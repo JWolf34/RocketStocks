@@ -9,13 +9,17 @@ def get_data():
     SQQQ = yf.Ticker("SQQQ")
 
     print("--------- QQQ ---------")
-    for line in QQQ.info:
-        print(line)
+    print(QQQ.info)
     print()
 
     print("--------- TQQQ ---------")
+    print(TQQQ.info)
+    print()
 
     print("--------- SQQQ ---------")
+    print(SQQQ.info)
+    print()
+
 
 
 
