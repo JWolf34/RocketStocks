@@ -1,10 +1,19 @@
-FROM python:3.12.0b4-bookworm
+FROM python:3.9-slim-bullseye
 
-ADD . /usr/src/RocketStocks
-WORKDIR /usr/src/RocketStocks
+ADD . /RocketStocks
+WORKDIR /RocketStocks
 
-COPY requirements.txt requirements.txt
-RUN pip3 install -r requirements.txt
+RUN pip install pip==23.2.1
+RUN pip install APScheduler
+RUN pip install discord
+RUN pip install discord.py
+RUN pip install pandas
+RUN pip install pandas-datareader
+RUN pip install scipy
+RUN pip install yahoo-fin
+RUN pip install yfinance
+#COPY requirements.txt requirements.txt
+#RUN pip install -r requirements.txt
 
 COPY . . 
 
