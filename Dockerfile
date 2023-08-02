@@ -3,7 +3,7 @@ FROM python:3.12.0b4-bookworm
 ADD . /usr/src/RocketStocks
 WORKDIR /usr/src/RocketStocks
 
-RUN pip install pip==23.1.2
+RUN pip install pip==23.2.1
 COPY requirements.txt requirements.txt
 RUN pip install -r requirements.txt
 
