@@ -20,6 +20,10 @@ def get_data():
     print(SQQQ.info)
     print()
 
+def get_news():
+    NASDAQ = yf.Ticker("NASDAQ")
+    for article in NASDAQ.news:
+        print(article)
 
 
 
@@ -29,4 +33,4 @@ def get_data():
 
 
 if __name__ == "__main__":
-    get_data()
+    get_news()
