@@ -2,16 +2,21 @@ import sys
 sys.path.append('discord')
 import bot as Discord
 import stockdata as sd
-from multiprocessing import Process
-import sched
+import subprocess
+import scheduler
 
 def rocketStocks():
-    sched.scheduler()
+    scheduler.scheduler()
 
 
 
 if (__name__ == '__main__'):
 
+    subprocess.run(["python", "discord/bot.py"])
+
+    subprocess.run(["python", "scheduler.py"])
+
+    '''
     rocketStocks = Process(target=rocketStocks())
     rocketStocks.start()
 
@@ -20,3 +25,4 @@ if (__name__ == '__main__'):
 
     rocketStocks.join()
     discord.join()
+    '''

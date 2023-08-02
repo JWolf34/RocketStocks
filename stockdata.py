@@ -65,6 +65,7 @@ def update_csv(data, ticker):
 def download_data_and_update_csv(ticker, period):
     data = download_data(ticker, period)
     update_csv(data, ticker)
+    print('Done!')
 
 
 if __name__ == "__main__":
