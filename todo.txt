@@ -1,2 +1,0 @@
-- Get daily news articles related to NASDAQ and push to discord (John)
-- Pull data from yfinance from a daily basis (Bennett)

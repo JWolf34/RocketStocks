@@ -1,3 +1,5 @@
+import sys
+sys.path.append('..')
 import os
 import discord
 from discord import app_commands
@@ -5,7 +7,6 @@ from discord.ext import commands
 import asyncio
 import json
 import yfinance as yf
-import responses
 import stockdata as sd
 
 async def send_message(message, user_message, is_private):
@@ -15,7 +16,7 @@ async def send_message(message, user_message, is_private):
         print(e)
 
 def run_bot():
-    with open('config.json') as config_file:
+    with open('discord/config.json') as config_file:
         data = json.load(config_file)
 
     TOKEN = data['discord-token']
@@ -109,11 +110,8 @@ def run_bot():
         return embed
         
 
-
-
-
-    
     client.run(TOKEN)
+    
 
 if __name__ == "__main__":
     run_bot()
