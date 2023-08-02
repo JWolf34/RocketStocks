@@ -1,0 +1,10 @@
+version: "3.7"
+
+services:
+  rocketstocks:
+    build:
+      context: . 
+    restart: always
+    volumes:
+      - usr/src/RocketStocks/data:/mnt/data/RocketStocks/data
+       
