@@ -1,4 +1,4 @@
-FROM python:3.12.0b4-bookworm
+FROM python:3.9-slim-bullseye
 
 ADD . /RocketStocks
 WORKDIR /RocketStocks
