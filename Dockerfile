@@ -3,6 +3,7 @@ FROM python:3.12.0b4-bookworm
 ADD . /RocketStocks
 WORKDIR /RocketStocks
 
+RUN pip install pip==21.3.1
 RUN pip install APScheduler
 RUN pip install discord
 RUN pip install discord.py
