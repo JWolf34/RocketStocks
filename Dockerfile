@@ -1,10 +1,10 @@
 FROM python:3.12.0b4-bookworm
 
-ADD . /usr/src/RocketStocks
-WORKDIR /usr/src/RocketStocks
+ADD . /RocketStocks
+WORKDIR /RocketStocks
 
 RUN pip install APScheduler
-#RUN pip install discord
+RUN pip install discord
 #RUN pip install discord.py
 #RUN pip install pandas
 #RUN pip install pandas-datareader
