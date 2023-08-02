@@ -5,7 +5,7 @@ WORKDIR /usr/src/RocketStocks
 
 RUN pip install APScheduler
 #RUN pip install discord
-RUN pip install discord.py
+#RUN pip install discord.py
 RUN pip install pandas
 RUN pip install pandas-datareader
 RUN pip install scipy
