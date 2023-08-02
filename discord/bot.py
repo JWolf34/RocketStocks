@@ -7,7 +7,7 @@ from discord.ext import commands
 import asyncio
 import json
 import yfinance as yf
-import stockdata as sd
+import rocketstocks.stockdata as sd
 
 async def send_message(message, user_message, is_private):
     try:
