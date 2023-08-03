@@ -1,5 +1,5 @@
 import sys
-sys.path.append('..')
+sys.path.append('../RocketStocks')
 import os
 import discord
 from discord import app_commands
@@ -7,7 +7,7 @@ from discord.ext import commands
 import asyncio
 import json
 import yfinance as yf
-import rocketstocks.stockdata as sd
+import stockdata as sd
 
 async def send_message(message, user_message, is_private):
     try:
@@ -36,7 +36,7 @@ def run_bot():
     @app_commands.describe(ticker = "Ticker to add to watchlist")
     async def addticker(interaction: discord.Interaction, ticker: str):
 
-        tickers = open('tickers.txt', 'a')
+        tickers = open('discord/tickers.txt', 'a')
         tickers.write(ticker + "\n")
         await interaction.response.send_message("Added " + ticker + "  to the watchlist")
 
@@ -44,11 +44,11 @@ def run_bot():
     @app_commands.describe(ticker = "Ticker to remove from watchlist")
     async def removeticker(interaction: discord.Interaction, ticker: str):
 
-        with open("tickers.txt", 'r') as watchlist:
+        with open("discord/tickers.txt", 'r') as watchlist:
             symbols = watchlist.read().splitlines()
 
         message = ticker + " does not exist in the watchlist"
-        with open("tickers.txt", 'w') as watchlist:
+        with open("discord/tickers.txt", 'w') as watchlist:
             for symbol in symbols:
                 if symbol != ticker:
                     watchlist.write(symbol + "\n")
@@ -59,13 +59,13 @@ def run_bot():
 
     @client.tree.command(name = "watchlist", description= "List the tickers on the watchlist",)
     async def watchlist(interaction: discord.Interaction):
-        tickers = open("tickers.txt", 'r').read().splitlines()
+        tickers = open("discord/tickers.txt", 'r').read().splitlines()
         message = "Watchlist: " + ','.join(tickers)
         await interaction.response.send_message(message)
 
     @client.tree.command(name = "news-all", description= "Get the news on all the tickets on your watchlist",)
     async def newsall(interaction: discord.Interaction):
-        tickers = open("tickers.txt").read().splitlines()
+        tickers = open("discord/tickers.txt").read().splitlines()
         embed = get_news(tickers)
         await interaction.response.send_message(embed=embed)
 
@@ -89,8 +89,8 @@ def run_bot():
         for ticker in tickers:
             stock = yf.Ticker(ticker)
             articles = stock.news
-            uuids_txt = open("tickers.txt", 'a')
-            uuids_values = open("tickers.txt", 'r').read().splitlines()
+            uuids_txt = open("discord/tickers.txt", 'a')
+            uuids_values = open("disord/tickers.txt", 'r').read().splitlines()
             titles = []
             links = []
             for article in articles:
