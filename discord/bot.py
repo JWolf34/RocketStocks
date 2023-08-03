@@ -65,7 +65,7 @@ def run_bot():
     @client.tree.command(name = "news-all", description= "Get the news on all the tickets on your watchlist",)
     async def newsall(interaction: discord.Interaction):
         tickers = sd.get_tickers()
-        embed = get_news(tickers)
+        embed = sd.get_news(tickers)
         await interaction.response.send_message(embed=embed)
 
     @client.tree.command(name = "news", description= "Get the news from all tickers given in a comma-separated list",)
@@ -81,32 +81,13 @@ def run_bot():
         embed.description = message
         await interaction.response.send_message(embed=embed)
 
-
-    def get_news(tickers):
-        embed = discord.Embed()
-        message = ''
-        for ticker in tickers:
-            stock = yf.Ticker(ticker)
-            articles = stock.news
-            uuids_txt = open("data/tickers.txt", 'a')
-            uuids_values = open("data/tickers.txt", 'r').read().splitlines()
-            titles = []
-            links = []
-            for article in articles:
-                if article['uuid'] in uuids_values:
-                    pass
-                else: 
-                    titles.append(article['title']) 
-                    links.append(article['link'])
-            if len(titles) > 0:
-                description = ''
-                for i in range(0, len(titles)):
-                    description += "[" + titles[i] + "]" + "(" + links[i] + ")" + "\n"
-                
-                message += ticker + ": \n" + description + "\n"
-                
-        embed.description = message
-        return embed
+    @client.tree.command(name = "fetch", description= "Returns data file for input ticker",)
+    async def fetch(interaction: discord.Interaction, ticker: str):
+        try:
+            file = discord.File("data/" + ticker + ".csv")
+            await interaction.response.send_message(file=file, content= "Data file for " + ticker)
+        except Exception:
+            await interaction.response.send_message("No data file for " + ticker + " available")
         
 
     client.run(TOKEN)
