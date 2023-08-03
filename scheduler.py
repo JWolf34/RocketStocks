@@ -10,7 +10,6 @@ def scheduler():
         sched.add_job(sd.download_data_and_update_csv, 'cron', args= [ticker, 'max'], name='Fetch' + ticker + 'data', timezone=timezone, hour = 16, minute=0, replace_existing=True)
         
     
-    print(sched.get_jobs())
     print('Ready!')
 
     sched.start()
