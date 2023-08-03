@@ -36,7 +36,7 @@ def run_bot():
     @app_commands.describe(ticker = "Ticker to add to watchlist")
     async def addticker(interaction: discord.Interaction, ticker: str):
 
-        tickers = open('discord/tickers.txt', 'a')
+        tickers = open('data/tickers.txt', 'a')
         tickers.write(ticker + "\n")
         await interaction.response.send_message("Added " + ticker + "  to the watchlist")
 
@@ -44,8 +44,7 @@ def run_bot():
     @app_commands.describe(ticker = "Ticker to remove from watchlist")
     async def removeticker(interaction: discord.Interaction, ticker: str):
 
-        with open("discord/tickers.txt", 'r') as watchlist:
-            symbols = watchlist.read().splitlines()
+        symbols = sd.get_tickers()
 
         message = ticker + " does not exist in the watchlist"
         with open("discord/tickers.txt", 'w') as watchlist:
@@ -59,13 +58,13 @@ def run_bot():
 
     @client.tree.command(name = "watchlist", description= "List the tickers on the watchlist",)
     async def watchlist(interaction: discord.Interaction):
-        tickers = open("discord/tickers.txt", 'r').read().splitlines()
-        message = "Watchlist: " + ','.join(tickers)
+        tickers = sd.get_tickers()
+        message = "Watchlist: " + ', '.join(tickers)
         await interaction.response.send_message(message)
 
     @client.tree.command(name = "news-all", description= "Get the news on all the tickets on your watchlist",)
     async def newsall(interaction: discord.Interaction):
-        tickers = open("discord/tickers.txt").read().splitlines()
+        tickers = sd.get_tickers()
         embed = get_news(tickers)
         await interaction.response.send_message(embed=embed)
 
@@ -89,8 +88,8 @@ def run_bot():
         for ticker in tickers:
             stock = yf.Ticker(ticker)
             articles = stock.news
-            uuids_txt = open("discord/tickers.txt", 'a')
-            uuids_values = open("disord/tickers.txt", 'r').read().splitlines()
+            uuids_txt = open("data/tickers.txt", 'a')
+            uuids_values = open("data/tickers.txt", 'r').read().splitlines()
             titles = []
             links = []
             for article in articles:

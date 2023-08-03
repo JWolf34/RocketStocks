@@ -30,6 +30,10 @@ def get_news(ticker):
             message += ticker + ": \n" + description + "\n"
         return message
 
+def get_tickers():
+    with open("data/tickers.txt", 'r') as watchlist:
+            tickers = watchlist.read().splitlines()
+    return tickers
 
 def download_data(ticker, period):
 
