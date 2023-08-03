@@ -71,7 +71,20 @@ def download_data_and_update_csv(ticker, period):
     update_csv(data, ticker)
     print('Done!')
 
+def combine_csv(ticker):
 
+    # Load historical and current data into data frames
+    historical_data = pd.read_csv("historical_data/" + ticker + ".csv", index_col=0, parse_dates=True)
+    current_data = pd.read_csv("data/" + ticker + ".csv", index_col=0, parse_dates=True)
+    
+    # Append the historical data to the current data
+    combined_data = pd.concat([historical_data, current_data])
+
+     # Remove duplicate rows, if any
+    combined_data = combined_data[~combined_data.index.duplicated(keep='first')]
+    
+    # Save the combined data to the CSV file
+    combined_data.to_csv("data/" + ticker + ".csv")
 
 
 if __name__ == "__main__":

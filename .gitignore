@@ -1,2 +1,6 @@
 #Config
 config.json
+
+#Data folder
+data/
+
