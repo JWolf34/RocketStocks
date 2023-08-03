@@ -14,7 +14,7 @@ def scheduler():
         for ticker in tickers:
             sd.download_data_and_update_csv(ticker, 'max')
     '''
-    for
+    
     sched.add_job(sd.download_data_and_update_csv, 'cron', args= ['QQQ', 'max'], name='Fetch QQQ data', timezone=timezone, hour = 13, minute=1, replace_existing=True)
     
     print('Ready!')
