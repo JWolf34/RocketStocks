@@ -72,5 +72,7 @@ def download_data_and_update_csv(ticker, period):
     print('Done!')
 
 
+
+
 if __name__ == "__main__":
     pass

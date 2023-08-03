@@ -6,17 +6,11 @@ def scheduler():
     
     sched = BlockingScheduler()
 
-    '''
-    @sched.scheduled_job('cron', hour=9)
-    def download_data_and_update_csv():
-        with open("tickers.txt", 'r') as watchlist:
-            tickers = watchlist.read().splitlines()
-        for ticker in tickers:
-            sd.download_data_and_update_csv(ticker, 'max')
-    '''
+    for ticker in sd.get_tickers():
+        sched.add_job(sd.download_data_and_update_csv, 'cron', args= [ticker, 'max'], name='Fetch' + ticker + 'data', timezone=timezone, hour = 16, minute=0, replace_existing=True)
+        
     
-    sched.add_job(sd.download_data_and_update_csv, 'cron', args= ['QQQ', 'max'], name='Fetch QQQ data', timezone=timezone, hour = 13, minute=1, replace_existing=True)
-    
+    print(sched.get_jobs())
     print('Ready!')
 
     sched.start()

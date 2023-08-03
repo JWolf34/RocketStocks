@@ -1,3 +1,4 @@
-TSLA
-TLRY
 QQQ
+TQQQ
+SQQQ
+
