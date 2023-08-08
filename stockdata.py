@@ -35,12 +35,12 @@ def get_tickers():
             tickers = watchlist.read().splitlines()
     return tickers
 
-def download_data(ticker, period):
+def download_data(ticker, period, interval):
 
     # Download data for the given ticker
     data = yf.download(tickers=ticker, 
                        period=period, 
-                       interval="1m", 
+                       interval=interval, 
                        prepost = True,
                        auto_adjust = False,
                        repair = True)
@@ -85,6 +85,7 @@ def combine_csv(ticker):
     
     # Save the combined data to the CSV file
     combined_data.to_csv("data/" + ticker + ".csv")
+
 
 
 if __name__ == "__main__":

@@ -1,5 +1,5 @@
 import pandas as pd
-import yfinance as yf
+import stockdata as sd
 #from ta import add_all_ta_features
 #from ta.utils import dropna
 #from ta.momentum import *
@@ -7,22 +7,18 @@ import datetime
 import matplotlib.pyplot as plt
 
 
-def rsi():
+def rsi(ticker):
     # Load the data into a dataframe
-    symbol = yf.Ticker('QQQ')
-    qqq = symbol.history(interval="1d",period="1y")
+    data = sd.download_data(ticker=ticker, period="1y", interval="1d")
 
     # Filter the data by date
-    #qqq = qqq[qqq.index > datetime.date(2022,8,7)]
-    #qqq = qqq[qqq.index < datetime.date(2023,8,7)]
+    #data = data[data.index > datetime.date(2022,8,7)]
+    #data = data[data.index < datetime.date(2023,8,7)]
 
     # Print the result
-    print(qqq)
+    #print(data)
 
-    del qqq["Dividends"]
-    del qqq["Stock Splits"]
-
-    change = qqq["Close"].diff()
+    change = data["Close"].diff()
     change.dropna(inplace=True)
 
     # Create two copies of the Closing price Series
@@ -51,8 +47,8 @@ def rsi():
 
     # First chart:
     # Plot the closing price on the first chart
-    ax1.plot(qqq['Close'], linewidth=2)
-    ax1.set_title('QQQ Close Price')
+    ax1.plot(data['Close'], linewidth=2)
+    ax1.set_title(ticker.upper() + ' Close Price')
 
     # Second chart
     # Plot the RSI
@@ -66,12 +62,51 @@ def rsi():
 
     plt.show()
 
-'''
-def obv():
 
-    np.where(df['close'] > df['close'].shift(1), df['volume'], 
-    np.where(df['close'] < df['close'].shift(1), -df['volume'], 0)).cumsum()
-'''
+def obv(ticker):
+    obv = []
+    obv.append(0)
+
+    #Fetch yearly data for ticker
+    data = sd.download_data(ticker=ticker, period="1y", interval="1d")
+
+    #Loop through data set to record volume and close price each day
+    #Append to OBV accordingly
+    for i in range(1, len(data.Close)):
+        if data.Close[i] > data.Close[i-1]:
+            obv.append(obv[-1] + data.Volume[i])
+        elif data.Close[i] < data.Close[i-1]:
+            obv.append(obv[-1] - data.Volume[i])
+        else:
+            obv.append(obv[-1])
+    
+    #Include OBV and OBV Exponential Moving Average (EMA) as columns in data
+    data['OBV'] = obv
+    data['OBV_EMA'] = data['OBV'].ewm(span=20).mean()
+
+    # Create two charts on the same figure.
+    ax1 = plt.subplot2grid((10,1), (0,0), rowspan = 4, colspan = 1)
+    ax2 = plt.subplot2grid((10,1), (5,0), rowspan = 4, colspan = 1)
+
+    # First chart:
+    # Plot the closing price on the first chart
+    ax1.plot(data['Close'], linewidth=2)
+    ax1.set_title(ticker.upper() + ' Close Price')
+
+    # Second chart
+    # Plot the RSI
+    ax2.set_title('OBV / OBV_EMA')
+    ax2.plot(data['OBV'], label='OBV', color='orange')
+    ax2.plot(data['OBV_EMA'], label='OBV_EMA', color='purple')
+    
+
+    plt.show()
+        
+    
+    
+
+
+    
 
 if __name__ == '__main__':
-    rsi()
+    obv("GOOG")
