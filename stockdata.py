@@ -35,6 +35,10 @@ def get_tickers():
             tickers = watchlist.read().splitlines()
     return tickers
 
+def get_data(ticker):
+     path = "data/" + ticker + ".csv"
+     existing_data = pd.read_csv(path, index_col=0, parse_dates=True)
+
 def download_data(ticker, period, interval):
 
     # Download data for the given ticker
@@ -66,8 +70,8 @@ def update_csv(data, ticker):
     # Save the combined data to the CSV file
     combined_data.to_csv(path)
 
-def download_data_and_update_csv(ticker, period):
-    data = download_data(ticker, period)
+def download_data_and_update_csv(ticker, period, interval):
+    data = download_data(ticker, period, interval)
     update_csv(data, ticker)
     print('Done!')
 
