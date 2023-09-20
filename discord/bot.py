@@ -4,16 +4,15 @@ import os
 import discord
 from discord import app_commands
 from discord.ext import commands
+from discord.ext import tasks
 import asyncio
 import json
 import yfinance as yf
 import stockdata as sd
+import analysis as an
+import datetime as dt
 
-async def send_message(message, user_message, is_private):
-    try:
-        response = ''
-    except Exception as e:
-        print(e)
+
 
 def run_bot():
     with open('discord/config.json') as config_file:
@@ -28,6 +27,7 @@ def run_bot():
     async def on_ready():
         try:
             await client.tree.sync()
+            send_reports  .start()
         except Exception as e:
             print(e)
         print('Connected!')
@@ -88,8 +88,36 @@ def run_bot():
             await interaction.response.send_message(file=file, content= "Data file for " + ticker)
         except Exception:
             await interaction.response.send_message("No data file for " + ticker + " available")
-        
+    
+    @tasks.loop(hours=24)  
+    async def send_reports():
 
+        # Configure channel to send reports to
+        channel = await client.fetch_channel('1150890013471555705')
+        
+        
+        for ticker in sd.get_tickers():
+
+            # Run analysis on ticker to collect indicators and generate charts
+            data = an.retrieve_data(ticker)
+            an.generate_charts(data, ticker)
+
+            # Get techincal indicator charts and convert them to a list of discord File objects
+            files = an.fetch_charts(ticker)
+            for i in range(0, len(files)):
+                files[i] = discord.File(files[i])
+
+            # Append message based on analysis of indicators
+
+            message = "**" + ticker + " Analysis " + dt.date.today().strftime("%m/%d/%Y") + "**\n\n"
+
+            analysis = an.fetch_analysis(data)
+
+            for indicator in analysis:
+                message += indicator.get('analysis')
+            
+            await channel.send(message, files=files)
+        
     client.run(TOKEN)
     
 
