@@ -4,3 +4,6 @@ config.json
 #Data folder
 data/
 
+#Plots folder
+plots/
+
