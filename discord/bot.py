@@ -27,7 +27,7 @@ def run_bot():
     async def on_ready():
         try:
             await client.tree.sync()
-            send_reports  .start()
+            send_reports.start()
         except Exception as e:
             print(e)
         print('Connected!')
@@ -37,7 +37,8 @@ def run_bot():
     async def addticker(interaction: discord.Interaction, ticker: str):
 
         tickers = open('data/tickers.txt', 'a')
-        tickers.write(ticker + "\n")
+        tickers.write("\n" + ticker)
+        tickers.close()
         await interaction.response.send_message("Added " + ticker + "  to the watchlist")
 
     @client.tree.command(name = "removeticker", description= "Remove a stock ticker from the watchlist",)
@@ -47,10 +48,13 @@ def run_bot():
         symbols = sd.get_tickers()
 
         message = ticker + " does not exist in the watchlist"
-        with open("discord/tickers.txt", 'w') as watchlist:
-            for symbol in symbols:
-                if symbol != ticker:
-                    watchlist.write(symbol + "\n")
+        with open("data/tickers.txt", 'w') as watchlist:
+            for i in range(0, len(symbols)):
+                if symbols[i] != ticker:
+                    if i == len(symbols) - 1:
+                        watchlist.write(symbols[i])
+                    else:
+                        watchlist.write(symbols[i] + "\n")
                 else:
                     message =  "Removed " + ticker + " from the watchlist"
 
