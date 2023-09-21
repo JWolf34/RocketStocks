@@ -90,7 +90,28 @@ def combine_csv(ticker):
     # Save the combined data to the CSV file
     combined_data.to_csv("data/" + ticker + ".csv")
 
+# Return all filepaths of all charts for a given ticker
+def fetch_charts(ticker):
+    path = "plots/" + ticker + "/"
+    charts = os.listdir("plots/" + ticker)
+    for i in range(0, len(charts)):
+        charts[i] = path + charts[i]
+    return charts
 
+# Return the latest data with technical indicators as a Pandas datafram
+def fetch_data(ticker):
+    data = pd.read_csv("data/{}.csv".format(ticker))
+    return data
+
+def fetch_analysis(ticker):
+    analyis = ''
+    path = "analysis/{}/".format(ticker)
+    for file in os.listdir(path):
+        data = open(path + file)
+        analyis += data.read() + "\n"
+
+    return analyis
+                        
 
 if __name__ == "__main__":
     pass

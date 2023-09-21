@@ -2,7 +2,6 @@ import sys
 sys.path.append('discord')
 import bot as Discord
 import stockdata as sd
-#import subprocess
 import threading
 import scheduler
 

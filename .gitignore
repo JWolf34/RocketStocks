@@ -7,3 +7,8 @@ data/
 #Plots folder
 plots/
 
+#Analysis folder
+analysis/
+
+#old_data folder
+old_data/
