@@ -12,6 +12,7 @@ RUN pip install pandas-datareader
 RUN pip install scipy
 RUN pip install yahoo-fin
 RUN pip install yfinance
+RUN pip install matplotlib
 #COPY requirements.txt requirements.txt
 #RUN pip install -r requirements.txt
 
