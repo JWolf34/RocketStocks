@@ -9,3 +9,5 @@ pandas-datareader==0.10.0
 scipy==1.11.1
 yahoo-fin==0.8.9.1
 yfinance==0.2.22
+pandas_ta
+matplotlib
