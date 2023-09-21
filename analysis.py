@@ -33,6 +33,7 @@ def plot_rsi(data, ticker):
     ax2.axhline(70, linestyle='--', linewidth=1.5, color='red')
 
     plt.savefig("plots/" + ticker + "/" + ticker + "_RSI.png", dpi=1000)
+    plt.close()
 
 def plot_obv(data, ticker):
     # Create two charts on the same figure.
@@ -50,6 +51,7 @@ def plot_obv(data, ticker):
         ax2.plot(data['OBV'], color='purple', linewidth=1)
 
         plt.savefig("plots/" + ticker + "/" + ticker + "_OBV.png", dpi=1000)
+        plt.close()
 
 def plot_adi(data, ticker):
     # Create two charts on the same figure.
@@ -67,6 +69,7 @@ def plot_adi(data, ticker):
         ax2.plot(data['ADI'], color='green', linewidth=1)
 
         plt.savefig("plots/" + ticker + "/" + ticker + "_ADI.png", dpi=1000)
+        plt.close()
 
 def plot_adx(data, ticker):
     # Create two charts on the same figure.
@@ -93,6 +96,7 @@ def plot_adx(data, ticker):
         ax2.axhline(20, linestyle='--', linewidth=1.5, color='orange')
 
         plt.savefig("plots/" + ticker + "/" + ticker + "_ADX.png", dpi=1000)
+        plt.close()
 
 def plot_aroon(data, ticker):
     # Create two charts on the same figure.
@@ -113,6 +117,7 @@ def plot_aroon(data, ticker):
         ax2.legend()
 
         plt.savefig("plots/" + ticker + "/" + ticker + "_AROON.png", dpi=1000)
+        plt.close()
 
 def plot_macd(data, ticker):
     # Create two charts on the same figure.
@@ -135,6 +140,7 @@ def plot_macd(data, ticker):
         ax2.axhline(0, linestyle='--', linewidth=1.5, color='blue')
 
         plt.savefig("plots/" + ticker + "/" + ticker + "_MACD.png", dpi=1000)
+        plt.close()
 
 def plot_stoch(data, ticker):
     # Create two charts on the same figure.
@@ -160,14 +166,7 @@ def plot_stoch(data, ticker):
         ax2.axhline(80, linestyle='--', linewidth=1.5, color='red')
 
         plt.savefig("plots/" + ticker + "/" + ticker + "_STOCH.png", dpi=1000)
-
-# Return all filepaths of all charts for a given ticker
-def fetch_charts(ticker):
-    path = "plots/" + ticker + "/"
-    charts = os.listdir("plots/" + ticker)
-    for i in range(0, len(charts)):
-        charts[i] = path + charts[i]
-    return charts
+        plt.close()
 
 def generate_charts(data, ticker):
     
@@ -188,59 +187,95 @@ def generate_charts(data, ticker):
 
 # Running analysis on techincal indicators to generate buy/sell signals
 
-def analyze_obv(data):
+def analyze_obv(data, ticker):
     analysis = ""
     return analysis
 
 
-def analyze_adi(data):
+def analyze_adi(data, ticker):
     analysis = ""
     return analysis
  
-def analyze_adx(data):
+def analyze_adx(data, ticker):
+    analysis = ''
+    signal = ''
+    adx = data['ADX'].values[-1]
+    DIplus = data['ADX_DI+'].values[-1]
+    DIminus = data['ADX_DI-'].values[-1]
+
+    with open("analysis/{}/ADX.txt".format(ticker),'w') as adx_analysis: 
+        if (adx >= 20 and DIplus > DIminus):
+            signal = "BUY"
+            analysis = "ADX: **{}** - The ADX value is above 20 ({:.2f}) and DI+ ({}) is greater than DI- ({}), indicating an uptrend".format(signal, adx, DIplus, DIminus)
+            adx_analysis.write(analysis)
+        elif (adx >= 20 and DIplus < DIminus):
+            signal = "SELL"
+            analysis = "ADX: **{}** - The ADX value is above 20 ({:.2f}) and DI+ ({}) is less than DI- ({}), indicating a downtrend".format(signal, adx, DIplus, DIminus)
+            adx_analysis.write(analysis)
+        elif (adx < 20):
+            signal = "NEUTRAL"
+            analysis = "ADX: **{}** - The ADX value is below 20 ({:.2f}), indicating no trend in either direction".format(signal, adx)
+            adx_analysis.write(analysis)
+
+def analyze_aroon(data, ticker):
     analysis = ""
     return analysis
 
-def analyze_aroon(data):
-    analysis = ""
-    return analysis
+def analyze_macd(data, ticker):
+    signal = ''
+    macd = data['MACD'].values[-1]
+    macd_signal = data['MACD_SIGNAL'].values[-1]
 
-def analyze_macd(data):
-    analysis = ""
-    return analysis
+    with open("analysis/{}/MACD.txt".format(ticker),'w') as macd_analysis: 
+        if (macd > 0 and macd > macd_signal):
+            signal = "BUY"
+            analysis = "MACD: **{}** - The MACD value is above 0 ({:.2f}) and greater than the MACD signal line ({}), indicating an uptrend".format(signal, macd, macd_signal)
+            macd_analysis.write(analysis)
+        elif (macd > 0 and macd <= macd_signal):
+            signal = "NEUTRAL"
+            analysis = "MACD: **{}** - The MACD value is above 0 ({:.2f}) but less than the MACD signal line ({}). Wait until it crosses the signal line to buy.".format(signal, macd, macd_signal)
+            macd_analysis.write(analysis)
+        elif (macd <= 0):
+            signal = "SELL"
+            analysis = "MACD: **{}** - The MACD value is below 0 ({:.2f}), indicating a downtrend".format(signal, macd)
+            macd_analysis.write(analysis)
 
-def analyze_rsi(data):
+def analyze_rsi(data, ticker):
     analysis = ''
     signal = ''
     rsi = data['RSI'].values[-1]
 
-    if rsi >= 70:
-        signal = "SELL"
-        analysis = "RSI: **{}** - The RSI value is above 70 ({:.2f}) indicating the stock is currently overbought and could see a decline in price soon".format(signal, rsi)
-    elif rsi <= 30:
-        signal = "BUY"
-        analysis = "RSI: **{}** - The RSI value is above 70 ({:.2f}) indicating the stock is currently oversold and could see an incline in price soon".format(signal, rsi)
-    else:
-        signal = "NEUTRAL"
-        analysis = "RSI: **{}** - The RSI value is between 30 and 70 ({:.2f}), giving no indication as to where the price will move".format(signal, rsi)
+    with open("analysis/{}/RSI.txt".format(ticker),'w') as rsi_analysis: 
+        if rsi >= 70:
+            signal = "SELL"
+            analysis = "RSI: **{}** - The RSI value is above 70 ({:.2f}) indicating the stock is currently overbought and could see a decline in price soon".format(signal, rsi)
+            rsi_analysis.write(analysis)
+        elif rsi <= 30:
+            signal = "BUY"
+            analysis = "RSI: **{}** - The RSI value is above 70 ({:.2f}) indicating the stock is currently oversold and could see an incline in price soon".format(signal, rsi)
+            rsi_analysis.write(analysis)
+        else:
+            signal = "NEUTRAL"
+            analysis = "RSI: **{}** - The RSI value is between 30 and 70 ({:.2f}), giving no indication as to where the price will move".format(signal, rsi)
+            rsi_analysis.write(analysis)
 
-    return {'analysis':analysis, 'signal':signal}
-
-def analyze_stoch(data):
+def analyze_stoch(data, ticker):
     analysis = ""
     return analysis
     
-def fetch_analysis(data):
+def generate_analysis(data, ticker):
+    if not (os.path.isdir("analysis/" + ticker)):
+        os.makedirs("analysis/" + ticker)
 
-    analysis = []  
-    analysis.append(analyze_rsi(data))
-    return analysis
+    analyze_obv(data, ticker)
+    analyze_adi(data, ticker)
+    analyze_adx(data, ticker)
+    analyze_aroon(data, ticker)
+    analyze_macd(data, ticker)
+    analyze_rsi(data, ticker)
+    analyze_stoch(data, ticker)
 
-      
-
-
-
-def retrieve_data(ticker):
+def generate_indicators(ticker):
         
     # Load the data into a dataframe
     data = sd.download_data(ticker=ticker, period="1y", interval="1d")
@@ -270,12 +305,18 @@ def retrieve_data(ticker):
     # Run Relative Stength Index (RSI) analysis
     data ['RSI'] = ta.rsi(data['Close'])
         
-    return data
+    sd.update_csv(data, ticker)
+
+def run_analysis():
+    for ticker in sd.get_tickers():
+        generate_indicators(ticker)
+        data = sd.fetch_data(ticker)
+        generate_charts(data, ticker)
+        generate_analysis(data, ticker)
 
 
 if __name__ == '__main__':  
-    pass
-
+    run_analysis()
 
 
         

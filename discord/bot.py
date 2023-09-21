@@ -99,15 +99,10 @@ def run_bot():
         # Configure channel to send reports to
         channel = await client.fetch_channel('1150890013471555705')
         
-        
         for ticker in sd.get_tickers():
 
-            # Run analysis on ticker to collect indicators and generate charts
-            data = an.retrieve_data(ticker)
-            an.generate_charts(data, ticker)
-
             # Get techincal indicator charts and convert them to a list of discord File objects
-            files = an.fetch_charts(ticker)
+            files = sd.fetch_charts(ticker)
             for i in range(0, len(files)):
                 files[i] = discord.File(files[i])
 
@@ -115,10 +110,10 @@ def run_bot():
 
             message = "**" + ticker + " Analysis " + dt.date.today().strftime("%m/%d/%Y") + "**\n\n"
 
-            analysis = an.fetch_analysis(data)
+            analysis = sd.fetch_analysis(ticker)
 
             for indicator in analysis:
-                message += indicator.get('analysis')
+                message += indicator
             
             await channel.send(message, files=files)
         
