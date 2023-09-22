@@ -233,7 +233,7 @@ def analyze_macd(data, ticker):
             macd_analysis.write(analysis)
         elif (macd > 0 and macd <= macd_signal):
             signal = "NEUTRAL"
-            analysis = "MACD: **{}** - The MACD value is above 0 ({:.2f}) but less than the MACD signal line ({}). Wait until it crosses the signal line to buy.".format(signal, macd, macd_signal)
+            analysis = "MACD: **{}** - The MACD value is above 0 ({:.2f}) but less than the MACD signal line ({}). Wait until it crosses the signal line to buy, or consider selling .".format(signal, macd, macd_signal)
             macd_analysis.write(analysis)
         elif (macd <= 0):
             signal = "SELL"
@@ -316,8 +316,7 @@ def run_analysis():
 
 
 if __name__ == '__main__':  
-    run_analysis()
-
+    pass
 
         
 
