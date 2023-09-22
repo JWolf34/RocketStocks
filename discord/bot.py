@@ -39,7 +39,7 @@ def run_bot():
         tickers = open('data/tickers.txt', 'a')
         tickers.write("\n" + ticker)
         tickers.close()
-        await interaction.response.send_message("Added " + ticker + "  to the watchlist")
+        await interaction.response.send_message("Added " + ticker + " to the watchlist")
 
     @client.tree.command(name = "removeticker", description= "Remove a stock ticker from the watchlist",)
     @app_commands.describe(ticker = "Ticker to remove from watchlist")
@@ -93,6 +93,23 @@ def run_bot():
         except Exception:
             await interaction.response.send_message("No data file for " + ticker + " available")
     
+    @client.tree.command(name = "fetch", description= "Returns data file for input ticker",)
+    async def fetch(interaction: discord.Interaction, ticker: str):
+        try:
+            file = discord.File("data/" + ticker + ".csv")
+            await interaction.response.send_message(file=file, content= "Data file for " + ticker)
+        except Exception:
+            await interaction.response.send_message("No data file for " + ticker + " available")
+    '''
+    @client.tree.command(name = "run-analysis", description= "Force the bot to run analysis on all tickers in the watchlist",)
+    async def fetch(interaction: discord.Interaction):
+        try:
+            an.run_analysis()
+            await interaction.response.send_message("Analysis complete!")
+        except Exception as e:
+            await interaction.response.send_message("Could not complete analysis - is one of the tickers on the watchlist delisted?")
+        '''
+
     @tasks.loop(hours=24)  
     async def send_reports():
 
