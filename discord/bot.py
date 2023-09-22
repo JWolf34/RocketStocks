@@ -100,15 +100,15 @@ def run_bot():
             await interaction.response.send_message(file=file, content= "Data file for " + ticker)
         except Exception:
             await interaction.response.send_message("No data file for " + ticker + " available")
-    '''
+    
     @client.tree.command(name = "run-analysis", description= "Force the bot to run analysis on all tickers in the watchlist",)
-    async def fetch(interaction: discord.Interaction):
+    async def runanalysis(interaction: discord.Interaction):
         try:
             an.run_analysis()
             await interaction.response.send_message("Analysis complete!")
         except Exception as e:
             await interaction.response.send_message("Could not complete analysis - is one of the tickers on the watchlist delisted?")
-        '''
+        
 
     @tasks.loop(hours=24)  
     async def send_reports():
