@@ -93,14 +93,6 @@ def run_bot():
         except Exception:
             await interaction.response.send_message("No data file for " + ticker + " available")
     
-    @client.tree.command(name = "fetch", description= "Returns data file for input ticker",)
-    async def fetch(interaction: discord.Interaction, ticker: str):
-        try:
-            file = discord.File("data/" + ticker + ".csv")
-            await interaction.response.send_message(file=file, content= "Data file for " + ticker)
-        except Exception:
-            await interaction.response.send_message("No data file for " + ticker + " available")
-    
     @client.tree.command(name = "run-analysis", description= "Force the bot to run analysis on all tickers in the watchlist",)
     async def runanalysis(interaction: discord.Interaction):
         try:
