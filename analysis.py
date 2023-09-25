@@ -186,63 +186,62 @@ def generate_charts(data, ticker):
 # Running analysis on techincal indicators to generate buy/sell signals
 
 def analyze_obv(data, ticker):
-    print(data['OBV'].tail(14))
     obv_curr = data['OBV'].values[-1]
-    obv_old = data['OBV'].values[-14]
+    obv_old = data['OBV'].values[-60]
 
     close_curr = data['Close'].values[-1]
-    close_old = data['Close'].values[-14]
+    close_old = data['Close'].values[-60]
 
-    obv_slope = (obv_curr - obv_old) / 14.0
-    close_slope = (close_curr - close_old) / 14.0
+    obv_slope = (obv_curr - obv_old) / 60.0
+    close_slope = (close_curr - close_old) / 60.0
 
 
     with open("analysis/{}/OBV.txt".format(ticker),'w') as obv_analysis:
         if obv_slope >= 0.25 and close_slope > 0: 
             signal = "BUY"
-            analysis = "OBV: **{}** - Over the last 14 days, the slope of OBV ({:.2f}) and the slope of Close ({:.2f}) are positive, indicating a continuing uptrend".format(signal, obv_slope, close_slope)
+            analysis = "OBV: **{}** - Over the last 60 days, the slope of OBV ({:.2f}) and the slope of Close ({:.2f}) are positive, indicating a continuing uptrend".format(signal, obv_slope, close_slope)
             obv_analysis.write(analysis)
         elif obv_slope >= 0.25 and close_slope <= 0.25:
             signal = "BUY"
-            analysis = "OBV: **{}** - Over the last 14 days, the slope of OBV ({:.2f}) is positive and the slope of Close ({:.2f}) is flat or negative, indicating an upcoming uptrend".format(signal, obv_slope, close_slope)
+            analysis = "OBV: **{}** - Over the last 60 days, the slope of OBV ({:.2f}) is positive and the slope of Close ({:.2f}) is flat or negative, indicating an upcoming uptrend".format(signal, obv_slope, close_slope)
             obv_analysis.write(analysis)
         elif obv_slope <= 0.25 and close_slope > 0: 
             signal = "WEAK SELL"
-            analysis = "OBV: **{}** - Over the last 14 days, the slope of OBV ({:.2f}) is flat or negative and the slope of Close ({:.2f}) is positive, indicating the end of an uptrend".format(signal, obv_slope, close_slope)
+            analysis = "OBV: **{}** - Over the last 60 days, the slope of OBV ({:.2f}) is flat or negative and the slope of Close ({:.2f}) is positive, indicating the end of an uptrend".format(signal, obv_slope, close_slope)
             obv_analysis.write(analysis)
         elif obv_slope <= 0.25 and close_slope < 0: 
             signal = "SELL"
-            analysis = "OBV: **{}** - Over the last 14 days, the slope of OBV ({:.2f}) and the slope of Close ({:.2f}) are flat or negative, indicating a continuing downtrend".format(signal, obv_slope, close_slope)
+            analysis = "OBV: **{}** - Over the last 60 days, the slope of OBV ({:.2f}) and the slope of Close ({:.2f}) are flat or negative, indicating a continuing downtrend".format(signal, obv_slope, close_slope)
             obv_analysis.write(analysis)
         
 
 def analyze_adi(data, ticker):
     adi_curr = data['ADI'].values[-1]
-    adi_old = data['ADI'].values[-14]
+    adi_old = data['ADI'].values[-60]
 
     close_curr = data['Close'].values[-1]
-    close_old = data['Close'].values[-14]
+    close_old = data['Close'].values[-60]
 
-    adi_slope = (adi_curr - adi_old) / 14.0
-    close_slope = (close_curr - close_old) / 14.0
+    adi_slope = (adi_curr - adi_old) / 60.0
+    close_slope = (close_curr - close_old) / 60.0
 
 
     with open("analysis/{}/ADI.txt".format(ticker),'w') as adi_analysis:
         if adi_slope >= 0.25 and close_slope > 0: 
             signal = "BUY"
-            analysis = "ADI: **{}** - Over the last 14 days, the slope of ADI ({:.2f}) and the slope of Close ({:.2f}) are positive, indicating a continuing uptrend".format(signal, adi_slope, close_slope)
+            analysis = "ADI: **{}** - Over the last 60 days, the slope of ADI ({:.2f}) and the slope of Close ({:.2f}) are positive, indicating a continuing uptrend".format(signal, adi_slope, close_slope)
             adi_analysis.write(analysis)
         elif adi_slope >= 0.25 and close_slope <= 0.25:
             signal = "BUY"
-            analysis = "ADI: **{}** - Over the last 14 days, the slope of ADI ({:.2f}) is positive and the slope of Close ({:.2f}) is flat or negative, indicating an upcoming uptrend".format(signal, adi_slope, close_slope)
+            analysis = "ADI: **{}** - Over the last 60 days, the slope of ADI ({:.2f}) is positive and the slope of Close ({:.2f}) is flat or negative, indicating an upcoming uptrend".format(signal, adi_slope, close_slope)
             adi_analysis.write(analysis)
         elif adi_slope <= 0.25 and close_slope > 0: 
             signal = "WEAK SELL"
-            analysis = "ADI: **{}** - Over the last 14 days, the slope of ADI ({:.2f}) is flat or negative and the slope of Close ({:.2f}) is positive, indicating the end of an uptrend".format(signal, adi_slope, close_slope)
+            analysis = "ADI: **{}** - Over the last 60 days, the slope of ADI ({:.2f}) is flat or negative and the slope of Close ({:.2f}) is positive, indicating the end of an uptrend".format(signal, adi_slope, close_slope)
             adi_analysis.write(analysis)
         elif adi_slope <= -0.25 and close_slope < 0: 
             signal = "SELL"
-            analysis = "ADI: **{}** - Over the last 14 days, the slope of ADI ({:.2f}) and the slope of Close ({:.2f}) are negative, indicating a continuing downtrend".format(signal, adi_slope, close_slope)
+            analysis = "ADI: **{}** - Over the last 60 days, the slope of ADI ({:.2f}) and the slope of Close ({:.2f}) are negative, indicating a continuing downtrend".format(signal, adi_slope, close_slope)
             adi_analysis.write(analysis)
         
 def analyze_adx(data, ticker):
