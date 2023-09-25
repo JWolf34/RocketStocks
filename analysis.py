@@ -183,18 +183,44 @@ def generate_charts(data, ticker):
     plot_rsi(data, ticker)
     plot_stoch(data, ticker)
     
-    
-
 # Running analysis on techincal indicators to generate buy/sell signals
 
 def analyze_obv(data, ticker):
-    analysis = ""
-    return analysis
+    obv_ema  = ta.ema(data['OBV']).values[-1]
+    obv = data['OBV'].values[-1]
+
+    with open("analysis/{}/OBV.txt".format(ticker),'w') as obv_analysis:
+        if obv > obv_ema: 
+            signal = "BUY"
+            analysis = "OBV: **{}** - The OBV value ({:.2f}) is greater than the OBV EMA value ({:.2f}), indicating an uptrend".format(signal, obv, obv_ema)
+            obv_analysis.write(analysis)
+        elif obv < obv_ema: 
+            signal = "SELL"
+            analysis = "OBV: **{}** - The OBV value ({:.2f}) is less than the OBV EMA value ({:.2f}), indicating a downtrend".format(signal, obv, obv_ema)
+            obv_analysis.write(analysis)
+        else:
+            signal = "NEUTRAL"
+            analysis = "OBV: **{}** - The OBV value ({:.2f}) is equal to the OBV EMA value ({:.2f}), showing no indication of a trend".format(signal, obv, obv_ema)
+            obv_analysis.write(analysis)
 
 
 def analyze_adi(data, ticker):
-    analysis = ""
-    return analysis
+    adi_ema  = ta.ema(data['ADI']).values[-1]
+    adi = data['ADI'].values[-1]
+
+    with open("analysis/{}/ADI.txt".format(ticker),'w') as adi_analysis:
+        if adi > adi_ema: 
+            signal = "BUY"
+            analysis = "ADI: **{}** - The ADI value ({:.2f}) is greater than the ADI EMA value ({:.2f}), indicating an uptrend".format(signal, adi, adi_ema)
+            adi_analysis.write(analysis)
+        elif adi < adi_ema: 
+            signal = "SELL"
+            analysis = "ADI: **{}** - The ADI value ({:.2f}) is less than the ADI EMA value ({:.2f}), indicating a downtrend".format(signal, adi, adi_ema)
+            adi_analysis.write(analysis)
+        else:
+            signal = "NEUTRAL"
+            analysis = "ADI: **{}** - The ADI value ({:.2f}) is equal to the ADI EMA value ({:.2f}), showing no indication of a trend".format(signal, adi, adi_ema)
+            adi_analysis.write(analysis)
  
 def analyze_adx(data, ticker):
     analysis = ''
@@ -252,7 +278,7 @@ def analyze_rsi(data, ticker):
             rsi_analysis.write(analysis)
         elif rsi <= 30:
             signal = "BUY"
-            analysis = "RSI: **{}** - The RSI value is above 70 ({:.2f}) indicating the stock is currently oversold and could see an incline in price soon".format(signal, rsi)
+            analysis = "RSI: **{}** - The RSI value is below 30 ({:.2f}) indicating the stock is currently oversold and could see an incline in price soon".format(signal, rsi)
             rsi_analysis.write(analysis)
         else:
             signal = "NEUTRAL"
@@ -260,8 +286,29 @@ def analyze_rsi(data, ticker):
             rsi_analysis.write(analysis)
 
 def analyze_stoch(data, ticker):
-    analysis = ""
-    return analysis
+    stoch = data['STOCH'].values[-1]
+    last_5_days_stoch = data['STOCH'].values[[-1, -2, -3, -4, -5]]
+    with open("analysis/{}/STOCH.txt".format(ticker),'w') as stoch_analysis: 
+        if (stoch < 80 and max(last_5_days_stoch) > 80):
+            signal = "SELL"
+            analysis = "STOCH: **{}** - The STOCH value ({:.2f}) has recently dropped below 80, indicating a potential decrease in price soon".format(signal, stoch)
+            stoch_analysis.write(analysis)
+        elif (stoch > 80 and min(last_5_days_stoch) < 80):
+            signal = "NEUTRAL"
+            analysis = "STOCH: **{}** - The STOCH value ({:.2f}) has recently crossed above 80. This is not always a sell signal, but look to sell soon".format(signal, stoch)
+            stoch_analysis.write(analysis)
+        elif (stoch > 20 and min(last_5_days_stoch) < 20):
+            signal = "BUY"
+            analysis = "STOCH: **{}** - The STOCH value ({:.2f}) has recently risen above 20, indicating a potential increase in price soon".format(signal, stoch)
+            stoch_analysis.write(analysis)
+        elif (stoch < 20 and max(last_5_days_stoch) > 20):
+            signal = "NEUTRAL"
+            analysis = "STOCH: **{}** - The STOCH value ({:.2f}) has recently crossed below 20. This is not always a buy signal, but look for buying opportunities".format(signal, stoch)
+            stoch_analysis.write(analysis)
+        else: 
+            signal = "NEUTRAL"
+            analysis = "STOCH: **{}** - The STOCH value ({:.2f}) gives no indication of a trend or this behavior is not documented yet".format(signal, stoch)
+            stoch_analysis.write(analysis) 
     
 def generate_analysis(data, ticker):
     if not (os.path.isdir("analysis/" + ticker)):
@@ -316,7 +363,7 @@ def run_analysis():
 
 
 if __name__ == '__main__':  
-    pass
+    run_analysis()
 
         
 
