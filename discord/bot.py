@@ -36,9 +36,11 @@ def run_bot():
     @app_commands.describe(ticker = "Ticker to add to watchlist")
     async def addticker(interaction: discord.Interaction, ticker: str):
 
-        tickers = open('data/tickers.txt', 'a')
-        tickers.write("\n" + ticker)
-        tickers.close()
+        symbols = sd.get_tickers()
+        symbols.append(ticker)
+        symbols.sort()
+        with open('data/tickers.txt', 'w') as watchlist:
+            watchlist.write("\n".join(symbols))
         await interaction.response.send_message("Added " + ticker + " to the watchlist")
 
     @client.tree.command(name = "removeticker", description= "Remove a stock ticker from the watchlist",)
@@ -49,14 +51,13 @@ def run_bot():
 
         message = ticker + " does not exist in the watchlist"
         with open("data/tickers.txt", 'w') as watchlist:
-            for i in range(0, len(symbols)):
-                if symbols[i] != ticker:
-                    if i == len(symbols) - 1:
-                        watchlist.write(symbols[i])
-                    else:
-                        watchlist.write(symbols[i] + "\n")
-                else:
-                    message =  "Removed " + ticker + " from the watchlist"
+            try:
+                symbols.remove(ticker)
+                symbols.sort()
+                watchlist.write("\n".join(symbols))
+                message =  "Removed " + ticker + " from the watchlist"
+            except ValueError as e:
+                pass
 
         await interaction.response.send_message(message)
 
@@ -96,15 +97,16 @@ def run_bot():
     @client.tree.command(name = "run-analysis", description= "Force the bot to run analysis on all tickers in the watchlist",)
     async def runanalysis(interaction: discord.Interaction):
         try:
+            await interaction.response.defer(ephemeral=True)
             an.run_analysis()
-            await interaction.response.send_message("Analysis complete!")
+            await interaction.followup.send("Analysis complete!")
         except Exception as e:
             await interaction.response.send_message("Could not complete analysis - is one of the tickers on the watchlist delisted?")
 
     @tasks.loop(hours=24)  
     async def send_reports():
 
-        if (dt.datetime.now().weekday() < 5 or override == True):
+        if (dt.datetime.now().weekday() < 5):
             # Configure channel to send reports to
             channel = await client.fetch_channel('1150890013471555705')
             
