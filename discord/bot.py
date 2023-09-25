@@ -100,14 +100,48 @@ def run_bot():
             await interaction.response.send_message("Analysis complete!")
         except Exception as e:
             await interaction.response.send_message("Could not complete analysis - is one of the tickers on the watchlist delisted?")
-        
 
     @tasks.loop(hours=24)  
     async def send_reports():
 
-        # Configure channel to send reports to
-        channel = await client.fetch_channel('1150890013471555705')
+        if (dt.datetime.now().weekday() < 5 or override == True):
+            # Configure channel to send reports to
+            channel = await client.fetch_channel('1150890013471555705')
+            
+            for ticker in sd.get_tickers():
+
+                # Get techincal indicator charts and convert them to a list of discord File objects
+                files = sd.fetch_charts(ticker)
+                for i in range(0, len(files)):
+                    files[i] = discord.File(files[i])
+
+                # Append message based on analysis of indicators
+
+                message = "**" + ticker + " Analysis " + dt.date.today().strftime("%m/%d/%Y") + "**\n\n"
+
+                analysis = sd.fetch_analysis(ticker)
+
+                for indicator in analysis:
+                    message += indicator
+                
+                await channel.send(message, files=files)
+        else:
+            pass
+     
+    @send_reports.before_loop
+    async def delay_send_reports():
+        hour = 16
+        minute = 30
+        now = dt.datetime.now()
+        future = dt.datetime(now.year, now.month, now.day, hour, minute)
+        if now.hour >= hour and now.minute > minute:
+            future += dt.timedelta(days=1)
+        await asyncio.sleep((future-now).seconds)
         
+    @client.tree.command(name = "run-reports-test", description= "Force the bot to post reports in a testing channel",)
+    async def run_reports_test(interaction: discord.Interaction):
+        # Configure channel to send reports to
+        channel = await client.fetch_channel('1113281014677123084')
         for ticker in sd.get_tickers():
 
             # Get techincal indicator charts and convert them to a list of discord File objects
@@ -125,7 +159,9 @@ def run_bot():
                 message += indicator
             
             await channel.send(message, files=files)
-        
+            
+    
+
     client.run(TOKEN)
     
 
