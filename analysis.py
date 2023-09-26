@@ -40,15 +40,37 @@ def plot_obv(data, ticker):
         ax1 = plt.subplot2grid((10,1), (0,0), rowspan = 4, colspan = 1)
         ax2 = plt.subplot2grid((10,1), (5,0), rowspan = 4, colspan = 1, sharex=ax1)
 
+        period = 60
+
+        obv_curr = data['OBV'].values[-1]
+        obv_old = data['OBV'].values[-period]
+
+        close_curr = data['Close'].values[-1]
+        close_old = data['Close'].values[-period]
+
+        obv_slope = (obv_curr - obv_old) / period
+        close_slope = (close_curr - close_old) / period
+
+
+        xstart = len(data['Close']) - period
+
         # First chart:
         # Plot the closing price on the first chart
         ax1.plot(data['Close'], linewidth=2)
         ax1.set_title(ticker.upper() + ' Close Price')
 
+        # Create line indicating start of analysis period
+        ax1.axvline(x = xstart, linestyle = '--', color = 'red')
+        ax1.axline(xy1 = (xstart, close_old), slope  = close_slope, color = 'red')
+
         # Second chart
         # Plot the OBV
         ax2.set_title('On-Balance Volume (' + ticker + ')')
         ax2.plot(data['OBV'], color='purple', linewidth=1)
+
+        # Create line indicating start of analysis period
+        ax2.axvline(x = xstart, linestyle = '--', color = 'red')
+        ax2.axline(xy1 = (xstart, obv_old), slope  = obv_slope, color = 'red')
 
         plt.savefig("plots/" + ticker + "/" + ticker + "_OBV.png", dpi=1000)
         plt.close()
@@ -58,15 +80,36 @@ def plot_adi(data, ticker):
         ax1 = plt.subplot2grid((10,1), (0,0), rowspan = 4, colspan = 1)
         ax2 = plt.subplot2grid((10,1), (5,0), rowspan = 4, colspan = 1, sharex=ax1)
 
+        period = 60
+
+        adi_curr = data['ADI'].values[-1]
+        adi_old = data['ADI'].values[-period]
+
+        close_curr = data['Close'].values[-1]
+        close_old = data['Close'].values[-period]
+
+        adi_slope = (adi_curr - adi_old) / period
+        close_slope = (close_curr - close_old) / period
+
+        xstart = len(data['Close']) - period
+
         # First chart:
         # Plot the closing price on the first chart
         ax1.plot(data['Close'], linewidth=2)
         ax1.set_title(ticker.upper() + ' Close Price')
 
+        # Create line indicating start of analysis period
+        ax1.axvline(x = xstart, linestyle = '--', color = 'red')
+        ax1.axline(xy1 = (xstart, close_old), slope  = close_slope, color = 'red')
+
         # Second chart
         # Plot the OBV
         ax2.set_title('Accumulation/Distribution Index (' + ticker + ')')
         ax2.plot(data['ADI'], color='green', linewidth=1)
+
+        # Create line indicating start of analysis period
+        ax2.axvline(x = xstart, linestyle = '--', color = 'red')
+        ax2.axline(xy1 = (xstart, adi_old), slope  = adi_slope, color = 'red')
 
         plt.savefig("plots/" + ticker + "/" + ticker + "_ADI.png", dpi=1000)
         plt.close()
