@@ -7,6 +7,13 @@ import os
 
 yf.pdr_override()
 
+def validate_ticker(ticker):
+    stock = yf.Ticker(ticker)
+    try:
+        stock.info
+        return True
+    except HTTPError as e:
+        return False
 
 def get_news(ticker):
         message = ''
@@ -117,4 +124,5 @@ def fetch_analysis(ticker):
                         
 
 if __name__ == "__main__":
-    pass
+    print(validate_ticker("QQQ"))
+    print(validate_ticker("QRSTUV"))
