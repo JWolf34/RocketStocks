@@ -49,6 +49,8 @@ def download_data(ticker, period, interval):
                        auto_adjust = False,
                        repair = True)
     
+    data.fillna(0)
+
     return data
 
 def update_csv(data, ticker):
@@ -58,6 +60,7 @@ def update_csv(data, ticker):
     # If the CSV file already exists, read the existing data
     if os.path.exists(path):
         existing_data = pd.read_csv(path, index_col=0, parse_dates=True)
+        existing_data.fillna(0)
         
         # Append the new data to the existing data
         combined_data = pd.concat([existing_data, data])

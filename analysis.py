@@ -4,6 +4,7 @@ import stockdata as sd
 import numpy as np
 import datetime
 import matplotlib.pyplot as plt
+import matplotlib.dates as mdates
 import pandas_ta as ta
 import pandas_ta.momentum as tamomentum
 import pandas_ta.volume as tavolume
@@ -13,24 +14,39 @@ import pandas_ta.trend as tatrend
 
 def plot_rsi(data, ticker):
 
+    close = data[['Date', 'Close']].copy().set_index('Date')
+    rsi = data[['Date', 'RSI']].copy().set_index('Date')
+    
+    locator = mdates.MonthLocator()
+    fmt = mdates.AutoDateFormatter(locator)
+
     # Create two charts on the same figure.
     ax1 = plt.subplot2grid((10,1), (0,0), rowspan = 4, colspan = 1)
     ax2 = plt.subplot2grid((10,1), (5,0), rowspan = 4, colspan = 1, sharex=ax1)
 
     # First chart:
     # Plot the closing price on the first chart
-    ax1.plot(data['Close'], linewidth=2)
+    ax1.plot(close, linewidth=2)
     ax1.set_title(ticker.upper() + ' Close Price')
+    ax1.xaxis.set_major_locator(locator)
+    ax1.xaxis.grid(True)
+    plt.setp(ax1.get_xticklabels(), fontsize = 4)
+    #ax1.xaxis.set_major_formatter(fmt)
 
     # Second chart
     # Plot the RSI
     ax2.set_title('Relative Strength Index (' + ticker + ')')
-    ax2.plot(data['RSI'], color='orange', linewidth=1)
+    ax2.plot(rsi, color='orange', linewidth=1)
     # Add two horizontal lines, signalling the buy and sell ranges.
     # Oversold
     ax2.axhline(30, linestyle='--', linewidth=1.5, color='green')
     # Overbought
     ax2.axhline(70, linestyle='--', linewidth=1.5, color='red')
+
+    ax2.xaxis.set_major_locator(locator)
+    ax2.xaxis.grid(True)
+    plt.setp(ax2.get_xticklabels(), fontsize = 4)
+    plt.tight_layout()
 
     plt.savefig("plots/" + ticker + "/" + ticker + "_RSI.png", dpi=1000)
     plt.close()
