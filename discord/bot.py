@@ -34,14 +34,32 @@ def run_bot():
 
     @client.tree.command(name = "addticker", description= "Add a new stock ticker for the bot to watch",)
     @app_commands.describe(ticker = "Ticker to add to watchlist")
-    async def addticker(interaction: discord.Interaction, ticker: str):
+    @app_commands.choices(watchlist =[
+        app_commands.Choice(name = "personal", value = 'personal'),
+        app_commands.Choice(name = "global", value = 'global')
+    ])
+    async def addticker(interaction: discord.Interaction, ticker: str, watchlist: app_commands.Choice[str]):
 
-        symbols = sd.get_tickers()
-        symbols.append(ticker)
-        symbols.sort()
-        with open('data/tickers.txt', 'w') as watchlist:
-            watchlist.write("\n".join(symbols))
-        await interaction.response.send_message("Added " + ticker + " to the watchlist")
+        if watchlist.value == 'personal':
+            user_id = interaction.user.id
+            if not (os.path.isdir("watchlists/{}".format(user_id))):
+                os.makedirs("watchlists/{}".format(user_id))
+
+            symbols = sd.get_tickers(user_id)
+            symbols.append(ticker)
+            symbols.sort()
+            with open('watchlists/{}/watchlist.txt'.format(user_id), 'w') as watchlist:
+                watchlist.write("\n".join(symbols))
+            await interaction.response.send_message("Added " + ticker + " to your watchlist")
+        else:
+            if not (os.path.isdir("watchlists/global")):
+                os.makedirs("watchlists/global")
+            symbols = sd.get_tickers()
+            symbols.append(ticker)
+            symbols.sort()
+            with open('wacthlists/global/watchlist.txt', 'w') as watchlist:
+                watchlist.write("\n".join(symbols))
+            await interaction.response.send_message("Added " + ticker + " to the global watchlist")
 
     @client.tree.command(name = "removeticker", description= "Remove a stock ticker from the watchlist",)
     @app_commands.describe(ticker = "Ticker to remove from watchlist")
