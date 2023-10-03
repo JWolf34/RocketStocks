@@ -37,10 +37,15 @@ def get_news(ticker):
             message += ticker + ": \n" + description + "\n"
         return message
 
-def get_tickers():
-    with open("data/tickers.txt", 'r') as watchlist:
-            tickers = watchlist.read().splitlines()
-    return tickers
+def get_tickers(id = 0):
+    if id == 0:
+        with open("watchlists/global/watchlist.txt", 'r') as watchlist:
+                tickers = watchlist.read().splitlines()
+        return tickers
+    else:
+        with open("watchlists/{}/watchlist.txt".format(id), 'r') as watchlist:
+                tickers = watchlist.read().splitlines()
+        return tickers
 
 def get_data(ticker):
      path = "data/" + ticker + ".csv"
