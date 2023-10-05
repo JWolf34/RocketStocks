@@ -12,7 +12,7 @@ def validate_ticker(ticker):
     try:
         stock.info
         return True
-    except HTTPError as e:
+    except Exception as e:
         return False
 
 def get_news(ticker):
