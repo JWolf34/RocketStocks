@@ -35,36 +35,57 @@ def run_bot():
     @client.tree.command(name = "addticker", description= "Add a new stock ticker for the bot to watch",)
     @app_commands.describe(ticker = "Ticker to add to watchlist")
     @app_commands.choices(watchlist =[
-        app_commands.Choice(name = "personal", value = 'personal'),
-        app_commands.Choice(name = "global", value = 'global')
+        app_commands.Choice(name = "global", value = 'global'),
+        app_commands.Choice(name = "personal", value = 'personal')
     ])
     async def addticker(interaction: discord.Interaction, ticker: str, watchlist: app_commands.Choice[str]):
 
-        if watchlist.value == 'personal':
-            user_id = interaction.user.id
-            if not (os.path.isdir("watchlists/{}".format(user_id))):
-                os.makedirs("watchlists/{}".format(user_id))
+        if(sd.validate_ticker(ticker)):
+            if watchlist.value == 'personal':
+                user_id = interaction.user.id
+                if not (os.path.isdir("watchlists/{}".format(user_id))):
+                    os.makedirs("watchlists/{}".format(user_id))
+                    file = open("watchlists/{}/watchlist.txt".format(user_id), 'a')
+                    file.close()
 
-            symbols = sd.get_tickers(user_id)
-            symbols.append(ticker)
-            symbols.sort()
-            with open('watchlists/{}/watchlist.txt'.format(user_id), 'w') as watchlist:
-                watchlist.write("\n".join(symbols))
-            await interaction.response.send_message("Added " + ticker + " to your watchlist")
+                symbols = sd.get_tickers(user_id)
+                if (ticker in symbols):
+                    await interaction.response.send_message(ticker + " is already on your watchlist")
+                else:
+                    symbols.append(ticker)
+                    symbols.sort()
+                    with open('watchlists/{}/watchlist.txt'.format(user_id), 'w') as watchlist:
+                        watchlist.write("\n".join(symbols))
+                        await interaction.response.send_message("Added " + ticker + " to your watchlist")
+            else:
+                if not (os.path.isdir("watchlists/global")):
+                    os.makedirs("watchlists/global")
+                    file = open("watchlists/global/watchlist.txt", 'a')
+                    file.close()
+                
+                symbols = sd.get_tickers()
+                if (ticker in symbols):
+                    await interaction.response.send_message(ticker + " is already on the global watchlist")
+                else: 
+                    symbols.append(ticker)
+                    symbols.sort()
+                    with open('watchlists/global/watchlist.txt', 'w') as watchlist:
+                        watchlist.write("\n".join(symbols))
+                        await interaction.response.send_message("Added " + ticker + " to the global watchlist")
         else:
-            if not (os.path.isdir("watchlists/global")):
-                os.makedirs("watchlists/global")
-            symbols = sd.get_tickers()
-            symbols.append(ticker)
-            symbols.sort()
-            with open('wacthlists/global/watchlist.txt', 'w') as watchlist:
-                watchlist.write("\n".join(symbols))
-            await interaction.response.send_message("Added " + ticker + " to the global watchlist")
+            await interaction.response.send_message(ticker + " is not a valid ticker")
+
 
     @client.tree.command(name = "removeticker", description= "Remove a stock ticker from the watchlist",)
     @app_commands.describe(ticker = "Ticker to remove from watchlist")
-    async def removeticker(interaction: discord.Interaction, ticker: str):
+    @app_commands.choices(watchlist =[
+        app_commands.Choice(name = "global", value = 'global'),
+        app_commands.Choice(name = "personal", value = 'personal')
+    ])
+    async def removeticker(interaction: discord.Interaction, ticker: str, watchlist: app_commands.Choice[str]):
+        pass
 
+        """
         symbols = sd.get_tickers()
 
         message = ticker + " does not exist in the watchlist"
@@ -78,6 +99,7 @@ def run_bot():
                 pass
 
         await interaction.response.send_message(message)
+        """
 
     @client.tree.command(name = "watchlist", description= "List the tickers on the watchlist",)
     async def watchlist(interaction: discord.Interaction):
