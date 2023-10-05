@@ -435,8 +435,8 @@ def generate_indicators(ticker):
         
     sd.update_csv(data, ticker)
 
-def run_analysis(tickers):
-    for ticker in tickers():
+def run_analysis(tickers=sd.get_tickers()):
+    for ticker in tickers:
         generate_indicators(ticker)
         data = sd.fetch_data(ticker)
         generate_charts(data, ticker)
