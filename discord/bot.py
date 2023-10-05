@@ -56,7 +56,8 @@ def run_bot():
                     symbols.sort()
                     with open('watchlists/{}/watchlist.txt'.format(user_id), 'w') as watchlist:
                         watchlist.write("\n".join(symbols))
-                        await interaction.response.send_message("Added " + ticker + " to your watchlist", ephemeral=True)
+                        await interaction.response.send_message("Added " + ticker + " to your watchlist! Running analysis...", ephemeral=True)
+                        an.run_analysis([ticker])
             else:
                 if not (os.path.isdir("watchlists/global")):
                     os.makedirs("watchlists/global")
@@ -71,7 +72,8 @@ def run_bot():
                     symbols.sort()
                     with open('watchlists/global/watchlist.txt', 'w') as watchlist:
                         watchlist.write("\n".join(symbols))
-                        await interaction.response.send_message("Added " + ticker + " to the global watchlist")
+                        await interaction.response.send_message("Added " + ticker + " to the global watchlist! Running analysis...")
+                        an.run_analysis([ticker])
         else:
             await interaction.response.send_message(ticker + " is not a valid ticker")
 
@@ -138,10 +140,20 @@ def run_bot():
         """
 
     @client.tree.command(name = "watchlist", description= "List the tickers on the watchlist",)
-    async def watchlist(interaction: discord.Interaction):
-        tickers = sd.get_tickers()
-        message = "Watchlist: " + ', '.join(tickers)
-        await interaction.response.send_message(message)
+    @app_commands.choices(watchlist =[
+        app_commands.Choice(name = "global", value = 'global'),
+        app_commands.Choice(name = "personal", value = 'personal')
+    ])
+    async def watchlist(interaction: discord.Interaction, watchlist: app_commands.Choice[str]):
+        if watchlist.value == 'personal':
+            user_id = interaction.user.id
+            tickers = sd.get_tickers(user_id)
+            message = "Watchlist: " + ', '.join(tickers)
+            await interaction.response.send_message(message, ephemeral=True)
+        else:
+            tickers = sd.get_tickers()
+            message = "Watchlist: " + ', '.join(tickers)
+            await interaction.response.send_message(message)
 
     @client.tree.command(name = "news-all", description= "Get the news on all the tickets on your watchlist",)
     async def newsall(interaction: discord.Interaction):
@@ -170,39 +182,40 @@ def run_bot():
         except Exception:
             await interaction.response.send_message("No data file for " + ticker + " available")
     
-    @client.tree.command(name = "run-analysis", description= "Force the bot to run analysis on all tickers in the watchlist",)
-    async def runanalysis(interaction: discord.Interaction):
-        try:
-            await interaction.response.defer(ephemeral=True)
-            an.run_analysis()
-            await interaction.followup.send("Analysis complete!")
-        except Exception as e:
-            await interaction.response.send_message("Could not complete analysis - is one of the tickers on the watchlist delisted?")
+    @client.tree.command(name = "run-analysis", description= "Force the bot to run analysis on all tickers in a given watchlist",)
+    @app_commands.choices(watchlist =[
+        app_commands.Choice(name = "global", value = 'global'),
+        app_commands.Choice(name = "personal", value = 'personal')
+    ])
+    async def runanalysis(interaction: discord.Interaction, watchlist: app_commands.Choice[str]):
+        
+        if watchlist == 'personal':
+            user_id = interaction.user.id
+            try:
+                tickers = sd.get_tickers(user_id)
+                await interaction.response.defer(ephemeral=True)
+                an.run_analysis(tickers)
+                await interaction.followup.send("Analysis complete!")
+            except Exception as e:
+                await interaction.response.send_message("Analysis failed. Do you have an existing watchlist?", ephemeral=True)
+        
 
     @tasks.loop(hours=24)  
     async def send_reports():
 
         if (dt.datetime.now().weekday() < 5):
+            
+            #Send out global reports
+
             # Configure channel to send reports to
             channel = await client.fetch_channel('1150890013471555705')
             
             for ticker in sd.get_tickers():
-
-                # Get techincal indicator charts and convert them to a list of discord File objects
-                files = sd.fetch_charts(ticker)
-                for i in range(0, len(files)):
-                    files[i] = discord.File(files[i])
-
-                # Append message based on analysis of indicators
-
-                message = "**" + ticker + " Analysis " + dt.date.today().strftime("%m/%d/%Y") + "**\n\n"
-
-                analysis = sd.fetch_analysis(ticker)
-
-                for indicator in analysis:
-                    message += indicator
-                
+                report = build_report(ticker)
+                message, files = report.get('message'), report.get('files')
                 await channel.send(message, files=files)
+
+
         else:
             pass
      
@@ -215,7 +228,37 @@ def run_bot():
         if now.hour >= hour and now.minute > minute:
             future += dt.timedelta(days=1)
         await asyncio.sleep((future-now).seconds)
+
+    @client.tree.command(name = "run-reports", description= "Force the bot to post analysis of a given watchlist",)
+    @app_commands.choices(watchlist =[
+        app_commands.Choice(name = "global", value = 'global'),
+        app_commands.Choice(name = "personal", value = 'personal')
+    ])
+    async def runreports(interaction: discord.Interaction, watchlist: app_commands.Choice[str]):
         
+        pass
+            
+
+    def build_report(ticker):
+
+        # Get techincal indicator charts and convert them to a list of discord File objects
+        files = sd.fetch_charts(ticker)
+        for i in range(0, len(files)):
+            files[i] = discord.File(files[i])
+
+        # Append message based on analysis of indicators
+
+        message = "**" + ticker + " Analysis " + dt.date.today().strftime("%m/%d/%Y") + "**\n\n"
+
+        analysis = sd.fetch_analysis(ticker)
+
+        for indicator in analysis:
+            message += indicator
+        
+        report = {'message':message, 'files':files}
+
+        return report
+
     @client.tree.command(name = "run-reports-test", description= "Force the bot to post reports in a testing channel",)
     async def run_reports_test(interaction: discord.Interaction):
         # Configure channel to send reports to
