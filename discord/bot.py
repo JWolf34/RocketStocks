@@ -40,7 +40,7 @@ def run_bot():
     ])
     async def addticker(interaction: discord.Interaction, ticker: str, watchlist: app_commands.Choice[str]):
 
-        if(sd.validate_ticker(ticker)):
+        if(True):
             if watchlist.value == 'personal':
                 user_id = interaction.user.id
                 if not (os.path.isdir("watchlists/{}".format(user_id))):
@@ -75,7 +75,7 @@ def run_bot():
                         await interaction.response.send_message("Added " + ticker + " to the global watchlist! Running analysis...")
                         an.run_analysis([ticker])
         else:
-            await interaction.response.send_message(ticker + " is not a valid ticker")
+            await interaction.response.send_message(ticker + " is not a valid ticker", ephemeral=True)
 
 
     @client.tree.command(name = "removeticker", description= "Remove a stock ticker from the watchlist",)
@@ -189,7 +189,7 @@ def run_bot():
     ])
     async def runanalysis(interaction: discord.Interaction, watchlist: app_commands.Choice[str]):
         
-        if watchlist == 'personal':
+        if watchlist.value == 'personal':
             user_id = interaction.user.id
             try:
                 tickers = sd.get_tickers(user_id)
@@ -198,6 +198,15 @@ def run_bot():
                 await interaction.followup.send("Analysis complete!")
             except Exception as e:
                 await interaction.response.send_message("Analysis failed. Do you have an existing watchlist?", ephemeral=True)
+        else: 
+            try:
+                tickers = sd.get_tickers()
+                await interaction.response.defer(ephemeral=True)
+                an.run_analysis(tickers)
+                await interaction.followup.send("Analysis complete!")
+            except Exception as e:
+                await interaction.response.send_message("Analysis failed. Is there an invalid ticker on the watchlist?", ephemeral=True)
+        
         
 
     @tasks.loop(hours=24)  
@@ -235,8 +244,31 @@ def run_bot():
         app_commands.Choice(name = "personal", value = 'personal')
     ])
     async def runreports(interaction: discord.Interaction, watchlist: app_commands.Choice[str]):
-        
-        pass
+        if watchlist.value == 'personal':
+            user_id = interaction.user.id
+            try:
+                tickers = sd.get_tickers(user_id)
+                user = interaction.user
+                await interaction.response.defer(ephemeral=True)
+                for ticker in tickers:
+                    report = build_report(ticker)
+                    message, files = report.get('message'), report.get('files')
+                    await user.send(message, files=files)
+                await interaction.followup.send("Reports have been posted!", ephemeral=True)
+            except Exception as e:
+                await interaction.response.send_message("Reports failed to run. Do you have an existing watchlist?", ephemeral=True)
+        else: 
+            try:
+                channel = await client.fetch_channel('1113281014677123084')
+                tickers = sd.get_tickers()
+                await interaction.response.defer(ephemeral=True)
+                for ticker in tickers:
+                    report = build_report(ticker)
+                    message, files = report.get('message'), report.get('files')
+                    await channel.send(message, files=files)
+                await interaction.followup.send("Reports have been posted!")
+            except Exception as e:
+                await interaction.response.send_message("Reports failed to run. Is there an invalid ticker on thw watchlist?", ephemeral=True)
             
 
     def build_report(ticker):
@@ -259,7 +291,7 @@ def run_bot():
 
         return report
 
-    @client.tree.command(name = "run-reports-test", description= "Force the bot to post reports in a testing channel",)
+    @client.tree.command(name = "test-run-reports", description= "Force the bot to post reports in a testing channel",)
     async def run_reports_test(interaction: discord.Interaction):
         # Configure channel to send reports to
         channel = await client.fetch_channel('1113281014677123084')
