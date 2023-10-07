@@ -129,5 +129,4 @@ def fetch_analysis(ticker):
                         
 
 if __name__ == "__main__":
-    print(validate_ticker("QQQ"))
-    print(validate_ticker("QRSTUV"))
+    pass

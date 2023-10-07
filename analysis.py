@@ -444,7 +444,7 @@ def run_analysis(tickers=sd.get_tickers()):
 
 
 if __name__ == '__main__':  
-    run_analysis()
+    pass
     
 
 
