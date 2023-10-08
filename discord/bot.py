@@ -283,9 +283,9 @@ def run_bot():
         tickers = tickers.split(',')
 
         # Validate each ticker in the list is valid
-        #for ticker in tickers:
-        #    if(not sd.validate_ticker(ticker)):
-        #        tickers.remove(ticker)
+        for ticker in tickers:
+            if(not sd.validate_ticker(ticker)):
+                tickers.remove(ticker)
 
         an.run_analysis(tickers)
 
