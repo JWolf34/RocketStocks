@@ -39,7 +39,7 @@ def run_bot():
         app_commands.Choice(name = "personal", value = 'personal')
     ])
     async def addticker(interaction: discord.Interaction, ticker: str, watchlist: app_commands.Choice[str]):
-
+        ticker = ticker.upper()
         if(sd.validate_ticker(ticker)):
             if watchlist.value == 'personal':
                 user_id = interaction.user.id
@@ -86,6 +86,7 @@ def run_bot():
     ])
     async def removeticker(interaction: discord.Interaction, ticker: str, watchlist: app_commands.Choice[str]):
         
+        ticker = ticker.upper()
         # Handle personal watchlist use case
         if watchlist.value == 'personal':
             user_id = interaction.user.id
@@ -121,23 +122,6 @@ def run_bot():
                 with open('watchlists/global/watchlist.txt'.format(user_id), 'w') as watchlist:
                     watchlist.write("\n".join(symbols))
                     await interaction.response.send_message("Removed " + ticker + " from the global watchlist")
-
-
-        """
-        symbols = sd.get_tickers()
-
-        message = ticker + " does not exist in the watchlist"
-        with open("data/tickers.txt", 'w') as watchlist:
-            try:
-                symbols.remove(ticker)
-                symbols.sort()
-                watchlist.write("\n".join(symbols))
-                message =  "Removed " + ticker + " from the watchlist"
-            except ValueError as e:
-                pass
-
-        await interaction.response.send_message(message)
-        """
 
     @client.tree.command(name = "watchlist", description= "List the tickers on the watchlist",)
     @app_commands.choices(watchlist =[
@@ -345,7 +329,9 @@ def run_bot():
             
             await channel.send(message, files=files)
             
-    
+    @client.tree.command(name = "help", description= "Show help on the bot's commands",)
+    async def run_reports_test(interaction: discord.Interaction):
+        pass
 
     client.run(TOKEN)
     
