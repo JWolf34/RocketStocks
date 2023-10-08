@@ -32,7 +32,7 @@ def run_bot():
             print(e)
         print('Connected!')
 
-    @client.tree.command(name = "addticker", description= "Add a new stock ticker for the bot to watch",)
+    @client.tree.command(name = "addticker", description= "Add a new stock ticker for the bot to watch and generate analysis for the ticker",)
     @app_commands.describe(ticker = "Ticker to add to watchlist")
     @app_commands.choices(watchlist =[
         app_commands.Choice(name = "global", value = 'global'),
@@ -41,6 +41,7 @@ def run_bot():
     async def addticker(interaction: discord.Interaction, ticker: str, watchlist: app_commands.Choice[str]):
         ticker = ticker.upper()
         if(sd.validate_ticker(ticker)):
+            await interaction.response.defer(ephemeral=True)
             if watchlist.value == 'personal':
                 user_id = interaction.user.id
                 if not (os.path.isdir("watchlists/{}".format(user_id))):
@@ -50,15 +51,16 @@ def run_bot():
 
                 symbols = sd.get_tickers(user_id)
                 if (ticker in symbols):
-                    await interaction.response.send_message(ticker + " is already on your watchlist", ephemeral=True)
+                    await interaction.followup.send(ticker + " is already on your watchlist", ephemeral=True)
                 else:
                     symbols.append(ticker)
                     symbols.sort()
                     with open('watchlists/{}/watchlist.txt'.format(user_id), 'w') as watchlist:
                         watchlist.write("\n".join(symbols))
-                        await interaction.response.send_message("Added " + ticker + " to your watchlist! Running analysis...", ephemeral=True)
                         an.run_analysis([ticker])
+                        await interaction.followup.send("Added " + ticker + " to your watchlist!", ephemeral=True)
             else:
+                await interaction.response.defer(ephemeral=True)
                 if not (os.path.isdir("watchlists/global")):
                     os.makedirs("watchlists/global")
                     file = open("watchlists/global/watchlist.txt", 'a')
@@ -66,14 +68,14 @@ def run_bot():
                 
                 symbols = sd.get_tickers()
                 if (ticker in symbols):
-                    await interaction.response.send_message(ticker + " is already on the global watchlist")
+                    await interaction.followup.send(ticker + " is already on the global watchlist")
                 else: 
                     symbols.append(ticker)
                     symbols.sort()
                     with open('watchlists/global/watchlist.txt', 'w') as watchlist:
                         watchlist.write("\n".join(symbols))
-                        await interaction.response.send_message("Added " + ticker + " to the global watchlist! Running analysis...")
                         an.run_analysis([ticker])
+                        await interaction.followup.send("Added " + ticker + " to the global watchlist!")
         else:
             await interaction.response.send_message(ticker + " is not a valid ticker", ephemeral=True)
 
