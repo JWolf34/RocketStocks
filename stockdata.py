@@ -10,7 +10,7 @@ yf.pdr_override()
 def validate_ticker(ticker):
     stock = yf.Ticker(ticker)
     try:
-        stock.info
+        stock.history
         return True
     except Exception as e:
         return False

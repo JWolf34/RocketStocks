@@ -40,7 +40,7 @@ def run_bot():
     ])
     async def addticker(interaction: discord.Interaction, ticker: str, watchlist: app_commands.Choice[str]):
 
-        if(True):
+        if(sd.validate_ticker(ticker)):
             if watchlist.value == 'personal':
                 user_id = interaction.user.id
                 if not (os.path.isdir("watchlists/{}".format(user_id))):
