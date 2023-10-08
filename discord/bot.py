@@ -259,7 +259,7 @@ def run_bot():
                 await interaction.response.send_message("Reports failed to run. Do you have an existing watchlist?", ephemeral=True)
         else: 
             try:
-                channel = await client.fetch_channel('1113281014677123084')
+                channel = await client.fetch_channel('1150890013471555705')
                 tickers = sd.get_tickers()
                 await interaction.response.defer(ephemeral=True)
                 for ticker in tickers:
@@ -269,6 +269,38 @@ def run_bot():
                 await interaction.followup.send("Reports have been posted!")
             except Exception as e:
                 await interaction.response.send_message("Reports failed to run. Is there an invalid ticker on thw watchlist?", ephemeral=True)
+
+
+    @client.tree.command(name = "fetch-reports", description= "Fetch analysis reports of the specified tickers",)
+    @app_commands.choices(visibility =[
+        app_commands.Choice(name = "private", value = 'private'),
+        app_commands.Choice(name = "public", value = 'public')
+    ])        
+    async def fetchreports(interaction: discord.interactions, tickers: str, visibility: app_commands.Choice[str]):
+        
+        await interaction.response.defer(ephemeral=True)
+
+        tickers = tickers.split(',')
+
+        # Validate each ticker in the list is valid
+        #for ticker in tickers:
+        #    if(not sd.validate_ticker(ticker)):
+        #        tickers.remove(ticker)
+
+        an.run_analysis(tickers)
+
+        if visibility.value == 'private':
+            for ticker in tickers:
+                report = build_report(ticker)
+                message, files = report.get('message'), report.get('files')
+                await interaction.user.send(message, files=files)
+        else:
+            for ticker in tickers:
+                report = build_report(ticker)
+                message, files = report.get('message'), report.get('files')
+                await interaction.channel.send(message, files=files)
+
+        await interaction.followup.send("Fetched reports!", ephemeral=True)
             
 
     def build_report(ticker):
