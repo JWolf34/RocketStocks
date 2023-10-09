@@ -332,9 +332,12 @@ def run_bot():
             await channel.send(message, files=files)
             
     @client.tree.command(name = "help", description= "Show help on the bot's commands",)
-    async def run_reports_test(interaction: discord.Interaction):
-        pass
-
+    async def help(interaction: discord.Interaction):
+        embed = discord.Embed()
+        embed.title = 'RocketStocks Help'
+        for command in client.tree.get_commands():
+            embed.add_field(name=command.name, value=command.description)
+        await interaction.response.send_message(embed=embed)
     client.run(TOKEN)
     
 
