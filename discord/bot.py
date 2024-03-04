@@ -34,6 +34,7 @@ def run_bot():
 
     @client.tree.command(name = "addtickers", description= "Add tickers to the selected watchlist",)
     @app_commands.describe(tickers = "Ticker to add to watchlist (separated by spaces)")
+    @app_commands.describe(watchlist = "Which watchlist you want to make changes to")
     @app_commands.choices(watchlist =[
         app_commands.Choice(name = "global", value = 'global'),
         app_commands.Choice(name = "personal", value = 'personal')
@@ -42,28 +43,31 @@ def run_bot():
         await interaction.response.defer(ephemeral=True)
         
         # Parse list from ticker input and identify invalid tickers
-        tickers, invalid_tickers = sd.get_list_from_tickers()
+        tickers, invalid_tickers = sd.get_list_from_tickers(tickers)
 
         watchlist_path = ""
         symbols = ""
         message_flavor = ""
-        
-        for ticker in tickers:
-            
-            if watchlist.value == 'personal':
+
+        # Get watchlist path and watchlist contents based on value of watchlist input
+        if watchlist.value == 'personal':
                 user_id = interaction.user.id
                 watchlist_path = sd.get_watchlist_path(user_id)
                 symbols = sd.get_tickers(user_id)
                 message_flavor = "your"
-            else:
-                watchlist_path = sd.get_watchlist_path()
-                symbols = sd.get_tickers()
-                message_flavor = "the global"
-            if not (os.path.isdir(watchlist_path)):
-                os.makedirs(watchlist_path)
-                file = open("{}/watchlist.txt".format(watchlist_path), 'a')
-                file.close()
+        else:
+            watchlist_path = sd.get_watchlist_path()
+            symbols = sd.get_tickers()
+            message_flavor = "the global"
 
+        # Create watchlist if not present    
+        if not (os.path.isdir(watchlist_path)):
+            os.makedirs(watchlist_path)
+            file = open("{}/watchlist.txt".format(watchlist_path), 'a')
+            file.close()
+    
+
+        for ticker in tickers:
             if (ticker in symbols):
                 pass
             else:
@@ -71,87 +75,60 @@ def run_bot():
                 symbols.sort()
                 with open('{}/watchlist.txt'.format(watchlist_path), 'w') as watchlist:
                     watchlist.write("\n".join(symbols))
-                    an.run_analysis([ticker])
+                    #an.run_analysis([ticker])
                     
         
         if len(tickers) > 0 and len(invalid_tickers) > 0:
-            await interaction.followup.send("Added {} to {} watchlist but could not add the following tickers: {}".format(tickers.join(","), message_flavor, invalid_tickers.join(",")), ephemeral=True)
+            await interaction.followup.send("Added {} to {} watchlist but could not add the following tickers: {}".format(", ".join(tickers), message_flavor, ", ".join(invalid_tickers)), ephemeral=True)
         elif len(tickers) > 0:
-            await interaction.followup.send("Added {} to {} watchlist!".format(tickers.join(","), message_flavor), ephemeral=True)
+            await interaction.followup.send("Added {} to {} watchlist!".format(", ".join(tickers), message_flavor), ephemeral=True)
         else:
-            await interaction.followup.send("No tickers added to {} watchlist. Invalid tickers:".format(message_flavor, invalid_tickers.join(",")), ephemeral=True)
-
-        
-        
-        '''
-        
-        
-        else:
-                await interaction.response.defer(ephemeral=True)
-                if not (os.path.isdir("watchlists/global")):
-                    os.makedirs("watchlists/global")
-                    file = open("watchlists/global/watchlist.txt", 'a')
-                    file.close()
-                
-                symbols = sd.get_tickers()
-                if (ticker in symbols):
-                    await interaction.followup.send(ticker + " is already on the global watchlist")
-                else: 
-                    symbols.append(ticker)
-                    symbols.sort()
-                    with open('watchlists/global/watchlist.txt', 'w') as watchlist:
-                        watchlist.write("\n".join(symbols))
-                        an.run_analysis([ticker])
-                        await interaction.followup.send("Added " + ticker + " to the global watchlist!")
-        else:
-            await interaction.response.send_message(ticker + " is not a valid ticker", ephemeral=True)
-            '''
+            await interaction.followup.send("No tickers added to {} watchlist. Invalid tickers: {}".format(message_flavor, ", ".join(invalid_tickers)), ephemeral=True)
 
 
-    @client.tree.command(name = "removeticker", description= "Remove a stock ticker from the watchlist",)
-    @app_commands.describe(ticker = "Ticker to remove from watchlist")
+    @client.tree.command(name = "removetickers", description= "Remove tickers from the selected watchlist",)
+    @app_commands.describe(tickers = "Tickers to remove from watchlist (separated by spaces)")
+    @app_commands.describe(watchlist = "Which watchlist you want to make changes to")
     @app_commands.choices(watchlist =[
         app_commands.Choice(name = "global", value = 'global'),
         app_commands.Choice(name = "personal", value = 'personal')
     ])
-    async def removeticker(interaction: discord.Interaction, ticker: str, watchlist: app_commands.Choice[str]):
+    async def removetickers(interaction: discord.Interaction, tickers: str, watchlist: app_commands.Choice[str]):
+        await interaction.response.defer(ephemeral=True)
         
-        ticker = ticker.upper()
-        # Handle personal watchlist use case
+        # Parse list from ticker input and identify invalid tickers
+        tickers, invalid_tickers = sd.get_list_from_tickers(tickers)
+
+        watchlist_path = ""
+        symbols = ""
+        message_flavor = ""
+
         if watchlist.value == 'personal':
             user_id = interaction.user.id
-            if not (os.path.isdir("watchlists/{}".format(user_id))):
-                os.makedirs("watchlists/{}".format(user_id))
-                file = open("watchlists/{}/watchlist.txt".format(user_id), 'a')
-                file.close()
-
+            watchlist_path = sd.get_watchlist_path(user_id)
             symbols = sd.get_tickers(user_id)
-            if (ticker not in symbols):
-                await interaction.response.send_message(ticker + " is not on your watchlist", ephemeral=True)
-            else:
-                symbols.remove(ticker)
-                symbols.sort()
-                with open('watchlists/{}/watchlist.txt'.format(user_id), 'w') as watchlist:
-                    watchlist.write("\n".join(symbols))
-                    await interaction.response.send_message("Removed " + ticker + " to your watchlist", ephemeral=True)
-
-        # Handle global watchlist use case            
+            message_flavor = "your"
         else:
-            user_id = interaction.user.id
-            if not (os.path.isdir("watchlists/global".format(user_id))):
-                os.makedirs("watchlists/global".format(user_id))
-                file = open("watchlists/global/watchlist.txt".format(user_id), 'a')
-                file.close()
-
+            watchlist_path = sd.get_watchlist_path()
             symbols = sd.get_tickers()
-            if (ticker not in symbols):
-                await interaction.response.send_message(ticker + " is not on the global watchlist")
-            else:
+            message_flavor = "the global"
+    
+        for ticker in tickers:
+            
+            if (ticker in symbols):
                 symbols.remove(ticker)
-                symbols.sort()
-                with open('watchlists/global/watchlist.txt'.format(user_id), 'w') as watchlist:
-                    watchlist.write("\n".join(symbols))
-                    await interaction.response.send_message("Removed " + ticker + " from the global watchlist")
+            
+        with open('{}/watchlist.txt'.format(watchlist_path), 'w') as watchlist:
+            watchlist.write("\n".join(symbols))
+            #an.run_analysis([ticker])
+                
+        
+        if len(tickers) > 0 and len(invalid_tickers) > 0:
+            await interaction.followup.send("Removed {} from {} watchlist but could not remove the following tickers: {}".format(", ".join(tickers), message_flavor, ", ".join(invalid_tickers)), ephemeral=True)
+        elif len(tickers) > 0:
+            await interaction.followup.send("Removed {} from {} watchlist!".format(", ".join(tickers), message_flavor), ephemeral=True)
+        else:
+            await interaction.followup.send("No tickers removed from {} watchlist. Invalid tickers: {}".format(message_flavor, ", ".join(invalid_tickers)), ephemeral=True)
 
     @client.tree.command(name = "watchlist", description= "List the tickers on the watchlist",)
     @app_commands.choices(watchlist =[
@@ -370,6 +347,8 @@ def run_bot():
     
 
 if __name__ == "__main__":
+
+
     run_bot()
 
     
