@@ -66,7 +66,7 @@ def run_bot():
             file = open("{}/watchlist.txt".format(watchlist_path), 'a')
             file.close()
     
-
+        # Add ticker to watchlist if not already present
         for ticker in tickers:
             if (ticker in symbols):
                 pass
@@ -103,6 +103,7 @@ def run_bot():
         symbols = ""
         message_flavor = ""
 
+        # Get watchlist path and watchlist contents based on value of watchlist input
         if watchlist.value == 'personal':
             user_id = interaction.user.id
             watchlist_path = sd.get_watchlist_path(user_id)
@@ -111,16 +112,28 @@ def run_bot():
         else:
             watchlist_path = sd.get_watchlist_path()
             symbols = sd.get_tickers()
-            message_flavor = "the global"
+            message_flavor = "the global"\
+            
+        # Create watchlist if not present    
+        if not (os.path.isdir(watchlist_path)):
+            os.makedirs(watchlist_path)
+            file = open("{}/watchlist.txt".format(watchlist_path), 'a')
+            file.close()
+            await interaction.followup.send("There are no tickers in {} watchlist. Use /addticker to begin building a watchlist.".format(message_flavor), ephemeral=True)
+            return
+        # If watchlist is empty, return
+        elif len(symbols) == 0:
+            await interaction.followup.send("There are no tickers in {} watchlist. Use /addticker to begin building a watchlist.".format(message_flavor), ephemeral=True)
+            return
     
         for ticker in tickers:
-            
             if (ticker in symbols):
                 symbols.remove(ticker)
+            else:
+                invalid_tickers.append(ticker)
             
         with open('{}/watchlist.txt'.format(watchlist_path), 'w') as watchlist:
             watchlist.write("\n".join(symbols))
-            #an.run_analysis([ticker])
                 
         
         if len(tickers) > 0 and len(invalid_tickers) > 0:
@@ -130,7 +143,8 @@ def run_bot():
         else:
             await interaction.followup.send("No tickers removed from {} watchlist. Invalid tickers: {}".format(message_flavor, ", ".join(invalid_tickers)), ephemeral=True)
 
-    @client.tree.command(name = "watchlist", description= "List the tickers on the watchlist",)
+    @client.tree.command(name = "watchlist", description= "List the tickers on the selected watchlist",)
+    @app_commands.describe(watchlist = "Which watchlist you want to make changes to")
     @app_commands.choices(watchlist =[
         app_commands.Choice(name = "global", value = 'global'),
         app_commands.Choice(name = "personal", value = 'personal')
@@ -146,7 +160,9 @@ def run_bot():
             message = "Watchlist: " + ', '.join(tickers)
             await interaction.response.send_message(message)
 
-    @client.tree.command(name = "news-all", description= "Get the news on all the tickets on your watchlist",)
+    # Are the news commands necessary? See if it's worth implementing them into reports or something
+    '''
+    @client.tree.command(name = "news-all", description= "Get the news on all the tickers on your watchlist",)
     async def newsall(interaction: discord.Interaction):
         tickers = sd.get_tickers()
         embed = sd.get_news(tickers)
@@ -164,14 +180,17 @@ def run_bot():
             message += sd.get_news(ticker)
         embed.description = message
         await interaction.response.send_message(embed=embed)
+        '''
 
-    @client.tree.command(name = "fetch", description= "Returns data file for input ticker",)
+    @client.tree.command(name = "fetch-csv", description= "Returns data file for input ticker",)
+    @app_commands.describe(ticker = "Ticker to return data for")
     async def fetch(interaction: discord.Interaction, ticker: str):
         try:
-            file = discord.File("data/" + ticker + ".csv")
+            sd.download_data_and_update_csv(ticker)
+            file = discord.File("data/CSV/{}.csv".format(ticker))
             await interaction.response.send_message(file=file, content= "Data file for " + ticker)
         except Exception:
-            await interaction.response.send_message("No data file for " + ticker + " available")
+            await interaction.response.send_message("Failed to fetch data file")
     
     @client.tree.command(name = "run-analysis", description= "Force the bot to run analysis on all tickers in a given watchlist",)
     @app_commands.choices(watchlist =[
