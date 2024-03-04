@@ -75,7 +75,6 @@ def run_bot():
                 symbols.sort()
                 with open('{}/watchlist.txt'.format(watchlist_path), 'w') as watchlist:
                     watchlist.write("\n".join(symbols))
-                    an.run_analysis([ticker])
                     
         
         if len(tickers) > 0 and len(invalid_tickers) > 0:
