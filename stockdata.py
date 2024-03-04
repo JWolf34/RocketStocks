@@ -59,7 +59,7 @@ def download_data(ticker, period, interval):
 
 def update_csv(data, ticker):
 
-    path = "data/" + ticker + ".csv"
+    path = "data/CSV/{}.csv".format(ticker)
 
     # If the CSV file already exists, read the existing data
     if os.path.exists(path):
@@ -85,8 +85,8 @@ def download_data_and_update_csv(ticker, period, interval):
 def combine_csv(ticker):
 
     # Load historical and current data into data frames
-    historical_data = pd.read_csv("historical_data/" + ticker + ".csv", index_col=0, parse_dates=True)
-    current_data = pd.read_csv("data/" + ticker + ".csv", index_col=0, parse_dates=True)
+    historical_data = pd.read_csv("data/historical_data/" + ticker + ".csv", index_col=0, parse_dates=True)
+    current_data = pd.read_csv("data/CSV/" + ticker + ".csv", index_col=0, parse_dates=True)
     
     # Append the historical data to the current data
     combined_data = pd.concat([historical_data, current_data])
@@ -95,11 +95,11 @@ def combine_csv(ticker):
     combined_data = combined_data[~combined_data.index.duplicated(keep='first')]
     
     # Save the combined data to the CSV file
-    combined_data.to_csv("data/" + ticker + ".csv")
+    combined_data.to_csv("data/CSV/" + ticker + ".csv")
 
 # Return all filepaths of all charts for a given ticker
 def fetch_charts(ticker):
-    path = "plots/" + ticker + "/"
+    path = "data/plots/{}".format(ticker)
     charts = os.listdir("plots/" + ticker)
     for i in range(0, len(charts)):
         charts[i] = path + charts[i]
