@@ -1,9 +1,7 @@
 import yfinance as yf
 from pandas_datareader import data as pdr
 import pandas as pd
-from yahoo_fin import stock_info
 import os
-
 
 yf.pdr_override()
 
@@ -15,6 +13,7 @@ def validate_ticker(ticker):
     except Exception as e:
         return False
 
+# Return news articles from Yahoo finance relevant to input ticker
 def get_news(ticker):
         message = ''
         stock = yf.Ticker(ticker)
@@ -37,20 +36,13 @@ def get_news(ticker):
             message += ticker + ": \n" + description + "\n"
         return message
 
+ # Return tickers from watchlist - global by default, personal if chosen by user
 def get_tickers(id = 0):
-    if id == 0:
-        with open("watchlists/global/watchlist.txt", 'r') as watchlist:
-                tickers = watchlist.read().splitlines()
-        return tickers
-    else:
-        with open("watchlists/{}/watchlist.txt".format(id), 'r') as watchlist:
-                tickers = watchlist.read().splitlines()
-        return tickers
-
-def get_data(ticker):
-     path = "data/" + ticker + ".csv"
-     existing_data = pd.read_csv(path, index_col=0, parse_dates=True)
-
+    
+    with open("{}/watchlist.txt".format(get_watchlist_path(id)), 'r') as watchlist:
+            tickers = watchlist.read().splitlines()
+    return tickers
+        
 def download_data(ticker, period, interval):
 
     # Download data for the given ticker
@@ -126,6 +118,21 @@ def fetch_analysis(ticker):
         analyis += data.read() + "\n"
 
     return analyis
+
+def get_list_from_tickers(tickers):
+    ticker__list = tickers.split(" ")
+    invalid_tickers = []
+    for ticker in ticker__list:
+        if not validate_ticker(ticker):
+            ticker__list.remove(ticker)
+            invalid_tickers.append(ticker)
+
+def get_watchlist_path(id = 0):
+    if id == 0:
+        return "/data/watchlists/global"
+    else:
+        return "/data/watchlists/{}".format(id)
+
                         
 
 if __name__ == "__main__":
