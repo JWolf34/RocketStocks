@@ -8,7 +8,7 @@ yf.pdr_override()
 def validate_ticker(ticker):
     stock = yf.Ticker(ticker)
     try:
-        stock.history
+        stock.info
         return True
     except Exception as e:
         return False
@@ -120,20 +120,26 @@ def fetch_analysis(ticker):
     return analyis
 
 def get_list_from_tickers(tickers):
-    ticker__list = tickers.split(" ")
+    ticker_list = tickers.split(" ")
     invalid_tickers = []
-    for ticker in ticker__list:
+    for ticker in ticker_list:
         if not validate_ticker(ticker):
-            ticker__list.remove(ticker)
             invalid_tickers.append(ticker)
+    for ticker in invalid_tickers:
+        ticker_list.remove(ticker)
+    return ticker_list, invalid_tickers
 
 def get_watchlist_path(id = 0):
     if id == 0:
-        return "/data/watchlists/global"
+        return "data/watchlists/global"
     else:
-        return "/data/watchlists/{}".format(id)
+        return "data/watchlists/{}".format(id)
 
                         
+
+def test():
+    ticker = yf.Ticker("NVDA")
+    print(ticker.info)
 
 if __name__ == "__main__":
     pass
