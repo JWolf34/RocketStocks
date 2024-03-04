@@ -32,34 +32,61 @@ def run_bot():
             print(e)
         print('Connected!')
 
-    @client.tree.command(name = "addticker", description= "Add a new stock ticker for the bot to watch and generate analysis for the ticker",)
-    @app_commands.describe(ticker = "Ticker to add to watchlist")
+    @client.tree.command(name = "addtickers", description= "Add tickers to the selected watchlist",)
+    @app_commands.describe(tickers = "Ticker to add to watchlist (separated by spaces)")
     @app_commands.choices(watchlist =[
         app_commands.Choice(name = "global", value = 'global'),
         app_commands.Choice(name = "personal", value = 'personal')
     ])
-    async def addticker(interaction: discord.Interaction, ticker: str, watchlist: app_commands.Choice[str]):
-        ticker = ticker.upper()
-        if(sd.validate_ticker(ticker)):
-            await interaction.response.defer(ephemeral=True)
+    async def addticker(interaction: discord.Interaction, tickers: str, watchlist: app_commands.Choice[str]):
+        await interaction.response.defer(ephemeral=True)
+        
+        # Parse list from ticker input and identify invalid tickers
+        tickers, invalid_tickers = sd.get_list_from_tickers()
+
+        watchlist_path = ""
+        symbols = ""
+        message_flavor = ""
+        
+        for ticker in tickers:
+            
             if watchlist.value == 'personal':
                 user_id = interaction.user.id
-                if not (os.path.isdir("watchlists/{}".format(user_id))):
-                    os.makedirs("watchlists/{}".format(user_id))
-                    file = open("watchlists/{}/watchlist.txt".format(user_id), 'a')
-                    file.close()
-
+                watchlist_path = sd.get_watchlist_path(user_id)
                 symbols = sd.get_tickers(user_id)
-                if (ticker in symbols):
-                    await interaction.followup.send(ticker + " is already on your watchlist", ephemeral=True)
-                else:
-                    symbols.append(ticker)
-                    symbols.sort()
-                    with open('watchlists/{}/watchlist.txt'.format(user_id), 'w') as watchlist:
-                        watchlist.write("\n".join(symbols))
-                        an.run_analysis([ticker])
-                        await interaction.followup.send("Added " + ticker + " to your watchlist!", ephemeral=True)
+                message_flavor = "your"
             else:
+                watchlist_path = sd.get_watchlist_path()
+                symbols = sd.get_tickers()
+                message_flavor = "the global"
+            if not (os.path.isdir(watchlist_path)):
+                os.makedirs(watchlist_path)
+                file = open("{}/watchlist.txt".format(watchlist_path), 'a')
+                file.close()
+
+            if (ticker in symbols):
+                pass
+            else:
+                symbols.append(ticker)
+                symbols.sort()
+                with open('{}/watchlist.txt'.format(watchlist_path), 'w') as watchlist:
+                    watchlist.write("\n".join(symbols))
+                    an.run_analysis([ticker])
+                    
+        
+        if len(tickers) > 0 and len(invalid_tickers) > 0:
+            await interaction.followup.send("Added {} to {} watchlist but could not add the following tickers: {}".format(tickers.join(","), message_flavor, invalid_tickers.join(",")), ephemeral=True)
+        elif len(tickers) > 0:
+            await interaction.followup.send("Added {} to {} watchlist!".format(tickers.join(","), message_flavor), ephemeral=True)
+        else:
+            await interaction.followup.send("No tickers added to {} watchlist. Invalid tickers:".format(message_flavor, invalid_tickers.join(",")), ephemeral=True)
+
+        
+        
+        '''
+        
+        
+        else:
                 await interaction.response.defer(ephemeral=True)
                 if not (os.path.isdir("watchlists/global")):
                     os.makedirs("watchlists/global")
@@ -78,6 +105,7 @@ def run_bot():
                         await interaction.followup.send("Added " + ticker + " to the global watchlist!")
         else:
             await interaction.response.send_message(ticker + " is not a valid ticker", ephemeral=True)
+            '''
 
 
     @client.tree.command(name = "removeticker", description= "Remove a stock ticker from the watchlist",)
