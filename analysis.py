@@ -48,7 +48,7 @@ def plot_rsi(data, ticker):
     plt.setp(ax2.get_xticklabels(), fontsize = 4)
     plt.tight_layout()
 
-    plt.savefig("plots/" + ticker + "/" + ticker + "_RSI.png", dpi=1000)
+    plt.savefig("data/plots/" + ticker + "/" + ticker + "_RSI.png", dpi=1000)
     plt.close()
 
 def plot_obv(data, ticker):
@@ -88,7 +88,7 @@ def plot_obv(data, ticker):
         ax2.axvline(x = xstart, linestyle = '--', color = 'red')
         ax2.axline(xy1 = (xstart, obv_old), slope  = obv_slope, color = 'red')
 
-        plt.savefig("plots/" + ticker + "/" + ticker + "_OBV.png", dpi=1000)
+        plt.savefig("data/plots/" + ticker + "/" + ticker + "_OBV.png", dpi=1000)
         plt.close()
 
 def plot_adi(data, ticker):
@@ -127,7 +127,7 @@ def plot_adi(data, ticker):
         ax2.axvline(x = xstart, linestyle = '--', color = 'red')
         ax2.axline(xy1 = (xstart, adi_old), slope  = adi_slope, color = 'red')
 
-        plt.savefig("plots/" + ticker + "/" + ticker + "_ADI.png", dpi=1000)
+        plt.savefig("data/plots/" + ticker + "/" + ticker + "_ADI.png", dpi=1000)
         plt.close()
 
 def plot_adx(data, ticker):
@@ -154,7 +154,7 @@ def plot_adx(data, ticker):
         # Downtrend
         ax2.axhline(20, linestyle='--', linewidth=1.5, color='orange')
 
-        plt.savefig("plots/" + ticker + "/" + ticker + "_ADX.png", dpi=1000)
+        plt.savefig("data/plots/" + ticker + "/" + ticker + "_ADX.png", dpi=1000)
         plt.close()
 
 def plot_aroon(data, ticker):
@@ -175,7 +175,7 @@ def plot_aroon(data, ticker):
         ax2.plot(data['AROON_UP'], color = 'orange', linewidth=1, label = 'AROON_UP')
         ax2.legend()
 
-        plt.savefig("plots/" + ticker + "/" + ticker + "_AROON.png", dpi=1000)
+        plt.savefig("data/plots/" + ticker + "/" + ticker + "_AROON.png", dpi=1000)
         plt.close()
 
 def plot_macd(data, ticker):
@@ -198,7 +198,7 @@ def plot_macd(data, ticker):
         # Plot zero-line
         ax2.axhline(0, linestyle='--', linewidth=1.5, color='blue')
 
-        plt.savefig("plots/" + ticker + "/" + ticker + "_MACD.png", dpi=1000)
+        plt.savefig("data/plots/" + ticker + "/" + ticker + "_MACD.png", dpi=1000)
         plt.close()
 
 def plot_stoch(data, ticker):
@@ -224,13 +224,13 @@ def plot_stoch(data, ticker):
         # Overbought
         ax2.axhline(80, linestyle='--', linewidth=1.5, color='red')
 
-        plt.savefig("plots/" + ticker + "/" + ticker + "_STOCH.png", dpi=1000)
+        plt.savefig("data/plots/" + ticker + "/" + ticker + "_STOCH.png", dpi=1000)
         plt.close()
 
 def generate_charts(data, ticker):
     
-    if not (os.path.isdir("plots/" + ticker)):
-            os.makedirs("plots/" + ticker)
+    if not (os.path.isdir("data/plots/" + ticker)):
+            os.makedirs("data/plots/" + ticker)
 
     # Generate technical indicator charts
 
@@ -255,7 +255,7 @@ def analyze_obv(data, ticker):
     close_slope = (close_curr - close_old) / 60.0
 
 
-    with open("analysis/{}/OBV.txt".format(ticker),'w') as obv_analysis:
+    with open("data/analysis/{}/OBV.txt".format(ticker),'w') as obv_analysis:
         if obv_slope >= 0.25 and close_slope > 0: 
             signal = "BUY"
             analysis = "OBV: **{}** - Over the last 60 days, the slope of OBV ({:.2f}) and the slope of Close ({:.2f}) are positive, indicating a continuing uptrend".format(signal, obv_slope, close_slope)
@@ -285,7 +285,7 @@ def analyze_adi(data, ticker):
     close_slope = (close_curr - close_old) / 60.0
 
 
-    with open("analysis/{}/ADI.txt".format(ticker),'w') as adi_analysis:
+    with open("data/analysis/{}/ADI.txt".format(ticker),'w') as adi_analysis:
         if adi_slope >= 0.25 and close_slope > 0: 
             signal = "BUY"
             analysis = "ADI: **{}** - Over the last 60 days, the slope of ADI ({:.2f}) and the slope of Close ({:.2f}) are positive, indicating a continuing uptrend".format(signal, adi_slope, close_slope)
@@ -310,7 +310,7 @@ def analyze_adx(data, ticker):
     DIplus = data['ADX_DI+'].values[-1]
     DIminus = data['ADX_DI-'].values[-1]
 
-    with open("analysis/{}/ADX.txt".format(ticker),'w') as adx_analysis: 
+    with open("data{}/ADX.txt".format(ticker),'w') as adx_analysis: 
         if (adx >= 20 and DIplus > DIminus):
             signal = "BUY"
             analysis = "ADX: **{}** - The ADX value is above 20 ({:.2f}) and DI+ ({}) is greater than DI- ({}), indicating an uptrend".format(signal, adx, DIplus, DIminus)
@@ -333,7 +333,7 @@ def analyze_macd(data, ticker):
     macd = data['MACD'].values[-1]
     macd_signal = data['MACD_SIGNAL'].values[-1]
 
-    with open("analysis/{}/MACD.txt".format(ticker),'w') as macd_analysis: 
+    with open("data/analysis/{}/MACD.txt".format(ticker),'w') as macd_analysis: 
         if (macd > 0 and macd > macd_signal):
             signal = "BUY"
             analysis = "MACD: **{}** - The MACD value is above 0 ({:.2f}) and greater than the MACD signal line ({}), indicating an uptrend".format(signal, macd, macd_signal)
@@ -352,7 +352,7 @@ def analyze_rsi(data, ticker):
     signal = ''
     rsi = data['RSI'].values[-1]
 
-    with open("analysis/{}/RSI.txt".format(ticker),'w') as rsi_analysis: 
+    with open("data/analysis/{}/RSI.txt".format(ticker),'w') as rsi_analysis: 
         if rsi >= 70:
             signal = "SELL"
             analysis = "RSI: **{}** - The RSI value is above 70 ({:.2f}) indicating the stock is currently overbought and could see a decline in price soon".format(signal, rsi)
@@ -369,7 +369,7 @@ def analyze_rsi(data, ticker):
 def analyze_stoch(data, ticker):
     stoch = data['STOCH'].values[-1]
     last_5_days_stoch = data['STOCH'].values[[-1, -2, -3, -4, -5]]
-    with open("analysis/{}/STOCH.txt".format(ticker),'w') as stoch_analysis: 
+    with open("data/analysis/{}/STOCH.txt".format(ticker),'w') as stoch_analysis: 
         if (stoch < 80 and max(last_5_days_stoch) > 80):
             signal = "SELL"
             analysis = "STOCH: **{}** - The STOCH value ({:.2f}) has recently dropped below 80, indicating a potential decrease in price soon".format(signal, stoch)
@@ -392,8 +392,8 @@ def analyze_stoch(data, ticker):
             stoch_analysis.write(analysis) 
     
 def generate_analysis(data, ticker):
-    if not (os.path.isdir("analysis/" + ticker)):
-        os.makedirs("analysis/" + ticker)
+    if not (os.path.isdir("data/analysis/" + ticker)):
+        os.makedirs("data/analysis/" + ticker)
 
     analyze_obv(data, ticker)
     analyze_adi(data, ticker)

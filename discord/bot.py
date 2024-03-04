@@ -75,7 +75,7 @@ def run_bot():
                 symbols.sort()
                 with open('{}/watchlist.txt'.format(watchlist_path), 'w') as watchlist:
                     watchlist.write("\n".join(symbols))
-                    #an.run_analysis([ticker])
+                    an.run_analysis([ticker])
                     
         
         if len(tickers) > 0 and len(invalid_tickers) > 0:
@@ -193,32 +193,31 @@ def run_bot():
             await interaction.response.send_message("Failed to fetch data file")
     
     @client.tree.command(name = "run-analysis", description= "Force the bot to run analysis on all tickers in a given watchlist",)
+    @app_commands.describe(watchlist = "Which watchlist you want to make changes to")
     @app_commands.choices(watchlist =[
         app_commands.Choice(name = "global", value = 'global'),
         app_commands.Choice(name = "personal", value = 'personal')
     ])
     async def runanalysis(interaction: discord.Interaction, watchlist: app_commands.Choice[str]):
-        
+        tickers = []
         if watchlist.value == 'personal':
             user_id = interaction.user.id
             try:
                 tickers = sd.get_tickers(user_id)
-                await interaction.response.defer(ephemeral=True)
-                an.run_analysis(tickers)
-                await interaction.followup.send("Analysis complete!")
             except Exception as e:
                 await interaction.response.send_message("Analysis failed. Do you have an existing watchlist?", ephemeral=True)
-        else: 
+        else:
             try:
                 tickers = sd.get_tickers()
-                await interaction.response.defer(ephemeral=True)
-                an.run_analysis(tickers)
-                await interaction.followup.send("Analysis complete!")
             except Exception as e:
-                await interaction.response.send_message("Analysis failed. Is there an invalid ticker on the watchlist?", ephemeral=True)
+                await interaction.response.send_message("Analysis failed. Do you have an existing watchlist?", ephemeral=True)
+        
+        #await interaction.response.defer(ephemeral=True)
+        an.run_analysis(tickers)
+        await interaction.followup.send("Analysis complete!")
+            
         
         
-
     @tasks.loop(hours=24)  
     async def send_reports():
 
@@ -249,6 +248,7 @@ def run_bot():
         await asyncio.sleep((future-now).seconds)
 
     @client.tree.command(name = "run-reports", description= "Force the bot to post analysis of a given watchlist",)
+    @app_commands.describe(watchlist = "Which watchlist you fetch reports for")
     @app_commands.choices(watchlist =[
         app_commands.Choice(name = "global", value = 'global'),
         app_commands.Choice(name = "personal", value = 'personal')

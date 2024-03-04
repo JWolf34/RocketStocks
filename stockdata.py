@@ -8,9 +8,10 @@ yf.pdr_override()
 def validate_ticker(ticker):
     stock = yf.Ticker(ticker)
     try:
-        stock.info
+        stock.history
         return True
     except Exception as e:
+        print(e)
         return False
 
 # Return news articles from Yahoo finance relevant to input ticker
@@ -38,10 +39,16 @@ def get_news(ticker):
 
  # Return tickers from watchlist - global by default, personal if chosen by user
 def get_tickers(id = 0):
+
+    watchlist_path = get_watchlist_path(id)
     
-    with open("{}/watchlist.txt".format(get_watchlist_path(id)), 'r') as watchlist:
+    try:
+        with open("{}/watchlist.txt".format(watchlist_path), 'w+') as watchlist:
             tickers = watchlist.read().splitlines()
-    return tickers
+        return tickers
+    except FileNotFoundError as e:
+        validate_path(watchlist_path)
+        return []
         
 def download_data(ticker, period, interval):
 
@@ -59,7 +66,10 @@ def download_data(ticker, period, interval):
 
 def update_csv(data, ticker):
 
-    path = "data/CSV/{}.csv".format(ticker)
+
+    path = "data/CSV"
+    validate_path(path)
+    path += "/{}.csv".format(ticker)
 
     # If the CSV file already exists, read the existing data
     if os.path.exists(path):
@@ -99,20 +109,20 @@ def combine_csv(ticker):
 
 # Return all filepaths of all charts for a given ticker
 def fetch_charts(ticker):
-    path = "data/plots/{}".format(ticker)
-    charts = os.listdir("plots/" + ticker)
+    charts_path = "data/plots/{}/".format(ticker)
+    charts = os.listdir(charts_path)
     for i in range(0, len(charts)):
-        charts[i] = path + charts[i]
+        charts[i] = charts_path + charts[i]
     return charts
 
 # Return the latest data with technical indicators as a Pandas datafram
 def fetch_data(ticker):
-    data = pd.read_csv("data/{}.csv".format(ticker))
+    data = pd.read_csv("data/CSV/{}.csv".format(ticker))
     return data
 
 def fetch_analysis(ticker):
     analyis = ''
-    path = "analysis/{}/".format(ticker)
+    path = "data/analysis/{}".format(ticker)
     for file in os.listdir(path):
         data = open(path + file)
         analyis += data.read() + "\n"
@@ -135,7 +145,9 @@ def get_watchlist_path(id = 0):
     else:
         return "data/watchlists/{}".format(id)
 
-                        
+def validate_path(path):
+    if not (os.path.isdir(path)):
+        os.makedirs(path)                        
 
 def test():
     ticker = yf.Ticker("NVDA")
