@@ -357,13 +357,13 @@ def run_bot():
         if visibility.value == 'private':
             for ticker in tickers:
                 report = build_report(ticker)
-                message, files = report.get('message'), report.get('files')
-                await interaction.user.send(message, files=files)
+                message, files, links = report.get('message'), report.get('files'), report.get('links')
+                await interaction.user.send(message, files=files, embed=links)
         else:
             for ticker in tickers:
                 report = build_report(ticker)
-                message, files = report.get('message'), report.get('files')
-                await interaction.channel.send(message, files=files)
+                message, files, links = report.get('message'), report.get('files'), report.get('links')
+                await interaction.channel.send(message, files=files, embed=links)
 
         await interaction.followup.send("Fetched reports!", ephemeral=True)
             
@@ -377,6 +377,7 @@ def run_bot():
 
         # Append message based on analysis of indicators
 
+        links = get_ticker_links(ticker)
         message = "**" + ticker + " Analysis " + dt.date.today().strftime("%m/%d/%Y") + "**\n\n"
 
         analysis = sd.fetch_analysis(ticker)
@@ -384,9 +385,19 @@ def run_bot():
         for indicator in analysis:
             message += indicator
         
-        report = {'message':message, 'files':files}
+        report = {'message':message, 'files':files, 'embed':links}
 
         return report
+
+    def get_ticker_links(ticker):
+
+        links = discord.Embed(title = "[StockInvest](https://stockinvest.us/stock/{})".format(ticker) + " | " + "[FinViz](https://finviz.com/quote.ashx?t={})".format(ticker) + " | " + "[Yahoo! Finance](https://finance.yahoo.com/quote/{})".format(ticker))
+        #links.add_field(name = "StockInvest", value = "[StockInvest](https://stockinvest.us/stock/{})".format(ticker))
+        #links.add_field(name = "FinViz", value = "[FinViz](https://finviz.com/quote.ashx?t={})".format(ticker))
+        #links.add_field(name = "YahooFinance", value = "[Yahoo! Finance](https://finance.yahoo.com/quote/{})".format(ticker))
+        return links
+
+
 
     @client.tree.command(name = "test-run-reports", description= "Force the bot to post reports in a testing channel",)
     async def run_reports_test(interaction: discord.Interaction):
