@@ -43,7 +43,7 @@ def get_tickers(id = 0):
     watchlist_path = get_watchlist_path(id)
     
     try:
-        with open("{}/watchlist.txt".format(watchlist_path), 'w+') as watchlist:
+        with open("{}/watchlist.txt".format(watchlist_path), 'r+') as watchlist:
             tickers = watchlist.read().splitlines()
         return tickers
     except FileNotFoundError as e:
@@ -122,7 +122,7 @@ def fetch_data(ticker):
 
 def fetch_analysis(ticker):
     analyis = ''
-    path = "data/analysis/{}".format(ticker)
+    path = "data/analysis/{}/".format(ticker)
     for file in os.listdir(path):
         data = open(path + file)
         analyis += data.read() + "\n"
