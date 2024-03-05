@@ -6,13 +6,11 @@ import os
 yf.pdr_override()
 
 def validate_ticker(ticker):
-    stock = yf.Ticker(ticker)
-    try:
-        stock.history
-        return True
-    except Exception as e:
-        print(e)
+    data = yf.download(ticker, period="1d")
+    if len(data) == 0:
         return False
+    else:
+        return True
 
 # Return news articles from Yahoo finance relevant to input ticker
 def get_news(ticker):
@@ -150,8 +148,16 @@ def validate_path(path):
         os.makedirs(path)                        
 
 def test():
-    ticker = yf.Ticker("NVDA")
-    print(ticker.info)
+    ticker = yf.Ticker("ANF")
+    #print(ticker.info)
+    print(ticker.income_stmt)
+    print(ticker.quarterly_income_stmt)
+    print(ticker.balance_sheet)
+    print(ticker.quarterly_balance_sheet)
+    print(ticker.cashflow)
+    print(ticker.quarterly_cashflow)
+    print(ticker.get_income_stmt())
+    print(ticker.get_earnings_dates(limit=8))
 
 if __name__ == "__main__":
-    pass
+    test()
