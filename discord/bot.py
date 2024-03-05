@@ -131,6 +131,10 @@ def run_bot():
                 symbols.remove(ticker)
             else:
                 invalid_tickers.append(ticker)
+
+        for ticker in invalid_tickers:
+            if ticker in tickers:
+                tickers.remove(ticker)
             
         with open('{}/watchlist.txt'.format(watchlist_path), 'w') as watchlist:
             watchlist.write("\n".join(symbols))
@@ -160,6 +164,52 @@ def run_bot():
             message = "Watchlist: " + ', '.join(tickers)
             await interaction.response.send_message(message)
 
+    @client.tree.command(name = "set-watchlist", description= "Overwrite a watchlist with the specified tickers",)
+    @app_commands.describe(tickers = "Tickers to add to watchlist (separated by spaces)")
+    @app_commands.describe(watchlist = "Which watchlist you want to make changes to")
+    @app_commands.choices(watchlist =[
+        app_commands.Choice(name = "global", value = 'global'),
+        app_commands.Choice(name = "personal", value = 'personal')
+    ])
+    async def set_watchlist(interaction: discord.Interaction, tickers: str, watchlist: app_commands.Choice[str]):
+        await interaction.response.defer(ephemeral=True)
+
+        # Parse list from ticker input and identify invalid tickers
+        tickers, invalid_tickers = sd.get_list_from_tickers(tickers)
+
+        watchlist_path = ""
+        symbols = ""
+        message_flavor = ""
+
+        # Get watchlist path and watchlist contents based on value of watchlist input
+        if watchlist.value == 'personal':
+                user_id = interaction.user.id
+                watchlist_path = sd.get_watchlist_path(user_id)
+                message_flavor = "your"
+        else:
+            watchlist_path = sd.get_watchlist_path()
+            symbols = sd.get_tickers()
+            message_flavor = "the global"
+
+        # Create watchlist if not present    
+        if not (os.path.isdir(watchlist_path)):
+            os.makedirs(watchlist_path)
+            file = open("{}/watchlist.txt".format(watchlist_path), 'a')
+            file.close()
+    
+        # Add tickers to watchlist
+        with open('{}/watchlist.txt'.format(watchlist_path), 'w') as watchlist:
+            watchlist.write("\n".join(tickers))
+            watchlist.close()
+                    
+        
+        if len(tickers) > 0 and len(invalid_tickers) > 0:
+            await interaction.followup.send("Set {} watchlist to {} but could not add the following tickers: {}".format(message_flavor, ", ".join(tickers), ", ".join(invalid_tickers)), ephemeral=True)
+        elif len(tickers) > 0:
+            await interaction.followup.send("Set {} watchlist to {}.".format(message_flavor, ", ".join(tickers)), ephemeral=True)
+        else:
+            await interaction.followup.send("No tickers added to {} watchlist. Invalid tickers: {}".format(message_flavor, ", ".join(invalid_tickers)), ephemeral=True)
+
     # Are the news commands necessary? See if it's worth implementing them into reports or something
     '''
     @client.tree.command(name = "news-all", description= "Get the news on all the tickers on your watchlist",)
@@ -182,15 +232,17 @@ def run_bot():
         await interaction.response.send_message(embed=embed)
         '''
 
-    @client.tree.command(name = "fetch-csv", description= "Returns data file for input ticker",)
+    @client.tree.command(name = "fetch-csv", description= "Returns data file for input ticker. Default: 1 year period.",)
     @app_commands.describe(ticker = "Ticker to return data for")
-    async def fetch(interaction: discord.Interaction, ticker: str):
+    @app_commands.describe(period = "Range of the data returned. Valid values: 1d, 5d, 1mo, 3mo, 6mo, 1y, 2y, 5y, 10y, ytd, max. Default: 1y")
+    @app_commands.describe(interval = "Range between intraday data. Valid values: 1m, 2m, 5m, 15m, 30m, 60m, 90m, 1h, 1d, 5d, 1wk, 1mo, 3mo. Default: 1d")
+    async def fetch_csv(interaction: discord.Interaction, ticker: str, period: str = "1y", interval: str = "1d"):
         try:
-            sd.download_data_and_update_csv(ticker)
+            sd.download_data_and_update_csv(ticker, period, interval)
             file = discord.File("data/CSV/{}.csv".format(ticker))
             await interaction.response.send_message(file=file, content= "Data file for " + ticker)
         except Exception:
-            await interaction.response.send_message("Failed to fetch data file")
+            await interaction.response.send_message("Failed to fetch data file. Please ensure your parameters are valid.")
     
     @client.tree.command(name = "run-analysis", description= "Force the bot to run analysis on all tickers in a given watchlist",)
     @app_commands.describe(watchlist = "Which watchlist you want to make changes to")

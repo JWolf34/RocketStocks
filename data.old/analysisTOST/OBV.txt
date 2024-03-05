@@ -1,1 +1,0 @@
-OBV: **BUY** - Over the last 60 days, the slope of OBV (1496152.80) and the slope of Close (0.15) are positive, indicating a continuing uptrend
