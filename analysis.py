@@ -310,7 +310,7 @@ def analyze_adx(data, ticker):
     DIplus = data['ADX_DI+'].values[-1]
     DIminus = data['ADX_DI-'].values[-1]
 
-    with open("data{}/ADX.txt".format(ticker),'w') as adx_analysis: 
+    with open("data/analysis/{}/ADX.txt".format(ticker),'w') as adx_analysis: 
         if (adx >= 20 and DIplus > DIminus):
             signal = "BUY"
             analysis = "ADX: **{}** - The ADX value is above 20 ({:.2f}) and DI+ ({}) is greater than DI- ({}), indicating an uptrend".format(signal, adx, DIplus, DIminus)

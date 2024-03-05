@@ -39,7 +39,7 @@ def run_bot():
         app_commands.Choice(name = "global", value = 'global'),
         app_commands.Choice(name = "personal", value = 'personal')
     ])
-    async def addticker(interaction: discord.Interaction, tickers: str, watchlist: app_commands.Choice[str]):
+    async def addtickers(interaction: discord.Interaction, tickers: str, watchlist: app_commands.Choice[str]):
         await interaction.response.defer(ephemeral=True)
         
         # Parse list from ticker input and identify invalid tickers
@@ -75,6 +75,7 @@ def run_bot():
                 symbols.sort()
                 with open('{}/watchlist.txt'.format(watchlist_path), 'w') as watchlist:
                     watchlist.write("\n".join(symbols))
+                    watchlist.close()
                     
         
         if len(tickers) > 0 and len(invalid_tickers) > 0:
@@ -247,37 +248,40 @@ def run_bot():
         await asyncio.sleep((future-now).seconds)
 
     @client.tree.command(name = "run-reports", description= "Force the bot to post analysis of a given watchlist",)
-    @app_commands.describe(watchlist = "Which watchlist you fetch reports for")
+    @app_commands.describe(watchlist = "Which watchlist to fetch reports for")
     @app_commands.choices(watchlist =[
         app_commands.Choice(name = "global", value = 'global'),
         app_commands.Choice(name = "personal", value = 'personal')
     ])
     async def runreports(interaction: discord.Interaction, watchlist: app_commands.Choice[str]):
+        await interaction.response.defer(ephemeral=True)
+        
+        tickers = ""
+        message = ""
         if watchlist.value == 'personal':
             user_id = interaction.user.id
-            try:
-                tickers = sd.get_tickers(user_id)
-                user = interaction.user
-                await interaction.response.defer(ephemeral=True)
-                for ticker in tickers:
-                    report = build_report(ticker)
-                    message, files = report.get('message'), report.get('files')
+            tickers = sd.get_tickers(user_id)
+        else:
+            tickers = sd.get_tickers()
+
+        if len(tickers) == 0:
+            message = "No tickers on the watchlist. Use /addticker to build a watchlist."
+        else:
+            user = interaction.user
+            channel = await client.fetch_channel('1150890013471555705')
+
+            an.run_analysis(tickers)
+
+            for ticker in tickers:
+                report = build_report(ticker)
+                message, files = report.get('message'), report.get('files')
+                if watchlist.value == 'personal':
                     await user.send(message, files=files)
-                await interaction.followup.send("Reports have been posted!", ephemeral=True)
-            except Exception as e:
-                await interaction.response.send_message("Reports failed to run. Do you have an existing watchlist?", ephemeral=True)
-        else: 
-            try:
-                channel = await client.fetch_channel('1150890013471555705')
-                tickers = sd.get_tickers()
-                await interaction.response.defer(ephemeral=True)
-                for ticker in tickers:
-                    report = build_report(ticker)
-                    message, files = report.get('message'), report.get('files')
+                else:
                     await channel.send(message, files=files)
-                await interaction.followup.send("Reports have been posted!")
-            except Exception as e:
-                await interaction.response.send_message("Reports failed to run. Is there an invalid ticker on thw watchlist?", ephemeral=True)
+                    
+            message = "Reports have been posted!"
+        await interaction.followup.send(message, ephemeral=True)
 
 
     @client.tree.command(name = "fetch-reports", description= "Fetch analysis reports of the specified tickers",)
