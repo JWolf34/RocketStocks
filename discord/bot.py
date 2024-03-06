@@ -436,6 +436,8 @@ def run_bot():
         links.append(finviz)
         yahoo = "[Yahoo! Finance](https://finance.yahoo.com/quote/{})".format(ticker)
         links.append(yahoo)
+        tradingview = "[TradingView](https://www.tradingview.com/chart/?symbol={})".format(ticker)
+        links.append(tradingview)
 
         return links
 
