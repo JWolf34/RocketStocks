@@ -375,8 +375,6 @@ def run_bot():
         
         await interaction.response.defer(ephemeral=True)
 
-        tickers = tickers.split(' ')
-
         # Validate each ticker in the list is valid
         tickers, invalid_tickers = sd.get_list_from_tickers(tickers)
 
