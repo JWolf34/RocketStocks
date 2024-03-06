@@ -146,6 +146,9 @@ def get_watchlist_path(id = 0):
 def validate_path(path):
     if not (os.path.isdir(path)):
         os.makedirs(path) 
+        return 
+    else:
+        return True
 
 def get_stock_data(ticker):
     try:
@@ -172,23 +175,40 @@ def get_next_earnings_date(ticker):
         return "Earnings date unavailable"
     
 
-def fetch_financials(ticker):
+def download_financials(ticker):
     financials_path = "data/financials/{}".format(ticker)
     validate_path(financials_path)
-
+    
+    stock = yf.Ticker(ticker)
+    stock.income_stmt.to_csv("{}/income_stmt.csv".format(financials_path))
+    stock.quarterly_income_stmt.to_csv("{}/quarterly_income_stmt.csv".format(financials_path))
+    stock.balance_sheet.to_csv("{}/balance_sheet.csv".format(financials_path))
+    stock.quarterly_balance_sheet.to_csv("{}/quarterly_balance_sheet.csv".format(financials_path))
+    stock.cashflow.to_csv("{}/cashflow.csv".format(financials_path))
+    stock.quarterly_cashflow.to_csv("{}/quarterly_cashflow.csv".format(financials_path))
+    #stock.get_income_stmt().to_csv("{}/income_stmt.csv".format(financials_path))
+    #stock.get_earnings_dates(limit=8)
+    
+def fetch_financials(ticker):
+    financials_path = "data/financials/{}".format(ticker)
+    if not validate_path(financials_path):
+        download_financials(ticker)
+    financials = os.listdir(financials_path)
+    for i in range(0, len(financials)):
+        financials[i] = financials_path + "/" + financials[i]
+    return financials
     
 
 def test():
-    #Testing retrieving earnings
-    earnings = get_next_earnings_date('ANF')
-    print(earnings)
+    # Testing retrieving income statement
+    download_financials("NVDA")
 
 
 
     #Testing retrieving financials with yfinance
     '''
     ticker = yf.Ticker("ANF")
-    #print(ticker.info)
+    print(ticker.info)
     print(ticker.income_stmt)
     print(ticker.quarterly_income_stmt)
     print(ticker.balance_sheet)
@@ -200,4 +220,4 @@ def test():
     '''
 
 if __name__ == "__main__":
-    pass
+    test()
