@@ -258,19 +258,19 @@ def analyze_obv(data, ticker):
     with open("data/analysis/{}/OBV.txt".format(ticker),'w') as obv_analysis:
         if obv_slope >= 0.25 and close_slope > 0: 
             signal = "BUY"
-            analysis = "OBV: **{}** - Over the last 60 days, the slope of OBV ({:.2f}) and the slope of Close ({:.2f}) are positive, indicating a continuing uptrend".format(signal, obv_slope, close_slope)
+            analysis = "OBV: **{}** - Over the last 60 days, the slope of OBV ({:,.2f}) and the slope of Close ({:,.2f}) are positive, indicating a continuing uptrend".format(signal, obv_slope, close_slope)
             obv_analysis.write(analysis)
         elif obv_slope >= 0.25 and close_slope <= 0.25:
             signal = "BUY"
-            analysis = "OBV: **{}** - Over the last 60 days, the slope of OBV ({:.2f}) is positive and the slope of Close ({:.2f}) is flat or negative, indicating an upcoming uptrend".format(signal, obv_slope, close_slope)
+            analysis = "OBV: **{}** - Over the last 60 days, the slope of OBV ({:,.2f}) is positive and the slope of Close ({:,.2f}) is flat or negative, indicating an upcoming uptrend".format(signal, obv_slope, close_slope)
             obv_analysis.write(analysis)
         elif obv_slope <= 0.25 and close_slope > 0: 
             signal = "WEAK SELL"
-            analysis = "OBV: **{}** - Over the last 60 days, the slope of OBV ({:.2f}) is flat or negative and the slope of Close ({:.2f}) is positive, indicating the end of an uptrend".format(signal, obv_slope, close_slope)
+            analysis = "OBV: **{}** - Over the last 60 days, the slope of OBV ({:,.2f}) is flat or negative and the slope of Close ({:,.2f}) is positive, indicating the end of an uptrend".format(signal, obv_slope, close_slope)
             obv_analysis.write(analysis)
         elif obv_slope <= 0.25 and close_slope < 0: 
             signal = "SELL"
-            analysis = "OBV: **{}** - Over the last 60 days, the slope of OBV ({:.2f}) and the slope of Close ({:.2f}) are flat or negative, indicating a continuing downtrend".format(signal, obv_slope, close_slope)
+            analysis = "OBV: **{}** - Over the last 60 days, the slope of OBV ({:,.2f}) and the slope of Close ({:,.2f}) are flat or negative, indicating a continuing downtrend".format(signal, obv_slope, close_slope)
             obv_analysis.write(analysis)
         
 
@@ -288,19 +288,19 @@ def analyze_adi(data, ticker):
     with open("data/analysis/{}/ADI.txt".format(ticker),'w') as adi_analysis:
         if adi_slope >= 0.25 and close_slope > 0: 
             signal = "BUY"
-            analysis = "ADI: **{}** - Over the last 60 days, the slope of ADI ({:.2f}) and the slope of Close ({:.2f}) are positive, indicating a continuing uptrend".format(signal, adi_slope, close_slope)
+            analysis = "ADI: **{}** - Over the last 60 days, the slope of ADI ({:,.2f}) and the slope of Close ({:,.2f}) are positive, indicating a continuing uptrend".format(signal, adi_slope, close_slope)
             adi_analysis.write(analysis)
         elif adi_slope >= 0.25 and close_slope <= 0.25:
             signal = "BUY"
-            analysis = "ADI: **{}** - Over the last 60 days, the slope of ADI ({:.2f}) is positive and the slope of Close ({:.2f}) is flat or negative, indicating an upcoming uptrend".format(signal, adi_slope, close_slope)
+            analysis = "ADI: **{}** - Over the last 60 days, the slope of ADI ({:,.2f}) is positive and the slope of Close ({:,.2f}) is flat or negative, indicating an upcoming uptrend".format(signal, adi_slope, close_slope)
             adi_analysis.write(analysis)
         elif adi_slope <= 0.25 and close_slope > 0: 
             signal = "WEAK SELL"
-            analysis = "ADI: **{}** - Over the last 60 days, the slope of ADI ({:.2f}) is flat or negative and the slope of Close ({:.2f}) is positive, indicating the end of an uptrend".format(signal, adi_slope, close_slope)
+            analysis = "ADI: **{}** - Over the last 60 days, the slope of ADI ({:,.2f}) is flat or negative and the slope of Close ({:,.2f}) is positive, indicating the end of an uptrend".format(signal, adi_slope, close_slope)
             adi_analysis.write(analysis)
         elif adi_slope <= -0.25 and close_slope < 0: 
             signal = "SELL"
-            analysis = "ADI: **{}** - Over the last 60 days, the slope of ADI ({:.2f}) and the slope of Close ({:.2f}) are negative, indicating a continuing downtrend".format(signal, adi_slope, close_slope)
+            analysis = "ADI: **{}** - Over the last 60 days, the slope of ADI ({:,.2f}) and the slope of Close ({:,.2f}) are negative, indicating a continuing downtrend".format(signal, adi_slope, close_slope)
             adi_analysis.write(analysis)
         
 def analyze_adx(data, ticker):
@@ -313,15 +313,15 @@ def analyze_adx(data, ticker):
     with open("data/analysis/{}/ADX.txt".format(ticker),'w') as adx_analysis: 
         if (adx >= 20 and DIplus > DIminus):
             signal = "BUY"
-            analysis = "ADX: **{}** - The ADX value is above 20 ({:.2f}) and DI+ ({}) is greater than DI- ({}), indicating an uptrend".format(signal, adx, DIplus, DIminus)
+            analysis = "ADX: **{}** - The ADX value is above 20 ({:,.2f}) and DI+ ({:,.2f}) is greater than DI- ({:,.2f}), indicating an uptrend".format(signal, adx, DIplus, DIminus)
             adx_analysis.write(analysis)
         elif (adx >= 20 and DIplus < DIminus):
             signal = "SELL"
-            analysis = "ADX: **{}** - The ADX value is above 20 ({:.2f}) and DI+ ({}) is less than DI- ({}), indicating a downtrend".format(signal, adx, DIplus, DIminus)
+            analysis = "ADX: **{}** - The ADX value is above 20 ({:,.2f}) and DI+ ({:,.2f}) is less than DI- ({:,.2f}), indicating a downtrend".format(signal, adx, DIplus, DIminus)
             adx_analysis.write(analysis)
         elif (adx < 20):
             signal = "NEUTRAL"
-            analysis = "ADX: **{}** - The ADX value is below 20 ({:.2f}), indicating no trend in either direction".format(signal, adx)
+            analysis = "ADX: **{}** - The ADX value is below 20 ({:,.2f}), indicating no trend in either direction".format(signal, adx)
             adx_analysis.write(analysis)
 
 def analyze_aroon(data, ticker):
@@ -336,15 +336,15 @@ def analyze_macd(data, ticker):
     with open("data/analysis/{}/MACD.txt".format(ticker),'w') as macd_analysis: 
         if (macd > 0 and macd > macd_signal):
             signal = "BUY"
-            analysis = "MACD: **{}** - The MACD value is above 0 ({:.2f}) and greater than the MACD signal line ({}), indicating an uptrend".format(signal, macd, macd_signal)
+            analysis = "MACD: **{}** - The MACD value is above 0 ({:,.2f}) and greater than the MACD signal line ({:,.2f}), indicating an uptrend".format(signal, macd, macd_signal)
             macd_analysis.write(analysis)
         elif (macd > 0 and macd <= macd_signal):
             signal = "NEUTRAL"
-            analysis = "MACD: **{}** - The MACD value is above 0 ({:.2f}) but less than the MACD signal line ({}). Wait until it crosses the signal line to buy, or consider selling .".format(signal, macd, macd_signal)
+            analysis = "MACD: **{}** - The MACD value is above 0 ({:,.2f}) but less than the MACD signal line ({:,.2f}). Wait until it crosses the signal line to buy, or consider selling .".format(signal, macd, macd_signal)
             macd_analysis.write(analysis)
         elif (macd <= 0):
             signal = "SELL"
-            analysis = "MACD: **{}** - The MACD value is below 0 ({:.2f}), indicating a downtrend".format(signal, macd)
+            analysis = "MACD: **{}** - The MACD value is below 0 ({:,.2f}), indicating a downtrend".format(signal, macd)
             macd_analysis.write(analysis)
 
 def analyze_rsi(data, ticker):
@@ -355,15 +355,15 @@ def analyze_rsi(data, ticker):
     with open("data/analysis/{}/RSI.txt".format(ticker),'w') as rsi_analysis: 
         if rsi >= 70:
             signal = "SELL"
-            analysis = "RSI: **{}** - The RSI value is above 70 ({:.2f}) indicating the stock is currently overbought and could see a decline in price soon".format(signal, rsi)
+            analysis = "RSI: **{}** - The RSI value is above 70 ({:,.2f}) indicating the stock is currently overbought and could see a decline in price soon".format(signal, rsi)
             rsi_analysis.write(analysis)
         elif rsi <= 30:
             signal = "BUY"
-            analysis = "RSI: **{}** - The RSI value is below 30 ({:.2f}) indicating the stock is currently oversold and could see an incline in price soon".format(signal, rsi)
+            analysis = "RSI: **{}** - The RSI value is below 30 ({:,.2f}) indicating the stock is currently oversold and could see an incline in price soon".format(signal, rsi)
             rsi_analysis.write(analysis)
         else:
             signal = "NEUTRAL"
-            analysis = "RSI: **{}** - The RSI value is between 30 and 70 ({:.2f}), giving no indication as to where the price will move".format(signal, rsi)
+            analysis = "RSI: **{}** - The RSI value is between 30 and 70 ({:,.2f}), giving no indication as to where the price will move".format(signal, rsi)
             rsi_analysis.write(analysis)
 
 def analyze_stoch(data, ticker):
@@ -372,23 +372,23 @@ def analyze_stoch(data, ticker):
     with open("data/analysis/{}/STOCH.txt".format(ticker),'w') as stoch_analysis: 
         if (stoch < 80 and max(last_5_days_stoch) > 80):
             signal = "SELL"
-            analysis = "STOCH: **{}** - The STOCH value ({:.2f}) has recently dropped below 80, indicating a potential decrease in price soon".format(signal, stoch)
+            analysis = "STOCH: **{}** - The STOCH value ({:,.2f}) has recently dropped below 80, indicating a potential decrease in price soon".format(signal, stoch)
             stoch_analysis.write(analysis)
         elif (stoch > 80 and min(last_5_days_stoch) < 80):
             signal = "NEUTRAL"
-            analysis = "STOCH: **{}** - The STOCH value ({:.2f}) has recently crossed above 80. This is not always a sell signal, but look to sell soon".format(signal, stoch)
+            analysis = "STOCH: **{}** - The STOCH value ({:,.2f}) has recently crossed above 80. This is not always a sell signal, but look to sell soon".format(signal, stoch)
             stoch_analysis.write(analysis)
         elif (stoch > 20 and min(last_5_days_stoch) < 20):
             signal = "BUY"
-            analysis = "STOCH: **{}** - The STOCH value ({:.2f}) has recently risen above 20, indicating a potential increase in price soon".format(signal, stoch)
+            analysis = "STOCH: **{}** - The STOCH value ({:,.2f}) has recently risen above 20, indicating a potential increase in price soon".format(signal, stoch)
             stoch_analysis.write(analysis)
         elif (stoch < 20 and max(last_5_days_stoch) > 20):
             signal = "NEUTRAL"
-            analysis = "STOCH: **{}** - The STOCH value ({:.2f}) has recently crossed below 20. This is not always a buy signal, but look for buying opportunities".format(signal, stoch)
+            analysis = "STOCH: **{}** - The STOCH value ({:,.2f}) has recently crossed below 20. This is not always a buy signal, but look for buying opportunities".format(signal, stoch)
             stoch_analysis.write(analysis)
         else: 
             signal = "NEUTRAL"
-            analysis = "STOCH: **{}** - The STOCH value ({:.2f}) gives no indication of a trend or this behavior is not documented yet".format(signal, stoch)
+            analysis = "STOCH: **{}** - The STOCH value ({:,.2f}) gives no indication of a trend or this behavior is not documented yet".format(signal, stoch)
             stoch_analysis.write(analysis) 
     
 def generate_analysis(data, ticker):

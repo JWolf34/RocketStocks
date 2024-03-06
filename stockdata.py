@@ -170,6 +170,7 @@ def get_next_earnings_date(ticker):
     except IndexError as e:
         print(e)
         return "Earnings date unavailable"
+    
 
 def fetch_financials(ticker):
     financials_path = "data/financials/{}".format(ticker)
