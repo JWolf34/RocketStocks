@@ -291,8 +291,8 @@ def run_bot():
      
     @send_reports.before_loop
     async def delay_send_reports():
-        hour = 15
-        minute = 5
+        hour = 6
+        minute = 0
         now = dt.datetime.now()
         future = dt.datetime(now.year, now.month, now.day, hour, minute)
         if now.hour >= hour and now.minute > minute:
