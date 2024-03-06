@@ -335,6 +335,37 @@ def run_bot():
             message = "Reports have been posted!"
         await interaction.followup.send(message, ephemeral=True)
 
+    @client.tree.command(name = "fetch-financials", description= "Fetch financial reports of the specified tickers",)
+    @app_commands.describe(tickers = "Tickers to return financials for")
+    @app_commands.describe(visibility = "'private' to send to DMs, 'public' to send to the channel")
+    @app_commands.choices(visibility =[
+        app_commands.Choice(name = "private", value = 'private'),
+        app_commands.Choice(name = "public", value = 'public')
+    ])        
+    async def fetch_financials(interaction: discord.interactions, tickers: str, visibility: app_commands.Choice[str]):
+        await interaction.response.defer(ephemeral=True)
+
+        tickers = tickers.split(' ')
+
+        # Validate each ticker in the list is valid
+        for ticker in tickers:
+            if(not sd.validate_ticker(ticker)):
+                tickers.remove(ticker)
+
+        if visibility.value == 'private':
+            for ticker in tickers:
+                files = sd.fetch_financials(ticker)
+                for i in range(0, len(files)):
+                    files[i] = discord.File(files[i])
+                await interaction.user.send("Financials for {}".format(ticker), files=files)
+        else:
+            for ticker in tickers:
+                files = sd.fetch_financials(ticker)
+                for i in range(0, len(files)):
+                    files[i] = discord.File(files[i])
+                await interaction.channel.send("Financials for {}".format(ticker), files=files)
+
+        await interaction.followup.send("Posted financials for {}".format(",".join(tickers)), ephemeral=True)
 
     @client.tree.command(name = "fetch-reports", description= "Fetch analysis reports of the specified tickers",)
     @app_commands.choices(visibility =[
