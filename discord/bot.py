@@ -345,7 +345,7 @@ def run_bot():
         
         await interaction.response.defer(ephemeral=True)
 
-        tickers = tickers.split(',')
+        tickers = tickers.split(' ')
 
         # Validate each ticker in the list is valid
         for ticker in tickers:
@@ -376,12 +376,26 @@ def run_bot():
             files[i] = discord.File(files[i])
 
         # Append message based on analysis of indicators
-
+        message = "**" + ticker + " Report " + dt.date.today().strftime("%m/%d/%Y") + "**\n"
         links = get_ticker_links(ticker)
-        message = "**" + ticker + " Analysis " + dt.date.today().strftime("%m/%d/%Y") + "**\n\n"
+        message += " | ".join(links) + "\n\n"
+
+        # Append day's summary to message
+        summary = sd.get_days_summary(ticker)
+        message += "**Summary** \n| "
+        for col in summary.keys():
+            message += "**{}:** {}".format(col, f"{summary[col]:,.2f}")
+            message += " | "
+
+        message += "\n"
+
+        # Append next earnings date to message
+        message += "*Next earnings date:* {}\n\n".format(sd.get_next_earnings_date(ticker))
+
 
         analysis = sd.fetch_analysis(ticker)
 
+        message += "**Analysis**\n"
         for indicator in analysis:
             message += indicator
         
@@ -391,10 +405,14 @@ def run_bot():
 
     def get_ticker_links(ticker):
 
-        links = discord.Embed(title = "[StockInvest](https://stockinvest.us/stock/{})".format(ticker) + " | " + "[FinViz](https://finviz.com/quote.ashx?t={})".format(ticker) + " | " + "[Yahoo! Finance](https://finance.yahoo.com/quote/{})".format(ticker))
-        #links.add_field(name = "StockInvest", value = "[StockInvest](https://stockinvest.us/stock/{})".format(ticker))
-        #links.add_field(name = "FinViz", value = "[FinViz](https://finviz.com/quote.ashx?t={})".format(ticker))
-        #links.add_field(name = "YahooFinance", value = "[Yahoo! Finance](https://finance.yahoo.com/quote/{})".format(ticker))
+        links = []
+        stockinvest = "[StockInvest](https://stockinvest.us/stock/{})".format(ticker)
+        links.append(stockinvest)
+        finviz = "[FinViz](https://finviz.com/quote.ashx?t={})".format(ticker)
+        links.append(finviz)
+        yahoo = "[Yahoo! Finance](https://finance.yahoo.com/quote/{})".format(ticker)
+        links.append(yahoo)
+
         return links
 
 

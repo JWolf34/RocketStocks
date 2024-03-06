@@ -145,9 +145,38 @@ def get_watchlist_path(id = 0):
 
 def validate_path(path):
     if not (os.path.isdir(path)):
-        os.makedirs(path)                        
+        os.makedirs(path) 
+
+def get_stock_data(ticker):
+    try:
+        return pd.read_csv("data/CSV/{}.csv".format(ticker))
+    except FileNotFoundError as e:
+        print(e)
+        return pd.DataFrame()
+        
+
+def get_days_summary(ticker):
+    # Assumes data has been pulled recently. Mainly called when running or fetching reports. 
+    data  = get_stock_data(ticker)
+    if len(data) > 0:
+        summary = data[['Open', "Close", "High", "Low", "Volume"]].iloc[-1]
+        return summary
+    else:
+        return None
+    
+def get_next_earnings_date(ticker):
+    return yf.Ticker(ticker).calendar['Earnings Date'][0]
+    
 
 def test():
+    #Testing retrieving earnings
+    earnings = get_next_earnings_date('ANF')
+    print(earnings)
+
+
+
+    #Testing retrieving financials with yfinance
+    '''
     ticker = yf.Ticker("ANF")
     #print(ticker.info)
     print(ticker.income_stmt)
@@ -158,6 +187,7 @@ def test():
     print(ticker.quarterly_cashflow)
     print(ticker.get_income_stmt())
     print(ticker.get_earnings_dates(limit=8))
+    '''
 
 if __name__ == "__main__":
-    test()
+    pass
