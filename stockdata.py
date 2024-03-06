@@ -115,7 +115,7 @@ def fetch_charts(ticker):
 
 # Return the latest data with technical indicators as a Pandas datafram
 def fetch_data(ticker):
-    data = pd.read_csv("data/CSV/{}.csv".format(ticker))
+    data = pd.read_csv("data/CSV/{}.csv".format(ticker), parse_dates=True, index_col='Date')
     return data
 
 def fetch_analysis(ticker):
@@ -201,8 +201,11 @@ def fetch_financials(ticker):
 
 def test():
     # Testing retrieving income statement
-    data = yf.download("NVDA", period="1y")
-    
+    downloaded_data = download_data("MSFT", "1y", "1d")
+    download_data_and_update_csv("MSFT", "1y", "1d")
+    fetched_data = fetch_data("MSFT")
+
+    print('Done!')
 
 
 
@@ -221,4 +224,5 @@ def test():
     '''
 
 if __name__ == "__main__":
-    test()
+    #test()
+    pass
