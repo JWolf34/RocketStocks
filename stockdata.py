@@ -166,6 +166,11 @@ def get_days_summary(ticker):
     
 def get_next_earnings_date(ticker):
     return yf.Ticker(ticker).calendar['Earnings Date'][0]
+
+def fetch_financials(ticker):
+    financials_path = "data/financials/{}".format(ticker)
+    validate_path(financials_path)
+    
     
 
 def test():
