@@ -8,7 +8,7 @@ def scheduler():
     sched = BlockingScheduler()
 
     for ticker in sd.get_tickers():
-        sched.add_job(an.run_analysis, 'cron', name='Run analysis on ' + ticker + ' data', timezone=timezone, hour = 15, minute=0, replace_existing=True)
+        sched.add_job(an.run_analysis, 'cron', name='Run analysis on ' + ticker + ' data', timezone=timezone, hour = 5, minute=0, replace_existing=True)
         
     print('Ready!')
 
