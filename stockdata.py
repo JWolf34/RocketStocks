@@ -165,12 +165,16 @@ def get_days_summary(ticker):
         return None
     
 def get_next_earnings_date(ticker):
-    return yf.Ticker(ticker).calendar['Earnings Date'][0]
+    try:
+        return yf.Ticker(ticker).calendar['Earnings Date'][0]
+    except IndexError as e:
+        print(e)
+        return "Earnings date unavailable"
 
 def fetch_financials(ticker):
     financials_path = "data/financials/{}".format(ticker)
     validate_path(financials_path)
-    
+
     
 
 def test():
