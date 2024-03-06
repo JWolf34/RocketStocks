@@ -201,7 +201,8 @@ def fetch_financials(ticker):
 
 def test():
     # Testing retrieving income statement
-    download_financials("NVDA")
+    data = yf.download("NVDA", period="1y")
+    
 
 
 
