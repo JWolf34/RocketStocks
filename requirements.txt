@@ -11,3 +11,4 @@ yfinance
 pandas_ta
 matplotlib
 setuptools 
+mplfinance
