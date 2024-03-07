@@ -297,7 +297,7 @@ def run_bot():
             future += dt.timedelta(days=1)
         await asyncio.sleep((future-now).seconds)
 
-    @client.tree.command(name = "run-reports", description= "Post analysis of a given watchlist",)
+    @client.tree.command(name = "run-reports", description= "Post analysis of a given watchlist (use /fetch-reports for individual or non-watchlist stocks)",)
     @app_commands.describe(watchlist = "Which watchlist to fetch reports for")
     @app_commands.choices(watchlist =[
         app_commands.Choice(name = "global", value = 'global'),
@@ -337,8 +337,8 @@ def run_bot():
             message = "Reports have been posted!"
         await interaction.followup.send(message, ephemeral=True)
 
-    @client.tree.command(name = "fetch-financials", description= "Fetch financial reports of the specified tickers",)
-    @app_commands.describe(tickers = "Tickers to return financials for")
+    @client.tree.command(name = "fetch-financials", description= "Fetch financial reports of the specified tickers ",)
+    @app_commands.describe(tickers = "Tickers to return financials for (separated by spaces)")
     @app_commands.describe(visibility = "'private' to send to DMs, 'public' to send to the channel")
     @app_commands.choices(visibility =[
         app_commands.Choice(name = "private", value = 'private'),
@@ -364,8 +364,8 @@ def run_bot():
             await interaction.followup.send("No valid tickers in {}".format(",".join(invalid_tickers)), ephemeral=True)
             
 
-    @client.tree.command(name = "fetch-reports", description= "Fetch analysis reports of the specified tickers",)
-    @app_commands.describe(tickers = "Tickers to return financials for")
+    @client.tree.command(name = "fetch-reports", description= "Fetch analysis reports of the specified tickers (use /run-reports to analyze a watchlist)",)
+    @app_commands.describe(tickers = "Tickers to post reports for (separated by spaces)")
     @app_commands.describe(visibility = "'private' to send to DMs, 'public' to send to the channel")
     @app_commands.choices(visibility =[
         app_commands.Choice(name = "private", value = 'private'),
