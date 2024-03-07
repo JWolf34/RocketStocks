@@ -237,13 +237,14 @@ def run_bot():
     @app_commands.describe(period = "Range of the data returned. Valid values: 1d, 5d, 1mo, 3mo, 6mo, 1y, 2y, 5y, 10y, ytd, max. Default: 1y")
     @app_commands.describe(interval = "Range between intraday data. Valid values: 1m, 2m, 5m, 15m, 30m, 60m, 90m, 1h, 1d, 5d, 1wk, 1mo, 3mo. Default: 1d")
     async def fetch_csv(interaction: discord.Interaction, ticker: str, period: str = "1y", interval: str = "1d"):
+        await interaction.response.defer(ephemeral=True)
         try:
             sd.download_data_and_update_csv(ticker, period, interval)
             file = discord.File("data/CSV/{}.csv".format(ticker))
-            await interaction.response.send_message(file=file, content= "Data file for " + ticker)
+            await interaction.followup.send(file=file, content= "Data file for " + ticker)
         except Exception as e:
             print(e)
-            await interaction.response.send_message("Failed to fetch data file. Please ensure your parameters are valid.")
+            await interaction.followup.send("Failed to fetch data file. Please ensure your parameters are valid.")
     
     @client.tree.command(name = "run-analysis", description= "Run analysis on all tickers in the selected watchlist",)
     @app_commands.describe(watchlist = "Which watchlist you want to make changes to")

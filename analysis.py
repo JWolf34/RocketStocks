@@ -17,9 +17,10 @@ import yfinance as yf
 # Plotting Technical Indicators
 
 def plot_volume(data, ticker):
-
+    NUM_DAYS = 30
     save      = dict(fname='data/plots/{}/{}_VOLUME.png'.format(ticker, ticker),dpi=500,pad_inches=0.25)
-    mpf.plot(data,volume=True,type='line',ylabel='Close Price',figscale=1.6,figratio=(6,5),title='\n\n{} Volume'.format(ticker),
+    data = data.tail(NUM_DAYS)
+    mpf.plot(data,volume=True,type='candle',ylabel='Close Price',figscale=1.6,figratio=(6,5),title='\n\n{} {}-Day'.format(ticker,NUM_DAYS),
             style='tradingview', savefig=save)#,show_nontrading=True)   
 
 def plot_rsi(data, ticker):
@@ -30,14 +31,16 @@ def plot_rsi(data, ticker):
     data      = get_rsi(data)
     rsi       = data['RSI']
     close     = data['Close']
-    hlines    = dict(hlines=[30,70],colors=['g','r'],linestyle="-.")
-
+    hline_70  = [70] * data.shape[0]
+    hline_30  = [30] * data.shape[0]
     #buy_signal, sell_signal =  buy_sell_signals(rsi, close)
 
     apds = [
         #mpf.make_addplot(buy_signal, color='b', type='scatter', label="Buy Signal"),
         #mpf.make_addplot(sell_signal,color='orange',type='scatter', label="Sell Signal"),
-        mpf.make_addplot(rsi,panel=1,color='orange',secondary_y=False,label='RSI', ylabel= 'Relative Strength \nIndex'),#hlines=hlines
+        mpf.make_addplot(hline_70,type='line',panel=1,color='r',secondary_y=False,label='Overbought', linestyle="--"),
+        mpf.make_addplot(hline_30,type='line',panel=1,color='g',secondary_y=False,label='Overbought', linestyle="--"),
+        mpf.make_addplot(rsi,panel=1,color='orange',secondary_y=False,label='RSI', ylabel= 'Relative Strength \nIndex'),
         ]
 
     #s = mpf.make_mpf_style(base_mpf_style='classic',rc={'figure.facecolor':'lightgray'})
