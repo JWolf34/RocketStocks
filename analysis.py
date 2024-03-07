@@ -15,44 +15,60 @@ import yfinance as yf
 
 
 # Plotting Technical Indicators
+
+def plot_volume(data, ticker):
+
+    save      = dict(fname='data/plots/{}/{}_VOLUME.png'.format(ticker, ticker),dpi=500,pad_inches=0.25)
+    mpf.plot(data,volume=True,type='line',ylabel='Close Price',figscale=1.6,figratio=(6,5),title='\n\n{} Volume'.format(ticker),
+            style='tradingview', savefig=save)#,show_nontrading=True)   
+
 def plot_rsi(data, ticker):
+    def buy_sell_signals(rsi, close):
+        pass
 
-    close = data[['Date', 'Close']].copy().set_index('Date')
-    rsi = data[['Date', 'RSI']].copy().set_index('Date')
-    
-    locator = mdates.MonthLocator()
-    fmt = mdates.AutoDateFormatter(locator)
+    save      = dict(fname='data/plots/{}/{}_RSI.png'.format(ticker, ticker),dpi=500,pad_inches=0.25)
+    data      = get_rsi(data)
+    rsi       = data['RSI']
+    close     = data['Close']
+    hlines    = dict(hlines=[30,70],colors=['g','r'],linestyle="-.")
 
-    # Create two charts on the same figure.
-    ax1 = plt.subplot2grid((10,1), (0,0), rowspan = 4, colspan = 1)
-    ax2 = plt.subplot2grid((10,1), (5,0), rowspan = 4, colspan = 1, sharex=ax1)
+    #buy_signal, sell_signal =  buy_sell_signals(rsi, close)
 
-    # First chart:
-    # Plot the closing price on the first chart
-    ax1.plot(close, linewidth=2)
-    ax1.set_title(ticker.upper() + ' Close Price')
-    ax1.xaxis.set_major_locator(locator)
-    ax1.xaxis.grid(True)
-    plt.setp(ax1.get_xticklabels(), fontsize = 4)
-    #ax1.xaxis.set_major_formatter(fmt)
+    apds = [
+        #mpf.make_addplot(buy_signal, color='b', type='scatter', label="Buy Signal"),
+        #mpf.make_addplot(sell_signal,color='orange',type='scatter', label="Sell Signal"),
+        mpf.make_addplot(rsi,panel=1,color='orange',secondary_y=False,label='RSI', ylabel= 'Relative Strength \nIndex'),#hlines=hlines
+        ]
 
-    # Second chart
-    # Plot the RSI
-    ax2.set_title('Relative Strength Index (' + ticker + ')')
-    ax2.plot(rsi, color='orange', linewidth=1)
-    # Add two horizontal lines, signalling the buy and sell ranges.
-    # Oversold
-    ax2.axhline(30, linestyle='--', linewidth=1.5, color='green')
-    # Overbought
-    ax2.axhline(70, linestyle='--', linewidth=1.5, color='red')
+    #s = mpf.make_mpf_style(base_mpf_style='classic',rc={'figure.facecolor':'lightgray'})
 
-    ax2.xaxis.set_major_locator(locator)
-    ax2.xaxis.grid(True)
-    plt.setp(ax2.get_xticklabels(), fontsize = 4)
-    plt.tight_layout()
+    mpf.plot(data,type='candle',ylabel='Close Price',addplot=apds,figscale=1.6,figratio=(6,5),title='\n\n{} RSI'.format(ticker),
+            style='tradingview',panel_ratios=(1,1), savefig=save)#,show_nontrading=True)   
 
-    plt.savefig("data/plots/" + ticker + "/" + ticker + "_RSI.png", dpi=1000)
-    plt.close()
+def analyze_rsi(data, ticker):
+    analysis = ''
+    signal = ''
+    rsi = data['RSI'].values[-1]
+
+    with open("data/analysis/{}/RSI.txt".format(ticker),'w') as rsi_analysis: 
+        if rsi >= 70:
+            signal = "SELL"
+            analysis = "RSI: **{}** - The RSI value is above 70 ({:,.2f}) indicating the stock is currently overbought and could see a decline in price soon".format(signal, rsi)
+            rsi_analysis.write(analysis)
+        elif rsi <= 30:
+            signal = "BUY"
+            analysis = "RSI: **{}** - The RSI value is below 30 ({:,.2f}) indicating the stock is currently oversold and could see an incline in price soon".format(signal, rsi)
+            rsi_analysis.write(analysis)
+        else:
+            signal = "NEUTRAL"
+            analysis = "RSI: **{}** - The RSI value is between 30 and 70 ({:,.2f}), giving no indication as to where the price will move".format(signal, rsi)
+            rsi_analysis.write(analysis)
+
+def get_rsi(data):
+    # Run Relative Stength Index (RSI) analysis
+    data['RSI'] = ta.rsi(data['Close'])
+    return data
+
 
 def plot_obv(data, ticker):
     data = data.set_index('Date')
@@ -186,32 +202,23 @@ def plot_aroon(data, ticker):
         
 def plot_macd(data, ticker):
 
-    def signal_buy(macd,macd_signal,close):
-        signal = []
+    def buy_sell_signals(macd,macd_signal,close):
+        buy_signals = []
+        sell_signals = []
         previous_signal = -1
         previous_macd = 0
         for date, value in macd.items():
             if value > macd_signal[date] and previous_macd < previous_signal:
-                signal.append(macd[date]*0.99999999999)
+                buy_signals.append(close[date])
             else:
-                signal.append(np.nan)
-            previous_macd = value
-            previous_signal =  macd_signal[date]
-        return signal
-
-    def signal_sell(macd,macd_signal,close):
-        signal = []
-        previous_signal = -1
-        previous_macd = 0
-        for date, value in macd.items():
+                buy_signals.append(np.nan)
             if value < macd_signal[date] and previous_macd > previous_signal:
-                signal.append(macd[date]*0.99)
+                sell_signals.append(close[date])
             else:
-                signal.append(np.nan)
+                sell_signals.append(np.nan)
             previous_macd = value
             previous_signal =  macd_signal[date]
-        return signal
-
+        return buy_signals, sell_signals
 
     save      = dict(fname='data/plots/{}/{}_MACD.png'.format(ticker, ticker),dpi=500,pad_inches=0.25)
     data      = get_macd(data)
@@ -220,8 +227,8 @@ def plot_macd(data, ticker):
     macd      = data['MACD']
     signal    = data['MACD_SIGNAL']
     histogram = data['MACD_HISTOGRAM']
-    buy_signal = signal_buy(macd, signal, data['Close'])
-    sell_signal = signal_sell(macd, signal, data['Close'])
+    buy_signal, sell_signal = buy_sell_signals(macd, signal, data['Close'])
+
 
     fb_green = dict(y1=macd.values,y2=signal.values,where=signal<macd,color="#93c47d",alpha=0.6,interpolate=True)
     fb_red   = dict(y1=macd.values,y2=signal.values,where=signal>macd,color="#e06666",alpha=0.6,interpolate=True)
@@ -229,19 +236,19 @@ def plot_macd(data, ticker):
     fb_red['panel'] = 1
     fb       = [fb_green,fb_red]
 
-    apds = [mpf.make_addplot(exp12,color='lime'),
-        mpf.make_addplot(exp26,color='c'),
-        mpf.make_addplot(buy_signal,panel=1, color='b', type='scatter'),
-        mpf.make_addplot(sell_signal,panel=1,color='orange',type='scatter'),
-        mpf.make_addplot(macd,panel=1,color='green',secondary_y=False),
-        mpf.make_addplot(signal,panel=1,color='yellow',secondary_y=False),#,fill_between=fb),
+    apds = [#mpf.make_addplot(exp12,color='lime', label='MACD'),
+        #mpf.make_addplot(exp26,color='c',label="MACD_SIGNAL"),
+        mpf.make_addplot(buy_signal, color='b', type='scatter', label="Buy Signal"),
+        mpf.make_addplot(sell_signal,color='orange',type='scatter', label="Sell Signal"),
+        mpf.make_addplot(macd,panel=1,color='green',secondary_y=False,label='MACD', ylabel='Moving Average\nConvergence Divergence'),
+        mpf.make_addplot(signal,panel=1,color='yellow',secondary_y=False,label="MACD_SIGNAL"),#,fill_between=fb),
         mpf.make_addplot(histogram,type='bar',width=0.7,panel=1,alpha=1,color='dimgray', secondary_y=True)
         ]
 
     #s = mpf.make_mpf_style(base_mpf_style='classic',rc={'figure.facecolor':'lightgray'})
 
     mpf.plot(data,type='candle',ylabel='Close Price',addplot=apds,figscale=1.6,figratio=(6,5),title='\n\n{} MACD'.format(ticker),
-            style='default',panel_ratios=(1,1),fill_between=fb, savefig=save)#,show_nontrading=True)
+            style='tradingview',panel_ratios=(1,1),fill_between=fb, savefig=save)#,show_nontrading=True)   
     
 def analyze_macd(data, ticker):
     data = get_macd(data)
@@ -305,12 +312,13 @@ def generate_charts(data, ticker):
 
     # Generate technical indicator charts
 
+    plot_volume(data, ticker)
     #plot_obv(data, ticker)
     #plot_adi(data, ticker)
     #plot_adx(data, ticker)
     #plot_aroon(data, ticker)
     plot_macd(data, ticker)
-    #plot_rsi(data, ticker)
+    plot_rsi(data, ticker)
     #plot_stoch(data, ticker)
     
 # Running analysis on techincal indicators to generate buy/sell signals
@@ -399,24 +407,6 @@ def analyze_aroon(data, ticker):
     analysis = ""
     return analysis
 
-def analyze_rsi(data, ticker):
-    analysis = ''
-    signal = ''
-    rsi = data['RSI'].values[-1]
-
-    with open("data/analysis/{}/RSI.txt".format(ticker),'w') as rsi_analysis: 
-        if rsi >= 70:
-            signal = "SELL"
-            analysis = "RSI: **{}** - The RSI value is above 70 ({:,.2f}) indicating the stock is currently overbought and could see a decline in price soon".format(signal, rsi)
-            rsi_analysis.write(analysis)
-        elif rsi <= 30:
-            signal = "BUY"
-            analysis = "RSI: **{}** - The RSI value is below 30 ({:,.2f}) indicating the stock is currently oversold and could see an incline in price soon".format(signal, rsi)
-            rsi_analysis.write(analysis)
-        else:
-            signal = "NEUTRAL"
-            analysis = "RSI: **{}** - The RSI value is between 30 and 70 ({:,.2f}), giving no indication as to where the price will move".format(signal, rsi)
-            rsi_analysis.write(analysis)
 
 def analyze_stoch(data, ticker):
     stoch = data['STOCH'].values[-1]
@@ -481,11 +471,6 @@ def get_stoch(data):
     # Run Stochastic Oscillator (STOCH) analysis 
     stoch = ta.stoch(close = data['Close'], high = data['High'], low = data['Low'])
     data['STOCH'], data['STOCH_SIGNAL']= stoch['STOCHk_14_3_3'], stoch['STOCHd_14_3_3'] 
-    return data
-
-def get_rsi(data):
-    # Run Relative Stength Index (RSI) analysis
-    data['RSI'] = ta.rsi(data['Close'])
     return data
 
 def run_analysis(tickers=sd.get_tickers()):
