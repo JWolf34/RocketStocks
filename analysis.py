@@ -15,7 +15,6 @@ import yfinance as yf
 
 
 # Plotting Technical Indicators
-
 def plot_volume(data, ticker):
     NUM_DAYS = 30
     save      = dict(fname='data/plots/{}/{}_VOLUME.png'.format(ticker, ticker),dpi=500,pad_inches=0.25)
@@ -25,7 +24,22 @@ def plot_volume(data, ticker):
 
 def plot_rsi(data, ticker):
     def buy_sell_signals(rsi, close):
-        pass
+        buy_signals = []
+        sell_signals = []
+        UPPER_BOUND  = 70
+        LOWER_BOUND  = 30 
+        previous_rsi = 50
+        for date, rsi_value in rsi.items():
+            if rsi_value < LOWER_BOUND: #and previous_rsi > LOWER_BOUND:
+                buy_signals.append(close[date])
+            else:
+                buy_signals.append(np.nan)
+            if rsi_value > UPPER_BOUND: #and previous_rsi < UPPER_BOUND:
+                sell_signals.append(close[date])
+            else:
+                sell_signals.append(np.nan)
+            previous_rsi = rsi_value
+        return buy_signals, sell_signals
 
     save      = dict(fname='data/plots/{}/{}_RSI.png'.format(ticker, ticker),dpi=500,pad_inches=0.25)
     data      = get_rsi(data)
@@ -33,7 +47,13 @@ def plot_rsi(data, ticker):
     close     = data['Close']
     hline_70  = [70] * data.shape[0]
     hline_30  = [30] * data.shape[0]
-    #buy_signal, sell_signal =  buy_sell_signals(rsi, close)
+    buy_signal, sell_signal = buy_sell_signals(rsi, close)
+
+    fb_green = dict(y1=buy_signal,y2=0,where=rsi<30,color="#93c47d",alpha=0.6,interpolate=True)
+    fb_red   = dict(y1=sell_signal,y2=0,where=rsi>70,color="#e06666",alpha=0.6,interpolate=True)
+    fb_red['panel'] = 0
+    fb_green['panel'] = 0
+    fb       = [fb_green,fb_red]
 
     apds = [
         #mpf.make_addplot(buy_signal, color='b', type='scatter', label="Buy Signal"),
@@ -46,7 +66,7 @@ def plot_rsi(data, ticker):
     #s = mpf.make_mpf_style(base_mpf_style='classic',rc={'figure.facecolor':'lightgray'})
 
     mpf.plot(data,type='candle',ylabel='Close Price',addplot=apds,figscale=1.6,figratio=(6,5),title='\n\n{} RSI'.format(ticker),
-            style='tradingview',panel_ratios=(1,1), savefig=save)#,show_nontrading=True)   
+            style='tradingview',panel_ratios=(1,1),fill_between=fb, savefig=save)#,show_nontrading=True),fill_between=fb   
 
 def analyze_rsi(data, ticker):
     analysis = ''
@@ -71,137 +91,6 @@ def get_rsi(data):
     # Run Relative Stength Index (RSI) analysis
     data['RSI'] = ta.rsi(data['Close'])
     return data
-
-
-def plot_obv(data, ticker):
-    data = data.set_index('Date')
-    # Create two charts on the same figure.
-    ax1 = plt.subplot2grid((10,1), (0,0), rowspan = 4, colspan = 1)
-    ax2 = plt.subplot2grid((10,1), (5,0), rowspan = 4, colspan = 1, sharex=ax1)
-
-    period = 60
-
-    obv_curr = data['OBV'].values[-1]
-    obv_old = data['OBV'].values[-period]
-
-    close_curr = data['Close'].values[-1]
-    close_old = data['Close'].values[-period]
-
-    obv_slope = (obv_curr - obv_old) / period
-    close_slope = (close_curr - close_old) / period
-
-
-    xstart = len(data['Close']) - period
-
-    # First chart:
-    # Plot the closing price on the first chart
-    ax1.plot(data['Close'], linewidth=2)
-    ax1.set_title(ticker.upper() + ' Close Price')
-
-    # Create line indicating start of analysis period
-    ax1.axvline(x = xstart, linestyle = '--', color = 'red')
-    ax1.axline(xy1 = (xstart, close_old), slope  = close_slope, color = 'red')
-
-    # Second chart
-    # Plot the OBV
-    ax2.set_title('On-Balance Volume (' + ticker + ')')
-    ax2.plot(data['OBV'], color='purple', linewidth=1)
-
-    # Create line indicating start of analysis period
-    ax2.axvline(x = xstart, linestyle = '--', color = 'red')
-    ax2.axline(xy1 = (xstart, obv_old), slope  = obv_slope, color = 'red')
-
-    plt.savefig("data/plots/" + ticker + "/" + ticker + "_OBV.png", dpi=1000)
-    plt.close()
-
-def plot_adi(data, ticker):
-    # Create two charts on the same figure.
-        ax1 = plt.subplot2grid((10,1), (0,0), rowspan = 4, colspan = 1)
-        ax2 = plt.subplot2grid((10,1), (5,0), rowspan = 4, colspan = 1, sharex=ax1)
-
-        period = 60
-
-        adi_curr = data['ADI'].values[-1]
-        adi_old = data['ADI'].values[-period]
-
-        close_curr = data['Close'].values[-1]
-        close_old = data['Close'].values[-period]
-
-        adi_slope = (adi_curr - adi_old) / period
-        close_slope = (close_curr - close_old) / period
-
-        xstart = len(data['Close']) - period
-
-        # First chart:
-        # Plot the closing price on the first chart
-        ax1.plot(data['Close'], linewidth=2)
-        ax1.set_title(ticker.upper() + ' Close Price')
-
-        # Create line indicating start of analysis period
-        ax1.axvline(x = xstart, linestyle = '--', color = 'red')
-        ax1.axline(xy1 = (xstart, close_old), slope  = close_slope, color = 'red')
-
-        # Second chart
-        # Plot the OBV
-        ax2.set_title('Accumulation/Distribution Index (' + ticker + ')')
-        ax2.plot(data['ADI'], color='green', linewidth=1)
-
-        # Create line indicating start of analysis period
-        ax2.axvline(x = xstart, linestyle = '--', color = 'red')
-        ax2.axline(xy1 = (xstart, adi_old), slope  = adi_slope, color = 'red')
-
-        plt.savefig("data/plots/" + ticker + "/" + ticker + "_ADI.png", dpi=1000)
-        plt.close()
-
-def plot_adx(data, ticker):
-    # Create two charts on the same figure.
-        ax1 = plt.subplot2grid((10,1), (0,0), rowspan = 4, colspan = 1)
-        ax2 = plt.subplot2grid((10,1), (5,0), rowspan = 4, colspan = 1, sharex=ax1)
-
-        # First chart:
-        # Plot the closing price on the first chart
-        ax1.plot(data['Close'], linewidth=2)
-        ax1.set_title(ticker.upper() + ' Close Price')
-
-        # Second chart
-        # Plot the OBV
-        ax2.set_title('Average Directional Index (' + ticker + ')')
-        ax2.plot(data['ADX'], color='purple', linewidth=1, label = 'ADX')
-        ax2.plot(data['ADX_DI+'], color='blue', linewidth=1, label = 'DI+')
-        ax2.plot(data['ADX_DI-'], color = 'red', linewidth=1, label = 'DI-')
-        ax2.legend()
-
-        # Add two horizontal lines, signalling the uptrend and downrtend ranges.
-        # Uptrend
-        ax2.axhline(40, linestyle='--', linewidth=1.5, color='green')
-        # Downtrend
-        ax2.axhline(20, linestyle='--', linewidth=1.5, color='orange')
-
-        plt.savefig("data/plots/" + ticker + "/" + ticker + "_ADX.png", dpi=1000)
-        plt.close()
-
-def plot_aroon(data, ticker):
-    # Create two charts on the same figure.
-        ax1 = plt.subplot2grid((10,1), (0,0), rowspan = 4, colspan = 1)
-        ax2 = plt.subplot2grid((10,1), (5,0), rowspan = 4, colspan = 1, sharex=ax1)
-
-        # First chart:
-        # Plot the closing price on the first chart
-        ax1.plot(data['Close'], linewidth=2)
-        ax1.set_title(ticker.upper() + ' Close Price')
-
-        # Second chart
-        # Plot the OBV
-        ax2.set_title('Aroon Oscillator (' + ticker + ')')
-        ax2.plot(data['AROON_DOWN'], color='green', linewidth=1, label = 'AROON_DOWN')
-        #ax2.plot(data['AROON_INDICATOR'], color='blue', linewidth=1, label = 'AROON_INDICATOR')
-        ax2.plot(data['AROON_UP'], color = 'orange', linewidth=1, label = 'AROON_UP')
-        ax2.legend()
-
-        plt.savefig("data/plots/" + ticker + "/" + ticker + "_AROON.png", dpi=1000)
-        plt.close()
-
-#Testing with pandas plot
         
 def plot_macd(data, ticker):
 
@@ -279,32 +168,28 @@ def get_macd(data):
     data['MACD'], data['MACD_HISTOGRAM'], data['MACD_SIGNAL'] = macd['MACD_12_26_9'], macd['MACDh_12_26_9'], macd['MACDs_12_26_9'] 
     return data
 
-def plot_stoch(data, ticker):
-    # Create two charts on the same figure.
-        ax1 = plt.subplot2grid((10,1), (0,0), rowspan = 4, colspan = 1)
-        ax2 = plt.subplot2grid((10,1), (5,0), rowspan = 4, colspan = 1, sharex=ax1)
+def plot_sma(data,ticker):
 
-        # First chart:
-        # Plot the closing price on the first chart
-        ax1.plot(data['Close'], linewidth=2)
-        ax1.set_title(ticker.upper() + ' Close Price')
+    save      = dict(fname='data/plots/{}/{}_SMA.png'.format(ticker, ticker),dpi=500,pad_inches=0.25)
+    data      = get_sma(data)
+    sma_50    = data['SMA_50']
+    sma_200   = data['SMA_200']
 
-        # Second chart
-        # Plot the OBV
-        ax2.set_title('Stochastic Oscillator (' + ticker + ')')
-        ax2.plot(data['STOCH'], color='purple', linewidth=1, label = 'STOCH')
-        ax2.plot(data['STOCH_SIGNAL'], color='blue', linewidth=1, label = 'STOCH_SIGNAL')
-        ax2.legend()
+    apds  = [
+        mpf.make_addplot(sma_50, color='blue', label = 'SMA 50'),
+        mpf.make_addplot(sma_200, color='purple', label = 'SMA 200')
+    ]
 
-        # Add two horizontal lines, signalling the buy and sell ranges.
-        # Oversold
-        ax2.axhline(20, linestyle='--', linewidth=1.5, color='green')
-        # Overbought
-        ax2.axhline(80, linestyle='--', linewidth=1.5, color='red')
+    mpf.plot(data,type='candle',ylabel='Close Price',addplot=apds,figscale=1.6,figratio=(6,5),title='\n\n{} SMA'.format(ticker),
+            style='tradingview',savefig=save)
 
-        plt.savefig("data/plots/" + ticker + "/" + ticker + "_STOCH.png", dpi=1000)
-        plt.close()
-    
+def get_sma(data):
+    sma_50 = ta.sma(data['Close'], length=50)
+    sma_200 = ta.sma(data['Close'], length=200)
+
+    data['SMA_50'], data['SMA_200'] = sma_50, sma_200
+    return data
+
 def format_plot(plot):
     pass
 
@@ -316,137 +201,19 @@ def generate_charts(data, ticker):
     # Generate technical indicator charts
 
     plot_volume(data, ticker)
-    #plot_obv(data, ticker)
-    #plot_adi(data, ticker)
-    #plot_adx(data, ticker)
-    #plot_aroon(data, ticker)
     plot_macd(data, ticker)
     plot_rsi(data, ticker)
-    #plot_stoch(data, ticker)
+    plot_sma(data,ticker)
+
     
 # Running analysis on techincal indicators to generate buy/sell signals
-
-def analyze_obv(data, ticker):
-    obv_curr = data['OBV'].values[-1]
-    obv_old = data['OBV'].values[-60]
-
-    close_curr = data['Close'].values[-1]
-    close_old = data['Close'].values[-60]
-
-    obv_slope = (obv_curr - obv_old) / 60.0
-    close_slope = (close_curr - close_old) / 60.0
-
-
-    with open("data/analysis/{}/OBV.txt".format(ticker),'w') as obv_analysis:
-        if obv_slope >= 0.25 and close_slope > 0: 
-            signal = "BUY"
-            analysis = "OBV: **{}** - Over the last 60 days, the slope of OBV ({:,.2f}) and the slope of Close ({:,.2f}) are positive, indicating a continuing uptrend".format(signal, obv_slope, close_slope)
-            obv_analysis.write(analysis)
-        elif obv_slope >= 0.25 and close_slope <= 0.25:
-            signal = "BUY"
-            analysis = "OBV: **{}** - Over the last 60 days, the slope of OBV ({:,.2f}) is positive and the slope of Close ({:,.2f}) is flat or negative, indicating an upcoming uptrend".format(signal, obv_slope, close_slope)
-            obv_analysis.write(analysis)
-        elif obv_slope <= 0.25 and close_slope > 0: 
-            signal = "WEAK SELL"
-            analysis = "OBV: **{}** - Over the last 60 days, the slope of OBV ({:,.2f}) is flat or negative and the slope of Close ({:,.2f}) is positive, indicating the end of an uptrend".format(signal, obv_slope, close_slope)
-            obv_analysis.write(analysis)
-        elif obv_slope <= 0.25 and close_slope < 0: 
-            signal = "SELL"
-            analysis = "OBV: **{}** - Over the last 60 days, the slope of OBV ({:,.2f}) and the slope of Close ({:,.2f}) are flat or negative, indicating a continuing downtrend".format(signal, obv_slope, close_slope)
-            obv_analysis.write(analysis)
-        
-
-def analyze_adi(data, ticker):
-    adi_curr = data['ADI'].values[-1]
-    adi_old = data['ADI'].values[-60]
-
-    close_curr = data['Close'].values[-1]
-    close_old = data['Close'].values[-60]
-
-    adi_slope = (adi_curr - adi_old) / 60.0
-    close_slope = (close_curr - close_old) / 60.0
-
-
-    with open("data/analysis/{}/ADI.txt".format(ticker),'w') as adi_analysis:
-        if adi_slope >= 0.25 and close_slope > 0: 
-            signal = "BUY"
-            analysis = "ADI: **{}** - Over the last 60 days, the slope of ADI ({:,.2f}) and the slope of Close ({:,.2f}) are positive, indicating a continuing uptrend".format(signal, adi_slope, close_slope)
-            adi_analysis.write(analysis)
-        elif adi_slope >= 0.25 and close_slope <= 0.25:
-            signal = "BUY"
-            analysis = "ADI: **{}** - Over the last 60 days, the slope of ADI ({:,.2f}) is positive and the slope of Close ({:,.2f}) is flat or negative, indicating an upcoming uptrend".format(signal, adi_slope, close_slope)
-            adi_analysis.write(analysis)
-        elif adi_slope <= 0.25 and close_slope > 0: 
-            signal = "WEAK SELL"
-            analysis = "ADI: **{}** - Over the last 60 days, the slope of ADI ({:,.2f}) is flat or negative and the slope of Close ({:,.2f}) is positive, indicating the end of an uptrend".format(signal, adi_slope, close_slope)
-            adi_analysis.write(analysis)
-        elif adi_slope <= -0.25 and close_slope < 0: 
-            signal = "SELL"
-            analysis = "ADI: **{}** - Over the last 60 days, the slope of ADI ({:,.2f}) and the slope of Close ({:,.2f}) are negative, indicating a continuing downtrend".format(signal, adi_slope, close_slope)
-            adi_analysis.write(analysis)
-        
-def analyze_adx(data, ticker):
-    analysis = ''
-    signal = ''
-    adx = data['ADX'].values[-1]
-    DIplus = data['ADX_DI+'].values[-1]
-    DIminus = data['ADX_DI-'].values[-1]
-
-    with open("data/analysis/{}/ADX.txt".format(ticker),'w') as adx_analysis: 
-        if (adx >= 20 and DIplus > DIminus):
-            signal = "BUY"
-            analysis = "ADX: **{}** - The ADX value is above 20 ({:,.2f}) and DI+ ({:,.2f}) is greater than DI- ({:,.2f}), indicating an uptrend".format(signal, adx, DIplus, DIminus)
-            adx_analysis.write(analysis)
-        elif (adx >= 20 and DIplus < DIminus):
-            signal = "SELL"
-            analysis = "ADX: **{}** - The ADX value is above 20 ({:,.2f}) and DI+ ({:,.2f}) is less than DI- ({:,.2f}), indicating a downtrend".format(signal, adx, DIplus, DIminus)
-            adx_analysis.write(analysis)
-        elif (adx < 20):
-            signal = "NEUTRAL"
-            analysis = "ADX: **{}** - The ADX value is below 20 ({:,.2f}), indicating no trend in either direction".format(signal, adx)
-            adx_analysis.write(analysis)
-
-def analyze_aroon(data, ticker):
-    analysis = ""
-    return analysis
-
-
-def analyze_stoch(data, ticker):
-    stoch = data['STOCH'].values[-1]
-    last_5_days_stoch = data['STOCH'].values[[-1, -2, -3, -4, -5]]
-    with open("data/analysis/{}/STOCH.txt".format(ticker),'w') as stoch_analysis: 
-        if (stoch < 80 and max(last_5_days_stoch) > 80):
-            signal = "SELL"
-            analysis = "STOCH: **{}** - The STOCH value ({:,.2f}) has recently dropped below 80, indicating a potential decrease in price soon".format(signal, stoch)
-            stoch_analysis.write(analysis)
-        elif (stoch > 80 and min(last_5_days_stoch) < 80):
-            signal = "NEUTRAL"
-            analysis = "STOCH: **{}** - The STOCH value ({:,.2f}) has recently crossed above 80. This is not always a sell signal, but look to sell soon".format(signal, stoch)
-            stoch_analysis.write(analysis)
-        elif (stoch > 20 and min(last_5_days_stoch) < 20):
-            signal = "BUY"
-            analysis = "STOCH: **{}** - The STOCH value ({:,.2f}) has recently risen above 20, indicating a potential increase in price soon".format(signal, stoch)
-            stoch_analysis.write(analysis)
-        elif (stoch < 20 and max(last_5_days_stoch) > 20):
-            signal = "NEUTRAL"
-            analysis = "STOCH: **{}** - The STOCH value ({:,.2f}) has recently crossed below 20. This is not always a buy signal, but look for buying opportunities".format(signal, stoch)
-            stoch_analysis.write(analysis)
-        else: 
-            signal = "NEUTRAL"
-            analysis = "STOCH: **{}** - The STOCH value ({:,.2f}) gives no indication of a trend or this behavior is not documented yet".format(signal, stoch)
-            stoch_analysis.write(analysis) 
-    
 def generate_analysis(data, ticker):
     if not (os.path.isdir("data/analysis/" + ticker)):
         os.makedirs("data/analysis/" + ticker)
 
-    #analyze_obv(data, ticker)
-    #analyze_adi(data, ticker)
-    #analyze_adx(data, ticker)
-    #analyze_aroon(data, ticker)
     analyze_macd(data, ticker)
-    #analyze_rsi(data, ticker)
-    #analyze_stoch(data, ticker)
+    analyze_rsi(data, ticker)
+    #analyse_sma(data,ticker)
     
 def get_obv(data):
     # Run On-Balance Volume (OBV) analysis 
