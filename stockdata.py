@@ -245,5 +245,5 @@ def test():
     download_masterlist_daily()
 
 if __name__ == "__main__":
-    test()
-    #pass
+    #test()
+    pass

@@ -399,7 +399,7 @@ def generate_analysis(data, ticker):
 
 def run_analysis(tickers=sd.get_tickers()):
     for ticker in tickers:
-        sd.download_data_and_update_csv(ticker=ticker, period="max", interval="1d", DAILY_DATA_PATH)
+        sd.download_data_and_update_csv(ticker=ticker, period="max", interval="1d", path=DAILY_DATA_PATH)
         #generate_indicators(ticker)
         data = sd.fetch_data(ticker)
         generate_charts(data, ticker)
