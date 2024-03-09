@@ -23,11 +23,12 @@ def plot_volume(data, ticker):
             style='tradingview', savefig=save)#,show_nontrading=True)   
 
 def plot_rsi(data, ticker):
+    UPPER_BOUND  = 80
+    LOWER_BOUND  = 20
     def buy_sell_signals(rsi, close):
         buy_signals = []
         sell_signals = []
-        UPPER_BOUND  = 70
-        LOWER_BOUND  = 30 
+        
         previous_rsi = 50
         for date, rsi_value in rsi.items():
             if rsi_value < LOWER_BOUND: #and previous_rsi > LOWER_BOUND:
@@ -46,8 +47,8 @@ def plot_rsi(data, ticker):
     data      = data.tail(365)
     rsi       = data['RSI']
     close     = data['Close']
-    hline_70  = [70] * data.shape[0]
-    hline_30  = [30] * data.shape[0]
+    hline_upper  = [UPPER_BOUND] * data.shape[0]
+    hline_lower  = [UPPER_BOUND] * data.shape[0]
     buy_signal, sell_signal = buy_sell_signals(rsi, close)
 
     fb_green = dict(y1=buy_signal,y2=0,where=rsi<30,color="#93c47d",alpha=0.6,interpolate=True)
@@ -59,8 +60,8 @@ def plot_rsi(data, ticker):
     apds = [
         #mpf.make_addplot(buy_signal, color='b', type='scatter', label="Buy Signal"),
         #mpf.make_addplot(sell_signal,color='orange',type='scatter', label="Sell Signal"),
-        mpf.make_addplot(hline_70,type='line',panel=1,color='r',secondary_y=False,label='Overbought', linestyle="--"),
-        mpf.make_addplot(hline_30,type='line',panel=1,color='g',secondary_y=False,label='Overbought', linestyle="--"),
+        mpf.make_addplot(hline_upper,type='line',panel=1,color='r',secondary_y=False,label='Overbought', linestyle="--"),
+        mpf.make_addplot(hline_lower,type='line',panel=1,color='g',secondary_y=False,label='Overbought', linestyle="--"),
         mpf.make_addplot(rsi,panel=1,color='orange',secondary_y=False,label='RSI', ylabel= 'Relative Strength \nIndex'),
         ]
 
@@ -70,23 +71,40 @@ def plot_rsi(data, ticker):
             style='tradingview',panel_ratios=(1,1),fill_between=fb, savefig=save)#,show_nontrading=True),fill_between=fb   
 
 def analyze_rsi(data, ticker):
-    analysis = ''
-    signal = ''
+    UPPER_BOUND = 80
+    LOWER_BOUND = 20
+    signal = signal_rsi(data)
     rsi = data['RSI'].values[-1]
 
     with open("data/analysis/{}/RSI.txt".format(ticker),'w') as rsi_analysis: 
-        if rsi >= 70:
-            signal = "SELL"
-            analysis = "RSI: **{}** - The RSI value is above 70 ({:,.2f}) indicating the stock is currently overbought and could see a decline in price soon".format(signal, rsi)
+        if signal == "BUY":
+            analysis = "RSI: **{}** - The RSI value ({:,.2f}) is below {}, indicating the stock is currently pversold and could see an increase in price soon".format(signal, rsi, LOWER_BOUND)
             rsi_analysis.write(analysis)
-        elif rsi <= 30:
-            signal = "BUY"
-            analysis = "RSI: **{}** - The RSI value is below 30 ({:,.2f}) indicating the stock is currently oversold and could see an incline in price soon".format(signal, rsi)
+        elif signal == "SELL":
+            analysis = "RSI: **{}** - The RSI value ({:,.2f}) is above {}, indicating the stock is currently overbought and could see an incline in price soon".format(signal, rsi, UPPER_BOUND)
             rsi_analysis.write(analysis)
-        else:
-            signal = "NEUTRAL"
-            analysis = "RSI: **{}** - The RSI value is between 30 and 70 ({:,.2f}), giving no indication as to where the price will move".format(signal, rsi)
+        elif signal == "HOLD":
+            analysis = "RSI: **{}** - The RSI value ({:,.2f}) is between {} and {} , giving no indication as to where the price will move".format(signal, rsi, LOWER_BOUND, UPPER_BOUND)
             rsi_analysis.write(analysis)
+
+def signal_rsi(data):
+    
+    UPPER_BOUND = 80
+    LOWER_BOUND = 20
+    rsi = data['RSI'].iloc[-1]
+
+    # BUY SIGNAL - RSI is below lower bound
+    if rsi < LOWER_BOUND:
+        return "BUY"
+    
+    # SELL SIGNAL - RSI is above upper bound
+    if rsi > UPPER_BOUND:
+        return "SELL"
+
+    # HOLD SIGNAL - RSI is between upper bound and lower bound
+    else:
+        return "HOLD"
+
 
 def get_rsi(data):
     # Run Relative Stength Index (RSI) analysis
@@ -149,30 +167,30 @@ def analyze_macd(data, ticker):
    macd = data['MACD'].iloc[-1]
    macd_signal = data['MACD_SIGNAL'].iloc[-1]
 
-   with open("data/analysis/{}/MACD.txt".format(ticker),'w') as sma_analysis: 
+   with open("data/analysis/{}/MACD.txt".format(ticker),'w') as macd_analysis: 
         if (signal == "BUY"):
-            analysis = "SMA: **{}** - The SMA_10 line ({:,.2f}) is above the SMA_50 line ({:,.2f}) and has recently crossed over the SMA_50 line, indicating an upcoming uptrend".format(signal, sma_10, sma_50)
-            sma_analysis.write(analysis)
+            analysis = "MACD: **{}** - The MACD line ({:,.2f}) is above the MACD signal line ({:,.2f}) and has recently crossed over 0, indicating an upcoming or continuing uptrend".format(signal, macd, macd_signal)
+            macd_analysis.write(analysis)
         elif (signal == "WEAK BUY"):
-            analysis = "SMA: **{}** - The SMA_10 line ({:,.2f}) is above the SMA_30 line ({:,.2f}) but below the SMA_50 line ({:,.2f}). Watch for a cross over ths SMA_50 line.".format(signal, sma_10, sma_30, sma_50)
-            sma_analysis.write(analysis)
+            analysis = "MACD: **{}** - The MACD line ({:,.2f}) has recently crossed above the MACD signal line ({:,.2f}), indicating that the price is rising".format(signal, macd, macd_signal)
+            macd_analysis.write(analysis)
         elif (signal == "HOLD"):
-            analysis = "SMA: **{}** - The SMA_10 line ({:,.2f}) is above the SMA_50 line ({:,.2f}), indicating a current uptrend".format(signal, sma_10, sma_50)
-            sma_analysis.write(analysis)
+            analysis = "MACD: **{}** - The MACD line ({:,.2f}) is above the MACD signal line ({:,.2f}), which can indicate an upcoming uptrend".format(signal, macd, macd_signal)
+            macd_analysis.write(analysis)
         elif (signal == "WEAK SELL"):
-            analysis = "SMA: **{}** - The SMA_10 line ({:,.2f}) is below the SMA_30 line ({:,.2f}) but above the SMA_50 line ({:,.2f}), indicating an upcoming downtrend".format(signal, sma_10, sma_30, sma_50)
-            sma_analysis.write(analysis)
+            analysis = "MACD: **{}** - The MACD line ({:,.2f}) is below the MACD signal line ({:,.2f}) but above the 0, which can indicate an upcoming downtrend".format(signal, macd, macd_signal)
+            macd_analysis.write(analysis)
         if (signal == "SELL"):
-            analysis = "SMA: **{}** - The SMA_10 line ({:,.2f}) is below the SMA_50 line ({:,.2f}), indicating an upcoming or continuing downtrend".format(signal, sma_10, sma_50)
-            sma_analysis.write(analysis)
+            analysis = "MACD: **{}** - The MACD line ({:,.2f}) is below the MACD signal line ({:,.2f}) an 0, indicating an upcoming or continuing downtrend".format(signal, macd, macd_signal)
+            macd_analysis.write(analysis)
 
 
 def signal_macd(data):
     signal = ''
-    macd = data['MACD']
-    macd_signal = data['MACD_SIGNAL']
-    prev_macd = macd.tail(5).to_list()
-    prev_macd_signal = macd_signal.tail(5).to_list()
+    macd = data['MACD'].iloc[-1]
+    macd_signal = data['MACD_SIGNAL'].iloc[-1]
+    prev_macd = data['MACD'].tail(5).to_list()
+    prev_macd_signal = data['MACD_SIGNAL'].tail(5).to_list()
     compare_0 = [0]*5
     cross_0 = recent_crossover(prev_macd, compare_0)
     cross_signal = recent_crossover(prev_macd, prev_macd_signal)
@@ -194,8 +212,8 @@ def signal_macd(data):
     elif macd < 0 and macd < macd_signal:
         return "SELL"
     
-    # HOLD SIGNAL - MACD is above signal and 0 but has not recently crossed the signal or 0
-    elif macd > macd_signal and macd > 0 and cross_signal == None and cross_0 == None:
+    # HOLD SIGNAL - MACD is above the signal but has not recently crossed the signal or 0
+    elif macd > macd_signal and cross_signal == None and cross_0 == None:
         return "HOLD"
     
 
@@ -303,6 +321,13 @@ def get_sma(data):
     sma_50 = ta.sma(data['Close'],length=50, append = True)
 
     data['SMA_10'], data['SMA_30'], data['SMA_50'] = sma_10, sma_30, sma_50
+    return data
+
+def get_obv(data):
+    data['OBV'] = ta.obv(data['Close'])
+
+    
+
     return data
 
 def recent_crossover(indicator, signal):
