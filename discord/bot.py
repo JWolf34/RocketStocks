@@ -212,28 +212,6 @@ def run_bot():
         else:
             await interaction.followup.send("No tickers added to {} watchlist. Invalid tickers: {}".format(message_flavor, ", ".join(invalid_tickers)), ephemeral=True)
 
-    # Are the news commands necessary? See if it's worth implementing them into reports or something
-    '''
-    @client.tree.command(name = "news-all", description= "Get the news on all the tickers on your watchlist",)
-    async def newsall(interaction: discord.Interaction):
-        tickers = sd.get_tickers()
-        embed = sd.get_news(tickers)
-        await interaction.response.send_message(embed=embed)
-
-    @client.tree.command(name = "news", description= "Get the news from all tickers given in a comma-separated list",)
-    async def news(interaction: discord.Interaction, tickers: str):
-        tickerList = []
-        for ticker in tickers.split(','):
-            tickerList.append(ticker)
-
-        embed = discord.Embed()
-        message = ''
-        for ticker in tickerList:
-            message += sd.get_news(ticker)
-        embed.description = message
-        await interaction.response.send_message(embed=embed)
-        '''
-
     @client.tree.command(name = "fetch-csv", description= "Returns data file for input ticker. Default: 1 year period.",)
     @app_commands.describe(ticker = "Ticker to return data for")
     @app_commands.describe(period = "Range of the data returned. Valid values: 1d, 5d, 1mo, 3mo, 6mo, 1y, 2y, 5y, 10y, ytd, max. Default: 1y")
