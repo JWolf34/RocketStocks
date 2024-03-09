@@ -115,7 +115,7 @@ def fetch_charts(ticker):
 
 # Return the latest data with technical indicators as a Pandas datafram
 def fetch_data(ticker):
-    data = pd.read_csv("data/CSV/{}.csv".format(ticker), parse_dates=True, index_col='Date')
+    data = pd.read_csv("data/CSV/{}.csv".format(ticker), parse_dates=True, index_col='Date').sort_index()
     return data
 
 def fetch_analysis(ticker):
@@ -173,6 +173,9 @@ def get_next_earnings_date(ticker):
     except IndexError as e:
         print(e)
         return "Earnings date unavailable"
+    except KeyError as e:
+        print(e)
+        return "Earnings Date unavailable"
     
 
 def download_financials(ticker):
@@ -201,12 +204,8 @@ def fetch_financials(ticker):
 
 def test():
     # Testing retrieving income statement
-    downloaded_data = download_data("MSFT", "1y", "1d")
-    download_data_and_update_csv("MSFT", "1y", "1d")
-    fetched_data = fetch_data("MSFT")
-
-    print('Done!')
-
+    yf.download("ANF", period='max', interval="1d").to_csv("ANF_MAX.csv")
+    yf.download("ANF", period='1y', interval="1d").to_csv("ANF_1Y.csv")
 
 
     #Testing retrieving financials with yfinance
