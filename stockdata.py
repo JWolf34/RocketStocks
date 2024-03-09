@@ -201,27 +201,39 @@ def fetch_financials(ticker):
         financials[i] = financials_path + "/" + financials[i]
     return financials
     
+def download_masterlist():
+    import time
+    masterlist_file = "data/ticker_masterlist.txt"
+
+    if os.path.isfile(masterlist_file):
+        with open(masterlist_file, 'r') as masterlist:
+            tickers = masterlist.read().splitlines()
+        invalid_tickers = []
+        num_requests = 0
+        requests_limit = 1500
+        for ticker in tickers:
+            if num_requests >= requests_limit:
+                time.sleep(3600)
+                num_requests = 0
+            data = download_data(ticker, "5y", "1d")
+            if len(data) > 0:
+                update_csv(data, ticker)
+            else:
+                invalid_tickers.append(ticker)
+            num_requests += 1
+        for ticker in invalid_tickers:
+            if ticker in tickers:
+                tickers.remove(ticker)
+        with open(masterlist_file,'w') as masterlist:
+            masterlist.write("\n".join(tickers))
+
+    else:
+        pass
+
 
 def test():
-    # Testing retrieving income statement
-    yf.download("ANF", period='max', interval="1d").to_csv("ANF_MAX.csv")
-    yf.download("ANF", period='1y', interval="1d").to_csv("ANF_1Y.csv")
-
-
-    #Testing retrieving financials with yfinance
-    '''
-    ticker = yf.Ticker("ANF")
-    print(ticker.info)
-    print(ticker.income_stmt)
-    print(ticker.quarterly_income_stmt)
-    print(ticker.balance_sheet)
-    print(ticker.quarterly_balance_sheet)
-    print(ticker.cashflow)
-    print(ticker.quarterly_cashflow)
-    print(ticker.get_income_stmt())
-    print(ticker.get_earnings_dates(limit=8))
-    '''
+    download_masterlist()
 
 if __name__ == "__main__":
-    #test()
-    pass
+    test()
+    #pass
