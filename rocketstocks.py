@@ -23,9 +23,7 @@ def rocketStocks():
 
 if (__name__ == '__main__'):
     rocketStocks()
-    #subprocess.run(["python", "scheduler.py"])
-
-    #subprocess.run(["python", "discord/bot.py"])
+    
 
     
 

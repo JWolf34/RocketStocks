@@ -5,6 +5,15 @@ import os
 
 yf.pdr_override()
 
+# Paths for writing data
+DAILY_DATA_PATH = "data/CSV/daily"
+INTRADAY_DATA_PATH = "data/CSV/intraday"
+FINANCIALS_PATH = "data/financials"
+PLOTS_PATH = "data/plots"
+ANALYSIS_PATH = "data/analysis"
+ATTACHMENTS_PATH = "discord/attachments"
+
+
 def validate_ticker(ticker):
     data = yf.download(ticker, period="1d")
     if len(data) == 0:
@@ -62,10 +71,8 @@ def download_data(ticker, period, interval):
 
     return data
 
-def update_csv(data, ticker):
+def update_csv(data, ticker, path):
 
-
-    path = "data/CSV"
     validate_path(path)
     path += "/{}.csv".format(ticker)
 
@@ -85,11 +92,11 @@ def update_csv(data, ticker):
     # Save the combined data to the CSV file
     combined_data.to_csv(path)
 
-def download_data_and_update_csv(ticker, period, interval):
+def download_data_and_update_csv(ticker, period, interval, path=DAILY_DATA_PATH):
     data = download_data(ticker, period, interval)
-    update_csv(data, ticker)
+    update_csv(data, ticker, path)
     print('Done!')
-
+'''
 def combine_csv(ticker):
 
     # Load historical and current data into data frames
@@ -104,23 +111,24 @@ def combine_csv(ticker):
     
     # Save the combined data to the CSV file
     combined_data.to_csv("data/CSV/" + ticker + ".csv")
+    '''
 
 # Return all filepaths of all charts for a given ticker
 def fetch_charts(ticker):
-    charts_path = "data/plots/{}/".format(ticker)
+    charts_path = "{}/{}/".format(PLOTS_PATH,ticker)
     charts = os.listdir(charts_path)
     for i in range(0, len(charts)):
         charts[i] = charts_path + charts[i]
     return charts
 
 # Return the latest data with technical indicators as a Pandas datafram
-def fetch_data(ticker):
-    data = pd.read_csv("data/CSV/{}.csv".format(ticker), parse_dates=True, index_col='Date').sort_index()
+def fetch_daily_data(ticker):
+    data = pd.read_csv("{}/{}.csv".format(DAILY_DATA_PATH, ticker), parse_dates=True, index_col='Date').sort_index()
     return data
 
 def fetch_analysis(ticker):
     analyis = ''
-    path = "data/analysis/{}/".format(ticker)
+    path = "{}/{}/".format(ANALYSIS_PATH,ticker)
     for file in os.listdir(path):
         data = open(path + file)
         analyis += data.read() + "\n"
@@ -150,17 +158,19 @@ def validate_path(path):
     else:
         return True
 
+'''
 def get_stock_data(ticker):
     try:
         return pd.read_csv("data/CSV/{}.csv".format(ticker))
     except FileNotFoundError as e:
         print(e)
         return pd.DataFrame()
+        '''
         
 
 def get_days_summary(ticker):
     # Assumes data has been pulled recently. Mainly called when running or fetching reports. 
-    data  = get_stock_data(ticker)
+    data  = fetch_daily_data(ticker)
     if len(data) > 0:
         summary = data[['Open', "Close", "High", "Low", "Volume"]].iloc[-1]
         return summary
@@ -179,29 +189,29 @@ def get_next_earnings_date(ticker):
     
 
 def download_financials(ticker):
-    financials_path = "data/financials/{}".format(ticker)
-    validate_path(financials_path)
+    path = "{}/{}".format(FINANCIALS_PATH,ticker)
+    validate_path(path)
     
     stock = yf.Ticker(ticker)
-    stock.income_stmt.to_csv("{}/income_stmt.csv".format(financials_path))
-    stock.quarterly_income_stmt.to_csv("{}/quarterly_income_stmt.csv".format(financials_path))
-    stock.balance_sheet.to_csv("{}/balance_sheet.csv".format(financials_path))
-    stock.quarterly_balance_sheet.to_csv("{}/quarterly_balance_sheet.csv".format(financials_path))
-    stock.cashflow.to_csv("{}/cashflow.csv".format(financials_path))
-    stock.quarterly_cashflow.to_csv("{}/quarterly_cashflow.csv".format(financials_path))
-    #stock.get_income_stmt().to_csv("{}/income_stmt.csv".format(financials_path))
-    #stock.get_earnings_dates(limit=8)
+    stock.income_stmt.to_csv("{}/income_stmt.csv".format(path))
+    stock.quarterly_income_stmt.to_csv("{}/quarterly_income_stmt.csv".format(path))
+    stock.balance_sheet.to_csv("{}/balance_sheet.csv".format(path))
+    stock.quarterly_balance_sheet.to_csv("{}/quarterly_balance_sheet.csv".format(path))
+    stock.cashflow.to_csv("{}/cashflow.csv".format(path))
+    stock.quarterly_cashflow.to_csv("{}/quarterly_cashflow.csv".format(path))
+    stock.get_earnings_dates(limit=8).to_csv("{}/earnings_dates.csv".format(path)
+    )
     
 def fetch_financials(ticker):
-    financials_path = "data/financials/{}".format(ticker)
-    if not validate_path(financials_path):
+    path = "{}/{}".format(FINANCIALS_PATH,ticker)
+    if not validate_path(path):
         download_financials(ticker)
-    financials = os.listdir(financials_path)
+    financials = os.listdir(path)
     for i in range(0, len(financials)):
-        financials[i] = financials_path + "/" + financials[i]
+        financials[i] = path + "/" + financials[i]
     return financials
     
-def download_masterlist():
+def download_masterlist_daily():
     import time
     masterlist_file = "data/ticker_masterlist.txt"
 
@@ -215,9 +225,9 @@ def download_masterlist():
             if num_requests >= requests_limit:
                 time.sleep(3600)
                 num_requests = 0
-            data = download_data(ticker, "5y", "1d")
+            data = download_data(ticker, "max", "1d")
             if len(data) > 0:
-                update_csv(data, ticker)
+                update_csv(data, ticker, DAILY_DATA_PATH)
             else:
                 invalid_tickers.append(ticker)
             num_requests += 1
@@ -232,7 +242,7 @@ def download_masterlist():
 
 
 def test():
-    download_masterlist()
+    download_masterlist_daily()
 
 if __name__ == "__main__":
     test()

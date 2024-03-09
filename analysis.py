@@ -11,8 +11,15 @@ import pandas_ta.volume as tavolume
 import pandas_ta.trend as tatrend
 import mplfinance as mpf
 import stockdata as sd
-import yfinance as yf
+import yfinance as yfupdayte
 
+# Paths for writing data
+DAILY_DATA_PATH = "data/CSV/daily"
+INTRADAY_DATA_PATH = "data/CSV/intraday"
+FINANCIALS_PATH = "data/financials"
+PLOTS_PATH = "data/plots"
+ANALYSIS_PATH = "data/analysis"
+ATTACHMENTS_PATH = "discord/attachments"
 
 # Plotting Technical Indicators
 def plot_volume(data, ticker):
@@ -392,7 +399,7 @@ def generate_analysis(data, ticker):
 
 def run_analysis(tickers=sd.get_tickers()):
     for ticker in tickers:
-        sd.download_data_and_update_csv(ticker=ticker, period="max", interval="1d")
+        sd.download_data_and_update_csv(ticker=ticker, period="max", interval="1d", DAILY_DATA_PATH)
         #generate_indicators(ticker)
         data = sd.fetch_data(ticker)
         generate_charts(data, ticker)
