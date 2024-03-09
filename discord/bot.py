@@ -12,6 +12,8 @@ import stockdata as sd
 import analysis as an
 import datetime as dt
 
+# Paths for writing data
+ATTACHMENTS_PATH = "discord/attachments"
 
 
 def run_bot():
@@ -239,8 +241,8 @@ def run_bot():
     async def fetch_csv(interaction: discord.Interaction, ticker: str, period: str = "1y", interval: str = "1d"):
         await interaction.response.defer(ephemeral=True)
         try:
-            sd.download_data_and_update_csv(ticker, period, interval)
-            file = discord.File("data/CSV/{}.csv".format(ticker))
+            sd.download_data_and_update_csv(ticker, period, interval, ATTACHMENTS_PATH)
+            file = discord.File("{}/{}.csv".format(ATTACHMENTS_PATH,ticker))
             await interaction.followup.send(file=file, content= "Data file for " + ticker)
         except Exception as e:
             print(e)
