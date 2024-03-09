@@ -323,8 +323,29 @@ def get_sma(data):
     data['SMA_10'], data['SMA_30'], data['SMA_50'] = sma_10, sma_30, sma_50
     return data
 
+def plot_obv(data, ticker):
+
+    save      = dict(fname='data/plots/{}/{}_OBV.png'.format(ticker, ticker),dpi=500,pad_inches=0.25)
+    data      = get_obv(data)
+    data      = data.tail(365)
+    close     = data['Close']
+    obv       = data['OBV']
+    #buy_signal, sell_signal = buy_sell_signals(sma_10, sma_50, data['Close'])
+    close_slope = ta.slope(data['Close'], 60)#,as_angle=True, to_degress=True)
+    obv_slope = ta.slope(obv, 60)#,as_angle=True, to_degree=True)
+    #print("{} Close Slope: {}".format(ticker, close_slope))
+    #print("{} OBV Slope: {}".format(ticker, obv_slope))
+    apds  = [
+        #mpf.make_addplot(close_slope, color= 'purple', label='CLOSE_SLOPE'),
+        #mpf.make_addplot(obv_slope, color = 'orange',panel=1,label="OVB_SLOPE"),
+        mpf.make_addplot(obv, color='lightblue',panel=1,label="OBV",ylabel='On-Balance Volume')
+    ]
+
+    mpf.plot(data,type='candle',ylabel='Close Price',addplot=apds,figscale=1.6,figratio=(6,5),title='\n\n{} On-Balance Volume'.format(ticker),
+            style='tradingview',panel_ratios=(1,1),savefig=save)
+
 def get_obv(data):
-    data['OBV'] = ta.obv(data['Close'])
+    data['OBV'] = ta.obv(data['Close'], data['Volume'])
 
     
 
@@ -356,16 +377,18 @@ def generate_charts(data, ticker):
     plot_macd(data, ticker)
     plot_rsi(data, ticker)
     plot_sma(data,ticker)
+    plot_obv(data,ticker)
 
     
 # Running analysis on techincal indicators to generate buy/sell signals
 def generate_analysis(data, ticker):
     if not (os.path.isdir("data/analysis/" + ticker)):
         os.makedirs("data/analysis/" + ticker)
-
+    
     analyze_macd(data, ticker)
     analyze_rsi(data, ticker)
     analyze_sma(data,ticker)
+    #analyze_obv(data,ticker)
 
 def run_analysis(tickers=sd.get_tickers()):
     for ticker in tickers:
