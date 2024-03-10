@@ -4,11 +4,8 @@ config.json
 #Data folder
 data/
 
-#Plots folder
-plots/
+#Attachments folder
+discord/attachments
 
-#Analysis folder
-analysis/
-
-#old_data folder
-old_data/
+#ENV file
+.env

@@ -401,7 +401,7 @@ def run_analysis(tickers=sd.get_tickers()):
     for ticker in tickers:
         sd.download_data_and_update_csv(ticker=ticker, period="max", interval="1d", path=DAILY_DATA_PATH)
         #generate_indicators(ticker)
-        data = sd.fetch_data(ticker)
+        data = sd.fetch_daily_data(ticker)
         generate_charts(data, ticker)
         generate_analysis(data, ticker)
 
@@ -410,7 +410,7 @@ def test():
     # Testing mplfinance plot styles:
 
     styles = mpf.available_styles()
-    data = sd.fetch_data('MSFT')
+    data = sd.fetch_daily_data('MSFT')
     data = get_macd(data)
     for style in styles:
         mpf.plot(data, style=style, volume=True, title=style)
