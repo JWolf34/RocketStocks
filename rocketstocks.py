@@ -7,9 +7,6 @@ import threading
 import scheduler
 
 def rocketStocks():
-
-    
-
     bot_thread = threading.Thread(target=Discord.run_bot)
     scheduler_thread = threading.Thread(target=scheduler.scheduler)
 
@@ -17,10 +14,6 @@ def rocketStocks():
     scheduler_thread.start()
     
     bot_thread.join()
-
-    
-
-
 
 if (__name__ == '__main__'):
     rocketStocks()

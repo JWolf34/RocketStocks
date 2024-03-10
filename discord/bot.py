@@ -384,8 +384,12 @@ def run_bot():
                 await interaction.user.send(message, files=files, embed=links)
             else:
                 await interaction.channel.send(message, files=files, embed=links)
+        if len(invalid_tickers) > 0:
+            await interaction.followup.send("Fetched reports for {}. Failed to fetch reports for {}.".format(", ".join(tickers), ", ".join(invalid_tickers)), ephemeral=True)
+        else:
+            await interaction.followup.send("Fetched reports!", ephemeral=True)
 
-        await interaction.followup.send("Fetched reports!", ephemeral=True)
+        
             
 
     def build_report(ticker):
