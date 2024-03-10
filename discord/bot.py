@@ -17,7 +17,7 @@ ATTACHMENTS_PATH = "discord/attachments"
 
 def get_bot_token():
     try:
-        token = os.environ.get('DISCORD_TOKEN')
+        token = os.getencv('DISCORD_TOKEN')
         return token
     except Exception as e:
         print(e)

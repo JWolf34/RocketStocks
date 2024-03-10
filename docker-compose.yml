@@ -6,5 +6,5 @@ services:
       context: . 
     restart: always
     environment:
-      DISCORD-TOKEN: "1"
+      DISCORD_TOKEN: "1"
 
