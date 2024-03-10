@@ -15,12 +15,17 @@ import datetime as dt
 # Paths for writing data
 ATTACHMENTS_PATH = "discord/attachments"
 
+def get_bot_token():
+    try:
+        token = os.environ.get('DISCORD_TOKEN')
+        return token
+    except Exception as e:
+        print(e)
+        print("Failed to fetch bot token")
+        return ""
 
 def run_bot():
-    with open('discord/config.json') as config_file:
-        data = json.load(config_file)
-
-    TOKEN = data['discord-token']
+    TOKEN = get_bot_token()
 
     intents = discord.Intents.default()
     client = commands.Bot(command_prefix='$', intents=intents)
@@ -33,6 +38,8 @@ def run_bot():
         except Exception as e:
             print(e)
         print('Connected!')
+
+
 
     @client.tree.command(name = "add-tickers", description= "Add tickers to the selected watchlist",)
     @app_commands.describe(tickers = "Ticker to add to watchlist (separated by spaces)")
@@ -213,18 +220,26 @@ def run_bot():
             await interaction.followup.send("No tickers added to {} watchlist. Invalid tickers: {}".format(message_flavor, ", ".join(invalid_tickers)), ephemeral=True)
 
     @client.tree.command(name = "fetch-csv", description= "Returns data file for input ticker. Default: 1 year period.",)
-    @app_commands.describe(ticker = "Ticker to return data for")
+    @app_commands.describe(tickers = "Tickers to return data for (separated by spaces)")
     @app_commands.describe(period = "Range of the data returned. Valid values: 1d, 5d, 1mo, 3mo, 6mo, 1y, 2y, 5y, 10y, ytd, max. Default: 1y")
     @app_commands.describe(interval = "Range between intraday data. Valid values: 1m, 2m, 5m, 15m, 30m, 60m, 90m, 1h, 1d, 5d, 1wk, 1mo, 3mo. Default: 1d")
-    async def fetch_csv(interaction: discord.Interaction, ticker: str, period: str = "1y", interval: str = "1d"):
+    async def fetch_csv(interaction: discord.Interaction, tickers: str, period: str = "1y", interval: str = "1d"):
         await interaction.response.defer(ephemeral=True)
         try:
-            sd.download_data_and_update_csv(ticker, period, interval, ATTACHMENTS_PATH)
-            file = discord.File("{}/{}.csv".format(ATTACHMENTS_PATH,ticker))
-            await interaction.followup.send(file=file, content= "Data file for " + ticker)
+            files = []
+            tickers, invalid_tickers = sd.get_list_from_tickers(tickers)
+            for ticker in tickers:
+                sd.download_data_and_update_csv(ticker, period, interval, ATTACHMENTS_PATH)
+                file = discord.File("{}/{}.csv".format(ATTACHMENTS_PATH,ticker))
+                await interaction.user.send(content = "Data file for {}".format(ticker), file=file)
+            if len(invalid_tickers) > 0:
+                await interaction.followup.send("Fetched data files for {}. Invalid tickers:".format(", ".join(tickers), ", ".join(invalid_tickers)), ephemeral=True)
+            else:
+                await interaction.followup.send("Fetched data files for {}".format(", ".join(tickers)), ephemeral=True)
+
         except Exception as e:
             print(e)
-            await interaction.followup.send("Failed to fetch data file. Please ensure your parameters are valid.")
+            await interaction.followup.send("Failed to fetch data files. Please ensure your parameters are valid.")
     
     @client.tree.command(name = "run-analysis", description= "Run analysis on all tickers in the selected watchlist",)
     @app_commands.describe(watchlist = "Which watchlist you want to make changes to")
