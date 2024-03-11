@@ -24,6 +24,15 @@ def get_bot_token():
         print("Failed to fetch bot token")
         return ""
 
+def get_reports_channel_id()
+    try:
+        channel_id = os.getenv("REPORTS_CHANNEL_ID")
+        return channel_id
+    else:
+        print(e)
+        print("Failed to fetch Reports channel ID")
+        return ""
+
 def run_bot():
     TOKEN = get_bot_token()
 
@@ -272,7 +281,7 @@ def run_bot():
             #Send out global reports
 
             # Configure channel to send reports to
-            channel = await client.fetch_channel('1150890013471555705')
+            channel = await client.fetch_channel(get_reports_channel_id())
             
             for ticker in sd.get_tickers():
                 report = build_report(ticker)
