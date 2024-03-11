@@ -353,10 +353,44 @@ def plot_obv(data, ticker):
 
 def get_obv(data):
     data['OBV'] = ta.obv(data['Close'], data['Volume'])
-
-    
-
     return data
+
+def plot_adx(data,ticker):
+
+    TREND_UPPER = 40
+    TREND_LOWER = 20
+    save      = dict(fname='data/plots/{}/{}_ADX.png'.format(ticker, ticker),dpi=500,pad_inches=0.25)
+    data      = get_adx(data)
+    data      = data.tail(365)
+    adx    = data['ADX']
+    dip    = data['DI+']
+    din    = data['DI-']
+    hline_upper  = [TREND_UPPER] * data.shape[0]
+    hline_lower  = [TREND_LOWER] * data.shape[0]
+
+    #buy_signal, sell_signal = buy_sell_signals(sma_10, sma_50, data['Close'])
+    apds  = [
+        mpf.make_addplot(adx,type='line',color='purple',label='ADX',panel=1),
+        mpf.make_addplot(dip,type='line',color='blue',label='DI+',panel=1),
+        mpf.make_addplot(din,type='line',color='red',label ='DI-',panel=1),
+        mpf.make_addplot(hline_upper,type='line',linestyle='--',color='g',panel=1),
+        mpf.make_addplot(hline_lower,type='line',linestyle='--',color='r',panel=1)
+    ]
+
+    mpf.plot(data,type='candle',ylabel='Close Price',addplot=apds,figscale=1.6,figratio=(6,5),title='\n\n{} Average Direction Index'.format(ticker),
+    panel_ratios=(1,1), style='tradingview',savefig=save)
+
+def analyze_adx(data, ticker):
+    pass
+
+def signal_adx(data):
+    pass
+
+def get_adx(data):
+    adx = ta.adx(data['High'], data['Low'], data['Close'])
+    data['ADX'], data["DI+"], data["DI-"] = adx['ADX_14'], adx['DMP_14'], adx['DMN_14']
+    return data
+
 
 def recent_crossover(indicator, signal):
 
@@ -380,11 +414,12 @@ def generate_charts(data, ticker):
 
     # Generate technical indicator charts
 
-    plot_volume(data, ticker)
-    plot_macd(data, ticker)
-    plot_rsi(data, ticker)
+    plot_volume(data,ticker)
+    plot_macd(data,ticker)
+    plot_rsi(data,ticker)
     plot_sma(data,ticker)
     plot_obv(data,ticker)
+    plot_adx(data,ticker)
 
     
 # Running analysis on techincal indicators to generate buy/sell signals
