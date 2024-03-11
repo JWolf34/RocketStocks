@@ -349,7 +349,7 @@ def plot_obv(data, ticker):
 
     save      = dict(fname='data/plots/{}/{}_OBV.png'.format(ticker, ticker),dpi=500,pad_inches=0.25)
     data      = get_obv(data)
-    data      = data.tail(365)
+    data      = data.tail(60)
     close     = data['Close']
     obv       = data['OBV']
     #buy_signal, sell_signal = buy_sell_signals(sma_10, sma_50, data['Close'])
@@ -474,7 +474,7 @@ def analyze_adx(data, ticker):
 
         # HOLD SIGNAL - ADX > TREND_LOWER and DI+ > DI-
         elif (signal == "HOLD"):
-            analysis = "ADX: **{}** - The ADX line  ({:,.2f}) has stayed above {} and DI+ ({:,.2f}) is above DI- ({:,.2f}), indicating the stock is in an uptrend.".format(signal, TREND_LOWER, dip, din)
+            analysis = "ADX: **{}** - The ADX line  ({:,.2f}) has stayed above {} and DI+ ({:,.2f}) is above DI- ({:,.2f}), indicating the stock is in an uptrend.".format(signal, adx, TREND_LOWER, dip, din)
             adx_analysis.write(analysis)
 
         # WEAK SELL SIGNAL - ADX between TREND_UPPER and TREND_LOWER and DI- > DI+ OR ADX < TREND_LOWER
@@ -550,6 +550,22 @@ def recent_crossover(indicator, signal):
 
     return None
 
+def signals_score(data):
+    score = 0.0
+    scores_legend = {
+        'BUY':1.0,
+        'WEAK BUY':0.75,
+        'HOLD':0.5,
+        'WEAK SELL':0.0,
+        'SELL':0.0
+    }
+
+    score += scores_legend.get(signal_rsi(data))
+    score += scores_legend.get(signal_macd(data))
+    score += scores_legend.get(signal_sma(data))
+    score += scores_legend.get(signal_adx(data))
+    return score
+
 def generate_charts(data, ticker):
     
     if not (os.path.isdir("data/plots/" + ticker)):
@@ -575,6 +591,8 @@ def generate_analysis(data, ticker):
     analyze_sma(data,ticker)
     #analyze_obv(data,ticker)
     analyze_adx(data,ticker)
+
+
 
 def run_analysis(tickers=sd.get_tickers()):
     for ticker in tickers:
