@@ -560,10 +560,10 @@ def signals_score(data):
         'SELL':0.0
     }
 
-    score += scores_legend.get(signal_rsi(data))
-    score += scores_legend.get(signal_macd(data))
-    score += scores_legend.get(signal_sma(data))
-    score += scores_legend.get(signal_adx(data))
+    score += scores_legend.get(signal_rsi(get_rsi(data)))
+    score += scores_legend.get(signal_macd(get_macd(data)))
+    score += scores_legend.get(signal_sma(get_sma(data)))
+    score += scores_legend.get(signal_adx(get_adx(data)))
     return score
 
 def generate_charts(data, ticker):
