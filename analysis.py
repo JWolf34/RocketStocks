@@ -388,9 +388,9 @@ def plot_adx(data,ticker):
 
             if adx.iloc[i] > TREND_LOWER:
                 if dip.iloc[i] > din.iloc[i]:
-                    buy_signals[i] = close[i]
+                    buy_signals[i] = close.iloc[i]
                 else:
-                    sell_signals[i] = close[i]
+                    sell_signals[i] = close.iloc[i]
 
             '''
             for j in range(0,5):
@@ -503,15 +503,15 @@ def signal_adx(data):
     prev_trend_lower = [TREND_LOWER] * 5
 
     # BUY SIGNAL - ADX crosses above TREND_UPPER and DI+ > DI-
-    if recent_crossover(prev_adx, prev_trend_lower) == 'UP' and dip.iloc[-1] > din.iloc[-1]:
+    if recent_crossover(prev_adx, prev_trend_upper) == 'UP' and dip.iloc[-1] > din.iloc[-1]:
         return 'BUY'
     
     # WEAK BUY SIGNAL - ADX between TREND_UPPER and TREND_LOWER and DI+ > DI-
-    elif recent_crossover(prev_adx, prev_trend_lower) == 'UP' and adx.iloc[-i] < TREND_UPPER and dip.iloc[-1] > din.iloc[-1]:
+    elif recent_crossover(prev_adx, prev_trend_lower) == 'UP' and adx.iloc[-1] < TREND_UPPER and dip.iloc[-1] > din.iloc[-1]:
         return "WEAK BUY"
     
     # WEAK SELL SIGNAL - ADX between TREND_UPPER and TREND_LOWER and DI- > DI+ OR ADX < TREND_LOWER
-    elif (adx.iloc[-1] < TREND_UPPER and adx.iloc[-1] > TREND_UPPER and din.iloc[-1] > dip.iloc[-1]) or adx.iloc[-1] < TREND_LOWER:
+    elif (adx.iloc[-1] < TREND_UPPER and adx.iloc[-1] > TREND_LOWER and din.iloc[-1] > dip.iloc[-1]) or adx.iloc[-1] < TREND_LOWER:
         return "WEAK SELL"
 
     # SELL SIGNAL - ADX > TREND_UPPER and DI- > DI+
