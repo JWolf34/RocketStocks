@@ -24,11 +24,11 @@ def get_bot_token():
         print("Failed to fetch bot token")
         return ""
 
-def get_reports_channel_id()
+def get_reports_channel_id():
     try:
         channel_id = os.getenv("REPORTS_CHANNEL_ID")
         return channel_id
-    else:
+    except Exception as e:
         print(e)
         print("Failed to fetch Reports channel ID")
         return ""

@@ -233,8 +233,8 @@ def get_macd(data):
 
 def plot_sma(data,ticker):
     def buy_sell_signals(sma_10, sma_50,close):
-        buy_signals = [np.nan] * 365
-        sell_signals = [np.nan] * 365
+        buy_signals = [np.nan] * sma_10.shape[0]
+        sell_signals = [np.nan] * sma_10.shape[0]
         
         for i in range(1,sma_10.size):
             sma_10_values = [sma_10.iloc[i-1], sma_10.iloc[i]]
@@ -257,12 +257,18 @@ def plot_sma(data,ticker):
     sma_50    = data['SMA_50']
     buy_signal, sell_signal = buy_sell_signals(sma_10, sma_50, data['Close'])
     apds  = [
-        mpf.make_addplot(buy_signal,color='g',type='scatter',markersize=100,marker='^',label='Buy Signal'),
-        mpf.make_addplot(sell_signal,color='r',type='scatter',markersize=100,marker='v',label='Sell Signal'),
+        #mpf.make_addplot(buy_signal,color='g',type='scatter',markersize=100,marker='^',label='Buy Signal'),
+        #mpf.make_addplot(sell_signal,color='r',type='scatter',markersize=100,marker='v',label='Sell Signal'),
         mpf.make_addplot(sma_10, color='blue', label = 'SMA 10'),
         mpf.make_addplot(sma_30, color='purple', label = 'SMA 30'),
         mpf.make_addplot(sma_50, color='red', label = 'SMA 50')
     ]
+
+    if not all_values_are_nan(buy_signal):
+        apds.append(mpf.make_addplot(buy_signal,color='g',type='scatter',markersize=100,marker='^',label='Buy Signal'))
+    if not all_values_are_nan(sell_signal):
+        apds.append(mpf.make_addplot(sell_signal,color='r',type='scatter',markersize=100,marker='v',label='Sell Signal'))
+
 
     mpf.plot(data,type='candle',ylabel='Close Price',addplot=apds,figscale=1.6,figratio=(6,5),title='\n\n{} Simple Moving Average'.format(ticker),
             style='tradingview',savefig=save)
@@ -357,6 +363,9 @@ def get_obv(data):
 
 def plot_adx(data,ticker):
 
+    def buy_sell_signals():
+        pass
+
     TREND_UPPER = 40
     TREND_LOWER = 20
     save      = dict(fname='data/plots/{}/{}_ADX.png'.format(ticker, ticker),dpi=500,pad_inches=0.25)
@@ -390,6 +399,13 @@ def get_adx(data):
     adx = ta.adx(data['High'], data['Low'], data['Close'])
     data['ADX'], data["DI+"], data["DI-"] = adx['ADX_14'], adx['DMP_14'], adx['DMN_14']
     return data
+
+#Utilities
+def all_values_are_nan(values):
+    if not all([x == np.nan for x in values]):
+        return True
+    else:
+        return False
 
 
 def recent_crossover(indicator, signal):
