@@ -213,11 +213,10 @@ def fetch_financials(ticker):
     
 def download_masterlist_daily():
     import time
-    masterlist_file = "data/ticker_masterlist.txt"
+    
+    tickers = get_masterlist_tickers()
 
-    if os.path.isfile(masterlist_file):
-        with open(masterlist_file, 'r') as masterlist:
-            tickers = masterlist.read().splitlines()
+    if isinstance(tickers, list):
         invalid_tickers = []
         num_requests = 0
         requests_limit = 1500
@@ -239,6 +238,17 @@ def download_masterlist_daily():
 
     else:
         pass
+
+def get_masterlist_tickers():
+    masterlist_file = "data/ticker_masterlist.txt"
+
+    if os.path.isfile(masterlist_file):
+        with open(masterlist_file, 'r') as masterlist:
+            tickers = masterlist.read().splitlines()
+            return tickers
+    else:
+        print("No ticker masterlist available.")
+        return ""
 
 
 def test():
