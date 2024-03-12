@@ -12,6 +12,7 @@ import pandas_ta.trend as tatrend
 import mplfinance as mpf
 import stockdata as sd
 import yfinance as yfupdayte
+import csv
 
 # Paths for writing data
 DAILY_DATA_PATH = "data/CSV/daily"
@@ -611,7 +612,10 @@ def get_masterlist_scores():
             print(e)
             print("Skipping {}".format(ticker))
     
-    print(scores)
+    with open('{}/daily_rankings.csv'.format(ATTACHMENTS_PATH), 'w+') as f:  # You will need 'wb' mode in Python 2.x
+        w = csv.DictWriter(f, sorted(scores.keys(), reverse=True))
+        w.writeheader()
+        w.writerow(scores)
 
 
 
