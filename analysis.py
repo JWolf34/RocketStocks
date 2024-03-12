@@ -529,7 +529,7 @@ def get_adx(data):
 
 #Utilities
 def all_values_are_nan(values):
-    if all([x == np.nan for x in values]):
+    if np.isnan(values).all():
         return True
     else:
         return False
