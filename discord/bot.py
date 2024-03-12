@@ -278,7 +278,7 @@ def run_bot():
 
         if (dt.datetime.now().weekday() < 5):
             
-            #Send out global reports
+            #Send out global report
 
             # Configure channel to send reports to
             channel = await client.fetch_channel(get_reports_channel_id())
@@ -288,6 +288,8 @@ def run_bot():
                 message, files = report.get('message'), report.get('files')
                 await channel.send(message, files=files)
 
+            await channel.send("Daily Stock Rankings", file=discord.File("{}/daily_rankings.csv".format(ATTACHMENTS_PATH)))
+
 
         else:
             pass
@@ -295,7 +297,7 @@ def run_bot():
     @send_reports.before_loop
     async def delay_send_reports():
         hour = 6
-        minute = 0
+        minute = 30
         now = dt.datetime.now()
         future = dt.datetime(now.year, now.month, now.day, hour, minute)
         if now.hour >= hour and now.minute > minute:
