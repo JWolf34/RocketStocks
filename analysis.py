@@ -240,8 +240,8 @@ def get_macd(data):
 
 def plot_sma(data,ticker):
     def buy_sell_signals(sma_10, sma_50,close):
-        buy_signals = [np.nan] * sma_10.shape[0]
-        sell_signals = [np.nan] * sma_10.shape[0]
+        buy_signals = [np.nan] * close.shape[0]
+        sell_signals = [np.nan] * close.shape[0]
         
         for i in range(1,sma_10.size):
             sma_10_values = [sma_10.iloc[i-1], sma_10.iloc[i]]
@@ -251,9 +251,9 @@ def plot_sma(data,ticker):
                 buy_signals[i] = close.iloc[i]*0.95
             elif cross == 'DOWN':
                 sell_signals[i] = close.iloc[i]*1.05
-            else:
-                buy_signals[i] = np.nan
-                sell_signals[i] = np.nan
+            #else:
+            #   buy_signals[i] = np.nan
+            #    sell_signals[i] = np.nan
         return buy_signals, sell_signals
 
     save      = dict(fname='data/plots/{}/{}_SMA.png'.format(ticker, ticker),dpi=500,pad_inches=0.25)
@@ -550,7 +550,8 @@ def recent_crossover(indicator, signal):
 
     return None
 
-def signals_score(data):
+def signals_score(ticker):
+    data = sd.fetch_daily_data(ticker)
     score = 0.0
     scores_legend = {
         'BUY':1.0,
@@ -592,6 +593,26 @@ def generate_analysis(data, ticker):
     #analyze_obv(data,ticker)
     analyze_adx(data,ticker)
 
+def get_masterlist_scores():
+    scores = {}
+
+    tickers = sd.get_masterlist_tickers()
+    for ticker in tickers:
+        print("Evaluating {}".format(ticker))
+        try:
+            score = signals_score(ticker)
+            if score in scores.keys():
+                score_tickers = scores.get(score)
+                score_tickers.append(ticker)
+                scores[score] = score_tickers
+            else:
+                scores[score] = [ticker]
+        except Exception as e:
+            print(e)
+            print("Skipping {}".format(ticker))
+    
+    print(scores)
+
 
 
 def run_analysis(tickers=sd.get_tickers()):
@@ -604,16 +625,11 @@ def run_analysis(tickers=sd.get_tickers()):
 
 
 def test():
-    # Testing mplfinance plot styles:
-
-    styles = mpf.available_styles()
-    data = sd.fetch_daily_data('MSFT')
-    data = get_macd(data)
-    for style in styles:
-        mpf.plot(data, style=style, volume=True, title=style)
+    #sd.download_masterlist_daily()
+    get_masterlist_scores()
 
 if __name__ == '__main__':  
-    #test()
+    test()
     pass
 
 
