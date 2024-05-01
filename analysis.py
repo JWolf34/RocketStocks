@@ -595,6 +595,9 @@ def generate_analysis(data, ticker):
     analyze_adx(data,ticker)
 
 def get_masterlist_scores():
+    return pd.read_csv('{}/daily_rankings.csv'.format(ATTACHMENTS_PATH))
+
+def generate_masterlist_scores():
     scores = {}
 
     tickers = sd.get_masterlist_tickers()
@@ -611,11 +614,18 @@ def get_masterlist_scores():
         except Exception as e:
             print(e)
             print("Skipping {}".format(ticker))
+            
+    scores = dict(sorted(scores.items()))
+    scores_df = pd.DataFrame.from_dict(scores, orient='index').T
+    scores_df.to_csv('{}/daily_rankings.csv'.format(ATTACHMENTS_PATH))
     
-    with open('{}/daily_rankings.csv'.format(ATTACHMENTS_PATH), 'w+') as f:  # You will need 'wb' mode in Python 2.x
+    '''
+    with open('{}/daily_rankings.csv'.format(ATTACHMENTS_PATH), 'w+') as f:  
         w = csv.DictWriter(f, sorted(scores.keys(), reverse=True))
         w.writeheader()
         w.writerow(scores)
+        '''
+        
 
 
 
@@ -630,7 +640,7 @@ def run_analysis(tickers=sd.get_tickers()):
 
 def test():
     #sd.download_masterlist_daily()
-    get_masterlist_scores()
+    generate_masterlist_scores()
 
 if __name__ == '__main__':  
     test()
