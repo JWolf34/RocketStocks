@@ -528,6 +528,46 @@ def get_adx(data):
     data['ADX'], data["DI+"], data["DI-"] = adx['ADX_14'], adx['DMP_14'], adx['DMN_14']
     return data
 
+def plot_strategy(data, ticker):
+
+    def buy_sell_signals(data):
+
+        BUY_THRESHOLD = 2.00
+        SELL_THRESHOLD = 2.00
+
+        buy_signals = [np.nan] * data['Close'].shape[0]
+        sell_signals = [np.nan] * data['Close'].shape[0]
+        
+        for i in range(5, data['Close'].size):
+            score = signals_score(data.tail(i))
+            print(score)
+            score = float(score)
+            if score > BUY_THRESHOLD:
+                buy_signals[i] = data['Close'].iloc[i]*0.95
+            elif score < SELL_THRESHOLD == 'DOWN':
+                sell_signals[i] = data['Close'].iloc[i]*1.05
+        return buy_signals, sell_signals
+
+    save      = dict(fname='data/plots/{}/{}_STRATEGY.png'.format(ticker, ticker),dpi=500,pad_inches=0.25)
+    data      = data.tail(365)
+    buy_signal, sell_signal = buy_sell_signals(data)
+
+    
+    apds  = []
+
+
+
+    if not all_values_are_nan(buy_signal):
+        apds.append(mpf.make_addplot(buy_signal,color='g',type='scatter',markersize=100,marker='^',label='Buy Signal'))
+    if not all_values_are_nan(sell_signal):
+        apds.append(mpf.make_addplot(sell_signal,color='r',type='scatter',markersize=100,marker='v',label='Sell Signal'))
+
+
+    mpf.plot(data,type='candle',ylabel='Close Price',addplot=apds,figscale=1.6,figratio=(6,5),title='\n\n{} Strategy'.format(ticker),
+            style='tradingview',savefig=save)
+    pass
+
+
 #Utilities
 def all_values_are_nan(values):
     if np.isnan(values).all():
@@ -551,8 +591,8 @@ def recent_crossover(indicator, signal):
 
     return None
 
-def signals_score(ticker):
-    data = sd.fetch_daily_data(ticker)
+def signals_score(data):
+    #data = sd.fetch_daily_data(ticker)
     score = 0.0
     scores_legend = {
         'BUY':1.0,
@@ -562,10 +602,10 @@ def signals_score(ticker):
         'SELL':0.0
     }
 
-    score += scores_legend.get(signal_rsi(get_rsi(data)))
-    score += scores_legend.get(signal_macd(get_macd(data)))
-    score += scores_legend.get(signal_sma(get_sma(data)))
-    score += scores_legend.get(signal_adx(get_adx(data)))
+    score += scores_legend.get(signal_rsi(data))    #(get_rsi(data)))
+    score += scores_legend.get(signal_macd(data))   #(get_macd(data)))
+    score += scores_legend.get(signal_sma(data))    #(get_sma(data)))
+    score += scores_legend.get(signal_adx(data))    #(get_adx(data)))
     return score
 
 def generate_charts(data, ticker):
@@ -581,6 +621,7 @@ def generate_charts(data, ticker):
     plot_sma(data,ticker)
     plot_obv(data,ticker)
     plot_adx(data,ticker)
+    plot_strategy(data, ticker)
 
     
 # Running analysis on techincal indicators to generate buy/sell signals
@@ -643,7 +684,7 @@ def test():
     generate_masterlist_scores()
 
 if __name__ == '__main__':  
-    test()
+    #test()
     pass
 
 

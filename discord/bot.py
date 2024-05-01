@@ -451,7 +451,7 @@ def run_bot():
         for indicator in analysis:
             message += indicator
 
-        message += "\nScore: {:.2f}/4.0".format(an.signals_score(ticker))
+        message += "\nScore: {:.2f}/4.0".format(an.signals_score(sd.fetch_daily_data(ticker)))
         
         report = {'message':message, 'files':files, 'embed':links}
 
