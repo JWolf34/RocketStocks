@@ -14,7 +14,7 @@ def scheduler():
     sched.add_job(sd.download_masterlist_daily, 'cron', name = 'Download stock data for masterlist tickers', timezone = timezone, hour = 0, minute = 0, replace_existing=True)
 
     # Evaluate ticker scores on masterlist tickers
-    sched.add_job(an.get_masterlist_scores, 'cron', name = "Calculate masterlist scores", timezone=timezone, hour = 6, minute = 0, replace_existing = True)
+    sched.add_job(an.generate_masterlist_scores, 'cron', name = "Calculate masterlist scores", timezone=timezone, hour = 6, minute = 0, replace_existing = True)
     print('Ready!')
 
     sched.start()

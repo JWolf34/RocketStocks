@@ -275,10 +275,11 @@ def run_bot():
         
     @tasks.loop(hours=24)  
     async def send_reports():
-
+        
         if (dt.datetime.now().weekday() < 5):
             
             #Send out global report
+            print("Sending reports!")
 
             # Configure channel to send reports to
             channel = await client.fetch_channel(get_reports_channel_id())
@@ -287,8 +288,20 @@ def run_bot():
                 report = build_report(ticker)
                 message, files = report.get('message'), report.get('files')
                 await channel.send(message, files=files)
+                
+        
+            daily_scores = an.get_masterlist_scores()
+            daily_rankings_message = '**Daily Stock Rankings**\n\n'
+            for col in daily_scores.columns:
+                try:
+                    if float(col) > 2.00:
+                        daily_rankings_message += "**{}**\n".format(col)
+                        daily_rankings_message += " ".join(daily_scores[col].dropna()) + "\n\n"
+                except ValueError as e:
+                    #Index column is invalid
+                    pass
 
-            await channel.send("Daily Stock Rankings", file=discord.File("{}/daily_rankings.csv".format(ATTACHMENTS_PATH)))
+            await channel.send(daily_rankings_message, file=discord.File("{}/daily_rankings.csv".format(ATTACHMENTS_PATH)))
 
 
         else:
@@ -296,13 +309,17 @@ def run_bot():
      
     @send_reports.before_loop
     async def delay_send_reports():
+        
         hour = 6
         minute = 30
         now = dt.datetime.now()
+        print(now)
         future = dt.datetime(now.year, now.month, now.day, hour, minute)
         if now.hour >= hour and now.minute > minute:
             future += dt.timedelta(days=1)
+        print("Sending reports in {} seconds".format((future-now).seconds))
         await asyncio.sleep((future-now).seconds)
+        
 
     @client.tree.command(name = "run-reports", description= "Post analysis of a given watchlist (use /fetch-reports for individual or non-watchlist stocks)",)
     @app_commands.describe(watchlist = "Which watchlist to fetch reports for")
