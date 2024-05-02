@@ -216,7 +216,7 @@ def signal_macd(data):
         return "BUY"
     
     # WEAK BUY SIGNAL - MACD has recently crossed over signal
-    elif cross_signal == 'UP':
+    elif cross_signal == 'UP' or (macd > macd_signal and macd < 0):
         return "WEAK BUY"
     
     # WEAK SELL SIGNAL - MACD is below signal but above 0
@@ -230,6 +230,10 @@ def signal_macd(data):
     # HOLD SIGNAL - MACD is above the signal but has not recently crossed the signal or 0
     elif macd > macd_signal and cross_signal == None and cross_0 == None:
         return "HOLD"
+    
+    else:
+        print("How did we get here?")
+        return 'HOLD'
     
 
 
@@ -336,6 +340,10 @@ def signal_sma(data):
     
     # HOLD SIGNAL - SMA_10 is above SMA_50 and no recent crossover
     elif sma_10 > sma_50 and recent_cross_50 == None:
+        return "HOLD"
+
+    else:
+        print("How did we get here?")
         return "HOLD"
 
 def get_sma(data):
@@ -533,19 +541,22 @@ def plot_strategy(data, ticker):
     def buy_sell_signals(data):
 
         BUY_THRESHOLD = 2.00
-        SELL_THRESHOLD = 2.00
+        SELL_THRESHOLD = 1.50
 
         buy_signals = [np.nan] * data['Close'].shape[0]
         sell_signals = [np.nan] * data['Close'].shape[0]
+
+        position = False
         
         for i in range(5, data['Close'].size):
-            score = signals_score(data.tail(i))
-            print(score)
+            score = signals_score(data.head(i))
             score = float(score)
-            if score > BUY_THRESHOLD:
-                buy_signals[i] = data['Close'].iloc[i]*0.95
-            elif score < SELL_THRESHOLD == 'DOWN':
-                sell_signals[i] = data['Close'].iloc[i]*1.05
+            if score >= BUY_THRESHOLD and position == False:
+                buy_signals[i] = data['Close'].iloc[i]*0.999999
+                position = True
+            elif score <= SELL_THRESHOLD and position == True:
+                sell_signals[i] = data['Close'].iloc[i]*1.000001
+                position = False
         return buy_signals, sell_signals
 
     save      = dict(fname='data/plots/{}/{}_STRATEGY.png'.format(ticker, ticker),dpi=500,pad_inches=0.25)
@@ -558,12 +569,12 @@ def plot_strategy(data, ticker):
 
 
     if not all_values_are_nan(buy_signal):
-        apds.append(mpf.make_addplot(buy_signal,color='g',type='scatter',markersize=100,marker='^',label='Buy Signal'))
+        apds.append(mpf.make_addplot(buy_signal,color='g',type='scatter',markersize=50,marker='^',label='Buy Signal'))
     if not all_values_are_nan(sell_signal):
-        apds.append(mpf.make_addplot(sell_signal,color='r',type='scatter',markersize=100,marker='v',label='Sell Signal'))
+        apds.append(mpf.make_addplot(sell_signal,color='r',type='scatter',markersize=50,marker='v',label='Sell Signal'))
 
 
-    mpf.plot(data,type='candle',ylabel='Close Price',addplot=apds,figscale=1.6,figratio=(6,5),title='\n\n{} Strategy'.format(ticker),
+    mpf.plot(data,type='line',ylabel='Close Price',addplot=apds,figscale=1.6,figratio=(6,5),title='\n\n{} Strategy'.format(ticker),
             style='tradingview',savefig=save)
     pass
 
