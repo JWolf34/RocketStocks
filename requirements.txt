@@ -12,3 +12,5 @@ pandas_ta
 matplotlib
 setuptools 
 mplfinance
+requests_cache
+requests_ratelimiter

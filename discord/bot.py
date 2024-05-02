@@ -320,7 +320,6 @@ def run_bot():
         print("Sending reports in {} seconds".format((future-now).seconds))
         await asyncio.sleep((future-now).seconds)
         
-
     @client.tree.command(name = "run-reports", description= "Post analysis of a given watchlist (use /fetch-reports for individual or non-watchlist stocks)",)
     @app_commands.describe(watchlist = "Which watchlist to fetch reports for")
     @app_commands.choices(watchlist =[

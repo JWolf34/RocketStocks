@@ -639,11 +639,13 @@ def get_masterlist_scores():
     return pd.read_csv('{}/daily_rankings.csv'.format(ATTACHMENTS_PATH))
 
 def generate_masterlist_scores():
+    print("Generating scores for all tickers in masterlist...")
     scores = {}
 
     tickers = sd.get_masterlist_tickers()
+    num_ticker = 1
     for ticker in tickers:
-        print("Evaluating {}".format(ticker))
+        print("Evaluating {}... {}/{}".format(ticker, num_ticker, len(tickersss)))
         try:
             score = signals_score(ticker)
             if score in scores.keys():
@@ -655,6 +657,7 @@ def generate_masterlist_scores():
         except Exception as e:
             print(e)
             print("Skipping {}".format(ticker))
+        num_ticker += 1
             
     scores = dict(sorted(scores.items()))
     scores_df = pd.DataFrame.from_dict(scores, orient='index').T
@@ -672,20 +675,19 @@ def generate_masterlist_scores():
 
 def run_analysis(tickers=sd.get_tickers()):
     for ticker in tickers:
-        sd.download_data_and_update_csv(ticker=ticker, period="max", interval="1d", path=DAILY_DATA_PATH)
+        #sd.download_data_and_update_csv(ticker=ticker, period="max", interval="1d", path=DAILY_DATA_PATH)
         #generate_indicators(ticker)
         data = sd.fetch_daily_data(ticker)
         generate_charts(data, ticker)
         generate_analysis(data, ticker)
 
-def generate_indicators(ticker):
-    data = sd.fetch_daily_data(ticker)
+def generate_indicators(data):
     data = get_rsi(data)
     data = get_sma(data)
     data = get_macd(data)
     data = get_obv(data)
     data = get_adx(data)
-    sd.update_csv(data, ticker, DAILY_DATA_PATH)
+    return data
 
 
 
