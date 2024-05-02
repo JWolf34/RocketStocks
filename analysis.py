@@ -678,6 +678,16 @@ def run_analysis(tickers=sd.get_tickers()):
         generate_charts(data, ticker)
         generate_analysis(data, ticker)
 
+def generate_indicators(ticker):
+    data = sd.fetch_daily_data(ticker)
+    data = get_rsi(data)
+    data = get_sma(data)
+    data = get_macd(data)
+    data = get_obv(data)
+    data = get_adx(data)
+    sd.update_csv(data, ticker, DAILY_DATA_PATH)
+
+
 
 def test():
     #sd.download_masterlist_daily()

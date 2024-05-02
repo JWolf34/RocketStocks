@@ -212,11 +212,14 @@ def fetch_financials(ticker):
     return financials
     
 def download_masterlist_daily():
+    
     import time
+    masterlist_file = "data/ticker_masterlist.txt"
     
     tickers = get_masterlist_tickers()
 
     if isinstance(tickers, list):
+        print("Downloading masterlist data...")
         invalid_tickers = []
         num_requests = 0
         requests_limit = 1500
@@ -236,6 +239,8 @@ def download_masterlist_daily():
         with open(masterlist_file,'w') as masterlist:
             masterlist.write("\n".join(tickers))
 
+        print("Complete!")
+
     else:
         pass
 
@@ -249,11 +254,44 @@ def get_masterlist_tickers():
     else:
         print("No ticker masterlist available.")
         return ""
+    
+def download_masterlist_daily():
+    
+    import time
+    masterlist_file = "data/ticker_masterlist.txt"
+    
+    tickers = get_masterlist_tickers()
+
+    if isinstance(tickers, list):
+        print("Downloading masterlist data...")
+        invalid_tickers = []
+        num_requests = 0
+        requests_limit = 1500
+        for ticker in tickers:
+            if num_requests >= requests_limit:
+                time.sleep(3600)
+                num_requests = 0
+            data = download_data(ticker, "max", "1d")
+            if len(data) > 0:
+                update_csv(data, ticker, DAILY_DATA_PATH)
+            else:
+                invalid_tickers.append(ticker)
+            num_requests += 1
+        for ticker in invalid_tickers:
+            if ticker in tickers:
+                tickers.remove(ticker)
+        with open(masterlist_file,'w') as masterlist:
+            masterlist.write("\n".join(tickers))
+
+        print("Complete!")
+
+    else:
+        pass
 
 
 def test():
-    download_masterlist_daily()
+    daily_download_and_analysis()
 
 if __name__ == "__main__":
-    #test()
+    test()
     pass
