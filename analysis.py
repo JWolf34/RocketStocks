@@ -540,7 +540,7 @@ def plot_strategy(data, ticker):
 
     def buy_sell_signals(data):
 
-        BUY_THRESHOLD = 2.00
+        BUY_THRESHOLD = 2.50
         SELL_THRESHOLD = 1.50
 
         buy_signals = [np.nan] * data['Close'].shape[0]
