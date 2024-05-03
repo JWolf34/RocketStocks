@@ -271,38 +271,34 @@ def plot_sma(data,ticker):
             sma_50_values = [sma_50.iloc[i-1], sma_50.iloc[i]]
             cross = recent_crossover(sma_10_values, sma_50_values)
             if cross == 'UP':
-                buy_signals[i] = close.iloc[i]*0.95
+                buy_signals[i] = close.iloc[i]*0.99
             elif cross == 'DOWN':
-                sell_signals[i] = close.iloc[i]*1.05
-            #else:
-            #   buy_signals[i] = np.nan
-            #    sell_signals[i] = np.nan
+                sell_signals[i] = close.iloc[i]*1.01
+            
         return buy_signals, sell_signals
 
     save      = dict(fname='data/plots/{}/{}_SMA.png'.format(ticker, ticker),dpi=500,pad_inches=0.25)
     data      = get_sma(data)
     data      = data.tail(365)
     sma_10    = data['SMA_10']
-    sma_30    = data['SMA_30']
     sma_50    = data['SMA_50']
     buy_signal, sell_signal = buy_sell_signals(sma_10, sma_50, data['Close'])
 
     
     apds  = [
         mpf.make_addplot(sma_10, color='blue', label = 'SMA 10'),
-        mpf.make_addplot(sma_30, color='purple', label = 'SMA 30'),
         mpf.make_addplot(sma_50, color='red', label = 'SMA 50')
     ]
 
 
 
     if not all_values_are_nan(buy_signal):
-        apds.append(mpf.make_addplot(buy_signal,color='g',type='scatter',markersize=100,marker='^',label='Buy Signal'))
+        apds.append(mpf.make_addplot(buy_signal,color='g',type='scatter',markersize=50,marker='^',label='Buy Signal'))
     if not all_values_are_nan(sell_signal):
-        apds.append(mpf.make_addplot(sell_signal,color='r',type='scatter',markersize=100,marker='v',label='Sell Signal'))
+        apds.append(mpf.make_addplot(sell_signal,color='r',type='scatter',markersize=50,marker='v',label='Sell Signal'))
 
 
-    mpf.plot(data,type='candle',ylabel='Close Price',addplot=apds,figscale=1.6,figratio=(6,5),title='\n\n{} Simple Moving Average'.format(ticker),
+    mpf.plot(data,type='line',ylabel='Close Price',addplot=apds,figscale=1.6,figratio=(6,5),title='\n\n{} Simple Moving Average'.format(ticker),
             style='tradingview',savefig=save)
     
 def analyze_sma(data, ticker):
