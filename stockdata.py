@@ -302,7 +302,7 @@ def daily_download_data():
 
 
 def test():
-    pass
+    download_data('HYZ')
 
 if __name__ == "__main__":
     #test()
