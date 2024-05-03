@@ -443,11 +443,22 @@ def run_bot():
         for indicator in analysis:
             message += indicator
 
-        message += "\nScore: {:.2f}/1.0".format(an.signals_score(sd.fetch_daily_data(ticker)))
+        message += "\n"
+
+        message += build_strategy_report(ticker)
         
         report = {'message':message, 'files':files, 'embed':links}
 
         return report
+    
+    def build_strategy_report(ticker):
+        message = "**Strategies**\n"
+    
+        for strategy in an.get_strategies():
+            score = an.signals_score(sd.fetch_daily_data(ticker), strategy.signals)
+            message += "{}: **{}**".format(strategy.name, an.score_eval(score, strategy))
+
+        return message
     
     def build_daily_summary():
         daily_scores = an.get_masterlist_scores()

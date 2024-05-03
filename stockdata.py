@@ -92,6 +92,9 @@ def update_csv(data, ticker, path):
     validate_path(path)
     path += "/{}.csv".format(ticker)
 
+    data.to_csv(path)
+    '''
+
     # If the CSV file already exists, read the existing data
     if os.path.exists(path):
         existing_data = pd.read_csv(path, index_col=0, parse_dates=True)
@@ -107,6 +110,7 @@ def update_csv(data, ticker, path):
     
     # Save the combined data to the CSV file
     combined_data.to_csv(path)
+    '''
 
 def download_data_and_update_csv(ticker, period, interval, path=DAILY_DATA_PATH):
     data = download_data(ticker, period, interval)
@@ -302,8 +306,8 @@ def daily_download_data():
 
 
 def test():
-    download_data('HYZ')
+    daily_download_data()
 
 if __name__ == "__main__":
-    #test()
+    test()
     pass
