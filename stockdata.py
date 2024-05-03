@@ -2,14 +2,11 @@ import yfinance as yf
 from pandas_datareader import data as pdr
 import pandas as pd
 import os
-<<<<<<< HEAD
 #import analysis as an
 from requests import Session
 from requests_cache import CacheMixin, SQLiteCache
 from requests_ratelimiter import LimiterMixin, MemoryQueueBucket
 from pyrate_limiter import Duration, RequestRate, Limiter
-=======
->>>>>>> 405501164043714887641f569eeb0ac5afde4e68
 
 yf.pdr_override()
 
@@ -21,7 +18,6 @@ PLOTS_PATH = "data/plots"
 ANALYSIS_PATH = "data/analysis"
 ATTACHMENTS_PATH = "discord/attachments"
 
-<<<<<<< HEAD
 # Class for limiting requests to avoid hitting the rate limit when downloading data
 class CachedLimiterSession(CacheMixin, LimiterMixin, Session):
     pass
@@ -40,16 +36,6 @@ def validate_ticker(ticker):
     else:
         return True
 
-=======
-
-def validate_ticker(ticker):
-    data = yf.download(ticker, period="1d")
-    if len(data) == 0:
-        return False
-    else:
-        return True
-
->>>>>>> 405501164043714887641f569eeb0ac5afde4e68
 # Return news articles from Yahoo finance relevant to input ticker
 def get_news(ticker):
         message = ''
@@ -86,11 +72,7 @@ def get_tickers(id = 0):
         validate_path(watchlist_path)
         return []
         
-<<<<<<< HEAD
 def download_data(ticker, period='max', interval='1d'):
-=======
-def download_data(ticker, period, interval):
->>>>>>> 405501164043714887641f569eeb0ac5afde4e68
 
     # Download data for the given ticker
     data = yf.download(tickers=ticker, 
@@ -258,12 +240,6 @@ def download_masterlist_daily():
         num_requests = 0
         requests_limit = 1500
         for ticker in tickers:
-<<<<<<< HEAD
-=======
-            if num_requests >= requests_limit:
-                time.sleep(3600)
-                num_requests = 0
->>>>>>> 405501164043714887641f569eeb0ac5afde4e68
             data = download_data(ticker, "max", "1d")
             if len(data) > 0:
                 update_csv(data, ticker, DAILY_DATA_PATH)
@@ -291,22 +267,15 @@ def get_masterlist_tickers():
     else:
         print("No ticker masterlist available.")
         return ""
-<<<<<<< HEAD
 
 # Download data and generate indicator data on all tickers
 def daily_download_analyze_scoring():
-=======
-    
-def download_masterlist_daily():
-    
->>>>>>> 405501164043714887641f569eeb0ac5afde4e68
     import time
     masterlist_file = "data/ticker_masterlist.txt"
     
     tickers = get_masterlist_tickers()
 
     if isinstance(tickers, list):
-<<<<<<< HEAD
         invalid_tickers = []
         num_ticker = 1
         for ticker in tickers:
@@ -320,33 +289,14 @@ def download_masterlist_daily():
                 invalid_tickers.append(ticker)
                 print("Invalid ticker {}, removing from list...".format(ticker))
             num_ticker += 1
-=======
-        print("Downloading masterlist data...")
-        invalid_tickers = []
-        num_requests = 0
-        requests_limit = 1500
-        for ticker in tickers:
-            if num_requests >= requests_limit:
-                time.sleep(3600)
-                num_requests = 0
-            data = download_data(ticker, "max", "1d")
-            if len(data) > 0:
-                update_csv(data, ticker, DAILY_DATA_PATH)
-            else:
-                invalid_tickers.append(ticker)
-            num_requests += 1
->>>>>>> 405501164043714887641f569eeb0ac5afde4e68
         for ticker in invalid_tickers:
             if ticker in tickers:
                 tickers.remove(ticker)
         with open(masterlist_file,'w') as masterlist:
             masterlist.write("\n".join(tickers))
 
-<<<<<<< HEAD
         #an.generate_masterlist_scores()
 
-=======
->>>>>>> 405501164043714887641f569eeb0ac5afde4e68
         print("Complete!")
 
     else:
@@ -354,15 +304,8 @@ def download_masterlist_daily():
 
 
 def test():
-<<<<<<< HEAD
     daily_download_analyze_scoring()
 
 if __name__ == "__main__":
     #test()
-=======
-    daily_download_and_analysis()
-
-if __name__ == "__main__":
-    test()
->>>>>>> 405501164043714887641f569eeb0ac5afde4e68
     pass
