@@ -9,3 +9,6 @@ discord/attachments
 
 #ENV file
 .env
+
+# yfinance cache file
+yfinance.cache
