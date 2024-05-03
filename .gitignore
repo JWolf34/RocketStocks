@@ -7,6 +7,8 @@ data/
 #Attachments folder
 discord/attachments
 
+
+
 #ENV file
 .env
 

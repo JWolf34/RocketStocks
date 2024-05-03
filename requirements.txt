@@ -11,6 +11,10 @@ yfinance
 pandas_ta
 matplotlib
 setuptools 
+<<<<<<< HEAD
 mplfinance
 requests_cache
 requests_ratelimiter
+=======
+mplfinance
+>>>>>>> 405501164043714887641f569eeb0ac5afde4e68
