@@ -216,11 +216,7 @@ def signal_macd(data):
         return "BUY"
     
     # WEAK BUY SIGNAL - MACD has recently crossed over signal
-<<<<<<< HEAD
     elif cross_signal == 'UP' or (macd > macd_signal and macd < 0):
-=======
-    elif cross_signal == 'UP':
->>>>>>> 405501164043714887641f569eeb0ac5afde4e68
         return "WEAK BUY"
     
     # WEAK SELL SIGNAL - MACD is below signal but above 0
@@ -230,7 +226,6 @@ def signal_macd(data):
     # SELL SIGNAL - MACD is below signal and 0
     elif macd < 0 and macd < macd_signal:
         return "SELL"
-<<<<<<< HEAD
     
     # HOLD SIGNAL - MACD is above the signal but has not recently crossed the signal or 0
     elif macd > macd_signal and cross_signal == None and cross_0 == None:
@@ -239,12 +234,6 @@ def signal_macd(data):
     else:
         print("How did we get here?")
         return 'HOLD'
-=======
-    
-    # HOLD SIGNAL - MACD is above the signal but has not recently crossed the signal or 0
-    elif macd > macd_signal and cross_signal == None and cross_0 == None:
-        return "HOLD"
->>>>>>> 405501164043714887641f569eeb0ac5afde4e68
     
 
 
@@ -352,7 +341,6 @@ def signal_sma(data):
     # HOLD SIGNAL - SMA_10 is above SMA_50 and no recent crossover
     elif sma_10 > sma_50 and recent_cross_50 == None:
         return "HOLD"
-<<<<<<< HEAD
 
     else:
         print("How did we get here?")
@@ -391,42 +379,6 @@ def get_obv(data):
     data['OBV'] = ta.obv(data['Close'], data['Volume'])
     return data
 
-=======
-
-def get_sma(data):
-    sma_10 = ta.sma(data['Close'],length=10, append = True)
-    sma_30 = ta.sma(data['Close'],length=30, append = True)
-    sma_50 = ta.sma(data['Close'],length=50, append = True)
-
-    data['SMA_10'], data['SMA_30'], data['SMA_50'] = sma_10, sma_30, sma_50
-    return data
-
-def plot_obv(data, ticker):
-
-    save      = dict(fname='data/plots/{}/{}_OBV.png'.format(ticker, ticker),dpi=500,pad_inches=0.25)
-    data      = get_obv(data)
-    data      = data.tail(60)
-    close     = data['Close']
-    obv       = data['OBV']
-    #buy_signal, sell_signal = buy_sell_signals(sma_10, sma_50, data['Close'])
-    close_slope = ta.slope(data['Close'], 60)#,as_angle=True, to_degress=True)
-    obv_slope = ta.slope(obv, 60)#,as_angle=True, to_degree=True)
-    #print("{} Close Slope: {}".format(ticker, close_slope))
-    #print("{} OBV Slope: {}".format(ticker, obv_slope))
-    apds  = [
-        #mpf.make_addplot(close_slope, color= 'purple', label='CLOSE_SLOPE'),
-        #mpf.make_addplot(obv_slope, color = 'orange',panel=1,label="OVB_SLOPE"),
-        mpf.make_addplot(obv, color='lightblue',panel=1,label="OBV",ylabel='On-Balance Volume')
-    ]
-
-    mpf.plot(data,type='candle',ylabel='Close Price',addplot=apds,figscale=1.6,figratio=(6,5),title='\n\n{} On-Balance Volume'.format(ticker),
-            style='tradingview',panel_ratios=(1,1),savefig=save)
-
-def get_obv(data):
-    data['OBV'] = ta.obv(data['Close'], data['Volume'])
-    return data
-
->>>>>>> 405501164043714887641f569eeb0ac5afde4e68
 def plot_adx(data,ticker):
     TREND_UPPER = 25
     TREND_LOWER = 20
@@ -471,7 +423,6 @@ def plot_adx(data,ticker):
         return buy_signals, sell_signals
 
 
-<<<<<<< HEAD
     
     save      = dict(fname='data/plots/{}/{}_ADX.png'.format(ticker, ticker),dpi=500,pad_inches=0.25)
     data      = get_adx(data)
@@ -747,124 +698,11 @@ def generate_indicators(data):
     data = get_macd(data)
     data = get_obv(data)
     data = get_adx(data)
-=======
-    
-    save      = dict(fname='data/plots/{}/{}_ADX.png'.format(ticker, ticker),dpi=500,pad_inches=0.25)
-    data      = get_adx(data)
-    data      = data.tail(365)
-    adx    = data['ADX']
-    dip    = data['DI+']
-    din    = data['DI-']
-    hline_upper  = [TREND_UPPER] * data.shape[0]
-    hline_lower  = [TREND_LOWER] * data.shape[0]
-
-    buy_signal, sell_signal = buy_sell_signals(adx, dip, din, data['Close'])
-
-    fb_green = dict(y1=buy_signal,y2=0,where=adx > TREND_LOWER,color="#93c47d",alpha=0.6,interpolate=True)
-    fb_red   = dict(y1=sell_signal,y2=0,where=adx > TREND_LOWER,color="#e06666",alpha=0.6,interpolate=True)
-    fb_red['panel'] = 0
-    fb_green['panel'] = 0
-    fb       = [fb_green,fb_red]
-    
-    apds  = [
-        mpf.make_addplot(adx,type='line',color='purple',label='ADX',panel=1),
-        mpf.make_addplot(dip,type='line',color='blue',label='DI+',panel=1),
-        mpf.make_addplot(din,type='line',color='red',label ='DI-',panel=1),
-        mpf.make_addplot(hline_upper,type='line',linestyle='--',color='g',panel=1),
-        mpf.make_addplot(hline_lower,type='line',linestyle='--',color='r',panel=1)
-    ]
-
-    '''
-    if not all_values_are_nan(buy_signal):
-        apds.append(mpf.make_addplot(buy_signal,color='blue',type='scatter',label='Buy Signal'))
-    if not all_values_are_nan(sell_signal):
-        apds.append(mpf.make_addplot(sell_signal,color='orange',type='scatter',label='Sell Signal'))
-        '''
-
-
-    mpf.plot(data,type='candle',ylabel='Close Price',addplot=apds,figscale=1.6,figratio=(6,5),title='\n\n{} Average Direction Index'.format(ticker),
-    panel_ratios=(1,1), fill_between=fb,style='tradingview',savefig=save)
-
-def analyze_adx(data, ticker):
-    TREND_UPPER = 25
-    TREND_LOWER = 20
-    signal = signal_adx(data)
-    adx = data['ADX'].iloc[-1]
-    dip = data['DI+'].iloc[-1]
-    din = data['DI-'].iloc[-1]
-
-    with open("data/analysis/{}/ADX.txt".format(ticker),'w') as adx_analysis: 
-        #adx_analysis.write('ADX: **{}**'.format(signal))
-
-        # BUY SIGNAL - ADX crosses above TREND_UPPER and DI+ > DI-
-        if (signal == "BUY"):
-            analysis = "ADX: **{}** - The ADX line ({:,.2f}) has recently crossed {} and DI+ ({:,.2f}) is above DI- ({:,.2f}), indicating the stock is strong uptrend".format(signal, adx, TREND_UPPER, dip, din)
-            adx_analysis.write(analysis)
-
-        # WEAK BUY SIGNAL - ADX between TREND_UPPER and TREND_LOWER and DI+ > DI-    
-        elif (signal == "WEAK BUY"):
-            analysis = "ADX: **{}** - The ADX line ({:,.2f}) is between {} and {} and DI+ ({:,.2f}) is above DI- ({:,.2f}), indicating the stock is in an uptrend. Look for ADX to cross {} for a strong buy signal".format(signal, adx, TREND_LOWER, TREND_UPPER, dip, din, TREND_UPPER)
-            adx_analysis.write(analysis)
-
-        # HOLD SIGNAL - ADX > TREND_LOWER and DI+ > DI-
-        elif (signal == "HOLD"):
-            analysis = "ADX: **{}** - The ADX line  ({:,.2f}) has stayed above {} and DI+ ({:,.2f}) is above DI- ({:,.2f}), indicating the stock is in an uptrend.".format(signal, adx, TREND_LOWER, dip, din)
-            adx_analysis.write(analysis)
-
-        # WEAK SELL SIGNAL - ADX between TREND_UPPER and TREND_LOWER and DI- > DI+ OR ADX < TREND_LOWER
-        elif (signal == "WEAK SELL"):
-            analysis = "ADX: **{}** - The ADX line ({:,.2f}) is between {} and {} and DI+ ({:,.2f}) is below DI- ({:,.2f}), indicating the stock is in a downtrend. Otherwise, ADX is below {} which does not indcate a current trend".format(signal, adx, TREND_LOWER, TREND_UPPER, dip, din, TREND_LOWER)
-            adx_analysis.write(analysis)
-
-        # SELL SIGNAL - ADX > TREND_UPPER and DI- > DI+
-        if (signal == "SELL"):
-            analysis = "ADX: **{}** - The ADX line ({:,.2f}) has recently crossed {} and DI+ ({:,.2f}) is below DI- ({:,.2f}), indicating the stock is strong downtrend".format(signal, adx, TREND_UPPER, dip, din)
-            adx_analysis.write(analysis)
-            
-
-def signal_adx(data):
-
-    TREND_UPPER = 25
-    TREND_LOWER = 20
-    adx = data['ADX']
-    dip = data['DI+']
-    din = data['DI-']
-
-    prev_adx = adx.tail(5).to_list()
-    prev_dip = dip.tail(5).to_list()
-    prev_din = din.tail(5).to_list()
-    prev_trend_upper = [TREND_UPPER] * 5
-    prev_trend_lower = [TREND_LOWER] * 5
-
-    # BUY SIGNAL - ADX crosses above TREND_UPPER and DI+ > DI-
-    if recent_crossover(prev_adx, prev_trend_upper) == 'UP' and dip.iloc[-1] > din.iloc[-1]:
-        return 'BUY'
-    
-    # WEAK BUY SIGNAL - ADX between TREND_UPPER and TREND_LOWER and DI+ > DI-
-    elif recent_crossover(prev_adx, prev_trend_lower) == 'UP' and adx.iloc[-1] < TREND_UPPER and dip.iloc[-1] > din.iloc[-1]:
-        return "WEAK BUY"
-    
-    # WEAK SELL SIGNAL - ADX between TREND_UPPER and TREND_LOWER and DI- > DI+ OR ADX < TREND_LOWER
-    elif (adx.iloc[-1] < TREND_UPPER and adx.iloc[-1] > TREND_LOWER and din.iloc[-1] > dip.iloc[-1]) or adx.iloc[-1] < TREND_LOWER:
-        return "WEAK SELL"
-
-    # SELL SIGNAL - ADX > TREND_UPPER and DI- > DI+
-    elif adx.iloc[-1] > TREND_UPPER and din.iloc[-1] > dip.iloc[-1]:
-        return "SELL"
-    
-    # HOLD SIGNAL - ADX > TREND_LOWER and DI+ > DI-
-    elif adx.iloc[-1] > TREND_LOWER and dip.iloc[-1] > din.iloc[-1]:
-        return "HOLD"
-
-def get_adx(data):
-    adx = ta.adx(data['High'], data['Low'], data['Close'])
-    data['ADX'], data["DI+"], data["DI-"] = adx['ADX_14'], adx['DMP_14'], adx['DMN_14']
->>>>>>> 405501164043714887641f569eeb0ac5afde4e68
     return data
 
 def plot_strategy(data, ticker):
+    pass
 
-<<<<<<< HEAD
 
 def test():
     #sd.download_masterlist_daily()
@@ -872,43 +710,6 @@ def test():
 
 if __name__ == '__main__':  
     #test()
-=======
-    def buy_sell_signals(data):
-
-        BUY_THRESHOLD = 2.00
-        SELL_THRESHOLD = 2.00
-
-        buy_signals = [np.nan] * data['Close'].shape[0]
-        sell_signals = [np.nan] * data['Close'].shape[0]
-        
-        for i in range(5, data['Close'].size):
-            score = signals_score(data.tail(i))
-            print(score)
-            score = float(score)
-            if score > BUY_THRESHOLD:
-                buy_signals[i] = data['Close'].iloc[i]*0.95
-            elif score < SELL_THRESHOLD == 'DOWN':
-                sell_signals[i] = data['Close'].iloc[i]*1.05
-        return buy_signals, sell_signals
-
-    save      = dict(fname='data/plots/{}/{}_STRATEGY.png'.format(ticker, ticker),dpi=500,pad_inches=0.25)
-    data      = data.tail(365)
-    buy_signal, sell_signal = buy_sell_signals(data)
-
-    
-    apds  = []
-
-
-
-    if not all_values_are_nan(buy_signal):
-        apds.append(mpf.make_addplot(buy_signal,color='g',type='scatter',markersize=100,marker='^',label='Buy Signal'))
-    if not all_values_are_nan(sell_signal):
-        apds.append(mpf.make_addplot(sell_signal,color='r',type='scatter',markersize=100,marker='v',label='Sell Signal'))
-
-
-    mpf.plot(data,type='candle',ylabel='Close Price',addplot=apds,figscale=1.6,figratio=(6,5),title='\n\n{} Strategy'.format(ticker),
-            style='tradingview',savefig=save)
->>>>>>> 405501164043714887641f569eeb0ac5afde4e68
     pass
 
 
@@ -952,98 +753,4 @@ def signals_score(data):
     score += scores_legend.get(signal_adx(data))    #(get_adx(data)))
     return score
 
-<<<<<<< HEAD
-=======
-def generate_charts(data, ticker):
-    
-    if not (os.path.isdir("data/plots/" + ticker)):
-            os.makedirs("data/plots/" + ticker)
-
-    # Generate technical indicator charts
-
-    plot_volume(data,ticker)
-    plot_macd(data,ticker)
-    plot_rsi(data,ticker)
-    plot_sma(data,ticker)
-    plot_obv(data,ticker)
-    plot_adx(data,ticker)
-    plot_strategy(data, ticker)
-
-    
-# Running analysis on techincal indicators to generate buy/sell signals
-def generate_analysis(data, ticker):
-    if not (os.path.isdir("data/analysis/" + ticker)):
-        os.makedirs("data/analysis/" + ticker)
-    
-    analyze_macd(data, ticker)
-    analyze_rsi(data, ticker)
-    analyze_sma(data,ticker)
-    #analyze_obv(data,ticker)
-    analyze_adx(data,ticker)
-
-def get_masterlist_scores():
-    return pd.read_csv('{}/daily_rankings.csv'.format(ATTACHMENTS_PATH))
-
-def generate_masterlist_scores():
-    scores = {}
-
-    tickers = sd.get_masterlist_tickers()
-    for ticker in tickers:
-        print("Evaluating {}".format(ticker))
-        try:
-            score = signals_score(ticker)
-            if score in scores.keys():
-                score_tickers = scores.get(score)
-                score_tickers.append(ticker)
-                scores[score] = score_tickers
-            else:
-                scores[score] = [ticker]
-        except Exception as e:
-            print(e)
-            print("Skipping {}".format(ticker))
-            
-    scores = dict(sorted(scores.items()))
-    scores_df = pd.DataFrame.from_dict(scores, orient='index').T
-    scores_df.to_csv('{}/daily_rankings.csv'.format(ATTACHMENTS_PATH))
-    
-    '''
-    with open('{}/daily_rankings.csv'.format(ATTACHMENTS_PATH), 'w+') as f:  
-        w = csv.DictWriter(f, sorted(scores.keys(), reverse=True))
-        w.writeheader()
-        w.writerow(scores)
-        '''
-        
-
-
-
-def run_analysis(tickers=sd.get_tickers()):
-    for ticker in tickers:
-        sd.download_data_and_update_csv(ticker=ticker, period="max", interval="1d", path=DAILY_DATA_PATH)
-        #generate_indicators(ticker)
-        data = sd.fetch_daily_data(ticker)
-        generate_charts(data, ticker)
-        generate_analysis(data, ticker)
-
-def generate_indicators(ticker):
-    data = sd.fetch_daily_data(ticker)
-    data = get_rsi(data)
-    data = get_sma(data)
-    data = get_macd(data)
-    data = get_obv(data)
-    data = get_adx(data)
-    sd.update_csv(data, ticker, DAILY_DATA_PATH)
-
-
-
-def test():
-    #sd.download_masterlist_daily()
-    generate_masterlist_scores()
-
-if __name__ == '__main__':  
-    #test()
-    pass
-
-
-
->>>>>>> 405501164043714887641f569eeb0ac5afde4e68
        
