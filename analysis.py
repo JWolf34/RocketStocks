@@ -692,7 +692,7 @@ def run_analysis(tickers=sd.get_tickers()):
         generate_charts(data, ticker)
         generate_analysis(data, ticker)
 
-def generate_indicators(data):
+def generate_indicators():
     data = pd.DataFrame()
 
     MyStrategy = ta.Strategy(name = 'My Strategy', ta = [
@@ -708,10 +708,13 @@ def generate_indicators(data):
     )
                             
     tickers = sd.get_masterlist_tickers()
+    num_ticker = 1
     for ticker in tickers:
         data = sd.fetch_daily_data(ticker)
+        print("Generating indicator data for {}... {}/{}".format(ticker, num_ticker, len(tickers)))
         data.ta.strategy(MyStrategy)
         sd.update_csv(data, ticker, DAILY_DATA_PATH)
+    print("Complete!")
 
 def plot_strategy(data, ticker):
     pass

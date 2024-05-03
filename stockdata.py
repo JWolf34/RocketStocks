@@ -282,8 +282,6 @@ def daily_download_data():
             print("Downloading {}... {}/{}".format(ticker, num_ticker, len(tickers)))
             data = download_data(ticker)
             if data.size > 60 and data['Close'].iloc[-1] > 5.00:
-                #print("Generating indicator data for {}... {}/{}".format(ticker, num_ticker, len(tickers)))
-                #data = an.generate_indicators(data)
                 update_csv(data, ticker, DAILY_DATA_PATH)
             else:
                 invalid_tickers.append(ticker)
