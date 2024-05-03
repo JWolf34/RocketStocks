@@ -540,8 +540,8 @@ def plot_strategy(data, ticker):
 
     def buy_sell_signals(data):
 
-        BUY_THRESHOLD = 2.50
-        SELL_THRESHOLD = 1.50
+        BUY_THRESHOLD = 1.00
+        SELL_THRESHOLD = 0
 
         buy_signals = [np.nan] * data['Close'].shape[0]
         sell_signals = [np.nan] * data['Close'].shape[0]
@@ -613,10 +613,10 @@ def signals_score(data):
         'SELL':0.0
     }
 
-    score += scores_legend.get(signal_rsi(data))    #(get_rsi(data)))
-    score += scores_legend.get(signal_macd(data))   #(get_macd(data)))
+    #score += scores_legend.get(signal_rsi(data))    #(get_rsi(data)))
+    #score += scores_legend.get(signal_macd(data))   #(get_macd(data)))
     score += scores_legend.get(signal_sma(data))    #(get_sma(data)))
-    score += scores_legend.get(signal_adx(data))    #(get_adx(data)))
+    #score += scores_legend.get(signal_adx(data))    #(get_adx(data)))
     return score
 
 def generate_charts(data, ticker):
@@ -693,12 +693,25 @@ def run_analysis(tickers=sd.get_tickers()):
         generate_analysis(data, ticker)
 
 def generate_indicators(data):
-    data = get_rsi(data)
-    data = get_sma(data)
-    data = get_macd(data)
-    data = get_obv(data)
-    data = get_adx(data)
-    return data
+    data = pd.DataFrame()
+
+    MyStrategy = ta.Strategy(name = 'My Strategy', ta = [
+        {"kind": "sma", "length":10},
+        {"kind": "sma", "length":30},
+        {"kind": "sma", "length":50},
+        {"kind": "sma", "length":200},
+        {"kind": "macd"},
+        {"kind": "rsi"},
+        {"kind": "adx"},
+        {"kind": "ad"}
+    ]
+    )
+                            
+    tickers = sd.get_masterlist_tickers()
+    for ticker in tickers:
+        data = sd.fetch_daily_data(ticker)
+        data.ta.strategy(MyStrategy)
+        sd.update_csv(data, ticker, DAILY_DATA_PATH)
 
 def plot_strategy(data, ticker):
     pass
@@ -753,4 +766,37 @@ def signals_score(data):
     score += scores_legend.get(signal_adx(data))    #(get_adx(data)))
     return score
 
+def test():
+    df = pd.DataFrame()
+    #help(ta.ad)
+
+    MyStrategy = ta.Strategy(name = 'My Strategy', ta = [
+        {"kind": "sma", "length":10},
+        {"kind": "sma", "length":30},
+        {"kind": "sma", "length":50},
+        {"kind": "sma", "length":200},
+        {"kind": "macd"},
+        {"kind": "rsi"},
+        {"kind": "adx"},
+        {"kind": "ad"}
+    ]
+    )
+                             
+    
+    CommonStrategy = ta.CommonStrategy
+    tickers = sd.get_masterlist_tickers()
+    for ticker in tickers:
+        df = df.ta.ticker(ticker)
+        df.ta.strategy(MyStrategy)
+        df.to_csv("{}.csv".format(ticker))
+        
+
+    
+
+
+
+
+if __name__ == '__main__':
+    test()
+    pass
        

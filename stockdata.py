@@ -269,7 +269,7 @@ def get_masterlist_tickers():
         return ""
 
 # Download data and generate indicator data on all tickers
-def daily_download_analyze_scoring():
+def daily_download_data():
     import time
     masterlist_file = "data/ticker_masterlist.txt"
     
@@ -281,7 +281,7 @@ def daily_download_analyze_scoring():
         for ticker in tickers:
             print("Downloading {}... {}/{}".format(ticker, num_ticker, len(tickers)))
             data = download_data(ticker)
-            if data.size > 60 :
+            if data.size > 60 and data['Close'].iloc[-1] > 5.00:
                 #print("Generating indicator data for {}... {}/{}".format(ticker, num_ticker, len(tickers)))
                 #data = an.generate_indicators(data)
                 update_csv(data, ticker, DAILY_DATA_PATH)
@@ -304,7 +304,7 @@ def daily_download_analyze_scoring():
 
 
 def test():
-    daily_download_analyze_scoring()
+    pass
 
 if __name__ == "__main__":
     #test()

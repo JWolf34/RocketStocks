@@ -194,19 +194,11 @@ def run_bot():
 
         # Parse list from ticker input and identify invalid tickers
         tickers, invalid_tickers = sd.get_list_from_tickers(tickers)
-<<<<<<< HEAD
 
         watchlist_path = ""
         symbols = ""
         message_flavor = ""
 
-=======
-
-        watchlist_path = ""
-        symbols = ""
-        message_flavor = ""
-
->>>>>>> 405501164043714887641f569eeb0ac5afde4e68
         # Get watchlist path and watchlist contents based on value of watchlist input
         if watchlist.value == 'personal':
                 user_id = interaction.user.id
@@ -257,7 +249,6 @@ def run_bot():
         except Exception as e:
             print(e)
             await interaction.followup.send("Failed to fetch data files. Please ensure your parameters are valid.")
-<<<<<<< HEAD
     
     @client.tree.command(name = "run-analysis", description= "Run analysis on all tickers in the selected watchlist",)
     @app_commands.describe(watchlist = "Which watchlist you want to make changes to")
@@ -277,27 +268,6 @@ def run_bot():
         except Exception as e:
             await interaction.response.send_message("Failed to run analysis. Verify that the selected watchlist is populated with tickers.", ephemeral=True)
     
-=======
-    
-    @client.tree.command(name = "run-analysis", description= "Run analysis on all tickers in the selected watchlist",)
-    @app_commands.describe(watchlist = "Which watchlist you want to make changes to")
-    @app_commands.choices(watchlist =[
-        app_commands.Choice(name = "global", value = 'global'),
-        app_commands.Choice(name = "personal", value = 'personal')
-    ])
-    async def runanalysis(interaction: discord.Interaction, watchlist: app_commands.Choice[str]):
-        tickers = []
-        if watchlist.value == "personal":
-            user_id = interaction.user.id
-            tickers = sd.get_tickers(user_id)
-        else:
-            tickers = sd.get_tickers()
-        try:
-            tickers = sd.get_tickers(user_id)
-        except Exception as e:
-            await interaction.response.send_message("Failed to run analysis. Verify that the selected watchlist is populated with tickers.", ephemeral=True)
-    
->>>>>>> 405501164043714887641f569eeb0ac5afde4e68
         await interaction.response.defer(ephemeral=True)
         an.run_analysis(tickers)
         await interaction.followup.send("Analysis complete!")
@@ -321,17 +291,9 @@ def run_bot():
                 
         
             daily_scores = an.get_masterlist_scores()
-            daily_rankings_message = '**Daily Stock Rankings**\n\n'
-            for col in daily_scores.columns:
-                try:
-                    if float(col) > 2.00:
-                        daily_rankings_message += "**{}**\n".format(col)
-                        daily_rankings_message += " ".join(daily_scores[col].dropna()) + "\n\n"
-                except ValueError as e:
-                    #Index column is invalid
-                    pass
+            daily_summary_message = build_daily_summary
 
-            await channel.send(daily_rankings_message, file=discord.File("{}/daily_rankings.csv".format(ATTACHMENTS_PATH)))
+            await channel.send(daily_summary_message, file=discord.File("{}/daily_rankings.csv".format(ATTACHMENTS_PATH)))
 
 
         else:
@@ -339,125 +301,6 @@ def run_bot():
      
     @send_reports.before_loop
     async def delay_send_reports():
-<<<<<<< HEAD
-        
-        hour = 6
-        minute = 30
-        now = dt.datetime.now()
-        print(now)
-        future = dt.datetime(now.year, now.month, now.day, hour, minute)
-        if now.hour >= hour and now.minute > minute:
-            future += dt.timedelta(days=1)
-        print("Sending reports in {} seconds".format((future-now).seconds))
-        await asyncio.sleep((future-now).seconds)
-        
-    @client.tree.command(name = "run-reports", description= "Post analysis of a given watchlist (use /fetch-reports for individual or non-watchlist stocks)",)
-    @app_commands.describe(watchlist = "Which watchlist to fetch reports for")
-    @app_commands.choices(watchlist =[
-        app_commands.Choice(name = "global", value = 'global'),
-        app_commands.Choice(name = "personal", value = 'personal')
-    ])
-    async def runreports(interaction: discord.Interaction, watchlist: app_commands.Choice[str]):
-        await interaction.response.defer(ephemeral=True)
-        
-        tickers = ""
-        message = ""
-
-        # Populate tickers based on value of watchlist
-        if watchlist.value == 'personal':
-            user_id = interaction.user.id
-            tickers = sd.get_tickers(user_id)
-        else:
-            tickers = sd.get_tickers()
-
-        if len(tickers) == 0:
-            # Empty watchlist
-            message = "No tickers on the watchlist. Use /addticker to build a watchlist."
-        else:
-            user = interaction.user
-            channel = await client.fetch_channel('1150890013471555705')
-
-            an.run_analysis(tickers)
-
-            # Build reports and send messages
-            for ticker in tickers:
-                report = build_report(ticker)
-                message, files = report.get('message'), report.get('files')
-                if watchlist.value == 'personal':
-                    await user.send(message, files=files)
-                else:
-                    await channel.send(message, files=files)
-                    
-            message = "Reports have been posted!"
-        await interaction.followup.send(message, ephemeral=True)
-
-    @client.tree.command(name = "fetch-financials", description= "Fetch financial reports of the specified tickers ",)
-    @app_commands.describe(tickers = "Tickers to return financials for (separated by spaces)")
-    @app_commands.describe(visibility = "'private' to send to DMs, 'public' to send to the channel")
-    @app_commands.choices(visibility =[
-        app_commands.Choice(name = "private", value = 'private'),
-        app_commands.Choice(name = "public", value = 'public')
-    ])        
-    async def fetch_financials(interaction: discord.interactions, tickers: str, visibility: app_commands.Choice[str]):
-        await interaction.response.defer(ephemeral=True)
-
-        tickers, invalid_tickers = sd.get_list_from_tickers(tickers)
-
-        if(len(tickers) > 0):
-            for ticker in tickers:
-                files = sd.fetch_financials(ticker)
-                for i in range(0, len(files)):
-                    files[i] = discord.File(files[i])
-                if visibility.value == 'private':
-                    await interaction.user.send("Financials for {}".format(ticker), files=files)
-                else:
-                    await interaction.channel.send("Financials for {}".format(ticker), files=files)
-
-            await interaction.followup.send("Posted financials for {}".format(",".join(tickers)), ephemeral=True)
-        else:
-            await interaction.followup.send("No valid tickers in {}".format(",".join(invalid_tickers)), ephemeral=True)
-            
-
-    @client.tree.command(name = "fetch-reports", description= "Fetch analysis reports of the specified tickers (use /run-reports to analyze a watchlist)",)
-    @app_commands.describe(tickers = "Tickers to post reports for (separated by spaces)")
-    @app_commands.describe(visibility = "'private' to send to DMs, 'public' to send to the channel")
-    @app_commands.choices(visibility =[
-        app_commands.Choice(name = "private", value = 'private'),
-        app_commands.Choice(name = "public", value = 'public')
-    ])        
-    async def fetchreports(interaction: discord.interactions, tickers: str, visibility: app_commands.Choice[str]):
-        
-        await interaction.response.defer(ephemeral=True)
-
-        # Validate each ticker in the list is valid
-        tickers, invalid_tickers = sd.get_list_from_tickers(tickers)
-
-        an.run_analysis(tickers)
-
-        # Build reports and send messages
-        for ticker in tickers:
-            report = build_report(ticker)
-            message, files, links = report.get('message'), report.get('files'), report.get('links')
-            if visibility.value == 'private':
-                await interaction.user.send(message, files=files, embed=links)
-            else:
-                await interaction.channel.send(message, files=files, embed=links)
-        if len(invalid_tickers) > 0:
-            await interaction.followup.send("Fetched reports for {}. Failed to fetch reports for {}.".format(", ".join(tickers), ", ".join(invalid_tickers)), ephemeral=True)
-        else:
-            await interaction.followup.send("Fetched reports!", ephemeral=True)
-
-        
-            
-
-    def build_report(ticker):
-
-        # Get techincal indicator charts and convert them to a list of discord File objects
-        files = sd.fetch_charts(ticker)
-        for i in range(0, len(files)):
-            files[i] = discord.File(files[i])
-
-=======
         
         hour = 6
         minute = 30
@@ -576,7 +419,6 @@ def run_bot():
         for i in range(0, len(files)):
             files[i] = discord.File(files[i])
 
->>>>>>> 405501164043714887641f569eeb0ac5afde4e68
         # Append message based on analysis of indicators
         message = "**" + ticker + " Report " + dt.date.today().strftime("%m/%d/%Y") + "**\n"
         links = get_ticker_links(ticker)
@@ -601,11 +443,28 @@ def run_bot():
         for indicator in analysis:
             message += indicator
 
-        message += "\nScore: {:.2f}/4.0".format(an.signals_score(sd.fetch_daily_data(ticker)))
+        message += "\nScore: {:.2f}/1.0".format(an.signals_score(sd.fetch_daily_data(ticker)))
         
         report = {'message':message, 'files':files, 'embed':links}
 
         return report
+    
+    def build_daily_summary():
+        daily_scores = an.get_masterlist_scores()
+        BUY_THRESHOLD = 1.00
+        daily_rankings_message = '**Daily Stock Rankings**\n\n'
+
+        daily_rankings_message += "**SMA 10/50 Strategy**\n"
+        for col in daily_scores.columns:
+            try:
+                if float(col) >= 1.00:
+                    daily_rankings_message += "**{}**\n".format(col)
+                    daily_rankings_message += " ".join(daily_scores[col].dropna()) + "\n\n"
+            except ValueError as e:
+                #Index column is invalid
+                pass
+
+
 
     def get_ticker_links(ticker):
 
