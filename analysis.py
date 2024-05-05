@@ -33,8 +33,125 @@ class Strategy(ta.Strategy):
     def run_strategy(self, data):
         data.ta.strategy(self)
 
+plots = {
+        "Simple Moving Average 10/50":{
+            'abbreviation': "SMA10-50",
+            "addplot_params": [ 
+                
+                    {
+                        'column': 'SMA_10',
+                        'params': {
+                            'color': 'blue',
+                            'label': 'SMA 10'
+                            },
+                    },
+                    {
+                        'column': 'SMA_50',
+                        'params': {
+                            'color': 'red',
+                            'label': 'SMA_50'
+                         }
+                    }
+                ],
+            "signals": [
+                {
+                    'kind':'sma',
+                    'params':{
+                        'short':'SMA_10',
+                        'long':'SMA_50'
+                        }
+                 }
+                 ]
+            
+        },
+        "Simple Moving Average 50/200":{
+            'abbreviation': "SMA50-200",
+            "addplot_params": [ 
+                
+                    {
+                        'column': 'SMA_50',
+                        'params': {
+                            'color': 'blue',
+                            'label': 'SMA 50'
+                            },
+                    },
+                    {
+                        'column': 'SMA_200',
+                        'params': {
+                            'color': 'red',
+                            'label': 'SMA_200**'
+                         }
+                    }
+                ],
+            "signals": [
+                {
+                    'kind':'sma',
+                    'params':{
+                        'short':'SMA_50',
+                        'long':'SMA_200'
+                        }
+                 }
+                 ]
+            
+        }
+    }
+def get_plots(indicator_name):
+    return plots[indicator_name]
+
+
     
+    
+def plot(ticker, data, indicator_name, display_signals=False, num_days=365, plot_type = 'line', style='tradingview', savefilepath_root = PLOTS_PATH):
+
+    def buy_sell_signals(signals):
+        buy_signals = [np.nan] * data['Close'].shape[0]
+        sell_signals = [np.nan] * data['Close'].shape[0]
+        position = False
         
+        for i in range(5, data.size):
+            score = signals_score(data.head(i), signals)
+            score_evaluation = score_eval(score, 1.00, 0.00)
+            if score_evaluation == 'BUY' and position == False:
+                buy_signals[i] = (data['Close'].iloc[i]*0.99)
+                position = True
+            elif score_evaluation == 'SELL' and position == True:
+                sell_signals[i] = (data['Close'].iloc[i]*1.01)
+                position = False
+            
+        return buy_signals, sell_signals
+
+    addplots_info  = get_plots(indicator_name)
+    indicator_abbr = addplots_info['abbreviation']
+    addplots_params = addplots_info['addplot_params']
+    signals =  addplots_info['signals']
+
+    savefilepath_root = '{}/{}'.format(savefilepath_root,ticker)
+    sd.validate_path(savefilepath_root)
+    savefilepath = "{}/{}".format(savefilepath_root, indicator_abbr)
+    
+    save      = dict(fname=savefilepath,dpi=500,pad_inches=0.25)
+    data      = data.tail(num_days)
+
+
+    apds = []
+
+    for params in addplots_params:
+        column = params['column']
+        kwargs = params['params']
+        apds.append(mpf.make_addplot(data[column], **kwargs))
+    
+    if (display_signals):
+        buy_signal, sell_signal = buy_sell_signals(signals)
+        if not all_values_are_nan(buy_signal):
+            apds.append(mpf.make_addplot(buy_signal,color='g',type='scatter',markersize=50,marker='^',label='Buy Signal'))
+        if not all_values_are_nan(sell_signal):
+            apds.append(mpf.make_addplot(sell_signal,color='r',type='scatter',markersize=50,marker='v',label='Sell Signal'))
+            
+
+    
+    mpf.plot(data,type=plot_type,ylabel='Close Price',addplot=apds,figscale=1.6,figratio=(6,5),title='\n\n{} {}'.format(ticker, indicator_name),
+            style='tradingview', savefig=save)#,show_nontrading=True),fill_between=fb   
+
 
 
 
@@ -717,10 +834,10 @@ def recent_crossover(indicator, signal):
 
     return None
 
-def score_eval(score, strategy):
-    if score >= strategy.buy_threshold:
+def score_eval(score, buy_threshold, sell_threshold):
+    if score >= buy_threshold:
         return "BUY"
-    elif score <= strategy.sell_threshold:
+    elif score <= sell_threshold:
         return "SELL"
     else:
         return "HOLD"
@@ -742,15 +859,14 @@ def signals_score(data, signals):
         signal_function = globals()['signal_{}'.format(signal['kind'])]
         score += scores_legend.get(signal_function(**params))
 
-
-    #score += scores_legend.get(signal_rsi(data))    #(get_rsi(data)))
-    #score += scores_legend.get(signal_macd(data))   #(get_macd(data)))
-    #score += scores_legend.get(signal_sma(data))    #(get_sma(data)))
-    #score += scores_legend.get(signal_adx(data))    #(get_adx(data)))
     return score
 
 def test():
-    generate_indicators()
+    ticker = 'A'
+    data = sd.fetch_daily_data(ticker)
+    plot_info = get_plots("Simple Moving Average 10/50")
+    
+    plot('SPY', data, 'Simple Moving Average 50/200', True, num_days=760)
 
 
 
