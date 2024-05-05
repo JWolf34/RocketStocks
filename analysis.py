@@ -21,6 +21,7 @@ FINANCIALS_PATH = "data/financials"
 PLOTS_PATH = "data/plots"
 ANALYSIS_PATH = "data/analysis"
 ATTACHMENTS_PATH = "discord/attachments"
+MINUTE_DATA_PATH = "data/CSV/minute"
 
 class Strategy(ta.Strategy):
 
@@ -647,8 +648,7 @@ def run_analysis(tickers=sd.get_tickers()):
         generate_charts(data, ticker)
         generate_analysis(data, ticker)
 
-def generate_indicators():
-    data = pd.DataFrame()
+def generate_indicators(data):
 
     IndicatorStrategy = ta.Strategy(name = 'Indicator Strategy', ta = [
         {"kind": "sma", "length":10},
@@ -661,15 +661,8 @@ def generate_indicators():
         {"kind": "ad"}
     ]
     )
-                            
-    tickers = sd.get_masterlist_tickers()
-    num_ticker = 1
-    for ticker in tickers:
-        data = sd.fetch_daily_data(ticker)
-        print("Generating indicator data for {}... {}/{}".format(ticker, num_ticker, len(tickers)))
-        data.ta.strategy(IndicatorStrategy)
-        sd.update_csv(data, ticker, DAILY_DATA_PATH)
-    print("Complete!")
+    
+    data.ta.strategy(IndicatorStrategy)
 
 def plot_strategy(data, ticker):
     pass
@@ -749,8 +742,90 @@ def signals_score(data, signals):
     #score += scores_legend.get(signal_adx(data))    #(get_adx(data)))
     return score
 
+def download_analyze_data(ticker):
+    print("Downloading {}... {}/{}".format(ticker, num_ticker, len(tickers)))
+    data = sd.download_data(ticker)
+
+    # Generate indicator data
+    print("Generating indicator data for {}... {}/{}".format(ticker, num_ticker, len(tickers)))
+    generate_indicators(data)
+    sd.update_csv(data, ticker, DAILY_DATA_PATH)
+
+    with open("data/ticker_masterlist.txt", 'a') as masterlist:
+            masterlist.write("\n{}".format(ticker))
+    
+
+
+def daily_download_analyze_score():
+    import time
+    masterlist_file = "data/ticker_masterlist.txt"
+    
+    tickers = sd.get_masterlist_tickers()
+
+    if isinstance(tickers, list):
+        invalid_tickers = []
+        num_ticker = 1
+        for ticker in tickers:
+            print("Downloading {}... {}/{}".format(ticker, num_ticker, len(tickers)))
+            data = sd.download_data(ticker)
+            if data.size > 60 and data['Close'].iloc[-1] > 1.00:
+                # Generate indicator data
+                print("Generating indicator data for {}... {}/{}".format(ticker, num_ticker, len(tickers)))
+                generate_indicators(data)
+                sd.update_csv(data, ticker, DAILY_DATA_PATH)
+            else:
+                invalid_tickers.append(ticker)
+                print("Invalid ticker {}, removing from list...".format(ticker))
+            num_ticker += 1
+        for ticker in invalid_tickers:
+            if ticker in tickers:
+                tickers.remove(ticker)
+        with open(masterlist_file,'w') as masterlist:
+            masterlist.write("\n".join(tickers))
+
+        an.generate_masterlist_scores()
+
+        print("Complete!")
+
+    else:
+        pass
+
+def minute_download_analyze():
+    import time
+    masterlist_file = "data/ticker_masterlist.txt"
+    
+    tickers = sd.get_masterlist_tickers()
+
+    if isinstance(tickers, list):
+        invalid_tickers = []
+        num_ticker = 1
+        for ticker in tickers:
+            print("Downloading {}... {}/{}".format(ticker, num_ticker, len(tickers)))
+            data = sd.download_data(ticker, '5d', '1m')
+            if data.size > 60 and data['Close'].iloc[-1] > 1.00:
+                # Generate indicator data
+                print("Generating indicator data for {}... {}/{}".format(ticker, num_ticker, len(tickers)))
+                generate_indicators(data)
+                sd.update_csv(data, ticker, DAILY_DATA_PATH)
+            else:
+                invalid_tickers.append(ticker)
+                print("Invalid ticker {}, removing from list...".format(ticker))
+            num_ticker += 1
+        for ticker in invalid_tickers:
+            if ticker in tickers:
+                tickers.remove(ticker)
+        with open(masterlist_file,'w') as masterlist:
+            masterlist.write("\n".join(tickers))
+
+        #an.generate_masterlist_scores()
+
+        print("Complete!")
+
+    else:
+        pass
+
 def test():
-    generate_indicators()
+    daily_download_analyze_score()
 
 
 

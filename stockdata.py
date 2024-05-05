@@ -92,8 +92,10 @@ def update_csv(data, ticker, path):
     validate_path(path)
     path += "/{}.csv".format(ticker)
 
-    data.to_csv(path)
-    '''
+    # If the CSV file already exists, read the existing data
+    if os.path.exists(path):
+        existing_data = pd.read_csv(path, index_col=0, parse_dates=True)
+        #existing_data.fillna(0)
 
     # If the CSV file already exists, read the existing data
     if os.path.exists(path):
@@ -106,32 +108,18 @@ def update_csv(data, ticker, path):
         combined_data = data
     
     # Remove duplicate rows, if any
-    combined_data = combined_data[~combined_data.index.duplicated(keep='first')]
+    combined_data = combined_data[~combined_data.index.duplicated(keep='last')]
     
     # Save the combined data to the CSV file
     combined_data.to_csv(path)
-    '''
+    
+
+
 
 def download_data_and_update_csv(ticker, period, interval, path=DAILY_DATA_PATH):
     data = download_data(ticker, period, interval)
     update_csv(data, ticker, path)
     print('Done!')
-'''
-def combine_csv(ticker):
-
-    # Load historical and current data into data frames
-    historical_data = pd.read_csv("data/historical_data/" + ticker + ".csv", index_col=0, parse_dates=True)
-    current_data = pd.read_csv("data/CSV/" + ticker + ".csv", index_col=0, parse_dates=True)
-    
-    # Append the historical data to the current data
-    combined_data = pd.concat([historical_data, current_data])
-
-     # Remove duplicate rows, if any
-    combined_data = combined_data[~combined_data.index.duplicated(keep='first')]
-    
-    # Save the combined data to the CSV file
-    combined_data.to_csv("data/CSV/" + ticker + ".csv")
-    '''
 
 # Return all filepaths of all charts for a given ticker
 def fetch_charts(ticker):
@@ -143,7 +131,14 @@ def fetch_charts(ticker):
 
 # Return the latest data with technical indicators as a Pandas datafram
 def fetch_daily_data(ticker):
-    data = pd.read_csv("{}/{}.csv".format(DAILY_DATA_PATH, ticker), parse_dates=True, index_col='Date').sort_index()
+    data_path = "{}/{}.csv".format(DAILY_DATA_PATH, ticker)
+    if validate_path(data_path):
+        if daily_data_up_to_date(data):
+            data = pd.read_csv(data_path, parse_dates=True, index_col='Date').sort_index()
+        else:
+            data = an.download_analyze_data(ticker)
+    else:
+        data = an.download_analyze_data(ticker)
     return data
 
 def fetch_analysis(ticker):
@@ -186,6 +181,7 @@ def get_stock_data(ticker):
         print(e)
         return pd.DataFrame()
         '''
+        
         
 
 def get_days_summary(ticker):
@@ -272,6 +268,12 @@ def get_masterlist_tickers():
         print("No ticker masterlist available.")
         return ""
 
+def daily_data_up_to_date(data):
+    if datetime.today() in data.index:
+        return True
+    else:
+        return False
+
 # Download data and generate indicator data on all tickers
 def daily_download_data():
     import time
@@ -309,5 +311,5 @@ def test():
     daily_download_data()
 
 if __name__ == "__main__":
-    test()
+    #test()
     pass
