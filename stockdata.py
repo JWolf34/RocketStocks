@@ -134,15 +134,18 @@ def fetch_charts(ticker):
 # If CSV does not exist or is not up-to-date, return empty DataFrame
 def fetch_daily_data(ticker):
     data_path = "{}/{}.csv".format(DAILY_DATA_PATH, ticker)
-    if validate_path(data_path):
-        if daily_data_up_to_date(data):
-            data = pd.read_csv(data_path, parse_dates=True, index_col='Date').sort_index()
-        else:
-            print("CSV file for {} does exist but does not ".format(ticker))
-            data = pd.DataFrame()
-    else:
+    if not os.path.isfile(data_path):
         print("CSV file for {} does not exist.".format(ticker))
-        data = pd.DataFrame()
+        download_analyze_data(ticker)
+        add_to_masterlist(ticker)
+    
+    data = pd.read_csv(data_path, parse_dates=True, index_col='Date').sort_index()
+    
+    if not daily_data_up_to_date(data): 
+        print("CSV file for {} does exist but does not contain data for today: {}".format(ticker, datetime.date.today()))
+        download_analyze_data(ticker)
+        data = pd.read_csv(data_path, parse_dates=True, index_col='Date').sort_index()
+    
     return data
 
 def fetch_analysis(ticker):
@@ -243,11 +246,35 @@ def get_masterlist_tickers():
         print("No ticker masterlist available.")
         return ""
 
+def add_to_masterlist(ticker):
+    print("Attempting to add {} to masterlist".format(ticker))
+    masterlist_file = "data/ticker_masterlist.txt"
+    masterlist_tickers = get_masterlist_tickers()
+    if masterlist_tickers == "":
+        pass
+    else:
+        if ticker not in masterlist_tickers:
+            masterlist_tickers.append(masterlist_tickers)
+            with open(masterlist_file, 'w') as masterlist:
+                for ticker in masterlist_tickers:
+                    masterlist.write(ticker + "\n")
+            print("Added {} to masterlist".format(ticker))
+        else:
+            print("{} already exists in masterlist".format(ticker))
+
 def daily_data_up_to_date(data):
-    if datetime.today() in data.index:
+    if datetime.date.today() in data.index:
         return True
     else:
         return False
+    
+def download_analyze_data(ticker):
+    print("Downloading {}...".format(ticker))
+    data = download_data(ticker)
+    print("Generating inidcator data for {}...".format(ticker))
+    generate_indicators(data)
+    update_csv(data, ticker, DAILY_DATA_PATH)
+
 
 # Download ticker data and generate indicator data on all tickers
 def daily_download_analyze_data():
@@ -265,7 +292,7 @@ def daily_download_analyze_data():
             print("Downloading {}... {}/{}".format(ticker, num_ticker, len(tickers)))
             data = download_data(ticker)
             if data.size > 60 and data['Close'].iloc[-1] > 1.00:
-                print("Geenerating inidcator data for {}... {}/{}".format(ticker, num_ticker, len(tickers)))
+                print("Gnerating inidcator data for {}... {}/{}".format(ticker, num_ticker, len(tickers)))
                 generate_indicators(data)
                 update_csv(data, ticker, DAILY_DATA_PATH)
             else:
@@ -307,7 +334,7 @@ def generate_indicators(data):
 
 
 def test():
-    daily_download_analyze_data()
+    fetch_daily_data("ABBV")
 
 if __name__ == "__main__":
     test()

@@ -1,4 +1,5 @@
 from apscheduler.schedulers.blocking import BlockingScheduler
+from apscheduler.triggers.cron import CronTrigger
 import stockdata as sd
 import analysis as an
 
@@ -6,12 +7,12 @@ def scheduler():
     timezone = 'America/Chicago'
     
     sched = BlockingScheduler()
+
+    daily_data_trigger = CronTrigger(day_of_week="mon-sat")
+    minute_data_trigger = CronTrigger(day_of_week="sun")
     
     # Download daily data and generate indicator data on all tickers in masterlist
-    sched.add_job(sd.daily_download_data_generate_indicators, 'cron', name = 'Download data and generate indictor data for all tickers in the masterlist', timezone = timezone, hour = 0, minute = 0, replace_existing=True)
-
-    # Generate indicators on downloaded data and update the data file
-    #sched.add_job(an.generate_indicators, 'cron', name = 'Generate indicator data for masterlist tickers', timezone = timezone, hour = 4, minute = 0, replace_existing=True)
+    sched.add_job(sd.daily_download_analyze_data, 'cron', name = 'Download data and generate indictor data for all tickers in the masterlist', timezone = timezone, hour = 0, minute = 0, replace_existing=True, trigger=daily_data_trigger)
 
     for ticker in sd.get_tickers():
         sched.add_job(an.run_analysis, 'cron', name='Run analysis on ' + ticker + ' data', timezone=timezone, hour = 7, minute=0, replace_existing=True)
