@@ -338,7 +338,7 @@ def run_bot():
             message = "No tickers on the watchlist. Use /addticker to build a watchlist."
         else:
             user = interaction.user
-            channel = await client.fetch_channel('1150890013471555705')
+            channel = await client.fetch_channel(get_reports_channel_id())
 
             an.run_analysis(tickers)
 
