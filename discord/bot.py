@@ -43,6 +43,9 @@ def run_bot():
     async def on_ready():
         try:
             await client.tree.sync()
+            commands = client.tree.get_commands()
+            for command in commands:
+                print(command.name)
             send_reports.start()
         except Exception as e:
             print(e)
@@ -490,7 +493,8 @@ def run_bot():
         links.append(tradingview)
 
         return links
-
+    
+            
     @client.tree.command(name = "help", description= "Show help on the bot's commands",)
     async def help(interaction: discord.Interaction):
         embed = discord.Embed()
@@ -498,20 +502,18 @@ def run_bot():
         for command in client.tree.get_commands():
             embed.add_field(name=command.name, value=command.description)
         await interaction.response.send_message(embed=embed)
-    client.run(TOKEN)
-    
 
-    # Test commands
-    @client.tree.command(name = "test-daily-download-analyze-data", description= "Test command to run the bot's daily data download and analysis logic",)
+    '''
+    Test Commands
+    '''
+
+    @client.tree.command(name = "test-daily-download-analyze-data", description= "Show help on the bot's commands",)
     async def test_daily_download_analyze_data(interaction: discord.Interaction):
-        await interaction.response.send_message("Running daily data download and analysis...", ephemeral=True)
+        await interaction.response.send_message("Running daily download and analysis")
         sd.daily_download_analyze_data()
 
-
-
+        
     client.run(TOKEN)
-    
-            
     
 
 if __name__ == "__main__":
