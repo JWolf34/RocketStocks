@@ -330,7 +330,7 @@ def minute_download_data():
         for ticker in tickers:
             print("Downloading {}... {}/{}".format(ticker, num_ticker, len(tickers)))
             data = download_data(ticker, period='5d', interval='1m')
-            if data['Close'].iloc[-1] > 1.00:
+            if data.size < 60 or data['Close'].iloc[-1] > 1.00:
                 update_csv(data, ticker, MINUTE_DATA_PATH)
             else:
                 invalid_tickers.append(ticker)
@@ -375,5 +375,5 @@ def test():
     minute_download_data()
 
 if __name__ == "__main__":
-    test()
+    #test()
     pass
