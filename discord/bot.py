@@ -446,18 +446,27 @@ def run_bot():
 
         message += "\n"
 
-        message += build_strategy_report(ticker)
+        strategy_message = build_strategy_report(ticker)
+        if strategy_message == '':
+            pass
+        else:
+            message += strategy_message
         
         report = {'message':message, 'files':files, 'embed':links}
 
         return report
     
     def build_strategy_report(ticker):
-        message = "**Strategies**\n"
-    
-        for strategy in an.get_strategies():
-            score = an.signals_score(sd.fetch_daily_data(ticker), strategy.signals)
-            message += "{}: **{}**".format(strategy.name, an.score_eval(score, strategy))
+        message = ''
+        strategies = an.get_strategies()
+        if len(strategies) == 0:
+            return message
+        else:
+            message = "**Strategies**\n"
+        
+            for strategy in strategies:
+                score = an.signals_score(sd.fetch_daily_data(ticker), strategy.signals)
+                message += "{}: **{}**".format(strategy.name, an.score_eval(score, strategy))
 
         return message
     

@@ -684,7 +684,7 @@ def get_strategies():
         return strategies
     else:
         print('No strategies available')
-        return pd.DataFrame()
+        return []
             
 
 #Utilities
