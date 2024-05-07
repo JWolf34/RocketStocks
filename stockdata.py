@@ -1,8 +1,9 @@
 import yfinance as yf
 from pandas_datareader import data as pdr
 import pandas as pd
+import pandas_ta as ta
 import os
-#import analysis as an
+import datetime
 from requests import Session
 from requests_cache import CacheMixin, SQLiteCache
 from requests_ratelimiter import LimiterMixin, MemoryQueueBucket
@@ -129,16 +130,19 @@ def fetch_charts(ticker):
         charts[i] = charts_path + charts[i]
     return charts
 
-# Return the latest data with technical indicators as a Pandas datafram
+# Return the latest data with technical indicators as a Pandas dataframe.
+# If CSV does not exist or is not up-to-date, return empty DataFrame
 def fetch_daily_data(ticker):
     data_path = "{}/{}.csv".format(DAILY_DATA_PATH, ticker)
     if validate_path(data_path):
         if daily_data_up_to_date(data):
             data = pd.read_csv(data_path, parse_dates=True, index_col='Date').sort_index()
         else:
-            data = an.download_analyze_data(ticker)
+            print("CSV file for {} does exist but does not ".format(ticker))
+            data = pd.DataFrame()
     else:
-        data = an.download_analyze_data(ticker)
+        print("CSV file for {} does not exist.".format(ticker))
+        data = pd.DataFrame()
     return data
 
 def fetch_analysis(ticker):
@@ -227,35 +231,6 @@ def fetch_financials(ticker):
         financials[i] = path + "/" + financials[i]
     return financials
     
-def download_masterlist_daily():
-    
-    import time
-    masterlist_file = "data/ticker_masterlist.txt"
-    
-    tickers = get_masterlist_tickers()
-
-    if isinstance(tickers, list):
-        print("Downloading masterlist data...")
-        invalid_tickers = []
-        num_requests = 0
-        requests_limit = 1500
-        for ticker in tickers:
-            data = download_data(ticker, "max", "1d")
-            if len(data) > 0:
-                update_csv(data, ticker, DAILY_DATA_PATH)
-            else:
-                invalid_tickers.append(ticker)
-            num_requests += 1
-        for ticker in invalid_tickers:
-            if ticker in tickers:
-                tickers.remove(ticker)
-        with open(masterlist_file,'w') as masterlist:
-            masterlist.write("\n".join(tickers))
-
-        print("Complete!")
-
-    else:
-        pass
 
 def get_masterlist_tickers():
     masterlist_file = "data/ticker_masterlist.txt"
@@ -274,9 +249,11 @@ def daily_data_up_to_date(data):
     else:
         return False
 
-# Download data and generate indicator data on all tickers
-def daily_download_data():
+# Download ticker data and generate indicator data on all tickers
+def daily_download_analyze_data():
     import time
+
+    start_time = time.time()
     masterlist_file = "data/ticker_masterlist.txt"
     
     tickers = get_masterlist_tickers()
@@ -287,11 +264,16 @@ def daily_download_data():
         for ticker in tickers:
             print("Downloading {}... {}/{}".format(ticker, num_ticker, len(tickers)))
             data = download_data(ticker)
-            if data.size > 60 and data['Close'].iloc[-1] > 5.00:
+            if data.size > 60 and data['Close'].iloc[-1] > 1.00:
+                print("Geenerating inidcator data for {}... {}/{}".format(ticker, num_ticker, len(tickers)))
+                generate_indicators(data)
                 update_csv(data, ticker, DAILY_DATA_PATH)
             else:
                 invalid_tickers.append(ticker)
                 print("Invalid ticker {}, removing from list...".format(ticker))
+            curr_time = time.time()
+            print("{} elapsed".format(time.strftime('%H:%M:%S', time.gmtime(curr_time-start_time))))
+            print("-----------------------------------------")
             num_ticker += 1
         for ticker in invalid_tickers:
             if ticker in tickers:
@@ -299,17 +281,34 @@ def daily_download_data():
         with open(masterlist_file,'w') as masterlist:
             masterlist.write("\n".join(tickers))
 
-        #an.generate_masterlist_scores()
 
         print("Complete!")
 
     else:
         pass
 
+def generate_indicators(data):
+
+    IndicatorStrategy = ta.Strategy(name = 'Indicator Strategy', ta = [
+        {"kind": "sma", "length":10},
+        {"kind": "sma", "length":30},
+        {"kind": "sma", "length":50},
+        {"kind": "sma", "length":200},
+        {"kind": "macd"},
+        {"kind": "rsi"},
+        {"kind": "adx"},
+        {"kind": "ad"}
+    ]
+    )
+    
+    data.ta.strategy(IndicatorStrategy)
+
+
+
 
 def test():
-    daily_download_data()
+    daily_download_analyze_data()
 
 if __name__ == "__main__":
-    #test()
+    test()
     pass

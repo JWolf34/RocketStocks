@@ -756,76 +756,10 @@ def download_analyze_data(ticker):
     
 
 
-def daily_download_analyze_score():
-    import time
-    masterlist_file = "data/ticker_masterlist.txt"
-    
-    tickers = sd.get_masterlist_tickers()
 
-    if isinstance(tickers, list):
-        invalid_tickers = []
-        num_ticker = 1
-        for ticker in tickers:
-            print("Downloading {}... {}/{}".format(ticker, num_ticker, len(tickers)))
-            data = sd.download_data(ticker)
-            if data.size > 60 and data['Close'].iloc[-1] > 1.00:
-                # Generate indicator data
-                print("Generating indicator data for {}... {}/{}".format(ticker, num_ticker, len(tickers)))
-                generate_indicators(data)
-                sd.update_csv(data, ticker, DAILY_DATA_PATH)
-            else:
-                invalid_tickers.append(ticker)
-                print("Invalid ticker {}, removing from list...".format(ticker))
-            num_ticker += 1
-        for ticker in invalid_tickers:
-            if ticker in tickers:
-                tickers.remove(ticker)
-        with open(masterlist_file,'w') as masterlist:
-            masterlist.write("\n".join(tickers))
-
-        an.generate_masterlist_scores()
-
-        print("Complete!")
-
-    else:
-        pass
-
-def minute_download_analyze():
-    import time
-    masterlist_file = "data/ticker_masterlist.txt"
-    
-    tickers = sd.get_masterlist_tickers()
-
-    if isinstance(tickers, list):
-        invalid_tickers = []
-        num_ticker = 1
-        for ticker in tickers:
-            print("Downloading {}... {}/{}".format(ticker, num_ticker, len(tickers)))
-            data = sd.download_data(ticker, '5d', '1m')
-            if data.size > 60 and data['Close'].iloc[-1] > 1.00:
-                # Generate indicator data
-                print("Generating indicator data for {}... {}/{}".format(ticker, num_ticker, len(tickers)))
-                generate_indicators(data)
-                sd.update_csv(data, ticker, DAILY_DATA_PATH)
-            else:
-                invalid_tickers.append(ticker)
-                print("Invalid ticker {}, removing from list...".format(ticker))
-            num_ticker += 1
-        for ticker in invalid_tickers:
-            if ticker in tickers:
-                tickers.remove(ticker)
-        with open(masterlist_file,'w') as masterlist:
-            masterlist.write("\n".join(tickers))
-
-        #an.generate_masterlist_scores()
-
-        print("Complete!")
-
-    else:
-        pass
 
 def test():
-    daily_download_analyze_score()
+    pass
 
 
 

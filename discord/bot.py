@@ -491,30 +491,6 @@ def run_bot():
 
         return links
 
-
-
-    @client.tree.command(name = "test-run-reports", description= "Force the bot to post reports in a testing channel",)
-    async def run_reports_test(interaction: discord.Interaction):
-        # Configure channel to send reports to
-        channel = await client.fetch_channel('1113281014677123084')
-        for ticker in sd.get_tickers():
-
-            # Get techincal indicator charts and convert them to a list of discord File objects
-            files = sd.fetch_charts(ticker)
-            for i in range(0, len(files)):
-                files[i] = discord.File(files[i])
-
-            # Append message based on analysis of indicators
-
-            message = "\n**" + ticker + " Analysis " + dt.date.today().strftime("%m/%d/%Y") + "**\n\n"
-
-            analysis = sd.fetch_analysis(ticker)
-
-            for indicator in analysis:
-                message += indicator
-            
-            await channel.send(message, files=files)
-            
     @client.tree.command(name = "help", description= "Show help on the bot's commands",)
     async def help(interaction: discord.Interaction):
         embed = discord.Embed()
@@ -523,6 +499,19 @@ def run_bot():
             embed.add_field(name=command.name, value=command.description)
         await interaction.response.send_message(embed=embed)
     client.run(TOKEN)
+    
+
+    # Test commands
+    @client.tree.command(name = "test-daily-download-analyze-data", description= "Test command to run the bot's daily data download and analysis logic",)
+    async def test_daily_download_analyze_data(interaction: discord.Interaction):
+        await interaction.response.send_message("Running daily data download and analysis...", ephemeral=True)
+        sd.daily_download_analyze_data()
+
+
+
+    client.run(TOKEN)
+    
+            
     
 
 if __name__ == "__main__":

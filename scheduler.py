@@ -8,10 +8,10 @@ def scheduler():
     sched = BlockingScheduler()
     
     # Download daily data and generate indicator data on all tickers in masterlist
-    sched.add_job(sd.daily_download_data, 'cron', name = 'Download data and generate indictor data for all tickers in the masterlist', timezone = timezone, hour = 0, minute = 0, replace_existing=True)
+    sched.add_job(sd.daily_download_data_generate_indicators, 'cron', name = 'Download data and generate indictor data for all tickers in the masterlist', timezone = timezone, hour = 0, minute = 0, replace_existing=True)
 
     # Generate indicators on downloaded data and update the data file
-    sched.add_job(an.generate_indicators, 'cron', name = 'Generate indicator data for masterlist tickers', timezone = timezone, hour = 4, minute = 0, replace_existing=True)
+    #sched.add_job(an.generate_indicators, 'cron', name = 'Generate indicator data for masterlist tickers', timezone = timezone, hour = 4, minute = 0, replace_existing=True)
 
     for ticker in sd.get_tickers():
         sched.add_job(an.run_analysis, 'cron', name='Run analysis on ' + ticker + ' data', timezone=timezone, hour = 7, minute=0, replace_existing=True)
