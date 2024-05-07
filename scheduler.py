@@ -24,7 +24,6 @@ def scheduler():
     sched.add_job(an.generate_masterlist_scores, 'cron', name = "Calculate masterlist scores", timezone=timezone, hour = 7, minute = 30, replace_existing = True)
     print('Ready!')
 
-    sched.print_jobs()
     sched.start()
 
 if __name__ == '__main__':

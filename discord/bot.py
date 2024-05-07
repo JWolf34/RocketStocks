@@ -11,6 +11,7 @@ import yfinance as yf
 import stockdata as sd
 import analysis as an
 import datetime as dt
+import threading
 
 # Paths for writing data
 ATTACHMENTS_PATH = "discord/attachments"
@@ -43,9 +44,6 @@ def run_bot():
     async def on_ready():
         try:
             await client.tree.sync()
-            commands = client.tree.get_commands()
-            for command in commands:
-                print(command.name)
             send_reports.start()
         except Exception as e:
             print(e)
@@ -509,8 +507,9 @@ def run_bot():
 
     @client.tree.command(name = "test-daily-download-analyze-data", description= "Show help on the bot's commands",)
     async def test_daily_download_analyze_data(interaction: discord.Interaction):
-        await interaction.response.send_message("Running daily download and analysis")
-        sd.daily_download_analyze_data()
+        await interaction.response.send_message("Running daily download and analysis", ephemeral=True)
+        download_data_thread = threading.Thread(target=sd.daily_download_analyze_data)
+        download_data_thread.start()
 
         
     client.run(TOKEN)
