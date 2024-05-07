@@ -18,6 +18,7 @@ FINANCIALS_PATH = "data/financials"
 PLOTS_PATH = "data/plots"
 ANALYSIS_PATH = "data/analysis"
 ATTACHMENTS_PATH = "discord/attachments"
+MINUTE_DATA_PATH = "data/CSV/minute"
 
 # Class for limiting requests to avoid hitting the rate limit when downloading data
 class CachedLimiterSession(CacheMixin, LimiterMixin, Session):
@@ -279,7 +280,7 @@ def download_analyze_data(ticker):
 # Download ticker data and generate indicator data on all tickers
 def daily_download_analyze_data():
     import time
-
+    print("Begin download of daily ticker data and generate indicators")
     start_time = time.time()
     masterlist_file = "data/ticker_masterlist.txt"
     
@@ -292,7 +293,7 @@ def daily_download_analyze_data():
             print("Downloading {}... {}/{}".format(ticker, num_ticker, len(tickers)))
             data = download_data(ticker)
             if data.size > 60 and data['Close'].iloc[-1] > 1.00:
-                print("Gnerating inidcator data for {}... {}/{}".format(ticker, num_ticker, len(tickers)))
+                print("Generating inidcator data for {}... {}/{}".format(ticker, num_ticker, len(tickers)))
                 generate_indicators(data)
                 update_csv(data, ticker, DAILY_DATA_PATH)
             else:
@@ -314,6 +315,43 @@ def daily_download_analyze_data():
     else:
         pass
 
+def minute_download_data():
+
+    import time
+    print("Begin weekly download of minute-by-minute ticker data")
+    start_time = time.time()
+    masterlist_file = "data/ticker_masterlist.txt"
+    
+    tickers = get_masterlist_tickers()
+
+    if isinstance(tickers, list):
+        invalid_tickers = []
+        num_ticker = 1
+        for ticker in tickers:
+            print("Downloading {}... {}/{}".format(ticker, num_ticker, len(tickers)))
+            data = download_data(ticker, period='5d', interval='1m')
+            if data['Close'].iloc[-1] > 1.00:
+                update_csv(data, ticker, MINUTE_DATA_PATH)
+            else:
+                invalid_tickers.append(ticker)
+                print("Invalid ticker {}, removing from list...".format(ticker))
+            curr_time = time.time()
+            print("{} elapsed".format(time.strftime('%H:%M:%S', time.gmtime(curr_time-start_time))))
+            print("-----------------------------------------")
+            num_ticker += 1
+        for ticker in invalid_tickers:
+            if ticker in tickers:
+                tickers.remove(ticker)
+        with open(masterlist_file,'w') as masterlist:
+            masterlist.write("\n".join(tickers))
+
+
+        print("Complete!")
+
+    else:
+        pass
+
+
 def generate_indicators(data):
 
     IndicatorStrategy = ta.Strategy(name = 'Indicator Strategy', ta = [
@@ -334,7 +372,7 @@ def generate_indicators(data):
 
 
 def test():
-    fetch_daily_data("ABBV")
+    minute_download_data()
 
 if __name__ == "__main__":
     test()
