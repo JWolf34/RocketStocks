@@ -4,6 +4,7 @@ import pandas as pd
 import pandas_ta as ta
 import os
 import datetime
+from datetime import timedelta
 from requests import Session
 from requests_cache import CacheMixin, SQLiteCache
 from requests_ratelimiter import LimiterMixin, MemoryQueueBucket
@@ -143,7 +144,7 @@ def fetch_daily_data(ticker):
     data = pd.read_csv(data_path, parse_dates=True, index_col='Date').sort_index()
     
     if not daily_data_up_to_date(data): 
-        print("CSV file for {} does exist but does not contain data for today: {}".format(ticker, datetime.date.today()))
+        print("CSV file for {} does exist but does not contain data for yesterday: {}".format(ticker, datetime.date.today() - timedelta(days=1)))
         download_analyze_data(ticker)
         data = pd.read_csv(data_path, parse_dates=True, index_col='Date').sort_index()
     
@@ -264,7 +265,18 @@ def add_to_masterlist(ticker):
             print("{} already exists in masterlist".format(ticker))
 
 def daily_data_up_to_date(data):
-    if datetime.date.today() in data.index:
+    yesterday = datetime.date.today() - timedelta(days=1)
+    data_dates = [date.date() for date in data.index]
+    latest_date = data_dates[-1]
+    '''
+    latest_date = data.index[-1].date()
+    print(yesterday)
+    print(type(yesterday))
+    print(latest_date)
+    print(type(latest_date))
+    print(yesterday == latest_date) 
+    '''
+    if yesterday in data_dates:
         return True
     else:
         return False

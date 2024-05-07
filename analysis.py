@@ -588,7 +588,7 @@ def generate_charts(data, ticker):
     plot_sma(data,ticker)
     plot_obv(data,ticker)
     plot_adx(data,ticker)
-    plot_strategy(data, ticker)
+    #plot_strategy(data, ticker)
 
     
 # Running analysis on techincal indicators to generate buy/sell signals
