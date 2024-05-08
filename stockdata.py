@@ -22,7 +22,7 @@ ATTACHMENTS_PATH = "discord/attachments"
 MINUTE_DATA_PATH = "data/CSV/minute"
 
 # Class for limiting requests to avoid hitting the rate limit when downloading data
-
+""" 
 class CachedLimiterSession(CacheMixin, LimiterMixin, Session):
     pass
 
@@ -30,7 +30,9 @@ session = CachedLimiterSession(
     limiter=Limiter(RequestRate(2, Duration.SECOND*5)),  # max 2 requests per 5 seconds
     bucket_class=MemoryQueueBucket,
     backend=SQLiteCache("yfinance.cache"),
-)
+) """
+
+session = Session()
 
 #########################
 # Download and analysis #
