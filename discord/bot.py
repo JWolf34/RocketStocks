@@ -511,14 +511,19 @@ def run_bot():
             embed.add_field(name=command.name, value=command.description)
         await interaction.response.send_message(embed=embed)
 
-    '''
-    Test Commands
-    '''
-
-    @client.tree.command(name = "test-daily-download-analyze-data", description= "Show help on the bot's commands",)
+    
+    #Test Commands
+    
+    @client.tree.command(name = "test-daily-download-analyze-data", description= "Test running the logic for daily data download and indicator generation",)
     async def test_daily_download_analyze_data(interaction: discord.Interaction):
         await interaction.response.send_message("Running daily download and analysis", ephemeral=True)
         download_data_thread = threading.Thread(target=sd.daily_download_analyze_data)
+        download_data_thread.start()
+
+    @client.tree.command(name = "test-minute-download-data", description= "Test running the logic for weekly minute-by-minute data download",)
+    async def test_minutes_download_data(interaction: discord.Interaction):
+        await interaction.response.send_message("Running daily download and analysis", ephemeral=True)
+        download_data_thread = threading.Thread(target=sd.minute_download_data)
         download_data_thread.start()
 
         
