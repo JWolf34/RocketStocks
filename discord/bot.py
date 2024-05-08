@@ -47,7 +47,7 @@ def run_bot():
             send_reports.start()
         except Exception as e:
             print(e)
-        print('Connected!')
+        print('Bot connected!')
 
 
 

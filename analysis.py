@@ -745,15 +745,17 @@ def signals_score(data, signals):
 def download_analyze_data(ticker):
     print("Downloading {}... {}/{}".format(ticker, num_ticker, len(tickers)))
     data = sd.download_data(ticker)
+    if data.size == 0:
+        print("Encountered error downloading stock data")
+    else:
+        # Generate indicator data
+        print("Generating indicator data for {}... {}/{}".format(ticker, num_ticker, len(tickers)))
+        generate_indicators(data)
+        sd.update_csv(data, ticker, DAILY_DATA_PATH)
 
-    # Generate indicator data
-    print("Generating indicator data for {}... {}/{}".format(ticker, num_ticker, len(tickers)))
-    generate_indicators(data)
-    sd.update_csv(data, ticker, DAILY_DATA_PATH)
-
-    with open("data/ticker_masterlist.txt", 'a') as masterlist:
-            masterlist.write("\n{}".format(ticker))
-    
+        with open("data/ticker_masterlist.txt", 'a') as masterlist:
+                masterlist.write("\n{}".format(ticker))
+        
 
 
 

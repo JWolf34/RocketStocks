@@ -22,7 +22,7 @@ def scheduler():
      
     # Evaluate ticker scores on masterlist tickers
     sched.add_job(an.generate_masterlist_scores, 'cron', name = "Calculate masterlist scores", timezone=timezone, hour = 7, minute = 30, replace_existing = True)
-    print('Ready!')
+    print('Scheduler ready!')
 
     sched.start()
 
