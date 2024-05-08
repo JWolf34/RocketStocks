@@ -8,8 +8,8 @@ def scheduler():
     
     sched = BlockingScheduler()
 
-    daily_data_trigger = CronTrigger(day_of_week="mon-sat", hour=0, minute=0)
-    minute_data_trigger = CronTrigger(day_of_week="sun", hour = 0, minute = 0)
+    daily_data_trigger = CronTrigger(day_of_week="mon-sat", hour=0, minute=0, timezone="Americas/Chicago")
+    minute_data_trigger = CronTrigger(day_of_week="sun", hour = 0, minute = 0, timezone="Americas/Chicago")
     
     # Download daily data and generate indicator data on all tickers in masterlist daily
     sched.add_job(sd.daily_download_analyze_data, trigger=daily_data_trigger, name = 'Download data and generate indictor data for all tickers in the masterlist', timezone = timezone, replace_existing=True)
