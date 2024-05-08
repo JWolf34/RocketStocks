@@ -239,7 +239,8 @@ def run_bot():
             files = []
             tickers, invalid_tickers = sd.get_list_from_tickers(tickers)
             for ticker in tickers:
-                sd.download_data_and_update_csv(ticker, period, interval, ATTACHMENTS_PATH)
+                if not sd.daily_data_up_to_date(ticker):
+                    sd.download_analyze_data(ticker)
                 file = discord.File("{}/{}.csv".format(ATTACHMENTS_PATH,ticker))
                 await interaction.user.send(content = "Data file for {}".format(ticker), file=file)
             if len(invalid_tickers) > 0:

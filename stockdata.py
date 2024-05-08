@@ -33,7 +33,7 @@ session = CachedLimiterSession(
 
 
 def validate_ticker(ticker):
-    data = yf.download(ticker, period="1d")
+    data = download_data(ticker, period='1d')
     if len(data) == 0:
         return False
     else:
