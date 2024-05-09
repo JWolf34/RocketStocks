@@ -14,3 +14,4 @@ discord/attachments
 
 # yfinance cache file
 yfinance.cache
+http_cache.sqlite

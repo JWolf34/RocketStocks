@@ -104,6 +104,8 @@ def download_analyze_data(ticker):
     data = download_data(ticker)
     if data.size == 0:
         print("Encountered error downloading stock data")
+    elif data.size < 60 or data['Close'].iloc[-1] < 1.00:
+        print("Invalid ticker {}, not writing data to CSV".format(ticker))
     else:
         print("Generating inidcator data for {}...".format(ticker))
         generate_indicators(data)
@@ -121,23 +123,26 @@ def daily_download_analyze_data():
 
     # Verify that ticker_masterlist.txt exists
     if isinstance(tickers, list):
-        invalid_tickers = []
         num_ticker = 1
         for ticker in tickers:
-            print("Downloading {}... {}/{}".format(ticker, num_ticker, len(tickers)))
-            data = download_data(ticker)
+            if not daily_data_up_to_date(fetch_daily_data(ticker)):
+                if validate_ticker(ticker):
+                    download_analyze_data(ticker)
 
-            # Only analyze ticker if 60 days of data are available and most recent close is above 1.00
-            if data.size > 60 and data['Close'].iloc[-1] > 1.00:
-                print("Generating inidcator data for {}... {}/{}".format(ticker, num_ticker, len(tickers)))
-                generate_indicators(data)
-                update_csv(data, ticker, DAILY_DATA_PATH)
+                    # Data downloaded and still not up-to-date means there is
+                    # no data for yesterday. Remove from masterlist
+                    if not daily_data_up_to_date(fetch_daily_data(ticker)):
+                        print("No data available for yesterday. Removing {} from masterlist".format(ticker))
+                        remove_from_masterlist(ticker)
+                else:
+                    print("Ticker {} is invalid. Removing from masterlist".format(ticker))
+                    remove_from_masterlist(ticker)
             else:
-                print("Invalid ticker {}, removing from list...".format(ticker))
-                remove_from_masterlist(ticker)
+                print("Data for {} is up-to-date. Skipping...".format(ticker))
+            
             curr_time = time.time()
             print("{} elapsed".format(time.strftime('%H:%M:%S', time.gmtime(curr_time-start_time))))
-            print("-----------------------------------------")
+            print("-----{}/{}-----".format(num_ticker, len(tickers)))
             num_ticker += 1
 
         # Remove tickers that do not match above criteria
@@ -226,17 +231,11 @@ def fetch_charts(ticker):
 # Return the latest data with technical indicators as a Pandas dataframe.
 # If CSV does not exist or is not up-to-date, return empty DataFrame
 def fetch_daily_data(ticker):
+    data = pd.DataFrame()
     data_path = "{}/{}.csv".format(DAILY_DATA_PATH, ticker)
     if not os.path.isfile(data_path):
         print("CSV file for {} does not exist.".format(ticker))
-        download_analyze_data(ticker)
-        add_to_masterlist(ticker)
-    
-    data = pd.read_csv(data_path, parse_dates=True, index_col='Date').sort_index()
-    
-    if not daily_data_up_to_date(data): 
-        print("CSV file for {} does exist but does not contain data for yesterday: {}".format(ticker, datetime.date.today() - timedelta(days=1)))
-        download_analyze_data(ticker)
+    else:
         data = pd.read_csv(data_path, parse_dates=True, index_col='Date').sort_index()
     
     return data
@@ -384,21 +383,24 @@ def remove_from_masterlist(ticker):
 
 # Validate that data file for specified ticker has data up to yesterday
 def daily_data_up_to_date(data):
-    yesterday = datetime.date.today() - timedelta(days=1)
-    data_dates = [date.date() for date in data.index]
-    latest_date = data_dates[-1]
-    if yesterday in data_dates:
-        return True
-    else:
+    if data.size == 0:
         return False
+    else:
+        yesterday = datetime.date.today() - timedelta(days=1)
+        data_dates = [date.date() for date in data.index]
+        latest_date = data_dates[-1]
+        if yesterday in data_dates:
+            return True
+        else:
+            return False
 
 #########
 # Tests #
 #########
 
 def test():
-    minute_download_data()
+    daily_download_analyze_data()
 
 if __name__ == "__main__":
-    #test()
+    test()
     pass
