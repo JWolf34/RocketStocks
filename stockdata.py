@@ -134,8 +134,8 @@ def daily_download_analyze_data():
                 generate_indicators(data)
                 update_csv(data, ticker, DAILY_DATA_PATH)
             else:
-                invalid_tickers.append(ticker)
                 print("Invalid ticker {}, removing from list...".format(ticker))
+                remove_from_masterlist(ticker)
             curr_time = time.time()
             print("{} elapsed".format(time.strftime('%H:%M:%S', time.gmtime(curr_time-start_time))))
             print("-----------------------------------------")
@@ -178,8 +178,8 @@ def minute_download_data():
             if data.size < 60 or data['Close'].iloc[-1] > 1.00:
                 update_csv(data, ticker, MINUTE_DATA_PATH)
             else:
-                invalid_tickers.append(ticker)
                 print("Invalid ticker {}, removing from list...".format(ticker))
+                remove_from_masterlist(ticker)
             curr_time = time.time()
             print("{} elapsed".format(time.strftime('%H:%M:%S', time.gmtime(curr_time-start_time))))
             print("-----------------------------------------")
@@ -358,14 +358,30 @@ def add_to_masterlist(ticker):
         pass
     else:
         if ticker not in masterlist_tickers:
-            masterlist_tickers.append(masterlist_tickers)
+            masterlist_tickers.append(ticker)
             with open(masterlist_file, 'w') as masterlist:
-                for ticker in masterlist_tickers:
-                    masterlist.write(ticker + "\n")
+                masterlist.write("\n".join(masterlist_tickers))
             print("Added {} to masterlist".format(ticker))
         else: 
             # Ticker already in masterlist
             print("{} already exists in masterlist".format(ticker))
+
+def remove_from_masterlist(ticker):
+    
+    masterlist_file = "data/ticker_masterlist.txt"
+    masterlist_tickers = get_masterlist_tickers()
+    # Verify that ticker_masterlist.txt exists
+    if masterlist_tickers == "":
+        pass
+    else:
+        if ticker in masterlist_tickers:
+            masterlist_tickers.remove(ticker)
+            with open(masterlist_file, 'w') as masterlist:
+                masterlist.write("\n".join(masterlist_tickers))
+            print("Removed {} from masterlist".format(ticker))
+        else: 
+            # Ticker not in masterlist
+            print("{} does not exist in masterlist".format(ticker))
 
 # Validate that data file for specified ticker has data up to yesterday
 def daily_data_up_to_date(data):
