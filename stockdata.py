@@ -26,11 +26,14 @@ MINUTE_DATA_PATH = "data/CSV/minute"
 class CachedLimiterSession(CacheMixin, LimiterMixin, Session):
     pass
 
+
 session = CachedLimiterSession(
-    limiter=Limiter(RequestRate(2, Duration.SECOND*3)),  # max 2 requests per 3 seconds
+    limiter=Limiter(RequestRate(2, Duration.SECOND*5)),  # max 2 requests per 5 seconds
     bucket_class=MemoryQueueBucket,
     backend=SQLiteCache("yfinance.cache"),
 ) 
+
+#session = Session()
 
 
 #########################
@@ -126,17 +129,21 @@ def daily_download_analyze_data():
         num_ticker = 1
         for ticker in tickers:
             if not daily_data_up_to_date(fetch_daily_data(ticker)):
-                if validate_ticker(ticker):
-                    download_analyze_data(ticker)
+                
+                download_analyze_data(ticker)
+                data = fetch_daily_data(ticker)
 
-                    # Data downloaded and still not up-to-date means there is
-                    # no data for yesterday. Remove from masterlist
-                    if not daily_data_up_to_date(fetch_daily_data(ticker)):
-                        print("No data available for yesterday. Removing {} from masterlist".format(ticker))
-                        remove_from_masterlist(ticker)
-                else:
+                # No CSV was written or data was bad:
+                if data.size == 0:
                     print("Ticker {} is invalid. Removing from masterlist".format(ticker))
                     remove_from_masterlist(ticker)
+
+                # Data downloaded and still not up-to-date means there is
+                # no data for yesterday. Remove from masterlist
+                elif not daily_data_up_to_date(fetch_daily_data(ticker)):
+                    print("No data available for yesterday. Removing {} from masterlist".format(ticker))
+                    remove_from_masterlist(ticker)
+               
             else:
                 print("Data for {} is up-to-date. Skipping...".format(ticker))
             
