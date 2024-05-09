@@ -612,7 +612,7 @@ def generate_masterlist_scores():
     tickers = sd.get_masterlist_tickers()
     num_ticker = 1
     for ticker in tickers:
-        print("Evaluating {}... {}/{}".format(ticker, num_ticker, len(tickersss)))
+        print("Evaluating {}... {}/{}".format(ticker, num_ticker, len(tickers)))
         try:
             score = signals_score(ticker)
             if score in scores.keys():
