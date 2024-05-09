@@ -642,8 +642,12 @@ def generate_masterlist_scores():
 
 def run_analysis(tickers=sd.get_tickers()):
     for ticker in tickers:
-        #sd.download_data_and_update_csv(ticker=ticker, period="max", interval="1d", path=DAILY_DATA_PATH)
-        #generate_indicators(ticker)
+        data = sd.fetch_daily_data(ticker)
+
+        # Verify that data is returned
+        if data.size == 0:
+            if sd.validate_ticker(ticker):
+                sd.download_analyze_data(ticker)
         data = sd.fetch_daily_data(ticker)
         generate_charts(data, ticker)
         generate_analysis(data, ticker)
@@ -742,19 +746,6 @@ def signals_score(data, signals):
     #score += scores_legend.get(signal_adx(data))    #(get_adx(data)))
     return score
 
-def download_analyze_data(ticker):
-    print("Downloading {}... {}/{}".format(ticker, num_ticker, len(tickers)))
-    data = sd.download_data(ticker)
-    if data.size == 0:
-        print("Encountered error downloading stock data")
-    else:
-        # Generate indicator data
-        print("Generating indicator data for {}... {}/{}".format(ticker, num_ticker, len(tickers)))
-        generate_indicators(data)
-        sd.update_csv(data, ticker, DAILY_DATA_PATH)
-
-        with open("data/ticker_masterlist.txt", 'a') as masterlist:
-                masterlist.write("\n{}".format(ticker))
         
 
 
