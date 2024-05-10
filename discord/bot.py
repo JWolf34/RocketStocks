@@ -304,7 +304,7 @@ def run_bot():
     @send_reports.before_loop
     async def delay_send_reports():
         
-        hour = 7
+        hour = 6
         minute = 30
         now = dt.datetime.now()
         print(now)

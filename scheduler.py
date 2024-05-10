@@ -14,21 +14,23 @@ def scheduler():
     
     sched = BlockingScheduler()
 
-    daily_data_trigger = CronTrigger(day_of_week="mon-sat", hour=0, minute=0, timezone="America/Chicago")
-    minute_data_trigger = CronTrigger(day_of_week="sun", hour = 0, minute = 0, timezone="America/Chicago")
+    daily_data_trigger = CronTrigger(day_of_week="mon-sat", hour=0, minute=0, timezone=timezone)
+    minute_data_trigger = CronTrigger(day_of_week="sun", hour=0, minute=0, timezone=timezone)
+    watchlist_analysis_trigger = CronTrigger(day_of_week="mon-fri", hour=5, minute=30, timezone=timezone)
     
     # Download daily data and generate indicator data on all tickers in masterlist daily
+    # Estimated runtime ~4 hours
     sched.add_job(sd.daily_download_analyze_data, trigger=daily_data_trigger, name = 'Download data and generate indictor data for all tickers in the masterlist', timezone = timezone, replace_existing=True)
 
     # Download minute-by-minute data on all tickers in masterlist weekly
-    sched.add_job(sd.daily_download_analyze_data, trigger=minute_data_trigger, name = 'Download minute-by-minute data for all tickers in the masterlist', timezone = timezone, replace_existing=True)
+    # Estimated runtime ~4 hours
+    sched.add_job(sd.minute_download_data, trigger=minute_data_trigger, name = 'Download minute-by-minute data for all tickers in the masterlist', timezone = timezone, replace_existing=True)
 
-    for ticker in sd.get_tickers():
-        sched.add_job(an.run_analysis, 'cron', name='Run analysis on ' + ticker + ' data', timezone=timezone, hour = 7, minute=0, replace_existing=True)
+    # Run analaysis on the global watchlist tickers so they're ready to be posted by the bot
+    sched.add_job(an.run_analysis, args=sd.get_tickers(), trigger=watchlist_analysis_trigger, name='Run analysis on data for tickers from the global watchlist', timezone=timezone, replace_existing=True)
      
     # Evaluate ticker scores on masterlist tickers
     #sched.add_job(an.generate_masterlist_scores, 'cron', name = "Calculate masterlist scores", timezone=timezone, hour = 7, minute = 30, replace_existing = True)
-    print('Scheduler ready!')
 
     sched.start()
 

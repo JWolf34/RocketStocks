@@ -172,12 +172,13 @@ def minute_download_data():
     logger.info("START - weekly minute-by-minute data download task")
     masterlist_file = "data/ticker_masterlist.txt"
     tickers = get_masterlist_tickers()
-    logger.debug("Processesing {}, {}/{}".format(ticker, num_ticker, len(tickers)))
+    
 
     # Verify that ticker_masterlist.txt exists
     if isinstance(tickers, list):
         num_ticker = 1
         for ticker in tickers:    
+            logger.debug("Processesing {}, {}/{}".format(ticker, num_ticker, len(tickers)))
             data = download_data(ticker, period="7d", interval="1m")
             logger.debug("Download and analysis of {} complete. Validate that data is valid".format(ticker))
 
@@ -193,43 +194,6 @@ def minute_download_data():
 
     else:
         pass
-    """ import time
-    print("Begin weekly download of minute-by-minute ticker data")
-    start_time = time.time()
-    masterlist_file = "data/ticker_masterlist.txt"
-    
-    tickers = get_masterlist_tickers()
-
-    # Verify that ticker_masterlist.txt exists
-    if isinstance(tickers, list):
-        invalid_tickers = []
-        num_ticker = 1
-        for ticker in tickers:
-            print("Downloading {}... {}/{}".format(ticker, num_ticker, len(tickers)))
-            data = download_data(ticker, period='5d', interval='1m')
-
-            # Only write ticker data to CSV if 60 minutes of data are available 
-            # and most recent close is above 1.00
-            if data.size < 60 or data['Close'].iloc[-1] > 1.00:
-                update_csv(data, ticker, MINUTE_DATA_PATH)
-            else:
-                print("Invalid ticker {}, removing from list...".format(ticker))
-                remove_from_masterlist(ticker)
-            curr_time = time.time()
-            print("{} elapsed".format(time.strftime('%H:%M:%S', time.gmtime(curr_time-start_time))))
-            print("-----------------------------------------")
-            num_ticker += 1
-        for ticker in invalid_tickers:
-            if ticker in tickers:
-                tickers.remove(ticker)
-        with open(masterlist_file,'w') as masterlist:
-            masterlist.write("\n".join(tickers))
-
-
-        print("Complete!")
-
-    else:
-        pass """
 
 # Download and write financials for specified ticker to the financials folder
 def download_financials(ticker):
