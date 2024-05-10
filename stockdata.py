@@ -169,7 +169,27 @@ def daily_download_analyze_data():
 # in the masterlist
 def minute_download_data():
 
-    import time
+    masterlist_file = "data/ticker_masterlist.txt"
+    tickers = get_masterlist_tickers()
+
+    # Verify that ticker_masterlist.txt exists
+    if isinstance(tickers, list):
+        num_ticker = 1
+        for ticker in tickers:    
+            data = download_data(ticker, period="7d", interval="1m")
+        
+            # No CSV was written or data was bad:
+            if data.size == 0:
+                print("Ticker {} is invalid. Removing from masterlist".format(ticker))
+                remove_from_masterlist(ticker)
+            else: # Data downloaded successfully
+                update_csv(data, ticker, MINUTE_DATA_PATH)
+               
+            num_ticker += 1
+
+    else:
+        pass
+    """ import time
     print("Begin weekly download of minute-by-minute ticker data")
     start_time = time.time()
     masterlist_file = "data/ticker_masterlist.txt"
@@ -205,7 +225,7 @@ def minute_download_data():
         print("Complete!")
 
     else:
-        pass
+        pass """
 
 # Download and write financials for specified ticker to the financials folder
 def download_financials(ticker):
