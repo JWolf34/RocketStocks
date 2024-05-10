@@ -7,7 +7,10 @@ data/
 #Attachments folder
 discord/attachments
 
-
+# VS Code and Python cache
+__pycache__/
+.vscode/
+discord/__pycache__
 
 #ENV file
 .env
