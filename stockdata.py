@@ -154,11 +154,11 @@ def daily_download_analyze_data():
                 # Data downloaded and still not up-to-date means there is
                 # no data for yesterday. Remove from masterlist
                 elif not daily_data_up_to_date(fetch_daily_data(ticker)):
-                    logging.warn("INVALID TICKER - No data for ticker {} available for yesterday. Attempting to remove from masterlist".format(ticker))
+                    logger.warn("INVALID TICKER - No data for ticker {} available for yesterday. Attempting to remove from masterlist".format(ticker))
                     remove_from_masterlist(ticker)
                
             else:
-                logging.info("Data for {} is up-to-date. Skipping...".format(ticker))
+                logger.info("Data for {} is up-to-date. Skipping...".format(ticker))
             
             num_ticker += 1
         logger.info("Daily data download task complete!")
@@ -169,21 +169,24 @@ def daily_download_analyze_data():
 # in the masterlist
 def minute_download_data():
     # TODO: Logging
-
+    logger.info("START - weekly minute-by-minute data download task")
     masterlist_file = "data/ticker_masterlist.txt"
     tickers = get_masterlist_tickers()
+    logger.debug("Processesing {}, {}/{}".format(ticker, num_ticker, len(tickers)))
 
     # Verify that ticker_masterlist.txt exists
     if isinstance(tickers, list):
         num_ticker = 1
         for ticker in tickers:    
             data = download_data(ticker, period="7d", interval="1m")
-        
+            logger.debug("Download and analysis of {} complete. Validate that data is valid".format(ticker))
+
             # No CSV was written or data was bad:
             if data.size == 0:
-                print("Ticker {} is invalid. Removing from masterlist".format(ticker))
+                logger.warn("INVALID TICKER - Data of {} has size 0 after download. Attempting to remove from masterlist".format(ticker))
                 remove_from_masterlist(ticker)
-            else: # Data downloaded successfully
+            else: # Data downloaded 
+                logger.debug("Data downloaded for {} is valid.".format(ticker))
                 update_csv(data, ticker, MINUTE_DATA_PATH)
                
             num_ticker += 1
@@ -418,13 +421,14 @@ def remove_from_masterlist(ticker):
         pass
     else:
         if ticker in masterlist_tickers:
+            logger.debug("Ticker {} is in masterlist. Removing...".format(ticker))
             masterlist_tickers.remove(ticker)
             with open(masterlist_file, 'w') as masterlist:
                 masterlist.write("\n".join(masterlist_tickers))
-            print("Removed {} from masterlist".format(ticker))
+            logger.info("Removed {} from masterlist".format(ticker))
         else: 
             # Ticker not in masterlist
-            print("{} does not exist in masterlist".format(ticker))
+            logger.info("Ticker {} does not exist in masterlist".format(ticker))
 
 # Validate that data file for specified ticker has data up to yesterday
 def daily_data_up_to_date(data):
