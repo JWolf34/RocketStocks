@@ -1,17 +1,23 @@
-#Config
+# Config - if it exists
 config.json
 
-#Data folder
+# Data folder
 data/
 
-#Attachments folder
+# Attachments folder
 discord/attachments
 
+# VS Code and Python cache
+__pycache__/
+.vscode/
+discord/__pycache__
 
-
-#ENV file
+# ENV file
 .env
 
 # yfinance cache file
 yfinance.cache
 http_cache.sqlite
+
+# Logging
+rocketstocks.log

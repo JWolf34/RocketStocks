@@ -2,6 +2,12 @@ from apscheduler.schedulers.blocking import BlockingScheduler
 from apscheduler.triggers.cron import CronTrigger
 import stockdata as sd
 import analysis as an
+import logging
+
+# Logging configuration
+logger = logging.getLogger(__name__)
+format = '%(asctime)s [%(levelname)-8s] [%(thread)-5d] %(module)s.%(funcName)s: %(message)s'
+logging.basicConfig(filename="rocketstocks.log", level=logging.DEBUG, format=format)
 
 def scheduler():
     timezone = 'America/Chicago'
