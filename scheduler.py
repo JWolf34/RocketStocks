@@ -2,6 +2,12 @@ from apscheduler.schedulers.blocking import BlockingScheduler
 from apscheduler.triggers.cron import CronTrigger
 import stockdata as sd
 import analysis as an
+import logging
+
+# Logging configuration
+logger = logging.getLogger(__name__)
+format = '%(asctime)s [%(levelname)-8s] [%(thread)-5d] %(module)s.%(funcName)s: %(message)s'
+logging.basicConfig(filename="rocketstocks.log", level=logging.DEBUG, format=format)
 
 def scheduler():
     timezone = 'America/Chicago'
@@ -22,7 +28,7 @@ def scheduler():
      
     # Evaluate ticker scores on masterlist tickers
     sched.add_job(an.generate_masterlist_scores, 'cron', name = "Calculate masterlist scores", timezone=timezone, hour = 7, minute = 30, replace_existing = True)
-    print('Scheduler ready!')
+    
 
     sched.start()
 
