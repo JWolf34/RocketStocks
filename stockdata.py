@@ -9,7 +9,14 @@ from requests import Session
 from requests_cache import CacheMixin, SQLiteCache
 from requests_ratelimiter import LimiterMixin, MemoryQueueBucket
 from pyrate_limiter import Duration, RequestRate, Limiter
+import logging
 
+# Logging configuration
+logger = logging.getLogger(__name__)
+format = '%(asctime)s [%(levelname)-8s] [%(thread)-8d] %(module)s.%(funcName)s: %(message)s'
+logging.basicConfig(filename="rocketstocks.log", level=logging.DEBUG, format=format)
+
+logging.debug("Overriding Pandas DataReader with yfinance logic")
 yf.pdr_override()
 
 # Paths for writing data
@@ -406,8 +413,10 @@ def daily_data_up_to_date(data):
 #########
 
 def test():
-    daily_download_analyze_data()
+    logger.info("Running test case")
+    #daily_download_analyze_data()
 
 if __name__ == "__main__":
+    logger.info("stock.data.py initialized")
     test()
     pass
