@@ -27,7 +27,7 @@ def scheduler():
     sched.add_job(sd.minute_download_data, trigger=minute_data_trigger, name = 'Download minute-by-minute data for all tickers in the masterlist', timezone = timezone, replace_existing=True)
 
     # Run analaysis on the global watchlist tickers so they're ready to be posted by the bot
-    sched.add_job(an.run_analysis, args=sd.get_tickers(), trigger=watchlist_analysis_trigger, name='Run analysis on data for tickers from the global watchlist', timezone=timezone, replace_existing=True)
+    sched.add_job(an.run_analysis, trigger=watchlist_analysis_trigger, name='Run analysis on data for tickers from the global watchlist', timezone=timezone, replace_existing=True)
      
     # Evaluate ticker scores on masterlist tickers
     #sched.add_job(an.generate_masterlist_scores, 'cron', name = "Calculate masterlist scores", timezone=timezone, hour = 7, minute = 30, replace_existing = True)

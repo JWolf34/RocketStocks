@@ -9,7 +9,7 @@ import scheduler
 logger = logging.getLogger(__name__)
 format = '%(asctime)s [%(levelname)-8s] [%(thread)-5d] %(module)s.%(funcName)s: %(message)s'
 logging.basicConfig(filename="rocketstocks.log", level=logging.DEBUG, format=format)
-logger.info('**********[START LOG]**********')
+
 
 def rocketStocks():
     
@@ -26,6 +26,7 @@ def rocketStocks():
     logger.debug("Threads joined")
 
 if (__name__ == '__main__'):
+    logger.info('**********[START LOG]**********')
     rocketStocks()
     
 

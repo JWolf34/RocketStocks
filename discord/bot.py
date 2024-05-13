@@ -526,6 +526,14 @@ def run_bot():
         download_data_thread = threading.Thread(target=sd.minute_download_data)
         download_data_thread.start()
 
+    @client.tree.command(name = "get-logs", description= "Return the log file for the bot",)
+    async def get_logs(interaction: discord.Interaction):
+        log_file = discord.File("rocketstocks.log")
+        await interaction.user.send(content = "Log file for RocketStocks :rocket:",file=log_file)
+        await interaction.response.send_message("Log file has been sent", ephemeral=True)
+        
+    
+
         
     client.run(TOKEN)
     
