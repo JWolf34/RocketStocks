@@ -12,10 +12,15 @@ from pyrate_limiter import Duration, RequestRate, Limiter
 import logging
 
 # Logging configuration
+handler = logging.StreamHandler()
+handler.setLevel(logging.DEBUG)
 logger = logging.getLogger(__name__)
+logger.addHandler(handler)
 format = '%(asctime)s [%(levelname)-8s] [%(thread)-5d] %(module)s.%(funcName)s: %(message)s'
 logging.basicConfig(filename="rocketstocks.log", level=logging.DEBUG, format=format)
 
+
+# Override pandas data fetching with yfinance logic
 yf.pdr_override()
 
 # Paths for writing data
@@ -247,16 +252,18 @@ def fetch_daily_data(ticker):
     if not os.path.isfile(data_path):
         logger.warning("CSV file for {} does not exist.".format(ticker))
     else:
-        logging.debug("Data file for {} exists: {}".format(ticker, data_path))
+        logging.info("Data file for {} exists: {}".format(ticker, data_path))
         data = pd.read_csv(data_path, parse_dates=True, index_col='Date').sort_index()
     
     return data
 
 # Return analysis text for the given ticker
 def fetch_analysis(ticker):
+    logger.info("Fetching analysis for ticker {}".format(ticker))
     analyis = ''
     path = "{}/{}/".format(ANALYSIS_PATH,ticker)
     for file in os.listdir(path):
+        logger.debug("Analysis for ticker {} found at {}".format(ticker, path))
         data = open(path + file)
         analyis += data.read() + "\n"
 
@@ -264,11 +271,14 @@ def fetch_analysis(ticker):
 
 # Return list of files that contain financials data for the specified ticker
 def fetch_financials(ticker):
+    logger.info("Fetching financials for ticker {}".format(ticker))
     path = "{}/{}".format(FINANCIALS_PATH,ticker)
     if not validate_path(path):
+        logger.debug("Path {} not found".format(path))
         download_financials(ticker)
     financials = os.listdir(path)
     for i in range(0, len(financials)):
+        logger.debug("Appending path {} to list of financials".format(path + "/" + financials[i]))
         financials[i] = path + "/" + financials[i]
     return financials
     
@@ -279,30 +289,38 @@ def fetch_financials(ticker):
 
 # Confirm we get valid data back when downloading data for ticker
 def validate_ticker(ticker):
+    logger.info("Verifying that ticker {} is valid".format(ticker))
     data = download_data(ticker, period='1d')
     if data.size == 0:
+        logger.warning("INVALID TICKER - Size of data for ticker {} is 0".format(ticker))
         return False
     else:
+        logger.info("Ticker {} is valid".format(ticker()))
         return True
 
-# Validate specififed path exists and create it if needed
+# Validate specified path exists and create it if needed
 def validate_path(path):
+    logger.info("Validating that path {} exists".format(path))
     if not (os.path.isdir(path)):
+        logger.info("Path {} does not exist. Creating path...".format(path))
         os.makedirs(path) 
         return 
     else:
+        logger.info("Path {} exists in the filesystem".format(path))
         return True
        
 # Return tickers from watchlist - global by default, personal if chosen by user
 def get_tickers(id = 0):
-
+    logger.info("Fetching tickers from watchlist with ID '{}'".format(id))
     watchlist_path = get_watchlist_path(id)
     
     try:
         with open("{}/watchlist.txt".format(watchlist_path), 'r+') as watchlist:
             tickers = watchlist.read().splitlines()
+            logger.debug("Found file for watchlist with ID {} with tickers: '{}'".format(id, tickers))
         return tickers
     except FileNotFoundError as e:
+        logger.warning("Watchlist with ID {} does not exist - creating empty watchlist".format(id))
         validate_path(watchlist_path)
         return []
 

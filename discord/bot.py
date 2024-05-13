@@ -12,6 +12,15 @@ import stockdata as sd
 import analysis as an
 import datetime as dt
 import threading
+import logging
+
+# Logging configuration
+handler = logging.StreamHandler()
+handler.setLevel(logging.DEBUG)
+logger = logging.getLogger(__name__)
+logger.addHandler(handler)
+format = '%(asctime)s [%(levelname)-8s] [%(thread)-5d] %(module)s.%(funcName)s: %(message)s'
+logging.basicConfig(filename="rocketstocks.log", level=logging.DEBUG, format=format)
 
 # Paths for writing data
 ATTACHMENTS_PATH = "discord/attachments"

@@ -5,7 +5,10 @@ import analysis as an
 import logging
 
 # Logging configuration
+handler = logging.StreamHandler()
+handler.setLevel(logging.DEBUG)
 logger = logging.getLogger(__name__)
+logger.addHandler(handler)
 format = '%(asctime)s [%(levelname)-8s] [%(thread)-5d] %(module)s.%(funcName)s: %(message)s'
 logging.basicConfig(filename="rocketstocks.log", level=logging.DEBUG, format=format)
 
