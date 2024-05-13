@@ -14,14 +14,17 @@ import stockdata as sd
 import yfinance as yfupdayte
 import csv
 import logging
+import sys
 
 # Logging configuration
-handler = logging.StreamHandler()
-handler.setLevel(logging.DEBUG)
-logger = logging.getLogger(__name__)
-logger.addHandler(handler)
+logfile_handler = logging.FileHandler(filename="rocketstocks.log")
+logfile_handler.setLevel(logging.DEBUG)
+stderr_handler = logging.StreamHandler(stream=sys.stderr)
+stderr_handler.setLevel(logging.ERROR)
+handlers = [logfile_handler, stderr_handler]
 format = '%(asctime)s [%(levelname)-8s] [%(thread)-5d] %(module)s.%(funcName)s: %(message)s'
-logging.basicConfig(filename="rocketstocks.log", level=logging.DEBUG, format=format)
+logging.basicConfig(level = logging.DEBUG, format=format, handlers=handlers)
+logger = logging.getLogger(__name__)
 
 # Paths for writing data
 DAILY_DATA_PATH = "data/CSV/daily"

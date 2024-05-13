@@ -10,14 +10,17 @@ from requests_cache import CacheMixin, SQLiteCache
 from requests_ratelimiter import LimiterMixin, MemoryQueueBucket
 from pyrate_limiter import Duration, RequestRate, Limiter
 import logging
+import sys
 
 # Logging configuration
-handler = logging.StreamHandler()
-handler.setLevel(logging.DEBUG)
-logger = logging.getLogger(__name__)
-logger.addHandler(handler)
+logfile_handler = logging.FileHandler(filename="rocketstocks.log")
+logfile_handler.setLevel(logging.DEBUG)
+stderr_handler = logging.StreamHandler(stream=sys.stderr)
+stderr_handler.setLevel(logging.ERROR)
+handlers = [logfile_handler, stderr_handler]
 format = '%(asctime)s [%(levelname)-8s] [%(thread)-5d] %(module)s.%(funcName)s: %(message)s'
-logging.basicConfig(filename="rocketstocks.log", level=logging.DEBUG, format=format)
+logging.basicConfig(level = logging.DEBUG, format=format, handlers=handlers)
+logger = logging.getLogger(__name__)
 
 
 # Override pandas data fetching with yfinance logic
@@ -295,7 +298,7 @@ def validate_ticker(ticker):
         logger.warning("INVALID TICKER - Size of data for ticker {} is 0".format(ticker))
         return False
     else:
-        logger.info("Ticker {} is valid".format(ticker()))
+        logger.info("Ticker {} is valid".format(ticker))
         return True
 
 # Validate specified path exists and create it if needed
