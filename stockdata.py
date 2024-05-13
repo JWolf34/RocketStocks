@@ -230,7 +230,7 @@ def download_financials(ticker):
 
 # Return all filepaths of all charts for a given ticker
 def fetch_charts(ticker):
-    logger.info("Fetching charts for ticker {}".ticker(ticker))
+    logger.info("Fetching charts for ticker {}".format(ticker))
     charts_path = "{}/{}/".format(PLOTS_PATH,ticker)
     charts = os.listdir(charts_path)
     for i in range(0, len(charts)):
