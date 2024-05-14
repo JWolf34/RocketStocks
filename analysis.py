@@ -29,7 +29,7 @@ class Strategy(ta.Strategy):
         super(Strategy, self).__init__(name, ta)
         self.signals=signals
         self.buy_threshold = buy_threshold
-        self.sell_threshold = buy_threshold
+        self.sell_threshold = sell_threshold
 
     def run_strategy(self, data):
         data.ta.strategy(self)
