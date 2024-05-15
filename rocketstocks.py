@@ -3,21 +3,24 @@ sys.path.append('discord')
 import bot as Discord
 import stockdata as sd
 import logging
+from logging.handlers import RotatingFileHandler
 import threading
 import scheduler
 
 # Logging configuration
-logfile_handler = logging.FileHandler(filename="rocketstocks.log")
-logfile_handler.setLevel(logging.DEBUG)
-stderr_handler = logging.StreamHandler(stream=sys.stderr)
-stderr_handler.setLevel(logging.ERROR)
-handlers = [logfile_handler, stderr_handler]
-format = '%(asctime)s [%(levelname)-8s] [%(thread)-5d] %(module)s.%(funcName)s: %(message)s'
-logging.basicConfig(level = logging.DEBUG, format=format, handlers=handlers)
+format = '%(asctime)s [%(levelname)-8s] [%(thread)-5d] %(module)s.%(funcName)-20s > %(message)s'
+logfile_handler = RotatingFileHandler(filename="rocketstocks.log", maxBytes=1073741824, backupCount=10)
+logfile_handler.setLevel(logging.INFO)
+stdout_handler = logging.StreamHandler(stream=sys.stdout)
+stdout_handler.setLevel(logging.INFO)
+stdout_handler.addFilter(logging.Filter(__name__))
+handlers = [logfile_handler, stdout_handler]
+logging.basicConfig(level=logging.DEBUG, format=format, handlers=handlers)
 logger = logging.getLogger(__name__)
 
 def rocketStocks():
-    
+    logger.info('**********[START LOG]**********')
+
     bot_thread = threading.Thread(target=Discord.run_bot)
     scheduler_thread = threading.Thread(target=scheduler.scheduler)
 
@@ -31,7 +34,6 @@ def rocketStocks():
     logger.debug("Threads joined")
 
 if (__name__ == '__main__'):
-    logger.info('**********[START LOG]**********')
     rocketStocks()
     
 

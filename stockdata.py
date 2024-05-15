@@ -9,17 +9,19 @@ from requests import Session
 from requests_cache import CacheMixin, SQLiteCache
 from requests_ratelimiter import LimiterMixin, MemoryQueueBucket
 from pyrate_limiter import Duration, RequestRate, Limiter
-import logging
 import sys
+import logging
+from logging.handlers import RotatingFileHandler
 
 # Logging configuration
-logfile_handler = logging.FileHandler(filename="rocketstocks.log")
-logfile_handler.setLevel(logging.DEBUG)
-stderr_handler = logging.StreamHandler(stream=sys.stderr)
-stderr_handler.setLevel(logging.ERROR)
-handlers = [logfile_handler, stderr_handler]
-format = '%(asctime)s [%(levelname)-8s] [%(thread)-5d] %(module)s.%(funcName)s: %(message)s'
-logging.basicConfig(level = logging.DEBUG, format=format, handlers=handlers)
+format = '%(asctime)s [%(levelname)-8s] [%(thread)-5d] %(module)s.%(funcName)-20s > %(message)s'
+logfile_handler = RotatingFileHandler(filename="rocketstocks.log", maxBytes=1073741824, backupCount=10)
+logfile_handler.setLevel(logging.INFO)
+stdout_handler = logging.StreamHandler(stream=sys.stdout)
+stdout_handler.setLevel(logging.INFO)
+stdout_handler.addFilter(logging.Filter(__name__))
+handlers = [logfile_handler, stdout_handler]
+logging.basicConfig(level=logging.DEBUG, format=format, handlers=handlers)
 logger = logging.getLogger(__name__)
 
 
@@ -137,7 +139,7 @@ def download_analyze_data(ticker):
 # tickers in the masterlist
 def daily_download_analyze_data():
     import time
-    logging.info("START - daily data download task")
+    logging.info("********** [START DAILY DOWNLOAD TASK] **********")
     masterlist_file = "data/ticker_masterlist.txt"
     
     tickers = get_masterlist_tickers()
@@ -146,7 +148,7 @@ def daily_download_analyze_data():
     if isinstance(tickers, list):
         num_ticker = 1
         for ticker in tickers:
-            logger.debug("Processesing {}, {}/{}".format(ticker, num_ticker, len(tickers)))
+            logger.info("Processesing {}, {}/{}".format(ticker, num_ticker, len(tickers)))
             logger.debug("Validate if data file for {} is up-tp-date".format(ticker))
             if not daily_data_up_to_date(fetch_daily_data(ticker)):
                 logger.debug("Data file for {} is either empty or not up-to-date".format(ticker))
@@ -176,8 +178,8 @@ def daily_download_analyze_data():
 # Weekly process to download minute-by-minute ticker data on all tickers
 # in the masterlist
 def minute_download_data():
-    # TODO: Logging
-    logger.info("START - weekly minute-by-minute data download task")
+    
+    logging.info("********** [START WEEKLY DOWNLOAD TASK] **********")
     masterlist_file = "data/ticker_masterlist.txt"
     tickers = get_masterlist_tickers()
     
@@ -186,7 +188,7 @@ def minute_download_data():
     if isinstance(tickers, list):
         num_ticker = 1
         for ticker in tickers:    
-            logger.debug("Processesing {}, {}/{}".format(ticker, num_ticker, len(tickers)))
+            logger.info("Processesing {}, {}/{}".format(ticker, num_ticker, len(tickers)))
             data = download_data(ticker, period="7d", interval="1m")
             logger.debug("Download and analysis of {} complete. Validate that data is valid".format(ticker))
 
@@ -255,7 +257,7 @@ def fetch_daily_data(ticker):
     if not os.path.isfile(data_path):
         logger.warning("CSV file for {} does not exist.".format(ticker))
     else:
-        logging.info("Data file for {} exists: {}".format(ticker, data_path))
+        logging.debug("Data file for {} exists: {}".format(ticker, data_path))
         data = pd.read_csv(data_path, parse_dates=True, index_col='Date').sort_index()
     
     return data
@@ -292,24 +294,24 @@ def fetch_financials(ticker):
 
 # Confirm we get valid data back when downloading data for ticker
 def validate_ticker(ticker):
-    logger.info("Verifying that ticker {} is valid".format(ticker))
+    logger.debug("Verifying that ticker {} is valid".format(ticker))
     data = download_data(ticker, period='1d')
     if data.size == 0:
         logger.warning("INVALID TICKER - Size of data for ticker {} is 0".format(ticker))
         return False
     else:
-        logger.info("Ticker {} is valid".format(ticker))
+        logger.debug("Ticker {} is valid".format(ticker))
         return True
 
 # Validate specified path exists and create it if needed
 def validate_path(path):
-    logger.info("Validating that path {} exists".format(path))
+    logger.debug("Validating that path {} exists".format(path))
     if not (os.path.isdir(path)):
-        logger.info("Path {} does not exist. Creating path...".format(path))
+        logger.warning("Path {} does not exist. Creating path...".format(path))
         os.makedirs(path) 
         return 
     else:
-        logger.info("Path {} exists in the filesystem".format(path))
+        logger.debug("Path {} exists in the filesystem".format(path))
         return True
        
 # Return tickers from watchlist - global by default, personal if chosen by user
@@ -329,59 +331,74 @@ def get_tickers(id = 0):
 
 # Format string of tickers into list
 def get_list_from_tickers(tickers):
+    logger.debug("Processing valid and invalid tickers from {}".format(tickers))
     ticker_list = tickers.split(" ")
     invalid_tickers = []
     for ticker in ticker_list:
-        if not validate_ticker(ticker):
+        if not validate_ticker(ticker): 
             invalid_tickers.append(ticker)
     # Remove invalid tickers from list before returning
+    logger.debug("Identified invalid tickers from original list {} - removing...".format(invalid_tickers))
     for ticker in invalid_tickers:
         ticker_list.remove(ticker)
     return ticker_list, invalid_tickers
 
 # Return path to requested watchlist
 def get_watchlist_path(id = 0):
+    logger.debug("Requesting path of watchlist with ID {}".format(id))
     if id == 0:
-        return "data/watchlists/global"
+        path = "data/watchlists/global"
+        logger.debug("Return watchlist at path {}".format(path))
+        return path
     else:
-        return "data/watchlists/{}".format(id)
+        path = "data/watchlists/{}".format(id)
+        logger.debug("Return watchlist at path {}".format(path))
+        return path
     
 # Return Dataframe with the latest OHLCV of requested ticker
 def get_days_summary(ticker):
+    logger.info("Fetching today's OHLCV summary for ticker {}".format(ticker))
     # Assumes data has been pulled recently. Mainly called when running or fetching reports. 
     data = fetch_daily_data(ticker)
     if len(data) > 0:
         summary = data[['Open', "Close", "High", "Low", "Volume"]].iloc[-1]
+        logger.debug("Today's summary for ticker {}: {}".format(ticker, summary))
         return summary
     else:
+        logger.warning("Could not retrieve the day's summary for ticker {}".format(ticker))
         return None
     
 # Return next earnings date of the specified ticker, if available
 def get_next_earnings_date(ticker):
+    logger.info("Finding next earnings date for ticker {}".format(ticker))
     try:
-        return yf.Ticker(ticker).calendar['Earnings Date'][0]
+        earnings_date = yf.Ticker(ticker).calendar['Earnings Date'][0]
+        logger.info("Next earnings date for ticker {} is {}".format(ticker, earnings_date))
+        return earnings_date
     except IndexError as e:
-        print(e)
+        logger.error("Encountered IndexError when fetching next earnings date for ticker {}:\n{}".format(ticker, e))
         return "Earnings date unavailable"
     except KeyError as e:
-        print(e)
+        logger.error("Encountered KeyError when fetching next earnings date for ticker {}:\n{}".format(ticker, e))
         return "Earnings Date unavailable"
     
 # Return list of tickers available in the masterlist
 def get_masterlist_tickers():
+    logger.debug("Fetching tickers from masterlist")
     masterlist_file = "data/ticker_masterlist.txt"
 
     if os.path.isfile(masterlist_file):
         with open(masterlist_file, 'r') as masterlist:
             tickers = masterlist.read().splitlines()
+            logger.debug("Retrieved ticker masterlist containing {} tickers".format(len(tickers)))
             return tickers
     else:
-        print("No ticker masterlist available.")
+        logger.debug("No masterlist exists at 'data/ticker_masterlist.txt'")
         return ""
 
 # Add specified ticker to the masrterlist
 def add_to_masterlist(ticker):
-    print("Attempting to add {} to masterlist".format(ticker))
+    logger.debug("Attemping to add {} to masterlist".format(ticker))
     masterlist_file = "data/ticker_masterlist.txt"
     masterlist_tickers = get_masterlist_tickers()
     # Verify that ticker_masterlist.txt exists
@@ -392,13 +409,13 @@ def add_to_masterlist(ticker):
             masterlist_tickers.append(ticker)
             with open(masterlist_file, 'w') as masterlist:
                 masterlist.write("\n".join(masterlist_tickers))
-            print("Added {} to masterlist".format(ticker))
+            logger.debug("Added {} to masterlist".format(ticker))
         else: 
             # Ticker already in masterlist
-            print("{} already exists in masterlist".format(ticker))
+            logger.debug("{} already exists in masterlist".format(ticker))
 
 def remove_from_masterlist(ticker):
-    
+    logger.debug("Attemping to remove {} from masterlist".format(ticker))
     masterlist_file = "data/ticker_masterlist.txt"
     masterlist_tickers = get_masterlist_tickers()
     # Verify that ticker_masterlist.txt exists
@@ -410,22 +427,25 @@ def remove_from_masterlist(ticker):
             masterlist_tickers.remove(ticker)
             with open(masterlist_file, 'w') as masterlist:
                 masterlist.write("\n".join(masterlist_tickers))
-            logger.info("Removed {} from masterlist".format(ticker))
+            logger.debug("Removed {} from masterlist".format(ticker))
         else: 
             # Ticker not in masterlist
-            logger.info("Ticker {} does not exist in masterlist".format(ticker))
+            logger.debug("Ticker {} does not exist in masterlist".format(ticker))
 
 # Validate that data file for specified ticker has data up to yesterday
 def daily_data_up_to_date(data):
     if data.size == 0:
+        logger.debug("Provided data has size 0 - failed to validate if up-to-date")
         return False
     else:
         yesterday = datetime.date.today() - timedelta(days=1)
         data_dates = [date.date() for date in data.index]
         latest_date = data_dates[-1]
         if yesterday in data_dates:
+            logger.debug("Provided data is up-to-date")
             return True
         else:
+            logger.info("Provided data is not up-to-date")
             return False
 
 #########
@@ -438,5 +458,5 @@ def test():
 
 if __name__ == "__main__":
     logger.info("stock.data.py initialized")
-    test()
+    #test()
     pass
