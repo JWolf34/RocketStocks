@@ -26,28 +26,30 @@ handlers = [logfile_handler, stdout_handler]
 logging.basicConfig(level=logging.DEBUG, format=format, handlers=handlers)
 logger = logging.getLogger(__name__)
 
-
-
-
 # Paths for writing data
 ATTACHMENTS_PATH = "discord/attachments"
 
+##################
+# Init Functions #
+##################
+
 def get_bot_token():
+    logger.debug("Fetching Discord bot token")
     try:
         token = os.getenv('DISCORD_TOKEN')
+        logger.debug("Successfully fetched token")
         return token
     except Exception as e:
-        print(e)
-        print("Failed to fetch bot token")
+        logger.error("Failed to fetch Discord bot token\n{}".format(e))
         return ""
 
 def get_reports_channel_id():
     try:
         channel_id = os.getenv("REPORTS_CHANNEL_ID")
+        logger.debug("Reports channel ID is {}".format(channel_id))
         return channel_id
     except Exception as e:
-        print(e)
-        print("Failed to fetch Reports channel ID")
+        logger.error("Failed to fetch reports channel ID\n{}".format(e))
         return ""
 
 def run_bot():
@@ -62,10 +64,12 @@ def run_bot():
             await client.tree.sync()
             send_reports.start()
         except Exception as e:
-            print(e)
-        print('Bot connected!')
+            logger.error("Encountered error waiting for on-ready signal from bot\n{}".format(e))
+        logger.info("Bot connected! ")
 
-
+    ########################
+    # Watchlist Management #
+    ########################
 
     @client.tree.command(name = "add-tickers", description= "Add tickers to the selected watchlist",)
     @app_commands.describe(tickers = "Ticker to add to watchlist (separated by spaces)")
@@ -76,6 +80,7 @@ def run_bot():
     ])
     async def addtickers(interaction: discord.Interaction, tickers: str, watchlist: app_commands.Choice[str]):
         await interaction.response.defer(ephemeral=True)
+        logger.info("/add-tickers function called by user {}".format(interaction.user.name))
         
         # Parse list from ticker input and identify invalid tickers
         tickers, invalid_tickers = sd.get_list_from_tickers(tickers)
@@ -119,7 +124,6 @@ def run_bot():
             await interaction.followup.send("Added {} to {} watchlist!".format(", ".join(tickers), message_flavor), ephemeral=True)
         else:
             await interaction.followup.send("No tickers added to {} watchlist. Invalid tickers: {}".format(message_flavor, ", ".join(invalid_tickers)), ephemeral=True)
-
 
     @client.tree.command(name = "remove-tickers", description= "Remove tickers from the selected watchlist",)
     @app_commands.describe(tickers = "Tickers to remove from watchlist (separated by spaces)")
@@ -189,6 +193,8 @@ def run_bot():
         app_commands.Choice(name = "personal", value = 'personal')
     ])
     async def watchlist(interaction: discord.Interaction, watchlist: app_commands.Choice[str]):
+        logger.info("/watchlist function called by user {}".format(interaction.user.name))
+
         if watchlist.value == 'personal':
             user_id = interaction.user.id
             tickers = sd.get_tickers(user_id)
@@ -245,6 +251,10 @@ def run_bot():
         else:
             await interaction.followup.send("No tickers added to {} watchlist. Invalid tickers: {}".format(message_flavor, ", ".join(invalid_tickers)), ephemeral=True)
 
+    ######################################################
+    # 'Fetch' functions for returning data saved to disk #
+    ######################################################
+
     @client.tree.command(name = "fetch-csv", description= "Returns data file for input ticker. Default: 1 year period.",)
     @app_commands.describe(tickers = "Tickers to return data for (separated by spaces)")
     @app_commands.describe(period = "Range of the data returned. Valid values: 1d, 5d, 1mo, 3mo, 6mo, 1y, 2y, 5y, 10y, ytd, max. Default: 1y")
@@ -268,29 +278,37 @@ def run_bot():
             print(e)
             await interaction.followup.send("Failed to fetch data files. Please ensure your parameters are valid.")
     
-    @client.tree.command(name = "run-analysis", description= "Run analysis on all tickers in the selected watchlist",)
-    @app_commands.describe(watchlist = "Which watchlist you want to make changes to")
-    @app_commands.choices(watchlist =[
-        app_commands.Choice(name = "global", value = 'global'),
-        app_commands.Choice(name = "personal", value = 'personal')
-    ])
-    async def runanalysis(interaction: discord.Interaction, watchlist: app_commands.Choice[str]):
-        tickers = []
-        if watchlist.value == "personal":
-            user_id = interaction.user.id
-            tickers = sd.get_tickers(user_id)
-        else:
-            tickers = sd.get_tickers()
-        try:
-            tickers = sd.get_tickers(user_id)
-        except Exception as e:
-            await interaction.response.send_message("Failed to run analysis. Verify that the selected watchlist is populated with tickers.", ephemeral=True)
-    
+    @client.tree.command(name = "fetch-financials", description= "Fetch financial reports of the specified tickers ",)
+    @app_commands.describe(tickers = "Tickers to return financials for (separated by spaces)")
+    @app_commands.describe(visibility = "'private' to send to DMs, 'public' to send to the channel")
+    @app_commands.choices(visibility =[
+        app_commands.Choice(name = "private", value = 'private'),
+        app_commands.Choice(name = "public", value = 'public')
+    ])        
+    async def fetch_financials(interaction: discord.interactions, tickers: str, visibility: app_commands.Choice[str]):
         await interaction.response.defer(ephemeral=True)
-        an.run_analysis(tickers)
-        await interaction.followup.send("Analysis complete!")
+
+        tickers, invalid_tickers = sd.get_list_from_tickers(tickers)
+
+        if(len(tickers) > 0):
+            for ticker in tickers:
+                files = sd.fetch_financials(ticker)
+                for i in range(0, len(files)):
+                    files[i] = discord.File(files[i])
+                if visibility.value == 'private':
+                    await interaction.user.send("Financials for {}".format(ticker), files=files)
+                else:
+                    await interaction.channel.send("Financials for {}".format(ticker), files=files)
+
+            await interaction.followup.send("Posted financials for {}".format(",".join(tickers)), ephemeral=True)
+        else:
+            await interaction.followup.send("No valid tickers in {}".format(",".join(invalid_tickers)), ephemeral=True)
             
-        
+    ########################        
+    # Analysis and Reports #
+    ########################
+
+    # Send daily reports for stocks on the global watchlist to the reports channel
     @tasks.loop(hours=24)  
     async def send_reports():
         
@@ -316,7 +334,8 @@ def run_bot():
 
         else:
             pass
-     
+
+    # Configure delay before sending daily reports to send at the same time daily
     @send_reports.before_loop
     async def delay_send_reports():
         
@@ -330,7 +349,28 @@ def run_bot():
         print("Sending reports in {} seconds".format((future-now).seconds))
         await asyncio.sleep((future-now).seconds)
         
-
+    @client.tree.command(name = "run-analysis", description= "Run analysis on all tickers in the selected watchlist",)
+    @app_commands.describe(watchlist = "Which watchlist you want to make changes to")
+    @app_commands.choices(watchlist =[
+        app_commands.Choice(name = "global", value = 'global'),
+        app_commands.Choice(name = "personal", value = 'personal')
+    ])
+    async def runanalysis(interaction: discord.Interaction, watchlist: app_commands.Choice[str]):
+        tickers = []
+        if watchlist.value == "personal":
+            user_id = interaction.user.id
+            tickers = sd.get_tickers(user_id)
+        else:
+            tickers = sd.get_tickers()
+        try:
+            tickers = sd.get_tickers(user_id)
+        except Exception as e:
+            await interaction.response.send_message("Failed to run analysis. Verify that the selected watchlist is populated with tickers.", ephemeral=True)
+    
+        await interaction.response.defer(ephemeral=True)
+        an.run_analysis(tickers)
+        await interaction.followup.send("Analysis complete!")
+            
     @client.tree.command(name = "run-reports", description= "Post analysis of a given watchlist (use /fetch-reports for individual or non-watchlist stocks)",)
     @app_commands.describe(watchlist = "Which watchlist to fetch reports for")
     @app_commands.choices(watchlist =[
@@ -371,33 +411,7 @@ def run_bot():
             message = "Reports have been posted!"
         await interaction.followup.send(message, ephemeral=True)
 
-    @client.tree.command(name = "fetch-financials", description= "Fetch financial reports of the specified tickers ",)
-    @app_commands.describe(tickers = "Tickers to return financials for (separated by spaces)")
-    @app_commands.describe(visibility = "'private' to send to DMs, 'public' to send to the channel")
-    @app_commands.choices(visibility =[
-        app_commands.Choice(name = "private", value = 'private'),
-        app_commands.Choice(name = "public", value = 'public')
-    ])        
-    async def fetch_financials(interaction: discord.interactions, tickers: str, visibility: app_commands.Choice[str]):
-        await interaction.response.defer(ephemeral=True)
-
-        tickers, invalid_tickers = sd.get_list_from_tickers(tickers)
-
-        if(len(tickers) > 0):
-            for ticker in tickers:
-                files = sd.fetch_financials(ticker)
-                for i in range(0, len(files)):
-                    files[i] = discord.File(files[i])
-                if visibility.value == 'private':
-                    await interaction.user.send("Financials for {}".format(ticker), files=files)
-                else:
-                    await interaction.channel.send("Financials for {}".format(ticker), files=files)
-
-            await interaction.followup.send("Posted financials for {}".format(",".join(tickers)), ephemeral=True)
-        else:
-            await interaction.followup.send("No valid tickers in {}".format(",".join(invalid_tickers)), ephemeral=True)
-            
-
+    
     @client.tree.command(name = "fetch-reports", description= "Fetch analysis reports of the specified tickers (use /run-reports to analyze a watchlist)",)
     @app_commands.describe(tickers = "Tickers to post reports for (separated by spaces)")
     @app_commands.describe(visibility = "'private' to send to DMs, 'public' to send to the channel")
@@ -427,8 +441,9 @@ def run_bot():
         else:
             await interaction.followup.send("Fetched reports!", ephemeral=True)
 
-        
-            
+    ###########################
+    # Report Helper Functions #
+    ###########################
 
     def build_report(ticker):
 
@@ -502,8 +517,6 @@ def run_bot():
                 #Index column is invalid
                 pass
 
-
-
     def get_ticker_links(ticker):
 
         links = []
@@ -517,8 +530,11 @@ def run_bot():
         links.append(tradingview)
 
         return links
-    
-            
+         
+    ########################
+    # Test & Help Commands #
+    ########################
+
     @client.tree.command(name = "help", description= "Show help on the bot's commands",)
     async def help(interaction: discord.Interaction):
         embed = discord.Embed()
@@ -526,9 +542,6 @@ def run_bot():
         for command in client.tree.get_commands():
             embed.add_field(name=command.name, value=command.description)
         await interaction.response.send_message(embed=embed)
-
-    
-    #Test Commands
     
     @client.tree.command(name = "test-daily-download-analyze-data", description= "Test running the logic for daily data download and indicator generation",)
     async def test_daily_download_analyze_data(interaction: discord.Interaction):
@@ -548,15 +561,9 @@ def run_bot():
         await interaction.user.send(content = "Log file for RocketStocks :rocket:",file=log_file)
         await interaction.response.send_message("Log file has been sent", ephemeral=True)
         
-    
-
-        
     client.run(TOKEN)
     
-
 if __name__ == "__main__":
-
-
     run_bot()
 
     
