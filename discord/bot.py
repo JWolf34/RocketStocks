@@ -73,6 +73,7 @@ def run_bot():
         await interaction.response.defer(ephemeral=True)
         logger.info("/add-tickers function called by user {}".format(interaction.user.name))
         
+        
         # Parse list from ticker input and identify invalid tickers
         tickers, invalid_tickers = sd.get_list_from_tickers(tickers)
 
@@ -81,7 +82,9 @@ def run_bot():
         message_flavor = ""
 
         # Get watchlist path and watchlist contents based on value of watchlist input
+        logger.debug("Selected watchlist is '{}'".format(watchlist.value))
         if watchlist.value == 'personal':
+                
                 user_id = interaction.user.id
                 watchlist_path = sd.get_watchlist_path(user_id)
                 symbols = sd.get_tickers(user_id)
@@ -93,6 +96,7 @@ def run_bot():
 
         # Create watchlist if not present    
         if not (os.path.isdir(watchlist_path)):
+            logger.debug("Watchlist {} does not exist - creating path '{}'".format(watchlist.value, watchlist_path))
             os.makedirs(watchlist_path)
             file = open("{}/watchlist.txt".format(watchlist_path), 'a')
             file.close()
@@ -100,13 +104,14 @@ def run_bot():
         # Add ticker to watchlist if not already present
         for ticker in tickers:
             if (ticker in symbols):
-                pass
+                logger.info("Ticker {} already exists in watchlist '{}'".format(ticker, watchlist.value))
             else:
                 symbols.append(ticker)
                 symbols.sort()
                 with open('{}/watchlist.txt'.format(watchlist_path), 'w') as watchlist:
                     watchlist.write("\n".join(symbols))
                     watchlist.close()
+                logger.info("Added ticker {} to watchlist '{}'".format(ticker, watchlist.value))
                     
         
         if len(tickers) > 0 and len(invalid_tickers) > 0:
@@ -125,6 +130,7 @@ def run_bot():
     ])
     async def removetickers(interaction: discord.Interaction, tickers: str, watchlist: app_commands.Choice[str]):
         await interaction.response.defer(ephemeral=True)
+        logger.info("/remove-tickers function called by user {}".format(interaction.user.name))
         
         # Parse list from ticker input and identify invalid tickers
         tickers, invalid_tickers = sd.get_list_from_tickers(tickers)
@@ -133,6 +139,7 @@ def run_bot():
         symbols = ""
         message_flavor = ""
 
+        logger.debug("Selected watchlist is '{}'".format(watchlist.value))
         # Get watchlist path and watchlist contents based on value of watchlist input
         if watchlist.value == 'personal':
             user_id = interaction.user.id
@@ -142,24 +149,27 @@ def run_bot():
         else:
             watchlist_path = sd.get_watchlist_path()
             symbols = sd.get_tickers()
-            message_flavor = "the global"\
+            message_flavor = "the global"
             
         # Create watchlist if not present    
         if not (os.path.isdir(watchlist_path)):
+            logger.debug("Watchlist {} does not exist - creating path '{}'".format(watchlist.value, watchlist_path))
             os.makedirs(watchlist_path)
             file = open("{}/watchlist.txt".format(watchlist_path), 'a')
             file.close()
-            await interaction.followup.send("There are no tickers in {} watchlist. Use /addticker to begin building a watchlist.".format(message_flavor), ephemeral=True)
+            await interaction.followup.send("There are no tickers in {} watchlist. Use /add-tickers to begin building a watchlist.".format(message_flavor), ephemeral=True)
             return
         # If watchlist is empty, return
         elif len(symbols) == 0:
-            await interaction.followup.send("There are no tickers in {} watchlist. Use /addticker to begin building a watchlist.".format(message_flavor), ephemeral=True)
+            await interaction.followup.send("There are no tickers in {} watchlist. Use /add-tickers to begin building a watchlist.".format(message_flavor), ephemeral=True)
             return
     
         for ticker in tickers:
             if (ticker in symbols):
                 symbols.remove(ticker)
+                logger.info("Removed ticker {} from watchlist '{}'".format(ticker, watchlist.value))
             else:
+                logger.info("Ticker {} does not exist in watchlist '{}' - skipping...".format(ticker, watchlist.value))
                 invalid_tickers.append(ticker)
 
         for ticker in invalid_tickers:
@@ -186,6 +196,7 @@ def run_bot():
     async def watchlist(interaction: discord.Interaction, watchlist: app_commands.Choice[str]):
         logger.info("/watchlist function called by user {}".format(interaction.user.name))
 
+        logger.debug("Selected watchlist is '{}'".format(watchlist.value))
         if watchlist.value == 'personal':
             user_id = interaction.user.id
             tickers = sd.get_tickers(user_id)
@@ -205,6 +216,7 @@ def run_bot():
     ])
     async def set_watchlist(interaction: discord.Interaction, tickers: str, watchlist: app_commands.Choice[str]):
         await interaction.response.defer(ephemeral=True)
+        logger.info("/set-watchlist function called by user {}".format(interaction.user.name))
 
         # Parse list from ticker input and identify invalid tickers
         tickers, invalid_tickers = sd.get_list_from_tickers(tickers)
@@ -225,6 +237,7 @@ def run_bot():
 
         # Create watchlist if not present    
         if not (os.path.isdir(watchlist_path)):
+            logger.debug("Watchlist '{}' does not exist - creating path '{}'".format(watchlist.value, watchlist_path))
             os.makedirs(watchlist_path)
             file = open("{}/watchlist.txt".format(watchlist_path), 'a')
             file.close()
@@ -233,6 +246,7 @@ def run_bot():
         with open('{}/watchlist.txt'.format(watchlist_path), 'w') as watchlist:
             watchlist.write("\n".join(tickers))
             watchlist.close()
+        logger.info("Set watchlist '{}' to {}".format(watchlist.value, tickers))
                     
         
         if len(tickers) > 0 and len(invalid_tickers) > 0:
@@ -252,6 +266,8 @@ def run_bot():
     @app_commands.describe(interval = "Range between intraday data. Valid values: 1m, 2m, 5m, 15m, 30m, 60m, 90m, 1h, 1d, 5d, 1wk, 1mo, 3mo. Default: 1d")
     async def fetch_csv(interaction: discord.Interaction, tickers: str, period: str = "1y", interval: str = "1d"):
         await interaction.response.defer(ephemeral=True)
+        logger.info("/fetch-csv function called by user {}".format(interaction.user.name))
+        logger.debug("Data file(s) for {} requested".format(tickers))
         try:
             files = []
             tickers, invalid_tickers = sd.get_list_from_tickers(tickers)
@@ -266,7 +282,7 @@ def run_bot():
                 await interaction.followup.send("Fetched data files for {}".format(", ".join(tickers)), ephemeral=True)
 
         except Exception as e:
-            print(e)
+            logger.error("Failed to fetch data file with following exception:\n{}".format(e))
             await interaction.followup.send("Failed to fetch data files. Please ensure your parameters are valid.")
     
     @client.tree.command(name = "fetch-financials", description= "Fetch financial reports of the specified tickers ",)
@@ -278,6 +294,9 @@ def run_bot():
     ])        
     async def fetch_financials(interaction: discord.interactions, tickers: str, visibility: app_commands.Choice[str]):
         await interaction.response.defer(ephemeral=True)
+        logger.info("/fetch-financials function called by user {}".format(interaction.user.name))
+        logger.debug("Financials requested for {}".format(tickers))
+
 
         tickers, invalid_tickers = sd.get_list_from_tickers(tickers)
 
@@ -293,6 +312,7 @@ def run_bot():
 
             await interaction.followup.send("Posted financials for {}".format(",".join(tickers)), ephemeral=True)
         else:
+            logger.warning("No financials found for {}".format(tickers))
             await interaction.followup.send("No valid tickers in {}".format(",".join(invalid_tickers)), ephemeral=True)
             
     ########################        
