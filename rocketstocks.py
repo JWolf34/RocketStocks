@@ -43,14 +43,15 @@ logger = logging.getLogger(__name__)
 
 class moduleFilter(logging.Filter):
     def filter(self, record: logging.LogRecord):
+        module = record.module
         modules = ['bot', 'analysis', 'stockdata', 'scheduler', 'rocketstocks']
-        return record.module in modules
+        return module in modules
     
 class MyLogFormatter(logging.Formatter):
     def format(self, record):
         location = '%s.%s' % (record.name, record.funcName)
         msg = '%s [%-8s] [%-5s] %-40s > %s' % (self.formatTime(record), record.levelname, record.thread, location, record.msg)
-        record.msg = msg
+        #record.msg = msg
         return super(MyLogFormatter, self).format(record)
 
 def setup_logging():
