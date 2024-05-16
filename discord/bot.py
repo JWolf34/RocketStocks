@@ -13,17 +13,8 @@ import analysis as an
 import datetime as dt
 import threading
 import logging
-from logging.handlers import RotatingFileHandler
+from logging.handlers import RotatingFileHandler\
 
-# Logging configuration
-format = '%(asctime)s [%(levelname)-8s] [%(thread)-5d] %(module)s.%(funcName)-20s > %(message)s'
-logfile_handler = RotatingFileHandler(filename="rocketstocks.log", maxBytes=1073741824, backupCount=10)
-logfile_handler.setLevel(logging.INFO)
-stdout_handler = logging.StreamHandler(stream=sys.stdout)
-stdout_handler.setLevel(logging.INFO)
-stdout_handler.addFilter(logging.Filter(__name__))
-handlers = [logfile_handler, stdout_handler]
-logging.basicConfig(level=logging.DEBUG, format=format, handlers=handlers)
 logger = logging.getLogger(__name__)
 
 # Paths for writing data

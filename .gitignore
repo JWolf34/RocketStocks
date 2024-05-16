@@ -20,4 +20,4 @@ yfinance.cache
 http_cache.sqlite
 
 # Logging
-rocketstocks.log
+logs/

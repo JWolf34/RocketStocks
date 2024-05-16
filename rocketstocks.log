@@ -1,0 +1,133 @@
+2024-05-15 11:42:46,194 [INFO    ] [15440] stockdata.get_tickers          > Fetching tickers from watchlist with ID '0'
+2024-05-15 11:42:46,333 [INFO    ] [15440] rocketstocks.rocketStocks         > **********[START LOG]**********
+2024-05-15 11:42:46,338 [WARNING ] [1156 ] client.__init__             > PyNaCl is not installed, voice will NOT be supported
+2024-05-15 11:42:46,350 [WARNING ] [1156 ] bot._async_setup_hook    > Privileged message content intent is missing, commands may not work as expected.
+2024-05-15 11:42:46,351 [INFO    ] [1156 ] client.login                > logging in using static token
+2024-05-15 11:42:46,476 [INFO    ] [10204] base.add_job              > Adding job tentatively -- it will be properly scheduled when the scheduler starts
+2024-05-15 11:42:46,477 [INFO    ] [10204] base.add_job              > Adding job tentatively -- it will be properly scheduled when the scheduler starts
+2024-05-15 11:42:46,478 [INFO    ] [10204] base.add_job              > Adding job tentatively -- it will be properly scheduled when the scheduler starts
+2024-05-15 11:42:46,479 [INFO    ] [10204] base._real_add_job        > Added job "Download data and generate indictor data for all tickers in the masterlist" to job store "default"
+2024-05-15 11:42:46,480 [INFO    ] [10204] base._real_add_job        > Added job "Download minute-by-minute data for all tickers in the masterlist" to job store "default"
+2024-05-15 11:42:46,480 [INFO    ] [10204] base._real_add_job        > Added job "Run analysis on data for tickers from the global watchlist" to job store "default"
+2024-05-15 11:42:46,481 [INFO    ] [10204] base.start                > Scheduler started
+2024-05-15 11:42:47,163 [INFO    ] [1156 ] gateway.received_message     > Shard ID None has connected to Gateway (Session ID: 3b158a039b3184d8f964d49386844e6f).
+2024-05-15 11:42:49,573 [INFO    ] [1156 ] bot.on_ready             > Bot connected! 
+2024-05-15 11:44:00,263 [DEBUG   ] [12320] base.__init__             > Initialized SQLiteDict with serializer: SerializerPipeline(name=pickle, n_stages=2)
+2024-05-15 11:44:00,265 [DEBUG   ] [12320] sqlite.connection           > Opening connection to C:\Users\JohnM\OneDrive\Desktop\Projects\RocketStocks\yfinance.cache:responses
+2024-05-15 11:44:00,266 [DEBUG   ] [12320] base.__init__             > Initialized SQLiteDict with serializer: None
+2024-05-15 11:44:00,267 [DEBUG   ] [12320] sqlite.connection           > Opening connection to C:\Users\JohnM\OneDrive\Desktop\Projects\RocketStocks\yfinance.cache:redirects
+2024-05-15 11:44:00,268 [DEBUG   ] [12320] __init__.init_backend         > Initializing backend: <SQLiteCache(name=yfinance.cache)> http_cache
+2024-05-15 11:44:00,584 [DEBUG   ] [12320] __init__.wrapper              > matplotlib data path: c:\Users\JohnM\AppData\Local\Programs\Python\Python312\Lib\site-packages\matplotlib\mpl-data
+2024-05-15 11:44:00,603 [DEBUG   ] [12320] __init__.wrapper              > CONFIGDIR=C:\Users\JohnM\.matplotlib
+2024-05-15 11:44:00,612 [DEBUG   ] [12320] __init__.<module>             > interactive is False
+2024-05-15 11:44:00,613 [DEBUG   ] [12320] __init__.<module>             > platform is win32
+2024-05-15 11:44:00,958 [DEBUG   ] [12320] __init__.wrapper              > CACHEDIR=C:\Users\JohnM\.matplotlib
+2024-05-15 11:44:00,963 [DEBUG   ] [12320] font_manager._load_fontmanager    > Using fontManager instance from C:\Users\JohnM\.matplotlib\fontlist-v330.json
+2024-05-15 11:44:01,607 [INFO    ] [12320] stockdata.get_tickers          > Fetching tickers from watchlist with ID '0'
+2024-05-15 11:44:01,608 [DEBUG   ] [12320] stockdata.get_watchlist_path   > Requesting path of watchlist with ID 0
+2024-05-15 11:44:01,608 [DEBUG   ] [12320] stockdata.get_watchlist_path   > Return watchlist at path data/watchlists/global
+2024-05-15 11:44:01,608 [DEBUG   ] [12320] stockdata.get_tickers          > Found file for watchlist with ID 0 with tickers: '['BASE', 'ACMR']'
+2024-05-15 11:44:01,744 [INFO    ] [12320] rocketstocks.rocketStocks         > **********[START LOG]**********
+2024-05-15 11:44:01,746 [DEBUG   ] [12320] rocketstocks.rocketStocks         > Bot thread initialized
+2024-05-15 11:44:01,747 [DEBUG   ] [1196 ] bot.get_bot_token        > Fetching Discord bot token
+2024-05-15 11:44:01,748 [DEBUG   ] [1196 ] bot.get_bot_token        > Successfully fetched token
+2024-05-15 11:44:01,750 [WARNING ] [1196 ] client.__init__             > PyNaCl is not installed, voice will NOT be supported
+2024-05-15 11:44:01,750 [DEBUG   ] [12320] rocketstocks.rocketStocks         > Scheduler thread initialized
+2024-05-15 11:44:01,752 [DEBUG   ] [1196 ] client.event                > on_ready has successfully been registered as an event
+2024-05-15 11:44:01,752 [DEBUG   ] [1228 ] win32._get_localzone_name  > Looking up time zone info from registry
+2024-05-15 11:44:01,760 [DEBUG   ] [1196 ] proactor_events.__init__             > Using proactor: IocpProactor
+2024-05-15 11:44:01,763 [WARNING ] [1196 ] bot._async_setup_hook    > Privileged message content intent is missing, commands may not work as expected.
+2024-05-15 11:44:01,764 [INFO    ] [1196 ] client.login                > logging in using static token
+2024-05-15 11:44:01,890 [INFO    ] [1228 ] base.add_job              > Adding job tentatively -- it will be properly scheduled when the scheduler starts
+2024-05-15 11:44:01,890 [INFO    ] [1228 ] base.add_job              > Adding job tentatively -- it will be properly scheduled when the scheduler starts
+2024-05-15 11:44:01,891 [INFO    ] [1228 ] base.add_job              > Adding job tentatively -- it will be properly scheduled when the scheduler starts
+2024-05-15 11:44:01,892 [INFO    ] [1228 ] base._real_add_job        > Added job "Download data and generate indictor data for all tickers in the masterlist" to job store "default"
+2024-05-15 11:44:01,893 [INFO    ] [1228 ] base._real_add_job        > Added job "Download minute-by-minute data for all tickers in the masterlist" to job store "default"
+2024-05-15 11:44:01,894 [INFO    ] [1228 ] base._real_add_job        > Added job "Run analysis on data for tickers from the global watchlist" to job store "default"
+2024-05-15 11:44:01,894 [INFO    ] [1228 ] base.start                > Scheduler started
+2024-05-15 11:44:01,895 [DEBUG   ] [1228 ] base._process_jobs        > Looking for jobs to run
+2024-05-15 11:44:01,895 [DEBUG   ] [1228 ] base._process_jobs        > Next wakeup is due at 2024-05-16 00:00:00-05:00 (in 44158.104492 seconds)
+2024-05-15 11:44:02,351 [INFO    ] [1196 ] gateway.received_message     > Shard ID None has connected to Gateway (Session ID: 966cc8381c776aa3ad3e6b7cadc33768).
+2024-05-15 11:44:04,692 [INFO    ] [1196 ] bot.on_ready             > Bot connected! 
+2024-05-15 11:45:27,669 [INFO    ] [748  ] stockdata.get_tickers          > Fetching tickers from watchlist with ID '0'
+2024-05-15 11:45:27,670 [DEBUG   ] [748  ] stockdata.get_watchlist_path   > Requesting path of watchlist with ID 0
+2024-05-15 11:45:27,670 [DEBUG   ] [748  ] stockdata.get_watchlist_path   > Return watchlist at path data/watchlists/global
+2024-05-15 11:45:27,671 [DEBUG   ] [748  ] stockdata.get_tickers          > Found file for watchlist with ID 0 with tickers: '['BASE', 'ACMR']'
+2024-05-15 11:45:27,820 [INFO    ] [748  ] rocketstocks.rocketStocks         > **********[START LOG]**********
+2024-05-15 11:45:27,822 [DEBUG   ] [748  ] rocketstocks.rocketStocks         > Bot thread initialized
+2024-05-15 11:45:27,823 [DEBUG   ] [18852] bot.get_bot_token        > Fetching Discord bot token
+2024-05-15 11:45:27,824 [DEBUG   ] [18852] bot.get_bot_token        > Successfully fetched token
+2024-05-15 11:45:27,835 [DEBUG   ] [748  ] rocketstocks.rocketStocks         > Scheduler thread initialized
+2024-05-15 11:45:27,838 [WARNING ] [18852] bot._async_setup_hook    > Privileged message content intent is missing, commands may not work as expected.
+2024-05-15 11:45:31,269 [INFO    ] [18852] bot.on_ready             > Bot connected! 
+2024-05-15 11:54:06,245 stockdata.get_tickers:336                                    INFO     2024-05-15 11:54:06,245 stockdata.get_tickers:336                                    INFO     Fetching tickers from watchlist with ID '0'
+2024-05-15 11:54:06,247 stockdata.get_watchlist_path:365                             DEBUG    2024-05-15 11:54:06,247 stockdata.get_watchlist_path:365                             DEBUG    Requesting path of watchlist with ID 0
+2024-05-15 11:54:06,247 stockdata.get_watchlist_path:368                             DEBUG    2024-05-15 11:54:06,247 stockdata.get_watchlist_path:368                             DEBUG    Return watchlist at path data/watchlists/global
+2024-05-15 11:54:06,248 stockdata.get_tickers:342                                    DEBUG    2024-05-15 11:54:06,248 stockdata.get_tickers:342                                    DEBUG    Found file for watchlist with ID 0 with tickers: '['BASE', 'ACMR']'
+2024-05-15 11:54:06,395 __main__.rocketStocks:39                                     INFO     2024-05-15 11:54:06,395 __main__.rocketStocks:39                                     INFO     **********[START LOG]**********
+2024-05-15 11:54:06,398 __main__.rocketStocks:45                                     DEBUG    2024-05-15 11:54:06,398 __main__.rocketStocks:45                                     DEBUG    Bot thread initialized
+2024-05-15 11:54:06,399 bot.get_bot_token:54                                         DEBUG    2024-05-15 11:54:06,399 bot.get_bot_token:54                                         DEBUG    Fetching Discord bot token
+2024-05-15 11:54:06,399 bot.get_bot_token:57                                         DEBUG    2024-05-15 11:54:06,399 bot.get_bot_token:57                                         DEBUG    Successfully fetched token
+2024-05-15 11:54:06,410 __main__.rocketStocks:48                                     DEBUG    2024-05-15 11:54:06,410 __main__.rocketStocks:48                                     DEBUG    Scheduler thread initialized
+2024-05-15 11:54:06,412 discord.ext.commands.bot._async_setup_hook:217               WARNING  2024-05-15 11:54:06,412 discord.ext.commands.bot._async_setup_hook:217               WARNING  Privileged message content intent is missing, commands may not work as expected.
+2024-05-15 11:54:09,254 bot.on_ready:85                                              INFO     2024-05-15 11:54:09,254 bot.on_ready:85                                              INFO     Bot connected! 
+2024-05-15 11:57:51,419 [INFO    ] [1672 ] stockdata.get_tickers                    > 2024-05-15 11:57:51,419 [INFO    ] [1672 ] stockdata.get_tickers                    > Fetching tickers from watchlist with ID '0'
+2024-05-15 11:57:51,421 [DEBUG   ] [1672 ] stockdata.get_watchlist_path             > 2024-05-15 11:57:51,421 [DEBUG   ] [1672 ] stockdata.get_watchlist_path             > Requesting path of watchlist with ID 0
+2024-05-15 11:57:51,421 [DEBUG   ] [1672 ] stockdata.get_watchlist_path             > 2024-05-15 11:57:51,421 [DEBUG   ] [1672 ] stockdata.get_watchlist_path             > Return watchlist at path data/watchlists/global
+2024-05-15 11:57:51,422 [DEBUG   ] [1672 ] stockdata.get_tickers                    > 2024-05-15 11:57:51,422 [DEBUG   ] [1672 ] stockdata.get_tickers                    > Found file for watchlist with ID 0 with tickers: '['BASE', 'ACMR']'
+2024-05-15 11:57:51,566 [INFO    ] [1672 ] __main__.rocketStocks                    > 2024-05-15 11:57:51,566 [INFO    ] [1672 ] __main__.rocketStocks                    > **********[START LOG]**********
+2024-05-15 11:57:51,568 [DEBUG   ] [1672 ] __main__.rocketStocks                    > 2024-05-15 11:57:51,568 [DEBUG   ] [1672 ] __main__.rocketStocks                    > Bot thread initialized
+2024-05-15 11:57:51,569 [DEBUG   ] [13228] bot.get_bot_token                        > 2024-05-15 11:57:51,569 [DEBUG   ] [13228] bot.get_bot_token                        > Fetching Discord bot token
+2024-05-15 11:57:51,570 [DEBUG   ] [13228] bot.get_bot_token                        > 2024-05-15 11:57:51,570 [DEBUG   ] [13228] bot.get_bot_token                        > Successfully fetched token
+2024-05-15 11:57:51,570 [DEBUG   ] [1672 ] __main__.rocketStocks                    > 2024-05-15 11:57:51,570 [DEBUG   ] [1672 ] __main__.rocketStocks                    > Scheduler thread initialized
+2024-05-15 11:57:51,584 [WARNING ] [13228] discord.ext.commands.bot._async_setup_hook > 2024-05-15 11:57:51,584 [WARNING ] [13228] discord.ext.commands.bot._async_setup_hook > Privileged message content intent is missing, commands may not work as expected.
+2024-05-15 11:57:54,411 [INFO    ] [13228] bot.on_ready                             > 2024-05-15 11:57:54,411 [INFO    ] [13228] bot.on_ready                             > Bot connected! 
+2024-05-15 11:58:32,934 [INFO    ] [2884 ] stockdata.get_tickers                    > 2024-05-15 11:58:32,934 [INFO    ] [2884 ] stockdata.get_tickers                    > Fetching tickers from watchlist with ID '0'
+2024-05-15 11:58:32,935 [DEBUG   ] [2884 ] stockdata.get_watchlist_path             > 2024-05-15 11:58:32,935 [DEBUG   ] [2884 ] stockdata.get_watchlist_path             > Requesting path of watchlist with ID 0
+2024-05-15 11:58:32,936 [DEBUG   ] [2884 ] stockdata.get_watchlist_path             > 2024-05-15 11:58:32,936 [DEBUG   ] [2884 ] stockdata.get_watchlist_path             > Return watchlist at path data/watchlists/global
+2024-05-15 11:58:32,936 [DEBUG   ] [2884 ] stockdata.get_tickers                    > 2024-05-15 11:58:32,936 [DEBUG   ] [2884 ] stockdata.get_tickers                    > Found file for watchlist with ID 0 with tickers: '['BASE', 'ACMR']'
+2024-05-15 11:58:33,072 [INFO    ] [2884 ] __main__.rocketStocks                    > 2024-05-15 11:58:33,072 [INFO    ] [2884 ] __main__.rocketStocks                    > **********[START LOG]**********
+2024-05-15 11:58:33,074 [DEBUG   ] [2884 ] __main__.rocketStocks                    > 2024-05-15 11:58:33,074 [DEBUG   ] [2884 ] __main__.rocketStocks                    > Bot thread initialized
+2024-05-15 11:58:33,075 [DEBUG   ] [5664 ] bot.get_bot_token                        > 2024-05-15 11:58:33,075 [DEBUG   ] [5664 ] bot.get_bot_token                        > Fetching Discord bot token
+2024-05-15 11:58:33,076 [DEBUG   ] [5664 ] bot.get_bot_token                        > 2024-05-15 11:58:33,076 [DEBUG   ] [5664 ] bot.get_bot_token                        > Successfully fetched token
+2024-05-15 11:58:33,076 [DEBUG   ] [2884 ] __main__.rocketStocks                    > 2024-05-15 11:58:33,076 [DEBUG   ] [2884 ] __main__.rocketStocks                    > Scheduler thread initialized
+2024-05-15 11:58:33,089 [WARNING ] [5664 ] discord.ext.commands.bot._async_setup_hook > 2024-05-15 11:58:33,089 [WARNING ] [5664 ] discord.ext.commands.bot._async_setup_hook > Privileged message content intent is missing, commands may not work as expected.
+2024-05-15 11:58:37,167 [INFO    ] [5664 ] bot.on_ready                             > 2024-05-15 11:58:37,167 [INFO    ] [5664 ] bot.on_ready                             > Bot connected! 
+2024-05-15 12:00:23,310 [INFO    ] [13740] stockdata.get_tickers                    > 2024-05-15 12:00:23,310 [INFO    ] [13740] stockdata.get_tickers                    > Fetching tickers from watchlist with ID '0'
+2024-05-15 12:00:23,311 [DEBUG   ] [13740] stockdata.get_watchlist_path             > 2024-05-15 12:00:23,311 [DEBUG   ] [13740] stockdata.get_watchlist_path             > Requesting path of watchlist with ID 0
+2024-05-15 12:00:23,311 [DEBUG   ] [13740] stockdata.get_watchlist_path             > 2024-05-15 12:00:23,311 [DEBUG   ] [13740] stockdata.get_watchlist_path             > Return watchlist at path data/watchlists/global
+2024-05-15 12:00:23,312 [DEBUG   ] [13740] stockdata.get_tickers                    > 2024-05-15 12:00:23,312 [DEBUG   ] [13740] stockdata.get_tickers                    > Found file for watchlist with ID 0 with tickers: '['BASE', 'ACMR']'
+2024-05-15 12:00:23,452 [INFO    ] [13740] __main__.rocketStocks                    > 2024-05-15 12:00:23,452 [INFO    ] [13740] __main__.rocketStocks                    > **********[START LOG]**********
+2024-05-15 12:00:23,455 [DEBUG   ] [13740] __main__.rocketStocks                    > 2024-05-15 12:00:23,455 [DEBUG   ] [13740] __main__.rocketStocks                    > Bot thread initialized
+2024-05-15 12:00:23,456 [DEBUG   ] [4204 ] bot.get_bot_token                        > 2024-05-15 12:00:23,456 [DEBUG   ] [4204 ] bot.get_bot_token                        > Fetching Discord bot token
+2024-05-15 12:00:23,457 [DEBUG   ] [4204 ] bot.get_bot_token                        > 2024-05-15 12:00:23,457 [DEBUG   ] [4204 ] bot.get_bot_token                        > Successfully fetched token
+2024-05-15 12:00:23,457 [DEBUG   ] [13740] __main__.rocketStocks                    > 2024-05-15 12:00:23,457 [DEBUG   ] [13740] __main__.rocketStocks                    > Scheduler thread initialized
+2024-05-15 12:00:23,470 [WARNING ] [4204 ] discord.ext.commands.bot._async_setup_hook > 2024-05-15 12:00:23,470 [WARNING ] [4204 ] discord.ext.commands.bot._async_setup_hook > Privileged message content intent is missing, commands may not work as expected.
+2024-05-15 12:00:26,558 [INFO    ] [4204 ] bot.on_ready                             > 2024-05-15 12:00:26,558 [INFO    ] [4204 ] bot.on_ready                             > Bot connected! 
+2024-05-15 12:00:43,553 [INFO    ] [3728 ] stockdata.get_tickers                    > 2024-05-15 12:00:43,553 [INFO    ] [3728 ] stockdata.get_tickers                    > Fetching tickers from watchlist with ID '0'
+2024-05-15 12:06:45,493 [INFO    ] [17244] stockdata.get_tickers                    > 2024-05-15 12:06:45,493 [INFO    ] [17244] stockdata.get_tickers                    > Fetching tickers from watchlist with ID '0'
+2024-05-15 12:06:45,495 [DEBUG   ] [17244] stockdata.get_watchlist_path             > 2024-05-15 12:06:45,495 [DEBUG   ] [17244] stockdata.get_watchlist_path             > Requesting path of watchlist with ID 0
+2024-05-15 12:06:45,495 [DEBUG   ] [17244] stockdata.get_watchlist_path             > 2024-05-15 12:06:45,495 [DEBUG   ] [17244] stockdata.get_watchlist_path             > Return watchlist at path data/watchlists/global
+2024-05-15 12:06:45,496 [DEBUG   ] [17244] stockdata.get_tickers                    > 2024-05-15 12:06:45,496 [DEBUG   ] [17244] stockdata.get_tickers                    > Found file for watchlist with ID 0 with tickers: '['BASE', 'ACMR']'
+2024-05-15 12:06:45,635 [INFO    ] [17244] __main__.rocketStocks                    > 2024-05-15 12:06:45,635 [INFO    ] [17244] __main__.rocketStocks                    > **********[START LOG]**********
+2024-05-15 12:06:45,638 [DEBUG   ] [17244] __main__.rocketStocks                    > 2024-05-15 12:06:45,638 [DEBUG   ] [17244] __main__.rocketStocks                    > Bot thread initialized
+2024-05-15 12:06:45,639 [DEBUG   ] [19424] bot.get_bot_token                        > 2024-05-15 12:06:45,639 [DEBUG   ] [19424] bot.get_bot_token                        > Fetching Discord bot token
+2024-05-15 12:06:45,639 [DEBUG   ] [19424] bot.get_bot_token                        > 2024-05-15 12:06:45,639 [DEBUG   ] [19424] bot.get_bot_token                        > Successfully fetched token
+2024-05-15 12:06:45,650 [DEBUG   ] [17244] __main__.rocketStocks                    > 2024-05-15 12:06:45,650 [DEBUG   ] [17244] __main__.rocketStocks                    > Scheduler thread initialized
+2024-05-15 12:06:45,653 [WARNING ] [19424] discord.ext.commands.bot._async_setup_hook > 2024-05-15 12:06:45,653 [WARNING ] [19424] discord.ext.commands.bot._async_setup_hook > Privileged message content intent is missing, commands may not work as expected.
+2024-05-15 12:06:48,333 [INFO    ] [19424] bot.on_ready                             > 2024-05-15 12:06:48,333 [INFO    ] [19424] bot.on_ready                             > Bot connected! 
+2024-05-15 12:08:35,840 [INFO    ] [16412] stockdata.get_tickers                    > 2024-05-15 12:08:35,840 [INFO    ] [16412] stockdata.get_tickers                    > Fetching tickers from watchlist with ID '0'
+2024-05-15 12:08:35,841 [DEBUG   ] [16412] stockdata.get_watchlist_path             > 2024-05-15 12:08:35,841 [DEBUG   ] [16412] stockdata.get_watchlist_path             > Requesting path of watchlist with ID 0
+2024-05-15 12:08:35,841 [DEBUG   ] [16412] stockdata.get_watchlist_path             > 2024-05-15 12:08:35,841 [DEBUG   ] [16412] stockdata.get_watchlist_path             > Return watchlist at path data/watchlists/global
+2024-05-15 12:08:35,842 [DEBUG   ] [16412] stockdata.get_tickers                    > 2024-05-15 12:08:35,842 [DEBUG   ] [16412] stockdata.get_tickers                    > Found file for watchlist with ID 0 with tickers: '['BASE', 'ACMR']'
+2024-05-15 12:08:35,979 [INFO    ] [16412] __main__.rocketStocks                    > 2024-05-15 12:08:35,979 [INFO    ] [16412] __main__.rocketStocks                    > **********[START LOG]**********
+2024-05-15 12:08:35,982 [DEBUG   ] [16412] __main__.rocketStocks                    > 2024-05-15 12:08:35,982 [DEBUG   ] [16412] __main__.rocketStocks                    > Bot thread initialized
+2024-05-15 12:08:35,983 [DEBUG   ] [18700] bot.get_bot_token                        > 2024-05-15 12:08:35,983 [DEBUG   ] [18700] bot.get_bot_token                        > Fetching Discord bot token
+2024-05-15 12:08:35,984 [DEBUG   ] [18700] bot.get_bot_token                        > 2024-05-15 12:08:35,984 [DEBUG   ] [18700] bot.get_bot_token                        > Successfully fetched token
+2024-05-15 12:08:35,994 [DEBUG   ] [16412] __main__.rocketStocks                    > 2024-05-15 12:08:35,994 [DEBUG   ] [16412] __main__.rocketStocks                    > Scheduler thread initialized
+2024-05-15 12:08:35,997 [WARNING ] [18700] discord.ext.commands.bot._async_setup_hook > 2024-05-15 12:08:35,997 [WARNING ] [18700] discord.ext.commands.bot._async_setup_hook > Privileged message content intent is missing, commands may not work as expected.
+2024-05-15 12:08:38,908 [INFO    ] [18700] bot.on_ready                             > 2024-05-15 12:08:38,908 [INFO    ] [18700] bot.on_ready                             > Bot connected! 
+2024-05-15 12:10:48,768 [INFO    ] [1244 ] stockdata.get_tickers                    > 2024-05-15 12:10:48,768 [INFO    ] [1244 ] stockdata.get_tickers                    > Fetching tickers from watchlist with ID '0'
+2024-05-15 12:10:48,906 [INFO    ] [1244 ] __main__.rocketStocks                    > 2024-05-15 12:10:48,906 [INFO    ] [1244 ] __main__.rocketStocks                    > **********[START LOG]**********
+2024-05-15 12:10:48,923 [WARNING ] [19104] discord.ext.commands.bot._async_setup_hook > 2024-05-15 12:10:48,923 [WARNING ] [19104] discord.ext.commands.bot._async_setup_hook > Privileged message content intent is missing, commands may not work as expected.
+2024-05-15 12:10:51,745 [INFO    ] [19104] bot.on_ready                             > 2024-05-15 12:10:51,745 [INFO    ] [19104] bot.on_ready                             > Bot connected! 

@@ -1,0 +1,45 @@
+{
+    "version": 1,
+    "disable_existing_loggers": false,
+    "filters": {
+        "moduleFilter": {
+            "()": "rocketstocks.moduleFilter"
+        }
+    },
+    "formatters": {
+        "basic": {
+            "format": "%(asctime)s [%(levelname)-8s] [%(thread)-5s] %(module)s.%(funcName)s > %(message)s",
+            "datefmt": "%Y-%m-%dT%H:%M:%S%z"
+        },
+        "detailed": {
+            "()": "rocketstocks.MyLogFormatter"
+        }
+    },
+    "handlers": {
+        "stdout": {
+            "class": "logging.StreamHandler",
+            "level": "INFO",
+            "formatter": "detailed",
+            "stream": "ext://sys.stdout",
+            "filters": ["moduleFilter"]
+        },
+        "file": {
+            "class": "logging.handlers.RotatingFileHandler",
+            "level": "DEBUG",
+            "formatter": "detailed",
+            "filename": "logs/rocketstocks.log",
+            "maxBytes": 20000000,
+            "backupCount": 10,
+            "filters": ["moduleFilter"]
+        }
+    },
+    "loggers": {
+        "root": {
+            "level": "DEBUG",
+            "handlers": [
+                "stdout",
+                "file"
+            ]
+        }
+    }
+}
