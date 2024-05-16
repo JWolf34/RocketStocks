@@ -13,8 +13,8 @@ import analysis as an
 import datetime as dt
 import threading
 import logging
-from logging.handlers import RotatingFileHandler\
 
+# Logging configuration
 logger = logging.getLogger(__name__)
 
 # Paths for writing data

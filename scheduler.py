@@ -3,9 +3,9 @@ from apscheduler.triggers.cron import CronTrigger
 import stockdata as sd
 import analysis as an
 import logging
-from logging.handlers import RotatingFileHandler
 import sys
 
+# Logging configuration
 logger = logging.getLogger(__name__)
 
 

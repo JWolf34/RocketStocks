@@ -14,9 +14,9 @@ import stockdata as sd
 import yfinance as yfupdayte
 import csv
 import logging
-from logging.handlers import RotatingFileHandler
 import sys
 
+# Logging configuration
 logger = logging.getLogger(__name__)
 
 

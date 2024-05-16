@@ -12,6 +12,7 @@ from pyrate_limiter import Duration, RequestRate, Limiter
 import sys
 import logging
 
+# Logging configuration
 logger = logging.getLogger(__name__)
 
 # Override pandas data fetching with yfinance logic
@@ -104,7 +105,7 @@ def generate_indicators(data):#
         {"kind": "ad"}
     ]
     )
-    logger.info("Generating indicator data: {}".format(IndicatorStrategy.ta))
+    logger.info("Generating indicator data...")
     
     data.ta.strategy(IndicatorStrategy)
 
