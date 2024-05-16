@@ -548,7 +548,7 @@ def run_bot():
 
     @client.tree.command(name = "get-logs", description= "Return the log file for the bot",)
     async def get_logs(interaction: discord.Interaction):
-        log_file = discord.File("rocketstocks.log")
+        log_file = discord.File("logs/rocketstocks.log")
         await interaction.user.send(content = "Log file for RocketStocks :rocket:",file=log_file)
         await interaction.response.send_message("Log file has been sent", ephemeral=True)
         
