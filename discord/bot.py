@@ -109,9 +109,9 @@ def run_bot():
             else:
                 symbols.append(ticker)
                 symbols.sort()
-                with open('{}/watchlist.txt'.format(watchlist_path), 'w') as watchlist:
-                    watchlist.write("\n".join(symbols))
-                    watchlist.close()
+                with open('{}/watchlist.txt'.format(watchlist_path), 'w') as watchlist_file:
+                    watchlist_file.write("\n".join(symbols))
+                    watchlist_file.close()
                 logger.info("Added ticker {} to watchlist '{}'".format(ticker, watchlist.value))
                     
         
