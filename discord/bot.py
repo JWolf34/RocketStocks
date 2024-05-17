@@ -19,6 +19,7 @@ logger = logging.getLogger(__name__)
 
 # Paths for writing data
 ATTACHMENTS_PATH = "discord/attachments"
+DAILY_DATA_PATH = "data/CSV/daily"
 
 ##################
 # Init Functions #
@@ -262,9 +263,7 @@ def run_bot():
 
     @client.tree.command(name = "fetch-csv", description= "Returns data file for input ticker. Default: 1 year period.",)
     @app_commands.describe(tickers = "Tickers to return data for (separated by spaces)")
-    @app_commands.describe(period = "Range of the data returned. Valid values: 1d, 5d, 1mo, 3mo, 6mo, 1y, 2y, 5y, 10y, ytd, max. Default: 1y")
-    @app_commands.describe(interval = "Range between intraday data. Valid values: 1m, 2m, 5m, 15m, 30m, 60m, 90m, 1h, 1d, 5d, 1wk, 1mo, 3mo. Default: 1d")
-    async def fetch_csv(interaction: discord.Interaction, tickers: str, period: str = "1y", interval: str = "1d"):
+    async def fetch_csv(interaction: discord.Interaction, tickers: str):
         await interaction.response.defer(ephemeral=True)
         logger.info("/fetch-csv function called by user {}".format(interaction.user.name))
         logger.debug("Data file(s) for {} requested".format(tickers))
