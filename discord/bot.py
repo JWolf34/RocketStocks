@@ -358,28 +358,6 @@ def run_bot():
         time_to_reports = dt.timedelta(seconds=(future-now).seconds)
         logger.info("Sending reports in {}".format(time_to_reports))
         await asyncio.sleep((future-now).seconds)
-        
-    @client.tree.command(name = "run-analysis", description= "Run analysis on all tickers in the selected watchlist",)
-    @app_commands.describe(watchlist = "Which watchlist you want to make changes to")
-    @app_commands.choices(watchlist =[
-        app_commands.Choice(name = "global", value = 'global'),
-        app_commands.Choice(name = "personal", value = 'personal')
-    ])
-    async def runanalysis(interaction: discord.Interaction, watchlist: app_commands.Choice[str]):
-        tickers = []
-        if watchlist.value == "personal":
-            user_id = interaction.user.id
-            tickers = sd.get_tickers(user_id)
-        else:
-            tickers = sd.get_tickers()
-        try:
-            tickers = sd.get_tickers(user_id)
-        except Exception as e:
-            await interaction.response.send_message("Failed to run analysis. Verify that the selected watchlist is populated with tickers.", ephemeral=True)
-    
-        await interaction.response.defer(ephemeral=True)
-        an.run_analysis(tickers)
-        await interaction.followup.send("Analysis complete!")
             
     @client.tree.command(name = "run-reports", description= "Post analysis of a given watchlist (use /fetch-reports for individual or non-watchlist stocks)",)
     @app_commands.describe(watchlist = "Which watchlist to fetch reports for")
@@ -389,6 +367,8 @@ def run_bot():
     ])
     async def runreports(interaction: discord.Interaction, watchlist: app_commands.Choice[str]):
         await interaction.response.defer(ephemeral=True)
+        logger.info("/run-reports function called by user {}".format(interaction.user.name, tickers))
+        logger.debug("Selected watchlist is '{}'".format(watchlist.value))
         
         tickers = ""
         message = ""
@@ -402,6 +382,7 @@ def run_bot():
 
         if len(tickers) == 0:
             # Empty watchlist
+            logger.warning("Selected watchlist '{}' is empty".format(watchlist.value))
             message = "No tickers on the watchlist. Use /addticker to build a watchlist."
         else:
             user = interaction.user
@@ -410,15 +391,19 @@ def run_bot():
             an.run_analysis(tickers)
 
             # Build reports and send messages
+            logger.info("Running reports on tickers {}".format(tickers))
             for ticker in tickers:
+                logger.info("Processing ticker {}".format(ticker))
                 report = build_report(ticker)
                 message, files = report.get('message'), report.get('files')
                 if watchlist.value == 'personal':
                     await user.send(message, files=files)
                 else:
                     await channel.send(message, files=files)
+                logger.info("Posted report for ticker {}",format(ticker))
                     
             message = "Reports have been posted!"
+            logger.info("Reports have been posted")
         await interaction.followup.send(message, ephemeral=True)
 
     
@@ -430,25 +415,31 @@ def run_bot():
         app_commands.Choice(name = "public", value = 'public')
     ])        
     async def fetchreports(interaction: discord.interactions, tickers: str, visibility: app_commands.Choice[str]):
-        
         await interaction.response.defer(ephemeral=True)
+        logger.info("/fetch-reports function called by user {}".format(interaction.user.name))
+        
 
         # Validate each ticker in the list is valid
         tickers, invalid_tickers = sd.get_list_from_tickers(tickers)
+        logger.debug("Validated tickers {} | Invalid tickers: {}".format(tickers, invalid_tickers))
 
         an.run_analysis(tickers)
 
+        logger.info("Fetching reports for tickers {}".format(tickers))
         # Build reports and send messages
         for ticker in tickers:
+            logger.info("Processing ticker {}".format(ticker))
             report = build_report(ticker)
             message, files, links = report.get('message'), report.get('files'), report.get('links')
             if visibility.value == 'private':
                 await interaction.user.send(message, files=files, embed=links)
             else:
                 await interaction.channel.send(message, files=files, embed=links)
+            logger.info("Report posted for ticker {}".format(ticker))
         if len(invalid_tickers) > 0:
             await interaction.followup.send("Fetched reports for {}. Failed to fetch reports for {}.".format(", ".join(tickers), ", ".join(invalid_tickers)), ephemeral=True)
         else:
+            logger.info("Reports have been posted")
             await interaction.followup.send("Fetched reports!", ephemeral=True)
 
     ###########################
@@ -456,6 +447,7 @@ def run_bot():
     ###########################
 
     def build_report(ticker):
+        logger.info("Building report for ticker {}".format(ticker))
 
         # Get techincal indicator charts and convert them to a list of discord File objects
         files = sd.fetch_charts(ticker)
@@ -499,20 +491,26 @@ def run_bot():
         return report
     
     def build_strategy_report(ticker):
+        logger.info("Building strategy report for ticker {}".format(ticker))
         message = ''
         strategies = an.get_strategies()
         if len(strategies) == 0:
+            logger.debug("No strategies available - return empty report")
             return message
         else:
             message = "**Strategies**\n"
         
             for strategy in strategies:
+                logger.debug("Applying strategy '{}' on ticker '{}'".format(strategy.name, ticker))
                 score = an.signals_score(sd.fetch_daily_data(ticker), strategy.signals)
                 message += "{}: **{}**".format(strategy.name, an.score_eval(score, strategy))
 
         return message
     
     def build_daily_summary():
+        logger.info("Building daily summary report")
+        
+        # TODO - scoring and strategy signals
         daily_scores = an.get_masterlist_scores()
         BUY_THRESHOLD = 1.00
         daily_rankings_message = '**Daily Stock Rankings**\n\n'
@@ -528,6 +526,7 @@ def run_bot():
                 pass
 
     def get_ticker_links(ticker):
+        logger.debug("Building links to external sites for ticker {}".format(ticker))
 
         links = []
         stockinvest = "[StockInvest](https://stockinvest.us/stock/{})".format(ticker)
@@ -547,6 +546,7 @@ def run_bot():
 
     @client.tree.command(name = "help", description= "Show help on the bot's commands",)
     async def help(interaction: discord.Interaction):
+        logger.info("/help function called by user {}".format(interaction.user.name))
         embed = discord.Embed()
         embed.title = 'RocketStocks Help'
         for command in client.tree.get_commands():
@@ -555,18 +555,22 @@ def run_bot():
     
     @client.tree.command(name = "test-daily-download-analyze-data", description= "Test running the logic for daily data download and indicator generation",)
     async def test_daily_download_analyze_data(interaction: discord.Interaction):
+        logger.info("/test-daily-download-analyze-data function called by user {}".format(interaction.user.name))
         await interaction.response.send_message("Running daily download and analysis", ephemeral=True)
         download_data_thread = threading.Thread(target=sd.daily_download_analyze_data)
         download_data_thread.start()
 
     @client.tree.command(name = "test-minute-download-data", description= "Test running the logic for weekly minute-by-minute data download",)
     async def test_minutes_download_data(interaction: discord.Interaction):
+        logger.info("/test-minute-download-data function called by user {}".format(interaction.user.name))
+
         await interaction.response.send_message("Running daily download and analysis", ephemeral=True)
         download_data_thread = threading.Thread(target=sd.minute_download_data)
         download_data_thread.start()
 
-    @client.tree.command(name = "get-logs", description= "Return the log file for the bot",)
-    async def get_logs(interaction: discord.Interaction):
+    @client.tree.command(name = "fetch-logs", description= "Return the log file for the bot",)
+    async def fetch_logs(interaction: discord.Interaction):
+        logger.info("/fetch-logs function called by user {}".format(interaction.user.name))
         log_file = discord.File("logs/rocketstocks.log")
         await interaction.user.send(content = "Log file for RocketStocks :rocket:",file=log_file)
         await interaction.response.send_message("Log file has been sent", ephemeral=True)
