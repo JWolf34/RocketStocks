@@ -43,13 +43,6 @@ class Strategy(ta.Strategy):
     def run_strategy(self, data):
         data.ta.strategy(self)
 
-    
-        
-
-
-
-
-
 # Plotting Technical Indicators
 def plot_volume(data, ticker):
     NUM_DAYS = 30
@@ -661,25 +654,6 @@ def run_analysis(tickers=sd.get_tickers()):
         generate_charts(data, ticker)
         generate_analysis(data, ticker)
 
-def generate_indicators(data):
-
-    IndicatorStrategy = ta.Strategy(name = 'Indicator Strategy', ta = [
-        {"kind": "sma", "length":10},
-        {"kind": "sma", "length":30},
-        {"kind": "sma", "length":50},
-        {"kind": "sma", "length":200},
-        {"kind": "macd"},
-        {"kind": "rsi"},
-        {"kind": "adx"},
-        {"kind": "ad"}
-    ]
-    )
-    
-    data.ta.strategy(IndicatorStrategy)
-
-def plot_strategy(data, ticker):
-    pass
-
 def get_strategies():
     strategies = []
     strategies_path = "{}/strategies.csv".format(ANALYSIS_PATH)
@@ -747,23 +721,10 @@ def signals_score(data, signals):
         params = {'data':data} | signal['params']
         signal_function = globals()['signal_{}'.format(signal['kind'])]
         score += scores_legend.get(signal_function(**params))
-
-
-    #score += scores_legend.get(signal_rsi(data))    #(get_rsi(data)))
-    #score += scores_legend.get(signal_macd(data))   #(get_macd(data)))
-    #score += scores_legend.get(signal_sma(data))    #(get_sma(data)))
-    #score += scores_legend.get(signal_adx(data))    #(get_adx(data)))
     return score
-
-        
-
-
-
 
 def test():
     pass
-
-
 
 if __name__ == '__main__':
     test()
