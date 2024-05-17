@@ -284,13 +284,13 @@ def fetch_financials(ticker):
 
 # Confirm we get valid data back when downloading data for ticker
 def validate_ticker(ticker):
-    logger.debug("Verifying that ticker {} is valid".format(ticker))
+    logger.info("Verifying that ticker {} is valid".format(ticker))
     data = download_data(ticker, period='1d')
     if data.size == 0:
         logger.warning("INVALID TICKER - Size of data for ticker {} is 0".format(ticker))
         return False
     else:
-        logger.debug("Ticker {} is valid".format(ticker))
+        logger.info("Ticker {} is valid".format(ticker))
         return True
 
 # Validate specified path exists and create it if needed

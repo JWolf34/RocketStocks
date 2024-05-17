@@ -311,7 +311,7 @@ def run_bot():
 
             await interaction.followup.send("Posted financials for {}".format(",".join(tickers)), ephemeral=True)
         else:
-            logger.warning("No financials found for {}".format(tickers))
+            logger.warning("Found no valid tickers in {} to fetch fincancials for".format(tickers))
             await interaction.followup.send("No valid tickers in {}".format(",".join(invalid_tickers)), ephemeral=True)
             
     ########################        
@@ -323,9 +323,7 @@ def run_bot():
     async def send_reports():
         
         if (dt.datetime.now().weekday() < 5):
-            
-            #Send out global report
-            print("Sending reports!")
+            logger.info("********** [SENDING REPORTS] **********")
 
             # Configure channel to send reports to
             channel = await client.fetch_channel(get_reports_channel_id())
@@ -352,11 +350,13 @@ def run_bot():
         hour = 6
         minute = 30
         now = dt.datetime.now()
-        print(now)
+
         future = dt.datetime(now.year, now.month, now.day, hour, minute)
         if now.hour >= hour and now.minute > minute:
             future += dt.timedelta(days=1)
-        print("Sending reports in {} seconds".format((future-now).seconds))
+        
+        time_to_reports = dt.timedelta(seconds=(future-now).seconds)
+        logger.info("Sending reports in {}".format(time_to_reports))
         await asyncio.sleep((future-now).seconds)
         
     @client.tree.command(name = "run-analysis", description= "Run analysis on all tickers in the selected watchlist",)
