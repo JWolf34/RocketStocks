@@ -244,9 +244,9 @@ def run_bot():
             file.close()
     
         # Add tickers to watchlist
-        with open('{}/watchlist.txt'.format(watchlist_path), 'w') as watchlist:
-            watchlist.write("\n".join(tickers))
-            watchlist.close()
+        with open('{}/watchlist.txt'.format(watchlist_path), 'w') as watchlist_file:
+            watchlist_file.write("\n".join(tickers))
+            watchlist_file.close()
         logger.info("Set watchlist '{}' to {}".format(watchlist.value, tickers))
                     
         
@@ -367,7 +367,7 @@ def run_bot():
     ])
     async def runreports(interaction: discord.Interaction, watchlist: app_commands.Choice[str]):
         await interaction.response.defer(ephemeral=True)
-        logger.info("/run-reports function called by user {}".format(interaction.user.name, tickers))
+        logger.info("/run-reports function called by user {}".format(interaction.user.name))
         logger.debug("Selected watchlist is '{}'".format(watchlist.value))
         
         tickers = ""
@@ -400,7 +400,7 @@ def run_bot():
                     await user.send(message, files=files)
                 else:
                     await channel.send(message, files=files)
-                logger.info("Posted report for ticker {}",format(ticker))
+                logger.info("Posted report for ticker {}".format(ticker))
                     
             message = "Reports have been posted!"
             logger.info("Reports have been posted")
