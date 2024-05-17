@@ -13,6 +13,15 @@ import mplfinance as mpf
 import stockdata as sd
 import yfinance as yfupdayte
 import csv
+import logging
+import sys
+
+# Logging configuration
+logger = logging.getLogger(__name__)
+
+
+
+
 
 # Paths for writing data
 DAILY_DATA_PATH = "data/CSV/daily"
@@ -21,6 +30,7 @@ FINANCIALS_PATH = "data/financials"
 PLOTS_PATH = "data/plots"
 ANALYSIS_PATH = "data/analysis"
 ATTACHMENTS_PATH = "discord/attachments"
+MINUTE_DATA_PATH = "data/CSV/minute"
 
 class Strategy(ta.Strategy):
 
@@ -28,7 +38,7 @@ class Strategy(ta.Strategy):
         super(Strategy, self).__init__(name, ta)
         self.signals=signals
         self.buy_threshold = buy_threshold
-        self.sell_threshold = buy_threshold
+        self.sell_threshold = sell_threshold
 
     def run_strategy(self, data):
         data.ta.strategy(self)
@@ -704,7 +714,7 @@ def generate_charts(data, ticker):
     plot_sma(data,ticker)
     plot_obv(data,ticker)
     plot_adx(data,ticker)
-    plot_strategy(data, ticker)
+    #plot_strategy(data, ticker)
 
     
 # Running analysis on techincal indicators to generate buy/sell signals
@@ -728,7 +738,7 @@ def generate_masterlist_scores():
     tickers = sd.get_masterlist_tickers()
     num_ticker = 1
     for ticker in tickers:
-        print("Evaluating {}... {}/{}".format(ticker, num_ticker, len(tickersss)))
+        print("Evaluating {}... {}/{}".format(ticker, num_ticker, len(tickers)))
         try:
             score = signals_score(ticker)
             if score in scores.keys():
@@ -757,39 +767,17 @@ def generate_masterlist_scores():
 
 
 def run_analysis(tickers=sd.get_tickers()):
+    logger.info("Running analysis on tickers {}".format(tickers))
     for ticker in tickers:
-        #sd.download_data_and_update_csv(ticker=ticker, period="max", interval="1d", path=DAILY_DATA_PATH)
-        #generate_indicators(ticker)
+        data = sd.fetch_daily_data(ticker)
+
+        # Verify that data is returned
+        if data.size == 0:
+            if sd.validate_ticker(ticker):
+                sd.download_analyze_data(ticker)
         data = sd.fetch_daily_data(ticker)
         generate_charts(data, ticker)
         generate_analysis(data, ticker)
-
-def generate_indicators():
-    data = pd.DataFrame()
-
-    IndicatorStrategy = ta.Strategy(name = 'Indicator Strategy', ta = [
-        {"kind": "sma", "length":10},
-        {"kind": "sma", "length":30},
-        {"kind": "sma", "length":50},
-        {"kind": "sma", "length":200},
-        {"kind": "macd"},
-        {"kind": "rsi"},
-        {"kind": "adx"},
-        {"kind": "ad"}
-    ]
-    )
-                            
-    tickers = sd.get_masterlist_tickers()
-    num_ticker = 1
-    for ticker in tickers:
-        data = sd.fetch_daily_data(ticker)
-        print("Generating indicator data for {}... {}/{}".format(ticker, num_ticker, len(tickers)))
-        data.ta.strategy(IndicatorStrategy)
-        sd.update_csv(data, ticker, DAILY_DATA_PATH)
-    print("Complete!")
-
-def plot_strategy(data, ticker):
-    pass
 
 def get_strategies():
     strategies = []
@@ -808,7 +796,7 @@ def get_strategies():
         return strategies
     else:
         print('No strategies available')
-        return pd.DataFrame()
+        return []
             
 
 #Utilities
@@ -858,6 +846,7 @@ def signals_score(data, signals):
         params = {'data':data} | signal['params']
         signal_function = globals()['signal_{}'.format(signal['kind'])]
         score += scores_legend.get(signal_function(**params))
+<<<<<<< HEAD
 
     return score
 
@@ -869,8 +858,16 @@ def test():
     plot('SPY', data, 'Simple Moving Average 50/200', True, num_days=760)
 
 
+=======
+    return score
+
+def test():
+    run_analysis(sd.get_tickers())
+    sd.fetch_charts("AMC")
+>>>>>>> main
 
 if __name__ == '__main__':
-    test()
+    #test()
     pass
+    
        

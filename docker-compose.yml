@@ -9,5 +9,5 @@ services:
       DISCORD_TOKEN: "1"
       REPORTS_CHANNEL_ID: "1"
     volumes:
-      - "/RocketStocks/data:/RocketStocks/data"
+      - "/path/to/persistent/data:/RocketStocks/data"
 
