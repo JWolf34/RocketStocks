@@ -31,7 +31,7 @@ def get_bot_token():
         logger.debug("Successfully fetched token")
         return token
     except Exception as e:
-        logger.error("Failed to fetch Discord bot token\n{}".format(e))
+        logger.exception("Failed to fetch Discord bot token\n{}".format(e))
         return ""
 
 def get_reports_channel_id():
@@ -40,7 +40,7 @@ def get_reports_channel_id():
         logger.debug("Reports channel ID is {}".format(channel_id))
         return channel_id
     except Exception as e:
-        logger.error("Failed to fetch reports channel ID\n{}".format(e))
+        logger.exception("Failed to fetch reports channel ID\n{}".format(e))
         return ""
 
 def run_bot():
@@ -55,7 +55,7 @@ def run_bot():
             await client.tree.sync()
             send_reports.start()
         except Exception as e:
-            logger.error("Encountered error waiting for on-ready signal from bot\n{}".format(e))
+            logger.exception("Encountered error waiting for on-ready signal from bot\n{}".format(e))
         logger.info("Bot connected! ")
 
     ########################
@@ -272,9 +272,9 @@ def run_bot():
             files = []
             tickers, invalid_tickers = sd.get_list_from_tickers(tickers)
             for ticker in tickers:
-                if not sd.daily_data_up_to_date(ticker):
+                if not sd.daily_data_up_to_date(sd.fetch_daily_data(ticker)):
                     sd.download_analyze_data(ticker)
-                file = discord.File("{}/{}.csv".format(ATTACHMENTS_PATH,ticker))
+                file = discord.File("{}/{}.csv".format(DAILY_DATA_PATH,ticker))
                 await interaction.user.send(content = "Data file for {}".format(ticker), file=file)
             if len(invalid_tickers) > 0:
                 await interaction.followup.send("Fetched data files for {}. Invalid tickers:".format(", ".join(tickers), ", ".join(invalid_tickers)), ephemeral=True)
@@ -282,7 +282,7 @@ def run_bot():
                 await interaction.followup.send("Fetched data files for {}".format(", ".join(tickers)), ephemeral=True)
 
         except Exception as e:
-            logger.error("Failed to fetch data file with following exception:\n{}".format(e))
+            logger.exception("Failed to fetch data file with following exception:\n{}".format(e))
             await interaction.followup.send("Failed to fetch data files. Please ensure your parameters are valid.")
     
     @client.tree.command(name = "fetch-financials", description= "Fetch financial reports of the specified tickers ",)

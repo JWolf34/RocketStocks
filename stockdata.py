@@ -63,7 +63,7 @@ def download_data(ticker, period='max', interval='1d'):
 
     # yfinance occassionally encounters KeyErrors if separately threaded downloads are initiated   
     except KeyError as e:
-        logger.error("Encountered KeyError when downloading data for {} \n{}".format(ticker, e))
+        logger.exception("Encountered KeyError when downloading data for {} \n{}".format(ticker, e))
 
     return data
 
@@ -366,10 +366,10 @@ def get_next_earnings_date(ticker):
         logger.info("Next earnings date for ticker {} is {}".format(ticker, earnings_date))
         return earnings_date
     except IndexError as e:
-        logger.error("Encountered IndexError when fetching next earnings date for ticker {}:\n{}".format(ticker, e))
+        logger.exception("Encountered IndexError when fetching next earnings date for ticker {}:\n{}".format(ticker, e))
         return "Earnings date unavailable"
     except KeyError as e:
-        logger.error("Encountered KeyError when fetching next earnings date for ticker {}:\n{}".format(ticker, e))
+        logger.exception("Encountered KeyError when fetching next earnings date for ticker {}:\n{}".format(ticker, e))
         return "Earnings Date unavailable"
     
 # Return list of tickers available in the masterlist
