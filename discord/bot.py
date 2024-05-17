@@ -328,18 +328,19 @@ def run_bot():
             # Configure channel to send reports to
             channel = await client.fetch_channel(get_reports_channel_id())
             
+            an.run_analysis(sd.get_tickers())
             for ticker in sd.get_tickers():
                 report = build_report(ticker)
                 message, files = report.get('message'), report.get('files')
                 await channel.send(message, files=files)
                 
-        
-            daily_scores = an.get_masterlist_scores()
-            daily_summary_message = build_daily_summary
 
-            await channel.send(daily_summary_message, file=discord.File("{}/daily_rankings.csv".format(ATTACHMENTS_PATH)))
+            # Daily scoring logic 
+            #daily_scores = an.get_masterlist_scores()
+            #daily_summary_message = build_daily_summary
+            #await channel.send(daily_summary_message, file=discord.File("{}/daily_rankings.csv".format(ATTACHMENTS_PATH)))
 
-
+            logger.info("********** [FINISHED SENDING REPORTS] **********")
         else:
             pass
 
@@ -347,8 +348,8 @@ def run_bot():
     @send_reports.before_loop
     async def delay_send_reports():
         
-        hour = 6
-        minute = 30
+        hour = 10
+        minute = 48
         now = dt.datetime.now()
 
         future = dt.datetime(now.year, now.month, now.day, hour, minute)
@@ -357,7 +358,7 @@ def run_bot():
         
         time_to_reports = dt.timedelta(seconds=(future-now).seconds)
         logger.info("Sending reports in {}".format(time_to_reports))
-        await asyncio.sleep((future-now).seconds)
+        await asyncio.sleep(time_to_reports.seconds)
             
     @client.tree.command(name = "run-reports", description= "Post analysis of a given watchlist (use /fetch-reports for individual or non-watchlist stocks)",)
     @app_commands.describe(watchlist = "Which watchlist to fetch reports for")

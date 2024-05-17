@@ -444,9 +444,9 @@ def daily_data_up_to_date(data):
 
 def test():
     logger.info("Running test case")
-    daily_download_analyze_data()
+    fetch_charts("AMC")
 
 if __name__ == "__main__":
-    logger.info("stock.data.py initialized")
+    logger.info("stockdata.py initialized")
     #test()
     pass

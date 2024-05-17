@@ -643,6 +643,7 @@ def generate_masterlist_scores():
 
 
 def run_analysis(tickers=sd.get_tickers()):
+    logger.info("Running analysis on tickers {}".format(tickers))
     for ticker in tickers:
         data = sd.fetch_daily_data(ticker)
 
@@ -724,9 +725,11 @@ def signals_score(data, signals):
     return score
 
 def test():
-    pass
+    run_analysis(sd.get_tickers())
+    sd.fetch_charts("AMC")
 
 if __name__ == '__main__':
-    test()
+    #test()
     pass
+    
        
