@@ -318,6 +318,19 @@ def run_bot():
     # Analysis and Reports #
     ########################
 
+    # Plot graph for the selected ticker
+    @client.tree.command(name = "chart", description= "Plot selected graphs for the selected tickers",)
+    @app_commands.describe(tickers = "Tickers to return charts for (separated by spaces)")
+    @app_commands.describe(charts = "Charts to return for the specified tickers")
+    @app_commands.choices(charts = [])
+    @app_commands.describe(visibility = "'private' to send to DMs, 'public' to send to the channel")
+    @app_commands.choices(visibility =[
+        app_commands.Choice(name = "private", value = 'private'),
+        app_commands.Choice(name = "public", value = 'public')
+    ])        
+    async def fetch_financials(interaction: discord.interactions, tickers: str, plots: app_commands.Choice[str], visibility: app_commands.Choice[str]):
+        await interaction.response.defer(ephemeral=True)
+
     # Send daily reports for stocks on the global watchlist to the reports channel
     @tasks.loop(hours=24)  
     async def send_reports():

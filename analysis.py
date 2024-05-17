@@ -105,7 +105,10 @@ plots = {
             
         }
     }
-def get_plots(indicator_name):
+def get_plots():
+    return plots
+
+def get_plot(indicator_name):
     return plots[indicator_name]
 
 
@@ -846,7 +849,6 @@ def signals_score(data, signals):
         params = {'data':data} | signal['params']
         signal_function = globals()['signal_{}'.format(signal['kind'])]
         score += scores_legend.get(signal_function(**params))
-<<<<<<< HEAD
 
     return score
 
@@ -858,13 +860,6 @@ def test():
     plot('SPY', data, 'Simple Moving Average 50/200', True, num_days=760)
 
 
-=======
-    return score
-
-def test():
-    run_analysis(sd.get_tickers())
-    sd.fetch_charts("AMC")
->>>>>>> main
 
 if __name__ == '__main__':
     #test()
