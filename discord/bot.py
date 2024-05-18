@@ -321,15 +321,73 @@ def run_bot():
     # Plot graph for the selected ticker
     @client.tree.command(name = "chart", description= "Plot selected graphs for the selected tickers",)
     @app_commands.describe(tickers = "Tickers to return charts for (separated by spaces)")
-    @app_commands.describe(charts = "Charts to return for the specified tickers")
-    @app_commands.choices(charts = [])
+    @app_commands.describe(chart = "Charts to return for the specified tickers")
+    @app_commands.choices(chart = [app_commands.Choice(name=x, value=x) for x in an.get_plots().keys()])
     @app_commands.describe(visibility = "'private' to send to DMs, 'public' to send to the channel")
     @app_commands.choices(visibility =[
         app_commands.Choice(name = "private", value = 'private'),
         app_commands.Choice(name = "public", value = 'public')
-    ])        
-    async def fetch_financials(interaction: discord.interactions, tickers: str, plots: app_commands.Choice[str], visibility: app_commands.Choice[str]):
+    ])
+    @app_commands.describe(display_signals = "True to plot buy/sell signals, False to not plot signals") 
+    @app_commands.choices(display_signals=[
+        app_commands.Choice(name="True", value="True"),
+        app_commands.Choice(name="False", value="False") 
+    ])
+    @app_commands.describe(num_days = "Number of days (data points) to plot on the chart (Default: 365)")
+    @app_commands.describe(plot_type = "Style in which to plot the Close price on the chart")
+    @app_commands.choices(plot_type = [app_commands.Choice(name = x, value= x) for x in an.get_plot_types()])
+    @app_commands.describe(style = " Style in which to generate the chart")
+    @app_commands.choices(style = [app_commands.Choice(name = x, value = x) for x in an.get_plot_styles()])
+    @app_commands.describe(show_volume= "True to show volume plot, False to not plot volume") 
+    @app_commands.choices(show_volume=[
+        app_commands.Choice(name="True", value="True"),
+        app_commands.Choice(name="False", value="False") 
+    ])  
+    async def chart(interaction: discord.interactions, tickers: str, chart: app_commands.Choice[str], visibility: app_commands.Choice[str],
+                    display_signals: app_commands.Choice[str] = 'False',
+                    num_days: int = 365, 
+                    plot_type: app_commands.Choice[str] = 'line', 
+                    style: app_commands.Choice[str] = 'tradingview',
+                    show_volume: app_commands.Choice[str] = 'False'):
+
         await interaction.response.defer(ephemeral=True)
+        logger.info("/chart function called by user {}".format(interaction.user.name))
+
+        # Validate optional parameters
+        if isinstance(display_signals, app_commands.Choice):
+            display_signals = display_signals.value
+        if isinstance(plot_type, app_commands.Choice):
+            plot_type= plot_type.value
+        if isinstance(style, app_commands.Choice):
+            style=style.value
+        if isinstance(show_volume, app_commands.Choice):
+            show_volume = show_volume.value
+
+        # Validate each ticker in the list is valid
+        tickers, invalid_tickers = sd.get_list_from_tickers(tickers)
+
+        for ticker in tickers:
+            data = sd.fetch_daily_data(ticker)
+            if data.size == 0:
+                sd.download_analyze_data(ticker)
+
+            message = an.plot(ticker=ticker,
+                    data=data,
+                    indicator_name=chart.value,
+                    display_signals=eval(display_signals),
+                    num_days=num_days,
+                    plot_type=plot_type,
+                    style=style,
+                    show_volume=eval(show_volume),
+                    savefilepath_root=ATTACHMENTS_PATH
+                    )
+            
+            chart_path = ATTACHMENTS_PATH + "/{}/{}.png".format(ticker, an.get_plot(chart.value)['abbreviation'])
+            file = discord.File(chart_path)
+            await interaction.followup.send(message, file=file)
+
+
+        
 
     # Send daily reports for stocks on the global watchlist to the reports channel
     @tasks.loop(hours=24)  

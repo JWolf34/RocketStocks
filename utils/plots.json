@@ -1,0 +1,70 @@
+{
+    "Simple Moving Average 10/50":{
+        "abbreviation": "SMA10-50",
+        "addplots": [ 
+            
+                {   
+                    "kind": "column",
+                    "column": "SMA_10",
+                    "params": {
+                        "color": "blue",
+                        "label": "SMA 10"
+                        }
+                },
+                {
+                    "kind": "column",
+                    "column": "SMA_50",
+                    "params": {
+                        "color": "red",
+                        "label": "SMA_50"
+                     }
+                }
+            ],
+        "signals": [
+            {
+                "kind":"sma",
+                "params":{
+                    "short":"SMA_10",
+                    "long":"SMA_50"
+                    }
+             }
+             ]
+        
+    },
+    "Simple Moving Average 50/200":{
+        "abbreviation": "SMA50-200",
+        "addplots": [ 
+            
+                {
+                    "kind": "column",
+                    "column": "SMA_50",
+                    "params": {
+                        "color": "blue",
+                        "label": "SMA 50"
+                        }
+                },
+                {
+                    "kind": "column",
+                    "column": "SMA_200",
+                    "params": {
+                        "color": "red",
+                        "label": "SMA_200**"
+                     }
+                }
+            ],
+        "signals": [
+            {
+                "kind":"sma",
+                "params":{
+                    "short":"SMA_50",
+                    "long":"SMA_200"
+                    }
+             }
+            ] 
+    },
+    "Volume": {
+        "abbreviation": "VOLUME",
+        "addplots": [],
+        "signals": []
+    }
+}
