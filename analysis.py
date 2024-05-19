@@ -202,26 +202,29 @@ def generate_analysis(data, ticker):
         os.makedirs("data/analysis/" + ticker)
     
     #analyze_macd(data, ticker)
-    #analyze_rsi(data, ticker)
+    analyze_rsi(data, ticker)
     analyze_sma(data,ticker)
     #analyze_obv(data,ticker)
     #analyze_adx(data,ticker)
 
 def analyze_rsi(data, ticker):
-    UPPER_BOUND = 80
-    LOWER_BOUND = 20
-    signal = signal_rsi(data)
-    rsi = data['RSI'].values[-1]
+
+    signal_kwargs = get_plot("Relative Strength Index")['signals'][0]['params']
+    rsi = signal_kwargs['rsi']
+    UPPER_BOUND = signal_kwargs['UPPER_BOUND']
+    LOWER_BOUND = signal_kwargs['LOWER_BOUND']
+    signal = signal_rsi(data=data, rsi=rsi, UPPER_BOUND=UPPER_BOUND, LOWER_BOUND=LOWER_BOUND)
+    curr_rsi = data[rsi].values[-1]
 
     with open("data/analysis/{}/RSI.txt".format(ticker),'w') as rsi_analysis: 
         if signal == "BUY":
-            analysis = "RSI: **{}** - The RSI value ({:,.2f}) is below {}, indicating the stock is currently pversold and could see an increase in price soon".format(signal, rsi, LOWER_BOUND)
+            analysis = "RSI: **{}** - The RSI value ({:,.2f}) is below {}, indicating the stock is currently pversold and could see an increase in price soon".format(signal, curr_rsi, LOWER_BOUND)
             rsi_analysis.write(analysis)
         elif signal == "SELL":
-            analysis = "RSI: **{}** - The RSI value ({:,.2f}) is above {}, indicating the stock is currently overbought and could see an incline in price soon".format(signal, rsi, UPPER_BOUND)
+            analysis = "RSI: **{}** - The RSI value ({:,.2f}) is above {}, indicating the stock is currently overbought and could see an incline in price soon".format(signal, curr_rsi, UPPER_BOUND)
             rsi_analysis.write(analysis)
         elif signal == "HOLD":
-            analysis = "RSI: **{}** - The RSI value ({:,.2f}) is between {} and {} , giving no indication as to where the price will move".format(signal, rsi, LOWER_BOUND, UPPER_BOUND)
+            analysis = "RSI: **{}** - The RSI value ({:,.2f}) is between {} and {} , giving no indication as to where the price will move".format(signal, curr_rsi, LOWER_BOUND, UPPER_BOUND)
             rsi_analysis.write(analysis)
 
 def analyze_macd(data, ticker):
