@@ -319,7 +319,7 @@ def run_bot():
     ########################
 
     # Plot graph for the selected ticker
-    @client.tree.command(name = "chart", description= "Plot selected graphs for the selected tickers",)
+    @client.tree.command(name = "plot-chart", description= "Plot selected graphs for the selected tickers",)
     @app_commands.describe(tickers = "Tickers to return charts for (separated by spaces)")
     @app_commands.describe(chart = "Charts to return for the specified tickers")
     @app_commands.choices(chart = [app_commands.Choice(name=x, value=x) for x in an.get_plots().keys()])
