@@ -68,9 +68,9 @@ def get_strategies():
         return []
             
 
-#########
+############
 # Plotting #
-#########
+############
 
 with open("utils/plots.json", 'r') as plots_json:
     plots = json.load(plots_json)
@@ -87,7 +87,7 @@ def get_plot_types():
 def get_plot_styles():
     return mpf.available_styles()
 
-def plot(ticker, data, indicator_name, display_signals=False, num_days=365, plot_type = 'line', style='tradingview', show_volume= False, savefilepath_root = PLOTS_PATH):
+def plot(ticker, data, indicator_name, display_signals=True, num_days=365, plot_type = 'line', style='tradingview', show_volume= False, savefilepath_root = PLOTS_PATH):
 
     def buy_sell_signals(signals):
         buy_signals = [np.nan] * data['Close'].shape[0]
@@ -98,10 +98,10 @@ def plot(ticker, data, indicator_name, display_signals=False, num_days=365, plot
             score = signals_score(data.head(i), signals)
             score_evaluation = score_eval(score, 1.00, 0.00)
             if score_evaluation == 'BUY' and position == False:
-                buy_signals[i] = (data['Close'].iloc[i]*0.99)
+                buy_signals[i-1] = (data['Close'].iloc[i-1]*0.99)
                 position = True
             elif score_evaluation == 'SELL' and position == True:
-                sell_signals[i] = (data['Close'].iloc[i]*1.01)
+                sell_signals[i-1] = (data['Close'].iloc[i-1]*1.01)
                 position = False
             
         return buy_signals, sell_signals
@@ -137,8 +137,9 @@ def plot(ticker, data, indicator_name, display_signals=False, num_days=365, plot
             kwargs = addplot['params']
             apds.append(mpf.make_addplot(data[column], **kwargs))
         elif addplot['kind'] == "hline":
-            # TODO
-            pass
+            hline = [addplot['value']] * data.shape[0]
+            kwargs = addplot['params']
+            apds.append(mpf.make_addplot(hline, **kwargs))
         elif addplot['kind'] == "vline":
             # TODO
             pass
@@ -167,12 +168,14 @@ def generate_charts(data, ticker):
 
     # Generate technical indicator charts
 
-    plot_volume(data,ticker)
-    plot_macd(data,ticker)
-    plot_rsi(data,ticker)
-    plot_sma(data,ticker)
-    plot_obv(data,ticker)
-    plot_adx(data,ticker)
+    for indicator in get_plots():
+        plot(ticker, data, indicator_name=indicator)
+    #plot_volume(data,ticker)
+    #plot_macd(data,ticker)
+    #plot_rsi(data,ticker)
+    #plot_sma(data,ticker)
+    #plot_obv(data,ticker)
+    #plot_adx(data,ticker)
     #plot_strategy(data, ticker)
 
 #################################
@@ -198,11 +201,11 @@ def generate_analysis(data, ticker):
     if not (os.path.isdir("data/analysis/" + ticker)):
         os.makedirs("data/analysis/" + ticker)
     
-    analyze_macd(data, ticker)
-    analyze_rsi(data, ticker)
+    #analyze_macd(data, ticker)
+    #analyze_rsi(data, ticker)
     analyze_sma(data,ticker)
     #analyze_obv(data,ticker)
-    analyze_adx(data,ticker)
+    #analyze_adx(data,ticker)
 
 def analyze_rsi(data, ticker):
     UPPER_BOUND = 80
@@ -299,18 +302,16 @@ def analyze_adx(data, ticker):
 # Generate signals #
 ####################
 
-def signal_rsi(data):
+def signal_rsi(data, rsi, UPPER_BOUND, LOWER_BOUND):
     
-    UPPER_BOUND = 80
-    LOWER_BOUND = 20
-    rsi = data['RSI'].iloc[-1]
+    curr_rsi = data[rsi].iloc[-1]
 
     # BUY SIGNAL - RSI is below lower bound
-    if rsi < LOWER_BOUND:
+    if curr_rsi < LOWER_BOUND:
         return "BUY"
     
     # SELL SIGNAL - RSI is above upper bound
-    if rsi > UPPER_BOUND:
+    if curr_rsi > UPPER_BOUND:
         return "SELL"
 
     # HOLD SIGNAL - RSI is between upper bound and lower bound
@@ -435,6 +436,7 @@ def signals_score(data, signals):
     return score
 
 def score_eval(score, buy_threshold, sell_threshold):
+    
     if score >= buy_threshold:
         return "BUY"
     elif score <= sell_threshold:
@@ -481,13 +483,6 @@ def get_masterlist_scores():
 ######################################
 # Old plotting logic - to be removed #
 ######################################
-
-def plot_volume(data, ticker):
-    NUM_DAYS = 30
-    save      = dict(fname='data/plots/{}/{}_VOLUME.png'.format(ticker, ticker),dpi=500,pad_inches=0.25)
-    data = data.tail(NUM_DAYS)
-    mpf.plot(data,volume=True,type='candle',ylabel='Close Price',figscale=1.6,figratio=(6,5),title='\n\n{} {}-Day Candlestick'.format(ticker,NUM_DAYS),
-            style='tradingview', savefig=save)#,show_nontrading=True)   
 
 def plot_rsi(data, ticker):
     UPPER_BOUND  = 80
@@ -600,47 +595,7 @@ def plot_macd(data, ticker):
 
     mpf.plot(data,type='candle',ylabel='Close Price',addplot=apds,figscale=1.6,figratio=(6,5),title='\n\n{} Moving Average\nConvergence Divergence'.format(ticker),
             style='tradingview',panel_ratios=(1,1),fill_between=fb, savefig=save)#,show_nontrading=True)   
-    
-def plot_sma(data,ticker):
-    def buy_sell_signals(sma_10, sma_50,close):
-        buy_signals = [np.nan] * close.shape[0]
-        sell_signals = [np.nan] * close.shape[0]
-        
-        for i in range(1,sma_10.size):
-            sma_10_values = [sma_10.iloc[i-1], sma_10.iloc[i]]
-            sma_50_values = [sma_50.iloc[i-1], sma_50.iloc[i]]
-            cross = recent_crossover(sma_10_values, sma_50_values)
-            if cross == 'UP':
-                buy_signals[i] = close.iloc[i]*0.99
-            elif cross == 'DOWN':
-                sell_signals[i] = close.iloc[i]*1.01
-            
-        return buy_signals, sell_signals
-
-    save      = dict(fname='data/plots/{}/{}_SMA.png'.format(ticker, ticker),dpi=500,pad_inches=0.25)
-    data      = get_sma(data)
-    data      = data.tail(365)
-    sma_10    = data['SMA_10']
-    sma_50    = data['SMA_50']
-    buy_signal, sell_signal = buy_sell_signals(sma_10, sma_50, data['Close'])
-
-    
-    apds  = [
-        mpf.make_addplot(sma_10, color='blue', label = 'SMA 10'),
-        mpf.make_addplot(sma_50, color='red', label = 'SMA 50')
-    ]
-
-
-
-    if not all_values_are_nan(buy_signal):
-        apds.append(mpf.make_addplot(buy_signal,color='g',type='scatter',markersize=50,marker='^',label='Buy Signal'))
-    if not all_values_are_nan(sell_signal):
-        apds.append(mpf.make_addplot(sell_signal,color='r',type='scatter',markersize=50,marker='v',label='Sell Signal'))
-
-
-    mpf.plot(data,type='line',ylabel='Close Price',addplot=apds,figscale=1.6,figratio=(6,5),title='\n\n{} Simple Moving Average'.format(ticker),
-            style='tradingview',savefig=save)
-    
+     
 def plot_obv(data, ticker):
 
     save      = dict(fname='data/plots/{}/{}_OBV.png'.format(ticker, ticker),dpi=500,pad_inches=0.25)

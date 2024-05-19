@@ -66,5 +66,52 @@
         "abbreviation": "VOLUME",
         "addplots": [],
         "signals": []
+    },
+    "Relative Strength Index": {
+        "abbreviation": "RSI",
+        "addplots": [
+            {
+                "kind": "column",
+                "column": "RSI_14",
+                "params":{
+                    "panel": 1,
+                    "color": "orange",
+                    "label": "RSI",
+                    "ylabel": "Relative Strength Index"
+                }
+            },
+            {
+                "kind": "hline",
+                "value": 70,
+                "params": {
+                    "type": "line",
+                    "panel": 1,
+                    "color": "r",
+                    "label":"Overbought",
+                    "linestyle": "--"
+                }
+            },
+            {
+                "kind": "hline",
+                "value": 30,
+                "params": {
+                    "type": "line",
+                    "panel": 1,
+                    "color": "g",
+                    "label":"Oversold",
+                    "linestyle": "--"
+                }
+            }
+        ],
+        "signals": [
+            {
+                "kind":"rsi",
+                "params": {
+                    "rsi": "RSI_14",
+                    "UPPER_BOUND": 70,
+                    "LOWER_BOUND": 30
+                }
+            }
+        ]
     }
 }

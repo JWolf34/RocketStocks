@@ -371,7 +371,7 @@ def run_bot():
             if data.size == 0:
                 sd.download_analyze_data(ticker)
 
-            message = an.plot(ticker=ticker,
+            an.plot(ticker=ticker,
                     data=data,
                     indicator_name=chart.value,
                     display_signals=eval(display_signals),
@@ -382,9 +382,16 @@ def run_bot():
                     savefilepath_root=ATTACHMENTS_PATH
                     )
             
+            message = "{} for {} over {} days".format(chart.value, ticker, num_days)
             chart_path = ATTACHMENTS_PATH + "/{}/{}.png".format(ticker, an.get_plot(chart.value)['abbreviation'])
             file = discord.File(chart_path)
-            await interaction.followup.send(message, file=file)
+            
+            if visibility.value == 'private':
+                await interaction.user.send(message, file=file)
+            else:
+                await interaction.channel.send(message, file=file)
+
+            await interaction.followup.send("Charts complete")
 
 
         
@@ -575,7 +582,7 @@ def run_bot():
             for strategy in strategies:
                 logger.debug("Applying strategy '{}' on ticker '{}'".format(strategy.name, ticker))
                 score = an.signals_score(sd.fetch_daily_data(ticker), strategy.signals)
-                message += "{}: **{}**".format(strategy.name, an.score_eval(score, strategy))
+                message += "{}: **{}**".format(strategy.name, an.score_eval(score, strategy.buy_threshold, strategy.sell_threshold))
 
         return message
     
