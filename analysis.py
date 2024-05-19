@@ -210,10 +210,10 @@ def generate_analysis(data, ticker):
 def analyze_rsi(data, ticker):
 
     signal_kwargs = get_plot("Relative Strength Index")['signals'][0]['params']
-    rsi = signal_kwargs['rsi']
+    rsi_col = signal_kwargs['rsi']
     UPPER_BOUND = signal_kwargs['UPPER_BOUND']
     LOWER_BOUND = signal_kwargs['LOWER_BOUND']
-    signal = signal_rsi(data=data, rsi=rsi, UPPER_BOUND=UPPER_BOUND, LOWER_BOUND=LOWER_BOUND)
+    signal = signal_rsi(data=data, rsi_col=rsi_col, UPPER_BOUND=UPPER_BOUND, LOWER_BOUND=LOWER_BOUND)
     curr_rsi = data[rsi].values[-1]
 
     with open("data/analysis/{}/RSI.txt".format(ticker),'w') as rsi_analysis: 
@@ -305,7 +305,7 @@ def analyze_adx(data, ticker):
 # Generate signals #
 ####################
 
-def signal_rsi(data, rsi, UPPER_BOUND, LOWER_BOUND):
+def signal_rsi(data, rsi_col, UPPER_BOUND, LOWER_BOUND):
     
     curr_rsi = data[rsi].iloc[-1]
 
@@ -321,12 +321,12 @@ def signal_rsi(data, rsi, UPPER_BOUND, LOWER_BOUND):
     else:
         return "HOLD"
 
-def signal_macd(data):
+def signal_macd(data, macd_col, macd_signal_col):
     signal = ''
-    macd = data['MACD'].iloc[-1]
-    macd_signal = data['MACD_SIGNAL'].iloc[-1]
-    prev_macd = data['MACD'].tail(5).to_list()
-    prev_macd_signal = data['MACD_SIGNAL'].tail(5).to_list()
+    macd = data[macd_col].iloc[-1]
+    macd_signal = data[macd_signal_col].iloc[-1]
+    prev_macd = data[macd_col].tail(5).to_list()
+    prev_macd_signal = data[macd_signal_col].tail(5).to_list()
     compare_0 = [0]*5
     cross_0 = recent_crossover(prev_macd, compare_0)
     cross_signal = recent_crossover(prev_macd, prev_macd_signal)
@@ -539,30 +539,7 @@ def plot_macd(data, ticker):
 
     mpf.plot(data,type='candle',ylabel='Close Price',addplot=apds,figscale=1.6,figratio=(6,5),title='\n\n{} Moving Average\nConvergence Divergence'.format(ticker),
             style='tradingview',panel_ratios=(1,1),fill_between=fb, savefig=save)#,show_nontrading=True)   
-     
-def plot_obv(data, ticker):
-
-    save      = dict(fname='data/plots/{}/{}_OBV.png'.format(ticker, ticker),dpi=500,pad_inches=0.25)
-    data      = get_obv(data)
-    data      = data.tail(60)
-    close     = data['Close']
-    obv       = data['OBV']
-    #buy_signal, sell_signal = buy_sell_signals(sma_10, sma_50, data['Close'])
-    close_slope = ta.slope(data['Close'], 60)#,as_angle=True, to_degress=True)
-    obv_slope = ta.slope(obv, 60)#,as_angle=True, to_degree=True)
-    #print("{} Close Slope: {}".format(ticker, close_slope))
-    #print("{} OBV Slope: {}".format(ticker, obv_slope))
-    apds  = [
-        #mpf.make_addplot(close_slope, color= 'purple', label='CLOSE_SLOPE'),
-        #mpf.make_addplot(obv_slope, color = 'orange',panel=1,label="OVB_SLOPE"),
-        mpf.make_addplot(obv, color='lightblue',panel=1,label="OBV",ylabel='On-Balance Volume')
-    ]
-
-    mpf.plot(data,type='candle',ylabel='Close Price',addplot=apds,figscale=1.6,figratio=(6,5),title='\n\n{} On-Balance Volume'.format(ticker),
-            style='tradingview',panel_ratios=(1,1),savefig=save)
-
-    data['OBV'] = ta.obv(data['Close'], data['Volume'])
-    return data
+ 
 
 def plot_adx(data,ticker):
     TREND_UPPER = 25

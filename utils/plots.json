@@ -130,5 +130,66 @@
             }
         ],
         "signals": []            
+    },
+    "Accumulation/Distrtibution Index": {
+        "abbreviation":"AD",
+        "addplots": [
+            {
+                "kind": "column",
+                "column": "AD",
+                "params": {
+                    "color": "lightgreen",
+                    "panel": 1,
+                    "label": "AD",
+                    "ylabel": "Acccumulation/Distribution Index"
+                }
+                
+            }
+        ],
+        "signals": []  
+    },
+    "Moving Average Convergence/Divergence": {
+        "abbreviation": "MACD",
+        "addplots": [
+            {
+                "kind": "column",
+                "column": "MACD_12_26_9",
+                "params": {
+                    "panel": 1,
+                    "color":"green",
+                    "label": "MACD", 
+                    "ylabel":"Moving Average\nConvergence Divergence"
+                }
+            },
+            {
+                "kind":"column",
+                "column": "MACDs_12_26_9",
+                "params": {
+                    "panel": 1,
+                    "color": "orange",
+                    "label":"MACD_SIGNAL"
+                }
+            },
+            {
+                "kind": "column",
+                "column": "MACDh_12_26_9",
+                "params": {
+                    "type": "bar",
+                    "width": 0.7,
+                    "panel": 1,
+                    "color": "lightgray",
+                    "secondary_y": "auto"
+                }
+            }
+        ],
+        "signals": [
+            {
+                "kind": "macd",
+                "params": {
+                    "macd_col": "MACD_12_26_9",
+                    "macd_signal_col": "MACDs_12_26_9"
+                }
+            }
+        ]
     }
 }
