@@ -99,6 +99,7 @@ def generate_indicators(data):#
         {"kind": "sma", "length":30},
         {"kind": "sma", "length":50},
         {"kind": "sma", "length":200},
+        {"kind": "obv"},
         {"kind": "macd"},
         {"kind": "rsi"},
         {"kind": "adx"},

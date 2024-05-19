@@ -113,5 +113,22 @@
                 }
             }
         ]
+    },
+    "On-Balance Volume": {
+        "abbreviation":"OBV",
+        "addplots": [
+            {
+                "kind": "column",
+                "column": "OBV",
+                "params": {
+                    "color": "lightblue",
+                    "panel": 1,
+                    "label": "OBV",
+                    "ylabel": "On-Balance Volume"
+                }
+                
+            }
+        ],
+        "signals": []            
     }
 }

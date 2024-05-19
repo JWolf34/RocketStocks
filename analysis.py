@@ -487,65 +487,6 @@ def get_masterlist_scores():
 # Old plotting logic - to be removed #
 ######################################
 
-def plot_rsi(data, ticker):
-    UPPER_BOUND  = 80
-    LOWER_BOUND  = 20
-    def buy_sell_signals(rsi, close):
-        buy_signals = []
-        sell_signals = []
-        
-        previous_rsi = 50
-        for date, rsi_value in rsi.items():
-            if rsi_value < LOWER_BOUND: #and previous_rsi > LOWER_BOUND:
-                buy_signals.append(close[date])
-            else:
-                buy_signals.append(np.nan)
-            if rsi_value > UPPER_BOUND: #and previous_rsi < UPPER_BOUND:
-                sell_signals.append(close[date])
-            else:
-                sell_signals.append(np.nan)
-            previous_rsi = rsi_value
-        return buy_signals, sell_signals
-
-    save      = dict(fname='data/plots/{}/{}_RSI.png'.format(ticker, ticker),dpi=500,pad_inches=0.25)
-    data      = get_rsi(data)
-    data      = data.tail(365)
-    rsi       = data['RSI']
-    close     = data['Close']
-    hline_upper  = [UPPER_BOUND] * data.shape[0]
-    hline_lower  = [UPPER_BOUND] * data.shape[0]
-    buy_signal, sell_signal = buy_sell_signals(rsi, close)
-
-    fb_green = dict(y1=buy_signal,y2=0,where=rsi<30,color="#93c47d",alpha=0.6,interpolate=True)
-    fb_red   = dict(y1=sell_signal,y2=0,where=rsi>70,color="#e06666",alpha=0.6,interpolate=True)
-    fb_red['panel'] = 0
-    fb_green['panel'] = 0
-    fb       = [fb_green,fb_red]
-
-    apds = [
-        #mpf.make_addplot(buy_signal, color='b', type='scatter', label="Buy Signal"),
-        #mpf.make_addplot(sell_signal,color='orange',type='scatter', label="Sell Signal"),
-        mpf.make_addplot(hline_upper,type='line',panel=1,color='r',secondary_y=False,label='Overbought', linestyle="--"),
-        mpf.make_addplot(hline_lower,type='line',panel=1,color='g',secondary_y=False,label='Overbought', linestyle="--"),
-        mpf.make_addplot(rsi,panel=1,color='orange',secondary_y=False,label='RSI', ylabel= 'Relative Strength \nIndex'),
-        ]
-    '''
-    if not all_values_are_nan(buy_signal):
-        apds.append(mpf.make_addplot(buy_signal, color='b', type='scatter', label="Buy Signal"))
-    if not all_values_are_nan(sell_signal):
-        apds.append(mpf.make_addplot(sell_signal,color='orange',type='scatter', label="Sell Signal"))
-        '''
-
-    
-    mpf.plot(data,type='candle',ylabel='Close Price',addplot=apds,figscale=1.6,figratio=(6,5),title='\n\n{} Relative Strength Index'.format(ticker),
-            style='tradingview',panel_ratios=(1,1),fill_between=fb, savefig=save)#,show_nontrading=True),fill_between=fb   
-
-
-
-    # Run Relative Stength Index (RSI) analysis
-    data['RSI'] = ta.rsi(data['Close'])
-    return data
-        
 def plot_macd(data, ticker):
 
     def buy_sell_signals(macd,macd_signal,close):
