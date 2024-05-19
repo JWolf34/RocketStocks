@@ -382,13 +382,11 @@ def signal_sma(data, short, long):
         print("How did we get here?")
         return "HOLD"
 
-def signal_adx(data):
+def signal_adx(data, adx_col, dip_col, din_col, TREND_UPPER, TREND_LOWER):
 
-    TREND_UPPER = 25
-    TREND_LOWER = 20
-    adx = data['ADX']
-    dip = data['DI+']
-    din = data['DI-']
+    adx = data[adx_col]
+    dip = data[dip_col]
+    din = data[din_col]
 
     prev_adx = adx.tail(5).to_list()
     prev_dip = dip.tail(5).to_list()

@@ -8,7 +8,8 @@
                     "column": "SMA_10",
                     "params": {
                         "color": "blue",
-                        "label": "SMA 10"
+                        "label": "SMA 10",
+                        "secondary_y": "auto"
                         }
                 },
                 {
@@ -16,7 +17,8 @@
                     "column": "SMA_50",
                     "params": {
                         "color": "red",
-                        "label": "SMA_50"
+                        "label": "SMA_50",
+                        "secondary_y": "auto"
                      }
                 }
             ],
@@ -40,7 +42,8 @@
                     "column": "SMA_50",
                     "params": {
                         "color": "blue",
-                        "label": "SMA 50"
+                        "label": "SMA 50",
+                        "secondary_y": "auto"
                         }
                 },
                 {
@@ -48,7 +51,8 @@
                     "column": "SMA_200",
                     "params": {
                         "color": "red",
-                        "label": "SMA_200**"
+                        "label": "SMA_200**",
+                        "secondary_y": "auto"
                      }
                 }
             ],
@@ -77,7 +81,8 @@
                     "panel": 1,
                     "color": "orange",
                     "label": "RSI",
-                    "ylabel": "Relative Strength Index"
+                    "ylabel": "Relative Strength Index",
+                    "secondary_y": "auto"
                 }
             },
             {
@@ -88,7 +93,8 @@
                     "panel": 1,
                     "color": "r",
                     "label":"Overbought",
-                    "linestyle": "--"
+                    "linestyle": "--",
+                    "secondary_y": "auto"
                 }
             },
             {
@@ -99,7 +105,8 @@
                     "panel": 1,
                     "color": "g",
                     "label":"Oversold",
-                    "linestyle": "--"
+                    "linestyle": "--",
+                    "secondary_y": "auto"
                 }
             }
         ],
@@ -124,7 +131,8 @@
                     "color": "lightblue",
                     "panel": 1,
                     "label": "OBV",
-                    "ylabel": "On-Balance Volume"
+                    "ylabel": "On-Balance Volume",
+                    "secondary_y": "auto"
                 }
                 
             }
@@ -141,7 +149,8 @@
                     "color": "lightgreen",
                     "panel": 1,
                     "label": "AD",
-                    "ylabel": "Acccumulation/Distribution Index"
+                    "ylabel": "Acccumulation/Distribution Index",
+                    "secondary_y": "auto"
                 }
                 
             }
@@ -167,7 +176,8 @@
                 "params": {
                     "panel": 1,
                     "color": "orange",
-                    "label":"MACD_SIGNAL"
+                    "label":"MACD_SIGNAL",
+                    "secondary_y": "auto"
                 }
             },
             {
@@ -191,5 +201,73 @@
                 }
             }
         ]
+    },
+    "Average Directional Index": {
+        "abbreviation": "ADX",
+        "addplots": [
+            {
+                "kind": "column",
+                "column": "ADX_14",
+                "params": {
+                    "type": "line",
+                    "color": "purple",
+                    "label": "ADX",
+                    "panel": 1
+                }
+            },
+            {
+                "kind": "column",
+                "column": "DMP_14",
+                "params":{
+                    "type": "line",
+                    "color": "blue",
+                    "label": "DI+",
+                    "panel": 1
+                }
+            },
+            {
+                "kind": "column",
+                "column": "DMN_14",
+                "params": {
+                    "type": "line",
+                    "color":"red",
+                    "label": "DI-",
+                    "panel":1
+                }
+            },
+            {
+                "kind": "hline",
+                "value": 25,
+                "params": {
+                    "type": "line",
+                    "linestyle": "--",
+                    "color": "g",
+                    "panel": 1
+                }
+            },
+            {
+                "kind": "hline",
+                "value": 20,
+                "params": {
+                    "type": "line",
+                    "linestyle": "--",
+                    "color": "r",
+                    "panel": 1
+                }
+            }
+        ],
+        "signals": [
+            {
+                "kind": "adx",
+                "params": {
+                    "adx_col": "ADX_14",
+                    "dip_col": "DMP_14",
+                    "din_col": "DMN_14",
+                    "TREND_UPPER": 25,
+                    "TREND_LOWER": 20
+                }
+            }
+        ]
+        
     }
 }
