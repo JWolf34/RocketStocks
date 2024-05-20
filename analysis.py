@@ -280,7 +280,6 @@ def analyze_macd(data, ticker):
             analysis = "MACD: **{}** - The MACD line ({:,.2f}) is above the MACD signal line ({:,.2f}) and has recently crossed over 0, indicating an upcoming or continuing uptrend".format(signal, macd, macd_signal)
         elif (signal == "HOLD"):
             analysis = "MACD: **{}** - The MACD line ({:,.2f}) is above the MACD signal line ({:,.2f}), which can indicate an upcoming uptrend".format(signal, macd, macd_signal)
-            macd_analysis.write(analysis)
         elif (signal == "SELL"):
             analysis = "MACD: **{}** - The MACD line ({:,.2f}) is below the MACD signal line ({:,.2f}) an 0, indicating an upcoming or continuing downtrend".format(signal, macd, macd_signal)
         elif signal == "N/A":
@@ -322,7 +321,6 @@ def analyze_adx(data, ticker):
         signal = "N/A"
 
     with open("data/analysis/{}/ADX.txt".format(ticker),'w') as adx_analysis: 
-
         # BUY SIGNAL - ADX crosses above TREND_UPPER and DI+ > DI-
         if (signal == "BUY"):
             analysis = "ADX: **{}** - The ADX line ({:,.2f}) has recently crossed {} and DI+ ({:,.2f}) is above DI- ({:,.2f}), indicating the stock is strong uptrend".format(signal, adx, TREND_UPPER, dip, din)
@@ -370,34 +368,26 @@ def signal_macd(data, macd_col, macd_signal_col):
     macd_signal = data[macd_signal_col].iloc[-1]
     prev_macd = data[macd_col].tail(5).to_list()
     prev_macd_signal = data[macd_signal_col].tail(5).to_list()
-    compare_0 = [0]*5
-    cross_0 = recent_crossover(prev_macd, compare_0)
+    #compare_0 = [0]*5
+    #cross_0 = recent_crossover(prev_macd, compare_0)
     cross_signal = recent_crossover(prev_macd, prev_macd_signal)
 
 
-    # BUY SIGNAL - MACD is above MACD_SIGNAL and has recently crossed over 0
-    if macd > macd_signal and cross_0 == 'UP':
+    # BUY SIGNAL - MACD is above MACD_SIGNAL and has recently crossed over MACD_SIGNAL
+    if macd > macd_signal and cross_signal == 'UP':
         return "BUY"
-    
-    # WEAK BUY SIGNAL - MACD has recently crossed over signal
-    elif cross_signal == 'UP' or (macd > macd_signal and macd < 0):
-        return "WEAK BUY"
-    
-    # WEAK SELL SIGNAL - MACD is below signal but above 0
-    elif macd < macd_signal and macd > 0:
-        return "WEAK SELL"
 
-    # SELL SIGNAL - MACD is below signal and 0
-    elif macd < 0 and macd < macd_signal:
+    # SELL SIGNAL - MACD is below signal 
+    elif macd < macd_signal:
         return "SELL"
     
-    # HOLD SIGNAL - MACD is above the signal but has not recently crossed the signal or 0
-    elif macd > macd_signal and cross_signal == None and cross_0 == None:
+    # HOLD SIGNAL - MACD is above the signal but has not recently crossed the signal
+    elif macd > macd_signal:
         return "HOLD"
     
     else:
-        print("How did we get here?")
-        return 'HOLD'
+        logger.debug("MACD values likely NaN for specified range. MACD: {}, MACD_SIGNAL: {}. Return 'N/A'".format(macd, macd_signal))
+        return 'N/A'
     
 def signal_sma(data, short, long):
 
@@ -454,8 +444,8 @@ def signal_adx(data, adx_col, dip_col, din_col, TREND_UPPER, TREND_LOWER):
         return "HOLD"
     
     else:
-        logger.debug("ADX values likely NaN for specified range. ADX: {}, DIP: {}, DINL: {}. Return 'HOLD'".format(adx.iloc[-1], dip.iloc[-1], din.iloc[-1]))
-        return "HOLD"
+        logger.debug("ADX values likely NaN for specified range. ADX: {}, DIP: {}, DINL: {}. Return 'N/A'".format(adx.iloc[-1], dip.iloc[-1], din.iloc[-1]))
+        return "N/A"
 
 ###########
 # Scoring #
@@ -466,10 +456,9 @@ def signals_score(data, signals):
     score = 0.0
     scores_legend = {
         'BUY':1.0,
-        'WEAK BUY':0.75,
         'HOLD':0.5,
-        'WEAK SELL':0.0,
-        'SELL':0.0
+        'SELL':0.0,
+        'N/A':0.0
     }
 
     for signal in signals:
