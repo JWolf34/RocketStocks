@@ -86,7 +86,30 @@ def get_plot_types():
 def get_plot_styles():
     return mpf.available_styles()
 
-def plot(ticker, data, indicator_name, display_signals=True, num_days=365, plot_type = 'line', style='tradingview', show_volume= False, savefilepath_root = PLOTS_PATH):
+def generate_basic_charts(data, ticker):
+    
+    if not (os.path.isdir("data/plots/" + ticker)):
+            os.makedirs("data/plots/" + ticker)
+
+    plot(ticker=ticker, data=data, indicator_name="Simple Moving Average 10/50")
+    plot(ticker=ticker, data=data, indicator_name="Volume", title="{} 30-Day Candlestick".format(ticker), num_days=30, plot_type="candle", show_volume=True)
+    plot(ticker=ticker, data=data, indicator_name="Relative Strength Index", plot_type="candle")
+    plot(ticker=ticker, data=data, indicator_name="On-Balance Volume", plot_type="candle", num_days=90)
+    plot(ticker=ticker, data=data, indicator_name="Accumulation/Distrtibution Index", plot_type="candle", num_days=90)
+    plot(ticker=ticker, data=data, indicator_name="Moving Average Convergence/Divergence", plot_type="candle")
+    plot(ticker=ticker, data=data, indicator_name="Average Directional Index", plot_type="candle")
+
+def generate_all_charts(data, ticker):
+
+    if not (os.path.isdir("data/plots/" + ticker)):
+            os.makedirs("data/plots/" + ticker)
+
+    # Generate technical indicator charts
+
+    for indicator in get_plots():
+        plot(ticker, data, indicator_name=indicator)
+
+def plot(ticker, data, indicator_name, title = '', display_signals=True, num_days=365, plot_type = 'line', style='tradingview', show_volume= False, savefilepath_root = PLOTS_PATH):
 
     def buy_sell_signals(signals):
         buy_signals = [np.nan] * data['Close'].shape[0]
@@ -105,8 +128,10 @@ def plot(ticker, data, indicator_name, display_signals=True, num_days=365, plot_
             
         return buy_signals, sell_signals
 
-
-    
+    # Validate title
+    if title == '':
+        # Set default title
+        title = '\n\n{} {}'.format(ticker, indicator_name)
     # Validate num_days
     if num_days > data.shape[0]:
         num_days =  data.shape[0]
@@ -133,6 +158,9 @@ def plot(ticker, data, indicator_name, display_signals=True, num_days=365, plot_
     for addplot in addplots:
         if addplot['kind'] == 'column':
             column = addplot['column']
+            if column not in data.columns:
+                return False, "Data column needed to generate this chart ({}) does not exist. There may not be enough data to populate this data column yet.".format(column)
+
             kwargs = addplot['params']
             apds.append(mpf.make_addplot(data[column], **kwargs))
         elif addplot['kind'] == "hline":
@@ -156,9 +184,9 @@ def plot(ticker, data, indicator_name, display_signals=True, num_days=365, plot_
         if not all_values_are_nan(sell_signal):
             apds.append(mpf.make_addplot(sell_signal,color='r',type='scatter',markersize=50,marker='v',label='Sell Signal'))
     
-    mpf.plot(data,type=plot_type,ylabel='Close Price',addplot=apds,figscale=1.6,figratio=(6,5),title='\n\n{} {}'.format(ticker, indicator_name),
+    mpf.plot(data,type=plot_type,ylabel='Close Price',addplot=apds,figscale=1.6,figratio=(6,5),title=title,
             style=style, volume=show_volume, savefig=save)#,show_nontrading=True),fill_between=fb  
-    return "{} for ticker {} over {} days".format(indicator_name, ticker, num_days)
+    return True, "{} for ticker {} over {} days".format(indicator_name, ticker, num_days)
 
 def generate_charts(data, ticker):
     
@@ -192,7 +220,7 @@ def run_analysis(tickers=sd.get_tickers()):
             if sd.validate_ticker(ticker):
                 sd.download_analyze_data(ticker)
         data = sd.fetch_daily_data(ticker)
-        generate_charts(data, ticker)
+        generate_basic_charts(data, ticker)
         generate_analysis(data, ticker)
 
 # Running analysis on techincal indicators to generate buy/sell signals
@@ -200,11 +228,12 @@ def generate_analysis(data, ticker):
     if not (os.path.isdir("data/analysis/" + ticker)):
         os.makedirs("data/analysis/" + ticker)
     
-    #analyze_macd(data, ticker)
+    analyze_macd(data, ticker)
     analyze_rsi(data, ticker)
     analyze_sma(data,ticker)
+    analyze_adx(data,ticker)
     #analyze_obv(data,ticker)
-    #analyze_adx(data,ticker)
+    
 
 def analyze_rsi(data, ticker):
 
@@ -231,10 +260,10 @@ def analyze_macd(data, ticker):
 
     signal_data = get_signal("macd")['params']
     
-    signal = signal_adx(**({'data':data} | signal_data))
+    signal = signal_macd(**({'data':data} | signal_data))
     
-    macd = data[signal_data[macd_col]].iloc[-1]
-    macd_signal = data[signal_data[macd_signal_col]].iloc[-1]
+    macd = data[signal_data['macd_col']].iloc[-1]
+    macd_signal = data[signal_data['macd_signal_col']].iloc[-1]
 
     with open("data/analysis/{}/MACD.txt".format(ticker),'w') as macd_analysis: 
             if (signal == "BUY"):
@@ -275,9 +304,9 @@ def analyze_adx(data, ticker):
     signal_data = get_signal("adx")['params']
     signal = signal_adx(**({'data':data} | signal_data))
 
-    adx = data[signal_data[adx_col]].iloc[-1]
-    dip = data[signal_data[dip_col]].iloc[-1]
-    din = data[signal_data[din_col]].iloc[-1]
+    adx = data[signal_data['adx_col']].iloc[-1]
+    dip = data[signal_data['dip_col']].iloc[-1]
+    din = data[signal_data['din_col']].iloc[-1]
     TREND_UPPER = signal_data["TREND_UPPER"]
     TREND_LOWER = signal_data["TREND_LOWER"]
 

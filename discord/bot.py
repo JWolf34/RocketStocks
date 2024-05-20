@@ -370,8 +370,9 @@ def run_bot():
             data = sd.fetch_daily_data(ticker)
             if data.size == 0:
                 sd.download_analyze_data(ticker)
+                data = sd.fetch_daily_data(ticker)
 
-            an.plot(ticker=ticker,
+            plot_success, plot_message = an.plot(ticker=ticker,
                     data=data,
                     indicator_name=chart.value,
                     display_signals=eval(display_signals),
@@ -382,16 +383,23 @@ def run_bot():
                     savefilepath_root=ATTACHMENTS_PATH
                     )
             
-            message = "{} for {} over {} days".format(chart.value, ticker, num_days)
-            chart_path = ATTACHMENTS_PATH + "/{}/{}.png".format(ticker, an.get_plot(chart.value)['abbreviation'])
-            file = discord.File(chart_path)
+            if plot_success:
+                message = plot_message
+                chart_path = ATTACHMENTS_PATH + "/{}/{}.png".format(ticker, an.get_plot(chart.value)['abbreviation'])
+                file = discord.File(chart_path)
             
-            if visibility.value == 'private':
-                await interaction.user.send(message, file=file)
+                if visibility.value == 'private':
+                    await interaction.user.send(message, file=file)
+                else:
+                    await interaction.channel.send(message, file=file)
             else:
-                await interaction.channel.send(message, file=file)
+                message = "Failed to generate chart '{}' for ticker {}. ".format(chart.value, ticker) + plot_message
+                if visibility.value == 'private':
+                    await interaction.user.send(message)
+                else:
+                    await interaction.channel.send(message)
 
-            await interaction.followup.send("Charts complete")
+            await interaction.followup.send("Finished generating charts")
 
 
         
