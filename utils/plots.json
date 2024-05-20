@@ -22,15 +22,7 @@
                      }
                 }
             ],
-        "signals": [
-            {
-                "kind":"sma",
-                "params":{
-                    "short":"SMA_10",
-                    "long":"SMA_50"
-                    }
-             }
-             ]
+        "signals": ["sma10-50"]
         
     },
     "Simple Moving Average 50/200":{
@@ -56,15 +48,7 @@
                      }
                 }
             ],
-        "signals": [
-            {
-                "kind":"sma",
-                "params":{
-                    "short":"SMA_50",
-                    "long":"SMA_200"
-                    }
-             }
-            ] 
+        "signals": ["sma50-200"] 
     },
     "Volume": {
         "abbreviation": "VOLUME",
@@ -110,16 +94,7 @@
                 }
             }
         ],
-        "signals": [
-            {
-                "kind":"rsi",
-                "params": {
-                    "rsi": "RSI_14",
-                    "UPPER_BOUND": 70,
-                    "LOWER_BOUND": 30
-                }
-            }
-        ]
+        "signals": ["rsi"]
     },
     "On-Balance Volume": {
         "abbreviation":"OBV",
@@ -192,15 +167,7 @@
                 }
             }
         ],
-        "signals": [
-            {
-                "kind": "macd",
-                "params": {
-                    "macd_col": "MACD_12_26_9",
-                    "macd_signal_col": "MACDs_12_26_9"
-                }
-            }
-        ]
+        "signals": ["macd"]
     },
     "Average Directional Index": {
         "abbreviation": "ADX",
@@ -256,18 +223,6 @@
                 }
             }
         ],
-        "signals": [
-            {
-                "kind": "adx",
-                "params": {
-                    "adx_col": "ADX_14",
-                    "dip_col": "DMP_14",
-                    "din_col": "DMN_14",
-                    "TREND_UPPER": 25,
-                    "TREND_LOWER": 20
-                }
-            }
-        ]
-        
+        "signals": ["adx"]
     }
 }

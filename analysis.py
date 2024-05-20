@@ -72,14 +72,13 @@ def get_strategies():
 # Plotting #
 ############
 
-with open("utils/plots.json", 'r') as plots_json:
-    plots = json.load(plots_json)
-
 def get_plots():
-    return plots
+    with open("utils/plots.json", 'r') as plots_json:
+        plots = json.load(plots_json)
+        return plots
 
 def get_plot(indicator_name):
-    return plots[indicator_name]
+    return get_plots()[indicator_name]
 
 def get_plot_types():
     return ['line', 'candle', 'ohlc', 'renko', 'pnf']
@@ -209,12 +208,14 @@ def generate_analysis(data, ticker):
 
 def analyze_rsi(data, ticker):
 
-    signal_kwargs = get_plot("Relative Strength Index")['signals'][0]['params']
-    rsi_col = signal_kwargs['rsi']
-    UPPER_BOUND = signal_kwargs['UPPER_BOUND']
-    LOWER_BOUND = signal_kwargs['LOWER_BOUND']
-    signal = signal_rsi(data=data, rsi_col=rsi_col, UPPER_BOUND=UPPER_BOUND, LOWER_BOUND=LOWER_BOUND)
-    curr_rsi = data[rsi].values[-1]
+    signal_data = get_signal("RSI")['params']
+    signal = signal_adx(**signal_data)
+
+    rsi_col = signal_data['rsi_col']
+    UPPER_BOUND = signal_data['UPPER_BOUND']
+    LOWER_BOUND = signal_data ['LOWER_BOUND']
+    signal = signal_rsi(**signal_data)
+    curr_rsi = data[rsi_col].values[-1]
 
     with open("data/analysis/{}/RSI.txt".format(ticker),'w') as rsi_analysis: 
         if signal == "BUY":
@@ -228,29 +229,34 @@ def analyze_rsi(data, ticker):
             rsi_analysis.write(analysis)
 
 def analyze_macd(data, ticker):
-   signal = signal_macd(data)
-   macd = data['MACD'].iloc[-1]
-   macd_signal = data['MACD_SIGNAL'].iloc[-1]
 
-   with open("data/analysis/{}/MACD.txt".format(ticker),'w') as macd_analysis: 
-        if (signal == "BUY"):
-            analysis = "MACD: **{}** - The MACD line ({:,.2f}) is above the MACD signal line ({:,.2f}) and has recently crossed over 0, indicating an upcoming or continuing uptrend".format(signal, macd, macd_signal)
-            macd_analysis.write(analysis)
-        elif (signal == "WEAK BUY"):
-            analysis = "MACD: **{}** - The MACD line ({:,.2f}) has recently crossed above the MACD signal line ({:,.2f}), indicating that the price is rising".format(signal, macd, macd_signal)
-            macd_analysis.write(analysis)
-        elif (signal == "HOLD"):
-            analysis = "MACD: **{}** - The MACD line ({:,.2f}) is above the MACD signal line ({:,.2f}), which can indicate an upcoming uptrend".format(signal, macd, macd_signal)
-            macd_analysis.write(analysis)
-        elif (signal == "WEAK SELL"):
-            analysis = "MACD: **{}** - The MACD line ({:,.2f}) is below the MACD signal line ({:,.2f}) but above the 0, which can indicate an upcoming downtrend".format(signal, macd, macd_signal)
-            macd_analysis.write(analysis)
-        if (signal == "SELL"):
-            analysis = "MACD: **{}** - The MACD line ({:,.2f}) is below the MACD signal line ({:,.2f}) an 0, indicating an upcoming or continuing downtrend".format(signal, macd, macd_signal)
-            macd_analysis.write(analysis)
+    signal_data = get_signal("macd")['params']
+    signal = signal_adx(**signal_data)
+    
+    macd = data[signal_data[macd_col]].iloc[-1]
+    macd_signal = data[signal_data[macd_signal_col]].iloc[-1]
+
+    with open("data/analysis/{}/MACD.txt".format(ticker),'w') as macd_analysis: 
+            if (signal == "BUY"):
+                analysis = "MACD: **{}** - The MACD line ({:,.2f}) is above the MACD signal line ({:,.2f}) and has recently crossed over 0, indicating an upcoming or continuing uptrend".format(signal, macd, macd_signal)
+                macd_analysis.write(analysis)
+            elif (signal == "WEAK BUY"):
+                analysis = "MACD: **{}** - The MACD line ({:,.2f}) has recently crossed above the MACD signal line ({:,.2f}), indicating that the price is rising".format(signal, macd, macd_signal)
+                macd_analysis.write(analysis)
+            elif (signal == "HOLD"):
+                analysis = "MACD: **{}** - The MACD line ({:,.2f}) is above the MACD signal line ({:,.2f}), which can indicate an upcoming uptrend".format(signal, macd, macd_signal)
+                macd_analysis.write(analysis)
+            elif (signal == "WEAK SELL"):
+                analysis = "MACD: **{}** - The MACD line ({:,.2f}) is below the MACD signal line ({:,.2f}) but above the 0, which can indicate an upcoming downtrend".format(signal, macd, macd_signal)
+                macd_analysis.write(analysis)
+            if (signal == "SELL"):
+                analysis = "MACD: **{}** - The MACD line ({:,.2f}) is below the MACD signal line ({:,.2f}) an 0, indicating an upcoming or continuing downtrend".format(signal, macd, macd_signal)
+                macd_analysis.write(analysis)
 
 def analyze_sma(data, ticker):
-    signal = signal_sma(data, 'SMA_10', 'SMA_50')
+    signal_data = get_signal("SMA10-50")['params']
+    signal = signal_sma(**signal_data)
+    
     sma_10 = data['SMA_10'].iloc[-1]
     sma_50 = data['SMA_50'].iloc[-1]
 
@@ -266,12 +272,14 @@ def analyze_sma(data, ticker):
             sma_analysis.write(analysis)
 
 def analyze_adx(data, ticker):
-    TREND_UPPER = 25
-    TREND_LOWER = 20
-    signal = signal_adx(data)
-    adx = data['ADX'].iloc[-1]
-    dip = data['DI+'].iloc[-1]
-    din = data['DI-'].iloc[-1]
+    signal_data = get_signal("ADX")['params']
+    signal = signal_adx(**signal_data)
+
+    adx = data[signal_data[adx_col]].iloc[-1]
+    dip = data[signal_data[dip_col]].iloc[-1]
+    din = data[signal_data[din_col]].iloc[-1]
+    TREND_UPPER = signal_data["TREND_UPPER"]
+    TREND_LOWER = signal_data["TREND_LOWER"]
 
     with open("data/analysis/{}/ADX.txt".format(ticker),'w') as adx_analysis: 
         #adx_analysis.write('ADX: **{}**'.format(signal))
@@ -301,13 +309,21 @@ def analyze_adx(data, ticker):
             analysis = "ADX: **{}** - The ADX line ({:,.2f}) has recently crossed {} and DI+ ({:,.2f}) is below DI- ({:,.2f}), indicating the stock is strong downtrend".format(signal, adx, TREND_UPPER, dip, din)
             adx_analysis.write(analysis)
             
-####################
-# Generate signals #
-####################
+###########
+# Signals #
+###########
+
+def get_signals():
+    with open("utils/signals.json", 'r') as signals_json:
+        signals = json.load(signals_json)
+        return signals
+
+def get_signal(signal):
+    return get_signals()[signal]
 
 def signal_rsi(data, rsi_col, UPPER_BOUND, LOWER_BOUND):
     
-    curr_rsi = data[rsi].iloc[-1]
+    curr_rsi = data[rsi_col].iloc[-1]
 
     # BUY SIGNAL - RSI is below lower bound
     if curr_rsi < LOWER_BOUND:
@@ -394,24 +410,24 @@ def signal_adx(data, adx_col, dip_col, din_col, TREND_UPPER, TREND_LOWER):
     prev_trend_upper = [TREND_UPPER] * 5
     prev_trend_lower = [TREND_LOWER] * 5
 
-    # BUY SIGNAL - ADX crosses above TREND_UPPER and DI+ > DI-
-    if recent_crossover(prev_adx, prev_trend_upper) == 'UP' and dip.iloc[-1] > din.iloc[-1]:
+    # BUY SIGNAL - ADX crosses above TREND_LOWER and DI+ > DI-
+    if recent_crossover(prev_adx, prev_trend_lower) == 'UP' and dip.iloc[-1] > din.iloc[-1]:
         return 'BUY'
-    
-    # WEAK BUY SIGNAL - ADX between TREND_UPPER and TREND_LOWER and DI+ > DI-
-    elif recent_crossover(prev_adx, prev_trend_lower) == 'UP' and adx.iloc[-1] < TREND_UPPER and dip.iloc[-1] > din.iloc[-1]:
-        return "WEAK BUY"
-    
-    # WEAK SELL SIGNAL - ADX between TREND_UPPER and TREND_LOWER and DI- > DI+ OR ADX < TREND_LOWER
-    elif (adx.iloc[-1] < TREND_UPPER and adx.iloc[-1] > TREND_LOWER and din.iloc[-1] > dip.iloc[-1]) or adx.iloc[-1] < TREND_LOWER:
-        return "WEAK SELL"
 
-    # SELL SIGNAL - ADX > TREND_UPPER and DI- > DI+
-    elif adx.iloc[-1] > TREND_UPPER and din.iloc[-1] > dip.iloc[-1]:
+    # SELL SIGNAL - ADX > TREND_LOWER and DI- > DI+
+    elif adx.iloc[-1] > TREND_LOWER and din.iloc[-1] > dip.iloc[-1]:
         return "SELL"
     
     # HOLD SIGNAL - ADX > TREND_LOWER and DI+ > DI-
     elif adx.iloc[-1] > TREND_LOWER and dip.iloc[-1] > din.iloc[-1]:
+        return "HOLD"
+
+    # HOLD SIGNAL - ADX < TREND_LOWER
+    elif adx.iloc[-1] < TREND_LOWER:
+        return "HOLD"
+    
+    else:
+        logger.debug("ADX values likely NaN for specified range. ADX: {}, DIP: {}, DINL: {}. Return 'HOLD'".format(adx.iloc[-1], dip.iloc[-1], din.iloc[-1]))
         return "HOLD"
 
 ###########
@@ -430,8 +446,8 @@ def signals_score(data, signals):
     }
 
     for signal in signals:
-        params = {'data':data} | signal['params']
-        signal_function = globals()['signal_{}'.format(signal['kind'])]
+        params = {'data':data} | get_signal(signal)['params']
+        signal_function = globals()['signal_{}'.format(get_signal(signal)['signal_func'])]
         score += scores_legend.get(signal_function(**params))
 
     return score
@@ -652,13 +668,6 @@ def recent_crossover(indicator, signal):
             return'DOWN'
 
     return None
-
-
-
-
-
-
-
 
 def test():
     ticker = 'A'

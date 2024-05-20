@@ -322,7 +322,7 @@ def run_bot():
     @client.tree.command(name = "plot-chart", description= "Plot selected graphs for the selected tickers",)
     @app_commands.describe(tickers = "Tickers to return charts for (separated by spaces)")
     @app_commands.describe(chart = "Charts to return for the specified tickers")
-    @app_commands.choices(chart = [app_commands.Choice(name=x, value=x) for x in an.get_plots().keys()])
+    @app_commands.choices(chart = [app_commands.Choice(name=x, value=x) for x in sorted(an.get_plots().keys())])
     @app_commands.describe(visibility = "'private' to send to DMs, 'public' to send to the channel")
     @app_commands.choices(visibility =[
         app_commands.Choice(name = "private", value = 'private'),
@@ -343,8 +343,8 @@ def run_bot():
         app_commands.Choice(name="True", value="True"),
         app_commands.Choice(name="False", value="False") 
     ])  
-    async def chart(interaction: discord.interactions, tickers: str, chart: app_commands.Choice[str], visibility: app_commands.Choice[str],
-                    display_signals: app_commands.Choice[str] = 'False',
+    async def plot_chart(interaction: discord.interactions, tickers: str, chart: app_commands.Choice[str], visibility: app_commands.Choice[str],
+                    display_signals: app_commands.Choice[str] = 'True',
                     num_days: int = 365, 
                     plot_type: app_commands.Choice[str] = 'line', 
                     style: app_commands.Choice[str] = 'tradingview',
