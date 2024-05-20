@@ -433,9 +433,12 @@ def daily_data_up_to_date(data):
             return False
 
 def validate_columns(data, columns):
+    logger.debug("Validating that columns {} exist in data".format(columns))
     for column in columns: 
         if column not in data.columns:
+            logger.debug("Column {} does not exist in data".format(column))
             return False
+    logger.debug("Columns {} exist in data".format(columns))
     return True
 
 #########
