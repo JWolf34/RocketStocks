@@ -116,15 +116,8 @@ def download_analyze_data(ticker):
     CLOSE_THRESHOLD = 1.00
 
     data = download_data(ticker)
-    if data.size == 0:
-        logging.error("Enountered error downloading data for ticker {} - will not generate indicator data or write to CSV".format(ticker))
-    elif data.size < SIZE_THRESHOLD:
-        logging.warn("Size of {} data is less than threshold: {} - will not generate indicator data or write to CSV".format(ticker, SIZE_THRESHOLD))
-    elif data['Close'].iloc[-1] < CLOSE_THRESHOLD:
-        logging.warn("Last close of {} less than threshold: {} - will not generate indicator data or write to CSV".format(ticker, CLOSE_THRESHOLD))
-    else:
-        generate_indicators(data)
-        update_csv(data, ticker, DAILY_DATA_PATH)
+    generate_indicators(data)
+    update_csv(data, ticker, DAILY_DATA_PATH)
 
 # Daily process to download daily ticker data and generate indicator data on all 
 # tickers in the masterlist
@@ -444,7 +437,7 @@ def validate_columns(data, columns):
         if column not in data.columns:
             return False
     return True
-    
+
 #########
 # Tests #
 #########
