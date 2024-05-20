@@ -124,7 +124,7 @@ def plot(ticker, data, indicator_name, title = '', display_signals=True, num_day
         sell_signals = [np.nan] * data['Close'].shape[0]
         position = False
         
-        for i in range(5, data.size):
+        for i in range(2, data.shape[0]):
             score = signals_score(data.head(i), signals)
             score_evaluation = score_eval(score, 1.00, 0.00)
             if score_evaluation == 'BUY' and position == False:
