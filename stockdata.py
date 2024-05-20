@@ -439,6 +439,12 @@ def daily_data_up_to_date(data):
             logger.info("Provided data is not up-to-date")
             return False
 
+def validate_columns(data, columns):
+    for column in columns: 
+        if column not in data.columns:
+            return False
+    return True
+    
 #########
 # Tests #
 #########

@@ -237,106 +237,104 @@ def generate_analysis(data, ticker):
 
 def analyze_rsi(data, ticker):
 
+    
     signal_data = get_signal("rsi")['params']
-    signal = signal_rsi(**({'data':data} | signal_data))
+    signal_columns = [signal_data.get(x) for x in signal_data if isinstance(signal_data.get(x), str)]
+    if sd.validate_columns(data, signal_columns):
+        signal = signal_rsi(**({'data':data} | signal_data))
+        rsi_col = signal_data['rsi_col']
+        UPPER_BOUND = signal_data['UPPER_BOUND']
+        LOWER_BOUND = signal_data ['LOWER_BOUND']
+        curr_rsi = data[rsi_col].values[-1]
+    else:
+        signal = "N/A"
 
-    rsi_col = signal_data['rsi_col']
-    UPPER_BOUND = signal_data['UPPER_BOUND']
-    LOWER_BOUND = signal_data ['LOWER_BOUND']
-    curr_rsi = data[rsi_col].values[-1]
+    
 
     with open("data/analysis/{}/RSI.txt".format(ticker),'w') as rsi_analysis: 
         if signal == "BUY":
             analysis = "RSI: **{}** - The RSI value ({:,.2f}) is below {}, indicating the stock is currently pversold and could see an increase in price soon".format(signal, curr_rsi, LOWER_BOUND)
-            rsi_analysis.write(analysis)
         elif signal == "SELL":
             analysis = "RSI: **{}** - The RSI value ({:,.2f}) is above {}, indicating the stock is currently overbought and could see an incline in price soon".format(signal, curr_rsi, UPPER_BOUND)
-            rsi_analysis.write(analysis)
         elif signal == "HOLD":
             analysis = "RSI: **{}** - The RSI value ({:,.2f}) is between {} and {} , giving no indication as to where the price will move".format(signal, curr_rsi, LOWER_BOUND, UPPER_BOUND)
-            rsi_analysis.write(analysis)
+        elif signal == "N/A":
+            analysis = "RSI: **N/A**"
+        rsi_analysis.write(analysis)
 
 def analyze_macd(data, ticker):
 
     signal_data = get_signal("macd")['params']
+    signal_columns = [signal_data.get(x) for x in signal_data if isinstance(signal_data.get(x), str)]
+    if sd.validate_columns(data, signal_columns):
+        signal = signal_macd(**({'data':data} | signal_data))
+        macd = data[signal_data['macd_col']].iloc[-1]
+        macd_signal = data[signal_data['macd_signal_col']].iloc[-1]
+    else:
+        signal = "N/A"
     
-    signal = signal_macd(**({'data':data} | signal_data))
     
-    macd = data[signal_data['macd_col']].iloc[-1]
-    macd_signal = data[signal_data['macd_signal_col']].iloc[-1]
 
     with open("data/analysis/{}/MACD.txt".format(ticker),'w') as macd_analysis: 
-            if (signal == "BUY"):
-                analysis = "MACD: **{}** - The MACD line ({:,.2f}) is above the MACD signal line ({:,.2f}) and has recently crossed over 0, indicating an upcoming or continuing uptrend".format(signal, macd, macd_signal)
-                macd_analysis.write(analysis)
-            elif (signal == "WEAK BUY"):
-                analysis = "MACD: **{}** - The MACD line ({:,.2f}) has recently crossed above the MACD signal line ({:,.2f}), indicating that the price is rising".format(signal, macd, macd_signal)
-                macd_analysis.write(analysis)
-            elif (signal == "HOLD"):
-                analysis = "MACD: **{}** - The MACD line ({:,.2f}) is above the MACD signal line ({:,.2f}), which can indicate an upcoming uptrend".format(signal, macd, macd_signal)
-                macd_analysis.write(analysis)
-            elif (signal == "WEAK SELL"):
-                analysis = "MACD: **{}** - The MACD line ({:,.2f}) is below the MACD signal line ({:,.2f}) but above the 0, which can indicate an upcoming downtrend".format(signal, macd, macd_signal)
-                macd_analysis.write(analysis)
-            if (signal == "SELL"):
-                analysis = "MACD: **{}** - The MACD line ({:,.2f}) is below the MACD signal line ({:,.2f}) an 0, indicating an upcoming or continuing downtrend".format(signal, macd, macd_signal)
-                macd_analysis.write(analysis)
+        if (signal == "BUY"):
+            analysis = "MACD: **{}** - The MACD line ({:,.2f}) is above the MACD signal line ({:,.2f}) and has recently crossed over 0, indicating an upcoming or continuing uptrend".format(signal, macd, macd_signal)
+        elif (signal == "HOLD"):
+            analysis = "MACD: **{}** - The MACD line ({:,.2f}) is above the MACD signal line ({:,.2f}), which can indicate an upcoming uptrend".format(signal, macd, macd_signal)
+            macd_analysis.write(analysis)
+        elif (signal == "SELL"):
+            analysis = "MACD: **{}** - The MACD line ({:,.2f}) is below the MACD signal line ({:,.2f}) an 0, indicating an upcoming or continuing downtrend".format(signal, macd, macd_signal)
+        elif signal == "N/A":
+            analysis = "MACD: **N/A**"
+        macd_analysis.write(analysis)
 
 def analyze_sma(data, ticker):
     signal_data = get_signal("sma_10_50")['params']
-    signal = signal_sma(**({'data':data} | signal_data))
+    signal_columns = [signal_data.get(x) for x in signal_data if isinstance(signal_data.get(x), str)]
+    if sd.validate_columns(data, signal_columns):
+        signal = signal_sma(**({'data':data} | signal_data))
+        sma_10 = data[signal_data['short']].iloc[-1]
+        sma_50 = data[signal_data['long']].iloc[-1]
+    else:
+        signal = "N/A"
     
-    sma_10 = data[signal_data['short']].iloc[-1]
-    sma_50 = data[signal_data['long']].iloc[-1]
-
     with open("data/analysis/{}/SMA.txt".format(ticker),'w') as sma_analysis: 
         if (signal == "BUY"):
             analysis = "SMA: **{}** - The SMA_10 line ({:,.2f}) is above the SMA_50 line ({:,.2f}) and has recently crossed over the SMA_50 line, indicating an upcoming uptrend".format(signal, sma_10, sma_50)
-            sma_analysis.write(analysis)
         elif (signal == "HOLD"):
             analysis = "SMA: **{}** - The SMA_10 line ({:,.2f}) is above the SMA_50 line ({:,.2f}), indicating a current uptrend".format(signal, sma_10, sma_50)
-            sma_analysis.write(analysis)
-        if (signal == "SELL"):
+        elif (signal == "SELL"):
             analysis = "SMA: **{}** - The SMA_10 line ({:,.2f}) is below the SMA_50 line ({:,.2f}), indicating an upcoming or continuing downtrend".format(signal, sma_10, sma_50)
-            sma_analysis.write(analysis)
+        elif signal == "N/A":
+            analysis = "SMA: **N/A**"
+        sma_analysis.write(analysis)
 
 def analyze_adx(data, ticker):
     signal_data = get_signal("adx")['params']
-    signal = signal_adx(**({'data':data} | signal_data))
-
-    adx = data[signal_data['adx_col']].iloc[-1]
-    dip = data[signal_data['dip_col']].iloc[-1]
-    din = data[signal_data['din_col']].iloc[-1]
-    TREND_UPPER = signal_data["TREND_UPPER"]
-    TREND_LOWER = signal_data["TREND_LOWER"]
+    signal_columns = [signal_data.get(x) for x in signal_data if isinstance(signal_data.get(x), str)]
+    if sd.validate_columns(data, signal_columns):
+        signal = signal_adx(**({'data':data} | signal_data))
+        adx = data[signal_data['adx_col']].iloc[-1]
+        dip = data[signal_data['dip_col']].iloc[-1]
+        din = data[signal_data['din_col']].iloc[-1]
+        TREND_UPPER = signal_data["TREND_UPPER"]
+        TREND_LOWER = signal_data["TREND_LOWER"]
+    else:
+        signal = "N/A"
 
     with open("data/analysis/{}/ADX.txt".format(ticker),'w') as adx_analysis: 
-        #adx_analysis.write('ADX: **{}**'.format(signal))
 
         # BUY SIGNAL - ADX crosses above TREND_UPPER and DI+ > DI-
         if (signal == "BUY"):
             analysis = "ADX: **{}** - The ADX line ({:,.2f}) has recently crossed {} and DI+ ({:,.2f}) is above DI- ({:,.2f}), indicating the stock is strong uptrend".format(signal, adx, TREND_UPPER, dip, din)
-            adx_analysis.write(analysis)
-
-        # WEAK BUY SIGNAL - ADX between TREND_UPPER and TREND_LOWER and DI+ > DI-    
-        elif (signal == "WEAK BUY"):
-            analysis = "ADX: **{}** - The ADX line ({:,.2f}) is between {} and {} and DI+ ({:,.2f}) is above DI- ({:,.2f}), indicating the stock is in an uptrend. Look for ADX to cross {} for a strong buy signal".format(signal, adx, TREND_LOWER, TREND_UPPER, dip, din, TREND_UPPER)
-            adx_analysis.write(analysis)
-
         # HOLD SIGNAL - ADX > TREND_LOWER and DI+ > DI-
         elif (signal == "HOLD"):
             analysis = "ADX: **{}** - The ADX line  ({:,.2f}) has stayed above {} and DI+ ({:,.2f}) is above DI- ({:,.2f}), indicating the stock is in an uptrend.".format(signal, adx, TREND_LOWER, dip, din)
-            adx_analysis.write(analysis)
-
-        # WEAK SELL SIGNAL - ADX between TREND_UPPER and TREND_LOWER and DI- > DI+ OR ADX < TREND_LOWER
-        elif (signal == "WEAK SELL"):
-            analysis = "ADX: **{}** - The ADX line ({:,.2f}) is between {} and {} and DI+ ({:,.2f}) is below DI- ({:,.2f}), indicating the stock is in a downtrend. Otherwise, ADX is below {} which does not indcate a current trend".format(signal, adx, TREND_LOWER, TREND_UPPER, dip, din, TREND_LOWER)
-            adx_analysis.write(analysis)
-
         # SELL SIGNAL - ADX > TREND_UPPER and DI- > DI+
-        if (signal == "SELL"):
+        elif (signal == "SELL"):
             analysis = "ADX: **{}** - The ADX line ({:,.2f}) has recently crossed {} and DI+ ({:,.2f}) is below DI- ({:,.2f}), indicating the stock is strong downtrend".format(signal, adx, TREND_UPPER, dip, din)
-            adx_analysis.write(analysis)
+        elif signal == "N/A":
+            analysis = "ADX: **N/A**"
+        adx_analysis.write(analysis)
             
 ###########
 # Signals #
