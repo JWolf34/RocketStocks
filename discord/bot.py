@@ -558,12 +558,12 @@ def run_bot():
             message += indicator
 
         message += "\n"
-
-        strategy_message = build_strategy_report(ticker)
+        
+        """ strategy_message = build_strategy_report(ticker)
         if strategy_message == '':
             pass
         else:
-            message += strategy_message
+            message += strategy_message """
         
         report = {'message':message, 'files':files, 'embed':links}
 

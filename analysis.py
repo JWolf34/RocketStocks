@@ -208,13 +208,12 @@ def generate_analysis(data, ticker):
 
 def analyze_rsi(data, ticker):
 
-    signal_data = get_signal("RSI")['params']
-    signal = signal_adx(**signal_data)
+    signal_data = get_signal("rsi")['params']
+    signal = signal_rsi(**({'data':data} | signal_data))
 
     rsi_col = signal_data['rsi_col']
     UPPER_BOUND = signal_data['UPPER_BOUND']
     LOWER_BOUND = signal_data ['LOWER_BOUND']
-    signal = signal_rsi(**signal_data)
     curr_rsi = data[rsi_col].values[-1]
 
     with open("data/analysis/{}/RSI.txt".format(ticker),'w') as rsi_analysis: 
@@ -231,7 +230,8 @@ def analyze_rsi(data, ticker):
 def analyze_macd(data, ticker):
 
     signal_data = get_signal("macd")['params']
-    signal = signal_adx(**signal_data)
+    
+    signal = signal_adx(**({'data':data} | signal_data))
     
     macd = data[signal_data[macd_col]].iloc[-1]
     macd_signal = data[signal_data[macd_signal_col]].iloc[-1]
@@ -254,11 +254,11 @@ def analyze_macd(data, ticker):
                 macd_analysis.write(analysis)
 
 def analyze_sma(data, ticker):
-    signal_data = get_signal("SMA10-50")['params']
-    signal = signal_sma(**signal_data)
+    signal_data = get_signal("sma_10_50")['params']
+    signal = signal_sma(**({'data':data} | signal_data))
     
-    sma_10 = data['SMA_10'].iloc[-1]
-    sma_50 = data['SMA_50'].iloc[-1]
+    sma_10 = data[signal_data['short']].iloc[-1]
+    sma_50 = data[signal_data['long']].iloc[-1]
 
     with open("data/analysis/{}/SMA.txt".format(ticker),'w') as sma_analysis: 
         if (signal == "BUY"):
@@ -272,8 +272,8 @@ def analyze_sma(data, ticker):
             sma_analysis.write(analysis)
 
 def analyze_adx(data, ticker):
-    signal_data = get_signal("ADX")['params']
-    signal = signal_adx(**signal_data)
+    signal_data = get_signal("adx")['params']
+    signal = signal_adx(**({'data':data} | signal_data))
 
     adx = data[signal_data[adx_col]].iloc[-1]
     dip = data[signal_data[dip_col]].iloc[-1]
@@ -495,153 +495,6 @@ def generate_masterlist_scores():
 
 def get_masterlist_scores():
     return pd.read_csv('{}/daily_rankings.csv'.format(ATTACHMENTS_PATH))
-
-
-######################################
-# Old plotting logic - to be removed #
-######################################
-
-def plot_macd(data, ticker):
-
-    def buy_sell_signals(macd,macd_signal,close):
-        buy_signals = []
-        sell_signals = []
-        previous_signal = -1
-        previous_macd = 0
-        for date, value in macd.items():
-            if value > macd_signal[date] and previous_macd < previous_signal:
-                buy_signals.append(close[date])
-            else:
-                buy_signals.append(np.nan)
-            if value < macd_signal[date] and previous_macd > previous_signal:
-                sell_signals.append(close[date])
-            else:
-                sell_signals.append(np.nan)
-            previous_macd = value
-            previous_signal =  macd_signal[date]
-        return buy_signals, sell_signals
-
-    save      = dict(fname='data/plots/{}/{}_MACD.png'.format(ticker, ticker),dpi=500,pad_inches=0.25)
-    data      = get_macd(data)
-    data      = data.tail(365)
-    exp12     = data['Close'].ewm(span=12, adjust=False).mean()
-    exp26     = data['Close'].ewm(span=26, adjust=False).mean()
-    macd      = data['MACD']
-    signal    = data['MACD_SIGNAL']
-    histogram = data['MACD_HISTOGRAM']
-    buy_signal, sell_signal = buy_sell_signals(macd, signal, data['Close'])
-
-
-    fb_green = dict(y1=macd.values,y2=signal.values,where=signal<macd,color="#93c47d",alpha=0.6,interpolate=True)
-    fb_red   = dict(y1=macd.values,y2=signal.values,where=signal>macd,color="#e06666",alpha=0.6,interpolate=True)
-    fb_green['panel'] = 1
-    fb_red['panel'] = 1
-    fb       = [fb_green,fb_red]
-
-    apds = [
-        mpf.make_addplot(macd,panel=1,color='green',secondary_y=False,label='MACD', ylabel='Moving Average\nConvergence Divergence'),
-        mpf.make_addplot(signal,panel=1,color='yellow',secondary_y=False,label="MACD_SIGNAL"),#,fill_between=fb),
-        mpf.make_addplot(histogram,type='bar',width=0.7,panel=1,color='lightgray',secondary_y=True)
-        ]
-
-    if not all_values_are_nan(buy_signal):
-        apds.append(mpf.make_addplot(buy_signal, color='blue', type='scatter', label="Buy Signal"))
-    if not all_values_are_nan(sell_signal):
-        apds.append(mpf.make_addplot(sell_signal,color='orange',type='scatter', label="Sell Signal"))
-
-
-
-    mpf.plot(data,type='candle',ylabel='Close Price',addplot=apds,figscale=1.6,figratio=(6,5),title='\n\n{} Moving Average\nConvergence Divergence'.format(ticker),
-            style='tradingview',panel_ratios=(1,1),fill_between=fb, savefig=save)#,show_nontrading=True)   
- 
-
-def plot_adx(data,ticker):
-    TREND_UPPER = 25
-    TREND_LOWER = 20
-
-    def buy_sell_signals(adx, dip, din, close):
-        buy_signals = [np.nan] * adx.shape[0]
-        sell_signals = [np.nan] * adx.shape[0]
-
-        
-        for i in range(1, adx.size):
-            prev_trend_upper = [TREND_UPPER] * 2
-            prev_trend_lower = [TREND_UPPER] * 2
-            prev_adx = [adx.iloc[i-1], adx.iloc[i]]
-            prev_dip = []
-            prev_din = []
-
-            if adx.iloc[i] > TREND_LOWER:
-                if dip.iloc[i] > din.iloc[i]:
-                    buy_signals[i] = close.iloc[i]
-                else:
-                    sell_signals[i] = close.iloc[i]
-
-            '''
-            for j in range(0,5):
-                prev_dip.append(dip.iloc[i-j])
-            
-            for j in range(0,5):
-                prev_din.append(din.iloc[i-j])
-                
-            if recent_crossover(prev_adx, prev_trend_upper) == 'UP':
-                if dip.iloc[i] > din.iloc[i]:
-                    buy_signals[i] = close.iloc[i]
-                else:
-                    sell_signals[i] = close.iloc[i]
-            elif adx.iloc[i] > TREND_LOWER:
-                if recent_crossover(prev_dip, prev_din) == 'UP':
-                    buy_signals[i] = close.iloc[i]
-                elif recent_crossover(prev_dip,prev_din) == 'DOWN':
-                    sell_signals[i] = close.iloc[i]
-                    '''
-        
-        return buy_signals, sell_signals
-
-
-    
-    save      = dict(fname='data/plots/{}/{}_ADX.png'.format(ticker, ticker),dpi=500,pad_inches=0.25)
-    data      = get_adx(data)
-    data      = data.tail(365)
-    adx    = data['ADX']
-    dip    = data['DI+']
-    din    = data['DI-']
-    hline_upper  = [TREND_UPPER] * data.shape[0]
-    hline_lower  = [TREND_LOWER] * data.shape[0]
-
-    buy_signal, sell_signal = buy_sell_signals(adx, dip, din, data['Close'])
-
-    fb_green = dict(y1=buy_signal,y2=0,where=adx > TREND_LOWER,color="#93c47d",alpha=0.6,interpolate=True)
-    fb_red   = dict(y1=sell_signal,y2=0,where=adx > TREND_LOWER,color="#e06666",alpha=0.6,interpolate=True)
-    fb_red['panel'] = 0
-    fb_green['panel'] = 0
-    fb       = [fb_green,fb_red]
-    
-    apds  = [
-        mpf.make_addplot(adx,type='line',color='purple',label='ADX',panel=1),
-        mpf.make_addplot(dip,type='line',color='blue',label='DI+',panel=1),
-        mpf.make_addplot(din,type='line',color='red',label ='DI-',panel=1),
-        mpf.make_addplot(hline_upper,type='line',linestyle='--',color='g',panel=1),
-        mpf.make_addplot(hline_lower,type='line',linestyle='--',color='r',panel=1)
-    ]
-
-    '''
-    if not all_values_are_nan(buy_signal):
-        apds.append(mpf.make_addplot(buy_signal,color='blue',type='scatter',label='Buy Signal'))
-    if not all_values_are_nan(sell_signal):
-        apds.append(mpf.make_addplot(sell_signal,color='orange',type='scatter',label='Sell Signal'))
-        '''
-
-
-    mpf.plot(data,type='candle',ylabel='Close Price',addplot=apds,figscale=1.6,figratio=(6,5),title='\n\n{} Average Direction Index'.format(ticker),
-    panel_ratios=(1,1), fill_between=fb,style='tradingview',savefig=save)
-
-
-
-    adx = ta.adx(data['High'], data['Low'], data['Close'])
-    data['ADX'], data["DI+"], data["DI-"] = adx['ADX_14'], adx['DMP_14'], adx['DMN_14']
-    return data
-
 
 
 #############
