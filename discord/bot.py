@@ -102,6 +102,7 @@ def run_bot():
         duplicate_tickers = [x for x in tickers if x in symbols]
         tickers = [x for x in tickers if x not in symbols]
 
+    
         # Update watchlist with new tickers
         sd.update_watchlist(watchlist_id=watchlist_id, tickers=symbols + tickers)
         
@@ -116,6 +117,7 @@ def run_bot():
             message += " Duplicate tickers: {}".format(", ".join(duplicate_tickers))
         
         await interaction.followup.send(message, ephemeral=is_personal)
+        
 
     @client.tree.command(name = "remove-tickers", description= "Remove tickers from the selected watchlist",)
     @app_commands.describe(tickers = "Tickers to remove from watchlist (separated by spaces)")
@@ -152,7 +154,7 @@ def run_bot():
             NA_tickers = [ticker for ticker in tickers if ticker not in symbols]
             tickers = [ticker for ticker in tickers if ticker not in NA_tickers]
             
-                    
+            
             # Update watchlist without input tickers                   
             sd.update_watchlist(watchlist_id=watchlist_id, tickers=[ticker for ticker in symbols if ticker not in tickers])                   
             
@@ -167,6 +169,9 @@ def run_bot():
                 message += " Tickers not in watchlist: {}".format(", ".join(NA_tickers))
         
             await interaction.followup.send(message, ephemeral=is_personal)
+            
+                      
+        
 
     @client.tree.command(name = "watchlist", description= "List the tickers on the selected watchlist",)
     @app_commands.describe(watchlist = "Which watchlist you want to make changes to")
@@ -206,16 +211,22 @@ def run_bot():
                 message_flavor = "your"
                 is_personal = True
 
-        # Update watchlist with new tickers                   
-        sd.update_watchlist(id=watchlist_id, tickers=tickers)
-                    
+                  
+        try:
+            # Update watchlist with new tickers         
+            sd.update_watchlist(id=watchlist_id, tickers=tickers)
+            if len(tickers) > 0 and len(invalid_tickers) > 0:
+                await interaction.followup.send("Set {} watchlist to {} but could not add the following tickers: {}".format(message_flavor, ", ".join(tickers), ", ".join(invalid_tickers)), ephemeral=is_personal)
+            elif len(tickers) > 0:
+                await interaction.followup.send("Set {} watchlist to {}.".format(message_flavor, ", ".join(tickers)), ephemeral=is_personal)
+            else:
+                await interaction.followup.send("No tickers added to {} watchlist. Invalid tickers: {}".format(message_flavor, ", ".join(invalid_tickers)), ephemeral=is_personal)
+            
+        except FileNotFoundError as e:
+            logger.exception("Encountered FileNotFoundError when attempting to set watchlist '{}'".format(watchlist))
+            await interaction.followup.send("Watchlist '{}' does not exist".format(watchlist), ephemeral=False)            
         
-        if len(tickers) > 0 and len(invalid_tickers) > 0:
-            await interaction.followup.send("Set {} watchlist to {} but could not add the following tickers: {}".format(message_flavor, ", ".join(tickers), ", ".join(invalid_tickers)), ephemeral=is_personal)
-        elif len(tickers) > 0:
-            await interaction.followup.send("Set {} watchlist to {}.".format(message_flavor, ", ".join(tickers)), ephemeral=is_personal)
-        else:
-            await interaction.followup.send("No tickers added to {} watchlist. Invalid tickers: {}".format(message_flavor, ", ".join(invalid_tickers)), ephemeral=is_personal)
+        
 
     @client.tree.command(name = "create-watchlist", description= "List the tickers on the selected watchlist",)
     @app_commands.describe(watchlist = "Name of the watchlist to create")
@@ -229,7 +240,6 @@ def run_bot():
 
         sd.create_watchlist(watchlist_id=watchlist, tickers=tickers)
         await interaction.followup.send("Created watchlist '{}' with tickers: ".format(watchlist) + ', '.join(tickers), ephemeral=False)
-        await sync_commands()
 
     @client.tree.command(name = "delete-watchlist", description= "Delete a watchlist",)
     @app_commands.describe(watchlist = "Watchlist to delete")
@@ -238,9 +248,12 @@ def run_bot():
         await interaction.response.defer(ephemeral=True)
         logger.info("/delete-watchlist function called by user {}".format(interaction.user.name))
 
-        sd.delete_watchlist(watchlist_id=watchlist)
-        await interaction.followup.send("Deleted watchlist '{}'".format(watchlist), ephemeral=False)
-        await sync_commands()
+        try:
+            sd.delete_watchlist(watchlist_id=watchlist)
+            await interaction.followup.send("Deleted watchlist '{}'".format(watchlist), ephemeral=False)
+        except FileNotFoundError as e:
+            logger.exception("Encountered FileNotFoundError when attempting to delete watchlist '{}'".format(watchlist))
+            await interaction.followup.send("Watchlist '{}' does not exist".format(watchlist), ephemeral=False)
 
     ######################################################
     # 'Fetch' functions for returning data saved to disk #
@@ -434,7 +447,12 @@ def run_bot():
     @client.tree.command(name = "run-reports", description= "Post analysis of a given watchlist (use /fetch-reports for individual or non-watchlist stocks)",)
     @app_commands.describe(watchlist = "Which watchlist to fetch reports for")
     @app_commands.autocomplete(watchlist=watchlist_options,)
-    async def runreports(interaction: discord.Interaction, watchlist: str):
+    @app_commands.describe(visibility = "'private' to send to DMs, 'public' to send to the channel")
+    @app_commands.choices(visibility =[
+        app_commands.Choice(name = "private", value = 'private'),
+        app_commands.Choice(name = "public", value = 'public')
+    ])
+    async def runreports(interaction: discord.Interaction, watchlist: str, visibility: app_commands.Choice[str]):
         await interaction.response.defer(ephemeral=True)
         logger.info("/run-reports function called by user {}".format(interaction.user.name))
         logger.debug("Selected watchlist is '{}'".format(watchlist))
@@ -466,10 +484,11 @@ def run_bot():
                 logger.info("Processing ticker {}".format(ticker))
                 report = build_report(ticker)
                 message, files = report.get('message'), report.get('files')
-                if watchlist == 'personal':
-                    await user.send(message, files=files)
+
+                if visibility.value == 'private':
+                    await interaction.user.send(message, files=files)
                 else:
-                    await channel.send(message, files=files)
+                    await interaction.channel.send(message, files=files)
                 logger.info("Posted report for ticker {}".format(ticker))
                     
             message = "Reports have been posted!"

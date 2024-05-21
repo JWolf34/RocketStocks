@@ -334,14 +334,11 @@ def get_watchlists():
     watchlists.sort()
     return watchlists
 
-    for name in watchlist_names:
-        watchlist[name] = get_tickers_from_watchlist(name)
-    return watchlists
     
 def update_watchlist(watchlist_id, tickers):
     logger.info("Updating watchlist '{}': {}".format(watchlist_id, tickers))
     with open("{}/{}.txt".format(WATCHLISTS_PATH, watchlist_id), 'w') as watchlist:
-        watchlist.write("\n".join(tickers))
+        watchlist.write("\n".join(sorted(tickers)))
         watchlist.close()
 
 def create_watchlist(watchlist_id, tickers):
@@ -353,23 +350,6 @@ def create_watchlist(watchlist_id, tickers):
 def delete_watchlist(watchlist_id):
     logger.info("Deleting watchlist '{}'...".format(watchlist_id))
     os.remove("{}/{}.txt".format(WATCHLISTS_PATH, watchlist_id))
-
-# def remove_watchlist
-
-""" # Return path to requested watchlist
-def get_watchlist_path(id = 0):
-    logger.debug("Requesting path of watchlist with ID {}".format(id))
-    if id == 0:
-        path = "data/watchlists/global"
-        logger.debug("Return watchlist at path {}".format(path))
-        return path
-    else:
-        path = "data/watchlists/{}".format(id)
-        logger.debug("Return watchlist at path {}".format(path))
-        return path """
-
-
-
     
 # Return Dataframe with the latest OHLCV of requested ticker
 def get_days_summary(ticker):
