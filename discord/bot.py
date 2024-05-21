@@ -214,7 +214,7 @@ def run_bot():
                   
         try:
             # Update watchlist with new tickers         
-            sd.update_watchlist(id=watchlist_id, tickers=tickers)
+            sd.update_watchlist(watchlist_id=watchlist_id, tickers=tickers)
             if len(tickers) > 0 and len(invalid_tickers) > 0:
                 await interaction.followup.send("Set {} watchlist to {} but could not add the following tickers: {}".format(message_flavor, ", ".join(tickers), ", ".join(invalid_tickers)), ephemeral=is_personal)
             elif len(tickers) > 0:
