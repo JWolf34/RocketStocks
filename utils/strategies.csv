@@ -1,2 +1,0 @@
-,Name,TA,Signals,Buy Threshold,Sell Threshold
-0,SMA 10/50 Strategy,"[{'kind': 'sma','length': 10}, {'kind': 'sma','length': 50}]","[{'kind':'sma','params':{'short':'SMA_10','long':'SMA_50'}}]",1.00,0.00

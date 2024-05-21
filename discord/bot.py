@@ -316,7 +316,7 @@ def run_bot():
     # Analysis and Reports #
     ########################
 
-    # Plot graph for the selected ticker
+    # Plot graph for the selected tickers
     @client.tree.command(name = "plot-chart", description= "Plot selected graphs for the selected tickers",)
     @app_commands.describe(tickers = "Tickers to return charts for (separated by spaces)")
     @app_commands.describe(chart = "Charts to return for the specified tickers")
@@ -349,7 +349,7 @@ def run_bot():
                     show_volume: app_commands.Choice[str] = 'False'):
 
         await interaction.response.defer(ephemeral=True)
-        logger.info("/chart function called by user {}".format(interaction.user.name))
+        logger.info("/plot-chart function called by user {}".format(interaction.user.name))
 
         # Validate optional parameters
         if isinstance(display_signals, app_commands.Choice):
@@ -360,6 +360,8 @@ def run_bot():
             style=style.value
         if isinstance(show_volume, app_commands.Choice):
             show_volume = show_volume.value
+        
+        visibility = visibility.value
 
         # Validate each ticker in the list is valid
         tickers, invalid_tickers = sd.get_list_from_tickers(tickers)
@@ -399,6 +401,163 @@ def run_bot():
 
             await interaction.followup.send("Finished generating charts")
 
+    # Plot strategy for the selected tickers
+    @client.tree.command(name = "plot-strategy", description= "Plot selected graphs for the selected tickers",)
+    @app_commands.describe(tickers = "Tickers to return charts for (separated by spaces)")
+    @app_commands.describe(strategy = "Strategy to generate charts for")
+    @app_commands.choices(strategy = [app_commands.Choice(name=x, value=x) for x in sorted(an.get_strategies().keys())])
+    @app_commands.describe(visibility = "'private' to send to DMs, 'public' to send to the channel")
+    @app_commands.choices(visibility =[
+        app_commands.Choice(name = "private", value = 'private'),
+        app_commands.Choice(name = "public", value = 'public')
+    ])
+    @app_commands.describe(display_signals = "True to plot buy/sell signals, False to not plot signals") 
+    @app_commands.choices(display_signals=[
+        app_commands.Choice(name="True", value="True"),
+        app_commands.Choice(name="False", value="False") 
+    ])
+    @app_commands.describe(num_days = "Number of days (data points) to plot on the chart (Default: 365)")
+    @app_commands.describe(plot_type = "Style in which to plot the Close price on the chart")
+    @app_commands.choices(plot_type = [app_commands.Choice(name = x, value= x) for x in an.get_plot_types()])
+    @app_commands.describe(style = " Style in which to generate the chart")
+    @app_commands.choices(style = [app_commands.Choice(name = x, value = x) for x in an.get_plot_styles()])
+    @app_commands.describe(show_volume= "True to show volume plot, False to not plot volume") 
+    @app_commands.choices(show_volume=[
+        app_commands.Choice(name="True", value="True"),
+        app_commands.Choice(name="False", value="False") 
+    ])  
+    async def plot_strategy(interaction: discord.interactions, tickers: str, strategy: app_commands.Choice[str], visibility: app_commands.Choice[str],
+                    display_signals: app_commands.Choice[str] = 'True',
+                    num_days: int = 365, 
+                    plot_type: app_commands.Choice[str] = 'line', 
+                    style: app_commands.Choice[str] = 'tradingview',
+                    show_volume: app_commands.Choice[str] = 'False'):
+
+        await interaction.response.defer(ephemeral=True)
+        logger.info("/plot-chart function called by user {}".format(interaction.user.name))
+
+        # Validate optional parameters
+        if isinstance(display_signals, app_commands.Choice):
+            display_signals = display_signals.value
+        if isinstance(plot_type, app_commands.Choice):
+            plot_type= plot_type.value
+        if isinstance(style, app_commands.Choice):
+            style=style.value
+        if isinstance(show_volume, app_commands.Choice):
+            show_volume = show_volume.value
+        
+        visibility = visibility.value
+
+        # Validate each ticker in the list is valid
+        tickers, invalid_tickers = sd.get_list_from_tickers(tickers)
+
+        charts = an.get_strategy(strategy.value).plots
+
+        for ticker in tickers:
+            data = sd.fetch_daily_data(ticker)
+            if data.size == 0:
+                sd.download_analyze_data(ticker)
+                data = sd.fetch_daily_data(ticker)
+            message = ''
+            files = []
+            
+            # Generate individual charts
+            for chart in charts:
+                plot_success, plot_message = an.plot(ticker=ticker,
+                        data=data,
+                        indicator_name=chart,
+                        display_signals=eval(display_signals),
+                        num_days=num_days,
+                        plot_type=plot_type,
+                        style=style,
+                        show_volume=eval(show_volume),
+                        savefilepath_root=ATTACHMENTS_PATH
+                        )
+                
+                if plot_success:
+                    message = plot_message
+                    chart_path = ATTACHMENTS_PATH + "/{}/{}.png".format(ticker, an.get_plot(chart)['abbreviation'])
+                    files.append(discord.File(chart_path))
+                else:
+                    message += "Failed to generate chart '{}' for ticker {}. ".format(chart, ticker) + plot_message
+            
+            # Generate Strategy chart
+            plot_success, plot_message = an.plot(ticker=ticker,
+                        data=data,
+                        indicator_name=an.get_strategy(strategy.value).plots[0],
+                        display_signals=True,
+                        num_days=num_days,
+                        plot_type=plot_type,
+                        style=style,
+                        show_volume=eval(show_volume),
+                        savefilepath_root=ATTACHMENTS_PATH,
+                        title= "{} {} Strategy".format(ticker, strategy.value),
+                        signals=an.get_strategy(strategy.value).signals
+                        )
+            
+            if visibility == 'private':
+                await interaction.user.send(message, files=files)
+            else:
+                await interaction.channel.send(message, files=files)
+            
+                
+
+            await interaction.followup.send("Finished generating charts")
+
+    async def send_plot_reports(interaction: discord.interactions, 
+                                tickers: str, 
+                                charts: str,
+                                visibility: str,
+                                display_signals: str,
+                                num_days: int, 
+                                plot_type: str, 
+                                style: str,
+                                show_volume: str):
+        
+        # Validate each ticker in the list is valid
+        tickers, invalid_tickers = sd.get_list_from_tickers(tickers)
+        charts = charts.split(",")
+
+        for ticker in tickers:
+            data = sd.fetch_daily_data(ticker)
+            if data.size == 0:
+                sd.download_analyze_data(ticker)
+                data = sd.fetch_daily_data(ticker)
+                files = []
+                message = ''
+                for chart in charts:
+                    plot_success, plot_message = an.plot(ticker=ticker,
+                            data=data,
+                            indicator_name=chart.value,
+                            display_signals=eval(display_signals),
+                            num_days=num_days,
+                            plot_type=plot_type,
+                            style=style,
+                            show_volume=eval(show_volume),
+                            savefilepath_root=ATTACHMENTS_PATH
+                            )
+                    
+                    if plot_success:
+                        message = plot_message
+                        chart_path = ATTACHMENTS_PATH + "/{}/{}.png".format(ticker, an.get_plot(chart.value)['abbreviation'])
+                        files.append(discord.File(chart_path))
+                    else:
+                        message += "Failed to generate chart '{}' for ticker {}. ".format(chart.value, ticker) + plot_message
+                """     if visibility.value == 'private':
+                        await interaction.user.send(message)
+                    else:
+                        await interaction.channel.send(message) """
+            
+                if visibility.value == 'private':
+                    await interaction.user.send(message, files=files)
+                else:
+                    await interaction.channel.send(message, files=files)
+            
+
+            await interaction.followup.send("Finished generating charts")
+        
+
+
 
         
 
@@ -414,7 +573,7 @@ def run_bot():
             
             an.run_analysis(sd.get_tickers_from_watchlist())
             for ticker in sd.get_tickers_from_watchlist():
-                report = build_report(ticker)
+                report = build_ticker_report(ticker)
                 message, files = report.get('message'), report.get('files')
                 await channel.send(message, files=files)
                 
@@ -482,7 +641,7 @@ def run_bot():
             logger.info("Running reports on tickers {}".format(tickers))
             for ticker in tickers:
                 logger.info("Processing ticker {}".format(ticker))
-                report = build_report(ticker)
+                report = build_ticker_report(ticker)
                 message, files = report.get('message'), report.get('files')
 
                 if visibility.value == 'private':
@@ -518,7 +677,7 @@ def run_bot():
         # Build reports and send messages
         for ticker in tickers:
             logger.info("Processing ticker {}".format(ticker))
-            report = build_report(ticker)
+            report = build_ticker_report(ticker)
             message, files, links = report.get('message'), report.get('files'), report.get('links')
             if visibility.value == 'private':
                 await interaction.user.send(message, files=files, embed=links)
@@ -535,7 +694,7 @@ def run_bot():
     # Report Helper Functions #
     ###########################
 
-    def build_report(ticker):
+    def build_ticker_report(ticker):
         logger.info("Building report for ticker {}".format(ticker))
 
         # Get techincal indicator charts and convert them to a list of discord File objects
@@ -543,7 +702,7 @@ def run_bot():
         for i in range(0, len(files)):
             files[i] = discord.File(files[i])
 
-        # Append message based on analysis of indicators
+        # Append ticker name, today's date, and external links to message
         message = "**" + ticker + " Report " + dt.date.today().strftime("%m/%d/%Y") + "**\n"
         links = get_ticker_links(ticker)
         message += " | ".join(links) + "\n\n"
@@ -563,21 +722,32 @@ def run_bot():
         # Append analysis to mesage
         analysis = sd.fetch_analysis(ticker)
 
-        message += "**Analysis**\n"
+        message += "**Indicator Analysis**\n"
         for indicator in analysis:
             message += indicator
 
         message += "\n"
         
-        """ strategy_message = build_strategy_report(ticker)
-        if strategy_message == '':
-            pass
-        else:
-            message += strategy_message """
-        
-        report = {'message':message, 'files':files, 'embed':links}
+        # Append strategy analysis to message
+        strategies = an.get_strategies()
+        if len(strategies) > 0:
+            message += "**Strategy Analysis**\n"
+            for strategy in strategies:
+                data = sd.fetch_daily_data(ticker)
+                strategy_name = strategies[strategy].name
+                signals = strategies[strategy].signals
+                buy_threshold = strategies[strategy].buy_threshold
+                sell_threshold = strategies[strategy].sell_threshold
+                message += "{}: **{}**\n".format(
+                    strategy_name, 
+                    an.score_eval(
+                        an.signals_score(data, signals),
+                        buy_threshold, 
+                        sell_threshold))
+            
+            report = {'message':message, 'files':files, 'embed':links}
 
-        return report
+            return report
     
     def build_strategy_report(ticker):
         logger.info("Building strategy report for ticker {}".format(ticker))

@@ -36,37 +36,43 @@ UTILS_PATH = "utils"
 
 # Strategy class for storing indicator data, signal calculators, and buy/sell thresholds
 # Inherits from ta.Strategy
-class Strategy(ta.Strategy):
+class Strategy():#(ta.Strategy):
 
-    def __init__(self, name, ta, signals, buy_threshold, sell_threshold):
-        super(Strategy, self).__init__(name, ta)
+    def __init__(self, name, plots, signals, buy_threshold, sell_threshold):
+        #super(Strategy, self).__init__(name, ta)
+        self.name = name
+        self.plots = plots
         self.signals=signals
         self.buy_threshold = buy_threshold
         self.sell_threshold = sell_threshold
 
-    def run_strategy(self, data):
-        data.ta.strategy(self)
+    """ def run_strategy(self, data):
+        data.ta.strategy(self) """
 
 # Return list of strategies
 def get_strategies():
-    strategies = []
-    strategies_path = "{}/strategies.csv".format(UTILS_PATH)
-    if os.path.exists(strategies_path):
-        strategies_df = pd.read_csv(strategies_path)
-        for index, row in strategies_df.iterrows():
-            name = row['Name']
-            ta = eval(row['TA'])
-            signals = eval(row['Signals'])
-            buy_threshold = float(row['Buy Threshold'])
-            sell_threshold = float(row['Sell Threshold'])
+    strategies = {}
+    try:
+        with open("{}/strategies.json".format(UTILS_PATH), 'r') as strategy_file:
+            strategies_json = json.load(strategy_file)
             
-            strategies.append(Strategy(name, ta, signals, buy_threshold, sell_threshold))
+        
+        for strategy in strategies_json:
+            name = strategy
+            plots = strategies_json[strategy]['plots']
+            signals = strategies_json[strategy]['signals']
+            buy_threshold = strategies_json[strategy]['buy_threshold']
+            sell_threshold = strategies_json[strategy]['sell_threshold']
+            
+            strategies[name] = (Strategy(name, plots, signals, buy_threshold, sell_threshold))
 
-        return strategies
-    else:
-        print('No strategies available')
-        return []
+    except FileNotFoundError as e:
+        logger.exception("Encountered FileNotFoundError when fetching 'strategies.json':\n{}".format(e))
+        
+    return strategies
             
+def get_strategy(name):
+    return get_strategies()[name]
 
 ############
 # Plotting #
@@ -114,7 +120,7 @@ def generate_all_charts(data, ticker):
     for indicator in get_plots():
         plot(ticker, data, indicator_name=indicator)
 
-def plot(ticker, data, indicator_name, title = '', display_signals=True, num_days=365, plot_type = 'line', style='tradingview', show_volume= False, savefilepath_root = PLOTS_PATH):
+def plot(ticker, data, indicator_name, title = '', display_signals=True, signals='', num_days=365, plot_type = 'line', style='tradingview', show_volume= False, savefilepath_root = PLOTS_PATH):
     logger.info("Plotting chart '{}' for ticker '{}'".format(indicator_name, ticker))
     logger.debug("Args passed for chart '{}'\n{}".format(indicator_name, locals().pop('data')))
 
@@ -155,7 +161,10 @@ def plot(ticker, data, indicator_name, title = '', display_signals=True, num_day
     chart = get_plot(indicator_name)
     indicator_abbr = chart['abbreviation']
     addplots = chart['addplots']
-    signals =  chart['signals']
+
+    # Validate if custom signals passed in
+    if signals == '':
+        signals =  chart['signals']
 
     savefilepath_root = '{}/{}'.format(savefilepath_root,ticker)
     sd.validate_path(savefilepath_root)
@@ -565,14 +574,10 @@ def recent_crossover(indicator, signal):
     return None
 
 def test():
-    ticker = 'A'
-    data = sd.fetch_daily_data(ticker)
-    plot_info = get_plots("Simple Moving Average 10/50")
-    
-    plot('SPY', data, 'Simple Moving Average 50/200', True, num_days=760)
+    strategies = get_strategies()
 
 if __name__ == '__main__':
-    #test()
+    test()
     pass
     
        
