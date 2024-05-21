@@ -434,7 +434,7 @@ def run_bot():
                     show_volume: app_commands.Choice[str] = 'False'):
 
         await interaction.response.defer(ephemeral=True)
-        logger.info("/plot-chart function called by user {}".format(interaction.user.name))
+        logger.info("/plot-strategy function called by user {}".format(interaction.user.name))
 
         # Validate optional parameters
         if isinstance(display_signals, app_commands.Choice):
@@ -484,7 +484,7 @@ def run_bot():
             # Generate Strategy chart
             plot_success, plot_message = an.plot(ticker=ticker,
                         data=data,
-                        indicator_name=an.get_strategy(strategy.value).plots[0],
+                        indicator_name=strategy.value,
                         display_signals=True,
                         num_days=num_days,
                         plot_type=plot_type,
@@ -492,8 +492,13 @@ def run_bot():
                         show_volume=eval(show_volume),
                         savefilepath_root=ATTACHMENTS_PATH,
                         title= "{} {} Strategy".format(ticker, strategy.value),
-                        signals=an.get_strategy(strategy.value).signals
+                        is_strategy=True
                         )
+            
+            if plot_success:
+                    message = plot_message
+                    chart_path = ATTACHMENTS_PATH + "/{}/{}.png".format(ticker, an.get_strategy(strategy.value).abbreviation)
+                    files.append(discord.File(chart_path))
             
             if visibility == 'private':
                 await interaction.user.send(message, files=files)
@@ -738,12 +743,15 @@ def run_bot():
                 signals = strategies[strategy].signals
                 buy_threshold = strategies[strategy].buy_threshold
                 sell_threshold = strategies[strategy].sell_threshold
-                message += "{}: **{}**\n".format(
-                    strategy_name, 
-                    an.score_eval(
+                try:
+                    score_evaluation = an.score_eval(
                         an.signals_score(data, signals),
                         buy_threshold, 
-                        sell_threshold))
+                        sell_threshold)
+                except KeyError as e:
+                    logger.exception("Encountered Key Error when evaluating strategy '{}' fot ticker '{}':\n{}".format(strategy_name, ticker, e))
+                    score_evaluation = "N/A"
+                message += "{}: **{}**\n".format(strategy_name, score_evaluation)
             
             report = {'message':message, 'files':files, 'embed':links}
 

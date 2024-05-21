@@ -38,9 +38,10 @@ UTILS_PATH = "utils"
 # Inherits from ta.Strategy
 class Strategy():#(ta.Strategy):
 
-    def __init__(self, name, plots, signals, buy_threshold, sell_threshold):
+    def __init__(self, name, abbreviation, plots, signals, buy_threshold, sell_threshold):
         #super(Strategy, self).__init__(name, ta)
         self.name = name
+        self.abbreviation = abbreviation
         self.plots = plots
         self.signals=signals
         self.buy_threshold = buy_threshold
@@ -59,12 +60,13 @@ def get_strategies():
         
         for strategy in strategies_json:
             name = strategy
+            abbreviation = strategies_json[strategy]['abbreviation']
             plots = strategies_json[strategy]['plots']
             signals = strategies_json[strategy]['signals']
             buy_threshold = strategies_json[strategy]['buy_threshold']
             sell_threshold = strategies_json[strategy]['sell_threshold']
             
-            strategies[name] = (Strategy(name, plots, signals, buy_threshold, sell_threshold))
+            strategies[name] = (Strategy(name, abbreviation, plots, signals, buy_threshold, sell_threshold))
 
     except FileNotFoundError as e:
         logger.exception("Encountered FileNotFoundError when fetching 'strategies.json':\n{}".format(e))
@@ -120,7 +122,7 @@ def generate_all_charts(data, ticker):
     for indicator in get_plots():
         plot(ticker, data, indicator_name=indicator)
 
-def plot(ticker, data, indicator_name, title = '', display_signals=True, signals='', num_days=365, plot_type = 'line', style='tradingview', show_volume= False, savefilepath_root = PLOTS_PATH):
+def plot(ticker, data, indicator_name, title = '', display_signals=True, num_days=365, plot_type = 'line', style='tradingview', show_volume= False, savefilepath_root = PLOTS_PATH, is_strategy = False):
     logger.info("Plotting chart '{}' for ticker '{}'".format(indicator_name, ticker))
     logger.debug("Args passed for chart '{}'\n{}".format(indicator_name, locals().pop('data')))
 
@@ -158,13 +160,18 @@ def plot(ticker, data, indicator_name, title = '', display_signals=True, signals
         logger.debug("Chart is type 'VOLUME' - ensure 'show_volume' is set to True")
         show_volume= True
 
-    chart = get_plot(indicator_name)
-    indicator_abbr = chart['abbreviation']
-    addplots = chart['addplots']
+    # Validate if indicator plot or Strategy plot
+    if is_strategy:
+        indicator_abbr = get_strategy(indicator_name).abbreviation
+        signals = get_strategy(indicator_name).signals
+        addplots = []
+    else:
+        chart = get_plot(indicator_name)
+        indicator_abbr = chart['abbreviation']
+        addplots = chart['addplots']
+        signals =  chart['signals']
 
     # Validate if custom signals passed in
-    if signals == '':
-        signals =  chart['signals']
 
     savefilepath_root = '{}/{}'.format(savefilepath_root,ticker)
     sd.validate_path(savefilepath_root)

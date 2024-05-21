@@ -1,17 +1,20 @@
 {
     "Simple Moving Average 10/50": {
+        "abbreviation": "sma-10-50",
         "plots": ["Simple Moving Average 10/50"],
         "signals": ["sma_10_50"],
         "buy_threshold": 1.0,
         "sell_threshold": 0.0
     },
     "Simple Moving Average 50/200": {
+        "abbreviation": "sma-50-200",
         "plots": ["Simple Moving Average 50/200"],
         "signals": ["sma_50_200"],
         "buy_threshold": 1.0,
         "sell_threshold": 0.0
     },
     "SMA 10/50 & ADX": {
+        "abbreviation": "sma-adx",
         "plots": ["Simple Moving Average 10/50", "Average Directional Index"],
         "signals": ["sma_10_50", "adx"],
         "buy_threshold": 2.0,
