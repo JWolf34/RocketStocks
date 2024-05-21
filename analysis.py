@@ -212,7 +212,7 @@ def plot(ticker, data, indicator_name, title = '', display_signals=True, num_day
 #################################
 
 # Top-level function to generate analysis and charts on select tickers
-def run_analysis(tickers=sd.get_tickers()):
+def run_analysis(tickers=sd.get_tickers_from_watchlist(watchlist_id='group')):
     logger.info("Running analysis on tickers {}".format(tickers))
     for ticker in tickers:
         data = sd.fetch_daily_data(ticker)
