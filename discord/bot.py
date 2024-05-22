@@ -760,15 +760,30 @@ def run_bot():
                 message, files = report.get('message'), report.get('files')
                 await channel.send(message, files=files)
                 
-
-            # Daily scoring logic 
-            #daily_scores = an.get_masterlist_scores()
-            #daily_summary_message = build_daily_summary
-            #await channel.send(daily_summary_message, file=discord.File("{}/daily_rankings.csv".format(ATTACHMENTS_PATH)))
+            await send_strategy_reports()
 
             logger.info("********** [FINISHED SENDING REPORTS] **********")
         else:
             pass
+    
+    async def send_strategy_reports():
+        logger.info("********** [SENDING STRATEGY REPORTS] **********")
+        strategies = an.get_strategies()
+        reports = {}
+        
+        if len(strategies) > 0:
+            for name, strategy in strategies.items():
+                message, file = build_strategy_report(strategy)
+                reports[strategy.name] = {'message':message, 'file':file}
+
+            channel = await client.fetch_channel(get_reports_channel_id())
+            await channel.send("## Strategy Report {}".format(dt.date.today().strftime("%m/%d/%Y")))
+            for strategy_name, report in reports.items():
+                await channel.send(report.get('message'), file=report.get('file'))
+
+        
+
+
 
     # Configure delay before sending daily reports to send at the same time daily
     @send_reports.before_loop
@@ -935,23 +950,18 @@ def run_bot():
 
             return report
     
-    def build_strategy_report():
-        logger.info("Building strategy report")
-        strategies = an.get_strategies()
-        files = []
-        if len(strategies) > 0:
-            message = "## Strategy Report\n\n"
-            for name, strategy in strategies.items():
-                an.generate_strategy_scores(strategy)
-                buys = an.get_strategy_scores(strategy)['BUY'].dropna()
-                message += "{}\n**BUY:** {}".format(strategy.name, " ".join(buys))
-                message += "\n\n"
-                files.append(discord.File(an.get_strategy_score_filepath(strategy)))
+    def build_strategy_report(strategy):
+        logger.info("Building strategy report for strategy '{}'".format(strategy.name))
+        
+        an.generate_strategy_scores(strategy)
+        buys = an.get_strategy_scores(strategy)['BUY'].dropna()
+        message = "## {}\n**BUY:** {}".format(strategy.name, " ".join(buys))
+        message += "\n\n"
+        file = discord.File(an.get_strategy_score_filepath(strategy))
 
-        return message, files
+        return message, file
                 
 
-        return message
     
     def build_daily_summary():
         logger.info("Building daily summary report")
@@ -1019,9 +1029,7 @@ def run_bot():
         logger.info("/test-run-strategy-report function called by user {}".format(interaction.user.name))
         await interaction.response.defer(ephemeral=True)
 
-        channel = await client.fetch_channel(get_reports_channel_id())
-        message, files = build_strategy_report()
-        await channel.send(message, files=files)
+        await send_strategy_reports()
 
         await interaction.response.send_message("Posted strategy report", ephemeral=True)
         
