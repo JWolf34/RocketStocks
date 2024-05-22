@@ -571,6 +571,9 @@ def get_strategy_scores(strategy):
     scores = pd.read_csv('{}/strategies/{}/{}_scores.csv'.format(SCORING_PATH, strategy.abbreviation, strategy.abbreviation))
     return scores
 
+def get_strategy_score_filepath(strategy):
+    return '{}/strategies/{}/{}_scores.csv'.format(SCORING_PATH, strategy.abbreviation, strategy.abbreviation)
+
 
 #############
 # Utilities #

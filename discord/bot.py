@@ -935,20 +935,20 @@ def run_bot():
 
             return report
     
-    def build_strategy_report(ticker):
-        logger.info("Building strategy report for ticker {}".format(ticker))
-        message = ''
+    def build_strategy_report():
+        logger.info("Building strategy report")
         strategies = an.get_strategies()
-        if len(strategies) == 0:
-            logger.debug("No strategies available - return empty report")
-            return message
-        else:
-            message = "**Strategies**\n"
-        
-            for strategy in strategies:
-                logger.debug("Applying strategy '{}' on ticker '{}'".format(strategy.name, ticker))
-                score = an.signals_score(sd.fetch_daily_data(ticker), strategy.signals)
-                message += "{}: **{}**".format(strategy.name, an.score_eval(score, strategy.buy_threshold, strategy.sell_threshold))
+        files = []
+        if len(strategies) > 0:
+            message = "## Strategy Report\n\n"
+            for name, strategy in strategies.items():
+                buys = an.get_strategy_scores(strategy)['BUY'].dropna()
+                message += "{}\n**BUY:** {}".format(strategy.name, " ".join(buys))
+                message += "\n\n"
+                files.append(discord.File(an.get_strategy_score_filepath(strategy)))
+
+        return message, files
+                
 
         return message
     
@@ -1012,6 +1012,18 @@ def run_bot():
         await interaction.response.send_message("Running daily download and analysis", ephemeral=True)
         download_data_thread = threading.Thread(target=sd.minute_download_data)
         download_data_thread.start()
+
+    @client.tree.command(name = "test-run-strategy-report", description= "Test running the strategy report",)
+    async def test_run_strategy_report(interaction: discord.Interaction):
+        logger.info("/test-run-strategy-report function called by user {}".format(interaction.user.name))
+        await interaction.response.defer(ephemeral=True)
+
+        channel = await client.fetch_channel(get_reports_channel_id())
+        message, files = build_strategy_report()
+        await channel.send(message, files=files)
+
+        await interaction.response.send_message("Posted strategy report", ephemeral=True)
+        
 
     @client.tree.command(name = "fetch-logs", description= "Return the log file for the bot",)
     async def fetch_logs(interaction: discord.Interaction):
