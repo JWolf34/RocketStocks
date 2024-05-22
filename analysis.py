@@ -162,8 +162,9 @@ def plot(ticker, data, indicator_name, title = '', display_signals=True, num_day
 
     # Validate if indicator plot or Strategy plot
     if is_strategy:
-        indicator_abbr = get_strategy(indicator_name).abbreviation
-        signals = get_strategy(indicator_name).signals
+        strategy = get_strategy(indicator_name)
+        indicator_abbr = strategy.abbreviation
+        signals = strategy.signals
         addplots = []
     else:
         chart = get_plot(indicator_name)
@@ -171,8 +172,8 @@ def plot(ticker, data, indicator_name, title = '', display_signals=True, num_day
         addplots = chart['addplots']
         signals =  chart['signals']
 
-    # Validate if custom signals passed in
-
+    
+    # Build out path to save plot to
     savefilepath_root = '{}/{}'.format(savefilepath_root,ticker)
     sd.validate_path(savefilepath_root)
     savefilepath = "{}/{}.png".format(savefilepath_root, indicator_abbr)
