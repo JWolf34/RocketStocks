@@ -317,7 +317,7 @@ def run_bot():
     ########################
 
     # Plot graph for the selected tickers
-    @client.tree.command(name = "plot-chart", description= "Plot selected graphs for the selected tickers",)
+    @client.tree.command(name = "plot-charts", description= "Plot selected graphs for the selected tickers",)
     @app_commands.describe(tickers = "Tickers to return charts for (separated by spaces)")
     @app_commands.describe(chart = "Charts to return for the specified tickers")
     @app_commands.choices(chart = [app_commands.Choice(name=x, value=x) for x in sorted(an.get_plots().keys())])
@@ -341,7 +341,7 @@ def run_bot():
         app_commands.Choice(name="True", value="True"),
         app_commands.Choice(name="False", value="False") 
     ])  
-    async def plot_chart(interaction: discord.interactions, tickers: str, chart: app_commands.Choice[str], visibility: app_commands.Choice[str],
+    async def plot_charts(interaction: discord.interactions, tickers: str, chart: app_commands.Choice[str], visibility: app_commands.Choice[str],
                     display_signals: app_commands.Choice[str] = 'True',
                     num_days: int = 365, 
                     plot_type: app_commands.Choice[str] = 'line', 
@@ -361,45 +361,52 @@ def run_bot():
         if isinstance(show_volume, app_commands.Choice):
             show_volume = show_volume.value
         
-        visibility = visibility.value
+        
 
-        # Validate each ticker in the list is valid
+        # Clean up data for plotting
         tickers, invalid_tickers = sd.get_list_from_tickers(tickers)
+        chart = chart.value
+        visibility = visibility.value
+        chart_info = an.get_plot(chart)
 
+        savefilepath_root = "{}/{}".format(ATTACHMENTS_PATH, "plots")
+
+        # Generate indicator chart for tickers
         for ticker in tickers:
+            files = []
+            message  = ''
+
+            # Fetch data file for ticker
             data = sd.fetch_daily_data(ticker)
             if data.size == 0:
                 sd.download_analyze_data(ticker)
                 data = sd.fetch_daily_data(ticker)
 
             plot_success, plot_message = an.plot(ticker=ticker,
-                    data=data,
-                    indicator_name=chart.value,
-                    display_signals=eval(display_signals),
-                    num_days=num_days,
-                    plot_type=plot_type,
-                    style=style,
-                    show_volume=eval(show_volume),
-                    savefilepath_root=ATTACHMENTS_PATH
-                    )
-            
-            if plot_success:
-                message = plot_message
-                chart_path = ATTACHMENTS_PATH + "/{}/{}.png".format(ticker, an.get_plot(chart.value)['abbreviation'])
-                file = discord.File(chart_path)
-            
-                if visibility.value == 'private':
-                    await interaction.user.send(message, file=file)
-                else:
-                    await interaction.channel.send(message, file=file)
+                        data=data,
+                        indicator_name=chart,
+                        display_signals=eval(display_signals),
+                        num_days=num_days,
+                        plot_type=plot_type,
+                        style=style,
+                        show_volume=eval(show_volume),
+                        savefilepath_root=savefilepath_root
+                        )
+            if not plot_success:
+                message = "Failed to generate strategy '{}' for ticker {}. ".format(chart, ticker) + plot_message
+                logger.error(message)
+                await interaction.followup.send(message)
+                return
+            files.append(discord.File(savefilepath_root+ "/{}/{}.png".format(ticker, chart_info['abbreviation'])))
+        
+            if visibility == 'private':
+                await interaction.user.send(message, files=files)
             else:
-                message = "Failed to generate chart '{}' for ticker {}. ".format(chart.value, ticker) + plot_message
-                if visibility.value == 'private':
-                    await interaction.user.send(message)
-                else:
-                    await interaction.channel.send(message)
+                await interaction.channel.send(message, files=files)
 
-            await interaction.followup.send("Finished generating charts")
+        await interaction.followup.send("Finished generating charts")
+
+
 
     # Plot strategy for the selected tickers
     @client.tree.command(name = "plot-strategy", description= "Plot selected graphs for the selected tickers",)
@@ -900,6 +907,7 @@ def run_bot():
         log_file = discord.File("logs/rocketstocks.log")
         await interaction.user.send(content = "Log file for RocketStocks :rocket:",file=log_file)
         await interaction.response.send_message("Log file has been sent", ephemeral=True)
+
 
     client.run(TOKEN)
     
