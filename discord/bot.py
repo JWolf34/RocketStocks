@@ -942,6 +942,7 @@ def run_bot():
         if len(strategies) > 0:
             message = "## Strategy Report\n\n"
             for name, strategy in strategies.items():
+                an.generate_strategy_scores(strategy)
                 buys = an.get_strategy_scores(strategy)['BUY'].dropna()
                 message += "{}\n**BUY:** {}".format(strategy.name, " ".join(buys))
                 message += "\n\n"
