@@ -27,6 +27,7 @@ ANALYSIS_PATH = "data/analysis"
 ATTACHMENTS_PATH = "discord/attachments"
 MINUTE_DATA_PATH = "data/CSV/minute"
 WATCHLISTS_PATH = "data/watchlists"
+UTILS_PATH = "utils"
 
 # Class for limiting requests to avoid hitting the rate limit when downloading data
 
@@ -127,7 +128,7 @@ def daily_download_analyze_data():
     logging.info("********** [START DAILY DOWNLOAD TASK] **********")
     masterlist_file = "data/ticker_masterlist.txt"
     
-    tickers = get_masterlist_tickers()
+    tickers = get_all_tickers()
 
     # Verify that ticker_masterlist.txt exists
     if isinstance(tickers, list):
@@ -166,7 +167,7 @@ def minute_download_data():
     
     logging.info("********** [START WEEKLY DOWNLOAD TASK] **********")
     masterlist_file = "data/ticker_masterlist.txt"
-    tickers = get_masterlist_tickers()
+    tickers = get_all_tickers()
     
 
     # Verify that ticker_masterlist.txt exists
@@ -327,6 +328,17 @@ def get_tickers_from_watchlist(watchlist_id):
         logger.warning("Watchlist with ID {} does not exist".format(watchlist_id))
         return []
 
+def get_tickers_from_all_watchlists():
+    logger.debug("Fetching tickers from all available watchlists (besides personal)")
+    watchlists = get_watchlists()
+    logger.debug("Watchlists: {}".format(watchlists))
+    watchlists.remove('personal')
+    watchlists_tickers = []
+    for watchlist in watchlists:
+        watchlists_tickers = watchlists_tickers + get_tickers_from_watchlist(watchlist)
+    return watchlists_tickers
+
+
 # Format string of tickers into list
 def get_list_from_tickers(tickers):
     logger.debug("Processing valid and invalid tickers from {}".format(tickers))
@@ -364,6 +376,8 @@ def create_watchlist(watchlist_id, tickers):
 def delete_watchlist(watchlist_id):
     logger.info("Deleting watchlist '{}'...".format(watchlist_id))
     os.remove("{}/{}.txt".format(WATCHLISTS_PATH, watchlist_id))
+
+
     
 # Return Dataframe with the latest OHLCV of requested ticker
 def get_days_summary(ticker):
@@ -392,25 +406,28 @@ def get_next_earnings_date(ticker):
         logger.exception("Encountered KeyError when fetching next earnings date for ticker {}:\n{}".format(ticker, e))
         return "Earnings Date unavailable"
     
+# Return dataframe containing data from 'all_tickers.csv'
+def get_all_tickers_data():
+    return pd.read_csv("{}/all_tickers.csv".format(UTILS_PATH))
+    
 # Return list of tickers available in the masterlist
-def get_masterlist_tickers():
+def get_all_tickers():
     logger.debug("Fetching tickers from masterlist")
-    masterlist_file = "data/ticker_masterlist.txt"
+    
+    try:
+        all_tickers_data = get_all_tickers_data()
+        return all_tickers_data['Symbol'].to_list()
+    except FileNotFoundError as e:
+        logger.exception("Encountered FileNotFoundError when attempting to load data from 'all_tickers.csv:\n{}".format(e))
+        logger.debug("'all_tickers.csv' file does not exist")
+        return []
 
-    if os.path.isfile(masterlist_file):
-        with open(masterlist_file, 'r') as masterlist:
-            tickers = masterlist.read().splitlines()
-            logger.debug("Retrieved ticker masterlist containing {} tickers".format(len(tickers)))
-            return tickers
-    else:
-        logger.debug("No masterlist exists at 'data/ticker_masterlist.txt'")
-        return ""
 
 # Add specified ticker to the masrterlist
 def add_to_masterlist(ticker):
     logger.debug("Attemping to add {} to masterlist".format(ticker))
     masterlist_file = "data/ticker_masterlist.txt"
-    masterlist_tickers = get_masterlist_tickers()
+    masterlist_tickers = get_all_tickers()
     # Verify that ticker_masterlist.txt exists
     if masterlist_tickers == "":
         pass
@@ -427,7 +444,7 @@ def add_to_masterlist(ticker):
 def remove_from_masterlist(ticker):
     logger.debug("Attemping to remove {} from masterlist".format(ticker))
     masterlist_file = "data/ticker_masterlist.txt"
-    masterlist_tickers = get_masterlist_tickers()
+    masterlist_tickers = get_all_tickers()
     # Verify that ticker_masterlist.txt exists
     if masterlist_tickers == "":
         pass

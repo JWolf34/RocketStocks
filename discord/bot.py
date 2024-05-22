@@ -952,11 +952,25 @@ def run_bot():
     
     def build_strategy_report(strategy):
         logger.info("Building strategy report for strategy '{}'".format(strategy.name))
-        
+        watchlist_tickers = sd.get_tickers_from_all_watchlists()
         an.generate_strategy_scores(strategy)
         buys = an.get_strategy_scores(strategy)['BUY'].dropna()
-        message = "## {}\n**BUY:** {}".format(strategy.name, " ".join(buys))
+
+        # Append watchlist tickers to report
+        message = "## {} BUYS\n**Watchlist tickers: ** ".format(strategy.name)
+        for index, ticker in buys.items():
+            if ticker in watchlist_tickers:
+                message += "{} ".format(ticker)
+
+        # Append non-watchlist tickers to report
+        message += "\n**Non-watchlist tickers: **"
+        for index, ticker in buys.items():
+            if ticker not in watchlist_tickers:
+                message += "{} ".format(ticker)
+            if len(message) >= 1990:
+                break
         message += "\n\n"
+
         file = discord.File(an.get_strategy_score_filepath(strategy))
 
         return message, file

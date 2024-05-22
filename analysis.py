@@ -531,7 +531,7 @@ def generate_strategy_scores(strategy):
     buys = []
     holds = []
     sells = []
-    tickers = sd.get_masterlist_tickers()
+    tickers = sd.get_all_tickers()
      
     num_tickers = 1
     for ticker in tickers:
