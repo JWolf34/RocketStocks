@@ -236,7 +236,7 @@ def fetch_charts(ticker):
 # Return the latest data with technical indicators as a Pandas dataframe.
 # If CSV does not exist or is not up-to-date, return empty DataFrame
 def fetch_daily_data(ticker):
-    logger.info("Fetching data file for ticker {}".format(ticker))
+    logger.info("Fetching daily data file for ticker {}".format(ticker))
     data = pd.DataFrame()
     data_path = "{}/{}.csv".format(DAILY_DATA_PATH, ticker)
     if not os.path.isfile(data_path):
@@ -244,6 +244,20 @@ def fetch_daily_data(ticker):
     else:
         logging.debug("Data file for {} exists: {}".format(ticker, data_path))
         data = pd.read_csv(data_path, parse_dates=True, index_col='Date').sort_index()
+    
+    return data
+
+# Return the latest minute-by-minute data with technical indicators as a Pandas dataframe.
+# If CSV does not exist or is not up-to-date, return empty DataFrame
+def fetch_minute_data(ticker):
+    logger.info("Fetching minute data file for ticker {}".format(ticker))
+    data = pd.DataFrame()
+    data_path = "{}/{}.csv".format(MINUTE_DATA_PATH, ticker)
+    if not os.path.isfile(data_path):
+        logger.warning("CSV file for {} does not exist.".format(ticker))
+    else:
+        logging.debug("Data file for {} exists: {}".format(ticker, data_path))
+        data = pd.read_csv(data_path, parse_dates=True, index_col='Datetime').sort_index()
     
     return data
 

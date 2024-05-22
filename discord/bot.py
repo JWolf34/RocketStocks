@@ -20,6 +20,7 @@ logger = logging.getLogger(__name__)
 # Paths for writing data
 ATTACHMENTS_PATH = "discord/attachments"
 DAILY_DATA_PATH = "data/CSV/daily"
+MINUTE_DATA_PATH = "data/CSV/minute"
 
 ##################
 # Init Functions #
@@ -261,22 +262,41 @@ def run_bot():
 
     @client.tree.command(name = "fetch-csv", description= "Returns data file for input ticker. Default: 1 year period.",)
     @app_commands.describe(tickers = "Tickers to return data for (separated by spaces)")
-    async def fetch_csv(interaction: discord.Interaction, tickers: str):
+    @app_commands.describe(type="Type of data file to return - daily data or minute-by-minute data")
+    @app_commands.choices(type=[
+        app_commands.Choice(name='daily', value='daily'),
+        app_commands.Choice(name='minute', value='minute')
+    ])
+    async def fetch_csv(interaction: discord.Interaction, tickers: str, type: app_commands.Choice[str]):
         await interaction.response.defer(ephemeral=True)
         logger.info("/fetch-csv function called by user {}".format(interaction.user.name))
         logger.debug("Data file(s) for {} requested".format(tickers))
+
+        type = type.value
+        
+        files = []
+        tickers, invalid_tickers = sd.get_list_from_tickers(tickers)
         try:
-            files = []
-            tickers, invalid_tickers = sd.get_list_from_tickers(tickers)
             for ticker in tickers:
-                if not sd.daily_data_up_to_date(sd.fetch_daily_data(ticker)):
-                    sd.download_analyze_data(ticker)
-                file = discord.File("{}/{}.csv".format(DAILY_DATA_PATH,ticker))
+                if type == 'daily':
+                    data = sd.fetch_daily_data(ticker)
+                    csv_path = "{}/{}.csv".format(DAILY_DATA_PATH,ticker)
+                    if not sd.daily_data_up_to_date(data):
+                        sd.download_analyze_data(ticker)
+                else:
+                    data = sd.fetch_minute_data(ticker)
+                    csv_path = "{}/{}.csv".format(MINUTE_DATA_PATH,ticker)
+                    data = sd.download_data(ticker, period='7d', interval='1m')
+                    sd.update_csv(data, ticker, MINUTE_DATA_PATH)
+
+                file = discord.File(csv_path)
                 await interaction.user.send(content = "Data file for {}".format(ticker), file=file)
+
             if len(invalid_tickers) > 0:
                 await interaction.followup.send("Fetched data files for {}. Invalid tickers:".format(", ".join(tickers), ", ".join(invalid_tickers)), ephemeral=True)
             else:
                 await interaction.followup.send("Fetched data files for {}".format(", ".join(tickers)), ephemeral=True)
+
 
         except Exception as e:
             logger.exception("Failed to fetch data file with following exception:\n{}".format(e))
