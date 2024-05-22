@@ -16,6 +16,7 @@ import csv
 import logging
 import sys
 import json
+from itertools import zip_longest
 
 # Logging configuration
 logger = logging.getLogger(__name__)
@@ -29,6 +30,7 @@ ANALYSIS_PATH = "data/analysis"
 ATTACHMENTS_PATH = "discord/attachments"
 MINUTE_DATA_PATH = "data/CSV/minute"
 UTILS_PATH = "utils"
+SCORING_PATH = "data/scoring"
 
 ##############
 # Strategies #
@@ -524,34 +526,50 @@ def score_eval(score, buy_threshold, sell_threshold):
     else:
         return "HOLD"
 
-def generate_masterlist_scores():
-    logger.debug("Calculating scores based on current data for all tickers in the masterlist")
-    scores = {}
-
+def generate_strategy_scores(strategy):
+    logger.debug("Calculating scores for strategy '{}' on masterlist tickers".format(strategy.name))
+    buys = []
+    holds = []
+    sells = []
     tickers = sd.get_masterlist_tickers()
-    num_ticker = 1
+     
+    num_tickers = 1
     for ticker in tickers:
-        logger.debug("Evaluating {}... {}/{}".format(ticker, num_ticker, len(tickers)))
+        logger.debug("Evaluating score for ticker '{}', {}/{}".format(ticker, num_tickers, len(tickers)))
+        data = sd.fetch_daily_data(ticker)
         try:
-            score = signals_score(ticker)
-            if score in scores.keys():
-                score_tickers = scores.get(score)
-                score_tickers.append(ticker)
-                scores[score] = score_tickers
-            else:
-                scores[score] = [ticker]
-        except Exception as e:
-            logger.exception("Encounter exception when calculating score for ticker '{}':\n{}".format(ticker, e))
-        num_ticker += 1
-            
-    scores = dict(sorted(scores.items()))
-    scores_df = pd.DataFrame.from_dict(scores, orient='index').T
-    logger.debug("Writing scores to CSV...")
-    scores_df.to_csv('{}/daily_rankings.csv'.format(ATTACHMENTS_PATH))
+            score = signals_score(data, strategy.signals)
+            score_string = score_eval(score, strategy.buy_threshold, strategy.sell_threshold)
+            if score_string == 'BUY':
+                buys.append(ticker)
+            elif score_string == "HOLD":
+                holds.append(ticker)
+            elif score_string == 'SELL':
+                sells.append(ticker)
+        except KeyError as e:
+            logger.exception("Encountered KeyError generating '{}' signal for ticker '{}':\n{}".format(strategy.name, ticker, e))
+        num_tickers += 1
     
-def get_masterlist_scores():
-    logger.debug("Fetching scores for masterlist tickers...")
-    return pd.read_csv('{}/daily_rankings.csv'.format(ATTACHMENTS_PATH))
+    # Validate file path
+    savefilepath_root ="{}/{}/{}".format(SCORING_PATH, "strategies", strategy.abbreviation)
+    sd.validate_path(savefilepath_root)
+    savefilepath = "{}/{}_scores.csv".format(savefilepath_root, strategy.abbreviation)
+
+    # Prepare data to write to CSV
+    signals = zip_longest(*[buys, holds, sells], fillvalue = '')
+    
+    # Write scores to CSV
+    with open(savefilepath, 'w', newline='') as scores:
+      wr = csv.writer(scores)
+      wr.writerow(("BUY", "HOLD", "SELL"))
+      wr.writerows(signals)
+    
+    logger.debug("Scores for strategy '{}' written to '{}'".format(strategy.name, savefilepath))
+    
+def get_strategy_scores(strategy):
+    logger.debug("Fetching scores for strategy...{}")
+    scores = pd.read_csv('{}/strategies/{}/{}_scores.csv'.format(SCORING_PATH, strategy.abbreviation, strategy.abbreviation))
+    return scores
 
 
 #############
@@ -583,6 +601,10 @@ def recent_crossover(indicator, signal):
 
 def test():
     strategies = get_strategies()
+    for name, strategy in strategies.items():
+        generate_strategy_scores(strategy)
+        scores = get_strategy_scores(strategy)
+        print(scores)
 
 if __name__ == '__main__':
     test()
