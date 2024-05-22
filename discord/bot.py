@@ -312,9 +312,9 @@ def run_bot():
             logger.warning("Found no valid tickers in {} to fetch fincancials for".format(tickers))
             await interaction.followup.send("No valid tickers in {}".format(",".join(invalid_tickers)), ephemeral=True)
             
-    ########################        
-    # Analysis and Reports #
-    ########################
+    ############
+    # Plotting #
+    ############
 
     # Plot graphs for the selected tickers
     @client.tree.command(name = "plot-charts", description= "Plot selected graphs for the selected tickers",)
@@ -720,7 +720,10 @@ def run_bot():
 
         await interaction.followup.send("Finished generating charts")
         
-    
+    ###########
+    # Reports #
+    ###########
+
     # Send daily reports for stocks on the global watchlist to the reports channel
     @tasks.loop(hours=24)  
     async def send_reports():
