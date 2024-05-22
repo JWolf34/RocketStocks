@@ -510,7 +510,7 @@ def run_bot():
             
                 
 
-            await interaction.followup.send("Finished generating charts")
+        await interaction.followup.send("Finished generating charts")
 
     # Plot strategy for the selected watchlist
     @client.tree.command(name = "run-strategy", description= "Plot selected graphs for the selected watchlist",)
@@ -537,7 +537,7 @@ def run_bot():
     @app_commands.choices(show_volume=[
         app_commands.Choice(name="True", value="True"),
         app_commands.Choice(name="False", value="False") 
-    ])  
+    ])      
     async def run_strategy(interaction: discord.interactions, watchlist: str, strategy: app_commands.Choice[str], visibility: app_commands.Choice[str],
                     display_signals: app_commands.Choice[str] = 'True',
                     num_days: int = 365, 
@@ -545,57 +545,86 @@ def run_bot():
                     style: app_commands.Choice[str] = 'tradingview',
                     show_volume: app_commands.Choice[str] = 'False'):
         
-        tickers = " ".join(sd.get_tickers_from_watchlist(watchlist))
-        plot_args = locals()
-        del plot_args['watchlist']
-        await plot_strategy(**plot_args)
+        await interaction.response.defer(ephemeral=True)
+        logger.info("/run-strategy function called by user {}".format(interaction.user.name))
+
+        # Validate optional parameters
+        if isinstance(display_signals, app_commands.Choice):
+            display_signals = display_signals.value
+        if isinstance(plot_type, app_commands.Choice):
+            plot_type= plot_type.value
+        if isinstance(style, app_commands.Choice):
+            style=style.value
+        if isinstance(show_volume, app_commands.Choice):
+            show_volume = show_volume.value
         
-    def plot_for_reports(ticker: str,
-                               charts: str,
-                               display_signals: bool,
-                               num_days: int,
-                               plot_type: str,
-                               style: str,
-                               show_volume: bool,
-                               savefilepath_root: str):
     
-        
-        # Fetch data file for ticker
-        data = sd.fetch_daily_data(ticker)
-        if data.size == 0:
-            sd.download_analyze_data(ticker)
+        visibility = visibility.value
+
+        # Clean up data for plotting
+        tickers = sd.get_tickers_from_watchlist(watchlist)
+        strategy = an.get_strategy(strategy.value)
+        charts = strategy.plots
+        savefilepath_root = "{}/{}/{}".format(ATTACHMENTS_PATH, "plots/strategies",strategy.abbreviation)
+
+        # Generate indicator charts for each ticker and append them to 'files'
+        for ticker in tickers:
+            files = []
+            message  = ''
+
+            # Fetch data file for ticker
             data = sd.fetch_daily_data(ticker)
+            if data.size == 0:
+                sd.download_analyze_data(ticker)
+                data = sd.fetch_daily_data(ticker)
 
-        # Parse charts into list
-        charts = charts.split(",")
-        message = ''
-
-        for chart in charts:
+            for chart in charts:
+                plot_success, plot_message = an.plot(ticker=ticker,
+                            data=data,
+                            indicator_name=chart,
+                            display_signals=eval(display_signals),
+                            num_days=num_days,
+                            plot_type=plot_type,
+                            style=style,
+                            show_volume=eval(show_volume),
+                            savefilepath_root=savefilepath_root
+                            )
+                if not plot_success:
+                    message = "Failed to generate strategy '{}' for ticker {}. ".format(strategy.name, ticker) + plot_message
+                    logger.error(message)
+                    await interaction.followup.send(message)
+                    return
+                files.append(discord.File(savefilepath_root+ "/{}/{}.png".format(ticker, an.get_plot(chart)['abbreviation'])))
+        
+            # Generate Strategy chart
             plot_success, plot_message = an.plot(ticker=ticker,
                         data=data,
-                        indicator_name=chart,
-                        display_signals=display_signals,
+                        indicator_name=strategy.name,
+                        display_signals=True,
                         num_days=num_days,
                         plot_type=plot_type,
                         style=style,
-                        show_volume=show_volume,
-                        savefilepath_root=savefilepath_root
+                        show_volume=eval(show_volume),
+                        savefilepath_root=savefilepath_root,
+                        title= "{} {} Strategy".format(ticker, strategy.name),
+                        is_strategy=True
                         )
-            if not plot_success:
-                return plot_success, plot_message
-            message += plot_message
-
-        return plot_success, message
-
-    
+                
+                
+                
+            message = plot_message
+            files.append(discord.File(savefilepath_root+ "/{}/{}.png".format(ticker, strategy.abbreviation)))
         
+            if visibility == 'private':
+                await interaction.user.send(message, files=files)
+            else:
+                await interaction.channel.send(message, files=files)
+            
+                
 
-    
-
-
-
+        await interaction.followup.send("Finished generating charts")
         
-
+    
     # Send daily reports for stocks on the global watchlist to the reports channel
     @tasks.loop(hours=24)  
     async def send_reports():
@@ -871,13 +900,6 @@ def run_bot():
         log_file = discord.File("logs/rocketstocks.log")
         await interaction.user.send(content = "Log file for RocketStocks :rocket:",file=log_file)
         await interaction.response.send_message("Log file has been sent", ephemeral=True)
-
-    #############
-    # Utilities #
-    #############
-
-
-
 
     client.run(TOKEN)
     
