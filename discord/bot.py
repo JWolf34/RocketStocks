@@ -749,23 +749,34 @@ def run_bot():
     async def send_reports():
         
         if (dt.datetime.now().weekday() < 5):
-            logger.info("********** [SENDING REPORTS] **********")
 
-            # Configure channel to send reports to
-            channel = await client.fetch_channel(get_reports_channel_id())
-            
-            an.run_analysis(sd.get_tickers_from_watchlist())
-            for ticker in sd.get_tickers_from_watchlist():
-                report = build_ticker_report(ticker)
-                message, files = report.get('message'), report.get('files')
-                await channel.send(message, files=files)
-                
+            await send_watchlist_reports()    
             await send_strategy_reports()
 
-            logger.info("********** [FINISHED SENDING REPORTS] **********")
         else:
             pass
     
+    async def send_watchlist_reports():
+        
+        # Configure channel to send reports to
+        channel = await client.fetch_channel(get_reports_channel_id())
+        await channel.send("## Daily Reports")
+
+        watchlist = sd.get_tickers_from_watchlist('daily-reports')
+        if len(watchlist) == 0:
+            logger.info("No tickers found in the 'daily-reports' watchlist. No reports will be posted.")
+            await channel.send("No tickers exist in the 'daily-reports' watchlist. Add tickers to this watchlist to receive daily reports")
+        else:
+            
+            logger.info("********** [SENDING DAILY REPORTS] **********")
+            logger.info("Tickers {} found in 'daily-reports' watchlist".format(watchlist))
+            an.run_analysis(watchlist)
+            for ticker in watchlist:
+                report = build_ticker_report(ticker)
+                message, files = report.get('message'), report.get('files')
+                await channel.send(message, files=files)
+            logger.info("********** [FINISHED SENDING DAILY REPORTS] **********")
+
     async def send_strategy_reports():
         logger.info("********** [SENDING STRATEGY REPORTS] **********")
         strategies = an.get_strategies()
@@ -781,6 +792,8 @@ def run_bot():
             for strategy_name, report in reports.items():
                 await channel.send(report.get('message'), file=report.get('file'))
 
+        logger.info("********** [FINISHED SENDING STRATEGY REPORTS] **********")
+
         
 
 
@@ -789,8 +802,8 @@ def run_bot():
     @send_reports.before_loop
     async def delay_send_reports():
         
-        hour = 6
-        minute = 30
+        hour = 11
+        minute = 10
         now = dt.datetime.now()
 
         future = dt.datetime(now.year, now.month, now.day, hour, minute)
@@ -895,60 +908,106 @@ def run_bot():
     def build_ticker_report(ticker):
         logger.info("Building report for ticker {}".format(ticker))
 
-        # Get techincal indicator charts and convert them to a list of discord File objects
-        files = sd.fetch_charts(ticker)
-        for i in range(0, len(files)):
-            files[i] = discord.File(files[i])
+        data = sd.fetch_daily_data(ticker)
 
-        # Append ticker name, today's date, and external links to message
-        message = "**" + ticker + " Report " + dt.date.today().strftime("%m/%d/%Y") + "**\n"
-        links = get_ticker_links(ticker)
-        message += " | ".join(links) + "\n\n"
+        # Header
+        def build_report_header():
 
-        # Append day's summary to message
-        summary = sd.get_days_summary(ticker)
-        message += "**Summary** \n| "
-        for col in summary.keys():
-            message += "**{}:** {}".format(col, f"{summary[col]:,.2f}")
-            message += " | "
+            def get_ticker_links(ticker):
+                logger.debug("Building links to external sites for ticker {}".format(ticker))
 
-        message += "\n"
+                links = []
+                stockinvest = "[StockInvest](https://stockinvest.us/stock/{})".format(ticker)
+                links.append(stockinvest)
+                finviz = "[FinViz](https://finviz.com/quote.ashx?t={})".format(ticker)
+                links.append(finviz)
+                yahoo = "[Yahoo! Finance](https://finance.yahoo.com/quote/{})".format(ticker)
+                links.append(yahoo)
+                tradingview = "[TradingView](https://www.tradingview.com/chart/?symbol={})".format(ticker)
+                links.append(tradingview)
 
-        # Append next earnings date to message
-        message += "*Next earnings date:* {}\n\n".format(sd.get_next_earnings_date(ticker))
-
-        # Append analysis to mesage
-        analysis = sd.fetch_analysis(ticker)
-
-        message += "**Indicator Analysis**\n"
-        for indicator in analysis:
-            message += indicator
-
-        message += "\n"
-        
-        # Append strategy analysis to message
-        strategies = an.get_strategies()
-        if len(strategies) > 0:
-            message += "**Strategy Analysis**\n"
-            for strategy in strategies:
-                data = sd.fetch_daily_data(ticker)
-                strategy_name = strategies[strategy].name
-                signals = strategies[strategy].signals
-                buy_threshold = strategies[strategy].buy_threshold
-                sell_threshold = strategies[strategy].sell_threshold
-                try:
-                    score_evaluation = an.score_eval(
-                        an.signals_score(data, signals),
-                        buy_threshold, 
-                        sell_threshold)
-                except KeyError as e:
-                    logger.exception("Encountered Key Error when evaluating strategy '{}' fot ticker '{}':\n{}".format(strategy_name, ticker, e))
-                    score_evaluation = "N/A"
-                message += "{}: **{}**\n".format(strategy_name, score_evaluation)
+                return links
             
-            report = {'message':message, 'files':files, 'embed':links}
+            # Append ticker name, today's date, and external links to message
+            message = "## " + ticker + " Report " + dt.date.today().strftime("%m/%d/%Y") + "\n"
+            links = get_ticker_links(ticker)
+            message += " | ".join(links)
+            return message + "\n"
 
-            return report
+        # Ticker Info
+        def build_ticker_info():
+            ticker_data = sd.get_all_tickers_data().loc[ticker]
+            message = "### Ticker Info\n"
+            message += "**Name:** {}\n".format(ticker_data['Name'])
+            message += "**Sector:** {}\n".format(ticker_data['Sector'])
+            message += "**Industry:** {}\n".format(ticker_data['Industry'])
+            message += "**Market Cap:** ${:,}\n".format(ticker_data['Market Cap'])
+            message += "**Country:** {}\n".format(ticker_data['Country'])
+            message += "**Next earnings date:** {}".format(sd.get_next_earnings_date(ticker))
+            return message + "\n"
+
+        # Daily Summary
+        def build_daily_summary():
+            # Append day's summary to message
+            summary = sd.get_days_summary(data)
+            message = "### Summary \n| "
+            for col in summary.keys():
+                message += "**{}:** {}".format(col, f"{summary[col]:,.2f}")
+                message += " | "
+
+            return message + "\n"
+
+        # Indicator analysis
+        def build_indicator_analysis():
+            # Append analysis to mesage
+            analysis = sd.fetch_analysis(ticker)
+
+            message = "### Indicator Analysis\n"
+            message += analysis
+            return message
+
+        # Strategy analysis
+        def build_strategy_analysis():
+            # Append strategy analysis to message
+            message = ''
+            strategies = an.get_strategies()
+            if len(strategies) > 0:
+                message += "### Strategy Analysis\n"
+                for strategy in strategies:
+                    strategy_name = strategies[strategy].name
+                    signals = strategies[strategy].signals
+                    buy_threshold = strategies[strategy].buy_threshold
+                    sell_threshold = strategies[strategy].sell_threshold
+                    try:
+                        score_evaluation = an.score_eval(
+                            an.signals_score(data, signals),
+                            buy_threshold, 
+                            sell_threshold)
+                    except KeyError as e:
+                        logger.exception("Encountered Key Error when evaluating strategy '{}' for ticker '{}':\n{}".format(strategy_name, ticker, e))
+                        score_evaluation = "N/A"
+                    message += "{}: **{}**\n".format(strategy_name, score_evaluation)
+            return message + "\n"
+
+        # Chart files
+        def build_chart_files():
+            # Get techincal indicator charts and convert them to a list of discord File objects
+            files = sd.fetch_charts(ticker)
+            for i in range(0, len(files)):
+                files[i] = discord.File(files[i])
+            return files
+
+        message = build_report_header()
+        message += build_ticker_info()
+        message += build_daily_summary()
+        message += build_indicator_analysis()
+        message += build_strategy_analysis()
+        files = build_chart_files()
+
+
+        report = {'message':message, 'files':files} #, 'embed':links}
+
+        return report
     
     def build_strategy_report(strategy):
         logger.info("Building strategy report for strategy '{}'".format(strategy.name))
@@ -974,41 +1033,6 @@ def run_bot():
         file = discord.File(an.get_strategy_score_filepath(strategy))
 
         return message, file
-                
-
-    
-    def build_daily_summary():
-        logger.info("Building daily summary report")
-        
-        # TODO - scoring and strategy signals
-        daily_scores = an.get_masterlist_scores()
-        BUY_THRESHOLD = 1.00
-        daily_rankings_message = '**Daily Stock Rankings**\n\n'
-
-        daily_rankings_message += "**SMA 10/50 Strategy**\n"
-        for col in daily_scores.columns:
-            try:
-                if float(col) >= 1.00:
-                    daily_rankings_message += "**{}**\n".format(col)
-                    daily_rankings_message += " ".join(daily_scores[col].dropna()) + "\n\n"
-            except ValueError as e:
-                #Index column is invalid
-                pass
-
-    def get_ticker_links(ticker):
-        logger.debug("Building links to external sites for ticker {}".format(ticker))
-
-        links = []
-        stockinvest = "[StockInvest](https://stockinvest.us/stock/{})".format(ticker)
-        links.append(stockinvest)
-        finviz = "[FinViz](https://finviz.com/quote.ashx?t={})".format(ticker)
-        links.append(finviz)
-        yahoo = "[Yahoo! Finance](https://finance.yahoo.com/quote/{})".format(ticker)
-        links.append(yahoo)
-        tradingview = "[TradingView](https://www.tradingview.com/chart/?symbol={})".format(ticker)
-        links.append(tradingview)
-
-        return links
          
     ########################
     # Test & Help Commands #
@@ -1045,7 +1069,16 @@ def run_bot():
 
         await send_strategy_reports()
 
-        await interaction.response.send_message("Posted strategy report", ephemeral=True)
+        await interaction.followup.send("Posted strategy report", ephemeral=True)
+
+    @client.tree.command(name = "test-run-watchlist-report", description= "Test running the strategy report",)
+    async def test_run_watchlist_report(interaction: discord.Interaction):
+        logger.info("/test-run-watchlist-report function called by user {}".format(interaction.user.name))
+        await interaction.response.defer(ephemeral=True)
+
+        await send_watchlist_reports()
+
+        await interaction.followup.send("Posted watchlist report", ephemeral=True)
         
 
     @client.tree.command(name = "fetch-logs", description= "Return the log file for the bot",)
@@ -1053,7 +1086,7 @@ def run_bot():
         logger.info("/fetch-logs function called by user {}".format(interaction.user.name))
         log_file = discord.File("logs/rocketstocks.log")
         await interaction.user.send(content = "Log file for RocketStocks :rocket:",file=log_file)
-        await interaction.response.send_message("Log file has been sent", ephemeral=True)
+        await interaction.response.send_("Log file has been sent", ephemeral=True)
 
 
     client.run(TOKEN)

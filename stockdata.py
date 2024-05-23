@@ -165,7 +165,7 @@ def daily_download_analyze_data():
                     logger.warn("INVALID TICKER - No data for ticker {} available for yesterday. Attempting to remove from masterlist".format(ticker))
                     remove_from_all_tickers(ticker) """
             else:
-                logger.info("Ticker '{}' is not valid. Removing from all tickers")
+                logger.info("Ticker '{}' is not valid. Removing from all tickers"/format(ticker))
                 remove_from_all_tickers(ticker)
         else:
             logger.info("Data for {} is up-to-date. Skipping...".format(ticker))
@@ -310,7 +310,7 @@ def validate_ticker(ticker):
 
     # Confirm if data file already exists
     if os.path.isfile("{}/{}.csv".format(DAILY_DATA_PATH, ticker)) or os.path.isfile("{}/{}.csv".format(MINUTE_DATA_PATH, ticker)):
-        logger.info("Data files exixts for ticker '{}' - ticker is valid".format(ticker))
+        logger.info("Data file exists for ticker '{}' - ticker is valid".format(ticker))
         return True
     data = download_data(ticker, period='1d')
     if data.size == 0:
@@ -397,16 +397,14 @@ def delete_watchlist(watchlist_id):
 
     
 # Return Dataframe with the latest OHLCV of requested ticker
-def get_days_summary(ticker):
-    logger.info("Fetching today's OHLCV summary for ticker {}".format(ticker))
+def get_days_summary(data):
+    logger.info("Fetching today's OHLCV summary for provided data")
     # Assumes data has been pulled recently. Mainly called when running or fetching reports. 
-    data = fetch_daily_data(ticker)
     if len(data) > 0:
-        summary = data[['Open', "Close", "High", "Low", "Volume"]].iloc[-1]
-        logger.debug("Today's summary for ticker {}: {}".format(ticker, summary))
+        summary = data[["Open","High", "Low","Close","Volume"]].iloc[-1]
         return summary
     else:
-        logger.warning("Could not retrieve the day's summary for ticker {}".format(ticker))
+        logger.warning("Could not retrieve the day's summary for provided data")
         return None
     
 # Return next earnings date of the specified ticker, if available
