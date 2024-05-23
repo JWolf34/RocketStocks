@@ -480,9 +480,7 @@ def validate_columns(data, columns):
 #########
 
 def test():
-    logger.info("Running test case")
-    data = download_data("ABLLW")
-    print(data)
+    pass
 
 if __name__ == "__main__":
     logger.info("stockdata.py initialized")

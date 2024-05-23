@@ -457,8 +457,8 @@ def signal_sma(data, short, long):
         return "HOLD"
 
     else:
-        print("How did we get here?")
-        return "HOLD"
+        logger.debug("SMA values likely NaN for specified range. SMA_SHORT: {}, SMA_LONG: {}. Return 'N/A'".format(sma_short, sma_long))
+        return "N/A"
 
 def signal_adx(data, adx_col, dip_col, din_col, TREND_UPPER, TREND_LOWER):
     logger.debug("Calculating ADX signal...")
@@ -603,14 +603,10 @@ def recent_crossover(indicator, signal):
     return None
 
 def test():
-    strategies = get_strategies()
-    for name, strategy in strategies.items():
-        generate_strategy_scores(strategy)
-        scores = get_strategy_scores(strategy)
-        print(scores)
+    pass
 
 if __name__ == '__main__':
-    test()
+    #test()
     pass
     
        
