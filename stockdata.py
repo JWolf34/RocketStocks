@@ -165,7 +165,7 @@ def daily_download_analyze_data():
                     logger.warn("INVALID TICKER - No data for ticker {} available for yesterday. Attempting to remove from masterlist".format(ticker))
                     remove_from_all_tickers(ticker) """
             else:
-                logger.info("Ticker '{}' is not valid. Removing from all tickers"/format(ticker))
+                logger.info("Ticker '{}' is not valid. Removing from all tickers".format(ticker))
                 remove_from_all_tickers(ticker)
         else:
             logger.info("Data for {} is up-to-date. Skipping...".format(ticker))
@@ -447,7 +447,7 @@ def remove_from_all_tickers(ticker):
     data = get_all_tickers_data()
     data = data.drop(index=ticker)
     data.to_csv("{}/all_tickers.csv".format(UTILS_PATH))
-    logger.debug("Removed ticker '{}' from all tickers".format(ticker))
+    logger.info("Removed ticker '{}' from all tickers".format(ticker))
 
 # Validate that data file for specified ticker has data up to yesterday
 def daily_data_up_to_date(data):
