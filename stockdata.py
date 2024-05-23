@@ -127,9 +127,8 @@ def daily_download_analyze_data():
     logging.info("********** [START DAILY DOWNLOAD TASK] **********")
     DATA_SHAPE_THRESHOLD = 60
     
-    #tickers = get_all_tickers()
+    tickers = get_all_tickers()
 
-    tickers = ["DYCQ"]
     num_ticker = 1
     for ticker in tickers:
         logger.info("Processesing {}, {}/{}".format(ticker, num_ticker, len(tickers)))
