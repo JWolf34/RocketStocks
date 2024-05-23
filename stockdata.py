@@ -139,8 +139,20 @@ def daily_download_analyze_data():
             
             if validate_ticker(ticker):
                 # Ticker is valid - download data
-                download_analyze_data(ticker)
-                logger.debug("Download and analysis of {} complete.".format(ticker))
+                
+                data = download_data(ticker)
+
+                # Validate quality of data
+                if data.size < 30:
+                    logger.warn("INVALID TICKER - Data of {} has size {} after download which is less than threshold 30".format(ticker, data.size))
+                    remove_from_all_tickers(ticker)
+                else:
+                    generate_indicators(data)
+                    update_csv(data, ticker, DAILY_DATA_PATH)
+                    logger.debug("Download and analysis of {} complete.".format(ticker))
+                
+
+
 
                 """ # No CSV was written or data was bad:
                 if data.size == 0:
@@ -465,9 +477,10 @@ def validate_columns(data, columns):
 
 def test():
     logger.info("Running test case")
-    fetch_charts("AMC")
+    data = download_data("ABLLW")
+    print(data)
 
 if __name__ == "__main__":
     logger.info("stockdata.py initialized")
-    #test()
+    test()
     pass
