@@ -130,37 +130,37 @@ def daily_download_analyze_data():
     
     tickers = get_all_tickers()
 
-    # Verify that ticker_masterlist.txt exists
-    if isinstance(tickers, list):
-        num_ticker = 1
-        for ticker in tickers:
-            logger.info("Processesing {}, {}/{}".format(ticker, num_ticker, len(tickers)))
-            logger.debug("Validate if data file for {} is up-tp-date".format(ticker))
-            if not daily_data_up_to_date(fetch_daily_data(ticker)):
-                logger.debug("Data file for {} is either empty or not up-to-date".format(ticker))
+    num_ticker = 1
+    for ticker in tickers:
+        logger.info("Processesing {}, {}/{}".format(ticker, num_ticker, len(tickers)))
+        logger.debug("Validate if data file for {} is up-tp-date".format(ticker))
+        if not daily_data_up_to_date(fetch_daily_data(ticker)):
+            logger.debug("Data file for {} is either empty or not up-to-date".format(ticker))
+            
+            if validate_ticker(ticker):
+                # Ticker is valid - download data
                 download_analyze_data(ticker)
-                data = fetch_daily_data(ticker)
-                logger.debug("Download and analysis of {} complete. Validate that data is valid".format(ticker))
+                logger.debug("Download and analysis of {} complete.".format(ticker))
 
-                # No CSV was written or data was bad:
+                """ # No CSV was written or data was bad:
                 if data.size == 0:
                     logger.warn("INVALID TICKER - Data of {} has size 0 after download. Attempting to remove from masterlist".format(ticker))
-                    remove_from_masterlist(ticker)
+                    remove_from_all_tickers(ticker)
 
                 # Data downloaded and still not up-to-date means there is
                 # no data for yesterday. Remove from masterlist
                 elif not daily_data_up_to_date(fetch_daily_data(ticker)):
                     logger.warn("INVALID TICKER - No data for ticker {} available for yesterday. Attempting to remove from masterlist".format(ticker))
-                    remove_from_masterlist(ticker)
-               
+                    remove_from_all_tickers(ticker) """
             else:
-                logger.info("Data for {} is up-to-date. Skipping...".format(ticker))
-            
-            num_ticker += 1
-        logger.info("Daily data download task complete!")
-    else:
-        pass
-
+                logger.info("Ticker '{}' is not valid. Removing from all tickers")
+                remove_from_all_tickers(ticker)
+        else:
+            logger.info("Data for {} is up-to-date. Skipping...".format(ticker))
+        
+        num_ticker += 1
+    logger.info("Daily data download task complete!")
+   
 # Weekly process to download minute-by-minute ticker data on all tickers
 # in the masterlist
 def minute_download_data():
@@ -181,7 +181,7 @@ def minute_download_data():
             # No CSV was written or data was bad:
             if data.size == 0:
                 logger.warn("INVALID TICKER - Data of {} has size 0 after download. Attempting to remove from masterlist".format(ticker))
-                remove_from_masterlist(ticker)
+                remove_from_all_tickers(ticker)
             else: # Data downloaded 
                 logger.debug("Data downloaded for {} is valid.".format(ticker))
                 update_csv(data, ticker, MINUTE_DATA_PATH)
@@ -295,12 +295,17 @@ def fetch_financials(ticker):
 # Confirm we get valid data back when downloading data for ticker
 def validate_ticker(ticker):
     logger.info("Verifying that ticker {} is valid".format(ticker))
+
+    # Confirm if data file already exists
+    if os.path.isfile("{}/{}.csv".format(DAILY_DATA_PATH, ticker)) or os.path.isfile("{}/{}.csv".format(MINUTE_DATA_PATH, ticker)):
+        logger.info("Data files exixts for ticker '{}' - ticker is valid".format(ticker))
+        return True
     data = download_data(ticker, period='1d')
     if data.size == 0:
         logger.warning("INVALID TICKER - Size of data for ticker {} is 0".format(ticker))
         return False
     else:
-        logger.info("Ticker {} is valid".format(ticker))
+        logger.info("Data for ticker {} successfully downloaded - ticker is valid".format(ticker))
         return True
 
 # Validate specified path exists and create it if needed
@@ -408,7 +413,7 @@ def get_next_earnings_date(ticker):
     
 # Return dataframe containing data from 'all_tickers.csv'
 def get_all_tickers_data():
-    return pd.read_csv("{}/all_tickers.csv".format(UTILS_PATH))
+    return pd.read_csv("{}/all_tickers.csv".format(UTILS_PATH), index_col='Symbol')
     
 # Return list of tickers available in the masterlist
 def get_all_tickers():
@@ -416,48 +421,18 @@ def get_all_tickers():
     
     try:
         all_tickers_data = get_all_tickers_data()
-        return all_tickers_data['Symbol'].to_list()
+        return all_tickers_data.index.to_list()
     except FileNotFoundError as e:
         logger.exception("Encountered FileNotFoundError when attempting to load data from 'all_tickers.csv:\n{}".format(e))
         logger.debug("'all_tickers.csv' file does not exist")
         return []
 
-
-# Add specified ticker to the masrterlist
-def add_to_masterlist(ticker):
-    logger.debug("Attemping to add {} to masterlist".format(ticker))
-    masterlist_file = "data/ticker_masterlist.txt"
-    masterlist_tickers = get_all_tickers()
-    # Verify that ticker_masterlist.txt exists
-    if masterlist_tickers == "":
-        pass
-    else:
-        if ticker not in masterlist_tickers:
-            masterlist_tickers.append(ticker)
-            with open(masterlist_file, 'w') as masterlist:
-                masterlist.write("\n".join(masterlist_tickers))
-            logger.debug("Added {} to masterlist".format(ticker))
-        else: 
-            # Ticker already in masterlist
-            logger.debug("{} already exists in masterlist".format(ticker))
-
-def remove_from_masterlist(ticker):
-    logger.debug("Attemping to remove {} from masterlist".format(ticker))
-    masterlist_file = "data/ticker_masterlist.txt"
-    masterlist_tickers = get_all_tickers()
-    # Verify that ticker_masterlist.txt exists
-    if masterlist_tickers == "":
-        pass
-    else:
-        if ticker in masterlist_tickers:
-            logger.debug("Ticker {} is in masterlist. Removing...".format(ticker))
-            masterlist_tickers.remove(ticker)
-            with open(masterlist_file, 'w') as masterlist:
-                masterlist.write("\n".join(masterlist_tickers))
-            logger.debug("Removed {} from masterlist".format(ticker))
-        else: 
-            # Ticker not in masterlist
-            logger.debug("Ticker {} does not exist in masterlist".format(ticker))
+def remove_from_all_tickers(ticker):
+    
+    data = get_all_tickers_data()
+    data = data.drop(index=ticker)
+    data.to_csv("{}/all_tickers.csv".format(UTILS_PATH))
+    logger.debug("Removed ticker '{}' from all tickers".format(ticker))
 
 # Validate that data file for specified ticker has data up to yesterday
 def daily_data_up_to_date(data):
