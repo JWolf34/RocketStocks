@@ -760,7 +760,7 @@ def run_bot():
         
         # Configure channel to send reports to
         channel = await client.fetch_channel(get_reports_channel_id())
-        await channel.send("## Daily Reports")
+        await channel.send("## Daily Reports {}".format(dt.date.today().strftime("%m/%d/%Y")))
 
         watchlist = sd.get_tickers_from_watchlist('daily-reports')
         if len(watchlist) == 0:
@@ -778,32 +778,34 @@ def run_bot():
             logger.info("********** [FINISHED SENDING DAILY REPORTS] **********")
 
     async def send_strategy_reports():
-        logger.info("********** [SENDING STRATEGY REPORTS] **********")
+        
+        channel = await client.fetch_channel(get_reports_channel_id())
+        await channel.send("## Strategy Report {}".format(dt.date.today().strftime("%m/%d/%Y")))
         strategies = an.get_strategies()
         reports = {}
         
         if len(strategies) > 0:
+            logger.info("********** [SENDING STRATEGY REPORTS] **********")
             for name, strategy in strategies.items():
                 message, file = build_strategy_report(strategy)
                 reports[strategy.name] = {'message':message, 'file':file}
 
-            channel = await client.fetch_channel(get_reports_channel_id())
+            
             await channel.send("## Strategy Report {}".format(dt.date.today().strftime("%m/%d/%Y")))
             for strategy_name, report in reports.items():
                 await channel.send(report.get('message'), file=report.get('file'))
 
-        logger.info("********** [FINISHED SENDING STRATEGY REPORTS] **********")
-
-        
-
-
+            logger.info("********** [FINISHED SENDING STRATEGY REPORTS] **********")
+        else:
+            logger.info("No strategies are available. No reports will be posted.")
+            await channel.send("No strategies are accessible, so no reports will be posted.")
 
     # Configure delay before sending daily reports to send at the same time daily
     @send_reports.before_loop
     async def delay_send_reports():
         
-        hour = 11
-        minute = 10
+        hour = 6
+        minute = 30
         now = dt.datetime.now()
 
         future = dt.datetime(now.year, now.month, now.day, hour, minute)
