@@ -756,11 +756,12 @@ def run_bot():
         else:
             pass
     
+    # Send ticker reports to reports channel for tickers on the 'daily-reports' watchlist if it exists
     async def send_watchlist_reports():
         
         # Configure channel to send reports to
         channel = await client.fetch_channel(get_reports_channel_id())
-        await channel.send("## Daily Reports {}".format(dt.date.today().strftime("%m/%d/%Y")))
+        
 
         watchlist = sd.get_tickers_from_watchlist('daily-reports')
         if len(watchlist) == 0:
@@ -771,16 +772,17 @@ def run_bot():
             logger.info("********** [SENDING DAILY REPORTS] **********")
             logger.info("Tickers {} found in 'daily-reports' watchlist".format(watchlist))
             an.run_analysis(watchlist)
+            await channel.send("## Daily Reports {}".format(dt.date.today().strftime("%m/%d/%Y")))
             for ticker in watchlist:
                 report = build_ticker_report(ticker)
                 message, files = report.get('message'), report.get('files')
                 await channel.send(message, files=files)
             logger.info("********** [FINISHED SENDING DAILY REPORTS] **********")
 
+    # Generate and send strategy reports to the reports channel
     async def send_strategy_reports():
         
         channel = await client.fetch_channel(get_reports_channel_id())
-        await channel.send("## Strategy Report {}".format(dt.date.today().strftime("%m/%d/%Y")))
         strategies = an.get_strategies()
         reports = {}
         
@@ -907,6 +909,7 @@ def run_bot():
     # Report Helper Functions #
     ###########################
 
+    # Build report for selected ticker to be posted
     def build_ticker_report(ticker):
         logger.info("Building report for ticker {}".format(ticker))
 
@@ -991,7 +994,7 @@ def run_bot():
                     message += "{}: **{}**\n".format(strategy_name, score_evaluation)
             return message + "\n"
 
-        # Chart files
+        # Collect chart files
         def build_chart_files():
             # Get techincal indicator charts and convert them to a list of discord File objects
             files = sd.fetch_charts(ticker)
@@ -1011,6 +1014,7 @@ def run_bot():
 
         return report
     
+    # Build report for selected strategy against all tickers
     def build_strategy_report(strategy):
         logger.info("Building strategy report for strategy '{}'".format(strategy.name))
         watchlist_tickers = sd.get_tickers_from_all_watchlists()

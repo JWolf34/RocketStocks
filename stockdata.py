@@ -249,7 +249,7 @@ def fetch_charts(ticker):
 # Return the latest data with technical indicators as a Pandas dataframe.
 # If CSV does not exist or is not up-to-date, return empty DataFrame
 def fetch_daily_data(ticker):
-    logger.info("Fetching daily data file for ticker {}".format(ticker))
+    logger.debug("Fetching daily data file for ticker {}".format(ticker))
     data = pd.DataFrame()
     data_path = "{}/{}.csv".format(DAILY_DATA_PATH, ticker)
     if not os.path.isfile(data_path):
@@ -345,6 +345,7 @@ def get_tickers_from_watchlist(watchlist_id):
         logger.warning("Watchlist with ID {} does not exist".format(watchlist_id))
         return []
 
+# Return tickers from all available watchlists
 def get_tickers_from_all_watchlists():
     logger.debug("Fetching tickers from all available watchlists (besides personal)")
     watchlists = get_watchlists()
@@ -370,6 +371,7 @@ def get_list_from_tickers(tickers):
         ticker_list.remove(ticker)
     return ticker_list, invalid_tickers
 
+# Return list of existing watchlists
 def get_watchlists():
     watchlists = [x.split('.')[0] for x in os.listdir(WATCHLISTS_PATH)]
     watchlists = [x for x in watchlists if not x.isdigit()]
@@ -377,19 +379,21 @@ def get_watchlists():
     watchlists.sort()
     return watchlists
 
-    
+# Set content of watchlist to provided tickers
 def update_watchlist(watchlist_id, tickers):
     logger.info("Updating watchlist '{}': {}".format(watchlist_id, tickers))
     with open("{}/{}.txt".format(WATCHLISTS_PATH, watchlist_id), 'w') as watchlist:
         watchlist.write("\n".join(sorted(tickers)))
         watchlist.close()
 
+# Create a new watchlist with id 'watchlist_id'
 def create_watchlist(watchlist_id, tickers):
     logger.info("Creating watchlist with ID '{}' and tickers {}".format(watchlist_id, tickers))
     with open("{}/{}.txt".format(WATCHLISTS_PATH, watchlist_id), 'w') as watchlist:
         watchlist.write("\n".join(tickers))
         watchlist.close()
 
+# Delete watchlist wityh id 'watchlist_id'
 def delete_watchlist(watchlist_id):
     logger.info("Deleting watchlist '{}'...".format(watchlist_id))
     os.remove("{}/{}.txt".format(WATCHLISTS_PATH, watchlist_id))
@@ -437,6 +441,7 @@ def get_all_tickers():
         logger.debug("'all_tickers.csv' file does not exist")
         return []
 
+# Remove selected ticker row from 'all_tickers.csv'
 def remove_from_all_tickers(ticker):
     
     data = get_all_tickers_data()
@@ -460,6 +465,7 @@ def daily_data_up_to_date(data):
             logger.info("Provided data is not up-to-date")
             return False
 
+# Validate that selected columns exist within DataFrame 'data'
 def validate_columns(data, columns):
     logger.debug("Validating that columns {} exist in data".format(columns))
     for column in columns: 
@@ -480,5 +486,5 @@ def test():
 
 if __name__ == "__main__":
     logger.info("stockdata.py initialized")
-    test()
+    #test()
     pass
