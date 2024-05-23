@@ -21,6 +21,7 @@ logger = logging.getLogger(__name__)
 ATTACHMENTS_PATH = "discord/attachments"
 DAILY_DATA_PATH = "data/CSV/daily"
 MINUTE_DATA_PATH = "data/CSV/minute"
+UTILS_PATH = "utils"
 
 ##################
 # Init Functions #
@@ -1085,7 +1086,13 @@ def run_bot():
         await send_watchlist_reports()
 
         await interaction.followup.send("Posted watchlist report", ephemeral=True)
-        
+    
+    @client.tree.command(name = "fetch-all-tickers-csv", description= "Return CSV with data on all tickers the bot runs analysis on",)
+    async def fetch_all_tickers_csv(interaction: discord.Interaction):
+        logger.info("/fetch-all-tickers-csv function called by user {}".format(interaction.user.name))
+        csv_file = discord.File("{}/all_tickers.csv".format(UTILS_PATH))
+        await interaction.user.send(content = "All tickers",file=csv_file)
+        await interaction.response.send_message("CSV file has been sent", ephemeral=True)
 
     @client.tree.command(name = "fetch-logs", description= "Return the log file for the bot",)
     async def fetch_logs(interaction: discord.Interaction):
