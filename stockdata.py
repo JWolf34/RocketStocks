@@ -114,8 +114,7 @@ def generate_indicators(data):#
 
 # Download data and generate indicator data on specified ticker
 def download_analyze_data(ticker):
-    SIZE_THRESHOLD = 60
-    CLOSE_THRESHOLD = 1.00
+    
 
     data = download_data(ticker)
     generate_indicators(data)
@@ -124,9 +123,10 @@ def download_analyze_data(ticker):
 # Daily process to download daily ticker data and generate indicator data on all 
 # tickers in the masterlist
 def daily_download_analyze_data():
-    import time
+    
     logging.info("********** [START DAILY DOWNLOAD TASK] **********")
     masterlist_file = "data/ticker_masterlist.txt"
+    DATA_SIZE_THRESHOLD = 60
     
     tickers = get_all_tickers()
 
@@ -143,8 +143,8 @@ def daily_download_analyze_data():
                 data = download_data(ticker)
 
                 # Validate quality of data
-                if data.size < 30:
-                    logger.warn("INVALID TICKER - Data of {} has size {} after download which is less than threshold 30".format(ticker, data.size))
+                if data.size < DATA_SIZE_THRESHOLD:
+                    logger.warn("INVALID TICKER - Data of {} has size {} after download which is less than threshold {}".format(ticker, data.size, DATA_SIZE_THRESHOLD))
                     remove_from_all_tickers(ticker)
                 else:
                     generate_indicators(data)
@@ -480,9 +480,11 @@ def validate_columns(data, columns):
 #########
 
 def test():
-    pass
+    data = download_data("DYCQ")
+    #data.to_csv("DYCQ.csv")
+    generate_indicators(data)
 
 if __name__ == "__main__":
     logger.info("stockdata.py initialized")
-    #test()
+    test()
     pass
