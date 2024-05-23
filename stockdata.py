@@ -125,11 +125,11 @@ def download_analyze_data(ticker):
 def daily_download_analyze_data():
     
     logging.info("********** [START DAILY DOWNLOAD TASK] **********")
-    masterlist_file = "data/ticker_masterlist.txt"
-    DATA_SIZE_THRESHOLD = 60
+    DATA_SHAPE_THRESHOLD = 60
     
-    tickers = get_all_tickers()
+    #tickers = get_all_tickers()
 
+    tickers = ["DYCQ"]
     num_ticker = 1
     for ticker in tickers:
         logger.info("Processesing {}, {}/{}".format(ticker, num_ticker, len(tickers)))
@@ -143,27 +143,13 @@ def daily_download_analyze_data():
                 data = download_data(ticker)
 
                 # Validate quality of data
-                if data.size < DATA_SIZE_THRESHOLD:
-                    logger.warn("INVALID TICKER - Data of {} has size {} after download which is less than threshold {}".format(ticker, data.size, DATA_SIZE_THRESHOLD))
+                if data.shape[0] < DATA_SHAPE_THRESHOLD:
+                    logger.warn("INVALID TICKER - Data of {} has shape {} after download which is less than threshold {}".format(ticker, data.shape[0], DATA_SHAPE_THRESHOLD))
                     remove_from_all_tickers(ticker)
                 else:
                     generate_indicators(data)
                     update_csv(data, ticker, DAILY_DATA_PATH)
                     logger.debug("Download and analysis of {} complete.".format(ticker))
-                
-
-
-
-                """ # No CSV was written or data was bad:
-                if data.size == 0:
-                    logger.warn("INVALID TICKER - Data of {} has size 0 after download. Attempting to remove from masterlist".format(ticker))
-                    remove_from_all_tickers(ticker)
-
-                # Data downloaded and still not up-to-date means there is
-                # no data for yesterday. Remove from masterlist
-                elif not daily_data_up_to_date(fetch_daily_data(ticker)):
-                    logger.warn("INVALID TICKER - No data for ticker {} available for yesterday. Attempting to remove from masterlist".format(ticker))
-                    remove_from_all_tickers(ticker) """
             else:
                 logger.info("Ticker '{}' is not valid. Removing from all tickers".format(ticker))
                 remove_from_all_tickers(ticker)
