@@ -237,8 +237,11 @@ def run_analysis(tickers):
         data = sd.fetch_daily_data(ticker)
 
         # Verify that data is returned
-        if data.size == 0:
-            logger.debug("Returned data for ticker '{}' is size 0".format(ticker))
+        data_size = data.size
+        data_up_to_date = sd.daily_data_up_to_date(data)
+        ticker_in_all_tickers = True if ticker in sd.get_all_tickers() else False
+        if data_size == 0 or not data_up_to_date or not ticker_in_all_tickers():
+            logger.debug("Downloading data for ticker'{}':\n Data size: {} \n Data up-to-date: {}\n Ticker in all tickers: {}".format(ticker, data_size, data_up_to_date, ticker_in_all_tickers))
             if sd.validate_ticker(ticker):
                 sd.download_analyze_data(ticker)
         data = sd.fetch_daily_data(ticker)

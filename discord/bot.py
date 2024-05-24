@@ -941,14 +941,18 @@ def run_bot():
 
         # Ticker Info
         def build_ticker_info():
-            ticker_data = sd.get_all_tickers_data().loc[ticker]
             message = "### Ticker Info\n"
-            message += "**Name:** {}\n".format(ticker_data['Name'])
-            message += "**Sector:** {}\n".format(ticker_data['Sector'])
-            message += "**Industry:** {}\n".format(ticker_data['Industry'])
-            message += "**Market Cap:** ${:,}\n".format(ticker_data['Market Cap'])
-            message += "**Country:** {}\n".format(ticker_data['Country'])
-            message += "**Next earnings date:** {}".format(sd.get_next_earnings_date(ticker))
+            try:
+                ticker_data = sd.get_all_tickers_data().loc[ticker]
+                message += "**Name:** {}\n".format(ticker_data['Name'])
+                message += "**Sector:** {}\n".format(ticker_data['Sector'])
+                message += "**Industry:** {}\n".format(ticker_data['Industry'])
+                message += "**Market Cap:** ${:,}\n".format(ticker_data['Market Cap'])
+                message += "**Country:** {}\n".format(ticker_data['Country'])
+                message += "**Next earnings date:** {}".format(sd.get_next_earnings_date(ticker))
+            except KeyError as e:
+                logger.exception("Encountered KeyError when collecting ticker info:\n{}".format(e))
+                message += "Ticker info unavailable - coming soon!"
             return message + "\n"
 
         # Daily Summary
