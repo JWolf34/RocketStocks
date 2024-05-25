@@ -543,7 +543,7 @@ def score_eval(score, buy_threshold, sell_threshold):
         return "HOLD"
 
 def generate_strategy_scores(strategy):
-    logger.debug("Calculating scores for strategy '{}' on masterlist tickers".format(strategy.name))
+    logger.info("Calculating scores for strategy '{}' on masterlist tickers".format(strategy.name))
     buys = []
     holds = []
     sells = []
