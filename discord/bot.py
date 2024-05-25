@@ -952,7 +952,18 @@ def run_bot():
                 message += "**Next earnings date:** {}".format(sd.get_next_earnings_date(ticker))
             except KeyError as e:
                 logger.exception("Encountered KeyError when collecting ticker info:\n{}".format(e))
-                message += "Ticker info unavailable - coming soon!"
+                #message += "Ticker info unavailable - coming soon!"
+                ticker_info = sd.get_ticker_info(ticker)
+                info_list = [
+                    'longName',
+                    'category',
+                    
+                ]
+                if 'longName' in ticker_info.keys():
+                    message += "**Name:** {}\n".format(ticker_info.get('long'))
+
+                print(ticker_info)
+
             return message + "\n"
 
         # Daily Summary

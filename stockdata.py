@@ -424,6 +424,11 @@ def get_next_earnings_date(ticker):
     except KeyError as e:
         logger.exception("Encountered KeyError when fetching next earnings date for ticker {}:\n{}".format(ticker, e))
         return "Earnings Date unavailable"
+
+def get_ticker_info(ticker):
+    logger.debug("Retrieving info for ticker '{}'".format(ticker))
+    stock = yf.Ticker(ticker)
+    return stock.info
     
 # Return dataframe containing data from 'all_tickers.csv'
 def get_all_tickers_data():
