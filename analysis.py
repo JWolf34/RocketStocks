@@ -442,8 +442,8 @@ def signal_sma(data, short, long):
     sma_short = data[short].iloc[-1]
     sma_long = data[long].iloc[-1]
 
-    prev_short = data[short].tail(5).to_list()
-    prev_long = data[long].tail(5).to_list()
+    prev_short = data[short].tail(2).to_list()
+    prev_long = data[long].tail(2).to_list()
 
     recent_cross = recent_crossover(prev_short, prev_long)
     
@@ -470,11 +470,11 @@ def signal_adx(data, adx_col, dip_col, din_col, TREND_UPPER, TREND_LOWER):
     dip = data[dip_col]
     din = data[din_col]
 
-    prev_adx = adx.tail(5).to_list()
-    prev_dip = dip.tail(5).to_list()
-    prev_din = din.tail(5).to_list()
-    prev_trend_upper = [TREND_UPPER] * 5
-    prev_trend_lower = [TREND_LOWER] * 5
+    prev_adx = adx.tail(2).to_list()
+    prev_dip = dip.tail(2).to_list()
+    prev_din = din.tail(2).to_list()
+    prev_trend_upper = [TREND_UPPER] * 2
+    prev_trend_lower = [TREND_LOWER] * 2
 
     # BUY SIGNAL - ADX crosses above TREND_LOWER and DI+ > DI-
     if recent_crossover(prev_adx, prev_trend_lower) == 'UP' and dip.iloc[-1] > din.iloc[-1]:
