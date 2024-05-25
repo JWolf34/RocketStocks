@@ -128,7 +128,7 @@ def plot(ticker, data, indicator_name, title = '', display_signals=True, num_day
     logger.info("Plotting chart '{}' for ticker '{}'".format(indicator_name, ticker))
     logger.debug("Args passed for chart '{}'\n{}".format(indicator_name, locals().pop('data')))
 
-    def buy_sell_signals(signals):
+    def buy_sell_signals(signals, buy_threshold, sell_threshold):
         logger.debug("Generating buy and sell signals for {}".format(signals))
         buy_signals = [np.nan] * data['Close'].shape[0]
         sell_signals = [np.nan] * data['Close'].shape[0]
@@ -136,13 +136,17 @@ def plot(ticker, data, indicator_name, title = '', display_signals=True, num_day
         
         for i in range(2, data.shape[0]):
             score = signals_score(data.head(i), signals)
-            score_evaluation = score_eval(score, 1.00, 0.00)
+            score_evaluation = score_eval(score, buy_threshold, sell_threshold)
             if score_evaluation == 'BUY' and position == False:
                 buy_signals[i-1] = (data['Close'].iloc[i-1]*0.99)
                 position = True
             elif score_evaluation == 'SELL' and position == True:
                 sell_signals[i-1] = (data['Close'].iloc[i-1]*1.01)
                 position = False
+            elif "Next-Day Sell" in signals and position == True:
+                sell_signals[i-1] = (data['Close'].iloc[i-1]*1.01)
+                position = False
+
             
         return buy_signals, sell_signals
 
@@ -162,12 +166,17 @@ def plot(ticker, data, indicator_name, title = '', display_signals=True, num_day
         logger.debug("Chart is type 'VOLUME' - ensure 'show_volume' is set to True")
         show_volume= True
 
+    buy_threshold = 1.0
+    sell_threshold = 0.0
+
     # Validate if indicator plot or Strategy plot
     if is_strategy:
         strategy = get_strategy(indicator_name)
         indicator_abbr = strategy.abbreviation
         signals = strategy.signals
         addplots = []
+        buy_threshold = strategy.buy_threshold
+        sell_threshold = strategy.sell_threshold
     else:
         chart = get_plot(indicator_name)
         indicator_abbr = chart['abbreviation']
@@ -213,7 +222,7 @@ def plot(ticker, data, indicator_name, title = '', display_signals=True, num_day
         display_signals = False
 
     if (display_signals):
-        buy_signal, sell_signal = buy_sell_signals(signals)
+        buy_signal, sell_signal = buy_sell_signals(signals, buy_threshold, sell_threshold)
         if not all_values_are_nan(buy_signal):
             logger.debug("Appending addplot 'buy signals' to chart '{}'".format(indicator_name))
             apds.append(mpf.make_addplot(buy_signal,color='g',type='scatter',markersize=50,marker='^',label='Buy Signal'))
@@ -476,17 +485,18 @@ def signal_adx(data, adx_col, dip_col, din_col, TREND_UPPER, TREND_LOWER):
     prev_trend_upper = [TREND_UPPER] * 2
     prev_trend_lower = [TREND_LOWER] * 2
 
-    # BUY SIGNAL - ADX crosses above TREND_LOWER and DI+ > DI-
+    """ # BUY SIGNAL - ADX crosses above TREND_LOWER and DI+ > DI-
     if recent_crossover(prev_adx, prev_trend_lower) == 'UP' and dip.iloc[-1] > din.iloc[-1]:
-        return 'BUY'
+        return 'BUY' """
+        
 
     # SELL SIGNAL - ADX > TREND_LOWER and DI- > DI+
-    elif adx.iloc[-1] > TREND_LOWER and din.iloc[-1] > dip.iloc[-1]:
+    if adx.iloc[-1] > TREND_LOWER and din.iloc[-1] > dip.iloc[-1]:
         return "SELL"
     
     # HOLD SIGNAL - ADX > TREND_LOWER and DI+ > DI-
     elif adx.iloc[-1] > TREND_LOWER and dip.iloc[-1] > din.iloc[-1]:
-        return "HOLD"
+        return "BUY"
 
     # HOLD SIGNAL - ADX < TREND_LOWER
     elif adx.iloc[-1] < TREND_LOWER:
@@ -495,6 +505,9 @@ def signal_adx(data, adx_col, dip_col, din_col, TREND_UPPER, TREND_LOWER):
     else:
         logger.debug("ADX values likely NaN for specified range. ADX: {}, DIP: {}, DINL: {}. Return 'N/A'".format(adx.iloc[-1], dip.iloc[-1], din.iloc[-1]))
         return "N/A"
+    
+def signal_next_day_sell(data):
+    return "SELL"
 
 ###########
 # Scoring #
