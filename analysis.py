@@ -263,7 +263,7 @@ def generate_analysis(data, ticker):
 def analyze_rsi(data, ticker):
     logger.info("Analysing RSI for ticker '{}'".format(ticker))
 
-    signal_data = get_signal("rsi")['params']
+    signal_data = get_signal("Relative Strength Index")['params']
     signal_columns = [signal_data.get(x) for x in signal_data if isinstance(signal_data.get(x), str)]
     if sd.validate_columns(data, signal_columns):
         signal = signal_rsi(**({'data':data} | signal_data))
@@ -293,7 +293,7 @@ def analyze_rsi(data, ticker):
 def analyze_macd(data, ticker):
     logger.info("Analysing MACD for ticker '{}'".format(ticker))
     
-    signal_data = get_signal("macd")['params']
+    signal_data = get_signal("Moving Average Convergence/Divergence")['params']
     signal_columns = [signal_data.get(x) for x in signal_data if isinstance(signal_data.get(x), str)]
     if sd.validate_columns(data, signal_columns):
         signal = signal_macd(**({'data':data} | signal_data))
@@ -321,7 +321,7 @@ def analyze_macd(data, ticker):
 def analyze_sma(data, ticker):
     logger.info("Analysing SMA for ticker '{}'".format(ticker))
 
-    signal_data = get_signal("sma_10_50")['params']
+    signal_data = get_signal("Simple Moving Average 10/50")['params']
     signal_columns = [signal_data.get(x) for x in signal_data if isinstance(signal_data.get(x), str)]
     if sd.validate_columns(data, signal_columns):
         signal = signal_sma(**({'data':data} | signal_data))
@@ -347,7 +347,7 @@ def analyze_sma(data, ticker):
 def analyze_adx(data, ticker):
     logger.info("Analysing ADX for ticker '{}'".format(ticker))
 
-    signal_data = get_signal("adx")['params']
+    signal_data = get_signal("Average Directional Index")['params']
     signal_columns = [signal_data.get(x) for x in signal_data if isinstance(signal_data.get(x), str)]
     if sd.validate_columns(data, signal_columns):
         signal = signal_adx(**({'data':data} | signal_data))
