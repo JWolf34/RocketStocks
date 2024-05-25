@@ -485,9 +485,10 @@ def validate_columns(data, columns):
 #########
 
 def test():
-    logger.info("Running test case")
-    data = download_data("ABLLW")
-    print(data)
+    tickers = ['MSFT','NVDA', 'MMAT', 'GCT', 'QQQ', 'SPY']
+    for ticker in tickers:
+        info = get_ticker_info(ticker)
+        print("Info on ticker '{}'\n{}".format(ticker, info))
 
 if __name__ == "__main__":
     logger.info("stockdata.py initialized")
