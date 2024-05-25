@@ -27,7 +27,7 @@ ANALYSIS_PATH = "data/analysis"
 ATTACHMENTS_PATH = "discord/attachments"
 MINUTE_DATA_PATH = "data/CSV/minute"
 WATCHLISTS_PATH = "data/watchlists"
-UTILS_PATH = "utils"
+UTILS_PATH = "data/utils"
 
 # Class for limiting requests to avoid hitting the rate limit when downloading data
 

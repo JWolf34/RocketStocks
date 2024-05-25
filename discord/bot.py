@@ -21,7 +21,7 @@ logger = logging.getLogger(__name__)
 ATTACHMENTS_PATH = "discord/attachments"
 DAILY_DATA_PATH = "data/CSV/daily"
 MINUTE_DATA_PATH = "data/CSV/minute"
-UTILS_PATH = "utils"
+UTILS_PATH = "data/utils"
 
 ##################
 # Init Functions #

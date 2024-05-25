@@ -29,7 +29,7 @@ PLOTS_PATH = "data/plots"
 ANALYSIS_PATH = "data/analysis"
 ATTACHMENTS_PATH = "discord/attachments"
 MINUTE_DATA_PATH = "data/CSV/minute"
-UTILS_PATH = "utils"
+UTILS_PATH = "data/utils"
 SCORING_PATH = "data/scoring"
 
 ##############
@@ -84,7 +84,7 @@ def get_strategy(name):
 
 def get_plots():
     logger.debug("Building plots from JSON")
-    with open("utils/plots.json", 'r') as plots_json:
+    with open("{}/plots.json".format(UTILS_PATH), 'r') as plots_json:
         plots = json.load(plots_json)
         return plots
 
@@ -382,7 +382,7 @@ def analyze_adx(data, ticker):
 
 def get_signals():
     logger.debug("Building signals from JSON")
-    with open("utils/signals.json", 'r') as signals_json:
+    with open("{}/signals.json".format(UTILS_PATH), 'r') as signals_json:
         signals = json.load(signals_json)
         return signals
 
