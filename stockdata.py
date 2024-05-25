@@ -409,6 +409,11 @@ def get_next_earnings_date(ticker):
     except KeyError as e:
         logger.exception("Encountered KeyError when fetching next earnings date for ticker {}:\n{}".format(ticker, e))
         return "Earnings Date unavailable"
+
+def get_ticker_info(ticker):
+    logger.debug("Retrieving info for ticker '{}'".format(ticker))
+    stock = yf.Ticker(ticker)
+    return stock.info
     
 # Return dataframe containing data from 'all_tickers.csv'
 def get_all_tickers_data():
@@ -465,9 +470,10 @@ def validate_columns(data, columns):
 #########
 
 def test():
-    data = download_data("DYCQ")
-    #data.to_csv("DYCQ.csv")
-    generate_indicators(data)
+    tickers = ['MSFT','NVDA', 'MMAT', 'GCT', 'QQQ', 'SPY']
+    for ticker in tickers:
+        info = get_ticker_info(ticker)
+        print("Info on ticker '{}'\n{}".format(ticker, info))
 
 if __name__ == "__main__":
     logger.info("stockdata.py initialized")
