@@ -438,7 +438,6 @@ def add_to_all_tickers(ticker):
     columns = ["Name","Last","Sale","Net Change","% Change","Market Cap","Country","IPO Year","Volume","Sector","Industry"]
     ticker_data = dict.fromkeys(columns, "N/A")
 
-    #ticker_data['Symbol'] = ticker
     ticker_data['Name'] = ticker_info.get("longName")
     ticker_data['Sector'] = ticker_info.get("sector")
     ticker_data['Industry'] = ticker_info.get("industry")
@@ -447,12 +446,9 @@ def add_to_all_tickers(ticker):
 
     row = pd.DataFrame(data=[ticker_data], index = [ticker])
     row.index.name = 'Symbol'
-    print(row)
 
     all_tickers = get_all_tickers_data()
-    print(all_tickers)
     all_tickers = pd.concat([all_tickers, row])
-    print(all_tickers)
     all_tickers.to_csv("{}/all_tickers.csv".format(UTILS_PATH))
     logger.info("Added new row for ticker '{}' to all tickers".format(ticker))
 
