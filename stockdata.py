@@ -430,6 +430,32 @@ def get_all_tickers():
         logger.exception("Encountered FileNotFoundError when attempting to load data from 'all_tickers.csv:\n{}".format(e))
         logger.debug("'all_tickers.csv' file does not exist")
         return []
+    
+def add_to_all_tickers(ticker):
+    ticker_info = get_ticker_info(ticker)
+                
+    #Init dict with columns to be added to all_tickers
+    columns = ["Name","Last","Sale","Net Change","% Change","Market Cap","Country","IPO Year","Volume","Sector","Industry"]
+    ticker_data = dict.fromkeys(columns, "N/A")
+
+    #ticker_data['Symbol'] = ticker
+    ticker_data['Name'] = ticker_info.get("longName")
+    ticker_data['Sector'] = ticker_info.get("sector")
+    ticker_data['Industry'] = ticker_info.get("industry")
+    ticker_data['Market Cap'] = ticker_info.get("marketCap")
+    ticker_data['Country'] = ticker_info.get('country')
+
+    row = pd.DataFrame(data=[ticker_data], index = [ticker])
+    row.index.name = 'Symbol'
+    print(row)
+
+    all_tickers = get_all_tickers_data()
+    print(all_tickers)
+    all_tickers = pd.concat([all_tickers, row])
+    print(all_tickers)
+    all_tickers.to_csv("{}/all_tickers.csv".format(UTILS_PATH))
+    logger.info("Added new row for ticker '{}' to all tickers".format(ticker))
+
 
 # Remove selected ticker row from 'all_tickers.csv'
 def remove_from_all_tickers(ticker):
@@ -470,7 +496,7 @@ def validate_columns(data, columns):
 #########
 
 def test():
-    tickers = ['MSFT','NVDA', 'MMAT', 'GCT', 'QQQ', 'SPY']
+    tickers = []
     for ticker in tickers:
         info = get_ticker_info(ticker)
         print("Info on ticker '{}'\n{}".format(ticker, info))
