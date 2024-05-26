@@ -13,6 +13,7 @@ import analysis as an
 import datetime as dt
 import threading
 import logging
+import numpy as np
 
 # Logging configuration
 logger = logging.getLogger(__name__)
@@ -945,18 +946,18 @@ def run_bot():
             message = "### Ticker Info\n"
             try:
                 ticker_data = sd.get_all_tickers_data().loc[ticker]
-                message += "**Name:** {}\n".format(ticker_data['Name'])
-                message += "**Sector:** {}\n".format(ticker_data['Sector'])
-                message += "**Industry:** {}\n".format(ticker_data['Industry'])
-                message += "**Market Cap:** ${:,}\n".format(ticker_data['Market Cap'])
-                message += "**Country:** {}\n".format(ticker_data['Country'])
-                message += "**Next earnings date:** {}".format(sd.get_next_earnings_date(ticker))
             except KeyError as e:
                 logger.exception("Encountered KeyError when collecting ticker info:\n{}".format(e))
-                ticker_info = sd.get_ticker_info(ticker)
-                message += "**Name:** {}\n".format(ticker_info.get("longName"))
-                message += "**Category:** {}\n".format(ticker_info.get("category"))
-                message += "**Quote Type:** {}\n".format(ticker_info.get("quoteType"))
+                sd.add_to_all_tickers(ticker)
+                ticker_data = sd.get_all_tickers_data().loc[ticker]
+        
+            message += "**Name:** {}\n".format(ticker_data['Name'] if ticker_data['Name'] is not np.nan else "N/A")
+            message += "**Sector:** {}\n".format(ticker_data['Sector']if ticker_data['Sector'] is not np.nan else "N/A")
+            message += "**Industry:** {}\n".format(ticker_data['Industry'] if ticker_data['Industry'] is not np.nan else "N/A")
+            message += "**Market Cap:** {}\n".format(("$" + "{:,}".format(ticker_data['Market Cap'])) if ticker_data['Market Cap'] is not np.nan else "N/A") 
+            message += "**Country:** {}\n".format(ticker_data['Country'] if ticker_data['Country'] is not np.nan else "N/A")
+            message += "**Next earnings date:** {}".format(sd.get_next_earnings_date(ticker))
+            
             return message + "\n"
 
         # Daily Summary

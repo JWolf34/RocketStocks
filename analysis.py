@@ -491,15 +491,15 @@ def signal_adx(data, adx_col, dip_col, din_col, TREND_UPPER, TREND_LOWER):
         
 
     # SELL SIGNAL - ADX > TREND_LOWER and DI- > DI+
-    if adx.iloc[-1] > TREND_LOWER and din.iloc[-1] > dip.iloc[-1]:
+    if adx.iloc[-1] > TREND_UPPER and din.iloc[-1] > dip.iloc[-1]:
         return "SELL"
     
     # HOLD SIGNAL - ADX > TREND_LOWER and DI+ > DI-
-    elif adx.iloc[-1] > TREND_LOWER and dip.iloc[-1] > din.iloc[-1]:
+    elif adx.iloc[-1] > TREND_UPPER and dip.iloc[-1] > din.iloc[-1]:
         return "BUY"
 
     # HOLD SIGNAL - ADX < TREND_LOWER
-    elif adx.iloc[-1] < TREND_LOWER:
+    elif adx.iloc[-1] < TREND_UPPER:
         return "HOLD"
     
     else:
