@@ -885,112 +885,46 @@ def get_signal(signal):
     logger.debug("Fetching signals for '{}'".format(signal))
     return get_signals()[signal]
 
-def signal_rsi(data, rsi_col, UPPER_BOUND, LOWER_BOUND):
+def signal_rsi(close, UPPER_BOUND=70, LOWER_BOUND=30):
     logger.debug("Calculating RSI signal...")
 
-    curr_rsi = data[rsi_col].iloc[-1]
+    return ta.rsi(close) < LOWER_BOUND
 
-    # BUY SIGNAL - RSI is below lower bound
-    if curr_rsi < LOWER_BOUND:
-        return "BUY"
-    
-    # SELL SIGNAL - RSI is above upper bound
-    if curr_rsi > UPPER_BOUND:
-        return "SELL"
-
-    # HOLD SIGNAL - RSI is between upper bound and lower bound
-    else:
-        return "HOLD"
-
-def signal_macd(data, macd_col, macd_signal_col):
+def signal_macd(close):
     logger.debug("Calculating MACD signal...")
+    macds = ta.macd(close)
+    macd = macds[macds.columns[0]]
+    macd_sig = macds[macds.columns[1]]
 
-    signal = ''
-    macd = data[macd_col].iloc[-1]
-    macd_signal = data[macd_signal_col].iloc[-1]
-    prev_macd = data[macd_col].tail(2).to_list()
-    prev_macd_signal = data[macd_signal_col].tail(2).to_list()
-    #compare_0 = [0]*5
-    #cross_0 = recent_crossover(prev_macd, compare_0)
-    cross_signal = recent_crossover(prev_macd, prev_macd_signal)
-
-
-    # BUY SIGNAL - MACD is above MACD_SIGNAL and has recently crossed over MACD_SIGNAL
-    if macd > macd_signal and cross_signal == 'UP':
-        return "BUY"
-
-    # SELL SIGNAL - MACD is below signal 
-    elif macd < macd_signal:
-        return "SELL"
+    return macd > macd_sig
     
-    # HOLD SIGNAL - MACD is above the signal but has not recently crossed the signal
-    elif macd > macd_signal:
-        return "HOLD"
-    
-    else:
-        logger.debug("MACD values likely NaN for specified range. MACD: {}, MACD_SIGNAL: {}. Return 'N/A'".format(macd, macd_signal))
-        return 'N/A'
-    
-def signal_sma(data, short, long):
+def signal_sma(close, short, long):
     logger.debug("Calculating SMA signal...")
 
-    sma_short = data[short].iloc[-1]
-    sma_long = data[long].iloc[-1]
+    return ta.sma(close, short) > ta.sma(close, long)
 
-    prev_short = data[short].tail(2).to_list()
-    prev_long = data[long].tail(2).to_list()
-
-    recent_cross = recent_crossover(prev_short, prev_long)
-    
-    # BUY SIGNAL - SHORT above SMA_50 and SHORT recently crossed over SMA_50
-    if sma_short > sma_long and recent_cross == 'UP':
-        return 'BUY'
-
-    # SELL SIGNAL - SHORT is below SMA_50
-    elif sma_short < sma_long:
-        return "SELL"
-    
-    # HOLD SIGNAL - SHORT is above SMA_50 and no recent crossover
-    elif sma_short > sma_long:
-        return "HOLD"
-
-    else:
-        logger.debug("SMA values likely NaN for specified range. SMA_SHORT: {}, SMA_LONG: {}. Return 'N/A'".format(sma_short, sma_long))
-        return "N/A"
-
-def signal_adx(data, adx_col, dip_col, din_col, TREND_UPPER, TREND_LOWER):
+def signal_adx(close, highs, lows, TREND_UPPER=25, TREND_LOWER=20):
     logger.debug("Calculating ADX signal...")
 
-    adx = data[adx_col]
-    dip = data[dip_col]
-    din = data[din_col]
-
-    prev_adx = adx.tail(2).to_list()
-    prev_dip = dip.tail(2).to_list()
-    prev_din = din.tail(2).to_list()
-    prev_trend_upper = [TREND_UPPER] * 2
-    prev_trend_lower = [TREND_LOWER] * 2
-
-    """ # BUY SIGNAL - ADX crosses above TREND_LOWER and DI+ > DI-
-    if recent_crossover(prev_adx, prev_trend_lower) == 'UP' and dip.iloc[-1] > din.iloc[-1]:
-        return 'BUY' """
-        
-
-    # SELL SIGNAL - ADX > TREND_LOWER and DI- > DI+
-    if adx.iloc[-1] > TREND_UPPER and din.iloc[-1] > dip.iloc[-1]:
-        return "SELL"
+    adxs = ta.adx(close=close, high=highs, low=lows)
+    adx = adxs[adxs.columns[0]]
+    dip = adxs[adxs.columns[1]]
+    din = adxs[adxs.columns[2]]
     
-    # HOLD SIGNAL - ADX > TREND_LOWER and DI+ > DI-
-    elif adx.iloc[-1] > TREND_UPPER and dip.iloc[-1] > din.iloc[-1]:
-        return "BUY"
+    return (adx > TREND_UPPER) & (dip > din)
 
-    # HOLD SIGNAL - ADX < TREND_LOWER
-    elif adx.iloc[-1] < TREND_UPPER:
-        return "HOLD"
-    
-    else:
-        logger.debug("ADX values likely NaN for specified range. ADX: {}, DIP: {}, DINL: {}. Return 'N/A'".format(adx.iloc[-1], dip.iloc[-1], din.iloc[-1]))
-        return "N/A"
+def signal_obv(close, volume):
+    logger.debug("Calculating OBV signal...")
+
+    obv = ta.obv(close=close, volume=volume)
+    return  ta.increasing(ta.sma(obv, 10))
+
+def signal_ad(high, low, close, open, volume):
+    logger.debug("Calculating AD signal...")
+
+    ad = ta.ad(high=high, low=low, close=close, volume=volume, open=open)
+    return  ta.increasing(ta.sma(ad, 10))
+
     
 def signal_next_day_sell(data):
     return "SELL"
@@ -1139,7 +1073,14 @@ def hline(size, value):
     return hline
 
 def test():
-    pass
+    data = sd.fetch_daily_data("CAVA")
+    close = data['Close']
+    high = data['High']
+    low = data['Low'] 
+    open = data['Open']
+    volume = data['Volume']
+
+    print(signal_ad(close=close, high=high, low=low, volume=volume, open=open))
 
     # Create trends and see their returns
     #tsignals=True,
