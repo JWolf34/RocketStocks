@@ -6,14 +6,13 @@ from discord import app_commands
 from discord.ext import commands
 from discord.ext import tasks
 import asyncio
-import json
-import yfinance as yf
 import stockdata as sd
 import analysis as an
 import datetime as dt
 import threading
 import logging
 import numpy as np
+import pandas_ta as ta
 
 # Logging configuration
 logger = logging.getLogger(__name__)
@@ -353,7 +352,9 @@ def run_bot():
         app_commands.Choice(name="True", value="True"),
         app_commands.Choice(name="False", value="False") 
     ])
-    @app_commands.describe(num_days = "Number of days (data points) to plot on the chart (Default: 365)")
+    @app_commands.describe(timeframe = "Timeframe to plot the chart against (Default: 1y)")
+    @app_commands.choices(timeframe = [app_commands.Choice(name = x, value= x) for x in an.get_plot_timeframes()])
+
     @app_commands.describe(plot_type = "Style in which to plot the Close price on the chart")
     @app_commands.choices(plot_type = [app_commands.Choice(name = x, value= x) for x in an.get_plot_types()])
     @app_commands.describe(style = " Style in which to generate the chart")
@@ -365,68 +366,95 @@ def run_bot():
     ])  
     async def plot_charts(interaction: discord.interactions, tickers: str, chart: app_commands.Choice[str], visibility: app_commands.Choice[str],
                     display_signals: app_commands.Choice[str] = 'True',
-                    num_days: int = 365, 
-                    plot_type: app_commands.Choice[str] = 'line', 
+                    timeframe: str = "1y", 
+                    plot_type: app_commands.Choice[str] = 'candle', 
                     style: app_commands.Choice[str] = 'tradingview',
                     show_volume: app_commands.Choice[str] = 'False'):
 
         await interaction.response.defer(ephemeral=True)
         logger.info("/plot-chart function called by user {}".format(interaction.user.name))
-
-        # Validate optional parameters
-        if isinstance(display_signals, app_commands.Choice):
-            display_signals = display_signals.value
-        if isinstance(plot_type, app_commands.Choice):
-            plot_type= plot_type.value
-        if isinstance(style, app_commands.Choice):
-            style=style.value
-        if isinstance(show_volume, app_commands.Choice):
-            show_volume = show_volume.value
-        
-        
-
-        # Clean up data for plotting
         tickers, invalid_tickers = sd.get_list_from_tickers(tickers)
-        chart = chart.value
-        visibility = visibility.value
-        chart_info = an.get_plot(chart)
-
-        savefilepath_root = "{}/{}".format(ATTACHMENTS_PATH, "plots")
 
         # Generate indicator chart for tickers
         for ticker in tickers:
-            files = []
-            message  = ''
+            await send_charts(**locals())
 
-            # Fetch data file for ticker
+        await interaction.followup.send("Finished generating charts")
+
+    async def send_charts(interaction: discord.Interaction, ticker, **kwargs):
+            
+            # Parse ticker and data fields
+            plot_args = {}
+            plot_args['ticker'] = ticker
+
             data = sd.fetch_daily_data(ticker)
             if data.size == 0:
                 sd.download_analyze_data(ticker)
                 data = sd.fetch_daily_data(ticker)
+            plot_args['df'] = data
+            plot_args['title'] = ticker
+            plot_args['verbose'] = True
+            visibility = kwargs.pop("visibility").value
 
-            plot_success, plot_message = an.plot(ticker=ticker,
-                        data=data,
-                        indicator_name=chart,
-                        display_signals=eval(display_signals),
-                        num_days=num_days,
-                        plot_type=plot_type,
-                        style=style,
-                        show_volume=eval(show_volume),
-                        savefilepath_root=savefilepath_root
-                        )
-            if not plot_success:
-                message = "Failed to generate strategy '{}' for ticker {}. ".format(chart, ticker) + plot_message
+            # Parse plot and strategy information
+            plot_name = kwargs.pop('chart').value
+            plot_args['strategy'] = an.get_strategy_from_plot(plot_name)
+            plot = an.get_plot(plot_name)
+
+            
+             # Args for saving plot as PNG
+            plot_args['savepath'] = "{}/{}".format(ATTACHMENTS_PATH, "plots")
+            plot_args['filename'] = plot['short_name']
+
+            # Set true for indicators to plot
+            is_strategy = kwargs.pop("is_strategy", False)
+            if is_strategy:
+                pass
+            else:
+                plot_args[plot['short_name'].lower()] = True
+
+            # Parse optional requirements
+            #tsignals = kwargs.pop('display_signals')
+            #plot_args['tsignals'] = eval(tsignals) if isinstance(tsignals, str) else eval(tsignals.value)
+            plot_args['tsignals'] = False
+
+            type = kwargs.pop('plot_type')
+            plot_args['type'] = type if isinstance(type, str) else type.value
+
+            style = kwargs.pop('style')
+            plot_args['style'] = style if isinstance(style, str) else style.value
+
+            timeframe = kwargs.pop('timeframe', '1y')
+            plot_args['last'] = an.recent_bars(data, timeframe) if isinstance(timeframe, str) else an.recent_bars(data, timeframe.value)
+
+            # Override volume if plot requires volume panel
+            if plot_name not in ['On-Balance Volume', '90-Day Candles']:
+                volume = kwargs.pop('volume', 'False')
+                plot_args['volume'] = eval(volume) if isinstance(volume, str) else eval(volume.value)
+            else:
+                plot_args['volume'] = True
+
+
+
+
+            files = []
+            message  = ''
+
+            chart = an.Chart(**plot_args)
+            if chart is None:
+                message = "Failed to plot '{}' for ticker {}. ".format(plot_name, ticker) 
                 logger.error(message)
-                await interaction.followup.send(message)
-                return
-            files.append(discord.File(savefilepath_root+ "/{}/{}.png".format(ticker, chart_info['abbreviation'])))
-        
+                if visibility == 'private':
+                    await interaction.user.send(message)
+                else:
+                    await interaction.channel.send(message)
+                return None
+            files.append(discord.File(plot_args['savepath']+ "/{}/{}.png".format(ticker, plot['short_name'])))
             if visibility == 'private':
                 await interaction.user.send(message, files=files)
             else:
                 await interaction.channel.send(message, files=files)
 
-        await interaction.followup.send("Finished generating charts")
 
     # Plot graphs for the selected watchlist
     @client.tree.command(name = "run-charts", description= "Plot selected graphs for the selected tickers",)
@@ -444,7 +472,9 @@ def run_bot():
         app_commands.Choice(name="True", value="True"),
         app_commands.Choice(name="False", value="False") 
     ])
-    @app_commands.describe(num_days = "Number of days (data points) to plot on the chart (Default: 365)")
+    @app_commands.describe(timeframe = "Timeframe to plot the chart against (Default: 1y)")
+    @app_commands.choices(timeframe = [app_commands.Choice(name = x, value= x) for x in an.get_plot_timeframes()])
+
     @app_commands.describe(plot_type = "Style in which to plot the Close price on the chart")
     @app_commands.choices(plot_type = [app_commands.Choice(name = x, value= x) for x in an.get_plot_types()])
     @app_commands.describe(style = " Style in which to generate the chart")
@@ -456,66 +486,18 @@ def run_bot():
     ])  
     async def run_charts(interaction: discord.interactions, watchlist: str, chart: app_commands.Choice[str], visibility: app_commands.Choice[str],
                     display_signals: app_commands.Choice[str] = 'True',
-                    num_days: int = 365, 
-                    plot_type: app_commands.Choice[str] = 'line', 
+                    timeframe: app_commands.Choice[str] = "1y", 
+                    plot_type: app_commands.Choice[str] = 'candle', 
                     style: app_commands.Choice[str] = 'tradingview',
                     show_volume: app_commands.Choice[str] = 'False'):
 
         await interaction.response.defer(ephemeral=True)
         logger.info("/plot-chart function called by user {}".format(interaction.user.name))
-
-        # Validate optional parameters
-        if isinstance(display_signals, app_commands.Choice):
-            display_signals = display_signals.value
-        if isinstance(plot_type, app_commands.Choice):
-            plot_type= plot_type.value
-        if isinstance(style, app_commands.Choice):
-            style=style.value
-        if isinstance(show_volume, app_commands.Choice):
-            show_volume = show_volume.value
-        
-        
-
-        # Clean up data for plotting
         tickers = sd.get_tickers_from_watchlist(watchlist)
-        chart = chart.value
-        visibility = visibility.value
-        chart_info = an.get_plot(chart)
-
-        savefilepath_root = "{}/{}".format(ATTACHMENTS_PATH, "plots")
 
         # Generate indicator chart for tickers
         for ticker in tickers:
-            files = []
-            message  = ''
-
-            # Fetch data file for ticker
-            data = sd.fetch_daily_data(ticker)
-            if data.size == 0:
-                sd.download_analyze_data(ticker)
-                data = sd.fetch_daily_data(ticker)
-
-            plot_success, plot_message = an.plot(ticker=ticker,
-                        data=data,
-                        indicator_name=chart,
-                        display_signals=eval(display_signals),
-                        num_days=num_days,
-                        plot_type=plot_type,
-                        style=style,
-                        show_volume=eval(show_volume),
-                        savefilepath_root=savefilepath_root
-                        )
-            if not plot_success:
-                message = "Failed to generate strategy '{}' for ticker {}. ".format(chart, ticker) + plot_message
-                logger.error(message)
-                await interaction.followup.send(message)
-                return
-            files.append(discord.File(savefilepath_root+ "/{}/{}.png".format(ticker, chart_info['abbreviation'])))
-        
-            if visibility == 'private':
-                await interaction.user.send(message, files=files)
-            else:
-                await interaction.channel.send(message, files=files)
+            await send_charts(**locals())
 
         await interaction.followup.send("Finished generating charts")
 

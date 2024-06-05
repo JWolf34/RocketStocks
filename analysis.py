@@ -111,6 +111,9 @@ def get_plot(indicator_name):
     logger.debug("Fetching plots for {}")
     return valid_plots.get(indicator_name)
 
+def get_strategy_from_plot(name):
+    return ta.Strategy(name=name, ta=get_plot(name)['ta'])
+
 def get_plot_types():
     return ['line', 'candle', 'ohlc', 'renko', 'pnf']
 
@@ -1119,6 +1122,9 @@ def recent_bars(df, tf: str = "1y"):
     yd = yearly_divisor[tf] if tf in yearly_divisor.keys() else 0
     return int(ta.RATE["TRADING_DAYS_PER_YEAR"] / yd) if yd > 0 else df.shape[0]
 
+def get_plot_timeframes():
+    return {"all": 0, "10y": 0.1, "5y": 0.2, "4y": 0.25, "3y": 1./3, "2y": 0.5, "1y": 1, "6mo": 2, "3mo": 4}
+
 def ta_ylim(series: pd.Series, percent: float = 0.1):
     smin, smax = series.min(), series.max()
     if isinstance(percent, float) and 0 <= float(percent) <= 1:
@@ -1133,32 +1139,7 @@ def hline(size, value):
     return hline
 
 def test():
-    ticker = "CAVA"
-    data = sd.fetch_daily_data(ticker)
-
-    generate_basic_charts(data, ticker)
-    """ MACD_Strategy = ta.Strategy(name="Simple Moving Average 10/50", ta= [{"kind": "macd"}])
-
-    # help(df.ta.constants) # for more info
-    chart_lines = np.append(np.arange(-5, 6, 1), np.arange(-100, 110, 10))
-    data.ta.constants(True, chart_lines) # Adding the constants for the charts
-    data.ta.constants(False, np.array([-60, -40, 40, 60])) # Removing some constants from the DataFrame
-    print(f"Columns: {', '.join(list(data.columns))}")
-
-    Chart(data, ticker =  ticker, strategy=MACD_Strategy,
-          
-    # style: which mplfinance chart style to use. Added "random" as an option.
-    # rpad: how many bars to leave empty on the right of the chart
-    style="tradingview", title=ticker, last=recent_bars(data), rpad=10,
-    
-    # Overlap Indicators
-    #linreg=True, midpoint=True, ohlc4=True, archermas=True,
-    
-    # Example Indicators with default parameters
-    volume=False, macd=True,clr=False, #rsi=True,  zscore=True, squeeze=True, lazybear=True,
-
-    # Archer OBV and OBV MAs (https://www.tradingview.com/script/Co1ksara-Trade-Archer-On-balance-Volume-Moving-Averages-v1/)
-    #archerobv=True,
+    pass
 
     # Create trends and see their returns
     #tsignals=True,
@@ -1172,9 +1153,9 @@ def test():
 #     long_trend=ta.increasing(ta.sma(ta.rsi(closedf), 10), 5, asint=False), # trend: rising sma(rsi, 10) for the previous 5 periods
 #     long_trend=ta.squeeze(highdf, lowdf, closedf, lazybear=True, detailed=True).SQZ_PINC > 0,
 #     long_trend=ta.amat(closedf, 50, 200, mamode="sma").iloc[:,0], # trend: amat(50, 200) long signal using sma
-    show_nontrading=False, # Intraday use if needed
-    verbose=True, # More detail
-    ) """
+    #show_nontrading=False, # Intraday use if needed
+    #verbose=True, # More detail
+   
 
 if __name__ == '__main__':
     test()
