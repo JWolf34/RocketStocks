@@ -341,7 +341,7 @@ def run_bot():
     @client.tree.command(name = "plot-charts", description= "Plot selected graphs for the selected tickers",)
     @app_commands.describe(tickers = "Tickers to return charts for (separated by spaces)")
     @app_commands.describe(chart = "Charts to return for the specified tickers")
-    @app_commands.choices(chart = [app_commands.Choice(name=x, value=x) for x in sorted(an.get_plots().keys())])
+    @app_commands.choices(chart = [app_commands.Choice(name=x, value=x) for x in sorted(strategies.get_strategies().keys())])
     @app_commands.describe(visibility = "'private' to send to DMs, 'public' to send to the channel")
     @app_commands.choices(visibility =[
         app_commands.Choice(name = "private", value = 'private'),
@@ -410,11 +410,8 @@ def run_bot():
             plot_args['filename'] = strategy.short_name
 
             # Set true for indicators to plot
-            is_strategy = kwargs.pop("is_strategy", False)
-            if is_strategy:
-                pass
-            else:
-                plot_args[strategy.short_name.lower()] = True
+            for indicator in strategy.indicators:
+                plot_args[indicator] = True
 
             # Parse optional requirements
             tsignals = kwargs.pop('display_signals')
@@ -464,7 +461,7 @@ def run_bot():
     @app_commands.describe(watchlist = "Watchlist to plot the strategy against")
     @app_commands.autocomplete(watchlist=watchlist_options,)
     @app_commands.describe(chart = "Charts to return for the specified tickers")
-    @app_commands.choices(chart = [app_commands.Choice(name=x, value=x) for x in sorted(an.get_plots().keys())])
+    @app_commands.choices(chart = [app_commands.Choice(name=x, value=x) for x in sorted(strategies.get_strategies().keys())])
     @app_commands.describe(visibility = "'private' to send to DMs, 'public' to send to the channel")
     @app_commands.choices(visibility =[
         app_commands.Choice(name = "private", value = 'private'),
@@ -504,7 +501,7 @@ def run_bot():
 
         await interaction.followup.send("Finished generating charts")
 
-    # Plot strategy for the selected tickers
+    """ # Plot strategy for the selected tickers
     @client.tree.command(name = "plot-strategy", description= "Plot selected graphs for the selected tickers",)
     @app_commands.describe(tickers = "Tickers to return charts for (separated by spaces)")
     @app_commands.describe(strategy = "Strategy to generate charts for")
@@ -725,7 +722,7 @@ def run_bot():
             
                 
 
-        await interaction.followup.send("Finished generating charts")
+        await interaction.followup.send("Finished generating charts") """
         
     ###########
     # Reports #

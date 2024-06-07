@@ -374,6 +374,7 @@ def update_watchlist(watchlist_id, tickers):
 # Create a new watchlist with id 'watchlist_id'
 def create_watchlist(watchlist_id, tickers):
     logger.info("Creating watchlist with ID '{}' and tickers {}".format(watchlist_id, tickers))
+    validate_path("{}".format(WATCHLISTS_PATH, watchlist_id))
     with open("{}/{}.txt".format(WATCHLISTS_PATH, watchlist_id), 'w') as watchlist:
         watchlist.write("\n".join(tickers))
         watchlist.close()
