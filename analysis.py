@@ -400,6 +400,15 @@ class Chart(object):
                 mpf.make_addplot(mpfdf['SMA_50'], type="line", color="red", width=0.8, panel=0, label="SMA_50"),
                 
             ]
+
+        # SMA 50/200
+        sma_50_200 = kwargs.pop("sma_50_200", False)
+        if sma_50_200:
+            taplots += [
+                mpf.make_addplot(mpfdf['SMA_50'], type="line", color="blue", width=0.8, panel=0, label="SMA_50"),
+                mpf.make_addplot(mpfdf['SMA_200'], type="line", color="red", width=0.8, panel=0, label="SMA_200"),
+                
+            ]
     
         if self.strategy.name == ta.CommonStrategy.name:
             total_sma = 0 # Check if all the overlap indicators exists before adding plots
