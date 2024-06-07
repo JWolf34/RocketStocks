@@ -383,6 +383,15 @@ class Chart(object):
         if ohlc4_name in mpfdf_columns:
             taplots += [mpf.make_addplot(mpfdf[ohlc4_name], ylabel=ohlc4_name, type=kwargs.pop("ohlc4_type", "scatter"), color=kwargs.pop("ohlc4_color", "blue"), alpha=0.85, width=0.4, panel=0)]
 
+        # SMA 10/20
+        sma_10_20 = kwargs.pop("sma_10_20", False)
+        if sma_10_20:
+            taplots += [
+                mpf.make_addplot(mpfdf['SMA_10'], type="line", color="blue", width=0.8, panel=0, label="SMA_10"),
+                mpf.make_addplot(mpfdf['SMA_20'], type="line", color="red", width=0.8, panel=0, label="SMA_20"),
+                
+            ]
+        
         # SMA 10/50
         sma_10_50 = kwargs.pop("sma_10_50", False)
         if sma_10_50:
