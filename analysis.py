@@ -26,52 +26,6 @@ MINUTE_DATA_PATH = "data/CSV/minute"
 UTILS_PATH = "data/utils"
 SCORING_PATH = "data/scoring"
 
-##############
-# Strategies #
-##############
-
-# Strategy class for storing indicator data, signal calculators, and buy/sell thresholds
-# Inherits from ta.Strategy
-class Strategy():#(ta.Strategy):
-
-    def __init__(self, name, abbreviation, plots, signals, buy_threshold, sell_threshold):
-        #super(Strategy, self).__init__(name, ta)
-        self.name = name
-        self.abbreviation = abbreviation
-        self.plots = plots
-        self.signals=signals
-        self.buy_threshold = buy_threshold
-        self.sell_threshold = sell_threshold
-
-    """ def run_strategy(self, data):
-        data.ta.strategy(self) """
-
-# Return list of strategies
-def get_strategies():
-    strategies = {}
-    try:
-        with open("{}/strategies.json".format(UTILS_PATH), 'r') as strategy_file:
-            strategies_json = json.load(strategy_file)
-            
-        
-        for strategy in strategies_json:
-            name = strategy
-            abbreviation = strategies_json[strategy]['abbreviation']
-            plots = strategies_json[strategy]['plots']
-            signals = strategies_json[strategy]['signals']
-            buy_threshold = strategies_json[strategy]['buy_threshold']
-            sell_threshold = strategies_json[strategy]['sell_threshold']
-            
-            strategies[name] = (Strategy(name, abbreviation, plots, signals, buy_threshold, sell_threshold))
-
-    except FileNotFoundError as e:
-        logger.exception("Encountered FileNotFoundError when fetching 'strategies.json':\n{}".format(e))
-        
-    return strategies
-            
-def get_strategy(name):
-    return get_strategies()[name]
-
 ############
 # Plotting #
 ############
@@ -122,62 +76,46 @@ def get_plot_styles():
 
 # Generate charts used for basic stock reports (those pushed to the Reports channel
 # and those created by request via /run-reports or /fetch-reports)
-def generate_basic_charts(data, ticker):
+def generate_report_charts(data, ticker):
     logger.info("Generating basic charts for ticker '{}'".format(ticker))
     if not (os.path.isdir("data/plots/" + ticker)):
             os.makedirs("data/plots/" + ticker)
     
     # Simple Moving Average 10/50
     plot_name = "Simple Moving Average 10/50"
-    strategy = strategies.get_strategy(plot_name)
+    strategy = strategies.get_strategy(plot_name)()
     Chart(df = data, ticker = ticker, title="{} {}".format(ticker, plot_name), strategy=strategy, sma_10_50=True, volume = False, filename=strategy.short_name)
     
     # 90-Day Candlestick
     plot_name = "90-Day Candles"
-    plot = get_plot(plot_name)
-    strategy = ta.Strategy(plot_name, ta = plot['ta'])
-    Chart(df = data, ticker = ticker, title="{} 90-Day Candles".format(ticker), strategy=strategy, volume = True, last=recent_bars(data, "3mo"), rpad=2, filename=plot['short_name'])
+    strategy = ta.Strategy(plot_name, ta = [])
+    Chart(df = data, ticker = ticker, title="{} 90-Day Candles".format(ticker), strategy=strategy, volume = True, last=recent_bars(data, "3mo"), rpad=2, filename='CANDLES')
     
     # Relative Strength Index
     plot_name = "Relative Strength Index"
-    plot = get_plot(plot_name)
-    strategy = ta.Strategy(plot_name, ta = plot['ta'])
-    Chart(df = data, ticker = ticker, title = "{} Relative Strenth Index".format(ticker), strategy = strategy, rsi=True, volume=False, filename=plot['short_name'])
+    strategy = strategies.get_strategy(plot_name)()
+    Chart(df = data, ticker = ticker, title = "{} {}".format(ticker, plot_name), strategy = strategy, rsi=True, volume=False, filename=strategy.short_name)
     
     # On-Balance Volume
     plot_name = "On-Balance Volume"
-    plot = get_plot(plot_name)
-    strategy = ta.Strategy(plot_name, ta = plot['ta'])
-    Chart(df = data, ticker = ticker, title = "{} On-Balance Volume".format(ticker), strategy = strategy, obv=True, volume=True, last=recent_bars(data, tf="3mo"), rpad=2, filename=plot['short_name'])
+    strategy = strategies.get_strategy(plot_name)()
+    Chart(df = data, ticker = ticker, title = "{} {}".format(ticker, plot_name), strategy = strategy, obv=True, volume=True, last=recent_bars(data, tf="3mo"), rpad=2, filename=strategy.short_name)
     
     # Accumulation/Distribution Index
     plot_name = "Accumulation/Distribution Index"
-    plot = get_plot(plot_name)
-    strategy = ta.Strategy(plot_name, ta = plot['ta'])
-    Chart(df = data, ticker = ticker, title = "{} Accumulation/Distribution Index".format(ticker), strategy = strategy, ad=True, volume=False, last=recent_bars(data, tf="3mo"), rpad=2, filename=plot['short_name'])
+    strategy = strategies.get_strategy(plot_name)()
+    Chart(df = data, ticker = ticker, title = "{} {}".format(ticker, plot_name), strategy = strategy, ad=True, volume=False, last=recent_bars(data, tf="3mo"), rpad=2, filename=strategy.short_name)
 
     # Moving Average Convergence/Divergence
     plot_name = "Moving Average Convergence/Divergence"
-    plot = get_plot(plot_name)
-    strategy = ta.Strategy(plot_name, ta = plot['ta'])
-    Chart(df = data, ticker = ticker, title = "{} Moving Average Convergence/Divergence".format(ticker), strategy = strategy, macd=True, volume=False, filename=plot['short_name'])
+    strategy = strategies.get_strategy(plot_name)()
+    Chart(df = data, ticker = ticker, title = "{} {}".format(ticker, plot_name), strategy = strategy, macd=True, volume=False, filename=strategy.short_name)
 
     # Average Directional Index
     plot_name = "Average Directional Index"
-    plot = get_plot(plot_name)
-    strategy = ta.Strategy(plot_name, ta = plot['ta'])
-    Chart(df = data, ticker = ticker, title = "{} Average Directional Index".format(ticker), strategy = strategy, adx=True, volume=False, filename=plot['short_name'])
+    strategy = strategies.get_strategy(plot_name)()
+    Chart(df = data, ticker = ticker, title = "{} {}".format(ticker, plot_name), strategy = strategy, adx=True, volume=False, filename=strategy.short_name)
 
-# Generate all charts available from plots (see get_plots() amd 'plots.json')
-def generate_all_charts(data, ticker):
-    logger.info("Generating all charts for ticker '{}'".format(ticker))
-    if not (os.path.isdir("data/plots/" + ticker)):
-            os.makedirs("data/plots/" + ticker)
-
-    # Generate technical indicator charts
-
-    for indicator in get_plots():
-        plot(ticker, data, indicator_name=indicator)
 
 class Chart(object):
     def __init__(self, df: pd.DataFrame = None, ticker: str = "SPY", strategy: ta.Strategy = ta.CommonStrategy, *args, **kwargs):
@@ -295,16 +233,6 @@ class Chart(object):
         # Cumulative Log Return
         clr = kwargs.pop("clr", False)
         clr_name = self.df.ta.log_return(cumulative=True, append=True).name if clr else ""
-
-        # Could be used in the future for plotting several useful indicators, but commenting this out since it's one of the main report graphs
-        """ # RSI
-        rsi = kwargs.pop("rsi", False)
-        rsi_length = kwargs.pop("rsi_length", None)
-        if isinstance(rsi_length, int) and rsi_length > 1:
-            rsi_name = self.df.ta.rsi(length=rsi_length, append=True).name
-        elif rsi:
-            rsi_name = self.df.ta.rsi(append=True).name
-        else: rsi_name = "" """
             
         # ZScore
         zscore = kwargs.pop("zscore", False)
@@ -315,13 +243,6 @@ class Chart(object):
             zs_name = self.df.ta.zscore(append=True).name
         else: zs_name = ""
 
-        # Could be used in the future for plotting several useful indicators, but commenting this out since it's one of the main report graphs
-        """ # MACD
-        macd = kwargs.pop("macd", False)
-        macd_name = ""
-        if macd:
-            macds = self.df.ta.macd(append=True)
-            macd_name = macds.name """
 
         # Squeeze
         squeeze = kwargs.pop("squeeze", False)
@@ -645,8 +566,8 @@ def run_analysis(tickers):
             if sd.validate_ticker(ticker):
                 sd.download_analyze_data(ticker)
         data = sd.fetch_daily_data(ticker)
-        generate_basic_charts(data, ticker)
-        generate_analysis(data, ticker)
+        generate_report_charts(data, ticker)
+        #generate_analysis(data, ticker)
 
 # Running analysis on techincal indicators to generate buy/sell signals
 def generate_analysis(data, ticker):

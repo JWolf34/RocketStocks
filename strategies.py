@@ -19,22 +19,6 @@ Process for adding a new Strategy
 # Indicators
 class SMA_10_20_Strategy(ta.Strategy):
 
-    class Backtest(backtesting.Strategy):
-
-        def init(self):
-            super().init()
-            self.strategy = SMA_10_20_Strategy
-            self.long_position = False
-
-        def next(self):
-            signals = self.strategy.signals(self.strategy, self.data.df)
-            if signals.iloc[-1] and not self.long_position:
-                self.buy()
-                self.long_position = True
-            elif not signals.iloc[-1] and self.long_position:
-                self.position.close()
-                self.long_position = False
-
     def __init__(self):
         self.name = "Simple Moving Average 10/20"
         self.short_name = "SMA_10_20"

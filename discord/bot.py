@@ -776,8 +776,8 @@ def run_bot():
         message = build_report_header()
         message += build_ticker_info()
         message += build_daily_summary()
-        message += build_indicator_analysis()
-        message += build_strategy_analysis()
+        #message += build_indicator_analysis()
+        #message += build_strategy_analysis()
         files = build_chart_files()
 
 
