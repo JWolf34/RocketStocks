@@ -16,6 +16,22 @@ Process for adding a new Strategy
 
 '''
 
+class Backtest(backtesting.Strategy):
+
+        def init(self, signals):
+            super().init()
+            self.long_position = False
+            self.signals = signals
+
+        def next(self): 
+            day = self.data.__i
+            if self.signals.iloc[day] and not self.long_position:
+                self.buy()
+                self.long_position = True
+            elif not self.signals.iloc[day] and self.long_position:
+                self.position.close()
+                self.long_position = False
+
 # Indicators
 class SMA_10_20_Strategy(ta.Strategy):
 
@@ -295,15 +311,16 @@ class SMA_10_50_ADX_Strategy(ta.Strategy):
 
         def init(self):
             super().init()
-            self.strategy = SMA_10_50_ADX_Strategy
             self.long_position = False
+            self.strategy = SMA_10_50_ADX_Strategy
+            self.signals = self.strategy.signals(self.strategy, self.data)
 
-        def next(self):
-            signals = self.strategy.signals(self.strategy, self.data.df)
-            if signals.iloc[-1] and not self.long_position:
+        def next(self): 
+            day = self.data
+            if self.signals.iloc[day] and not self.long_position:
                 self.buy()
                 self.long_position = True
-            elif not signals.iloc[-1] and self.long_position:
+            elif not self.signals.iloc[day] and self.long_position:
                 self.position.close()
                 self.long_position = False
 
@@ -319,6 +336,14 @@ class SMA_10_50_ADX_Strategy(ta.Strategy):
             return an.signal_sma(data['Close'], 10, 50) & an.signal_adx(close=data['Close'], highs = data['High'], lows= data['Low'])
         except Exception as e:
             return pd.Series([False])
+        
+    def override_chart_args(args):
+        pass
+
+    def backtest(self, data):
+        data['Signals'] = self.signals(data)
+        bt = Backtest(data, Backtest, cash=10000)
+        
 
     
 def get_strategies():
@@ -340,12 +365,14 @@ if __name__ =='__main__':
 
     total_return = 0
     tickers = sd.get_tickers_from_all_watchlists()
+    strategy = SMA_10_50_ADX_Strategy()
     num_tickers = 1
     for ticker in tickers:
         print("***** BACKTESTING {}, {}/{} *****".format(ticker, num_tickers, len(tickers)))
         sd.download_analyze_data(ticker)
         data = sd.fetch_daily_data(ticker)
         data = data.tail(an.recent_bars(data, tf='10y'))
+        signals = strategy.signals(data)
 
         bt = backtesting.Backtest(data, SMA_10_50_ADX_Strategy.Backtest, cash=10000)
         stats = bt.run()

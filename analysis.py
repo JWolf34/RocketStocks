@@ -7,10 +7,10 @@ import mplfinance as mpf
 import stockdata as sd
 import csv
 import logging
-from tqdm import tqdm
 import json
 from itertools import zip_longest
 import random as rnd
+import strategies
 
 # Logging configuration
 logger = logging.getLogger(__name__)
@@ -128,9 +128,9 @@ def generate_basic_charts(data, ticker):
             os.makedirs("data/plots/" + ticker)
     
     # Simple Moving Average 10/50
-    plot = get_plot("Simple Moving Average 10/50")
-    strategy = ta.Strategy("Simple Moving Average 10/50", ta = plot['ta'])
-    Chart(df = data, ticker = ticker, title="{} Simple Moving Average 10/50".format(ticker), strategy=strategy, sma_10_50=True, volume = False, filename=plot['short_name'])
+    plot_name = "Simple Moving Average 10/50"
+    strategy = strategies.get_strategy(plot_name)
+    Chart(df = data, ticker = ticker, title="{} {}".format(ticker, plot_name), strategy=strategy, sma_10_50=True, volume = False, filename=strategy.short_name)
     
     # 90-Day Candlestick
     plot_name = "90-Day Candles"
