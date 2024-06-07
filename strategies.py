@@ -38,14 +38,16 @@ class SMA_10_50_ADX_Strategy(ta.Strategy, backtesting.Strategy):
         self.short_name = short_name
         self.ta = ta
         self.indicators = indicators
+        backtesting.Strategy.init(self)
 
     def init(self):
-        backtesting.Strategy.init(self)
+        pass
 
     def signals(self, data):
         return an.signal_sma(data['Close'], 10, 50) & an.signal_adx(close=data['Close'], highs = data['High'], lows= data['Low'])
 
     def next(self):
+        super().next()
         signal = self.signals(data)[-1]
         if signal:
             self.buy()
