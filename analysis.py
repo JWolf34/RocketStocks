@@ -355,8 +355,8 @@ class Chart(object):
         if tsig:
             # Long Trend requires Series Comparison (<=. <, = >, >=)
             # or Trade Logic that yields trends in binary.
-            default_long = mpfdf["SMA_10"] > mpfdf["SMA_20"]
-            long_trend = kwargs.pop("long_trend", default_long)
+            #default_long = mpfdf["SMA_10"] > mpfdf["SMA_20"]
+            long_trend = kwargs.pop("long_trend", "")
             if not isinstance(long_trend, pd.Series):
                 raise(f"[X] Must be a Series that has boolean values or values of 0s and 1s")
             mpfdf.ta.percent_return(append=True)
@@ -545,7 +545,7 @@ class Chart(object):
             taplots += [
                 mpf.make_addplot(mpfdf["ACTRET_1"], ylabel="Active % Return", type="bar", color="green", alpha=0.45, width=0.8, panel=cpanel(), ylim=treturn_ylim),
                 mpf.make_addplot(pd.Series(mpfdf["ACTRET_1"].mean(), index=mpfdf["ACTRET_1"].index), color="blue", width=1, panel=cpanel(), ylim=treturn_ylim),
-                mpf.make_addplot(mpfdf["0"], color="black", width=1, panel=cpanel(), ylim=treturn_ylim),
+                mpf.make_addplot(hline(mpfdf.shape[0], 0), color="black", width=1, panel=cpanel(), ylim=treturn_ylim),
             ]
             self.mpfchart["plot_ratios"] += common_plot_ratio # Required to add a new Panel
 
@@ -556,7 +556,7 @@ class Chart(object):
                 mpf.make_addplot(mpfdf["CUMACTRET_1"], ylabel="Cum Trend Return", type="bar", color="silver", alpha=0.45, width=1, panel=cpanel(), ylim=cumactret_ylim),
                 mpf.make_addplot(0.9 * buys * mpfdf["CUMACTRET_1"], type="scatter", marker="^", markersize=14, color="green", panel=cpanel(), ylim=cumactret_ylim),
                 mpf.make_addplot(1.1 * sells * mpfdf["CUMACTRET_1"], type="scatter", marker="v", markersize=14, color="red", panel=cpanel(), ylim=cumactret_ylim),
-                mpf.make_addplot(mpfdf["0"], color="black", width=1, panel=cpanel(), ylim=cumactret_ylim),
+                mpf.make_addplot(hline(mpfdf.shape[0], 0), color="black", width=1, panel=cpanel(), ylim=cumactret_ylim),
             ]            
             self.mpfchart["plot_ratios"] += common_plot_ratio # Required to add a new Panel
 

@@ -12,7 +12,7 @@ import datetime as dt
 import threading
 import logging
 import numpy as np
-import pandas_ta as ta
+import strategies
 
 # Logging configuration
 logger = logging.getLogger(__name__)
@@ -397,26 +397,29 @@ def run_bot():
             visibility = kwargs.pop("visibility").value
 
             # Parse plot and strategy information
-            plot_name = kwargs.pop('chart').value
-            plot_args['strategy'] = an.get_strategy_from_plot(plot_name)
-            plot = an.get_plot(plot_name)
+            strategy = strategies.get_strategy(kwargs.pop('chart').value)()
+            plot_args['strategy'] = strategy
+            plot_args['long_trend'] = strategy.signals(data)
+            plot_name = strategy.name
+            
+
 
             
              # Args for saving plot as PNG
             plot_args['savepath'] = "{}/{}".format(ATTACHMENTS_PATH, "plots")
-            plot_args['filename'] = plot['short_name']
+            plot_args['filename'] = strategy.short_name
 
             # Set true for indicators to plot
             is_strategy = kwargs.pop("is_strategy", False)
             if is_strategy:
                 pass
             else:
-                plot_args[plot['short_name'].lower()] = True
+                plot_args[strategy.short_name.lower()] = True
 
             # Parse optional requirements
-            #tsignals = kwargs.pop('display_signals')
-            #plot_args['tsignals'] = eval(tsignals) if isinstance(tsignals, str) else eval(tsignals.value)
-            plot_args['tsignals'] = False
+            tsignals = kwargs.pop('display_signals')
+            plot_args['tsignals'] = eval(tsignals) if isinstance(tsignals, str) else eval(tsignals.value)
+            #plot_args['tsignals'] = False
 
             type = kwargs.pop('plot_type')
             plot_args['type'] = type if isinstance(type, str) else type.value
@@ -449,7 +452,7 @@ def run_bot():
                 else:
                     await interaction.channel.send(message)
                 return None
-            files.append(discord.File(plot_args['savepath']+ "/{}/{}.png".format(ticker, plot['short_name'])))
+            files.append(discord.File(plot_args['savepath']+ "/{}/{}.png".format(ticker, strategy.short_name)))
             if visibility == 'private':
                 await interaction.user.send(message, files=files)
             else:
