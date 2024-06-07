@@ -16,22 +16,6 @@ Process for adding a new Strategy
 
 '''
 
-class Backtest(backtesting.Strategy):
-
-        def init(self, signals):
-            super().init()
-            self.long_position = False
-            self.signals = signals
-
-        def next(self): 
-            day = self.data.__i
-            if self.signals.iloc[day] and not self.long_position:
-                self.buy()
-                self.long_position = True
-            elif not self.signals.iloc[day] and self.long_position:
-                self.position.close()
-                self.long_position = False
-
 # Indicators
 class SMA_10_20_Strategy(ta.Strategy):
 
@@ -65,22 +49,6 @@ class SMA_10_20_Strategy(ta.Strategy):
 
 class SMA_10_50_Strategy(ta.Strategy):
 
-    class Backtest(backtesting.Strategy):
-
-        def init(self):
-            super().init()
-            self.strategy = SMA_10_50_ADX_Strategy
-            self.long_position = False
-
-        def next(self):
-            signals = self.strategy.signals(self.strategy, self.data.df)
-            if signals.iloc[-1] and not self.long_position:
-                self.buy()
-                self.long_position = True
-            elif not signals.iloc[-1] and self.long_position:
-                self.position.close()
-                self.long_position = False
-
     def __init__(self):
         self.name = "Simple Moving Average 10/50"
         self.short_name = "SMA_10_50"
@@ -95,22 +63,7 @@ class SMA_10_50_Strategy(ta.Strategy):
 
 class SMA_50_200_Strategy(ta.Strategy):
 
-    class Backtest(backtesting.Strategy):
-
-        def init(self):
-            super().init()
-            self.strategy = SMA_50_200_Strategy
-            self.long_position = False
-
-        def next(self):
-            signals = self.strategy.signals(self.strategy, self.data.df)
-            if signals.iloc[-1] and not self.long_position:
-                self.buy()
-                self.long_position = True
-            elif not signals.iloc[-1] and self.long_position:
-                self.position.close()
-                self.long_position = False
-
+    
     def __init__(self):
         self.name = "Simple Moving Average 50/200"
         self.short_name = "SMA_50_200"
@@ -124,22 +77,6 @@ class SMA_50_200_Strategy(ta.Strategy):
             return pd.Series([False])
         
 class RSI_Strategy(ta.Strategy):
-
-    class Backtest(backtesting.Strategy):
-
-        def init(self):
-            super().init()
-            self.strategy = RSI_Strategy
-            self.long_position = False
-
-        def next(self):
-            signals = self.strategy.signals(self.strategy, self.data.df)
-            if signals.iloc[-1] and not self.long_position:
-                self.buy()
-                self.long_position = True
-            elif not signals.iloc[-1] and self.long_position:
-                self.position.close()
-                self.long_position = False
 
     def __init__(self):
         self.name = "Relative Strength Index"
@@ -155,22 +92,6 @@ class RSI_Strategy(ta.Strategy):
         
 class OBV_Strategy(ta.Strategy):
 
-    class Backtest(backtesting.Strategy):
-
-        def init(self):
-            super().init()
-            self.strategy = OBV_Strategy
-            self.long_position = False
-
-        def next(self):
-            signals = self.strategy.signals(self.strategy, self.data.df)
-            if signals.iloc[-1] and not self.long_position:
-                self.buy()
-                self.long_position = True
-            elif not signals.iloc[-1] and self.long_position:
-                self.position.close()
-                self.long_position = False
-
     def __init__(self):
         self.name = "On-Balance Volume"
         self.short_name = "OBV"
@@ -185,22 +106,6 @@ class OBV_Strategy(ta.Strategy):
         
 class AD_Strategy(ta.Strategy):
 
-    class Backtest(backtesting.Strategy):
-
-        def init(self):
-            super().init()
-            self.strategy = AD_Strategy
-            self.long_position = False
-
-        def next(self):
-            signals = self.strategy.signals(self.strategy, self.data.df)
-            if signals.iloc[-1] and not self.long_position:
-                self.buy()
-                self.long_position = True
-            elif not signals.iloc[-1] and self.long_position:
-                self.position.close()
-                self.long_position = False
-
     def __init__(self):
         self.name = "Accumulation/Distribution Index"
         self.short_name = "AD"
@@ -214,22 +119,6 @@ class AD_Strategy(ta.Strategy):
             return pd.Series([False])
         
 class AD_Strategy(ta.Strategy):
-
-    class Backtest(backtesting.Strategy):
-
-        def init(self):
-            super().init()
-            self.strategy = AD_Strategy
-            self.long_position = False
-
-        def next(self):
-            signals = self.strategy.signals(self.strategy, self.data.df)
-            if signals.iloc[-1] and not self.long_position:
-                self.buy()
-                self.long_position = True
-            elif not signals.iloc[-1] and self.long_position:
-                self.position.close()
-                self.long_position = False
 
     def __init__(self):
         self.name = "Accumulation/Distribution Index"
@@ -245,22 +134,6 @@ class AD_Strategy(ta.Strategy):
         
 class MACD_Strategy(ta.Strategy):
 
-    class Backtest(backtesting.Strategy):
-
-        def init(self):
-            super().init()
-            self.strategy = MACD_Strategy
-            self.long_position = False
-
-        def next(self):
-            signals = self.strategy.signals(self.strategy, self.data.df)
-            if signals.iloc[-1] and not self.long_position:
-                self.buy()
-                self.long_position = True
-            elif not signals.iloc[-1] and self.long_position:
-                self.position.close()
-                self.long_position = False
-
     def __init__(self):
         self.name = "Moving Average Convergence/Divergence"
         self.short_name = "MACD"
@@ -274,22 +147,6 @@ class MACD_Strategy(ta.Strategy):
             return pd.Series([False])
         
 class ADX_Strategy(ta.Strategy):
-
-    class Backtest(backtesting.Strategy):
-
-        def init(self):
-            super().init()
-            self.strategy = ADX_Strategy
-            self.long_position = False
-
-        def next(self):
-            signals = self.strategy.signals(self.strategy, self.data.df)
-            if signals.iloc[-1] and not self.long_position:
-                self.buy()
-                self.long_position = True
-            elif not signals.iloc[-1] and self.long_position:
-                self.position.close()
-                self.long_position = False
 
     def __init__(self):
         self.name = "Average Directional Index"
@@ -306,23 +163,6 @@ class ADX_Strategy(ta.Strategy):
 
 # Strategies
 class SMA_10_50_ADX_Strategy(ta.Strategy):
-
-    class Backtest(backtesting.Strategy):
-
-        def init(self):
-            super().init()
-            self.long_position = False
-            self.strategy = SMA_10_50_ADX_Strategy
-            self.signals = self.strategy.signals(self.strategy, self.data)
-
-        def next(self): 
-            day = self.data
-            if self.signals.iloc[day] and not self.long_position:
-                self.buy()
-                self.long_position = True
-            elif not self.signals.iloc[day] and self.long_position:
-                self.position.close()
-                self.long_position = False
 
     def __init__(self):
         self.name = "SMA 10/50 & ADX Strategy"
@@ -341,8 +181,7 @@ class SMA_10_50_ADX_Strategy(ta.Strategy):
         pass
 
     def backtest(self, data):
-        data['Signals'] = self.signals(data)
-        bt = Backtest(data, Backtest, cash=10000)
+        pass
         
 
     
