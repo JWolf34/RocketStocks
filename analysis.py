@@ -120,6 +120,7 @@ def generate_report_charts(data, ticker):
 class Chart(object):
     def __init__(self, df: pd.DataFrame = None, ticker: str = "SPY", strategy: ta.Strategy = ta.CommonStrategy, *args, **kwargs):
         self.verbose = kwargs.pop("verbose", False)
+        logging.info("Charting {} for ticker {}".format(strategy.name, ticker))
 
         self.ticker = ticker
         if isinstance(df, pd.DataFrame) and df.ta.datetime_ordered:
@@ -134,16 +135,20 @@ class Chart(object):
         self._validate_ta_strategy(strategy)
 
         # Build TA and Plot
-        self.df.ta.strategy(self.strategy, verbose=self.verbose)
+        #logging.info("Generating TA...")
+        #self.df.ta.strategy(self.strategy, verbose=self.verbose)
+        logging.info("Building plot for ticker '{}'".format(self.ticker))
         self._plot(**kwargs)
 
     def _validate_ta_strategy(self, strategy):
+        logging.info("Validating strategy to be charted")
         if strategy is not None or isinstance(strategy, ta.Strategy):
             self.strategy = strategy
         else:
             self.strategy = ta.CommonStrategy        
 
     def _validate_chart_kwargs(self, **kwargs):
+        logging.info("Validating chart kwargs")
         """Chart Settings"""
         self.config = {}
         self.config["last"] = kwargs.pop("last", recent_bars(self.df))
@@ -152,6 +157,7 @@ class Chart(object):
         self.config["volume"] = kwargs.pop("volume", True)
 
     def _validate_mpf_kwargs(self, **kwargs):
+        logging.info("Validating mpf args")
         # mpf global chart settings
         default_chart = mpf.available_styles()[-1]
         default_mpf_width = {
@@ -180,11 +186,6 @@ class Chart(object):
         
         self.mpfchart = mpfchart
 
-    def _attribution(self):
-        print(f"\nPandas v: {pd.__version__} [pip install pandas] https://github.com/pandas-dev/pandas")
-        print(f"Data from AlphaVantage v: 1.0.19 [pip install alphaVantage-api] http://www.alphavantage.co https://github.com/twopirllc/AlphaVantageAPI")
-        print(f"Technical Analysis with Pandas TA v: {ta.version} [pip install pandas_ta] https://github.com/twopirllc/pandas-ta")
-        print(f"Charts by Matplotlib Finance v: {mpf.__version__} [pip install mplfinance] https://github.com/matplotlib/mplfinance\n")
 
     def _right_pad_df(self, rpad: int, delta_unit: str = "D", range_freq: str = "B"):
         if rpad > 0:
@@ -218,7 +219,9 @@ class Chart(object):
 
         # Last Second Default TA Indicators
 
-        # Linear Regression
+
+        # Disable excess analysis in the interest of speed
+        """ # Linear Regression
         linreg = kwargs.pop("linreg", False)
         linreg_name = self.df.ta.linreg(append=True).name if linreg else ""
 
@@ -229,10 +232,6 @@ class Chart(object):
         # OHLC4
         ohlc4 = kwargs.pop("ohlc4", False)
         ohlc4_name = self.df.ta.ohlc4(append=True).name if ohlc4 else ""
-
-        # Cumulative Log Return
-        clr = kwargs.pop("clr", False)
-        clr_name = self.df.ta.log_return(cumulative=True, append=True).name if clr else ""
             
         # ZScore
         zscore = kwargs.pop("zscore", False)
@@ -265,7 +264,7 @@ class Chart(object):
         if aobv:
             aobvs = self.df.ta.aobv(append=True)
             aobv_name = aobvs.name
-
+ """
 
         # Pad and trim Chart
         self._right_pad_df(rpad)
@@ -286,13 +285,18 @@ class Chart(object):
             sells = np.where(mpfdf.TS_Exits > 0, 1, np.nan)
             mpfdf["ACTRET_1"] = mpfdf.TS_Trends * mpfdf.PCTRET_1
 
+            # Generate CLR TA
+            # Cumulative Log Return
+            #clr_name = self.df.ta.log_return(cumulative=True, append=True).name if clr else ""
+
         # BEGIN: Custom TA Plots and Panels
         # Modify the area below 
         taplots = [] # Holds all the additional plots
 
         # Panel 0: Price Overlay
 
-        # Linear Regression
+        # Commented out graphs made for disabled
+        """ # Linear Regression
         if linreg_name in mpfdf_columns:
             taplots += [mpf.make_addplot(mpfdf[linreg_name], type=kwargs.pop("linreg_type", "line"), color=kwargs.pop("linreg_color", "black"), linestyle="-.", width=1.2, panel=0)]
 
@@ -303,7 +307,14 @@ class Chart(object):
         # OHLC4
         if ohlc4_name in mpfdf_columns:
             taplots += [mpf.make_addplot(mpfdf[ohlc4_name], ylabel=ohlc4_name, type=kwargs.pop("ohlc4_type", "scatter"), color=kwargs.pop("ohlc4_color", "blue"), alpha=0.85, width=0.4, panel=0)]
-
+ 
+         # Archer Moving Averages
+        if len(ama_name):
+            amat_sr_ = mpfdf[amas.columns[-1]][mpfdf[amas.columns[-1]] > 0]
+            amat_sr = amat_sr_.index.to_list()
+        else:
+            amat_sr = None
+ """
         # SMA 10/20
         sma_10_20 = kwargs.pop("sma_10_20", False)
         if sma_10_20:
@@ -331,7 +342,8 @@ class Chart(object):
                 
             ]
     
-        if self.strategy.name == ta.CommonStrategy.name:
+        # Maybe useful later? For now, eh
+        """ if self.strategy.name == ta.CommonStrategy.name:
             total_sma = 0 # Check if all the overlap indicators exists before adding plots
             for c in ["SMA_10", "SMA_20", "SMA_50", "SMA_200"]:
                 if c in mpfdf_columns: total_sma += 1
@@ -344,7 +356,7 @@ class Chart(object):
                     mpf.make_addplot(mpfdf["SMA_200"], color="maroon", width=3, panel=0),
                 ]
                 taplots += ta_smas
-
+ """
         # Buy/Sell Signals
         if tsig:
             taplots += [
@@ -352,12 +364,7 @@ class Chart(object):
                 mpf.make_addplot(1.015 * mpfdf['Close'] * sells, type="scatter", marker="v", markersize=26, color="fuchsia", panel=0),
             ]
                 
-        # Archer Moving Averages
-        if len(ama_name):
-            amat_sr_ = mpfdf[amas.columns[-1]][mpfdf[amas.columns[-1]] > 0]
-            amat_sr = amat_sr_.index.to_list()
-        else:
-            amat_sr = None
+       
 
         # Panel 1: If volume=True, the add the VOL MA. Since we know there is only one, we immediately pop it.
         if self.config["volume"]:
@@ -370,7 +377,7 @@ class Chart(object):
         # Panels 2+
         common_plot_ratio = (3,)
 
-        # Archer OBV
+        """ # Archer OBV
         if len(aobv_name):
             _p = kwargs.pop("aobv_percenty", 0.2)
             aobv_ylim = ta_ylim(mpfdf[aobvs.columns[0]], _p)
@@ -380,9 +387,9 @@ class Chart(object):
                 mpf.make_addplot(mpfdf[aobvs.columns[3]], color="green", width=1, panel=cpanel(), ylim=aobv_ylim),
                 mpf.make_addplot(mpfdf[aobvs.columns[4]], color="red", width=1.2, panel=cpanel(), ylim=aobv_ylim),
             ]
-            self.mpfchart["plot_ratios"] += common_plot_ratio # Required to add a new Panel
+            self.mpfchart["plot_ratios"] += common_plot_ratio # Required to add a new Panel """
 
-        # Cumulative Return
+        """ # Cumulative Return
         if clr_name in mpfdf_columns:
             _p = kwargs.pop("clr_percenty", 0.1)
             clr_ylim = ta_ylim(mpfdf[clr_name], _p)
@@ -391,7 +398,7 @@ class Chart(object):
             if (1 - _p) * mpfdf[clr_name].min() < 0 and (1 + _p) * mpfdf[clr_name].max() > 0:
                 taplots += [mpf.make_addplot(mpfdf["0"], color="gray", width=1.2, panel=cpanel(), ylim=clr_ylim)]
             self.mpfchart["plot_ratios"] += common_plot_ratio # Required to add a new Panel
-
+ """
         # RSI
         rsi = kwargs.pop("rsi", False)
         if rsi:
@@ -447,7 +454,7 @@ class Chart(object):
             self.mpfchart["plot_ratios"] += common_plot_ratio # Required to add a new Panel 
 
 
-        # ZScore
+        """ # ZScore
         if zs_name in mpfdf_columns:
             _p = kwargs.pop("zascore_percenty", 0.2)
             zs_ylim = ta_ylim(mpfdf[zs_name], _p)
@@ -476,7 +483,7 @@ class Chart(object):
                 mpf.make_addplot(mpfdf[squeezes.columns[4]], ylabel=squeeze_name, color="green", width=2, panel=cpanel(), ylim=sqz_ylim),
                 mpf.make_addplot(mpfdf[squeezes.columns[5]], color="red", width=1.8, panel=cpanel(), ylim=sqz_ylim),
             ]
-            self.mpfchart["plot_ratios"] += common_plot_ratio # Required to add a new Panel
+            self.mpfchart["plot_ratios"] += common_plot_ratio # Required to add a new Panel """
 
         if tsig:
             _p = kwargs.pop("tsig_percenty", 0.23)
@@ -505,17 +512,17 @@ class Chart(object):
             additional_ta = []
             chart_title  = f"{chart_title} [{self.strategy.name}] (last {self.config['last']} bars)"
             chart_title += f"\nSince {mpfdf.index[0]} till {mpfdf.index[-1]}"
-            if len(linreg_name) > 0: additional_ta.append(linreg_name)
+            """ if len(linreg_name) > 0: additional_ta.append(linreg_name)
             if len(midpoint_name) > 0: additional_ta.append(midpoint_name)
-            if len(ohlc4_name) > 0: additional_ta.append(ohlc4_name)
+            if len(ohlc4_name) > 0: additional_ta.append(ohlc4_name) """
             if len(additional_ta) > 0:
                 chart_title += f"\nIncluding: {', '.join(additional_ta)}"
 
-        if amat_sr:
+        """ if amat_sr:
             vlines_ = dict(vlines=amat_sr, alpha=0.1, colors="red")
         else:
             # Hidden because vlines needs valid arguments even if None 
-            vlines_ = dict(vlines=mpfdf.index[0], alpha=0, colors="white")
+            vlines_ = dict(vlines=mpfdf.index[0], alpha=0, colors="white") """
 
         # Build out path to save plot to
         filename = kwargs.pop("filename", "plot")
@@ -526,7 +533,7 @@ class Chart(object):
         
         save      = dict(fname=savefilepath,dpi=500,pad_inches=0.25)
 
-        plot_ratios = self.mpfchart['plot_ratios']
+        logging.info("Plotting...")
         # Create Final Plot
         mpf.plot(mpfdf,
             title=chart_title,
@@ -540,12 +547,11 @@ class Chart(object):
             xrotation=self.mpfchart["xrotation"],
             update_width_config=self.mpfchart["width_config"],
             show_nontrading=self.mpfchart["non_trading"],
-            vlines=vlines_,
+            #vlines=vlines_,
             addplot=taplots,
             savefig=save
         )
-        
-        self._attribution()
+        logging.info("Plot success!")
 
 #################################
 # Generate analysis for reports #
