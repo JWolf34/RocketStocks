@@ -25,7 +25,7 @@ class SMA_10_50_Strategy(ta.Strategy):
         return an.signal_sma(data['Close'], 10, 50)
     
 # Strategies
-class SMA_10_50_ADX_Strategy(ta.Strategy):
+class SMA_10_50_ADX_Strategy(ta.Strategy, backtesting.Strategy):
 
     def __init__(self,
              name = "SMA 10/50 & ADX",
@@ -39,11 +39,21 @@ class SMA_10_50_ADX_Strategy(ta.Strategy):
         self.ta = ta
         self.indicators = indicators
 
-    def next(self):
-        pass
-    
+    def init(self):
+        backtesting.Strategy.init(self)
+
     def signals(self, data):
         return an.signal_sma(data['Close'], 10, 50) & an.signal_adx(close=data['Close'], highs = data['High'], lows= data['Low'])
+
+    def next(self):
+        signal = self.signals(data)[-1]
+        if signal:
+            self.buy()
+        else:
+            self.sell()
+            
+    
+    
 
     
 
@@ -60,4 +70,9 @@ def get_strategy(name):
     return strategies.get(name)
     
 if __name__ =='__main__':
-    pass
+    ticker = 'MARA'
+    data = sd.fetch_daily_data(ticker)
+    bt = backtesting.Backtest(data, SMA_10_50_ADX_Strategy, cash=10_000, commission=0.0)
+    bt.run()
+    print(bt.stats)
+    bt.plot()
