@@ -196,9 +196,13 @@ def get_strategies():
 def get_strategy(name):
     return get_strategies().get(name)
 
-def get_strategies_to_score():
+def get_combination_strategies():
     all_strategies = get_strategies()
     return [all_strategies.get(x) for x in all_strategies if "Strategy" in x]
+
+def get_indicator_strategies():
+    all_strategies = get_strategies()
+    return [all_strategies.get(x) for x in all_strategies if "Strategy" not in x]
     
 if __name__ =='__main__':
 
