@@ -364,12 +364,60 @@ def run_bot():
         app_commands.Choice(name="True", value="True"),
         app_commands.Choice(name="False", value="False") 
     ])  
+    @app_commands.describe(linear_regression = "Plot linear regression over Close")
+    @app_commands.choices(linear_regression=[
+        app_commands.Choice(name="True", value="True"),
+        app_commands.Choice(name="False", value="False") 
+    ])  
+    @app_commands.describe(midpoint = "Plot midpoint over Close")
+    @app_commands.choices(midpoint =[
+        app_commands.Choice(name="True", value="True"),
+        app_commands.Choice(name="False", value="False") 
+    ])  
+    @app_commands.describe(ohlvc4 = "Plot OHLVC4 over Close")
+    @app_commands.choices(ohlvc4 =[
+        app_commands.Choice(name="True", value="True"),
+        app_commands.Choice(name="False", value="False") 
+    ])  
+    @app_commands.describe(zscore = "Plot ZScore indicator")
+    @app_commands.choices(zscore=[
+        app_commands.Choice(name="True", value="True"),
+        app_commands.Choice(name="False", value="False") 
+    ])  
+    @app_commands.describe(cumulative_log_return = "Plot Cumulative Log Return")
+    @app_commands.choices(cumulative_log_return=[
+        app_commands.Choice(name="True", value="True"),
+        app_commands.Choice(name="False", value="False") 
+    ])  
+    @app_commands.describe(squeeze = "Plot Squeeze indicator")
+    @app_commands.choices(linear_regression=[
+        app_commands.Choice(name="True", value="True"),
+        app_commands.Choice(name="False", value="False") 
+    ])  
+    @app_commands.describe(archer_moving_averages = "Plot Archer Moving Averages over Close (not recommended when plotting another MA indicator)")
+    @app_commands.choices(archer_moving_averages=[
+        app_commands.Choice(name="True", value="True"),
+        app_commands.Choice(name="False", value="False") 
+    ])  
+    @app_commands.describe(archer_obv = "Plot Archer OBV indicator")
+    @app_commands.choices(archer_obv=[
+        app_commands.Choice(name="True", value="True"),
+        app_commands.Choice(name="False", value="False") 
+    ]) 
     async def plot_charts(interaction: discord.interactions, tickers: str, chart: app_commands.Choice[str], visibility: app_commands.Choice[str],
                     display_signals: app_commands.Choice[str] = 'True',
                     timeframe: str = "1y", 
                     plot_type: app_commands.Choice[str] = 'candle', 
                     style: app_commands.Choice[str] = 'tradingview',
-                    show_volume: app_commands.Choice[str] = 'False'):
+                    show_volume: app_commands.Choice[str] = 'False',
+                    linear_regression: app_commands.Choice[str] = 'False',
+                    midpoint: app_commands.Choice[str] = 'False',
+                    ohlc4: app_commands.Choice[str] = 'False',
+                    zscore: app_commands.Choice[str] = 'False',
+                    cumulative_log_return: app_commands.Choice[str] = 'False',
+                    squeeze: app_commands.Choice[str] = 'False',
+                    archer_moving_averages: app_commands.Choice[str] = 'False',
+                    archer_obv: app_commands.Choice[str] = 'False'):
 
         await interaction.response.defer(ephemeral=True)
         logger.info("/plot-chart function called by user {}".format(interaction.user.name))
@@ -380,81 +428,6 @@ def run_bot():
             await send_charts(**locals())
 
         await interaction.followup.send("Finished generating charts")
-
-    async def send_charts(interaction: discord.Interaction, ticker, **kwargs):
-            
-            # Parse ticker and data fields
-            plot_args = {}
-            plot_args['ticker'] = ticker
-
-            data = sd.fetch_daily_data(ticker)
-            if data.size == 0:
-                sd.download_analyze_data(ticker)
-                data = sd.fetch_daily_data(ticker)
-            plot_args['df'] = data
-            plot_args['title'] = ticker
-            plot_args['verbose'] = True
-            visibility = kwargs.pop("visibility").value
-
-            # Parse plot and strategy information
-            strategy = strategies.get_strategy(kwargs.pop('chart').value)()
-            plot_args['strategy'] = strategy
-            plot_args['long_trend'] = strategy.signals(data)
-            plot_name = strategy.name
-            
-
-
-            
-             # Args for saving plot as PNG
-            plot_args['savepath'] = "{}/{}".format(ATTACHMENTS_PATH, "plots")
-            plot_args['filename'] = strategy.short_name
-
-            # Set true for indicators to plot
-            for indicator in strategy.indicators:
-                plot_args[indicator] = True
-
-            # Parse optional requirements
-            tsignals = kwargs.pop('display_signals')
-            plot_args['tsignals'] = eval(tsignals) if isinstance(tsignals, str) else eval(tsignals.value)
-            #plot_args['tsignals'] = False
-
-            type = kwargs.pop('plot_type')
-            plot_args['type'] = type if isinstance(type, str) else type.value
-
-            style = kwargs.pop('style')
-            plot_args['style'] = style if isinstance(style, str) else style.value
-
-            timeframe = kwargs.pop('timeframe', '1y')
-            plot_args['last'] = an.recent_bars(data, timeframe) if isinstance(timeframe, str) else an.recent_bars(data, timeframe.value)
-
-            # Override volume if plot requires volume panel
-            if plot_name not in ['On-Balance Volume', '90-Day Candles']:
-                volume = kwargs.pop('volume', 'False')
-                plot_args['volume'] = eval(volume) if isinstance(volume, str) else eval(volume.value)
-            else:
-                plot_args['volume'] = True
-
-
-
-
-            files = []
-            message  = ''
-
-            chart = an.Chart(**plot_args)
-            if chart is None:
-                message = "Failed to plot '{}' for ticker {}. ".format(plot_name, ticker) 
-                logger.error(message)
-                if visibility == 'private':
-                    await interaction.user.send(message)
-                else:
-                    await interaction.channel.send(message)
-                return None
-            files.append(discord.File(plot_args['savepath']+ "/{}/{}.png".format(ticker, strategy.short_name)))
-            if visibility == 'private':
-                await interaction.user.send(message, files=files)
-            else:
-                await interaction.channel.send(message, files=files)
-
 
     # Plot graphs for the selected watchlist
     @client.tree.command(name = "run-charts", description= "Plot selected graphs for the selected tickers",)
@@ -483,13 +456,61 @@ def run_bot():
     @app_commands.choices(show_volume=[
         app_commands.Choice(name="True", value="True"),
         app_commands.Choice(name="False", value="False") 
+    ])
+    @app_commands.describe(linear_regression = "Plot linear regression over Close")
+    @app_commands.choices(linear_regression=[
+        app_commands.Choice(name="True", value="True"),
+        app_commands.Choice(name="False", value="False") 
+    ])  
+    @app_commands.describe(midpoint = "Plot midpoint over Close")
+    @app_commands.choices(midpoint =[
+        app_commands.Choice(name="True", value="True"),
+        app_commands.Choice(name="False", value="False") 
+    ])  
+    @app_commands.describe(ohlvc4 = "Plot OHLVC4 over Close")
+    @app_commands.choices(ohlvc4 =[
+        app_commands.Choice(name="True", value="True"),
+        app_commands.Choice(name="False", value="False") 
+    ])  
+    @app_commands.describe(zscore = "Plot ZScore indicator")
+    @app_commands.choices(zscore=[
+        app_commands.Choice(name="True", value="True"),
+        app_commands.Choice(name="False", value="False") 
+    ])  
+    @app_commands.describe(cumulative_log_return = "Plot Cumulative Log Return")
+    @app_commands.choices(cumulative_log_return=[
+        app_commands.Choice(name="True", value="True"),
+        app_commands.Choice(name="False", value="False") 
+    ])  
+    @app_commands.describe(squeeze = "Plot Squeeze indicator")
+    @app_commands.choices(linear_regression=[
+        app_commands.Choice(name="True", value="True"),
+        app_commands.Choice(name="False", value="False") 
+    ])  
+    @app_commands.describe(archer_moving_averages = "Plot Archer Moving Averages over Close (not recommended when plotting another MA indicator)")
+    @app_commands.choices(archer_moving_averages=[
+        app_commands.Choice(name="True", value="True"),
+        app_commands.Choice(name="False", value="False") 
+    ])  
+    @app_commands.describe(archer_obv = "Plot Archer OBV indicator")
+    @app_commands.choices(archer_obv=[
+        app_commands.Choice(name="True", value="True"),
+        app_commands.Choice(name="False", value="False") 
     ])  
     async def run_charts(interaction: discord.interactions, watchlist: str, chart: app_commands.Choice[str], visibility: app_commands.Choice[str],
                     display_signals: app_commands.Choice[str] = 'True',
                     timeframe: app_commands.Choice[str] = "1y", 
                     plot_type: app_commands.Choice[str] = 'candle', 
                     style: app_commands.Choice[str] = 'tradingview',
-                    show_volume: app_commands.Choice[str] = 'False'):
+                    show_volume: app_commands.Choice[str] = 'False',
+                    linear_regression: app_commands.Choice[str] = 'False',
+                    midpoint: app_commands.Choice[str] = 'False',
+                    ohlc4: app_commands.Choice[str] = 'False',
+                    zscore: app_commands.Choice[str] = 'False',
+                    cumulative_log_return: app_commands.Choice[str] = 'False',
+                    squeeze: app_commands.Choice[str] = 'False',
+                    archer_moving_averages: app_commands.Choice[str] = 'False',
+                    archer_obv: app_commands.Choice[str] = 'False'):
 
         await interaction.response.defer(ephemeral=True)
         logger.info("/plot-chart function called by user {}".format(interaction.user.name))
@@ -501,8 +522,96 @@ def run_bot():
 
         await interaction.followup.send("Finished generating charts")
 
-    
-        await interaction.followup.send("Finished generating charts") 
+
+    async def send_charts(interaction: discord.Interaction, ticker, **kwargs):
+            
+            # Parse ticker and data fields
+            plot_args = {}
+            plot_args['ticker'] = ticker
+
+            data = sd.fetch_daily_data(ticker)
+            if data.size == 0:
+                sd.download_analyze_data(ticker)
+                data = sd.fetch_daily_data(ticker)
+            plot_args['df'] = data
+            plot_args['title'] = ticker
+            plot_args['verbose'] = True
+            visibility = kwargs.pop("visibility").value
+
+            # Parse plot and strategy information
+            strategy = strategies.get_strategy(kwargs.pop('chart').value)()
+            plot_args['strategy'] = strategy
+            plot_args['long_trend'] = strategy.signals(data)
+            plot_name = strategy.name
+            
+             # Args for saving plot as PNG
+            plot_args['savepath'] = "{}/{}".format(ATTACHMENTS_PATH, "plots")
+            plot_args['filename'] = strategy.short_name
+
+            # Set true for indicators to plot
+            for indicator in strategy.indicators:
+                plot_args[indicator] = True
+
+            # Parse optional plot args
+            tsignals = kwargs.pop('display_signals')
+            plot_args['tsignals'] = eval(tsignals) if isinstance(tsignals, str) else eval(tsignals.value)
+
+            type = kwargs.pop('plot_type')
+            plot_args['type'] = type if isinstance(type, str) else type.value
+
+            style = kwargs.pop('style')
+            plot_args['style'] = style if isinstance(style, str) else style.value
+
+            timeframe = kwargs.pop('timeframe', '1y')
+            plot_args['last'] = an.recent_bars(data, timeframe) if isinstance(timeframe, str) else an.recent_bars(data, timeframe.value)
+
+            # Parse additional charts to plot
+            linreg = kwargs.pop('linear_regression')
+            plot_args['linreg'] = eval(linreg) if isinstance(linreg, str) else eval(linreg.value)
+
+            midpoint = kwargs.pop('midpoint')
+            plot_args['midpoint'] = eval(midpoint) if isinstance(midpoint, str) else eval(midpoint.value)
+
+            olhc4 = kwargs.pop('ohlc4')
+            plot_args['olhc4'] = eval(olhc4) if isinstance(olhc4, str) else eval(olhc4.value)
+        
+            zscore = kwargs.pop('zscore')
+            plot_args['zscore'] = eval(zscore) if isinstance(zscore, str) else eval(zscore.value)
+
+            clr = kwargs.pop('cumulative_log_return')
+            plot_args['clr'] = eval(clr) if isinstance(clr, str) else eval(clr.value)
+
+            squeeze = kwargs.pop('squeeze')
+            plot_args['squeeze'] = eval(squeeze) if isinstance(squeeze, str) else eval(squeeze.value)
+
+            archermas = kwargs.pop('archer_moving_averages')
+            plot_args['archermas'] = eval(archermas) if isinstance(archermas, str) else eval(archermas.value)
+
+            archerobv = kwargs.pop('archer_obv')
+            plot_args['archerobv'] = eval(archerobv) if isinstance(archerobv, str) else eval(archerobv.value)
+
+            # Override plot args with strategy-specific configs
+            #plot_args = strategy.override_chart_args(plot_args)
+
+            files = []
+            message  = ''
+
+            chart = an.Chart(**plot_args)
+            if chart is None:
+                message = "Failed to plot '{}' for ticker {}. ".format(plot_name, ticker) 
+                logger.error(message)
+                if visibility == 'private':
+                    await interaction.user.send(message)
+                else:
+                    await interaction.channel.send(message)
+                return None
+            files.append(discord.File(plot_args['savepath']+ "/{}/{}.png".format(ticker, strategy.short_name)))
+            if visibility == 'private':
+                await interaction.user.send(message, files=files)
+            else:
+                await interaction.channel.send(message, files=files)
+
+
         
     ###########
     # Reports #

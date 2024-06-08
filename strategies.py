@@ -15,6 +15,27 @@ Process for adding a new Strategy
 - Add signal method(s) to analysis.py
 
 '''
+# Candles
+
+class Candles(ta.Strategy):
+
+    def __init__(self):
+        self.name = "Candles"
+        self.short_name = "CANDLES"
+        self.ta = [] 
+        self.indicators = []
+
+    def signals(self, data):
+        try:
+            return an.signal_sma(data['Close'], 10, 20) 
+        except Exception as e:
+            return pd.Series([False])  
+
+    def override_chart_args(chart_args):
+        chart_args['volume'] = True
+        return chart_args
+
+
 
 # Indicators
 class SMA_10_20_Strategy(ta.Strategy):
@@ -31,6 +52,9 @@ class SMA_10_20_Strategy(ta.Strategy):
         except Exception as e:
             return pd.Series([False])  
 
+    def override_chart_args(chart_args):
+        return chart_args
+
 class SMA_10_50_Strategy(ta.Strategy):
 
     def __init__(self):
@@ -45,9 +69,11 @@ class SMA_10_50_Strategy(ta.Strategy):
         except Exception as e:
             return pd.Series([False])
 
+    def override_chart_args(chart_args):
+        return chart_args
+
 class SMA_50_200_Strategy(ta.Strategy):
 
-    
     def __init__(self):
         self.name = "Simple Moving Average 50/200"
         self.short_name = "SMA_50_200"
@@ -73,6 +99,9 @@ class RSI_Strategy(ta.Strategy):
             return an.signal_rsi(close=data['Close'])
         except Exception as e:
             return pd.Series([False])
+
+    def override_chart_args(chart_args):
+        return chart_args
         
 class OBV_Strategy(ta.Strategy):
 
@@ -87,6 +116,27 @@ class OBV_Strategy(ta.Strategy):
             return an.signal_obv(close=data['Close'], volume=data['Volume'])
         except Exception as e:
             return pd.Series([False])
+
+    def override_chart_args(chart_args):
+        chart_args['volume'] = True
+        return chart_args
+        
+class AD_Strategy(ta.Strategy):
+
+    def __init__(self):
+        self.name = "Accumulation/Distribution Index"
+        self.short_name = "AD"
+        self.ta = [{"kind":"ad"}]
+        self.indicators = ['ad']
+
+    def signals(self, data):
+        try:
+            return an.signal_ad(high=data['High'], low=data['Low'], close=data['Close'], open=data['Open'], volume=data['Volume'])
+        except Exception as e:
+            return pd.Series([False])
+
+    def override_chart_args(chart_args):
+        return chart_args
         
 class AD_Strategy(ta.Strategy):
 
@@ -102,19 +152,8 @@ class AD_Strategy(ta.Strategy):
         except Exception as e:
             return pd.Series([False])
         
-class AD_Strategy(ta.Strategy):
-
-    def __init__(self):
-        self.name = "Accumulation/Distribution Index"
-        self.short_name = "AD"
-        self.ta = [{"kind":"ad"}]
-        self.indicators = ['ad']
-
-    def signals(self, data):
-        try:
-            return an.signal_ad(high=data['High'], low=data['Low'], close=data['Close'], open=data['Open'], volume=data['Volume'])
-        except Exception as e:
-            return pd.Series([False])
+    def override_chart_args(chart_args):
+        return chart_args
         
 class MACD_Strategy(ta.Strategy):
 
@@ -129,6 +168,9 @@ class MACD_Strategy(ta.Strategy):
             return an.signal_macd(close=data['Close'])
         except Exception as e:
             return pd.Series([False])
+    
+    def override_chart_args(chart_args):
+        return chart_args
         
 class ADX_Strategy(ta.Strategy):
 
@@ -143,6 +185,9 @@ class ADX_Strategy(ta.Strategy):
             return an.signal_adx(close=data['Close'], highs=data['High'], lows=data['Low'])
         except Exception as e:
             return pd.Series([False])
+    
+    def override_chart_args(chart_args):
+        return chart_args
 
 
 # Strategies
@@ -164,11 +209,7 @@ class SMA_10_50_ADX_Strategy(ta.Strategy):
     def override_chart_args(args):
         pass
 
-    def backtest(self, data):
-        pass
-        
-
-    
+  
 def get_strategies():
     strategies = {}
     for name, obj in inspect.getmembers(sys.modules[__name__]):

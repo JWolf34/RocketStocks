@@ -217,11 +217,9 @@ class Chart(object):
         def cpanel():
             return len(self.mpfchart["plot_ratios"])
 
-        # Last Second Default TA Indicators
+        # Calculate default indicators for detailed charts
 
-
-        # Disable excess analysis in the interest of speed
-        """ # Linear Regression
+        # Linear Regression
         linreg = kwargs.pop("linreg", False)
         linreg_name = self.df.ta.linreg(append=True).name if linreg else ""
 
@@ -242,6 +240,9 @@ class Chart(object):
             zs_name = self.df.ta.zscore(append=True).name
         else: zs_name = ""
 
+        # Cumulative Log Return
+        clr =  kwargs.pop("clr", False)
+        clr_name = self.df.ta.log_return(cumulative=True, append=True).name if clr else ""
 
         # Squeeze
         squeeze = kwargs.pop("squeeze", False)
@@ -264,7 +265,7 @@ class Chart(object):
         if aobv:
             aobvs = self.df.ta.aobv(append=True)
             aobv_name = aobvs.name
- """
+ 
 
         # Pad and trim Chart
         self._right_pad_df(rpad)
@@ -295,8 +296,9 @@ class Chart(object):
 
         # Panel 0: Price Overlay
 
-        # Commented out graphs made for disabled
-        """ # Linear Regression
+        # Plot default inicators if specified 
+
+        # Linear Regression
         if linreg_name in mpfdf_columns:
             taplots += [mpf.make_addplot(mpfdf[linreg_name], type=kwargs.pop("linreg_type", "line"), color=kwargs.pop("linreg_color", "black"), linestyle="-.", width=1.2, panel=0)]
 
@@ -307,14 +309,16 @@ class Chart(object):
         # OHLC4
         if ohlc4_name in mpfdf_columns:
             taplots += [mpf.make_addplot(mpfdf[ohlc4_name], ylabel=ohlc4_name, type=kwargs.pop("ohlc4_type", "scatter"), color=kwargs.pop("ohlc4_color", "blue"), alpha=0.85, width=0.4, panel=0)]
- 
-         # Archer Moving Averages
+
+        # Archer Moving Averages
         if len(ama_name):
             amat_sr_ = mpfdf[amas.columns[-1]][mpfdf[amas.columns[-1]] > 0]
             amat_sr = amat_sr_.index.to_list()
         else:
             amat_sr = None
- """
+
+        # Plot Strategy indicators
+ 
         # SMA 10/20
         sma_10_20 = kwargs.pop("sma_10_20", False)
         if sma_10_20:
@@ -364,8 +368,6 @@ class Chart(object):
                 mpf.make_addplot(1.015 * mpfdf['Close'] * sells, type="scatter", marker="v", markersize=26, color="fuchsia", panel=0),
             ]
                 
-       
-
         # Panel 1: If volume=True, the add the VOL MA. Since we know there is only one, we immediately pop it.
         if self.config["volume"]:
             volma = [x for x in list(self.df.columns) if x.startswith("Vol")].pop()
@@ -377,7 +379,10 @@ class Chart(object):
         # Panels 2+
         common_plot_ratio = (3,)
 
-        """ # Archer OBV
+
+        # Plot default indicators if specified 
+
+        # Archer OBV
         if len(aobv_name):
             _p = kwargs.pop("aobv_percenty", 0.2)
             aobv_ylim = ta_ylim(mpfdf[aobvs.columns[0]], _p)
@@ -389,16 +394,49 @@ class Chart(object):
             ]
             self.mpfchart["plot_ratios"] += common_plot_ratio # Required to add a new Panel """
 
-        """ # Cumulative Return
-        if clr_name in mpfdf_columns:
+        # Cumulative Return
+        if clr_name in mpfdf_columns and detailed:
             _p = kwargs.pop("clr_percenty", 0.1)
             clr_ylim = ta_ylim(mpfdf[clr_name], _p)
 
-            taplots += [mpf.make_addplot(mpfdf[clr_name], ylabel=clr_name, color="black", width=1.5, panel=cpanel(), ylim=clr_ylim)]
+            taplots += [mpf.make_addplot(mpfdf[clr_name], ylabel='CLR', color="black", width=1.5, panel=cpanel(), ylim=clr_ylim)]
             if (1 - _p) * mpfdf[clr_name].min() < 0 and (1 + _p) * mpfdf[clr_name].max() > 0:
-                taplots += [mpf.make_addplot(mpfdf["0"], color="gray", width=1.2, panel=cpanel(), ylim=clr_ylim)]
+                taplots += [mpf.make_addplot(hline(mpfdf.shape[0], 0), color="gray", width=1.2, panel=cpanel(), ylim=clr_ylim)]
             self.mpfchart["plot_ratios"] += common_plot_ratio # Required to add a new Panel
- """
+
+        # ZScore
+        if zs_name in mpfdf_columns and detailed:
+            _p = kwargs.pop("zascore_percenty", 0.2)
+            zs_ylim = ta_ylim(mpfdf[zs_name], _p)
+            taplots += [
+                mpf.make_addplot(mpfdf[zs_name], ylabel=zs_name, color="black", width=1.5, panel=cpanel(), ylim=zs_ylim),
+                mpf.make_addplot(hline(mpfdf.shape[0], -3), color="red", width=1.2, panel=cpanel(), ylim=zs_ylim),
+                mpf.make_addplot(hline(mpfdf.shape[0], -2), color="orange", width=1, panel=cpanel(), ylim=zs_ylim),
+                mpf.make_addplot(hline(mpfdf.shape[0], -1), color="silver", width=1, panel=cpanel(), ylim=zs_ylim),
+                mpf.make_addplot(hline(mpfdf.shape[0], 0), color="black", width=1.2, panel=cpanel(), ylim=zs_ylim),
+                mpf.make_addplot(hline(mpfdf.shape[0], 1), color="silver", width=1, panel=cpanel(), ylim=zs_ylim),
+                mpf.make_addplot(hline(mpfdf.shape[0], 2), color="orange", width=1, panel=cpanel(), ylim=zs_ylim),
+                mpf.make_addplot(hline(mpfdf.shape[0], 3), color="red", width=1.2, panel=cpanel(), ylim=zs_ylim)
+            ]
+            self.mpfchart["plot_ratios"] += common_plot_ratio # Required to add a new Panel
+
+        # Squeeze
+        if squeeze_name in mpfdf_columns and detailed:
+            _p = kwargs.pop("squeeze_percenty", 0.6)
+            sqz_ylim = ta_ylim(mpfdf[squeeze_name], _p)
+            taplots += [
+                mpf.make_addplot(mpfdf[squeezes.columns[-4]], type="bar", color="lime", alpha=0.65, width=0.8, panel=cpanel(), ylim=sqz_ylim),
+                mpf.make_addplot(mpfdf[squeezes.columns[-3]], type="bar", color="green", alpha=0.65, width=0.8, panel=cpanel(), ylim=sqz_ylim),
+                mpf.make_addplot(mpfdf[squeezes.columns[-2]], type="bar", color="maroon", alpha=0.65, width=0.8, panel=cpanel(), ylim=sqz_ylim),
+                mpf.make_addplot(mpfdf[squeezes.columns[-1]], type="bar", color="red", alpha=0.65, width=0.8, panel=cpanel(), ylim=sqz_ylim),
+                mpf.make_addplot(hline(mpfdf.shape[0], 0), color="black", width=1.2, panel=cpanel(), ylim=sqz_ylim),
+                mpf.make_addplot(mpfdf[squeezes.columns[4]], ylabel=squeeze_name, color="green", width=2, panel=cpanel(), ylim=sqz_ylim),
+                mpf.make_addplot(mpfdf[squeezes.columns[5]], color="red", width=1.8, panel=cpanel(), ylim=sqz_ylim),
+            ]
+            self.mpfchart["plot_ratios"] += common_plot_ratio # Required to add a new Panel """
+ 
+        # Plot Strategy Indicators
+
         # RSI
         rsi = kwargs.pop("rsi", False)
         if rsi:
@@ -423,7 +461,7 @@ class Chart(object):
         ad = kwargs.pop('ad', False)
         if ad:
             taplots += [
-                mpf.make_addplot(mpfdf['AD'], ylabel="Accumulation/Distribution\nIndex", color=kwargs.pop("obv_color", "lightgreen"), width=1.5, panel=cpanel())
+                mpf.make_addplot(mpfdf['AD'], ylabel="Accumulation/\nDistribution\nIndex", color=kwargs.pop("obv_color", "lightgreen"), width=1.5, panel=cpanel())
             ]
             self.mpfchart["plot_ratios"] += common_plot_ratio # Required to add a new Panel 
 
@@ -453,38 +491,6 @@ class Chart(object):
             ]
             self.mpfchart["plot_ratios"] += common_plot_ratio # Required to add a new Panel 
 
-
-        """ # ZScore
-        if zs_name in mpfdf_columns:
-            _p = kwargs.pop("zascore_percenty", 0.2)
-            zs_ylim = ta_ylim(mpfdf[zs_name], _p)
-            taplots += [
-                mpf.make_addplot(mpfdf[zs_name], ylabel=zs_name, color="black", width=1.5, panel=cpanel(), ylim=zs_ylim),
-                mpf.make_addplot(mpfdf["-3"], color="red", width=1.2, panel=cpanel(), ylim=zs_ylim),
-                mpf.make_addplot(mpfdf["-2"], color="orange", width=1, panel=cpanel(), ylim=zs_ylim),
-                mpf.make_addplot(mpfdf["-1"], color="silver", width=1, panel=cpanel(), ylim=zs_ylim),
-                mpf.make_addplot(mpfdf["0"], color="black", width=1.2, panel=cpanel(), ylim=zs_ylim),
-                mpf.make_addplot(mpfdf["1"], color="silver", width=1, panel=cpanel(), ylim=zs_ylim),
-                mpf.make_addplot(mpfdf["2"], color="orange", width=1, panel=cpanel(), ylim=zs_ylim),
-                mpf.make_addplot(mpfdf["3"], color="red", width=1.2, panel=cpanel(), ylim=zs_ylim)
-            ]
-            self.mpfchart["plot_ratios"] += common_plot_ratio # Required to add a new Panel
-
-        # Squeeze
-        if squeeze_name in mpfdf_columns:
-            _p = kwargs.pop("squeeze_percenty", 0.6)
-            sqz_ylim = ta_ylim(mpfdf[squeeze_name], _p)
-            taplots += [
-                mpf.make_addplot(mpfdf[squeezes.columns[-4]], type="bar", color="lime", alpha=0.65, width=0.8, panel=cpanel(), ylim=sqz_ylim),
-                mpf.make_addplot(mpfdf[squeezes.columns[-3]], type="bar", color="green", alpha=0.65, width=0.8, panel=cpanel(), ylim=sqz_ylim),
-                mpf.make_addplot(mpfdf[squeezes.columns[-2]], type="bar", color="maroon", alpha=0.65, width=0.8, panel=cpanel(), ylim=sqz_ylim),
-                mpf.make_addplot(mpfdf[squeezes.columns[-1]], type="bar", color="red", alpha=0.65, width=0.8, panel=cpanel(), ylim=sqz_ylim),
-                mpf.make_addplot(mpfdf["0"], color="black", width=1.2, panel=cpanel(), ylim=sqz_ylim),
-                mpf.make_addplot(mpfdf[squeezes.columns[4]], ylabel=squeeze_name, color="green", width=2, panel=cpanel(), ylim=sqz_ylim),
-                mpf.make_addplot(mpfdf[squeezes.columns[5]], color="red", width=1.8, panel=cpanel(), ylim=sqz_ylim),
-            ]
-            self.mpfchart["plot_ratios"] += common_plot_ratio # Required to add a new Panel """
-
         if tsig:
             _p = kwargs.pop("tsig_percenty", 0.23)
             treturn_ylim = ta_ylim(mpfdf["ACTRET_1"], _p)
@@ -512,17 +518,18 @@ class Chart(object):
             additional_ta = []
             chart_title  = f"{chart_title} [{self.strategy.name}] (last {self.config['last']} bars)"
             chart_title += f"\nSince {mpfdf.index[0]} till {mpfdf.index[-1]}"
-            """ if len(linreg_name) > 0: additional_ta.append(linreg_name)
-            if len(midpoint_name) > 0: additional_ta.append(midpoint_name)
-            if len(ohlc4_name) > 0: additional_ta.append(ohlc4_name) """
+            if detailed:
+                if len(linreg_name) > 0: additional_ta.append(linreg_name)
+                if len(midpoint_name) > 0: additional_ta.append(midpoint_name)
+                if len(ohlc4_name) > 0: additional_ta.append(ohlc4_name) 
             if len(additional_ta) > 0:
                 chart_title += f"\nIncluding: {', '.join(additional_ta)}"
 
-        """ if amat_sr:
+        if amat_sr:
             vlines_ = dict(vlines=amat_sr, alpha=0.1, colors="red")
         else:
             # Hidden because vlines needs valid arguments even if None 
-            vlines_ = dict(vlines=mpfdf.index[0], alpha=0, colors="white") """
+            vlines_ = dict(vlines=mpfdf.index[0], alpha=0, colors="white")
 
         # Build out path to save plot to
         filename = kwargs.pop("filename", "plot")
@@ -547,7 +554,7 @@ class Chart(object):
             xrotation=self.mpfchart["xrotation"],
             update_width_config=self.mpfchart["width_config"],
             show_nontrading=self.mpfchart["non_trading"],
-            #vlines=vlines_,
+            vlines=vlines_,
             addplot=taplots,
             savefig=save
         )
