@@ -395,7 +395,7 @@ class Chart(object):
             self.mpfchart["plot_ratios"] += common_plot_ratio # Required to add a new Panel """
 
         # Cumulative Return
-        if clr_name in mpfdf_columns and detailed:
+        if clr_name in mpfdf_columns:
             _p = kwargs.pop("clr_percenty", 0.1)
             clr_ylim = ta_ylim(mpfdf[clr_name], _p)
 
@@ -405,7 +405,7 @@ class Chart(object):
             self.mpfchart["plot_ratios"] += common_plot_ratio # Required to add a new Panel
 
         # ZScore
-        if zs_name in mpfdf_columns and detailed:
+        if zs_name in mpfdf_columns:
             _p = kwargs.pop("zascore_percenty", 0.2)
             zs_ylim = ta_ylim(mpfdf[zs_name], _p)
             taplots += [
@@ -421,7 +421,7 @@ class Chart(object):
             self.mpfchart["plot_ratios"] += common_plot_ratio # Required to add a new Panel
 
         # Squeeze
-        if squeeze_name in mpfdf_columns and detailed:
+        if squeeze_name in mpfdf_columns:
             _p = kwargs.pop("squeeze_percenty", 0.6)
             sqz_ylim = ta_ylim(mpfdf[squeeze_name], _p)
             taplots += [
@@ -518,10 +518,9 @@ class Chart(object):
             additional_ta = []
             chart_title  = f"{chart_title} [{self.strategy.name}] (last {self.config['last']} bars)"
             chart_title += f"\nSince {mpfdf.index[0]} till {mpfdf.index[-1]}"
-            if detailed:
-                if len(linreg_name) > 0: additional_ta.append(linreg_name)
-                if len(midpoint_name) > 0: additional_ta.append(midpoint_name)
-                if len(ohlc4_name) > 0: additional_ta.append(ohlc4_name) 
+            if len(linreg_name) > 0: additional_ta.append(linreg_name)
+            if len(midpoint_name) > 0: additional_ta.append(midpoint_name)
+            if len(ohlc4_name) > 0: additional_ta.append(ohlc4_name) 
             if len(additional_ta) > 0:
                 chart_title += f"\nIncluding: {', '.join(additional_ta)}"
 

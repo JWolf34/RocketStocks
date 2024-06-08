@@ -33,6 +33,7 @@ class Candles(ta.Strategy):
 
     def override_chart_args(chart_args):
         chart_args['volume'] = True
+        chart_args['tsignals'] = False
         return chart_args
 
 
@@ -209,7 +210,7 @@ class SMA_10_50_ADX_Strategy(ta.Strategy):
     def override_chart_args(args):
         pass
 
-  
+
 def get_strategies():
     strategies = {}
     for name, obj in inspect.getmembers(sys.modules[__name__]):

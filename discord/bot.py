@@ -374,8 +374,8 @@ def run_bot():
         app_commands.Choice(name="True", value="True"),
         app_commands.Choice(name="False", value="False") 
     ])  
-    @app_commands.describe(ohlvc4 = "Plot OHLVC4 over Close")
-    @app_commands.choices(ohlvc4 =[
+    @app_commands.describe(ohlc4 = "Plot OHLVC4 over Close")
+    @app_commands.choices(ohlc4 =[
         app_commands.Choice(name="True", value="True"),
         app_commands.Choice(name="False", value="False") 
     ])  
@@ -467,8 +467,8 @@ def run_bot():
         app_commands.Choice(name="True", value="True"),
         app_commands.Choice(name="False", value="False") 
     ])  
-    @app_commands.describe(ohlvc4 = "Plot OHLVC4 over Close")
-    @app_commands.choices(ohlvc4 =[
+    @app_commands.describe(ohlc4 = "Plot OHLVC4 over Close")
+    @app_commands.choices(ohlc4 =[
         app_commands.Choice(name="True", value="True"),
         app_commands.Choice(name="False", value="False") 
     ])  
