@@ -286,9 +286,8 @@ class Chart(object):
             sells = np.where(mpfdf.TS_Exits > 0, 1, np.nan)
             mpfdf["ACTRET_1"] = mpfdf.TS_Trends * mpfdf.PCTRET_1
 
-            # Generate CLR TA
-            # Cumulative Log Return
-            #clr_name = self.df.ta.log_return(cumulative=True, append=True).name if clr else ""
+            if all_values_are_nan(buys) or all_values_are_nan(sells):
+                tsig = False
 
         # BEGIN: Custom TA Plots and Panels
         # Modify the area below 
