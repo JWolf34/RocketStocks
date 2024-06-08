@@ -366,8 +366,8 @@ class Chart(object):
             taplots += [
                 mpf.make_addplot(0.985 * mpfdf['Close'] * buys, type="scatter", marker="^", markersize=26, color="blue", panel=0),
                 mpf.make_addplot(1.015 * mpfdf['Close'] * sells, type="scatter", marker="v", markersize=26, color="fuchsia", panel=0),
-            ]
-                
+            ] 
+                    
         # Panel 1: If volume=True, the add the VOL MA. Since we know there is only one, we immediately pop it.
         if self.config["volume"]:
             volma = [x for x in list(self.df.columns) if x.startswith("Vol")].pop()
@@ -510,7 +510,7 @@ class Chart(object):
                 mpf.make_addplot(1.1 * sells * mpfdf["CUMACTRET_1"], type="scatter", marker="v", markersize=14, color="red", panel=cpanel(), ylim=cumactret_ylim),
                 mpf.make_addplot(hline(mpfdf.shape[0], 0), color="black", width=1, panel=cpanel(), ylim=cumactret_ylim),
             ]            
-            self.mpfchart["plot_ratios"] += common_plot_ratio # Required to add a new Panel
+            self.mpfchart["plot_ratios"] += common_plot_ratio # Required to add a new Panel 
 
         # END: Custom TA Plots and Panels
         
@@ -762,10 +762,10 @@ def signal_ad(high, low, close, open, volume):
 
     ad = ta.ad(high=high, low=low, close=close, volume=volume, open=open)
     return  ta.increasing(ta.sma(ad, 10))
-
     
-def signal_next_day_sell(data):
-    return "SELL"
+def signal_zscore(close):
+    
+    return ta.zscore(close) < -3
 
 ###########
 # Scoring #

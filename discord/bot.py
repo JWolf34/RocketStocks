@@ -530,7 +530,7 @@ def run_bot():
             plot_args['ticker'] = ticker
 
             data = sd.fetch_daily_data(ticker)
-            if data.size == 0:
+            if data.size == 0 or not sd.daily_data_up_to_date(data):
                 sd.download_analyze_data(ticker)
                 data = sd.fetch_daily_data(ticker)
             plot_args['df'] = data
@@ -538,7 +538,7 @@ def run_bot():
             plot_args['verbose'] = True
             visibility = kwargs.pop("visibility").value
 
-            # Parse plot and strategy information
+            # Parse strategy and signal information
             strategy = strategies.get_strategy(kwargs.pop('chart').value)()
             plot_args['strategy'] = strategy
             plot_args['long_trend'] = strategy.signals(data)
@@ -547,10 +547,6 @@ def run_bot():
              # Args for saving plot as PNG
             plot_args['savepath'] = "{}/{}".format(ATTACHMENTS_PATH, "plots")
             plot_args['filename'] = strategy.short_name
-
-            # Set true for indicators to plot
-            for indicator in strategy.indicators:
-                plot_args[indicator] = True
 
             # Parse optional plot args
             tsignals = kwargs.pop('display_signals')
@@ -590,8 +586,12 @@ def run_bot():
             archerobv = kwargs.pop('archer_obv')
             plot_args['archerobv'] = eval(archerobv) if isinstance(archerobv, str) else eval(archerobv.value)
 
+            # Set true for indicators to plot
+            for indicator in strategy.indicators:
+                plot_args[indicator] = True
+
             # Override plot args with strategy-specific configs
-            #plot_args = strategy.override_chart_args(plot_args)
+            plot_args = strategy.override_chart_args(plot_args)
 
             files = []
             message  = ''

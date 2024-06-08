@@ -31,7 +31,7 @@ class Candles(ta.Strategy):
         except Exception as e:
             return pd.Series([False])  
 
-    def override_chart_args(chart_args):
+    def override_chart_args(self, chart_args):
         chart_args['volume'] = True
         chart_args['tsignals'] = False
         return chart_args
@@ -53,7 +53,7 @@ class SMA_10_20_Strategy(ta.Strategy):
         except Exception as e:
             return pd.Series([False])  
 
-    def override_chart_args(chart_args):
+    def override_chart_args(self, chart_args):
         return chart_args
 
 class SMA_10_50_Strategy(ta.Strategy):
@@ -70,7 +70,7 @@ class SMA_10_50_Strategy(ta.Strategy):
         except Exception as e:
             return pd.Series([False])
 
-    def override_chart_args(chart_args):
+    def override_chart_args(self, chart_args):
         return chart_args
 
 class SMA_50_200_Strategy(ta.Strategy):
@@ -86,6 +86,9 @@ class SMA_50_200_Strategy(ta.Strategy):
             return an.signal_sma(data['Close'], 50, 200) 
         except Exception as e:
             return pd.Series([False])
+    
+    def override_chart_args(self, chart_args):
+        return chart_args
         
 class RSI_Strategy(ta.Strategy):
 
@@ -101,7 +104,7 @@ class RSI_Strategy(ta.Strategy):
         except Exception as e:
             return pd.Series([False])
 
-    def override_chart_args(chart_args):
+    def override_chart_args(self, chart_args):
         return chart_args
         
 class OBV_Strategy(ta.Strategy):
@@ -136,7 +139,7 @@ class AD_Strategy(ta.Strategy):
         except Exception as e:
             return pd.Series([False])
 
-    def override_chart_args(chart_args):
+    def override_chart_args(self, chart_args):
         return chart_args
         
 class AD_Strategy(ta.Strategy):
@@ -153,7 +156,7 @@ class AD_Strategy(ta.Strategy):
         except Exception as e:
             return pd.Series([False])
         
-    def override_chart_args(chart_args):
+    def override_chart_args(self, chart_args):
         return chart_args
         
 class MACD_Strategy(ta.Strategy):
@@ -170,7 +173,7 @@ class MACD_Strategy(ta.Strategy):
         except Exception as e:
             return pd.Series([False])
     
-    def override_chart_args(chart_args):
+    def override_chart_args(self, chart_args):
         return chart_args
         
 class ADX_Strategy(ta.Strategy):
@@ -187,11 +190,28 @@ class ADX_Strategy(ta.Strategy):
         except Exception as e:
             return pd.Series([False])
     
-    def override_chart_args(chart_args):
+    def override_chart_args(self, chart_args):
         return chart_args
 
 
 # Strategies
+class ZScore_Strategy(ta.Strategy):
+
+    def __init__(self):
+        self.name = "ZScore Strategy"
+        self.short_name = "zscore"
+        self.ta = [{"kind":'zscore'}] 
+        self.indicators = ['zscore']
+
+    def signals(self, data):
+        try:
+            return an.signal_zscore(data['Close'])
+        except Exception as e:
+            return pd.Series([False])
+        
+    def override_chart_args(self, chart_args):
+        return chart_args
+
 class SMA_10_50_ADX_Strategy(ta.Strategy):
 
     def __init__(self):
@@ -207,8 +227,8 @@ class SMA_10_50_ADX_Strategy(ta.Strategy):
         except Exception as e:
             return pd.Series([False])
         
-    def override_chart_args(args):
-        pass
+    def override_chart_args(self, chart_args):
+        return chart_args
 
 
 def get_strategies():
