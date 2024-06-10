@@ -337,11 +337,18 @@ def run_bot():
     # Plotting #
     ############
 
+    async def chart_options(interaction: discord.Interaction, current: str):
+        charts = strategies.get_strategies().keys()
+        return [
+            app_commands.Choice(name = chart, value= chart)
+            for chart in charts if current.lower() in chart.lower()
+        ]
+
     # Plot graphs for the selected tickers
     @client.tree.command(name = "plot-charts", description= "Plot selected graphs for the selected tickers",)
     @app_commands.describe(tickers = "Tickers to return charts for (separated by spaces)")
     @app_commands.describe(chart = "Charts to return for the specified tickers")
-    @app_commands.choices(chart = [app_commands.Choice(name=x, value=x) for x in sorted(strategies.get_strategies().keys())])
+    @app_commands.autocomplete(chart=chart_options,)
     @app_commands.describe(visibility = "'private' to send to DMs, 'public' to send to the channel")
     @app_commands.choices(visibility =[
         app_commands.Choice(name = "private", value = 'private'),
@@ -404,7 +411,7 @@ def run_bot():
         app_commands.Choice(name="True", value="True"),
         app_commands.Choice(name="False", value="False") 
     ]) 
-    async def plot_charts(interaction: discord.interactions, tickers: str, chart: app_commands.Choice[str], visibility: app_commands.Choice[str],
+    async def plot_charts(interaction: discord.interactions, tickers: str, chart: str, visibility: app_commands.Choice[str],
                     display_signals: app_commands.Choice[str] = 'True',
                     timeframe: str = "1y", 
                     plot_type: app_commands.Choice[str] = 'candle', 
@@ -434,7 +441,7 @@ def run_bot():
     @app_commands.describe(watchlist = "Watchlist to plot the strategy against")
     @app_commands.autocomplete(watchlist=watchlist_options,)
     @app_commands.describe(chart = "Charts to return for the specified tickers")
-    @app_commands.choices(chart = [app_commands.Choice(name=x, value=x) for x in sorted(strategies.get_strategies().keys())])
+    @app_commands.autocomplete(chart=chart_options,)
     @app_commands.describe(visibility = "'private' to send to DMs, 'public' to send to the channel")
     @app_commands.choices(visibility =[
         app_commands.Choice(name = "private", value = 'private'),
@@ -497,7 +504,7 @@ def run_bot():
         app_commands.Choice(name="True", value="True"),
         app_commands.Choice(name="False", value="False") 
     ])  
-    async def run_charts(interaction: discord.interactions, watchlist: str, chart: app_commands.Choice[str], visibility: app_commands.Choice[str],
+    async def run_charts(interaction: discord.interactions, watchlist: str, chart: str, visibility: app_commands.Choice[str],
                     display_signals: app_commands.Choice[str] = 'True',
                     timeframe: app_commands.Choice[str] = "1y", 
                     plot_type: app_commands.Choice[str] = 'candle', 
@@ -539,7 +546,7 @@ def run_bot():
             visibility = kwargs.pop("visibility").value
 
             # Parse strategy and signal information
-            strategy = strategies.get_strategy(kwargs.pop('chart').value)()
+            strategy = strategies.get_strategy(kwargs.pop('chart'))()
             plot_args['strategy'] = strategy
             plot_args['long_trend'] = strategy.signals(data)
             plot_name = strategy.name

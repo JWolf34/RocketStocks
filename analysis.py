@@ -288,7 +288,7 @@ class Chart(object):
 
             if all_values_are_nan(buys) or all_values_are_nan(sells):
                 tsig = False
-
+            
         # BEGIN: Custom TA Plots and Panels
         # Modify the area below 
         taplots = [] # Holds all the additional plots
@@ -763,8 +763,24 @@ def signal_ad(high, low, close, open, volume):
     return  ta.increasing(ta.sma(ad, 10))
     
 def signal_zscore(close):
+    BUY_THRESHOLD = -3
+    SELL_THRESHOLD = -0.5
     
-    return ta.zscore(close) < -3
+    zscore = ta.zscore(close) 
+    signals = []
+    for i in range(0, zscore.shape[0]):
+        zscore_i = zscore.iloc[i]
+        if i == 0:
+            signals.append(0)
+        elif zscore.iloc[i] < BUY_THRESHOLD:
+            signals.append(1)
+        elif zscore.iloc[i] > SELL_THRESHOLD:
+            signals.append(0)
+        else:
+            signals.append(signals[i-1])
+
+
+    return pd.Series(signals).set_axis(close.index) 
 
 ###########
 # Scoring #
@@ -910,14 +926,14 @@ def hline(size, value):
     return hline
 
 def test():
-    data = sd.fetch_daily_data("CAVA")
+    data = sd.fetch_daily_data("AGBA")
     close = data['Close']
     high = data['High']
     low = data['Low'] 
     open = data['Open']
     volume = data['Volume']
 
-    print(signal_ad(close=close, high=high, low=low, volume=volume, open=open))
+    print(signal_zscore(close=close))
 
     # Create trends and see their returns
     #tsignals=True,
