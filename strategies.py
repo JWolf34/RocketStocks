@@ -283,7 +283,7 @@ class ZScore_ADX_SMA_10_50_Strategy(ta.Strategy):
     def override_chart_args(self, chart_args):
         return chart_args
     
-class Backtest (backtesting.Strategy):
+""" class Backtest (backtesting.Strategy):
 
     def init(self):
         strategy = ZScore_ADX_SMA_10_50_Strategy()
@@ -294,8 +294,8 @@ class Backtest (backtesting.Strategy):
         if self.signals.iloc[data_point]:
             self.buy()
         elif not self.signals.iloc[data_point]:
-            self.position.close()
-
+            self.position.close() """
+ 
 
 
 
@@ -321,7 +321,8 @@ def get_indicator_strategies():
 if __name__ =='__main__':
 
     total_return = 0
-    tickers = sd.get_tickers_from_all_watchlists()
+    #tickers = sd.get_tickers_from_watchlist('volatile')
+    tickers = ["ARM", 'CAVA', 'CELH', 'FMC', 'INTC', 'MRNA', 'NVDA', 'TLRY', 'TOST', 'TSM', 'YOLO']
     #strategy = ZScore_ADX_SMA_10_50_Strategy()
     num_tickers = 1
     for ticker in tickers:
@@ -337,6 +338,6 @@ if __name__ =='__main__':
         print("Return over last {} days: {}".format(data.shape[0], strat_return))
         total_return += strat_return
         num_tickers += 1
-        #bt.plot() 
+        bt.plot() 
     print("***** END BACKTESTING *****")
     print("Average Return: {:.2f}%".format(total_return / len(tickers)))
