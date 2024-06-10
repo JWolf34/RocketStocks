@@ -594,7 +594,7 @@ def run_bot():
             plot_args = strategy.override_chart_args(plot_args)
 
             files = []
-            message  = ''
+            message  = '{} for {} over last {} days'.format(strategy.name, ticker, plot_args['last'])
 
             chart = an.Chart(**plot_args)
             if chart is None:
