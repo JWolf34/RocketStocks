@@ -192,43 +192,98 @@ class ADX_Strategy(ta.Strategy):
     
     def override_chart_args(self, chart_args):
         return chart_args
-
-
-# Strategies
+    
 class ZScore_Strategy(ta.Strategy):
 
     def __init__(self):
-        self.name = "ZScore Strategy"
+        self.name = "ZScore -3/-1"
         self.short_name = "zscore"
         self.ta = [{"kind":'zscore'}] 
         self.indicators = ['zscore']
 
     def signals(self, data):
         try:
-            return an.signal_zscore(data['Close'])
+            return an.signal_zscore(close=data['Close'], BUY_THRESHOLD= -3, SELL_THRESHOLD= -1)
         except Exception as e:
             return pd.Series([False])
         
     def override_chart_args(self, chart_args):
         return chart_args
 
-class SMA_10_50_ADX_Strategy(ta.Strategy):
+
+# Strategies
+class SMA_10_20_ADX_Strategy(ta.Strategy):
 
     def __init__(self):
-        self.name = "SMA 10/50 & ADX Strategy"
-        self.short_name = "SMA_10_50_ADX"
-        self.ta = [{"kind":"sma", "length":10}, {"kind":"sma", "length":50}, {"kind":"adx"}] 
+        self.name = "SMA 10/20 & ADX Strategy"
+        self.short_name = "SMA_10_20_ADX"
+        self.ta = [{"kind":"sma", "length":10}, {"kind":"sma", "length":20}, {"kind":"adx"}] 
         self.indicators = ['sma_10_50', 'adx']
         self.long_position = False
 
     def signals(self, data):
         try:
-            return an.signal_sma(data['Close'], 10, 50) & an.signal_adx(close=data['Close'], highs = data['High'], lows= data['Low'])
+            return an.signal_sma(data['Close'], 10, 20) & an.signal_adx(close=data['Close'], highs = data['High'], lows= data['Low'])
         except Exception as e:
             return pd.Series([False])
         
     def override_chart_args(self, chart_args):
         return chart_args
+    
+class ZScore_ADX_Strategy(ta.Strategy):
+
+    def __init__(self):
+        self.name = "ZScore 0/2 & ADX Strategy"
+        self.short_name = "ZSCORE_ADX"
+        self.ta = [[{"kind":'zscore'}], {"kind":"adx"}] 
+        self.indicators = ['zscore', 'adx']
+        self.long_position = False
+
+    def signals(self, data):
+        try:
+            return an.signal_zscore(close=data['Close'], BUY_THRESHOLD=0, SELL_THRESHOLD=2) & an.signal_adx(close=data['Close'], highs = data['High'], lows= data['Low'])
+        except Exception as e:
+            return pd.Series([False])
+        
+    def override_chart_args(self, chart_args):
+        return chart_args
+    
+class ZScore_ADX_SMA_10_50_Strategy(ta.Strategy):
+
+    def __init__(self):
+        self.name = "ZScore 0/2, ADX, & SMA 10/50 Strategy"
+        self.short_name = "ZSCORE_ADX_SMA_10_50"
+        self.ta = [[{"kind":'zscore'}], {"kind":"adx"}, {"kind":"sma", "length":10}, {"kind":"sma", "length":50}]
+        self.indicators = ['zscore', 'adx', 'sma_10_50']
+        self.long_position = False
+
+    def signals(self, data):
+        try:
+            close = data['Close']
+            position = False
+            zscore_adx = an.signal_zscore(close=data['Close'], BUY_THRESHOLD=0, SELL_THRESHOLD=2) & an.signal_adx(close=data['Close'], highs = data['High'], lows= data['Low'])
+            sma = an.signal_sma(close, 10, 50)
+            signals = []
+            for i in range(0, close.shape[0]):
+                if i == 0:
+                    signals.append(0)
+                else:
+                    if zscore_adx.iloc[i]:
+                        signals.append(1)
+                    elif not sma.iloc[i]:
+                        signals.append(0)
+                    else:
+                        signals.append(signals[i-1])
+
+            return pd.Series(signals).set_axis(close.index) 
+            
+        except Exception as e:
+            return pd.Series([False])
+        
+    def override_chart_args(self, chart_args):
+        return chart_args
+    
+
 
 
 def get_strategies():

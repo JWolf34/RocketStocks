@@ -762,9 +762,7 @@ def signal_ad(high, low, close, open, volume):
     ad = ta.ad(high=high, low=low, close=close, volume=volume, open=open)
     return  ta.increasing(ta.sma(ad, 10))
     
-def signal_zscore(close):
-    BUY_THRESHOLD = -3
-    SELL_THRESHOLD = -0.5
+def signal_zscore(close, BUY_THRESHOLD, SELL_THRESHOLD):
     
     zscore = ta.zscore(close) 
     signals = []
@@ -933,7 +931,7 @@ def test():
     open = data['Open']
     volume = data['Volume']
 
-    print(signal_zscore(close=close))
+    print(signal_zscore(close=close, BUY_THRESHOLD=-3, SELL_THRESHOLD=-1))
 
     # Create trends and see their returns
     #tsignals=True,

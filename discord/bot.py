@@ -521,7 +521,10 @@ def run_bot():
 
         await interaction.response.defer(ephemeral=True)
         logger.info("/plot-chart function called by user {}".format(interaction.user.name))
-        tickers = sd.get_tickers_from_watchlist(watchlist)
+        watchlist_id =  watchlist
+        if watchlist == 'personal':
+            watchlist_id = interaction.user.id
+        tickers = sd.get_tickers_from_watchlist(watchlist_id)
 
         # Generate indicator chart for tickers
         for ticker in tickers:
