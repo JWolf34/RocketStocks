@@ -283,6 +283,19 @@ class ZScore_ADX_SMA_10_50_Strategy(ta.Strategy):
     def override_chart_args(self, chart_args):
         return chart_args
     
+class Backtest (backtesting.Strategy):
+
+    def init(self):
+        strategy = ZScore_ADX_SMA_10_50_Strategy()
+        self.signals = strategy.signals(self.data.df)
+
+    def next(self):
+        data_point = self.data.Close.shape[0] -1
+        if self.signals.iloc[data_point]:
+            self.buy()
+        elif not self.signals.iloc[data_point]:
+            self.position.close()
+
 
 
 
@@ -309,16 +322,16 @@ if __name__ =='__main__':
 
     total_return = 0
     tickers = sd.get_tickers_from_all_watchlists()
-    strategy = SMA_10_50_ADX_Strategy()
+    #strategy = ZScore_ADX_SMA_10_50_Strategy()
     num_tickers = 1
     for ticker in tickers:
         print("***** BACKTESTING {}, {}/{} *****".format(ticker, num_tickers, len(tickers)))
         sd.download_analyze_data(ticker)
         data = sd.fetch_daily_data(ticker)
         data = data.tail(an.recent_bars(data, tf='10y'))
-        signals = strategy.signals(data)
+        #signals = strategy.signals(data)
 
-        bt = backtesting.Backtest(data, SMA_10_50_ADX_Strategy.Backtest, cash=10000)
+        bt = backtesting.Backtest(data, Backtest, cash=10000)
         stats = bt.run()
         strat_return = stats['Return [%]']
         print("Return over last {} days: {}".format(data.shape[0], strat_return))
