@@ -584,7 +584,6 @@ def run_analysis(tickers):
                 sd.download_analyze_data(ticker)
         data = sd.fetch_daily_data(ticker)
         generate_report_charts(data, ticker)
-        #generate_analysis(data, ticker)
             
 ###########
 # Signals #
