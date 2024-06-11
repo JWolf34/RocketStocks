@@ -14,4 +14,4 @@ setuptools
 mplfinance
 requests_cache
 requests_ratelimiter
-backetesting
+Backtesting
