@@ -666,24 +666,21 @@ def run_bot():
     async def send_strategy_reports():
         
         channel = await client.fetch_channel(get_reports_channel_id())
-        strategies = an.get_strategies()
         reports = {}
         
-        if len(strategies) > 0:
-            logger.info("********** [SENDING STRATEGY REPORTS] **********")
-            for name, strategy in strategies.items():
-                message, file = build_strategy_report(strategy)
-                reports[strategy.name] = {'message':message, 'file':file}
+        logger.info("********** [SENDING STRATEGY REPORTS] **********")
+        for strategy in strategies.get_combination_strategies():
+            strategy = strategy()
+            message, file = build_strategy_report(strategy)
+            reports[strategy.name] = {'message':message, 'file':file}
 
-            
-            await channel.send("## Strategy Report {}".format(dt.date.today().strftime("%m/%d/%Y")))
-            for strategy_name, report in reports.items():
-                await channel.send(report.get('message'), file=report.get('file'))
+        
+        await channel.send("## Strategy Report {}".format(dt.date.today().strftime("%m/%d/%Y")))
+        for strategy_name, report in reports.items():
+            await channel.send(report.get('message'), file=report.get('file'))
 
-            logger.info("********** [FINISHED SENDING STRATEGY REPORTS] **********")
-        else:
-            logger.info("No strategies are available. No reports will be posted.")
-            await channel.send("No strategies are accessible, so no reports will be posted.")
+        logger.info("********** [FINISHED SENDING STRATEGY REPORTS] **********")
+
 
     # Configure delay before sending daily reports to send at the same time daily
     @send_reports.before_loop
@@ -855,34 +852,44 @@ def run_bot():
         # Indicator analysis
         def build_indicator_analysis():
             # Append analysis to mesage
-            analysis = sd.fetch_analysis(ticker)
+            #analysis = sd.fetch_analysis(ticker)
 
             message = "### Indicator Analysis\n"
-            message += analysis
-            return message
+            for strategy in strategies.get_indicator_strategies():
+                strategy = strategy()
+                signals = an.get_ta_signals(strategy.signals(data))
+                
+                message += "{}: ".format(strategy.name)
+
+                if signals.TS_Entries.iloc[-1]:
+                    message += "**BUY\n**"
+                elif signals.TS_Trends.iloc[-1]:
+                    message += "**HOLD\n**"
+                else:
+                    message += "**SELL\n**"
+
+            #message += analysis
+            return message + "\n"
 
         # Strategy analysis
         def build_strategy_analysis():
             # Append strategy analysis to message
             message = ''
-            strategies = an.get_strategies()
-            if len(strategies) > 0:
-                message += "### Strategy Analysis\n"
-                for strategy in strategies:
-                    strategy_name = strategies[strategy].name
-                    signals = strategies[strategy].signals
-                    buy_threshold = strategies[strategy].buy_threshold
-                    sell_threshold = strategies[strategy].sell_threshold
-                    try:
-                        score_evaluation = an.score_eval(
-                            an.signals_score(data, signals),
-                            buy_threshold, 
-                            sell_threshold)
-                    except KeyError as e:
-                        logger.exception("Encountered Key Error when evaluating strategy '{}' for ticker '{}':\n{}".format(strategy_name, ticker, e))
-                        score_evaluation = "N/A"
-                    message += "{}: **{}**\n".format(strategy_name, score_evaluation)
-            return message + "\n"
+
+            message += "### Strategy Analysis\n"
+            for strategy in strategies.get_combination_strategies():
+                strategy = strategy()
+                signals = an.get_ta_signals(strategy.signals(data))
+                
+                message += "{}: ".format(strategy.name)
+
+                if signals.TS_Entries.iloc[-1]:
+                    message += "**BUY\n**"
+                elif signals.TS_Trends.iloc[-1]:
+                    message += "**HOLD\n**"
+                else:
+                    message += "**SELL\n**"
+            return message
 
         # Collect chart files
         def build_chart_files():
@@ -895,8 +902,8 @@ def run_bot():
         message = build_report_header()
         message += build_ticker_info()
         message += build_daily_summary()
-        #message += build_indicator_analysis()
-        #message += build_strategy_analysis()
+        message += build_indicator_analysis()
+        message += build_strategy_analysis()
         files = build_chart_files()
 
 

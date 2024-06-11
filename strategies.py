@@ -316,6 +316,7 @@ def get_combination_strategies():
 
 def get_indicator_strategies():
     all_strategies = get_strategies()
+    all_strategies.pop("Candles")
     return [all_strategies.get(x) for x in all_strategies if "Strategy" not in x]
     
 if __name__ =='__main__':

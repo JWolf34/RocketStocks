@@ -116,6 +116,12 @@ def generate_report_charts(data, ticker):
     strategy = strategies.get_strategy(plot_name)()
     Chart(df = data, ticker = ticker, title = "{} {}".format(ticker, plot_name), strategy = strategy, adx=True, volume=False, filename=strategy.short_name)
 
+    # ZScore
+    plot_name = "ZScore -3/-1"
+    strategy = strategies.get_strategy(plot_name)()
+    Chart(df = data, ticker = ticker, title = "{} {}".format(ticker, plot_name), strategy = strategy, zscore=True, volume=False, filename=strategy.short_name)
+
+
 
 class Chart(object):
     def __init__(self, df: pd.DataFrame = None, ticker: str = "SPY", strategy: ta.Strategy = ta.CommonStrategy, *args, **kwargs):
@@ -585,14 +591,18 @@ def generate_analysis(data, ticker):
     logger.info("Generating analysis for ticker '{}'".format(ticker))
     if not (os.path.isdir("data/analysis/" + ticker)):
         os.makedirs("data/analysis/" + ticker)
+
+    for strategy in strategies.get_strategies():
+        print(strategy)
     
-    analyze_macd(data, ticker)
+    """ analyze_macd(data, ticker)
     analyze_rsi(data, ticker)
     analyze_sma(data,ticker)
-    analyze_adx(data,ticker)
+    analyze_adx(data,ticker) """
     
+    # Need these for reports? I don't think so anymore
 
-def analyze_rsi(data, ticker):
+""" def analyze_rsi(data, ticker):
     logger.info("Analysing RSI for ticker '{}'".format(ticker))
 
     signal_data = get_signal("Relative Strength Index")['params']
@@ -706,7 +716,7 @@ def analyze_adx(data, ticker):
             analysis = "ADX: **N/A**"
         adx_analysis.write(analysis)
 
-    logger.info("ADX analysis of ticker '{}' complete!".format(ticker))
+    logger.info("ADX analysis of ticker '{}' complete!".format(ticker)) """
             
 ###########
 # Signals #
@@ -784,6 +794,11 @@ def signal_zscore(close, BUY_THRESHOLD, SELL_THRESHOLD):
 # Scoring #
 ###########
 
+def get_ta_signals(signals_series):
+    signals = pd.DataFrame()
+    signals.ta.tsignals(signals_series, append=True)
+    return signals
+
 def signals_score(data, signals):
     logger.debug("Calculating score of data from signals {}".format(signals))
     #data = sd.fetch_daily_data(ticker)
@@ -825,22 +840,21 @@ def generate_strategy_scores(strategy):
         logger.debug("Evaluating score for ticker '{}', {}/{}".format(ticker, num_tickers, len(tickers)))
         data = sd.fetch_daily_data(ticker)
         try:
-            score = signals_score(data, strategy.signals)
-            score_string = score_eval(score, strategy.buy_threshold, strategy.sell_threshold)
-            if score_string == 'BUY':
+            signals = get_ta_signals(strategy.signals(data))
+            if signals.TS_Entries.iloc[-1]:
                 buys.append(ticker)
-            elif score_string == "HOLD":
+            elif signals.TS_Trends.iloc[-1]:
                 holds.append(ticker)
-            elif score_string == 'SELL':
+            else:
                 sells.append(ticker)
         except KeyError as e:
             logger.exception("Encountered KeyError generating '{}' signal for ticker '{}':\n{}".format(strategy.name, ticker, e))
         num_tickers += 1
     
     # Validate file path
-    savefilepath_root ="{}/{}/{}".format(SCORING_PATH, "strategies", strategy.abbreviation)
+    savefilepath_root ="{}/{}/{}".format(SCORING_PATH, "strategies", strategy.short_name)
     sd.validate_path(savefilepath_root)
-    savefilepath = "{}/{}_scores.csv".format(savefilepath_root, strategy.abbreviation)
+    savefilepath = "{}/{}_scores.csv".format(savefilepath_root, strategy.short_name)
 
     # Prepare data to write to CSV
     signals = zip_longest(*[buys, holds, sells], fillvalue = '')
@@ -855,11 +869,11 @@ def generate_strategy_scores(strategy):
     
 def get_strategy_scores(strategy):
     logger.debug("Fetching scores for strategy...{}")
-    scores = pd.read_csv('{}/strategies/{}/{}_scores.csv'.format(SCORING_PATH, strategy.abbreviation, strategy.abbreviation))
+    scores = pd.read_csv('{}/strategies/{}/{}_scores.csv'.format(SCORING_PATH, strategy.short_name, strategy.short_name))
     return scores
 
 def get_strategy_score_filepath(strategy):
-    return '{}/strategies/{}/{}_scores.csv'.format(SCORING_PATH, strategy.abbreviation, strategy.abbreviation)
+    return '{}/strategies/{}/{}_scores.csv'.format(SCORING_PATH, strategy.short_name, strategy.short_name)
 
 
 #############
@@ -924,14 +938,21 @@ def hline(size, value):
     return hline
 
 def test():
-    data = sd.fetch_daily_data("AGBA")
+    
+    data = sd.fetch_daily_data("GOOG")
+    for strategy_name in strategies.get_strategies():
+        strategy = strategies.get_strategy(strategy_name)
+        signals = pd.DataFrame()
+        signals.ta.tsignals(strategy.signals(strategy, data), append=True)
+        print(signals)
+    """ data = sd.fetch_daily_data("AGBA")
     close = data['Close']
     high = data['High']
     low = data['Low'] 
     open = data['Open']
     volume = data['Volume']
 
-    print(signal_zscore(close=close, BUY_THRESHOLD=-3, SELL_THRESHOLD=-1))
+    print(signal_zscore(close=close, BUY_THRESHOLD=-3, SELL_THRESHOLD=-1)) """
 
     # Create trends and see their returns
     #tsignals=True,
