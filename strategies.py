@@ -218,7 +218,7 @@ class SMA_10_20_ADX_Strategy(ta.Strategy):
         self.name = "SMA 10/20 & ADX Strategy"
         self.short_name = "SMA_10_20_ADX"
         self.ta = [{"kind":"sma", "length":10}, {"kind":"sma", "length":20}, {"kind":"adx"}] 
-        self.indicators = ['sma_10_50', 'adx']
+        self.indicators = ['sma_10_20', 'adx']
         self.long_position = False
 
     def signals(self, data):
