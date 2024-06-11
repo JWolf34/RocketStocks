@@ -30,44 +30,6 @@ SCORING_PATH = "data/scoring"
 # Plotting #
 ############
 
-valid_plots = {"Simple Moving Average 10/50":{
-                   "short_name":"SMA_10_50",
-                   "ta":[{"kind":"sma", "length":10}, {"kind":"sma", "length":50}]
-                },
-               "90-Day Candles":{
-                   "short_name":"CANDLES",
-                   "ta":[]
-                },
-               "Relative Strength Index":{
-                   "short_name":"RSI",
-                   "ta":[{"kind":"rsi"}]
-                },
-                "On-Balance Volume":{
-                    "short_name": "OBV",
-                    "ta": [{"kind":"obv"}]
-                },
-                "Accumulation/Distribution Index":{
-                    "short_name": "AD",
-                    "ta":[{'kind':'ad'}]
-                },
-                "Moving Average Convergence/Divergence":{
-                    "short_name": "MACD",
-                    "ta":[{'kind':'macd'}]
-                },
-                "Average Directional Index":{
-                    "short_name": "ADX",
-                    "ta": [{'kind':'adx'}]
-                }}
-def get_plots():
-    return valid_plots
-
-def get_plot(indicator_name):
-    logger.debug("Fetching plots for {}")
-    return valid_plots.get(indicator_name)
-
-def get_strategy_from_plot(name):
-    return ta.Strategy(name=name, ta=get_plot(name)['ta'])
-
 def get_plot_types():
     return ['line', 'candle', 'ohlc', 'renko', 'pnf']
 
