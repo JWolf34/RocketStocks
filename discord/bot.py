@@ -801,9 +801,15 @@ def run_bot():
             if return_value > highest_return:
                 highest_return = return_value
                 highest_return_ticker = ticker
+                if lowest_return == 0.0:
+                    lowest_return = return_value
+                    lowest_return_ticker = ticker
             if return_value < lowest_return:
                 lowest_return = return_value
                 lowest_return_ticker = ticker
+                if highest_return == 0.0:
+                    highest_return = return_value
+                    highest_return_ticker = ticker
 
         message = "## Backtest Summary\n**Strategy:** {}\n**Tickers:** {}\n".format(strategy_name, ", ".join(tickers))
         message += "**Average Return**: {:2f}%\n".format(total_return/len(tickers))
