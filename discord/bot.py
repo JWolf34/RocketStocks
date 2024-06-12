@@ -652,11 +652,17 @@ def run_bot():
         app_commands.Choice(name="True", value="True"),
         app_commands.Choice(name="False", value="False") 
     ])  
+    @app_commands.describe(summary_only = "True to only post backtest summary, False to post individual backtest stats (Default: False)")
+    @app_commands.choices(summary_only=[
+        app_commands.Choice(name="True", value="True"),
+        app_commands.Choice(name="False", value="False") 
+    ])  
 
     async def fetch_backtests(interaction: discord.interactions, tickers: str, strategy: str, visibility: app_commands.Choice[str],
                     cash: int = 10000,
                     timeframe: str = "1y", 
-                    stats_only: str = "False"):
+                    stats_only: str = "False", 
+                    summary_only: str = "False"):
 
         await interaction.response.defer(ephemeral=True)
         logger.info("/fetch-backtests function called by user {}".format(interaction.user.name))
@@ -691,11 +697,17 @@ def run_bot():
         app_commands.Choice(name="True", value="True"),
         app_commands.Choice(name="False", value="False") 
     ])  
+    @app_commands.describe(summary_only = "True to only post backtest summary, False to post individual backtest stats (Default: False)")
+    @app_commands.choices(summary_only=[
+        app_commands.Choice(name="True", value="True"),
+        app_commands.Choice(name="False", value="False") 
+    ])  
 
     async def run_backtests(interaction: discord.interactions, watchlist: str, strategy: str, visibility: app_commands.Choice[str],
                     cash: int = 10000,
-                    timeframe: str = "1y", 
-                    stats_only: str = "False"):
+                    timeframe: str = "10y", 
+                    stats_only: str = "False",
+                    summary_only: str = "False"):
 
         await interaction.response.defer(ephemeral=True)
         logger.info("/run-backtests function called by user {}".format(interaction.user.name))
@@ -744,9 +756,13 @@ def run_bot():
 
         
 
-        stats_only = kwargs.pop('stats_only')
+        stats_only = kwargs.pop('stats_only', "False")
         backtest_args['stats_only'] = eval(stats_only) if isinstance(stats_only, str) else eval(stats_only.value)
 
+        summary_only = kwargs.pop('summary_only', 'False')
+        summary_only = eval(summary_only) if isinstance(summary_only, str) else eval(summary_only.value)
+        if summary_only:
+            backtest_args['stats_only'] = True
         files = []
         message  = '### Backtest of {} for {} over last {} days'.format(strategy.name, ticker, last)
 
@@ -760,11 +776,13 @@ def run_bot():
                 await interaction.channel.send(message)
             return None
         message += "\n ```{}```".format(stats)
-        files.append(discord.File(backtest_args['filepathroot']+ "/{}/{}_{}.html".format(ticker, ticker, strategy.short_name)))
-        if visibility == 'private':
-            await interaction.user.send(message, files=files)
-        else:
-            await interaction.channel.send(message, files=files)
+        if not backtest_args['stats_only']:
+            files.append(discord.File(backtest_args['filepathroot']+ "/{}/{}_{}.html".format(ticker, ticker, strategy.short_name)))
+        if not summary_only:
+            if visibility == 'private':
+                await interaction.user.send(message, files=files)
+            else:
+                await interaction.channel.send(message, files=files)
         return stats
 
     async def send_backtest_summary(interaction : discord.Interaction, backtest_stats, tickers, strategy_name, visibility):
@@ -787,7 +805,7 @@ def run_bot():
                 lowest_return = return_value
                 lowest_return_ticker = ticker
 
-        message = "## Backtest Summary\n**Strategy:** {}\n**Tickers:** {}\n".format(strategy_name, " ,".join(tickers))
+        message = "## Backtest Summary\n**Strategy:** {}\n**Tickers:** {}\n".format(strategy_name, ", ".join(tickers))
         message += "**Average Return**: {:2f}%\n".format(total_return/len(tickers))
         message += "**Highest Return**: {:2f}% ({})\n".format(highest_return, highest_return_ticker)
         message += "**Lowest Return**: {:2f}% ({})".format(lowest_return, lowest_return_ticker)
