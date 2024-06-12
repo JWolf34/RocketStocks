@@ -13,6 +13,7 @@ import threading
 import logging
 import numpy as np
 import strategies
+import math
 
 # Logging configuration
 logger = logging.getLogger(__name__)
@@ -1022,6 +1023,14 @@ def run_bot():
 
         # Ticker Info
         def build_ticker_info():
+
+            def format_market_cap(market_cap):
+                market_cap = float('{:.3g}'.format(market_cap))
+                magnitude = 0
+                while abs(market_cap) >= 1000:
+                    magnitude += 1
+                    market_cap /= 1000.0
+                return '{}{}'.format('{:f}'.format(market_cap).rstrip('0').rstrip('.'), ['', 'K', 'M', 'B', 'T'][magnitude])
             message = "### Ticker Info\n"
             try:
                 ticker_data = sd.get_all_tickers_data().loc[ticker]
@@ -1033,7 +1042,7 @@ def run_bot():
             message += "**Name:** {}\n".format(ticker_data['Name'] if ticker_data['Name'] is not np.nan else "N/A")
             message += "**Sector:** {}\n".format(ticker_data['Sector']if ticker_data['Sector'] is not np.nan else "N/A")
             message += "**Industry:** {}\n".format(ticker_data['Industry'] if ticker_data['Industry'] is not np.nan else "N/A")
-            message += "**Market Cap:** {}\n".format(("$" + "{:,}".format(ticker_data['Market Cap'])) if ticker_data['Market Cap'] is not np.nan else "N/A") 
+            message += "**Market Cap:** {}\n".format(("$"+ "{}".format(format_market_cap(ticker_data['Market Cap']))) if ticker_data['Market Cap'] is not np.nan else "N/A") 
             message += "**Country:** {}\n".format(ticker_data['Country'] if ticker_data['Country'] is not np.nan else "N/A")
             message += "**Next earnings date:** {}".format(sd.get_next_earnings_date(ticker))
             
