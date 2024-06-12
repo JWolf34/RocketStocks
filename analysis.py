@@ -103,8 +103,8 @@ class Chart(object):
         self._validate_ta_strategy(strategy)
 
         # Build TA and Plot
-        #logging.info("Generating TA...")
-        #self.df.ta.strategy(self.strategy, verbose=self.verbose)
+        logging.info("Generating TA...")
+        self.df.ta.strategy(self.strategy, verbose=self.verbose)
         logging.info("Building plot for ticker '{}'".format(self.ticker))
         self._plot(**kwargs)
 
@@ -439,10 +439,10 @@ class Chart(object):
             _p = kwargs.pop("macd_percenty", 0.15)
             macd_ylim = ta_ylim(mpfdf[macds[0]], _p)
             taplots += [
-                mpf.make_addplot(mpfdf[macds[0]], ylabel="Moving Average\nConvergence/Divergence", color="green", width=1.5, panel=cpanel(), label="MACD"),#, ylim=macd_ylim),
-                mpf.make_addplot(mpfdf[macds[-1]], color="orange", width=1.1, panel=cpanel(), label="Signal"),#, ylim=macd_ylim),
-                mpf.make_addplot(mpfdf[macds[1]], type="bar", alpha=0.8, color="dimgray", width=0.8, panel=cpanel()),#, ylim=macd_ylim),
-                mpf.make_addplot(hline(mpfdf.shape[0], 0), color="black", width=1.2, panel=cpanel()),#, ylim=macd_y5lim),
+                mpf.make_addplot(mpfdf[macds[0]], ylabel="Moving Average\nConvergence/Divergence", color="green", width=1.5, panel=cpanel(), label="MACD", ylim=macd_ylim),
+                mpf.make_addplot(mpfdf[macds[-1]], color="orange", width=1.1, panel=cpanel(), label="Signal", ylim=macd_ylim),
+                mpf.make_addplot(mpfdf[macds[1]], type="bar", alpha=0.8, color="dimgray", width=0.8, panel=cpanel(), ylim=macd_ylim),
+                mpf.make_addplot(hline(mpfdf.shape[0], 0), color="black", width=1.2, panel=cpanel(), ylim=macd_ylim),
             ]
             self.mpfchart["plot_ratios"] += common_plot_ratio # Required to add a new Panel 
 
@@ -458,6 +458,20 @@ class Chart(object):
             ]
             self.mpfchart["plot_ratios"] += common_plot_ratio # Required to add a new Panel 
 
+
+        #ROC
+        roc = kwargs.pop("roc", False)
+        if roc:
+            _p = kwargs.pop("roc_percenty", 0.2)
+            roc_ylim = ta_ylim(mpfdf['ROC_10'], _p)
+            taplots += [
+                mpf.make_addplot(mpfdf['ROC_10'], ylabel="Rate of\nChange", color="blue", width=1.1, panel=cpanel(), label="ROC", ylim=roc_ylim),
+                mpf.make_addplot(hline(mpfdf.shape[0], 0), color="black",panel=cpanel(), linestyle="--")
+            ]
+            self.mpfchart["plot_ratios"] += common_plot_ratio # Required to add a new Panel
+
+
+        # Cumulative Return and Active % Return
         plot_returns = kwargs.pop("plot_returns", False)
         if tsig and plot_returns:
             _p = kwargs.pop("tsig_percenty", 0.23)
@@ -617,8 +631,11 @@ def signal_zscore(close, BUY_THRESHOLD, SELL_THRESHOLD):
         else:
             signals.append(signals[i-1])
 
-
     return pd.Series(signals).set_axis(close.index) 
+
+def signal_roc(close, length=10):
+
+    return ta.roc(close=close, length=length) > 0
 
 ###########
 # Scoring #

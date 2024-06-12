@@ -10,7 +10,6 @@ import sys, inspect
 Process for adding a new Strategy
 
 - Create a new Strategy Class using boilerplate from an existing Class
-- Add the Strategy to the `srtategies` dict
 - Add chart for indicator(s) of new Strategy in Chart class in analysis.py
 - Add signal method(s) to analysis.py
 
@@ -142,23 +141,6 @@ class AD_Strategy(ta.Strategy):
     def override_chart_args(self, chart_args):
         return chart_args
         
-class AD_Strategy(ta.Strategy):
-
-    def __init__(self):
-        self.name = "Accumulation/Distribution Index"
-        self.short_name = "AD"
-        self.ta = [{"kind":"ad"}]
-        self.indicators = ['ad']
-
-    def signals(self, data):
-        try:
-            return an.signal_ad(high=data['High'], low=data['Low'], close=data['Close'], open=data['Open'], volume=data['Volume'])
-        except Exception as e:
-            return pd.Series([False])
-        
-    def override_chart_args(self, chart_args):
-        return chart_args
-        
 class MACD_Strategy(ta.Strategy):
 
     def __init__(self):
@@ -193,17 +175,36 @@ class ADX_Strategy(ta.Strategy):
     def override_chart_args(self, chart_args):
         return chart_args
     
+class ROC_Strategy(ta.Strategy):
+
+    def __init__(self):
+        self.name = "Rate of Change"
+        self.short_name = "ROC"
+        self.ta = [{"kind":"roc"}]
+        self.indicators = ['roc']
+
+    def signals(self, data):
+        try:
+            return an.signal_roc(close=data['Close'])
+        except Exception as e:
+            return pd.Series([False])
+    
+    def override_chart_args(self, chart_args):
+        return chart_args
+
+
+    
 class ZScore_Strategy(ta.Strategy):
 
     def __init__(self):
-        self.name = "ZScore -3/-1"
+        self.name = "ZScore Mean-Revert"
         self.short_name = "zscore"
         self.ta = [{"kind":'zscore'}] 
         self.indicators = ['zscore']
 
     def signals(self, data):
         try:
-            return an.signal_zscore(close=data['Close'], BUY_THRESHOLD= -3, SELL_THRESHOLD= -1)
+            return an.signal_zscore(close=data['Close'], BUY_THRESHOLD= -3, SELL_THRESHOLD= 0)
         except Exception as e:
             return pd.Series([False])
         
@@ -230,28 +231,10 @@ class SMA_10_20_ADX_Strategy(ta.Strategy):
     def override_chart_args(self, chart_args):
         return chart_args
     
-class ZScore_ADX_Strategy(ta.Strategy):
-
-    def __init__(self):
-        self.name = "ZScore 0/2 & ADX Strategy"
-        self.short_name = "ZSCORE_ADX"
-        self.ta = [[{"kind":'zscore'}], {"kind":"adx"}] 
-        self.indicators = ['zscore', 'adx']
-        self.long_position = False
-
-    def signals(self, data):
-        try:
-            return an.signal_zscore(close=data['Close'], BUY_THRESHOLD=0, SELL_THRESHOLD=2) & an.signal_adx(close=data['Close'], highs = data['High'], lows= data['Low'])
-        except Exception as e:
-            return pd.Series([False])
-        
-    def override_chart_args(self, chart_args):
-        return chart_args
-    
 class ZScore_ADX_SMA_10_50_Strategy(ta.Strategy):
 
     def __init__(self):
-        self.name = "ZScore 0/2, ADX, & SMA 10/50 Strategy"
+        self.name = "ZScore 0, ADX, & SMA 10/50 Strategy"
         self.short_name = "ZSCORE_ADX_SMA_10_50"
         self.ta = [[{"kind":'zscore'}], {"kind":"adx"}, {"kind":"sma", "length":10}, {"kind":"sma", "length":50}]
         self.indicators = ['zscore', 'adx', 'sma_10_50']
@@ -277,6 +260,24 @@ class ZScore_ADX_SMA_10_50_Strategy(ta.Strategy):
 
             return pd.Series(signals).set_axis(close.index) 
             
+        except Exception as e:
+            return pd.Series([False])
+        
+    def override_chart_args(self, chart_args):
+        return chart_args
+    
+class ROC_OBV_Strategy(ta.Strategy):
+
+    def __init__(self):
+        self.name = "ROC & OBV Strategy"
+        self.short_name = "ROC_OBV"
+        self.ta = [{"kind":'obv'}, {"kind":"roc"}] 
+        self.indicators = ['obv', 'roc']
+        self.long_position = False
+
+    def signals(self, data):
+        try:
+            return an.signal_roc(data['Close']) & an.signal_obv(close=data['Close'], volume=data['Volume'])
         except Exception as e:
             return pd.Series([False])
         
