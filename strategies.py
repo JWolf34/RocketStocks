@@ -5,6 +5,12 @@ import analysis as an
 import backtesting
 import stockdata as sd
 import sys, inspect
+import logging
+
+BACKTESTING_PATH = "data/backtests"
+
+# Logging configuration
+logger = logging.getLogger(__name__)
 
 '''
 Process for adding a new Strategy
@@ -244,11 +250,20 @@ class SMA_10_20_ADX_Strategy(ta.Strategy):
     def override_chart_args(self, chart_args):
         return chart_args
     
-    def backtest(self, data, plot=False, cash = 10000):
+    def backtest(self, ticker, data, plot=False, cash = 10000, filepathroot = None):
+        logger.info("Running backtest for ticker '{}' on strategy {}".format(ticker, self.name))
+        
+        # Run backtest
         bt = backtesting.Backtest(data, self.Backtest, cash=cash)
         stats = bt.run()
         if plot:
-            bt.plot()
+            if filepathroot == None:
+                sd.validate_path(BACKTESTING_PATH + "/{}".format(ticker))
+                filename = "{}/{}/{}_{}.html".format(BACKTESTING_PATH, ticker, ticker, self.short_name)
+            else:
+                sd.validate_path(filepathroot + "/{}".format(ticker))
+                filename = "{}/{}/{}_{}.html".format(filepathroot, ticker, ticker, self.short_name)
+            bt.plot(filename=filename)
         return stats
     
 
@@ -301,11 +316,20 @@ class ZScore_ADX_SMA_10_50_Strategy(ta.Strategy):
     def override_chart_args(self, chart_args):
         return chart_args
     
-    def backtest(self, data, plot=False, cash = 10000):
+    def backtest(self, ticker, data, plot=False, cash = 10000, filepathroot = None):
+        logger.info("Running backtest for ticker '{}' on strategy {}".format(ticker, self.name))
+        
+        # Run backtest
         bt = backtesting.Backtest(data, self.Backtest, cash=cash)
         stats = bt.run()
         if plot:
-            bt.plot()
+            if filepathroot == None:
+                sd.validate_path(BACKTESTING_PATH + "/{}".format(ticker))
+                filename = "{}/{}/{}_{}.html".format(BACKTESTING_PATH, ticker, ticker, self.short_name)
+            else:
+                sd.validate_path(filepathroot + "/{}".format(ticker))
+                filename = "{}/{}/{}_{}.html".format(filepathroot, ticker, ticker, self.short_name)
+            bt.plot(filename=filename)
         return stats
     
 class ROC_OBV_Strategy(ta.Strategy):
@@ -339,18 +363,22 @@ class ROC_OBV_Strategy(ta.Strategy):
     def override_chart_args(self, chart_args):
         return chart_args
     
-    def backtest(self, data, plot=False, cash = 10000):
+    def backtest(self, ticker, data, plot=False, cash = 10000, filepathroot = None):
+        logger.info("Running backtest for ticker '{}' on strategy {}".format(ticker, self.name))
+        
+        # Run backtest
         bt = backtesting.Backtest(data, self.Backtest, cash=cash)
         stats = bt.run()
         if plot:
-            bt.plot()
+            if filepathroot == None:
+                sd.validate_path(BACKTESTING_PATH + "/{}".format(ticker))
+                filename = "{}/{}/{}_{}.html".format(BACKTESTING_PATH, ticker, ticker, self.short_name)
+            else:
+                sd.validate_path(filepathroot + "/{}".format(ticker))
+                filename = "{}/{}/{}_{}.html".format(filepathroot, ticker, ticker, self.short_name)
+            bt.plot(filename=filename)
         return stats
     
-
- 
-
-
-
 def get_strategies():
     strategies = {}
     for name, obj in inspect.getmembers(sys.modules[__name__]):
@@ -376,7 +404,7 @@ if __name__ =='__main__':
     total_return = 0
     tickers = sd.get_tickers_from_all_watchlists()
     #tickers = ["ARM", 'CAVA', 'CELH', 'FMC', 'INTC', 'MRNA', 'NVDA', 'TLRY', 'TOST', 'TSM', 'YOLO']
-    strategy = ROC_OBV_Strategy()
+    strategy = ZScore_ADX_SMA_10_50_Strategy()
     num_tickers = 1
     highest_return = 0.0
     lowest_return  = 0.0
@@ -386,7 +414,7 @@ if __name__ =='__main__':
         sd.download_analyze_data(ticker)
         data = sd.fetch_daily_data(ticker)
         data = data.tail(an.recent_bars(data, tf='1y'))
-        stats = strategy.backtest(data = data, plot=False)
+        stats = strategy.backtest(data = data, ticker=ticker, plot=True)
         print(stats)
 
         return_value = stats.get('Return [%]')
