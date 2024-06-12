@@ -228,11 +228,15 @@ class SMA_10_20_ADX_Strategy(ta.Strategy):
             self.signals = strategy.signals(self.data.df)
 
         def next(self):
-            data_point = self.data.Close.shape[0] -1
-            if self.signals.iloc[data_point]:
-                self.buy()
-            elif not self.signals.iloc[data_point]:
-                self.position.close() 
+            try:
+                data_point = self.data.Close.shape[0] -1
+                if self.signals.iloc[data_point]:
+                    self.buy()
+                elif not self.signals.iloc[data_point]:
+                    self.position.close() 
+            except IndexError as e:
+                # No signals to test against
+                pass
 
     def __init__(self):
         self.name = "SMA 10/20 & ADX Strategy"
@@ -250,13 +254,13 @@ class SMA_10_20_ADX_Strategy(ta.Strategy):
     def override_chart_args(self, chart_args):
         return chart_args
     
-    def backtest(self, ticker, data, plot=False, cash = 10000, filepathroot = None):
+    def backtest(self, ticker, data, stats_only=False, cash = 10000, filepathroot = None):
         logger.info("Running backtest for ticker '{}' on strategy {}".format(ticker, self.name))
         
         # Run backtest
         bt = backtesting.Backtest(data, self.Backtest, cash=cash)
         stats = bt.run()
-        if plot:
+        if not stats_only:
             if filepathroot == None:
                 sd.validate_path(BACKTESTING_PATH + "/{}".format(ticker))
                 filename = "{}/{}/{}_{}.html".format(BACKTESTING_PATH, ticker, ticker, self.short_name)
@@ -277,11 +281,15 @@ class ZScore_ADX_SMA_10_50_Strategy(ta.Strategy):
             self.signals = strategy.signals(self.data.df)
 
         def next(self):
-            data_point = self.data.Close.shape[0] -1
-            if self.signals.iloc[data_point]:
-                self.buy()
-            elif not self.signals.iloc[data_point]:
-                self.position.close() 
+            try:
+                data_point = self.data.Close.shape[0] -1
+                if self.signals.iloc[data_point]:
+                    self.buy()
+                elif not self.signals.iloc[data_point]:
+                    self.position.close() 
+            except IndexError as e:
+                # No signals to test against
+                pass
 
     def __init__(self):
         self.name = "ZScore 0, ADX, & SMA 10/50 Strategy"
@@ -316,13 +324,13 @@ class ZScore_ADX_SMA_10_50_Strategy(ta.Strategy):
     def override_chart_args(self, chart_args):
         return chart_args
     
-    def backtest(self, ticker, data, plot=False, cash = 10000, filepathroot = None):
+    def backtest(self, ticker, data, stats_only=False, cash = 10000, filepathroot = None):
         logger.info("Running backtest for ticker '{}' on strategy {}".format(ticker, self.name))
         
         # Run backtest
         bt = backtesting.Backtest(data, self.Backtest, cash=cash)
         stats = bt.run()
-        if plot:
+        if not stats_only:
             if filepathroot == None:
                 sd.validate_path(BACKTESTING_PATH + "/{}".format(ticker))
                 filename = "{}/{}/{}_{}.html".format(BACKTESTING_PATH, ticker, ticker, self.short_name)
@@ -341,11 +349,16 @@ class ROC_OBV_Strategy(ta.Strategy):
             self.signals = strategy.signals(self.data.df)
 
         def next(self):
-            data_point = self.data.Close.shape[0] -1
-            if self.signals.iloc[data_point]:
-                self.buy()
-            elif not self.signals.iloc[data_point]:
-                self.position.close() 
+            try:
+                data_point = self.data.Close.shape[0] -1
+                if self.signals.iloc[data_point]:
+                    self.buy()
+                elif not self.signals.iloc[data_point]:
+                    self.position.close() 
+            except IndexError as e:
+                # No signals to test against
+                pass
+
 
     def __init__(self):
         self.name = "ROC & OBV Strategy"
@@ -363,13 +376,13 @@ class ROC_OBV_Strategy(ta.Strategy):
     def override_chart_args(self, chart_args):
         return chart_args
     
-    def backtest(self, ticker, data, plot=False, cash = 10000, filepathroot = None):
+    def backtest(self, ticker, data, stats_only=False, cash = 10000, filepathroot = None):
         logger.info("Running backtest for ticker '{}' on strategy {}".format(ticker, self.name))
         
         # Run backtest
         bt = backtesting.Backtest(data, self.Backtest, cash=cash)
         stats = bt.run()
-        if plot:
+        if not stats_only:
             if filepathroot == None:
                 sd.validate_path(BACKTESTING_PATH + "/{}".format(ticker))
                 filename = "{}/{}/{}_{}.html".format(BACKTESTING_PATH, ticker, ticker, self.short_name)
@@ -414,7 +427,7 @@ if __name__ =='__main__':
         sd.download_analyze_data(ticker)
         data = sd.fetch_daily_data(ticker)
         data = data.tail(an.recent_bars(data, tf='1y'))
-        stats = strategy.backtest(data = data, ticker=ticker, plot=True)
+        stats = strategy.backtest(data = data, ticker=ticker, stats_only=True)
         print(stats)
 
         return_value = stats.get('Return [%]')

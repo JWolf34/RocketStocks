@@ -520,7 +520,7 @@ def run_bot():
                     archer_obv: app_commands.Choice[str] = 'False'):
 
         await interaction.response.defer(ephemeral=True)
-        logger.info("/plot-chart function called by user {}".format(interaction.user.name))
+        logger.info("/run-charts function called by user {}".format(interaction.user.name))
         watchlist_id =  watchlist
         if watchlist == 'personal':
             watchlist_id = interaction.user.id
@@ -621,6 +621,182 @@ def run_bot():
                 await interaction.user.send(message, files=files)
             else:
                 await interaction.channel.send(message, files=files)
+
+    ###############
+    # Backtesting #
+    ###############
+    
+    async def backtest_options(interaction: discord.Interaction, current: str):
+        charts = strategies.get_combination_strategies()
+        bt_strategies = [chart().name for chart in charts]
+        return [
+            app_commands.Choice(name = strategy, value= strategy)
+            for strategy in bt_strategies if current.lower() in strategy.lower()
+        ]
+
+    # Generate backtests for the selected tickers
+    @client.tree.command(name = "fetch-backtests", description= "Generate backtests for the selected tickers",)
+    @app_commands.describe(tickers = "Tickers to return charts for (separated by spaces)")
+    @app_commands.describe(strategy = "Strategy to run the backtest against")
+    @app_commands.autocomplete(strategy=backtest_options,)
+    @app_commands.describe(visibility = "'private' to send to DMs, 'public' to send to the channel")
+    @app_commands.choices(visibility =[
+        app_commands.Choice(name = "private", value = 'private'),
+        app_commands.Choice(name = "public", value = 'public')
+    ])
+    @app_commands.describe(cash = "Amount of captial to start the backtest with (Default: 10,000)")
+    @app_commands.describe(timeframe = "Timeframe to plot the chart against (Default: 10y)")
+    @app_commands.choices(timeframe = [app_commands.Choice(name = x, value= x) for x in an.get_plot_timeframes()])
+    @app_commands.describe(stats_only = "True to only return stats of backtest, False to return interactive backtest HTML file (Default: False)")
+    @app_commands.choices(stats_only=[
+        app_commands.Choice(name="True", value="True"),
+        app_commands.Choice(name="False", value="False") 
+    ])  
+
+    async def fetch_backtests(interaction: discord.interactions, tickers: str, strategy: str, visibility: app_commands.Choice[str],
+                    cash: int = 10000,
+                    timeframe: str = "1y", 
+                    stats_only: str = "False"):
+
+        await interaction.response.defer(ephemeral=True)
+        logger.info("/fetch-backtests function called by user {}".format(interaction.user.name))
+        tickers, invalid_tickers = sd.get_list_from_tickers(tickers)
+
+        # Generate backtest stats
+        backtest_stats = {}
+        for ticker in tickers:
+            stats = await send_backtest(**locals())
+            backtest_stats[ticker] = stats
+
+        await send_backtest_summary(interaction, backtest_stats, tickers, strategy, visibility.value)
+
+        await interaction.followup.send("Finished generating backtests")
+
+    # Generate backtests for tickers in the selected watchlists
+    @client.tree.command(name = "run-backtests", description= "Generate backtests for the selected tickers",)
+    @app_commands.describe(watchlist = "Watchlist to plot the strategy against")
+    @app_commands.autocomplete(watchlist=watchlist_options,)
+    @app_commands.describe(strategy = "Strategy to run the backtest against")
+    @app_commands.autocomplete(strategy=backtest_options,)
+    @app_commands.describe(visibility = "'private' to send to DMs, 'public' to send to the channel")
+    @app_commands.choices(visibility =[
+        app_commands.Choice(name = "private", value = 'private'),
+        app_commands.Choice(name = "public", value = 'public')
+    ])
+    @app_commands.describe(cash = "Amount of captial to start the backtest with (Default: 10,000)")
+    @app_commands.describe(timeframe = "Timeframe to plot the chart against (Default: 10y)")
+    @app_commands.choices(timeframe = [app_commands.Choice(name = x, value= x) for x in an.get_plot_timeframes()])
+    @app_commands.describe(stats_only = "True to only return stats of backtest, False to return interactive backtest HTML file (Default: False)")
+    @app_commands.choices(stats_only=[
+        app_commands.Choice(name="True", value="True"),
+        app_commands.Choice(name="False", value="False") 
+    ])  
+
+    async def run_backtests(interaction: discord.interactions, watchlist: str, strategy: str, visibility: app_commands.Choice[str],
+                    cash: int = 10000,
+                    timeframe: str = "1y", 
+                    stats_only: str = "False"):
+
+        await interaction.response.defer(ephemeral=True)
+        logger.info("/run-backtests function called by user {}".format(interaction.user.name))
+        watchlist_id =  watchlist
+        if watchlist == 'personal':
+            watchlist_id = interaction.user.id
+        tickers = sd.get_tickers_from_watchlist(watchlist_id)
+
+        # Generate backtest stats
+        backtest_stats = {}
+        for ticker in tickers:
+            stats = await send_backtest(**locals())
+            backtest_stats[ticker] = stats
+
+        await send_backtest_summary(interaction, backtest_stats, tickers, strategy, visibility.value)
+
+        await interaction.followup.send("Finished generating backtests")
+
+    
+    async def send_backtest(interaction: discord.Interaction, ticker, **kwargs):
+        
+        # Parse ticker and data fields
+        backtest_args = {}
+        backtest_args['ticker'] = ticker
+
+        data = sd.fetch_daily_data(ticker)
+        if data.size == 0 or not sd.daily_data_up_to_date(data):
+            sd.download_analyze_data(ticker)
+            data = sd.fetch_daily_data(ticker)
+        timeframe = kwargs.pop('timeframe', '10y')
+        last = an.recent_bars(data, tf=timeframe) if isinstance(timeframe, str) else an.recent_bars(data, tf=timeframe.value)
+        data = data.tail(last)
+        backtest_args['data'] = data
+        visibility = kwargs.pop("visibility").value
+
+        # Parse strategy
+        strategy = strategies.get_strategy(kwargs.pop('strategy'))()
+        
+            # Args for saving backtest HTML file 
+        backtest_args['filepathroot'] = "{}/{}".format(ATTACHMENTS_PATH, "backtests")
+
+        # Parse optional arguments
+
+        cash = kwargs.pop('cash', 10000)
+        backtest_args['cash'] = cash
+
+        
+
+        stats_only = kwargs.pop('stats_only')
+        backtest_args['stats_only'] = eval(stats_only) if isinstance(stats_only, str) else eval(stats_only.value)
+
+        files = []
+        message  = '### Backtest of {} for {} over last {} days'.format(strategy.name, ticker, last)
+
+        stats = strategy.backtest(**backtest_args)
+        if stats is None:
+            message = "Failed to plot '{}' for ticker {}. ".format(plot_name, ticker) 
+            logger.error(message)
+            if visibility == 'private':
+                await interaction.user.send(message)
+            else:
+                await interaction.channel.send(message)
+            return None
+        message += "\n ```{}```".format(stats)
+        files.append(discord.File(backtest_args['filepathroot']+ "/{}/{}_{}.html".format(ticker, ticker, strategy.short_name)))
+        if visibility == 'private':
+            await interaction.user.send(message, files=files)
+        else:
+            await interaction.channel.send(message, files=files)
+        return stats
+
+    async def send_backtest_summary(interaction : discord.Interaction, backtest_stats, tickers, strategy_name, visibility):
+
+        total_return = 0.0
+        highest_return = 0.0
+        highest_return_ticker = ''
+        lowest_return  = 0.0
+        lowest_return_ticker = ''
+        
+        for ticker in tickers:
+            stats = backtest_stats.get(ticker)
+            return_value = stats.get('Return [%]')
+            total_return += return_value    
+
+            if return_value > highest_return:
+                highest_return = return_value
+                highest_return_ticker = ticker
+            if return_value < lowest_return:
+                lowest_return = return_value
+                lowest_return_ticker = ticker
+
+        message = "## Backtest Summary\n**Strategy:** {}\n**Tickers:** {}\n".format(strategy_name, " ,".join(tickers))
+        message += "**Average Return**: {:2f}%\n".format(total_return/len(tickers))
+        message += "**Highest Return**: {:2f}% ({})\n".format(highest_return, highest_return_ticker)
+        message += "**Lowest Return**: {:2f}% ({})".format(lowest_return, lowest_return_ticker)
+
+        if visibility == 'private':
+            await interaction.user.send(message)
+        else:
+            await interaction.channel.send(message)
+
 
 
         
