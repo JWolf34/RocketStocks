@@ -214,6 +214,19 @@ class ZScore_Strategy(ta.Strategy):
 
 # Strategies
 class SMA_10_20_ADX_Strategy(ta.Strategy):
+    
+    class Backtest (backtesting.Strategy):
+
+        def init(self):
+            strategy = SMA_10_20_ADX_Strategy()
+            self.signals = strategy.signals(self.data.df)
+
+        def next(self):
+            data_point = self.data.Close.shape[0] -1
+            if self.signals.iloc[data_point]:
+                self.buy()
+            elif not self.signals.iloc[data_point]:
+                self.position.close() 
 
     def __init__(self):
         self.name = "SMA 10/20 & ADX Strategy"
@@ -231,7 +244,29 @@ class SMA_10_20_ADX_Strategy(ta.Strategy):
     def override_chart_args(self, chart_args):
         return chart_args
     
+    def backtest(self, data, plot=False, cash = 10000):
+        bt = backtesting.Backtest(data, self.Backtest, cash=cash)
+        stats = bt.run()
+        if plot:
+            bt.plot()
+        return stats
+    
+
+    
 class ZScore_ADX_SMA_10_50_Strategy(ta.Strategy):
+
+    class Backtest (backtesting.Strategy):
+
+        def init(self):
+            strategy = ZScore_ADX_SMA_10_50_Strategy()
+            self.signals = strategy.signals(self.data.df)
+
+        def next(self):
+            data_point = self.data.Close.shape[0] -1
+            if self.signals.iloc[data_point]:
+                self.buy()
+            elif not self.signals.iloc[data_point]:
+                self.position.close() 
 
     def __init__(self):
         self.name = "ZScore 0, ADX, & SMA 10/50 Strategy"
@@ -266,7 +301,27 @@ class ZScore_ADX_SMA_10_50_Strategy(ta.Strategy):
     def override_chart_args(self, chart_args):
         return chart_args
     
+    def backtest(self, data, plot=False, cash = 10000):
+        bt = backtesting.Backtest(data, self.Backtest, cash=cash)
+        stats = bt.run()
+        if plot:
+            bt.plot()
+        return stats
+    
 class ROC_OBV_Strategy(ta.Strategy):
+
+    class Backtest (backtesting.Strategy):
+
+        def init(self):
+            strategy = ROC_OBV_Strategy()
+            self.signals = strategy.signals(self.data.df)
+
+        def next(self):
+            data_point = self.data.Close.shape[0] -1
+            if self.signals.iloc[data_point]:
+                self.buy()
+            elif not self.signals.iloc[data_point]:
+                self.position.close() 
 
     def __init__(self):
         self.name = "ROC & OBV Strategy"
@@ -284,18 +339,14 @@ class ROC_OBV_Strategy(ta.Strategy):
     def override_chart_args(self, chart_args):
         return chart_args
     
-""" class Backtest (backtesting.Strategy):
+    def backtest(self, data, plot=False, cash = 10000):
+        bt = backtesting.Backtest(data, self.Backtest, cash=cash)
+        stats = bt.run()
+        if plot:
+            bt.plot()
+        return stats
+    
 
-    def init(self):
-        strategy = ZScore_ADX_SMA_10_50_Strategy()
-        self.signals = strategy.signals(self.data.df)
-
-    def next(self):
-        data_point = self.data.Close.shape[0] -1
-        if self.signals.iloc[data_point]:
-            self.buy()
-        elif not self.signals.iloc[data_point]:
-            self.position.close() """
  
 
 
@@ -323,23 +374,20 @@ def get_indicator_strategies():
 if __name__ =='__main__':
 
     total_return = 0
-    #tickers = sd.get_tickers_from_watchlist('volatile')
-    tickers = ["ARM", 'CAVA', 'CELH', 'FMC', 'INTC', 'MRNA', 'NVDA', 'TLRY', 'TOST', 'TSM', 'YOLO']
-    #strategy = ZScore_ADX_SMA_10_50_Strategy()
+    tickers = sd.get_tickers_from_all_watchlists()
+    #tickers = ["ARM", 'CAVA', 'CELH', 'FMC', 'INTC', 'MRNA', 'NVDA', 'TLRY', 'TOST', 'TSM', 'YOLO']
+    strategy = ROC_OBV_Strategy()
     num_tickers = 1
     for ticker in tickers:
         print("***** BACKTESTING {}, {}/{} *****".format(ticker, num_tickers, len(tickers)))
         sd.download_analyze_data(ticker)
         data = sd.fetch_daily_data(ticker)
-        data = data.tail(an.recent_bars(data, tf='10y'))
-        #signals = strategy.signals(data)
-
-        bt = backtesting.Backtest(data, Backtest, cash=10000)
-        stats = bt.run()
+        data = data.tail(an.recent_bars(data, tf='1y'))
+        stats = strategy.backtest(data = data, plot=False)
+        print(stats)
         strat_return = stats['Return [%]']
         print("Return over last {} days: {}".format(data.shape[0], strat_return))
         total_return += strat_return
         num_tickers += 1
-        bt.plot() 
     print("***** END BACKTESTING *****")
     print("Average Return: {:.2f}%".format(total_return / len(tickers)))
