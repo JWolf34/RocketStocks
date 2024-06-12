@@ -79,7 +79,7 @@ def generate_report_charts(data, ticker):
     Chart(df = data, ticker = ticker, title = "{} {}".format(ticker, plot_name), strategy = strategy, adx=True, volume=False, filename=strategy.short_name, tsignals=True, long_trend=strategy.signals(data))
 
     # ZScore
-    plot_name = "ZScore -3/-1"
+    plot_name = "ZScore Mean-Revert"
     strategy = strategies.get_strategy(plot_name)()
     Chart(df = data, ticker = ticker, title = "{} {}".format(ticker, plot_name), strategy = strategy, zscore=True, volume=False, filename=strategy.short_name, tsignals=True, long_trend=strategy.signals(data))
 
