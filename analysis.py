@@ -46,7 +46,7 @@ def generate_report_charts(data, ticker):
     # Simple Moving Average 10/50
     plot_name = "Simple Moving Average 10/50"
     strategy = strategies.get_strategy(plot_name)()
-    Chart(df = data, ticker = ticker, title="{} {}".format(ticker, plot_name), strategy=strategy, sma_10_50=True, volume = False, filename=strategy.short_name)
+    Chart(df = data, ticker = ticker, title="{} {}".format(ticker, plot_name), strategy=strategy, sma_10_50=True, volume = False, filename=strategy.short_name, tsignals=True, long_trend=strategy.signals(data))
     
     # 90-Day Candlestick
     plot_name = "90-Day Candles"
@@ -56,32 +56,32 @@ def generate_report_charts(data, ticker):
     # Relative Strength Index
     plot_name = "Relative Strength Index"
     strategy = strategies.get_strategy(plot_name)()
-    Chart(df = data, ticker = ticker, title = "{} {}".format(ticker, plot_name), strategy = strategy, rsi=True, volume=False, filename=strategy.short_name)
+    Chart(df = data, ticker = ticker, title = "{} {}".format(ticker, plot_name), strategy = strategy, rsi=True, volume=False, filename=strategy.short_name, tsignals=True, long_trend=strategy.signals(data))
     
     # On-Balance Volume
     plot_name = "On-Balance Volume"
     strategy = strategies.get_strategy(plot_name)()
-    Chart(df = data, ticker = ticker, title = "{} {}".format(ticker, plot_name), strategy = strategy, obv=True, volume=True, last=recent_bars(data, tf="3mo"), rpad=2, filename=strategy.short_name)
+    Chart(df = data, ticker = ticker, title = "{} {}".format(ticker, plot_name), strategy = strategy, obv=True, volume=True, last=recent_bars(data, tf="3mo"), rpad=2, filename=strategy.short_name, tsignals=True, long_trend=strategy.signals(data))
     
     # Accumulation/Distribution Index
     plot_name = "Accumulation/Distribution Index"
     strategy = strategies.get_strategy(plot_name)()
-    Chart(df = data, ticker = ticker, title = "{} {}".format(ticker, plot_name), strategy = strategy, ad=True, volume=False, last=recent_bars(data, tf="3mo"), rpad=2, filename=strategy.short_name)
+    Chart(df = data, ticker = ticker, title = "{} {}".format(ticker, plot_name), strategy = strategy, ad=True, volume=False, last=recent_bars(data, tf="3mo"), rpad=2, filename=strategy.short_name, tsignals=True, long_trend=strategy.signals(data))
 
     # Moving Average Convergence/Divergence
     plot_name = "Moving Average Convergence/Divergence"
     strategy = strategies.get_strategy(plot_name)()
-    Chart(df = data, ticker = ticker, title = "{} {}".format(ticker, plot_name), strategy = strategy, macd=True, volume=False, filename=strategy.short_name)
+    Chart(df = data, ticker = ticker, title = "{} {}".format(ticker, plot_name), strategy = strategy, macd=True, volume=False, filename=strategy.short_name, tsignals=True, long_trend=strategy.signals(data))
 
     # Average Directional Index
     plot_name = "Average Directional Index"
     strategy = strategies.get_strategy(plot_name)()
-    Chart(df = data, ticker = ticker, title = "{} {}".format(ticker, plot_name), strategy = strategy, adx=True, volume=False, filename=strategy.short_name)
+    Chart(df = data, ticker = ticker, title = "{} {}".format(ticker, plot_name), strategy = strategy, adx=True, volume=False, filename=strategy.short_name, tsignals=True, long_trend=strategy.signals(data))
 
     # ZScore
     plot_name = "ZScore -3/-1"
     strategy = strategies.get_strategy(plot_name)()
-    Chart(df = data, ticker = ticker, title = "{} {}".format(ticker, plot_name), strategy = strategy, zscore=True, volume=False, filename=strategy.short_name)
+    Chart(df = data, ticker = ticker, title = "{} {}".format(ticker, plot_name), strategy = strategy, zscore=True, volume=False, filename=strategy.short_name, tsignals=True, long_trend=strategy.signals(data))
 
 
 
@@ -146,7 +146,7 @@ class Chart(object):
         mpfchart["non_trading"] = kwargs.pop("nontrading", False)
         mpfchart["rc"] = kwargs.pop("rc", {'figure.facecolor': '#EDEDED'})
         mpfchart["plot_ratios"] = kwargs.pop("plot_ratios", (12, 1.7) if self.config['volume'] else (12,))
-        mpfchart["scale_padding"] = kwargs.pop("scale_padding", {'left': 1, 'top': 4, 'right': 4, 'bottom': 1})
+        mpfchart["scale_padding"] = kwargs.pop("scale_padding", {'left': 1, 'top': 4, 'right': 1, 'bottom': 1})
         mpfchart["tight_layout"] = kwargs.pop("tight_layout", True)
         mpfchart["type"] = kwargs.pop("type", "candle")
         mpfchart["width_config"] = kwargs.pop("width_config", default_mpf_width)
@@ -376,7 +376,7 @@ class Chart(object):
             _p = kwargs.pop("zascore_percenty", 0.2)
             zs_ylim = ta_ylim(mpfdf[zs_name], _p)
             taplots += [
-                mpf.make_addplot(mpfdf[zs_name], ylabel=zs_name, color="black", width=1.5, panel=cpanel(), ylim=zs_ylim),
+                mpf.make_addplot(mpfdf[zs_name], ylabel="ZScore", color="black", width=1.5, panel=cpanel(), ylim=zs_ylim),
                 mpf.make_addplot(hline(mpfdf.shape[0], -3), color="red", width=1.2, panel=cpanel(), ylim=zs_ylim),
                 mpf.make_addplot(hline(mpfdf.shape[0], -2), color="orange", width=1, panel=cpanel(), ylim=zs_ylim),
                 mpf.make_addplot(hline(mpfdf.shape[0], -1), color="silver", width=1, panel=cpanel(), ylim=zs_ylim),
@@ -458,7 +458,8 @@ class Chart(object):
             ]
             self.mpfchart["plot_ratios"] += common_plot_ratio # Required to add a new Panel 
 
-        if tsig:
+        plot_returns = kwargs.pop("plot_returns", False)
+        if tsig and plot_returns:
             _p = kwargs.pop("tsig_percenty", 0.23)
             treturn_ylim = ta_ylim(mpfdf["ACTRET_1"], _p)
             taplots += [

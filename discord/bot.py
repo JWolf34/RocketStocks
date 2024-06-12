@@ -561,6 +561,7 @@ def run_bot():
             # Parse optional plot args
             tsignals = kwargs.pop('display_signals')
             plot_args['tsignals'] = eval(tsignals) if isinstance(tsignals, str) else eval(tsignals.value)
+            plot_args['plot_returns'] = plot_args['tsignals']
 
             type = kwargs.pop('plot_type')
             plot_args['type'] = type if isinstance(type, str) else type.value
