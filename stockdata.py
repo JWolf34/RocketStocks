@@ -466,6 +466,8 @@ def daily_data_up_to_date(data):
         return False
     else:
         yesterday = datetime.date.today() - timedelta(days=1)
+        while yesterday.weekday() > 5:
+            yesterday = yesterday - timedelta(days=1)
         data_dates = [date.date() for date in data.index]
         latest_date = data_dates[-1]
         if yesterday in data_dates:
