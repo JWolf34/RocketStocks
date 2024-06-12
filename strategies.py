@@ -378,6 +378,9 @@ if __name__ =='__main__':
     #tickers = ["ARM", 'CAVA', 'CELH', 'FMC', 'INTC', 'MRNA', 'NVDA', 'TLRY', 'TOST', 'TSM', 'YOLO']
     strategy = ROC_OBV_Strategy()
     num_tickers = 1
+    highest_return = 0.0
+    lowest_return  = 0.0
+
     for ticker in tickers:
         print("***** BACKTESTING {}, {}/{} *****".format(ticker, num_tickers, len(tickers)))
         sd.download_analyze_data(ticker)
@@ -385,9 +388,18 @@ if __name__ =='__main__':
         data = data.tail(an.recent_bars(data, tf='1y'))
         stats = strategy.backtest(data = data, plot=False)
         print(stats)
-        strat_return = stats['Return [%]']
-        print("Return over last {} days: {}".format(data.shape[0], strat_return))
-        total_return += strat_return
+
+        return_value = stats.get('Return [%]')
+        total_return += return_value
+        print("Return over last {} days: {}".format(data.shape[0], return_value))
+
+        if return_value > highest_return:
+            highest_return = return_value
+        if return_value < lowest_return:
+            lowest_return = return_value
         num_tickers += 1
     print("***** END BACKTESTING *****")
-    print("Average Return: {:.2f}%".format(total_return / len(tickers)))
+  
+    print("Average Return: {:2f}%".format(total_return/len(tickers)))
+    print("Highest Return: {:2f}%".format(highest_return))
+    print("Lowest Return: {:2f}%".format(lowest_return))
