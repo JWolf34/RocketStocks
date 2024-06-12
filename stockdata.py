@@ -2,6 +2,7 @@ import yfinance as yf
 from pandas_datareader import data as pdr
 import pandas as pd
 import pandas_ta as ta
+import strategies
 import os
 import datetime
 from datetime import timedelta
@@ -9,7 +10,6 @@ from requests import Session
 from requests_cache import CacheMixin, SQLiteCache
 from requests_ratelimiter import LimiterMixin, MemoryQueueBucket
 from pyrate_limiter import Duration, RequestRate, Limiter
-import sys
 import logging
 
 # Logging configuration
@@ -94,20 +94,18 @@ def update_csv(data, ticker, path):
 
 # Generate indicator data on the provided Dataframe per the specified strategy
 # Can add or remove inidicators to the strategy as needed
-def generate_indicators(data):#
 
-    IndicatorStrategy = ta.Strategy(name = 'Indicator Strategy', ta = [
-        {"kind": "sma", "length":10},
-        {"kind": "sma", "length":30},
-        {"kind": "sma", "length":50},
-        {"kind": "sma", "length":200},
-        {"kind": "obv"},
-        {"kind": "macd"},
-        {"kind": "rsi"},
-        {"kind": "adx"},
-        {"kind": "ad"}
-    ]
-    )
+
+
+def generate_indicators(data):
+
+    ta_list = []
+    for strategy in strategies.get_indicator_strategies():
+        strategy = strategy()
+        ta_list += [x for x in strategy.ta if x not in ta_list]
+
+    IndicatorStrategy = ta.Strategy(name="Indicator Strategy", ta=ta_list)
+        
     logger.info("Generating indicator data...")
     
     data.ta.strategy(IndicatorStrategy)
@@ -115,7 +113,6 @@ def generate_indicators(data):#
 # Download data and generate indicator data on specified ticker
 def download_analyze_data(ticker):
     
-
     data = download_data(ticker)
     generate_indicators(data)
     update_csv(data, ticker, DAILY_DATA_PATH)
@@ -374,6 +371,7 @@ def update_watchlist(watchlist_id, tickers):
 # Create a new watchlist with id 'watchlist_id'
 def create_watchlist(watchlist_id, tickers):
     logger.info("Creating watchlist with ID '{}' and tickers {}".format(watchlist_id, tickers))
+    validate_path("{}".format(WATCHLISTS_PATH, watchlist_id))
     with open("{}/{}.txt".format(WATCHLISTS_PATH, watchlist_id), 'w') as watchlist:
         watchlist.write("\n".join(tickers))
         watchlist.close()
@@ -492,10 +490,10 @@ def validate_columns(data, columns):
 #########
 
 def test():
-    tickers = []
+    tickers = ['AAPL', 'MSFT', 'SPY']
+
     for ticker in tickers:
-        info = get_ticker_info(ticker)
-        print("Info on ticker '{}'\n{}".format(ticker, info))
+        download_analyze_data(ticker)
 
 if __name__ == "__main__":
     logger.info("stockdata.py initialized")
