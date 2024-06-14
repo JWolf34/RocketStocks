@@ -160,7 +160,7 @@ class OBV_Strategy(ta.Strategy):
         except Exception as e:
             return pd.Series([False])
 
-    def override_chart_args(chart_args):
+    def override_chart_args(self, chart_args):
         chart_args['volume'] = True
         return chart_args
         
