@@ -94,6 +94,40 @@ class SMA_50_200_Strategy(ta.Strategy):
     
     def override_chart_args(self, chart_args):
         return chart_args
+    
+class EMA_10_20_Strategy(ta.Strategy):
+
+    def __init__(self):
+        self.name = "Exponential Moving Average 10/20"
+        self.short_name = "EMA_10_20"
+        self.ta = [{"kind":"ema", "length":10}, {"kind":"ema", "length":20}] 
+        self.indicators = ['ema_10_20']
+
+    def signals(self, data):
+        try:
+            return an.signal_ema(data['Close'], 10, 20) 
+        except Exception as e:
+            return pd.Series([False])
+    
+    def override_chart_args(self, chart_args):
+        return chart_args
+    
+class EMA_50_200_Strategy(ta.Strategy):
+
+    def __init__(self):
+        self.name = "Exponential Moving Average 50/200"
+        self.short_name = "EMA_50_200"
+        self.ta = [{"kind":"ema", "length":50}, {"kind":"ema", "length":200}] 
+        self.indicators = ['ema_50_200']
+
+    def signals(self, data):
+        try:
+            return an.signal_ema(data['Close'], 50, 200) 
+        except Exception as e:
+            return pd.Series([False])
+    
+    def override_chart_args(self, chart_args):
+        return chart_args
         
 class RSI_Strategy(ta.Strategy):
 

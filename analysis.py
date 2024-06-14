@@ -312,6 +312,15 @@ class Chart(object):
                 mpf.make_addplot(mpfdf['SMA_200'], type="line", color="red", width=0.8, panel=0, label="SMA_200"),
                 
             ]
+
+        # EMA 50/200
+        ema_50_200 = kwargs.pop("ema_50_200", False)
+        if ema_50_200:
+            taplots += [
+                mpf.make_addplot(mpfdf['EMA_50'], type="line", color="blue", width=0.8, panel=0, label="EMA_50"),
+                mpf.make_addplot(mpfdf['EMA_200'], type="line", color="red", width=0.8, panel=0, label="EMA_200"),
+                
+            ]
     
         # Maybe useful later? For now, eh
         """ if self.strategy.name == ta.CommonStrategy.name:
