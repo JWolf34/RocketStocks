@@ -8,10 +8,12 @@ pandas
 pandas-datareader
 scipy
 yfinance
-pandas_ta
+pandas-ta
+numpy==1.26.4
 matplotlib
 setuptools 
 mplfinance
 requests_cache
 requests_ratelimiter
 Backtesting
+tradingview_screener
