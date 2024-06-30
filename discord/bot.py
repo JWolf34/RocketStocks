@@ -899,7 +899,7 @@ def run_bot():
                 today = datetime.datetime.now() - datetime.timedelta(days=2)
                 article_date = datetime.datetime.fromtimestamp(article['providerPublishTime'])
                 if article_date.date() == today.date():
-                    ticker_news.append(article['link'])
+                    ticker_news.append(article)
             if ticker_news:
                 premarket_news[ticker] = ticker_news
 
@@ -907,20 +907,17 @@ def run_bot():
         for ticker, news in premarket_news.items():
             if news:
                 message = "### :rotating_light: PREMARKET GAINER ALERT :rotating_light:\n"
-                percent_change = gainers.loc[gainers['name'] == ticker]['premarket_change_abs'].iloc[-1]
+                percent_change = gainers.loc[gainers['name'] == ticker]['premarket_change'].iloc[-1]
                 message += "### {} {:.2f}% :arrow_up:\n\n".format(ticker, percent_change)
 
-               # message += build_strategy_report.build_ticker_info(ticker)
+                message += build_gainer_summary(ticker, gainers.loc[gainers['name'] == ticker])
                 message += "\n"
 
                 message += "### News\n"
                 for article in news:
-                    message += news[0]
+                    article_date = datetime.datetime.fromtimestamp(article['providerPublishTime'])
+                    message += "{}: [{}](<{}>)\n".format(article_date.strftime('%I:%M:%S %p'), article['title'], article['link'])
             await channel.send(message)
-
-
-
-
         
 
 
@@ -1186,6 +1183,33 @@ def run_bot():
         file = discord.File(an.get_strategy_score_filepath(strategy))
 
         return message, file
+
+    # Summary of premarket/postmarket gainer 
+    def build_gainer_summary(ticker, screener):
+
+        def format_market_cap(market_cap):
+            market_cap = float('{:.3g}'.format(market_cap))
+            magnitude = 0
+            while abs(market_cap) >= 1000:
+                magnitude += 1
+                market_cap /= 1000.0
+            return '{}{}'.format('{:f}'.format(market_cap).rstrip('0').rstrip('.'), ['', 'K', 'M', 'B', 'T'][magnitude])
+        message = "### Summary\n"
+        try:
+            ticker_data = sd.get_all_tickers_data().loc[ticker]
+        except KeyError as e:
+            logger.exception("Encountered KeyError when collecting ticker info:\n{}".format(e))
+            sd.add_to_all_tickers(ticker)
+            ticker_data = sd.get_all_tickers_data().loc[ticker]
+    
+        message += "**Name:** {}\n".format(ticker_data['Name'] if ticker_data['Name'] is not np.nan else "N/A")
+        message += "**Sector:** {}\n".format(ticker_data['Sector']if ticker_data['Sector'] is not np.nan else "N/A")
+        message += "**Industry:** {}\n".format(ticker_data['Industry'] if ticker_data['Industry'] is not np.nan else "N/A")
+        message += "**Market Cap:** {}\n".format("$"+ "{}".format(format_market_cap(screener['market_cap_basic'].iloc[0])) if screener['market_cap_basic'] is not np.nan else "N/A") 
+        message += "**Premarket Volume:** {}\n".format(screener['premarket_volume'] if screener['premarket_volume'] is not np.nan else "N/A")
+        message += "**Previous Close:** {}".format(screener['close'])
+        
+        return message + "\n"
          
     ########################
     # Test & Help Commands #
