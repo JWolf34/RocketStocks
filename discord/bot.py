@@ -1224,7 +1224,7 @@ def run_bot():
             logger.exception("Encountered KeyError when collecting ticker info:\n{}".format(e))
             sd.add_to_all_tickers(ticker)
             ticker_data = sd.get_all_tickers_data().loc[ticker]
-        message = "### Summary"
+        message = "### Summary\n"
         message += "**Name:** {}\n".format(ticker_data['Name'] if ticker_data['Name'] is not np.nan else "N/A")
         message += "**Sector:** {}\n".format(ticker_data['Sector']if ticker_data['Sector'] is not np.nan else "N/A")
         message += "**Industry:** {}\n".format(ticker_data['Industry'] if ticker_data['Industry'] is not np.nan else "N/A")
