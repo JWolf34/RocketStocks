@@ -103,8 +103,8 @@ class Chart(object):
         self._validate_ta_strategy(strategy)
 
         # Build TA and Plot
-        logging.info("Generating TA...")
-        self.df.ta.strategy(self.strategy, verbose=self.verbose)
+        #logging.info("Generating TA...")
+        #self.df.ta.strategy(self.strategy, verbose=self.verbose)
         logging.info("Building plot for ticker '{}'".format(self.ticker))
         self._plot(**kwargs)
 
