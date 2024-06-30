@@ -1041,13 +1041,13 @@ def run_bot():
                 logger.debug("Building links to external sites for ticker {}".format(ticker))
 
                 links = []
-                stockinvest = "[StockInvest](https://stockinvest.us/stock/{})".format(ticker)
+                stockinvest = "[StockInvest](<https://stockinvest.us/stock/{}>)".format(ticker)
                 links.append(stockinvest)
-                finviz = "[FinViz](https://finviz.com/quote.ashx?t={})".format(ticker)
+                finviz = "[FinViz](<https://finviz.com/quote.ashx?t={}>)".format(ticker)
                 links.append(finviz)
-                yahoo = "[Yahoo! Finance](https://finance.yahoo.com/quote/{})".format(ticker)
+                yahoo = "[Yahoo! Finance](<https://finance.yahoo.com/quote/{}>)".format(ticker)
                 links.append(yahoo)
-                tradingview = "[TradingView](https://www.tradingview.com/chart/?symbol={})".format(ticker)
+                tradingview = "[TradingView](<https://www.tradingview.com/chart/?symbol={}>)".format(ticker)
                 links.append(tradingview)
 
                 return links
