@@ -890,7 +890,7 @@ def run_bot():
     async def send_gainer_reports():
 
         today = dt.datetime.now()
-        if (today.weekday() > 5):
+        if (today.weekday() < 5):
         
             in_premarket = False
             in_intraday = False
