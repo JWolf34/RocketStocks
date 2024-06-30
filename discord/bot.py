@@ -886,7 +886,7 @@ def run_bot():
         logger.info("********** [FINISHED SENDING STRATEGY REPORTS] **********")
 
     # Generate and send premarket gainer reports to the reports channel
-    @tasks.loop(minutes=1)
+    @tasks.loop(minutes=10)
     async def send_gainer_reports():
 
         today = dt.datetime.now()
