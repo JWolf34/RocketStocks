@@ -14,6 +14,7 @@ import logging
 import numpy as np
 import strategies
 import math
+import datetime
 
 # Logging configuration
 logger = logging.getLogger(__name__)
@@ -883,6 +884,45 @@ def run_bot():
 
         logger.info("********** [FINISHED SENDING STRATEGY REPORTS] **********")
 
+    # Generate and send premarket gainer reports to the reports channel
+    @tasks.loop(minutes=1)
+    async def send_premarket_reports():
+
+        # Get premarket gainers and filter for market cap > $100M
+        gainers = sd.get_premarket_gainers()
+        gainers= gainers.loc[gainers['market_cap_basic'] >= 100000000]
+        premarket_news = {}
+        for ticker in gainers['name'].to_list():
+            ticker_news = []
+            news = sd.get_news(ticker)
+            for article in news:
+                today = datetime.datetime.now() - datetime.timedelta(days=2)
+                article_date = datetime.datetime.fromtimestamp(article['providerPublishTime'])
+                if article_date.date() == today.date():
+                    ticker_news.append(article['link'])
+            if ticker_news:
+                premarket_news[ticker] = ticker_news
+
+        channel = await client.fetch_channel(get_reports_channel_id())
+        for ticker, news in premarket_news.items():
+            if news:
+                message = "### :rotating_light: PREMARKET GAINER ALERT :rotating_light:\n"
+                percent_change = gainers.loc[gainers['name'] == ticker]['premarket_change_abs'].iloc[-1]
+                message += "### {} {:.2f}% :arrow_up:\n\n".format(ticker, percent_change)
+
+               # message += build_strategy_report.build_ticker_info(ticker)
+                message += "\n"
+
+                message += "### News\n"
+                for article in news:
+                    message += news[0]
+            await channel.send(message)
+
+
+
+
+        
+
 
     # Configure delay before sending daily reports to send at the same time daily
     @send_reports.before_loop
@@ -1022,7 +1062,7 @@ def run_bot():
             return message + "\n"
 
         # Ticker Info
-        def build_ticker_info():
+        def build_ticker_info(ticker=ticker):
 
             def format_market_cap(market_cap):
                 market_cap = float('{:.3g}'.format(market_cap))
@@ -1207,6 +1247,14 @@ def run_bot():
         await interaction.user.send(content = "Log file for RocketStocks :rocket:",file=log_file)
         await interaction.response.send_("Log file has been sent", ephemeral=True)
 
+    @client.tree.command(name = "test-premarket-reports", description= "Test posting premarket gainer reports",)
+    async def test_premarket_reports(interaction: discord.Interaction):
+        logger.info("/test-premarket-reports function called by user {}".format(interaction.user.name))
+        await interaction.response.defer(ephemeral=True)
+
+        await send_premarket_reports()
+
+        await interaction.followup.send("Posted premarket reports", ephemeral=True)
 
     client.run(TOKEN)
     

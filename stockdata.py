@@ -496,6 +496,14 @@ def get_news(ticker):
     news = yf.Ticker(ticker, session=session).news
     return news
 
+def get_premarket_gainers():
+    num_rows, gainers = Scanner.premarket_gainers.get_scanner_data()
+    return gainers
+
+def get_postmarket_gainers():
+    num_rows, gainers = Scanner.postmarket_gainers.get_scanner_data()
+    return gainers
+
 def get_premarket_news():
     num_rows, gainers = Scanner.premarket_gainers.get_scanner_data()
     gainers = gainers.loc[gainers['market_cap_basic'] >= 100000000]
