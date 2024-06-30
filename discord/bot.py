@@ -890,29 +890,35 @@ def run_bot():
     async def send_gainer_reports():
 
         today = dt.datetime.now()
-        if (today.weekday() < 5):
+        if (today.weekday() > 5):
         
             in_premarket = False
             in_intraday = False
             in_postmarket = False
+            gainer_watchlist = []
 
             
             premarket_start = today.replace(hour=7, minute=0, second=0, microsecond=0)
             intraday_start = today.replace(hour=8, minute=30, second=0, microsecond=0)
             postmarket_start = today.replace(hour=15, minute=0, second=0, microsecond=0)
-            postmarket_end = today.replace(hour=17, minute=0, second=0, microsecond=0)
+            postmarket_end = today.replace(hour=23, minute=0, second=0, microsecond=0)
 
             
             if premarket_start < today < intraday_start: # Premarket
                 gainers = sd.get_premarket_gainers()
                 in_premarket = True
+                gainer_watchlist = sd.get_tickers_from_watchlist("premarket-gainers")
+                sd.delete_watchlist("after-hours-gainers")
                 logger.debug("Gainer reports are premarket")
             elif intraday_start < today < postmarket_start: # Intraday
                 in_intraday = True
                 logger.debug("Gainer reports are intraday")
+                return
             elif postmarket_start < today < postmarket_end: # Postmarket
                 gainers = sd.get_premarket_gainers()
                 in_postmarket = True
+                gainer_watchlist = sd.get_tickers_from_watchlist("after-hours-gainers")
+                sd.delete_watchlist("premarket-gainers")
                 logger.debug("Gainer reports are postmarket")
             else: # No more reports today
                 return
@@ -936,7 +942,7 @@ def run_bot():
 
             channel = await client.fetch_channel(get_reports_channel_id())
             for ticker, news in market_news.items():
-                if news:
+                if news and ticker not in gainer_watchlist:
                     message = "### :rotating_light: {} GAINER ALERT :rotating_light:\n".format(
                         "PREMARKET" if in_premarket
                         else "INTRADAY" if in_intraday
@@ -954,6 +960,13 @@ def run_bot():
                         message += "{}: [{}](<{}>)\n".format(article_date.strftime('%I:%M:%S %p'), article['title'], article['link'])
                     message += "\n"
                 await channel.send(message)
+
+            if in_premarket:
+                sd.update_watchlist("premarket-gainers", market_news.keys())
+            elif in_intraday:
+                pass
+            elif in_postmarket:
+                sd.update_watchlist("after-hours-gainers", market_news.keys())
         else:
             # Not a weekday - do not post gainer reports
             pass
