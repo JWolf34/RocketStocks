@@ -59,6 +59,7 @@ def run_bot():
         try:
             await client.tree.sync()
             send_reports.start()
+            send_gainer_reports.start()
         except Exception as e:
             logger.exception("Encountered error waiting for on-ready signal from bot\n{}".format(e))
         logger.info("Bot connected! ")
@@ -886,39 +887,76 @@ def run_bot():
 
     # Generate and send premarket gainer reports to the reports channel
     @tasks.loop(minutes=1)
-    async def send_premarket_reports():
+    async def send_gainer_reports():
 
-        # Get premarket gainers and filter for market cap > $100M
-        gainers = sd.get_premarket_gainers()
-        gainers= gainers.loc[gainers['market_cap_basic'] >= 100000000]
-        premarket_news = {}
-        for ticker in gainers['name'].to_list():
-            ticker_news = []
-            news = sd.get_news(ticker)
-            for article in news:
-                today = datetime.datetime.now() - datetime.timedelta(days=2)
-                article_date = datetime.datetime.fromtimestamp(article['providerPublishTime'])
-                if article_date.date() == today.date():
-                    ticker_news.append(article)
-            if ticker_news:
-                premarket_news[ticker] = ticker_news
-
-        channel = await client.fetch_channel(get_reports_channel_id())
-        for ticker, news in premarket_news.items():
-            if news:
-                message = "### :rotating_light: PREMARKET GAINER ALERT :rotating_light:\n"
-                percent_change = gainers.loc[gainers['name'] == ticker]['premarket_change'].iloc[-1]
-                message += "### {} {:.2f}% :arrow_up:\n\n".format(ticker, percent_change)
-
-                message += build_gainer_summary(ticker, gainers.loc[gainers['name'] == ticker])
-
-                message += "### News\n"
-                for article in news:
-                    article_date = datetime.datetime.fromtimestamp(article['providerPublishTime'])
-                    message += "{}: [{}](<{}>)\n".format(article_date.strftime('%I:%M:%S %p'), article['title'], article['link'])
-                message += "\n"
-            await channel.send(message)
+        today = dt.datetime.now()
+        if (today.weekday() > 5):
         
+            in_premarket = False
+            in_intraday = False
+            in_postmarket = False
+
+            
+            premarket_start = today.replace(hour=7, minute=0, second=0, microsecond=0)
+            intraday_start = today.replace(hour=8, minute=30, second=0, microsecond=0)
+            postmarket_start = today.replace(hour=15, minute=0, second=0, microsecond=0)
+            postmarket_end = today.replace(hour=23, minute=0, second=0, microsecond=0)
+
+            
+            if premarket_start < today < intraday_start: # Premarket
+                gainers = sd.get_premarket_gainers()
+                in_premarket = True
+                logger.debug("Gainer reports are premarket")
+            elif intraday_start < today < postmarket_start: # Intraday
+                in_intraday = True
+                logger.debug("Gainer reports are intraday")
+            elif postmarket_start < today < postmarket_end: # Postmarket
+                gainers = sd.get_premarket_gainers()
+                in_postmarket = True
+                logger.debug("Gainer reports are postmarket")
+            else: # No more reports today
+                return
+
+            logger.info("Sending gainer reports...")
+            # Filter gainers for market cap > $100M
+            gainers= gainers.loc[gainers['market_cap_basic'] >= 100000000]
+
+            # Identify gainers with news articles that have released today 
+            market_news = {}
+            for ticker in gainers['name'].to_list():
+                ticker_news = []
+                news = sd.get_news(ticker)
+                for article in news:
+                    today = today - datetime.timedelta(days=2)
+                    article_date = dt.datetime.fromtimestamp(article['providerPublishTime'])
+                    if article_date.date() == today.date():
+                        ticker_news.append(article)
+                if ticker_news:
+                    market_news[ticker] = ticker_news
+
+            channel = await client.fetch_channel(get_reports_channel_id())
+            for ticker, news in market_news.items():
+                if news:
+                    message = "### :rotating_light: {} GAINER ALERT :rotating_light:\n".format(
+                        "PREMARKET" if in_premarket
+                        else "INTRADAY" if in_intraday
+                        else "AFTER HOURS")
+
+                    gainer_row = gainers.loc[gainers['name'] == ticker]
+                    percent_change = gainer_row['premarket_change'].iloc[-1]
+                    message += "### {} {:.2f}% :arrow_up:\n\n".format(ticker, percent_change)
+
+                    message += build_gainer_summary(ticker, gainer_row)
+
+                    message += "### News\n"
+                    for article in news:
+                        article_date = dt.datetime.fromtimestamp(article['providerPublishTime'])
+                        message += "{}: [{}](<{}>)\n".format(article_date.strftime('%I:%M:%S %p'), article['title'], article['link'])
+                    message += "\n"
+                await channel.send(message)
+        else:
+            # Not a weekday - do not post gainer reports
+            pass
 
 
     # Configure delay before sending daily reports to send at the same time daily
@@ -1061,13 +1099,6 @@ def run_bot():
         # Ticker Info
         def build_ticker_info(ticker=ticker):
 
-            def format_market_cap(market_cap):
-                market_cap = float('{:.3g}'.format(market_cap))
-                magnitude = 0
-                while abs(market_cap) >= 1000:
-                    magnitude += 1
-                    market_cap /= 1000.0
-                return '{}{}'.format('{:f}'.format(market_cap).rstrip('0').rstrip('.'), ['', 'K', 'M', 'B', 'T'][magnitude])
             message = "### Ticker Info\n"
             try:
                 ticker_data = sd.get_all_tickers_data().loc[ticker]
@@ -1079,7 +1110,7 @@ def run_bot():
             message += "**Name:** {}\n".format(ticker_data['Name'] if ticker_data['Name'] is not np.nan else "N/A")
             message += "**Sector:** {}\n".format(ticker_data['Sector']if ticker_data['Sector'] is not np.nan else "N/A")
             message += "**Industry:** {}\n".format(ticker_data['Industry'] if ticker_data['Industry'] is not np.nan else "N/A")
-            message += "**Market Cap:** {}\n".format(("$"+ "{}".format(format_market_cap(ticker_data['Market Cap']))) if ticker_data['Market Cap'] is not np.nan else "N/A") 
+            message += "**Market Cap:** {}\n".format(("$"+ "{}".format(format_large_num(ticker_data['Market Cap']))) if ticker_data['Market Cap'] is not np.nan else "N/A") 
             message += "**Country:** {}\n".format(ticker_data['Country'] if ticker_data['Country'] is not np.nan else "N/A")
             message += "**Next earnings date:** {}".format(sd.get_next_earnings_date(ticker))
             
@@ -1187,29 +1218,29 @@ def run_bot():
     # Summary of premarket/postmarket gainer 
     def build_gainer_summary(ticker, screener):
 
-        def format_market_cap(market_cap):
-            market_cap = float('{:.3g}'.format(market_cap))
-            magnitude = 0
-            while abs(market_cap) >= 1000:
-                magnitude += 1
-                market_cap /= 1000.0
-            return '{}{}'.format('{:f}'.format(market_cap).rstrip('0').rstrip('.'), ['', 'K', 'M', 'B', 'T'][magnitude])
-        message = "### Summary\n"
         try:
             ticker_data = sd.get_all_tickers_data().loc[ticker]
         except KeyError as e:
             logger.exception("Encountered KeyError when collecting ticker info:\n{}".format(e))
             sd.add_to_all_tickers(ticker)
             ticker_data = sd.get_all_tickers_data().loc[ticker]
-    
+        message = "### Summary"
         message += "**Name:** {}\n".format(ticker_data['Name'] if ticker_data['Name'] is not np.nan else "N/A")
         message += "**Sector:** {}\n".format(ticker_data['Sector']if ticker_data['Sector'] is not np.nan else "N/A")
         message += "**Industry:** {}\n".format(ticker_data['Industry'] if ticker_data['Industry'] is not np.nan else "N/A")
-        message += "**Market Cap:** {}\n".format("$"+ "{}".format(format_market_cap(screener['market_cap_basic'].iloc[0])) if screener['market_cap_basic'].iloc[0] is not np.nan else "N/A") 
-        message += "**Premarket Volume:** {}\n".format(format_market_cap(screener['premarket_volume'].iloc[0]) if screener['premarket_volume'].iloc[0] is not np.nan else "N/A")
-        message += "**Previous Close:** {}".format(screener['close'].iloc[0])
+        message += "**Market Cap:** {}\n".format("$"+ "{}".format(format_large_num(screener['market_cap_basic'].iloc[0])) if screener['market_cap_basic'].iloc[0] is not np.nan else "N/A") 
         
         return message + "\n"
+
+    # Tool to format large numbers
+    def format_large_num(number):
+        number = float('{:.3g}'.format(number))
+        magnitude = 0
+        while abs(number) >= 1000:
+            magnitude += 1
+            number /= 1000.0
+        return '{}{}'.format('{:f}'.format(number).rstrip('0').rstrip('.'), ['', 'K', 'M', 'B', 'T'][magnitude])
+        
          
     ########################
     # Test & Help Commands #
@@ -1276,7 +1307,7 @@ def run_bot():
         logger.info("/test-premarket-reports function called by user {}".format(interaction.user.name))
         await interaction.response.defer(ephemeral=True)
 
-        await send_premarket_reports()
+        #await send_premarket_reports()
 
         await interaction.followup.send("Posted premarket reports", ephemeral=True)
 
