@@ -911,12 +911,12 @@ def run_bot():
                 message += "### {} {:.2f}% :arrow_up:\n\n".format(ticker, percent_change)
 
                 message += build_gainer_summary(ticker, gainers.loc[gainers['name'] == ticker])
-                message += "\n"
 
                 message += "### News\n"
                 for article in news:
                     article_date = datetime.datetime.fromtimestamp(article['providerPublishTime'])
                     message += "{}: [{}](<{}>)\n".format(article_date.strftime('%I:%M:%S %p'), article['title'], article['link'])
+                message += "\n"
             await channel.send(message)
         
 
@@ -1205,9 +1205,9 @@ def run_bot():
         message += "**Name:** {}\n".format(ticker_data['Name'] if ticker_data['Name'] is not np.nan else "N/A")
         message += "**Sector:** {}\n".format(ticker_data['Sector']if ticker_data['Sector'] is not np.nan else "N/A")
         message += "**Industry:** {}\n".format(ticker_data['Industry'] if ticker_data['Industry'] is not np.nan else "N/A")
-        message += "**Market Cap:** {}\n".format("$"+ "{}".format(format_market_cap(screener['market_cap_basic'].iloc[0])) if screener['market_cap_basic'] is not np.nan else "N/A") 
-        message += "**Premarket Volume:** {}\n".format(screener['premarket_volume'] if screener['premarket_volume'] is not np.nan else "N/A")
-        message += "**Previous Close:** {}".format(screener['close'])
+        message += "**Market Cap:** {}\n".format("$"+ "{}".format(format_market_cap(screener['market_cap_basic'].iloc[0])) if screener['market_cap_basic'].iloc[0] is not np.nan else "N/A") 
+        message += "**Premarket Volume:** {}\n".format(format_market_cap(screener['premarket_volume'].iloc[0]) if screener['premarket_volume'].iloc[0] is not np.nan else "N/A")
+        message += "**Previous Close:** {}".format(screener['close'].iloc[0])
         
         return message + "\n"
          
