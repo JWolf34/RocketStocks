@@ -918,17 +918,17 @@ def run_bot():
                 gainers = sd.get_premarket_gainers()
                 in_premarket = True
                 gainer_watchlist = sd.get_tickers_from_watchlist("premarket-gainers")
-                #sd.delete_watchlist("after-hours-gainers")
+                sd.update_watchlist("after-hours-gainers")
                 logger.debug("Gainer reports are premarket")
             elif intraday_start < today < postmarket_start: # Intraday
                 in_intraday = True
                 logger.debug("Gainer reports are intraday")
                 return
             elif postmarket_start < today < postmarket_end: # Postmarket
-                gainers = sd.get_premarket_gainers()
+                gainers = sd.get_postmarket_gainers()
                 in_postmarket = True
                 gainer_watchlist = sd.get_tickers_from_watchlist("after-hours-gainers")
-                #sd.delete_watchlist("premarket-gainers")
+                sd.update_watchlist("premarket-gainers", [])
                 logger.debug("Gainer reports are postmarket")
             else: # No more reports today
                 return
@@ -960,7 +960,7 @@ def run_bot():
                         else "AFTER HOURS")
 
                     gainer_row = gainers.loc[gainers['name'] == ticker]
-                    percent_change = gainer_row['premarket_change'].iloc[-1]
+                    percent_change = gainer_row['premarket_change'].iloc[-1] if in_premarket else gainer_row['postmarket_change'].iloc[-1]
                     message += "### {} {:.2f}% :arrow_up:\n\n".format(ticker, percent_change)
 
                     message += build_gainer_summary(ticker, gainer_row)
@@ -970,7 +970,7 @@ def run_bot():
                         article_date = dt.datetime.fromtimestamp(article['providerPublishTime'])
                         message += "{}: [{}](<{}>)\n".format(article_date.strftime('%I:%M:%S %p'), article['title'], article['link'])
                     message += "\n"
-                await channel.send(message)
+                    await channel.send(message)
 
             if in_premarket:
                 sd.update_watchlist("premarket-gainers", market_news.keys())
@@ -1254,7 +1254,7 @@ def run_bot():
         message += "**Industry:** {}\n".format(ticker_data['Industry'] if ticker_data['Industry'] is not np.nan else "N/A")
         message += "**Market Cap:** {}\n".format("$"+ "{}".format(format_large_num(screener['market_cap_basic'].iloc[0])) if screener['market_cap_basic'].iloc[0] is not np.nan else "N/A") 
         
-        return message + "\n"
+        return message
 
     # Tool to format large numbers
     def format_large_num(number):
