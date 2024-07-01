@@ -899,7 +899,7 @@ def run_bot():
 
             
             premarket_start = today.replace(hour=7, minute=0, second=0, microsecond=0)
-            intraday_start = today.replace(hour=8, minute=30, second=0, microsecond=0)
+            intraday_start = today.replace(hour=9, minute=30, second=0, microsecond=0)
             postmarket_start = today.replace(hour=15, minute=0, second=0, microsecond=0)
             postmarket_end = today.replace(hour=17, minute=0, second=0, microsecond=0)
 
@@ -908,7 +908,7 @@ def run_bot():
                 gainers = sd.get_premarket_gainers()
                 in_premarket = True
                 gainer_watchlist = sd.get_tickers_from_watchlist("premarket-gainers")
-                sd.delete_watchlist("after-hours-gainers")
+                #sd.delete_watchlist("after-hours-gainers")
                 logger.debug("Gainer reports are premarket")
             elif intraday_start < today < postmarket_start: # Intraday
                 in_intraday = True
@@ -918,10 +918,11 @@ def run_bot():
                 gainers = sd.get_premarket_gainers()
                 in_postmarket = True
                 gainer_watchlist = sd.get_tickers_from_watchlist("after-hours-gainers")
-                sd.delete_watchlist("premarket-gainers")
+                #sd.delete_watchlist("premarket-gainers")
                 logger.debug("Gainer reports are postmarket")
             else: # No more reports today
                 return
+
 
             logger.info("Sending gainer reports...")
             # Filter gainers for market cap > $100M
@@ -933,7 +934,7 @@ def run_bot():
                 ticker_news = []
                 news = sd.get_news(ticker)
                 for article in news:
-                    today = today - datetime.timedelta(days=2)
+                    #today = today - datetime.timedelta(days=2)
                     article_date = dt.datetime.fromtimestamp(article['providerPublishTime'])
                     if article_date.date() == today.date():
                         ticker_news.append(article)
