@@ -48,6 +48,16 @@ def get_reports_channel_id():
         logger.exception("Failed to fetch reports channel ID\n{}".format(e))
         return ""
 
+def get_alerts_channel_id():
+    try:
+        channel_id = os.getenv("ALERTS_CHANNEL_ID")
+        logger.debug("Alerts channel ID is {}".format(channel_id))
+        return channel_id
+    except Exception as e:
+        logger.exception("Failed to fetch alerts channel ID\n{}".format(e))
+        return ""
+
+
 def run_bot():
     TOKEN = get_bot_token()
 
@@ -941,7 +951,7 @@ def run_bot():
                 if ticker_news:
                     market_news[ticker] = ticker_news
 
-            channel = await client.fetch_channel(get_reports_channel_id())
+            channel = await client.fetch_channel(get_alerts_channel_id())
             for ticker, news in market_news.items():
                 if news and ticker not in gainer_watchlist:
                     message = "### :rotating_light: {} GAINER ALERT :rotating_light:\n".format(
