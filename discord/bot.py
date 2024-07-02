@@ -918,7 +918,7 @@ def run_bot():
                 gainers = sd.get_premarket_gainers()
                 in_premarket = True
                 gainer_watchlist = sd.get_tickers_from_watchlist("premarket-gainers")
-                sd.update_watchlist("after-hours-gainers")
+                sd.update_watchlist("after-hours-gainers", [])
                 logger.debug("Gainer reports are premarket")
             elif intraday_start < today < postmarket_start: # Intraday
                 in_intraday = True
