@@ -11,6 +11,7 @@ discord/attachments
 __pycache__/
 .vscode/
 discord/__pycache__
+.venv/
 
 # ENV file
 .env
