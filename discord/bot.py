@@ -909,7 +909,7 @@ def run_bot():
 
             
             premarket_start = today.replace(hour=7, minute=0, second=0, microsecond=0)
-            intraday_start = today.replace(hour=8, minute=30, second=0, microsecond=0)
+            intraday_start = today.replace(hour=14, minute=30, second=0, microsecond=0)
             postmarket_start = today.replace(hour=15, minute=0, second=0, microsecond=0)
             postmarket_end = today.replace(hour=17, minute=0, second=0, microsecond=0)
 
@@ -1331,7 +1331,7 @@ def run_bot():
         logger.info("/test-premarket-reports function called by user {}".format(interaction.user.name))
         await interaction.response.defer(ephemeral=True)
 
-        #await send_premarket_reports()
+        await send_gainer_reports()
 
         await interaction.followup.send("Posted premarket reports", ephemeral=True)
 

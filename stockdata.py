@@ -16,8 +16,8 @@ from tradingview_screener import Scanner
 # Logging configuration
 logger = logging.getLogger(__name__)
 
-# Override pandas data fetching with yfinance logic
-yf.pdr_override()
+# Override pandas data fetching with yfinance logic (Deprecated)
+# yf.pdr_override()
 
 # Paths for writing data
 DAILY_DATA_PATH = "data/CSV/daily"
@@ -532,7 +532,11 @@ def get_premarket_news():
 #########
 
 def test():
-    get_premarket_news()
+    #get_premarket_news()
+    id_value = os.getenv("ALERTS_CHANNEL_ID")
+    ticker = yf.Ticker("NVDA")
+    earnings = ticker.earnings_dates()
+    print(earnings)
 
 if __name__ == "__main__":
     logger.info("stockdata.py initialized")
