@@ -919,8 +919,7 @@ def run_bot():
         def build_report(self):
             message = ''
             message += self.build_report_header()
-            message += self.build_ticker_info()
-            message += self.build_daily_summary()
+            
             return message
 
         # Override

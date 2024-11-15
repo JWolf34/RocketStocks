@@ -42,7 +42,7 @@ session = CachedLimiterSession(
     backend=SQLiteCache("yfinance.cache"),
 ) 
 
-#session = Session()
+
 
 
 #########################
@@ -500,31 +500,18 @@ def get_premarket_gainers():
     num_rows, gainers = Scanner.premarket_gainers.get_scanner_data()
     return gainers
 
+def get_premarket_gainers_by_market_cap(market_cap):
+    num_rows, gainers = Scanner.premarket_gainers.get_scanner_data()
+    return gainers.loc[gainers['market_cap_basic'] >= market_cap]    
+
 def get_postmarket_gainers():
     num_rows, gainers = Scanner.postmarket_gainers.get_scanner_data()
     return gainers
 
-def get_premarket_news():
-    num_rows, gainers = Scanner.premarket_gainers.get_scanner_data()
-    gainers = gainers.loc[gainers['market_cap_basic'] >= 100000000]
-    premarket_news = {}
-    for ticker in gainers['name'].to_list():
-        ticker_news = []
-        news = get_news(ticker)
-        for article in news:
-            today = datetime.datetime.now()
-            article_date = datetime.datetime.fromtimestamp(article['providerPublishTime'])
-            if article_date.date() == today.date():
-                ticker_news.append(article['link'])
-        if ticker_news:
-            premarket_news[ticker] = ticker_news
-        
-    for ticker, news in premarket_news.items():
-        if news:
-            print("{}:".format(ticker))
-            for link in news:
-                print(link)
-            print("++++++++++++++++++++++++++++++")
+def get_postmarket_gainers_by_market_cap(market_cap):
+    num_rows, gainers = Scanner.postmarket_gainers.get_scanner_data()
+    return gainers.loc[gainers['market_cap_basic'] >= market_cap]    
+
 
 
 #########
