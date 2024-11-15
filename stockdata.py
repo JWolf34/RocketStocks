@@ -488,6 +488,10 @@ def validate_columns(data, columns):
     logger.debug("Columns {} exist in data".format(columns))
     return True
 
+# Return supported exchanges
+def get_supported_exchanges():
+    return ['NASDAQ', 'NYSE', 'AMEX']
+
 ###########################
 # Pre-market gainer logic #
 ###########################
@@ -503,6 +507,26 @@ def get_premarket_gainers():
 def get_premarket_gainers_by_market_cap(market_cap):
     num_rows, gainers = Scanner.premarket_gainers.get_scanner_data()
     return gainers.loc[gainers['market_cap_basic'] >= market_cap]    
+
+def get_intraday_gainers():
+    num_rows, gainers = (Query()
+                        .select('name','close', 'change', 'volume')
+                        .get_scanner_data())
+    return gainers
+
+def get_intraday_gainers_by_market_cap(market_cap):
+    num_rows, gainers = (Query()
+                        .select('name','close', 'volume', 'market_cap_basic', 'change', 'exchange')
+                        .set_markets('america')
+                        .where(
+                            Column('market_cap_basic') > market_cap,
+                            Column('exchange').isin(get_supported_exchanges())
+                        )
+                        .order_by('change', ascending=False)
+                        .get_scanner_data())
+    print(gainers.head(10))
+    return gainers #.loc[gainers['market_cap_basic'] >= market_cap]    
+            
 
 def get_postmarket_gainers():
     num_rows, gainers = Scanner.postmarket_gainers.get_scanner_data()

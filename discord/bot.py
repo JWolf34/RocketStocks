@@ -844,9 +844,7 @@ def run_bot():
 
     class Report(object):
         def __init__(self):
-            
-            self.message = self.build_report() + "\n\n  "
-            self.buttons = self.Buttons()
+            self.message = self.build_report() + "\n\n"
 
         ############################
         # Report Builder Functions #
@@ -933,6 +931,7 @@ def run_bot():
         def __init__(self, ticker : str):
             self.ticker = ticker
             self.data =  sd.fetch_daily_data(self.ticker)
+            self.buttons = self.Buttons(self.ticker)
             super().__init__()
             
         # Override
@@ -994,17 +993,16 @@ def run_bot():
                                 self.format_large_num(row.premarket_volume)])
             elif self.in_intraday():
                 # Placeholder - need to make query for intraday earners
-                gainers = sd.get_premarket_gainers_by_market_cap(100000000)
-                #gainers = gainers.set_axis(["Ticker:Exchange", "Ticker", "Close", "Volume", "Market Cap", "Premarket Change", "Premarket Change ABS", "Premarket Volume"], axis=1)
-                headers = ["Ticker", "Close", "Volume", "Market Cap", "Premarket Change", "Premarket Volume"]
+                gainers = sd.get_intraday_gainers_by_market_cap(100000000)[:15]
+                
+                headers = ["Ticker", "Close", "Volume", "Market Cap", "% Change"]
                 rows = []
                 for index, row in gainers.iterrows():
                     rows.append([row.iloc[1], 
                                 "${}".format(float('{:.2f}'.format(row.close))), 
                                 self.format_large_num(row.volume), 
                                 self.format_large_num(row.market_cap_basic), 
-                                "{:.2f}%".format(row.premarket_change), 
-                                self.format_large_num(row.premarket_volume)])
+                                "{:.2f}%".format(row.change)])
             elif self.in_afterhours():
                 gainers = sd.get_postmarket_gainers_by_market_cap(100000000)
             
@@ -1012,9 +1010,8 @@ def run_bot():
             table = table2ascii(
                 header = headers,
                 body = rows, 
-                #column_widths=[12, 12, 12, 12, 38, 38]
             )
-            #print(table)
+            print(table)
             return "```\n" + table + "\n```"
 
         # Override
