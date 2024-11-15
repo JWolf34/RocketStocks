@@ -70,7 +70,7 @@ def run_bot():
         try:
             await client.tree.sync()
             #send_reports.start()
-            send_gainer_reports.start()
+            send_gainer_reports.start(GainerReport())
         except Exception as e:
             logger.exception("Encountered error waiting for on-ready signal from bot\n{}".format(e))
         logger.info("Bot connected! ")
@@ -963,25 +963,26 @@ def run_bot():
             self.INTRADAY_START= self.today.replace(hour=8, minute=30, second=0, microsecond=0)
             self.AFTERHOURS_START = self.today.replace(hour=15, minute=0, second=0, microsecond=0)
             self.MARKET_END = self.today.replace(hour=17, minute=0, second=0, microsecond=0)
+            self.premarket_message_id = ''
+            self.intraday_message_id = ''
+            self.afterhours_message_id = ''
             super().__init__()
-
+    
 
         # Override
         def build_report_header(self):
             header = "### :rotating_light: {} Gainers {} (Market Cap > $100M)\n\n".format(
                         "Pre-market" if self.in_premarket()
                         else "Intraday" if self.in_intraday()
-                        else "AFTER HOURS" if self.in_afterhours()
+                        else "After Hours" if self.in_afterhours()
                         else "",
                         self.today.strftime("%m/%d/%Y"))
             return header
 
         def build_gainer_table(self):
-            #gainers = pd.DataFrame()
-            #headers = []
+
             if self.in_premarket():
-                gainers = sd.get_premarket_gainers_by_market_cap(100000000)
-                #gainers = gainers.set_axis(["Ticker:Exchange", "Ticker", "Close", "Volume", "Market Cap", "Premarket Change", "Premarket Change ABS", "Premarket Volume"], axis=1)
+                gainers = sd.get_premarket_gainers_by_market_cap(100000000)[:15]
                 headers = ["Ticker", "Close", "Volume", "Market Cap", "Premarket Change", "Premarket Volume"]
                 rows = []
                 for index, row in gainers.iterrows():
@@ -994,7 +995,6 @@ def run_bot():
             elif self.in_intraday():
                 # Placeholder - need to make query for intraday earners
                 gainers = sd.get_intraday_gainers_by_market_cap(100000000)[:15]
-                
                 headers = ["Ticker", "Close", "Volume", "Market Cap", "% Change"]
                 rows = []
                 for index, row in gainers.iterrows():
@@ -1004,7 +1004,16 @@ def run_bot():
                                 self.format_large_num(row.market_cap_basic), 
                                 "{:.2f}%".format(row.change)])
             elif self.in_afterhours():
-                gainers = sd.get_postmarket_gainers_by_market_cap(100000000)
+                gainers = sd.get_postmarket_gainers_by_market_cap(100000000)[:15] 
+                headers = ["Ticker", "Close", "Volume", "Market Cap", "After Hours Change", "After Hours Volume"]
+                rows = []
+                for index, row in gainers.iterrows():
+                    rows.append([row.iloc[1], 
+                                "${}".format(float('{:.2f}'.format(row.close))), 
+                                self.format_large_num(row.volume), 
+                                self.format_large_num(row.market_cap_basic), 
+                                "{:.2f}%".format(row.postmarket_change), 
+                                self.format_large_num(row.postmarket_volume)])
             
             
             table = table2ascii(
@@ -1022,8 +1031,35 @@ def run_bot():
             return report
 
         async def send_report(self):
+            self.today = dt.datetime.now()
+            self.message = self.build_report() +"\n\n"
             channel = await client.fetch_channel(get_reports_channel_id())
-            await channel.send(self.message)
+            if self.in_premarket():
+                message_id = self.premarket_message_id
+            elif self.in_intraday():
+                message_id = self.intraday_message_id
+            elif self.in_afterhours():
+                message_id = self.afterhours_message_id
+            try:
+                curr_message = await channel.fetch_message(message_id)
+                if curr_message.created_at.date() < self.today.date():
+                    message = await channel.send(self.message)
+                    self.update_message_id(message)
+                else:
+                    await curr_message.edit(content=self.message)
+
+            #if curr_message.created_at
+            except discord.errors.NotFound as e:
+                message = await channel.send(self.message)
+                self.update_message_id(message)
+                
+        def update_message_id(self, message):
+            if self.in_premarket():
+                self.premarket_message_id = message.id
+            elif self.in_intraday():
+                self.intraday_message_id - message.id
+            elif self.in_afterhours():
+                self.afterhours_message_id = message.id
 
 
         def in_premarket(self):
@@ -1091,10 +1127,8 @@ def run_bot():
         logger.info("********** [FINISHED SENDING STRATEGY REPORTS] **********")
 
     # Generate and send premarket gainer reports to the reports channel
-    @tasks.loop(minutes=10)
-    async def send_gainer_reports():
-        report = GainerReport()
-        #today = dt.datetime.now()
+    @tasks.loop(minutes=1)
+    async def send_gainer_reports(report):
         if (report.today.weekday() < 5):
         
             await report.send_report()
