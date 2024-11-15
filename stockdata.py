@@ -11,7 +11,7 @@ from requests_cache import CacheMixin, SQLiteCache
 from requests_ratelimiter import LimiterMixin, MemoryQueueBucket
 from pyrate_limiter import Duration, RequestRate, Limiter
 import logging
-from tradingview_screener import Scanner
+from tradingview_screener import Scanner, Query, Column
 
 # Logging configuration
 logger = logging.getLogger(__name__)
@@ -532,11 +532,10 @@ def get_premarket_news():
 #########
 
 def test():
-    #get_premarket_news()
-    id_value = os.getenv("ALERTS_CHANNEL_ID")
-    ticker = yf.Ticker("NVDA")
-    earnings = ticker.earnings_dates()
-    print(earnings)
+    # Check otu Vader stock analaysis for reddit and other news sources
+    # Stocker and that one guy on reddit
+    # Use interaction.edit to allow for editing existing bot messages with new charts in a specified time frame
+    pass
 
 if __name__ == "__main__":
     logger.info("stockdata.py initialized")

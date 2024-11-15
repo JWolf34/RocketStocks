@@ -68,7 +68,7 @@ def run_bot():
     async def on_ready():
         try:
             await client.tree.sync()
-            send_reports.start()
+            #send_reports.start()
             send_gainer_reports.start()
         except Exception as e:
             logger.exception("Encountered error waiting for on-ready signal from bot\n{}".format(e))
@@ -841,6 +841,104 @@ def run_bot():
     # Reports #
     ###########
 
+    class Report(object):
+        def __init__(self, ticker: str = "SPY"):
+            self.ticker = ticker
+            self.data =  sd.fetch_daily_data(self.ticker)
+            self.message = self.build_report() + "\n\n  "
+            self.buttons = self.Buttons(self.ticker)
+
+        ############################
+        # Report Builder Functions #
+        ############################
+
+        # Report Header
+        def build_report_header(self):
+            
+            # Append ticker name, today's date, and external links to message
+            message = "## " + self.ticker + " Report " + dt.date.today().strftime("%m/%d/%Y") + "\n"
+            return message + "\n"
+
+        # Ticker Info
+        def build_ticker_info(self):
+
+            message = "### Ticker Info\n"
+            try:
+                ticker_data = sd.get_all_tickers_data().loc[self.ticker]
+            except KeyError as e:
+                logger.exception("Encountered KeyError when collecting ticker info:\n{}".format(e))
+                sd.add_to_all_tickers(self.ticker)
+                ticker_data = sd.get_all_tickers_data().loc[self.ticker]
+        
+            message += "**Name:** {}\n".format(ticker_data['Name'] if ticker_data['Name'] is not np.nan else "N/A")
+            message += "**Sector:** {}\n".format(ticker_data['Sector']if ticker_data['Sector'] is not np.nan else "N/A")
+            message += "**Industry:** {}\n".format(ticker_data['Industry'] if ticker_data['Industry'] is not np.nan else "N/A")
+            message += "**Market Cap:** {}\n".format(("$"+ "{}".format(format_large_num(ticker_data['Market Cap']))) if ticker_data['Market Cap'] is not np.nan else "N/A") 
+            message += "**Country:** {}\n".format(ticker_data['Country'] if ticker_data['Country'] is not np.nan else "N/A")
+            message += "**Next earnings date:** {}".format(sd.get_next_earnings_date(self.ticker))
+            
+            return message + "\n"
+
+        # Daily Summary
+        def build_daily_summary(self):
+            # Append day's summary to message
+            summary = sd.get_days_summary(self.data)
+            message = "### Summary \n| "
+            for col in summary.keys():
+                message += "**{}:** {}".format(col, f"{summary[col]:,.2f}")
+                message += " | "
+
+            return message + "\n"
+
+        def build_report(self):
+            message = ''
+            message += self.build_report_header()
+            return message   
+        
+        async def send_report(self, interaction:discord.Interaction, visibility:str):
+            if visibility.value == 'private':
+                await interaction.user.send(self.message, view=self.buttons)#, files=files, embed=links)
+            else:
+                await interaction.channel.send(self.message, view=self.buttons)#, files=files, embed=links)
+
+        class Buttons(discord.ui.View):
+                def __init__(self, ticker : str):
+                    super().__init__()
+                    self.ticker = ticker
+                    self.add_item(discord.ui.Button(label="Google it", style=discord.ButtonStyle.url, url = "https://www.google.com/search?q={}".format(self.ticker)))
+                    self.add_item(discord.ui.Button(label="StockInvest", style=discord.ButtonStyle.url, url = "https://stockinvest.us/stock/{}".format(self.ticker)))
+                    self.add_item(discord.ui.Button(label="FinViz", style=discord.ButtonStyle.url, url = "https://finviz.com/quote.ashx?t={}".format(self.ticker)))
+                    self.add_item(discord.ui.Button(label="Yahoo! Finance", style=discord.ButtonStyle.url, url = "https://finance.yahoo.com/quote/{}".format(self.ticker)))
+
+    class StockReport(Report):
+        
+        def __init__(self, ticker : str):
+            super().__init__(ticker)
+            
+        # Override
+        def build_report(self):
+            message = ''
+            message += self.build_report_header()
+            message += self.build_ticker_info()
+            message += self.build_daily_summary()
+            return message
+
+        # Override
+        class Buttons(discord.ui.View):
+                def __init__(self, ticker : str):
+                    super().__init__()
+                    self.ticker = ticker
+                    self.add_item(discord.ui.Button(label="Google it", style=discord.ButtonStyle.url, url = "https://www.google.com/search?q={}".format(self.ticker)))
+                    self.add_item(discord.ui.Button(label="StockInvest", style=discord.ButtonStyle.url, url = "https://stockinvest.us/stock/{}".format(self.ticker)))
+                    self.add_item(discord.ui.Button(label="FinViz", style=discord.ButtonStyle.url, url = "https://finviz.com/quote.ashx?t={}".format(self.ticker)))
+                    self.add_item(discord.ui.Button(label="Yahoo! Finance", style=discord.ButtonStyle.url, url = "https://finance.yahoo.com/quote/{}".format(self.ticker)))
+
+                    
+                @discord.ui.button(label="Generate chart", style=discord.ButtonStyle.primary)
+                async def generate_chart(self, interaction:discord.Interaction, button:discord.ui.Button,):
+                    await interaction.response.send_message("Generate chart!")
+        
+
     # Send daily reports for stocks on the global watchlist to the reports channel
     @tasks.loop(hours=24)  
     async def send_reports():
@@ -1067,18 +1165,15 @@ def run_bot():
         tickers, invalid_tickers = sd.get_list_from_tickers(tickers)
         logger.debug("Validated tickers {} | Invalid tickers: {}".format(tickers, invalid_tickers))
 
-        an.run_analysis(tickers)
+        #an.run_analysis(tickers)
 
         logger.info("Fetching reports for tickers {}".format(tickers))
         # Build reports and send messages
         for ticker in tickers:
             logger.info("Processing ticker {}".format(ticker))
-            report = build_ticker_report(ticker)
-            message, files, links = report.get('message'), report.get('files'), report.get('links')
-            if visibility.value == 'private':
-                await interaction.user.send(message, files=files, embed=links)
-            else:
-                await interaction.channel.send(message, files=files, embed=links)
+            #report = build_ticker_report(ticker)
+            report = StockReport(ticker)
+            await report.send_report(interaction, visibility)
             logger.info("Report posted for ticker {}".format(ticker))
         if len(invalid_tickers) > 0:
             await interaction.followup.send("Fetched reports for {}. Failed to fetch reports for {}.".format(", ".join(tickers), ", ".join(invalid_tickers)), ephemeral=True)
@@ -1089,6 +1184,7 @@ def run_bot():
     ###########################
     # Report Helper Functions #
     ###########################
+        
 
     # Build report for selected ticker to be posted
     def build_ticker_report(ticker):
