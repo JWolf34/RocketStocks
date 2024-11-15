@@ -15,6 +15,7 @@ import numpy as np
 import strategies
 import math
 import datetime
+from table2ascii import table2ascii
 
 # Logging configuration
 logger = logging.getLogger(__name__)
@@ -842,11 +843,10 @@ def run_bot():
     ###########
 
     class Report(object):
-        def __init__(self, ticker: str = "SPY"):
-            self.ticker = ticker
-            self.data =  sd.fetch_daily_data(self.ticker)
+        def __init__(self):
+            
             self.message = self.build_report() + "\n\n  "
-            self.buttons = self.Buttons(self.ticker)
+            self.buttons = self.Buttons()
 
         ############################
         # Report Builder Functions #
@@ -856,8 +856,8 @@ def run_bot():
         def build_report_header(self):
             
             # Append ticker name, today's date, and external links to message
-            message = "## " + self.ticker + " Report " + dt.date.today().strftime("%m/%d/%Y") + "\n"
-            return message + "\n"
+            header = "## " + self.ticker + " Report " + dt.date.today().strftime("%m/%d/%Y") + "\n"
+            return header + "\n"
 
         # Ticker Info
         def build_ticker_info(self):
@@ -891,36 +891,56 @@ def run_bot():
             return message + "\n"
 
         def build_report(self):
-            message = ''
-            message += self.build_report_header()
-            return message   
+            report = ''
+            report += self.build_report_header()
+            return report   
         
         async def send_report(self, interaction:discord.Interaction, visibility:str):
-            if visibility.value == 'private':
+            if visibility == 'private':
                 await interaction.user.send(self.message, view=self.buttons)#, files=files, embed=links)
             else:
                 await interaction.channel.send(self.message, view=self.buttons)#, files=files, embed=links)
 
+        #####################
+        # Utility functions #
+        #####################
+
+        # Tool to format large numbers
+        def format_large_num(self, number):
+            number = float('{:.3g}'.format(number))
+            magnitude = 0
+            while abs(number) >= 1000:
+                magnitude += 1
+                number /= 1000.0
+            return '{}{}'.format('{:f}'.format(number).rstrip('0').rstrip('.'), ['', 'K', 'M', 'B', 'T'][magnitude])
+        
+        # Tool to determine percentage change
+        def percent_change(self, current, previous):
+            return float('{:.3g}'.format(((current - previous) / previous) * 100.0))
+
+        def percent_change_formatted(self, current, previous):
+            change = float('{:.3g}'.format(((current - previous) / previous) * 100.0))
+            return "{} {}%".format(":arrow_down_small:" if change > 0
+                                    else ":arrow_up_small:",
+                                    str(abs(change)))
+        
         class Buttons(discord.ui.View):
-                def __init__(self, ticker : str):
+                def __init__(self):
                     super().__init__()
-                    self.ticker = ticker
-                    self.add_item(discord.ui.Button(label="Google it", style=discord.ButtonStyle.url, url = "https://www.google.com/search?q={}".format(self.ticker)))
-                    self.add_item(discord.ui.Button(label="StockInvest", style=discord.ButtonStyle.url, url = "https://stockinvest.us/stock/{}".format(self.ticker)))
-                    self.add_item(discord.ui.Button(label="FinViz", style=discord.ButtonStyle.url, url = "https://finviz.com/quote.ashx?t={}".format(self.ticker)))
-                    self.add_item(discord.ui.Button(label="Yahoo! Finance", style=discord.ButtonStyle.url, url = "https://finance.yahoo.com/quote/{}".format(self.ticker)))
 
     class StockReport(Report):
         
         def __init__(self, ticker : str):
-            super().__init__(ticker)
+            self.ticker = ticker
+            self.data =  sd.fetch_daily_data(self.ticker)
+            super().__init__()
             
         # Override
         def build_report(self):
-            message = ''
-            message += self.build_report_header()
+            report = ''
+            report += self.build_report_header()
             
-            return message
+            return report
 
         # Override
         class Buttons(discord.ui.View):
@@ -936,6 +956,87 @@ def run_bot():
                 @discord.ui.button(label="Generate chart", style=discord.ButtonStyle.primary)
                 async def generate_chart(self, interaction:discord.Interaction, button:discord.ui.Button,):
                     await interaction.response.send_message("Generate chart!")
+
+    class GainerReport(Report):
+        def __init__(self):
+            self.today = dt.datetime.now()
+            self.PREMARKET_START = self.today.replace(hour=7, minute=0, second=0, microsecond=0)
+            self.INTRADAY_START= self.today.replace(hour=8, minute=30, second=0, microsecond=0)
+            self.AFTERHOURS_START = self.today.replace(hour=15, minute=0, second=0, microsecond=0)
+            self.MARKET_END = self.today.replace(hour=17, minute=0, second=0, microsecond=0)
+            super().__init__()
+
+
+        # Override
+        def build_report_header(self):
+            header = "### :rotating_light: {} Gainers {} (Market Cap > $100M)\n\n".format(
+                        "Pre-market" if self.in_premarket()
+                        else "Intraday" if self.in_intraday()
+                        else "AFTER HOURS" if self.in_afterhours()
+                        else "",
+                        self.today.strftime("%m/%d/%Y"))
+            return header
+
+        def build_gainer_table(self):
+            #gainers = pd.DataFrame()
+            #headers = []
+            if self.in_premarket():
+                gainers = sd.get_premarket_gainers_by_market_cap(100000000)
+                #gainers = gainers.set_axis(["Ticker:Exchange", "Ticker", "Close", "Volume", "Market Cap", "Premarket Change", "Premarket Change ABS", "Premarket Volume"], axis=1)
+                headers = ["Ticker", "Close", "Volume", "Market Cap", "Premarket Change", "Premarket Volume"]
+                rows = []
+                for index, row in gainers.iterrows():
+                    rows.append([row.iloc[1], 
+                                "${}".format(float('{:.2f}'.format(row.close))), 
+                                self.format_large_num(row.volume), 
+                                self.format_large_num(row.market_cap_basic), 
+                                "{:.2f}%".format(row.premarket_change), 
+                                self.format_large_num(row.premarket_volume)])
+            elif self.in_intraday():
+                # Placeholder - need to make query for intraday earners
+                gainers = sd.get_premarket_gainers_by_market_cap(100000000)
+                #gainers = gainers.set_axis(["Ticker:Exchange", "Ticker", "Close", "Volume", "Market Cap", "Premarket Change", "Premarket Change ABS", "Premarket Volume"], axis=1)
+                headers = ["Ticker", "Close", "Volume", "Market Cap", "Premarket Change", "Premarket Volume"]
+                rows = []
+                for index, row in gainers.iterrows():
+                    rows.append([row.iloc[1], 
+                                "${}".format(float('{:.2f}'.format(row.close))), 
+                                self.format_large_num(row.volume), 
+                                self.format_large_num(row.market_cap_basic), 
+                                "{:.2f}%".format(row.premarket_change), 
+                                self.format_large_num(row.premarket_volume)])
+            elif self.in_afterhours():
+                gainers = sd.get_postmarket_gainers_by_market_cap(100000000)
+            
+            
+            table = table2ascii(
+                header = headers,
+                body = rows, 
+                #column_widths=[12, 12, 12, 12, 38, 38]
+            )
+            #print(table)
+            return "```\n" + table + "\n```"
+
+        # Override
+        def build_report(self):
+            report = ""
+            report += self.build_report_header()
+            report += self.build_gainer_table()
+            return report
+
+        async def send_report(self):
+            channel = await client.fetch_channel(get_reports_channel_id())
+            await channel.send(self.message)
+
+
+        def in_premarket(self):
+            return self.today > self.PREMARKET_START and self.today < self.INTRADAY_START
+
+        def in_intraday(self):
+            return self.today > self.INTRADAY_START and self.today < self.AFTERHOURS_START
+        
+        def in_afterhours(self):
+            return self.today > self.AFTERHOURS_START and self.today < self.MARKET_END
         
 
     # Send daily reports for stocks on the global watchlist to the reports channel
@@ -995,86 +1096,12 @@ def run_bot():
     # Generate and send premarket gainer reports to the reports channel
     @tasks.loop(minutes=10)
     async def send_gainer_reports():
-
-        today = dt.datetime.now()
-        if (today.weekday() < 5):
+        report = GainerReport()
+        #today = dt.datetime.now()
+        if (report.today.weekday() < 5):
         
-            in_premarket = False
-            in_intraday = False
-            in_postmarket = False
-            gainer_watchlist = []
+            await report.send_report()
 
-            
-            premarket_start = today.replace(hour=7, minute=0, second=0, microsecond=0)
-            intraday_start = today.replace(hour=14, minute=30, second=0, microsecond=0)
-            postmarket_start = today.replace(hour=15, minute=0, second=0, microsecond=0)
-            postmarket_end = today.replace(hour=17, minute=0, second=0, microsecond=0)
-
-            
-            if premarket_start < today < intraday_start: # Premarket
-                gainers = sd.get_premarket_gainers()
-                in_premarket = True
-                gainer_watchlist = sd.get_tickers_from_watchlist("premarket-gainers")
-                sd.update_watchlist("after-hours-gainers", [])
-                logger.debug("Gainer reports are premarket")
-            elif intraday_start < today < postmarket_start: # Intraday
-                in_intraday = True
-                logger.debug("Gainer reports are intraday")
-                return
-            elif postmarket_start < today < postmarket_end: # Postmarket
-                gainers = sd.get_postmarket_gainers()
-                in_postmarket = True
-                gainer_watchlist = sd.get_tickers_from_watchlist("after-hours-gainers")
-                sd.update_watchlist("premarket-gainers", [])
-                logger.debug("Gainer reports are postmarket")
-            else: # No more reports today
-                return
-
-
-            logger.info("Sending gainer reports...")
-            # Filter gainers for market cap > $100M
-            gainers= gainers.loc[gainers['market_cap_basic'] >= 100000000]
-
-            # Identify gainers with news articles that have released today 
-            market_news = {}
-            for ticker in gainers['name'].to_list():
-                ticker_news = []
-                news = sd.get_news(ticker)
-                for article in news:
-                    #today = today - datetime.timedelta(days=2)
-                    article_date = dt.datetime.fromtimestamp(article['providerPublishTime'])
-                    if article_date.date() == today.date():
-                        ticker_news.append(article)
-                if ticker_news:
-                    market_news[ticker] = ticker_news
-
-            channel = await client.fetch_channel(get_alerts_channel_id())
-            for ticker, news in market_news.items():
-                if news and ticker not in gainer_watchlist:
-                    message = "### :rotating_light: {} GAINER ALERT :rotating_light:\n".format(
-                        "PREMARKET" if in_premarket
-                        else "INTRADAY" if in_intraday
-                        else "AFTER HOURS")
-
-                    gainer_row = gainers.loc[gainers['name'] == ticker]
-                    percent_change = gainer_row['premarket_change'].iloc[-1] if in_premarket else gainer_row['postmarket_change'].iloc[-1]
-                    message += "### {} {:.2f}% :arrow_up:\n\n".format(ticker, percent_change)
-
-                    message += build_gainer_summary(ticker, gainer_row)
-
-                    message += "### News\n"
-                    for article in news:
-                        article_date = dt.datetime.fromtimestamp(article['providerPublishTime'])
-                        message += "{}: [{}](<{}>)\n".format(article_date.strftime('%I:%M:%S %p'), article['title'], article['link'])
-                    message += "\n"
-                    await channel.send(message)
-
-            if in_premarket:
-                sd.update_watchlist("premarket-gainers", market_news.keys())
-            elif in_intraday:
-                pass
-            elif in_postmarket:
-                sd.update_watchlist("after-hours-gainers", market_news.keys())
         else:
             # Not a weekday - do not post gainer reports
             pass
@@ -1172,7 +1199,7 @@ def run_bot():
             logger.info("Processing ticker {}".format(ticker))
             #report = build_ticker_report(ticker)
             report = StockReport(ticker)
-            await report.send_report(interaction, visibility)
+            await report.send_report(interaction, visibility.value)
             logger.info("Report posted for ticker {}".format(ticker))
         if len(invalid_tickers) > 0:
             await interaction.followup.send("Fetched reports for {}. Failed to fetch reports for {}.".format(", ".join(tickers), ", ".join(invalid_tickers)), ephemeral=True)
@@ -1351,14 +1378,7 @@ def run_bot():
         
         return message
 
-    # Tool to format large numbers
-    def format_large_num(number):
-        number = float('{:.3g}'.format(number))
-        magnitude = 0
-        while abs(number) >= 1000:
-            magnitude += 1
-            number /= 1000.0
-        return '{}{}'.format('{:f}'.format(number).rstrip('0').rstrip('.'), ['', 'K', 'M', 'B', 'T'][magnitude])
+    
         
          
     ########################
@@ -1421,12 +1441,13 @@ def run_bot():
         await interaction.user.send(content = "Log file for RocketStocks :rocket:",file=log_file)
         await interaction.response.send_("Log file has been sent", ephemeral=True)
 
-    @client.tree.command(name = "test-premarket-reports", description= "Test posting premarket gainer reports",)
+    @client.tree.command(name = "test-gainer-reports", description= "Test posting premarket gainer reports",)
     async def test_premarket_reports(interaction: discord.Interaction):
         logger.info("/test-premarket-reports function called by user {}".format(interaction.user.name))
         await interaction.response.defer(ephemeral=True)
 
-        await send_gainer_reports()
+        report = GainerReport()
+        await report.send_report()
 
         await interaction.followup.send("Posted premarket reports", ephemeral=True)
 
