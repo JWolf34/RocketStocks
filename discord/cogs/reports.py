@@ -1,7 +1,10 @@
+import sys
+sys.path.append('../RocketStocks/discord/cogs')
 import discord
 from discord import app_commands
 from discord.ext import commands
 from discord.ext import tasks
+from watchlists import Watchlists
 import stockdata as sd
 import numpy as np
 import datetime as dt
@@ -12,21 +15,13 @@ import logging
 # Logging configuration
 logger = logging.getLogger(__name__)
 
-async def watchlist_options(interaction: discord.Interaction, current: str):
-    watchlists = sd.get_watchlists()
-    return [
-        app_commands.Choice(name = watchlist, value= watchlist)
-        for watchlist in watchlists if current.lower() in watchlist.lower()
-    ]
-
 class Reports(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
 
     @commands.Cog.listener()
     async def on_ready(self):
-        print("Loaded!")
-        #logger.info(f"Module {__name__} loaded!")
+        logger.info(f"Cog {__name__} loaded!")
     
     #########
     # Tasks #
@@ -44,7 +39,7 @@ class Reports(commands.Cog):
 
     @app_commands.command(name = "run-reports", description= "Post analysis of a given watchlist (use /fetch-reports for individual or non-watchlist stocks)",)
     @app_commands.describe(watchlist = "Which watchlist to fetch reports for")
-    @app_commands.autocomplete(watchlist=watchlist_options,)
+    @app_commands.autocomplete(watchlist=Watchlists.watchlist_options,)
     @app_commands.describe(visibility = "'private' to send to DMs, 'public' to send to the channel")
     @app_commands.choices(visibility =[
         app_commands.Choice(name = "private", value = 'private'),
