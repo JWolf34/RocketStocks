@@ -9,6 +9,7 @@ import stockdata as sd
 import numpy as np
 import datetime as dt
 import json
+import config
 from table2ascii import table2ascii
 import logging
 
@@ -313,39 +314,28 @@ class GainerReport(Report):
         else: 
             pass
             
-    def update_message_id(self, message_id):
+    def update_message_id(self, message_id, report_type):
         data = get_config()
         if "gainers" not in data.keys():
             self.write_gainer_config()
         data = get_config()
         if self.in_premarket():
-            data['gainers']['PREMARKET_MESSAGE_ID'] = message_id
+            data['reports']['gainers']['PREMARKET_MESSAGE_ID'] = message_id
         elif self.in_intraday():
-            data['gainers']['INTRADAY_MESSAGE_ID'] = message_id
+            data['reports']['gainers']['INTRADAY_MESSAGE_ID'] = message_id
         elif self.in_afterhours():
-            data['gainers']['AFTERHOURS_MESSAGE_ID'] = message_id
+            data['reports']['gainers']['AFTERHOURS_MESSAGE_ID'] = message_id
         write_config(data)
 
     def get_message_id(self):
-        data = get_config()
-        if "gainers" not in data.keys():
-            self.write_gainer_config()
-        data = get_config()
+        data = config.get_config()
         if self.in_premarket():
-            return data['gainers']['PREMARKET_MESSAGE_ID']
+            return data['reports']['gainers']['PREMARKET_MESSAGE_ID']
         elif self.in_intraday():
-            return data['gainers']['INTRADAY_MESSAGE_ID']
+            return data['reports']['gainers']['INTRADAY_MESSAGE_ID']
         elif self.in_afterhours():
-            return data['gainers']['AFTERHOURS_MESSAGE_ID']
+            return data['reports']['gainers']['AFTERHOURS_MESSAGE_ID']
 
-    def write_gainer_config(self):
-        data = get_config()
-        data['gainers'] = {
-                "PREMARKET_MESSAGE_ID":"",
-                "INTRADAY_MESSAGE_ID":"",
-                "AFTERHOURS_MESSAGE_ID":""
-            }
-        write_config(data)
 
 
     def in_premarket(self):

@@ -1,183 +1,27 @@
 import sys
-sys.path.append('../RocketStocks')
-import os
+sys.path.append("../RocketStocks/discord/cogs")
+from watchlists import Watchlists
 import discord
 from discord import app_commands
 from discord.ext import commands
 from discord.ext import tasks
-import asyncio
 import stockdata as sd
 import analysis as an
-import datetime as dt
-import threading
-import logging
-import numpy as np
 import strategies
-import math
-import datetime
-import json
-from table2ascii import table2ascii
+import logging
 
 # Logging configuration
 logger = logging.getLogger(__name__)
 
-# Paths for writing data
-ATTACHMENTS_PATH = "discord/attachments"
-DAILY_DATA_PATH = "data/CSV/daily"
-MINUTE_DATA_PATH = "data/CSV/minute"
-UTILS_PATH = "data/utils"
+class Charts(commands.Cog):
+    def __init__(self, bot):
+        self.bot = bot
 
-##################
-# Init Functions #
-##################
+    @commands.Cog.listener()
+    async def on_ready(self):
+        logger.info(f"Cog {__name__} loaded!")
 
-intents = discord.Intents.default()
-client = commands.Bot(command_prefix='$', intents=intents)
-
-def get_bot_token():
-    logger.debug("Fetching Discord bot token")
-    try:
-        token = os.getenv('DISCORD_TOKEN')
-        logger.debug("Successfully fetched token")
-        return token
-    except Exception as e:
-        logger.exception("Failed to fetch Discord bot token\n{}".format(e))
-        return ""
-
-async def load():
-    for filename in os.listdir("./discord/cogs"):
-        if filename.endswith(".py"):
-            await client.load_extension(f"cogs.{filename[:-3]}")
-
-async def main():
-    async with client:
-        await load()
-        await client.start(get_bot_token())
-
-asyncio.run(main())
-
-
-def get_reports_channel_id():
-    try:
-        channel_id = os.getenv("REPORTS_CHANNEL_ID")
-        logger.debug("Reports channel ID is {}".format(channel_id))
-        return channel_id
-    except Exception as e:
-        logger.exception("Failed to fetch reports channel ID\n{}".format(e))
-        return ""
-
-def get_alerts_channel_id():
-    try:
-        channel_id = os.getenv("ALERTS_CHANNEL_ID")
-        logger.debug("Alerts channel ID is {}".format(channel_id))
-        return channel_id
-    except Exception as e:
-        logger.exception("Failed to fetch alerts channel ID\n{}".format(e))
-        return ""
-
-
-def run_bot():
-    TOKEN = get_bot_token()
-
-    #intents = discord.Intents.default()
-    #client = commands.Bot(command_prefix='$', intents=intents)
-
-    @client.event
-    async def on_ready():
-        try:
-            await client.tree.sync()
-            #send_reports.start()
-            send_gainer_reports.start()
-        except Exception as e:
-            logger.exception("Encountered error waiting for on-ready signal from bot\n{}".format(e))
-        logger.info("Bot connected! ")
-
-    async def sync_commands():
-        logger.info("Syncing tree commands")
-        await client.tree.sync()
-        logger.info("Commands synced!")
-
-    ######################################################
-    # 'Fetch' functions for returning data saved to disk #
-    ######################################################
-
-    @client.tree.command(name = "fetch-csv", description= "Returns data file for input ticker. Default: 1 year period.",)
-    @app_commands.describe(tickers = "Tickers to return data for (separated by spaces)")
-    @app_commands.describe(type="Type of data file to return - daily data or minute-by-minute data")
-    @app_commands.choices(type=[
-        app_commands.Choice(name='daily', value='daily'),
-        app_commands.Choice(name='minute', value='minute')
-    ])
-    async def fetch_csv(interaction: discord.Interaction, tickers: str, type: app_commands.Choice[str]):
-        await interaction.response.defer(ephemeral=True)
-        logger.info("/fetch-csv function called by user {}".format(interaction.user.name))
-        logger.debug("Data file(s) for {} requested".format(tickers))
-
-        type = type.value
-        
-        files = []
-        tickers, invalid_tickers = sd.get_list_from_tickers(tickers)
-        try:
-            for ticker in tickers:
-                if type == 'daily':
-                    data = sd.fetch_daily_data(ticker)
-                    csv_path = "{}/{}.csv".format(DAILY_DATA_PATH,ticker)
-                    if not sd.daily_data_up_to_date(data):
-                        sd.download_analyze_data(ticker)
-                else:
-                    data = sd.fetch_minute_data(ticker)
-                    csv_path = "{}/{}.csv".format(MINUTE_DATA_PATH,ticker)
-                    data = sd.download_data(ticker, period='7d', interval='1m')
-                    sd.update_csv(data, ticker, MINUTE_DATA_PATH)
-
-                file = discord.File(csv_path)
-                await interaction.user.send(content = "Data file for {}".format(ticker), file=file)
-
-            if len(invalid_tickers) > 0:
-                await interaction.followup.send("Fetched data files for {}. Invalid tickers:".format(", ".join(tickers), ", ".join(invalid_tickers)), ephemeral=True)
-            else:
-                await interaction.followup.send("Fetched data files for {}".format(", ".join(tickers)), ephemeral=True)
-
-
-        except Exception as e:
-            logger.exception("Failed to fetch data file with following exception:\n{}".format(e))
-            await interaction.followup.send("Failed to fetch data files. Please ensure your parameters are valid.")
-    
-    @client.tree.command(name = "fetch-financials", description= "Fetch financial reports of the specified tickers ",)
-    @app_commands.describe(tickers = "Tickers to return financials for (separated by spaces)")
-    @app_commands.describe(visibility = "'private' to send to DMs, 'public' to send to the channel")
-    @app_commands.choices(visibility =[
-        app_commands.Choice(name = "private", value = 'private'),
-        app_commands.Choice(name = "public", value = 'public')
-    ])        
-    async def fetch_financials(interaction: discord.interactions, tickers: str, visibility: app_commands.Choice[str]):
-        await interaction.response.defer(ephemeral=True)
-        logger.info("/fetch-financials function called by user {}".format(interaction.user.name))
-        logger.debug("Financials requested for {}".format(tickers))
-
-
-        tickers, invalid_tickers = sd.get_list_from_tickers(tickers)
-
-        if(len(tickers) > 0):
-            for ticker in tickers:
-                files = sd.fetch_financials(ticker)
-                for i in range(0, len(files)):
-                    files[i] = discord.File(files[i])
-                if visibility.value == 'private':
-                    await interaction.user.send("Financials for {}".format(ticker), files=files)
-                else:
-                    await interaction.channel.send("Financials for {}".format(ticker), files=files)
-
-            await interaction.followup.send("Posted financials for {}".format(",".join(tickers)), ephemeral=True)
-        else:
-            logger.warning("Found no valid tickers in {} to fetch fincancials for".format(tickers))
-            await interaction.followup.send("No valid tickers in {}".format(",".join(invalid_tickers)), ephemeral=True)
-            
-    ############
-    # Plotting #
-    ############
-
-    async def chart_options(interaction: discord.Interaction, current: str):
+    async def chart_options(self, interaction: discord.Interaction, current: str):
         charts = strategies.get_strategies().keys()
         return [
             app_commands.Choice(name = chart, value= chart)
@@ -185,7 +29,7 @@ def run_bot():
         ]
 
     # Plot graphs for the selected tickers
-    @client.tree.command(name = "plot-charts", description= "Plot selected graphs for the selected tickers",)
+    @app_commands.command(name = "plot-charts", description= "Plot selected graphs for the selected tickers",)
     @app_commands.describe(tickers = "Tickers to return charts for (separated by spaces)")
     @app_commands.describe(chart = "Charts to return for the specified tickers")
     @app_commands.autocomplete(chart=chart_options,)
@@ -251,7 +95,7 @@ def run_bot():
         app_commands.Choice(name="True", value="True"),
         app_commands.Choice(name="False", value="False") 
     ]) 
-    async def plot_charts(interaction: discord.interactions, tickers: str, chart: str, visibility: app_commands.Choice[str],
+    async def plot_charts(self, interaction: discord.interactions, tickers: str, chart: str, visibility: app_commands.Choice[str],
                     display_signals: app_commands.Choice[str] = 'True',
                     timeframe: str = "1y", 
                     plot_type: app_commands.Choice[str] = 'candle', 
@@ -271,15 +115,19 @@ def run_bot():
         tickers, invalid_tickers = sd.get_list_from_tickers(tickers)
 
         # Generate indicator chart for tickers
+        plot_args = locals()
+        plot_args.pop("self", None)
+        plot_args.pop("interaction", None)
+        plot_args.pop("ticker", None)
         for ticker in tickers:
-            await send_charts(**locals())
+            await self.send_charts(interaction, ticker, **plot_args)
 
         await interaction.followup.send("Finished generating charts")
 
     # Plot graphs for the selected watchlist
-    @client.tree.command(name = "run-charts", description= "Plot selected graphs for the selected tickers",)
+    @app_commands.command(name = "run-charts", description= "Plot selected graphs for the selected tickers",)
     @app_commands.describe(watchlist = "Watchlist to plot the strategy against")
-    @app_commands.autocomplete(watchlist=watchlist_options,)
+    @app_commands.autocomplete(watchlist=Watchlists.watchlist_options,)
     @app_commands.describe(chart = "Charts to return for the specified tickers")
     @app_commands.autocomplete(chart=chart_options,)
     @app_commands.describe(visibility = "'private' to send to DMs, 'public' to send to the channel")
@@ -344,7 +192,7 @@ def run_bot():
         app_commands.Choice(name="True", value="True"),
         app_commands.Choice(name="False", value="False") 
     ])  
-    async def run_charts(interaction: discord.interactions, watchlist: str, chart: str, visibility: app_commands.Choice[str],
+    async def run_charts(self, interaction: discord.interactions, watchlist: str, chart: str, visibility: app_commands.Choice[str],
                     display_signals: app_commands.Choice[str] = 'True',
                     timeframe: app_commands.Choice[str] = "1y", 
                     plot_type: app_commands.Choice[str] = 'candle', 
@@ -367,13 +215,17 @@ def run_bot():
         tickers = sd.get_tickers_from_watchlist(watchlist_id)
 
         # Generate indicator chart for tickers
+        plot_args = locals()
+        plot_args.pop("self", None)
+        plot_args.pop("interaction", None)
+        plot_args.pop("ticker", None)
         for ticker in tickers:
-            await send_charts(**locals())
+            await self.send_charts(interaction, ticker, **plot_args)
 
         await interaction.followup.send("Finished generating charts")
 
 
-    async def send_charts(interaction: discord.Interaction, ticker, **kwargs):
+    async def send_charts(self, interaction: discord.Interaction, ticker, **kwargs):
             
             # Parse ticker and data fields
             plot_args = {}
@@ -466,7 +318,7 @@ def run_bot():
     # Backtesting #
     ###############
     
-    async def backtest_options(interaction: discord.Interaction, current: str):
+    async def backtest_options(self, interaction: discord.Interaction, current: str):
         charts = strategies.get_combination_strategies()
         bt_strategies = [chart().name for chart in charts]
         return [
@@ -475,7 +327,7 @@ def run_bot():
         ]
 
     # Generate backtests for the selected tickers
-    @client.tree.command(name = "fetch-backtests", description= "Generate backtests for the selected tickers",)
+    @app_commands.command(name = "fetch-backtests", description= "Generate backtests for the selected tickers",)
     @app_commands.describe(tickers = "Tickers to return charts for (separated by spaces)")
     @app_commands.describe(strategy = "Strategy to run the backtest against")
     @app_commands.autocomplete(strategy=backtest_options,)
@@ -498,7 +350,7 @@ def run_bot():
         app_commands.Choice(name="False", value="False") 
     ])  
 
-    async def fetch_backtests(interaction: discord.interactions, tickers: str, strategy: str, visibility: app_commands.Choice[str],
+    async def fetch_backtests(self, interaction: discord.interactions, tickers: str, strategy: str, visibility: app_commands.Choice[str],
                     cash: int = 10000,
                     timeframe: str = "1y", 
                     stats_only: str = "False", 
@@ -519,9 +371,9 @@ def run_bot():
         await interaction.followup.send("Finished generating backtests")
 
     # Generate backtests for tickers in the selected watchlists
-    @client.tree.command(name = "run-backtests", description= "Generate backtests for the selected tickers",)
+    @app_commands.command(name = "run-backtests", description= "Generate backtests for the selected tickers",)
     @app_commands.describe(watchlist = "Watchlist to plot the strategy against")
-    @app_commands.autocomplete(watchlist=watchlist_options,)
+    @app_commands.autocomplete(watchlist=Watchlists.watchlist_options,)
     @app_commands.describe(strategy = "Strategy to run the backtest against")
     @app_commands.autocomplete(strategy=backtest_options,)
     @app_commands.describe(visibility = "'private' to send to DMs, 'public' to send to the channel")
@@ -543,7 +395,7 @@ def run_bot():
         app_commands.Choice(name="False", value="False") 
     ])  
 
-    async def run_backtests(interaction: discord.interactions, watchlist: str, strategy: str, visibility: app_commands.Choice[str],
+    async def run_backtests(self, interaction: discord.interactions, watchlist: str, strategy: str, visibility: app_commands.Choice[str],
                     cash: int = 10000,
                     timeframe: str = "10y", 
                     stats_only: str = "False",
@@ -567,7 +419,7 @@ def run_bot():
         await interaction.followup.send("Finished generating backtests")
 
     
-    async def send_backtest(interaction: discord.Interaction, ticker, **kwargs):
+    async def send_backtest(self, interaction: discord.Interaction, ticker, **kwargs):
         
         # Parse ticker and data fields
         backtest_args = {}
@@ -625,7 +477,7 @@ def run_bot():
                 await interaction.channel.send(message, files=files)
         return stats
 
-    async def send_backtest_summary(interaction : discord.Interaction, backtest_stats, tickers, strategy_name, visibility):
+    async def send_backtest_summary(self, interaction : discord.Interaction, backtest_stats, tickers, strategy_name, visibility):
 
         total_return = 0.0
         highest_return = 0.0
@@ -661,95 +513,10 @@ def run_bot():
         else:
             await interaction.channel.send(message)
 
-
-# Config
-
-def get_config():
-    try:
-        config = open("config.json")
-        data = json.load(config)
-        return data 
-    except FileNotFoundError as e:
-        write_config({})
-
-def write_config(data):
-    with open("config.json", 'w') as config_file:
-        json.dump(data, config_file)
-        
-    ########################
-    # Test & Help Commands #
-    ########################
-
-    @client.tree.command(name = "help", description= "Show help on the bot's commands",)
-    async def help(interaction: discord.Interaction):
-        logger.info("/help function called by user {}".format(interaction.user.name))
-        embed = discord.Embed()
-        embed.title = 'RocketStocks Help'
-        for command in client.tree.get_commands():
-            embed.add_field(name=command.name, value=command.description)
-        await interaction.response.send_message(embed=embed)
     
-    @client.tree.command(name = "test-daily-download-analyze-data", description= "Test running the logic for daily data download and indicator generation",)
-    async def test_daily_download_analyze_data(interaction: discord.Interaction):
-        logger.info("/test-daily-download-analyze-data function called by user {}".format(interaction.user.name))
-        await interaction.response.send_message("Running daily download and analysis", ephemeral=True)
-        download_data_thread = threading.Thread(target=sd.daily_download_analyze_data)
-        download_data_thread.start()
+#########        
+# Setup #
+#########
 
-    @client.tree.command(name = "test-minute-download-data", description= "Test running the logic for weekly minute-by-minute data download",)
-    async def test_minutes_download_data(interaction: discord.Interaction):
-        logger.info("/test-minute-download-data function called by user {}".format(interaction.user.name))
-
-        await interaction.response.send_message("Running daily download and analysis", ephemeral=True)
-        download_data_thread = threading.Thread(target=sd.minute_download_data)
-        download_data_thread.start()
-
-    @client.tree.command(name = "test-run-strategy-report", description= "Test running the strategy report",)
-    async def test_run_strategy_report(interaction: discord.Interaction):
-        logger.info("/test-run-strategy-report function called by user {}".format(interaction.user.name))
-        await interaction.response.defer(ephemeral=True)
-
-        await send_strategy_reports()
-
-        await interaction.followup.send("Posted strategy report", ephemeral=True)
-
-    @client.tree.command(name = "test-run-watchlist-report", description= "Test running the strategy report",)
-    async def test_run_watchlist_report(interaction: discord.Interaction):
-        logger.info("/test-run-watchlist-report function called by user {}".format(interaction.user.name))
-        await interaction.response.defer(ephemeral=True)
-
-        await send_watchlist_reports()
-
-        await interaction.followup.send("Posted watchlist report", ephemeral=True)
-    
-    @client.tree.command(name = "fetch-all-tickers-csv", description= "Return CSV with data on all tickers the bot runs analysis on",)
-    async def fetch_all_tickers_csv(interaction: discord.Interaction):
-        logger.info("/fetch-all-tickers-csv function called by user {}".format(interaction.user.name))
-        csv_file = discord.File("{}/all_tickers.csv".format(UTILS_PATH))
-        await interaction.user.send(content = "All tickers",file=csv_file)
-        await interaction.response.send_message("CSV file has been sent", ephemeral=True)
-
-    @client.tree.command(name = "fetch-logs", description= "Return the log file for the bot",)
-    async def fetch_logs(interaction: discord.Interaction):
-        logger.info("/fetch-logs function called by user {}".format(interaction.user.name))
-        log_file = discord.File("logs/rocketstocks.log")
-        await interaction.user.send(content = "Log file for RocketStocks :rocket:",file=log_file)
-        await interaction.response.send_("Log file has been sent", ephemeral=True)
-
-    @client.tree.command(name = "test-gainer-reports", description= "Test posting premarket gainer reports",)
-    async def test_premarket_reports(interaction: discord.Interaction):
-        logger.info("/test-premarket-reports function called by user {}".format(interaction.user.name))
-        await interaction.response.defer(ephemeral=True)
-
-        report = GainerReport()
-        await report.send_report()
-
-        await interaction.followup.send("Posted premarket reports", ephemeral=True)
-
-    #client.run(TOKEN)
-    
-#if __name__ == "__main__":
-    #run_bot()
-
-    
-    
+async def setup(bot):
+    await bot.add_cog(Charts(bot))
