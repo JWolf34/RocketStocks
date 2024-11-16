@@ -524,8 +524,7 @@ def get_intraday_gainers_by_market_cap(market_cap):
                         )
                         .order_by('change', ascending=False)
                         .get_scanner_data())
-    print(gainers.head(10))
-    return gainers #.loc[gainers['market_cap_basic'] >= market_cap]    
+    return gainers
             
 
 def get_postmarket_gainers():

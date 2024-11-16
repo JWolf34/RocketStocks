@@ -15,6 +15,7 @@ import numpy as np
 import strategies
 import math
 import datetime
+import json
 from table2ascii import table2ascii
 
 # Logging configuration
@@ -29,6 +30,14 @@ UTILS_PATH = "data/utils"
 ##################
 # Init Functions #
 ##################
+
+intents = discord.Intents.default()
+client = commands.Bot(command_prefix='$', intents=intents)
+
+async def load():
+    for filename in os.listdir("/discord/cogs"):
+        if filename.endswith(".py"):
+            await bot.load_extension
 
 def get_bot_token():
     logger.debug("Fetching Discord bot token")
@@ -62,15 +71,15 @@ def get_alerts_channel_id():
 def run_bot():
     TOKEN = get_bot_token()
 
-    intents = discord.Intents.default()
-    client = commands.Bot(command_prefix='$', intents=intents)
+    #intents = discord.Intents.default()
+    #client = commands.Bot(command_prefix='$', intents=intents)
 
     @client.event
     async def on_ready():
         try:
             await client.tree.sync()
             #send_reports.start()
-            send_gainer_reports.start(GainerReport())
+            send_gainer_reports.start()
         except Exception as e:
             logger.exception("Encountered error waiting for on-ready signal from bot\n{}".format(e))
         logger.info("Bot connected! ")
@@ -837,7 +846,7 @@ def run_bot():
 
 
 
-        
+"""
     ###########
     # Reports #
     ###########
@@ -962,10 +971,7 @@ def run_bot():
             self.PREMARKET_START = self.today.replace(hour=7, minute=0, second=0, microsecond=0)
             self.INTRADAY_START= self.today.replace(hour=8, minute=30, second=0, microsecond=0)
             self.AFTERHOURS_START = self.today.replace(hour=15, minute=0, second=0, microsecond=0)
-            self.MARKET_END = self.today.replace(hour=17, minute=0, second=0, microsecond=0)
-            self.premarket_message_id = ''
-            self.intraday_message_id = ''
-            self.afterhours_message_id = ''
+            self.MARKET_END = self.today.replace(hour=18, minute=0, second=0, microsecond=0)
             super().__init__()
     
 
@@ -1014,13 +1020,13 @@ def run_bot():
                                 self.format_large_num(row.market_cap_basic), 
                                 "{:.2f}%".format(row.postmarket_change), 
                                 self.format_large_num(row.postmarket_volume)])
-            
+            else:
+                return ""
             
             table = table2ascii(
                 header = headers,
                 body = rows, 
             )
-            print(table)
             return "```\n" + table + "\n```"
 
         # Override
@@ -1031,35 +1037,57 @@ def run_bot():
             return report
 
         async def send_report(self):
-            self.today = dt.datetime.now()
-            self.message = self.build_report() +"\n\n"
-            channel = await client.fetch_channel(get_reports_channel_id())
-            if self.in_premarket():
-                message_id = self.premarket_message_id
-            elif self.in_intraday():
-                message_id = self.intraday_message_id
-            elif self.in_afterhours():
-                message_id = self.afterhours_message_id
-            try:
-                curr_message = await channel.fetch_message(message_id)
-                if curr_message.created_at.date() < self.today.date():
-                    message = await channel.send(self.message)
-                    self.update_message_id(message)
-                else:
-                    await curr_message.edit(content=self.message)
+            if self.in_premarket() or self.in_intraday() or self.in_afterhours():
+                channel = await client.fetch_channel(get_reports_channel_id())
+                message_id = self.get_message_id()
+                try:
+                    curr_message = await channel.fetch_message(message_id)
+                    if curr_message.created_at.date() < self.today.date():
+                        message = await channel.send(self.message)
+                        self.update_message_id(message.id)
+                    else:
+                        await curr_message.edit(content=self.message)
 
-            #if curr_message.created_at
-            except discord.errors.NotFound as e:
-                message = await channel.send(self.message)
-                self.update_message_id(message)
+                #if curr_message.created_at
+                except discord.errors.NotFound as e:
+                    message = await channel.send(self.message)
+                    self.update_message_id(message.id)
+            else: 
+                pass
                 
-        def update_message_id(self, message):
+        def update_message_id(self, message_id):
+            data = get_config()
+            if "gainers" not in data.keys():
+                self.write_gainer_config()
+            data = get_config()
             if self.in_premarket():
-                self.premarket_message_id = message.id
+                data['gainers']['PREMARKET_MESSAGE_ID'] = message_id
             elif self.in_intraday():
-                self.intraday_message_id - message.id
+                data['gainers']['INTRADAY_MESSAGE_ID'] = message_id
             elif self.in_afterhours():
-                self.afterhours_message_id = message.id
+                data['gainers']['AFTERHOURS_MESSAGE_ID'] = message_id
+            write_config(data)
+
+        def get_message_id(self):
+            data = get_config()
+            if "gainers" not in data.keys():
+                self.write_gainer_config()
+            data = get_config()
+            if self.in_premarket():
+                return data['gainers']['PREMARKET_MESSAGE_ID']
+            elif self.in_intraday():
+                return data['gainers']['INTRADAY_MESSAGE_ID']
+            elif self.in_afterhours():
+                return data['gainers']['AFTERHOURS_MESSAGE_ID']
+
+        def write_gainer_config(self):
+            data = get_config()
+            data['gainers'] = {
+                    "PREMARKET_MESSAGE_ID":"",
+                    "INTRADAY_MESSAGE_ID":"",
+                    "AFTERHOURS_MESSAGE_ID":""
+                }
+            write_config(data)
 
 
         def in_premarket(self):
@@ -1127,8 +1155,9 @@ def run_bot():
         logger.info("********** [FINISHED SENDING STRATEGY REPORTS] **********")
 
     # Generate and send premarket gainer reports to the reports channel
-    @tasks.loop(minutes=1)
-    async def send_gainer_reports(report):
+    @tasks.loop(minutes=5)
+    async def send_gainer_reports():
+        report = GainerReport()
         if (report.today.weekday() < 5):
         
             await report.send_report()
@@ -1408,9 +1437,23 @@ def run_bot():
         message += "**Market Cap:** {}\n".format("$"+ "{}".format(format_large_num(screener['market_cap_basic'].iloc[0])) if screener['market_cap_basic'].iloc[0] is not np.nan else "N/A") 
         
         return message
+        """
 
-    
-        
+    #######################
+    # Bot Config Settings #
+    ####################### 
+
+    def get_config():
+        try:
+            config = open("config.json")
+            data = json.load(config)
+            return data 
+        except FileNotFoundError as e:
+            write_config({})
+
+    def write_config(data):
+        with open("config.json", 'w') as config_file:
+            json.dump(data, config_file)
          
     ########################
     # Test & Help Commands #
