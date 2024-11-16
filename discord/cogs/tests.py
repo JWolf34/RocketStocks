@@ -2,7 +2,7 @@ import discord
 from discord import app_commands
 from discord.ext import commands
 from discord.ext import tasks
-import stockdata as sd
+import logging
 
 # Logging configuration
 logger = logging.getLogger(__name__)
@@ -30,23 +30,23 @@ class Tests(commands.Cog):
         await interaction.response.send_message(embed=embed)
     
 
-    @app_commands.command(self, name = "test-daily-download-analyze-data", description= "Test running the logic for daily data download and indicator generation",)
-    async def test_daily_download_analyze_data(interaction: discord.Interaction):
+    @app_commands.command(name = "test-daily-download-analyze-data", description= "Test running the logic for daily data download and indicator generation",)
+    async def test_daily_download_analyze_data(self, interaction: discord.Interaction):
         logger.info("/test-daily-download-analyze-data function called by user {}".format(interaction.user.name))
         await interaction.response.send_message("Running daily download and analysis", ephemeral=True)
         download_data_thread = threading.Thread(target=sd.daily_download_analyze_data)
         download_data_thread.start()
 
-    @app_commands.command(self, name = "test-minute-download-data", description= "Test running the logic for weekly minute-by-minute data download",)
-    async def test_minutes_download_data(interaction: discord.Interaction):
+    @app_commands.command(name = "test-minute-download-data", description= "Test running the logic for weekly minute-by-minute data download",)
+    async def test_minutes_download_data(self, interaction: discord.Interaction):
         logger.info("/test-minute-download-data function called by user {}".format(interaction.user.name))
 
         await interaction.response.send_message("Running daily download and analysis", ephemeral=True)
         download_data_thread = threading.Thread(target=sd.minute_download_data)
         download_data_thread.start()
 
-    @app_commands.command(self, name = "test-run-strategy-report", description= "Test running the strategy report",)
-    async def test_run_strategy_report(interaction: discord.Interaction):
+    @app_commands.command(name = "test-run-strategy-report", description= "Test running the strategy report",)
+    async def test_run_strategy_report(self, interaction: discord.Interaction):
         logger.info("/test-run-strategy-report function called by user {}".format(interaction.user.name))
         await interaction.response.defer(ephemeral=True)
 
@@ -54,8 +54,8 @@ class Tests(commands.Cog):
 
         await interaction.followup.send("Posted strategy report", ephemeral=True)
 
-    @app_commands.command(self, name = "test-run-watchlist-report", description= "Test running the strategy report",)
-    async def test_run_watchlist_report(interaction: discord.Interaction):
+    @app_commands.command(name = "test-run-watchlist-report", description= "Test running the strategy report",)
+    async def test_run_watchlist_report(self, interaction: discord.Interaction):
         logger.info("/test-run-watchlist-report function called by user {}".format(interaction.user.name))
         await interaction.response.defer(ephemeral=True)
 
@@ -64,8 +64,8 @@ class Tests(commands.Cog):
         await interaction.followup.send("Posted watchlist report", ephemeral=True)
 
    
-    @app_commands.command(self, name = "test-gainer-reports", description= "Test posting premarket gainer reports",)
-    async def test_premarket_reports(interaction: discord.Interaction):
+    @app_commands.command(name = "test-gainer-reports", description= "Test posting premarket gainer reports",)
+    async def test_premarket_reports(self, interaction: discord.Interaction):
         logger.info("/test-premarket-reports function called by user {}".format(interaction.user.name))
         await interaction.response.defer(ephemeral=True)
 
