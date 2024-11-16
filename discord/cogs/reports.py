@@ -1,6 +1,115 @@
+import discord
 from discord import app_commands
 from discord.ext import commands
 from discord.ext import tasks
+import stockdata as sd
+import datetime as dt
+import json
+from table2ascii import table2ascii
+import logging
+
+# Logging configuration
+logger = logging.getLogger(__name__)
+
+async def watchlist_options(interaction: discord.Interaction, current: str):
+    watchlists = sd.get_watchlists()
+    return [
+        app_commands.Choice(name = watchlist, value= watchlist)
+        for watchlist in watchlists if current.lower() in watchlist.lower()
+    ]
+
+class Reports(commands.Cog):
+    def __init__(self, bot):
+        self.bot = bot
+
+    @commands.Cog.listener()
+    async def on_ready(self):
+        print("Loaded!")
+        #logger.info(f"Module {__name__} loaded!")
+
+    @app_commands.command(name = "run-reports", description= "Post analysis of a given watchlist (use /fetch-reports for individual or non-watchlist stocks)",)
+    @app_commands.describe(watchlist = "Which watchlist to fetch reports for")
+    @app_commands.autocomplete(watchlist=watchlist_options,)
+    @app_commands.describe(visibility = "'private' to send to DMs, 'public' to send to the channel")
+    @app_commands.choices(visibility =[
+        app_commands.Choice(name = "private", value = 'private'),
+        app_commands.Choice(name = "public", value = 'public')
+    ])
+    async def runreports(self, interaction: discord.Interaction, watchlist: str, visibility: app_commands.Choice[str]):
+        await interaction.response.defer(ephemeral=True)
+        logger.info("/run-reports function called by user {}".format(interaction.user.name))
+        logger.debug("Selected watchlist is '{}'".format(watchlist))
+        
+        
+        message = ""
+        watchlist_id = watchlist
+
+        # Populate tickers based on value of watchlist
+        if watchlist == 'personal':
+            watchlist_id = str(interaction.user.id)
+        
+
+        tickers = sd.get_tickers_from_watchlist(watchlist_id)
+
+        if len(tickers) == 0:
+            # Empty watchlist
+            logger.warning("Selected watchlist '{}' is empty".format(watchlist))
+            message = "No tickers on the watchlist. Use /addticker to build a watchlist."
+        else:
+            user = interaction.user
+            channel = await bot.fetch_channel(get_reports_channel_id())
+
+            an.run_analysis(tickers)
+
+            # Build reports and send messages
+            logger.info("Running reports on tickers {}".format(tickers))
+            for ticker in tickers:
+                logger.info("Processing ticker {}".format(ticker))
+                report = build_ticker_report(ticker)
+                message, files = report.get('message'), report.get('files')
+
+                if visibility.value == 'private':
+                    await interaction.user.send(message, files=files)
+                else:
+                    await interaction.channel.send(message, files=files)
+                logger.info("Posted report for ticker {}".format(ticker))
+                    
+            message = "Reports have been posted!"
+            logger.info("Reports have been posted")
+        await interaction.followup.send(message, ephemeral=True)
+
+
+    @app_commands.command(name = "fetch-reports", description= "Fetch analysis reports of the specified tickers (use /run-reports to analyze a watchlist)",)
+    @app_commands.describe(tickers = "Tickers to post reports for (separated by spaces)")
+    @app_commands.describe(visibility = "'private' to send to DMs, 'public' to send to the channel")
+    @app_commands.choices(visibility =[
+        app_commands.Choice(name = "private", value = 'private'),
+        app_commands.Choice(name = "public", value = 'public')
+    ])        
+    async def fetchreports(self, interaction: discord.interactions, tickers: str, visibility: app_commands.Choice[str]):
+        await interaction.response.defer(ephemeral=True)
+        logger.info("/fetch-reports function called by user {}".format(interaction.user.name))
+        
+
+        # Validate each ticker in the list is valid
+        tickers, invalid_tickers = sd.get_list_from_tickers(tickers)
+        logger.debug("Validated tickers {} | Invalid tickers: {}".format(tickers, invalid_tickers))
+
+        #an.run_analysis(tickers)
+
+        logger.info("Fetching reports for tickers {}".format(tickers))
+        # Build reports and send messages
+        for ticker in tickers:
+            logger.info("Processing ticker {}".format(ticker))
+            #report = build_ticker_report(ticker)
+            report = StockReport(ticker)
+            await report.send_report(interaction, visibility.value)
+            logger.info("Report posted for ticker {}".format(ticker))
+        if len(invalid_tickers) > 0:
+            await interaction.followup.send("Fetched reports for {}. Failed to fetch reports for {}.".format(", ".join(tickers), ", ".join(invalid_tickers)), ephemeral=True)
+        else:
+            logger.info("Reports have been posted")
+            await interaction.followup.send("Fetched reports!", ephemeral=True)
 
 
 ###########
@@ -194,7 +303,7 @@ class GainerReport(Report):
 
     async def send_report(self):
         if self.in_premarket() or self.in_intraday() or self.in_afterhours():
-            channel = await client.fetch_channel(get_reports_channel_id())
+            channel = await bot.fetch_channel(get_reports_channel_id())
             message_id = self.get_message_id()
             try:
                 curr_message = await channel.fetch_message(message_id)
@@ -272,7 +381,7 @@ async def send_reports():
 async def send_watchlist_reports():
     
     # Configure channel to send reports to
-    channel = await client.fetch_channel(get_reports_channel_id())
+    channel = await bot.fetch_channel(get_reports_channel_id())
     
 
     watchlist = sd.get_tickers_from_watchlist('daily-reports')
@@ -294,7 +403,7 @@ async def send_watchlist_reports():
 # Generate and send strategy reports to the reports channel
 async def send_strategy_reports():
     
-    channel = await client.fetch_channel(get_reports_channel_id())
+    channel = await bot.fetch_channel(get_reports_channel_id())
     reports = {}
     
     logger.info("********** [SENDING STRATEGY REPORTS] **********")
@@ -339,86 +448,9 @@ async def delay_send_reports():
     logger.info("Sending reports in {}".format(time_to_reports))
     await asyncio.sleep(time_to_reports.seconds)
         
-@client.tree.command(name = "run-reports", description= "Post analysis of a given watchlist (use /fetch-reports for individual or non-watchlist stocks)",)
-@app_commands.describe(watchlist = "Which watchlist to fetch reports for")
-@app_commands.autocomplete(watchlist=watchlist_options,)
-@app_commands.describe(visibility = "'private' to send to DMs, 'public' to send to the channel")
-@app_commands.choices(visibility =[
-    app_commands.Choice(name = "private", value = 'private'),
-    app_commands.Choice(name = "public", value = 'public')
-])
-async def runreports(interaction: discord.Interaction, watchlist: str, visibility: app_commands.Choice[str]):
-    await interaction.response.defer(ephemeral=True)
-    logger.info("/run-reports function called by user {}".format(interaction.user.name))
-    logger.debug("Selected watchlist is '{}'".format(watchlist))
-    
-    
-    message = ""
-    watchlist_id = watchlist
+#########        
+# Setup #
+#########
 
-    # Populate tickers based on value of watchlist
-    if watchlist == 'personal':
-        watchlist_id = str(interaction.user.id)
-    
-
-    tickers = sd.get_tickers_from_watchlist(watchlist_id)
-
-    if len(tickers) == 0:
-        # Empty watchlist
-        logger.warning("Selected watchlist '{}' is empty".format(watchlist))
-        message = "No tickers on the watchlist. Use /addticker to build a watchlist."
-    else:
-        user = interaction.user
-        channel = await client.fetch_channel(get_reports_channel_id())
-
-        an.run_analysis(tickers)
-
-        # Build reports and send messages
-        logger.info("Running reports on tickers {}".format(tickers))
-        for ticker in tickers:
-            logger.info("Processing ticker {}".format(ticker))
-            report = build_ticker_report(ticker)
-            message, files = report.get('message'), report.get('files')
-
-            if visibility.value == 'private':
-                await interaction.user.send(message, files=files)
-            else:
-                await interaction.channel.send(message, files=files)
-            logger.info("Posted report for ticker {}".format(ticker))
-                
-        message = "Reports have been posted!"
-        logger.info("Reports have been posted")
-    await interaction.followup.send(message, ephemeral=True)
-
-
-@client.tree.command(name = "fetch-reports", description= "Fetch analysis reports of the specified tickers (use /run-reports to analyze a watchlist)",)
-@app_commands.describe(tickers = "Tickers to post reports for (separated by spaces)")
-@app_commands.describe(visibility = "'private' to send to DMs, 'public' to send to the channel")
-@app_commands.choices(visibility =[
-    app_commands.Choice(name = "private", value = 'private'),
-    app_commands.Choice(name = "public", value = 'public')
-])        
-async def fetchreports(interaction: discord.interactions, tickers: str, visibility: app_commands.Choice[str]):
-    await interaction.response.defer(ephemeral=True)
-    logger.info("/fetch-reports function called by user {}".format(interaction.user.name))
-    
-
-    # Validate each ticker in the list is valid
-    tickers, invalid_tickers = sd.get_list_from_tickers(tickers)
-    logger.debug("Validated tickers {} | Invalid tickers: {}".format(tickers, invalid_tickers))
-
-    #an.run_analysis(tickers)
-
-    logger.info("Fetching reports for tickers {}".format(tickers))
-    # Build reports and send messages
-    for ticker in tickers:
-        logger.info("Processing ticker {}".format(ticker))
-        #report = build_ticker_report(ticker)
-        report = StockReport(ticker)
-        await report.send_report(interaction, visibility.value)
-        logger.info("Report posted for ticker {}".format(ticker))
-    if len(invalid_tickers) > 0:
-        await interaction.followup.send("Fetched reports for {}. Failed to fetch reports for {}.".format(", ".join(tickers), ", ".join(invalid_tickers)), ephemeral=True)
-    else:
-        logger.info("Reports have been posted")
-        await interaction.followup.send("Fetched reports!", ephemeral=True)
+async def setup(bot):
+    await bot.add_cog(Reports(bot))
