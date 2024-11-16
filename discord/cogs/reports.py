@@ -3,6 +3,7 @@ from discord import app_commands
 from discord.ext import commands
 from discord.ext import tasks
 import stockdata as sd
+import numpy as np
 import datetime as dt
 import json
 from table2ascii import table2ascii
@@ -26,6 +27,20 @@ class Reports(commands.Cog):
     async def on_ready(self):
         print("Loaded!")
         #logger.info(f"Module {__name__} loaded!")
+    
+    #########
+    # Tasks #
+    #########
+
+    # Generate and send premarket gainer reports to the reports channel
+    @tasks.loop(minutes=5)
+    async def send_gainer_reports():
+        report = GainerReport()
+        if (report.today.weekday() < 5):
+            await report.send_report()
+        else:
+            # Not a weekday - do not post gainer reports
+            pass
 
     @app_commands.command(name = "run-reports", description= "Post analysis of a given watchlist (use /fetch-reports for individual or non-watchlist stocks)",)
     @app_commands.describe(watchlist = "Which watchlist to fetch reports for")
@@ -40,15 +55,12 @@ class Reports(commands.Cog):
         logger.info("/run-reports function called by user {}".format(interaction.user.name))
         logger.debug("Selected watchlist is '{}'".format(watchlist))
         
-        
         message = ""
         watchlist_id = watchlist
 
         # Populate tickers based on value of watchlist
         if watchlist == 'personal':
             watchlist_id = str(interaction.user.id)
-        
-
         tickers = sd.get_tickers_from_watchlist(watchlist_id)
 
         if len(tickers) == 0:
@@ -56,24 +68,13 @@ class Reports(commands.Cog):
             logger.warning("Selected watchlist '{}' is empty".format(watchlist))
             message = "No tickers on the watchlist. Use /addticker to build a watchlist."
         else:
-            user = interaction.user
-            channel = await bot.fetch_channel(get_reports_channel_id())
-
-            an.run_analysis(tickers)
-
-            # Build reports and send messages
+            # Send reports
             logger.info("Running reports on tickers {}".format(tickers))
             for ticker in tickers:
-                logger.info("Processing ticker {}".format(ticker))
-                report = build_ticker_report(ticker)
-                message, files = report.get('message'), report.get('files')
-
-                if visibility.value == 'private':
-                    await interaction.user.send(message, files=files)
-                else:
-                    await interaction.channel.send(message, files=files)
-                logger.info("Posted report for ticker {}".format(ticker))
-                    
+                logger.debug("Processing ticker {}".format(ticker))
+                report = StockReport(ticker)
+                await report.send_report(interaction, visibility.value)
+                logger.info("Report posted for ticker {}".format(ticker))
             message = "Reports have been posted!"
             logger.info("Reports have been posted")
         await interaction.followup.send(message, ephemeral=True)
@@ -89,19 +90,14 @@ class Reports(commands.Cog):
     async def fetchreports(self, interaction: discord.interactions, tickers: str, visibility: app_commands.Choice[str]):
         await interaction.response.defer(ephemeral=True)
         logger.info("/fetch-reports function called by user {}".format(interaction.user.name))
-        
-
+    
         # Validate each ticker in the list is valid
         tickers, invalid_tickers = sd.get_list_from_tickers(tickers)
         logger.debug("Validated tickers {} | Invalid tickers: {}".format(tickers, invalid_tickers))
 
-        #an.run_analysis(tickers)
-
         logger.info("Fetching reports for tickers {}".format(tickers))
-        # Build reports and send messages
         for ticker in tickers:
-            logger.info("Processing ticker {}".format(ticker))
-            #report = build_ticker_report(ticker)
+            logger.debug("Processing ticker {}".format(ticker))
             report = StockReport(ticker)
             await report.send_report(interaction, visibility.value)
             logger.info("Report posted for ticker {}".format(ticker))
@@ -112,9 +108,9 @@ class Reports(commands.Cog):
             await interaction.followup.send("Fetched reports!", ephemeral=True)
 
 
-###########
-# Reports #
-###########
+##################
+# Report Classes #
+##################
 
 class Report(object):
     def __init__(self):
@@ -145,7 +141,7 @@ class Report(object):
         message += "**Name:** {}\n".format(ticker_data['Name'] if ticker_data['Name'] is not np.nan else "N/A")
         message += "**Sector:** {}\n".format(ticker_data['Sector']if ticker_data['Sector'] is not np.nan else "N/A")
         message += "**Industry:** {}\n".format(ticker_data['Industry'] if ticker_data['Industry'] is not np.nan else "N/A")
-        message += "**Market Cap:** {}\n".format(("$"+ "{}".format(format_large_num(ticker_data['Market Cap']))) if ticker_data['Market Cap'] is not np.nan else "N/A") 
+        message += "**Market Cap:** {}\n".format(("$"+ "{}".format(self.format_large_num(ticker_data['Market Cap']))) if ticker_data['Market Cap'] is not np.nan else "N/A") 
         message += "**Country:** {}\n".format(ticker_data['Country'] if ticker_data['Country'] is not np.nan else "N/A")
         message += "**Next earnings date:** {}".format(sd.get_next_earnings_date(self.ticker))
         
@@ -212,6 +208,8 @@ class StockReport(Report):
     def build_report(self):
         report = ''
         report += self.build_report_header()
+        report += self.build_ticker_info()
+        report += self.build_daily_summary()
         
         return report
 
@@ -364,89 +362,6 @@ class GainerReport(Report):
     def in_afterhours(self):
         return self.today > self.AFTERHOURS_START and self.today < self.MARKET_END
     
-
-# Send daily reports for stocks on the global watchlist to the reports channel
-@tasks.loop(hours=24)  
-async def send_reports():
-    
-    if (dt.datetime.now().weekday() < 5):
-
-        await send_watchlist_reports()    
-        await send_strategy_reports()
-
-    else:
-        pass
-
-# Send ticker reports to reports channel for tickers on the 'daily-reports' watchlist if it exists
-async def send_watchlist_reports():
-    
-    # Configure channel to send reports to
-    channel = await bot.fetch_channel(get_reports_channel_id())
-    
-
-    watchlist = sd.get_tickers_from_watchlist('daily-reports')
-    if len(watchlist) == 0:
-        logger.info("No tickers found in the 'daily-reports' watchlist. No reports will be posted.")
-        await channel.send("No tickers exist in the 'daily-reports' watchlist. Add tickers to this watchlist to receive daily reports")
-    else:
-        
-        logger.info("********** [SENDING DAILY REPORTS] **********")
-        logger.info("Tickers {} found in 'daily-reports' watchlist".format(watchlist))
-        an.run_analysis(watchlist)
-        await channel.send("## Daily Reports {}".format(dt.date.today().strftime("%m/%d/%Y")))
-        for ticker in watchlist:
-            report = build_ticker_report(ticker)
-            message, files = report.get('message'), report.get('files')
-            await channel.send(message, files=files)
-        logger.info("********** [FINISHED SENDING DAILY REPORTS] **********")
-
-# Generate and send strategy reports to the reports channel
-async def send_strategy_reports():
-    
-    channel = await bot.fetch_channel(get_reports_channel_id())
-    reports = {}
-    
-    logger.info("********** [SENDING STRATEGY REPORTS] **********")
-    for strategy in strategies.get_combination_strategies():
-        strategy = strategy()
-        message, file = build_strategy_report(strategy)
-        reports[strategy.name] = {'message':message, 'file':file}
-
-    
-    await channel.send("## Strategy Report {}".format(dt.date.today().strftime("%m/%d/%Y")))
-    for strategy_name, report in reports.items():
-        await channel.send(report.get('message'), file=report.get('file'))
-
-    logger.info("********** [FINISHED SENDING STRATEGY REPORTS] **********")
-
-# Generate and send premarket gainer reports to the reports channel
-@tasks.loop(minutes=5)
-async def send_gainer_reports():
-    report = GainerReport()
-    if (report.today.weekday() < 5):
-    
-        await report.send_report()
-
-    else:
-        # Not a weekday - do not post gainer reports
-        pass
-
-
-# Configure delay before sending daily reports to send at the same time daily
-@send_reports.before_loop
-async def delay_send_reports():
-    
-    hour = 6
-    minute = 30
-    now = dt.datetime.now()
-
-    future = dt.datetime(now.year, now.month, now.day, hour, minute)
-    if now.hour >= hour and now.minute > minute:
-        future += dt.timedelta(days=1)
-    
-    time_to_reports = dt.timedelta(seconds=(future-now).seconds)
-    logger.info("Sending reports in {}".format(time_to_reports))
-    await asyncio.sleep(time_to_reports.seconds)
         
 #########        
 # Setup #
