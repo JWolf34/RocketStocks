@@ -6,7 +6,7 @@ import discord
 # Logging configuration
 logger = logging.getLogger(__name__)
 
-CONFIG_PATH = "data/config.json"
+CONFIG_PATH = "config.json"
 
 def get_config():
     try:
