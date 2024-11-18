@@ -5,6 +5,6 @@ WORKDIR /RocketStocks
 COPY requirements.txt requirements.txt
 RUN pip install -r requirements.txt
 
-COPY . /RocketStocks
+COPY . ./
 
 CMD ["python3", "rocketstocks.py"]
