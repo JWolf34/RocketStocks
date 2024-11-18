@@ -20,15 +20,7 @@ class Tests(commands.Cog):
     # Test & Help Commands #
     ########################
 
-    @app_commands.command(name = "help", description= "Show help on the bot's commands",)
-    async def help(self, interaction: discord.Interaction):
-        logger.info("/help function called by user {}".format(interaction.user.name))
-        embed = discord.Embed()
-        embed.title = 'RocketStocks Help'
-        for command in client.tree.get_commands():
-            embed.add_field(name=command.name, value=command.description)
-        await interaction.response.send_message(embed=embed)
-    
+
 
     @app_commands.command(name = "test-daily-download-analyze-data", description= "Test running the logic for daily data download and indicator generation",)
     async def test_daily_download_analyze_data(self, interaction: discord.Interaction):

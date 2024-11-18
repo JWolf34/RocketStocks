@@ -1,6 +1,7 @@
 import json
 import logging
 import os
+import bot
 
 # Logging configuration
 logger = logging.getLogger(__name__)
@@ -50,11 +51,26 @@ def get_daily_data_path():
 def get_minute_data_path():
     return get_config()['data_paths']['MINUTE_DATA_PATH']
 
+def get_intraday_data_path():
+    return get_config()['data paths']['INTRADAY_DATA_PATH']
+
 def get_attachments_path():
     return get_config()['data_paths']['ATTACHMENTS_PATH']
 
 def get_utils_path():
     return get_config()['data_paths']['UTILS_PATH']
+
+def get_watchlists_path():
+    return get_config()['data paths']['WATCHLISTS_PATH']
+
+def get_analysis_path():
+    return get_config()['data paths']['ANALYSIS_PATH']
+
+def get_plots_path():
+    return get_config()['data paths']['PLOTS_PATH']
+
+def get_financials_path():
+    return get_config()['data paths']['FINANCIALS_PATH']
 
 # Environment Variables #
 
@@ -76,5 +92,24 @@ def get_alerts_channel_id():
         logger.exception("Failed to fetch alerts channel ID\n{}".format(e))
         return ""
 
+def get_discord_token():
+        logger.debug("Fetching Discord bot token")
+        try:
+            token = os.getenv('DISCORD_TOKEN')
+            logger.debug("Successfully fetched token")
+            return token
+        except Exception as e:
+            logger.exception("Failed to fetch Discord bot token\n{}".format(e))
+            return ""
+
+def get_news_api_token():
+        logger.debug("Fetching News API token")
+        try:
+            token = os.getenv('NEWS_API_KEY')
+            logger.debug("Successfully fetched token")
+            return token
+        except Exception as e:
+            logger.exception("Failed to fetch News API token token\n{}".format(e))
+            return ""
 
         

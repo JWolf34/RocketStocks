@@ -103,8 +103,7 @@ class Data(commands.Cog):
         csv_file = discord.File("{}/all_tickers.csv".format(config.get_utils_path()))
         await interaction.user.send(content = "All tickers",file=csv_file)
         await interaction.response.send_message("CSV file has been sent", ephemeral=True)
-
-            
+        
 
 #########        
 # Setup #

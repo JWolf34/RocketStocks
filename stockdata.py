@@ -1,8 +1,11 @@
+import sys
+sys.path.append('../RocketStocks/discord')
 import yfinance as yf
 from pandas_datareader import data as pdr
 import pandas as pd
 import pandas_ta as ta
 import strategies
+from newsapi import NewsApiClient
 import os
 import datetime
 from datetime import timedelta
@@ -10,28 +13,15 @@ from requests import Session
 from requests_cache import CacheMixin, SQLiteCache
 from requests_ratelimiter import LimiterMixin, MemoryQueueBucket
 from pyrate_limiter import Duration, RequestRate, Limiter
+import config
 import logging
 from tradingview_screener import Scanner, Query, Column
 
 # Logging configuration
 logger = logging.getLogger(__name__)
 
-# Override pandas data fetching with yfinance logic (Deprecated)
-# yf.pdr_override()
-
-# Paths for writing data
-DAILY_DATA_PATH = "data/CSV/daily"
-INTRADAY_DATA_PATH = "data/CSV/intraday"
-FINANCIALS_PATH = "data/financials"
-PLOTS_PATH = "data/plots"
-ANALYSIS_PATH = "data/analysis"
-ATTACHMENTS_PATH = "discord/attachments"
-MINUTE_DATA_PATH = "data/CSV/minute"
-WATCHLISTS_PATH = "data/watchlists"
-UTILS_PATH = "data/utils"
 
 # Class for limiting requests to avoid hitting the rate limit when downloading data
-
 class CachedLimiterSession(CacheMixin, LimiterMixin, Session):
     pass
 
@@ -42,7 +32,33 @@ session = CachedLimiterSession(
     backend=SQLiteCache("yfinance.cache"),
 ) 
 
+class News():
+    def __init__(self):
+        self.token = config.get_news_api_token()
+        self.news = NewsApiClient(api_key=config.get_news_api_token())
+        self.categories= {'Business':'business',
+                          'Entertainment':'entertainment',
+                          'General':'eeneral',
+                          'Health':'health',
+                          'Science':'science',
+                          'Sports':'sports',
+                          'Technology':'technology'}
+        self.sort_by = {'Relevancy':'relevancy',
+                        'Popularity':'popularity',
+                        'Publication Time':'publishedAt'}
 
+    def get_sources(self):
+        return self.news.get_sources()
+
+    def get_news(self, query, **kwargs):
+        return self.news.get_everything(q=query, language='en', **kwargs)
+    
+    def get_breaking_news(self, query, **kwargs):
+        return self.news.get_top_headlines(q=query, **kwargs)
+
+    def format_article_date(self, date):
+        new_date = datetime.datetime.fromisoformat(date)
+        return new_date.strftime("%m/%d/%y %H:%M:%S EST")
 
 
 #########################
@@ -116,7 +132,7 @@ def download_analyze_data(ticker):
     
     data = download_data(ticker)
     generate_indicators(data)
-    update_csv(data, ticker, DAILY_DATA_PATH)
+    update_csv(data, ticker, config.get_daily_data_path())
 
 # Daily process to download daily ticker data and generate indicator data on all 
 # tickers in the masterlist
@@ -145,7 +161,7 @@ def daily_download_analyze_data():
                     remove_from_all_tickers(ticker)
                 else:
                     generate_indicators(data)
-                    update_csv(data, ticker, DAILY_DATA_PATH)
+                    update_csv(data, ticker, config.get_daily_data_path())
                     logger.debug("Download and analysis of {} complete.".format(ticker))
             else:
                 logger.info("Ticker '{}' is not valid. Removing from all tickers".format(ticker))
@@ -179,7 +195,7 @@ def minute_download_data():
                 remove_from_all_tickers(ticker)
             else: # Data downloaded 
                 logger.debug("Data downloaded for {} is valid.".format(ticker))
-                update_csv(data, ticker, MINUTE_DATA_PATH)
+                update_csv(data, ticker, config.get_minute_data_path())
                
             num_ticker += 1
 
@@ -189,7 +205,7 @@ def minute_download_data():
 # Download and write financials for specified ticker to the financials folder
 def download_financials(ticker):
     logger.info("Downloading financials for ticker {}".format(ticker))
-    path = "{}/{}".format(FINANCIALS_PATH,ticker)
+    path = "{}/{}".format(config.get_financials_path(),ticker)
     validate_path(path)
     
     stock = yf.Ticker(ticker)
@@ -222,7 +238,7 @@ def download_financials(ticker):
 # Return all filepaths of all charts for a given ticker
 def fetch_charts(ticker):
     logger.info("Fetching charts for ticker {}".format(ticker))
-    charts_path = "{}/{}/".format(PLOTS_PATH,ticker)
+    charts_path = "{}/{}/".format(config.get_plots_path(),ticker)
     charts = os.listdir(charts_path)
     for i in range(0, len(charts)):
         logger.debug("Appending {} chart: {}".format(ticker, charts_path + charts[i]))
@@ -234,7 +250,7 @@ def fetch_charts(ticker):
 def fetch_daily_data(ticker):
     logger.debug("Fetching daily data file for ticker {}".format(ticker))
     data = pd.DataFrame()
-    data_path = "{}/{}.csv".format(DAILY_DATA_PATH, ticker)
+    data_path = "{}/{}.csv".format(config.get_daily_data_path(), ticker)
     if not os.path.isfile(data_path):
         logger.warning("CSV file for {} does not exist.".format(ticker))
     else:
@@ -248,7 +264,7 @@ def fetch_daily_data(ticker):
 def fetch_minute_data(ticker):
     logger.info("Fetching minute data file for ticker {}".format(ticker))
     data = pd.DataFrame()
-    data_path = "{}/{}.csv".format(MINUTE_DATA_PATH, ticker)
+    data_path = "{}/{}.csv".format(config.get_minute_data_path(), ticker)
     if not os.path.isfile(data_path):
         logger.warning("CSV file for {} does not exist.".format(ticker))
     else:
@@ -261,7 +277,7 @@ def fetch_minute_data(ticker):
 def fetch_analysis(ticker):
     logger.info("Fetching analysis for ticker {}".format(ticker))
     analyis = ''
-    path = "{}/{}/".format(ANALYSIS_PATH,ticker)
+    path = "{}/{}/".format(config.get_analysis_path(),ticker)
     for file in os.listdir(path):
         logger.debug("Analysis for ticker {} found at {}".format(ticker, path))
         data = open(path + file)
@@ -272,7 +288,7 @@ def fetch_analysis(ticker):
 # Return list of files that contain financials data for the specified ticker
 def fetch_financials(ticker):
     logger.info("Fetching financials for ticker {}".format(ticker))
-    path = "{}/{}".format(FINANCIALS_PATH,ticker)
+    path = "{}/{}".format(config.get_financials_path(),ticker)
     if not validate_path(path):
         logger.debug("Path {} not found".format(path))
         download_financials(ticker)
@@ -292,7 +308,7 @@ def validate_ticker(ticker):
     logger.info("Verifying that ticker {} is valid".format(ticker))
 
     # Confirm if data file already exists
-    if os.path.isfile("{}/{}.csv".format(DAILY_DATA_PATH, ticker)) or os.path.isfile("{}/{}.csv".format(MINUTE_DATA_PATH, ticker)):
+    if os.path.isfile("{}/{}.csv".format(config.get_daily_data_path(), ticker)) or os.path.isfile("{}/{}.csv".format(config.get_minute_data_path(), ticker)):
         logger.info("Data file exists for ticker '{}' - ticker is valid".format(ticker))
         return True
     data = download_data(ticker, period='1d')
@@ -317,7 +333,7 @@ def validate_path(path):
 # Return tickers from watchlist - global by default, personal if chosen by user
 def get_tickers_from_watchlist(watchlist_id):
     logger.info("Fetching tickers from watchlist with ID '{}'".format(watchlist_id))
-    watchlist_path = "{}/{}.txt".format(WATCHLISTS_PATH, watchlist_id)
+    watchlist_path = "{}/{}.txt".format(config.get_watchlists_path(), watchlist_id)
 
     try:
         with open(watchlist_path, 'r+') as watchlist:
@@ -356,7 +372,7 @@ def get_list_from_tickers(tickers):
 
 # Return list of existing watchlists
 def get_watchlists():
-    watchlists = [x.split('.')[0] for x in os.listdir(WATCHLISTS_PATH)]
+    watchlists = [x.split('.')[0] for x in os.listdir(config.get_watchlists_path())]
     watchlists = [x for x in watchlists if not x.isdigit()]
     watchlists.append('personal')
     watchlists.sort()
@@ -365,22 +381,22 @@ def get_watchlists():
 # Set content of watchlist to provided tickers
 def update_watchlist(watchlist_id, tickers):
     logger.info("Updating watchlist '{}': {}".format(watchlist_id, tickers))
-    with open("{}/{}.txt".format(WATCHLISTS_PATH, watchlist_id), 'w') as watchlist:
+    with open("{}/{}.txt".format(config.get_watchlists_path(), watchlist_id), 'w') as watchlist:
         watchlist.write("\n".join(sorted(tickers)))
         watchlist.close()
 
 # Create a new watchlist with id 'watchlist_id'
 def create_watchlist(watchlist_id, tickers):
     logger.info("Creating watchlist with ID '{}' and tickers {}".format(watchlist_id, tickers))
-    validate_path("{}".format(WATCHLISTS_PATH, watchlist_id))
-    with open("{}/{}.txt".format(WATCHLISTS_PATH, watchlist_id), 'w') as watchlist:
+    validate_path("{}".format(config.get_watchlists_path(), watchlist_id))
+    with open("{}/{}.txt".format(config.get_watchlists_path(), watchlist_id), 'w') as watchlist:
         watchlist.write("\n".join(tickers))
         watchlist.close()
 
 # Delete watchlist wityh id 'watchlist_id'
 def delete_watchlist(watchlist_id):
     logger.info("Deleting watchlist '{}'...".format(watchlist_id))
-    os.remove("{}/{}.txt".format(WATCHLISTS_PATH, watchlist_id))
+    os.remove("{}/{}.txt".format(config.get_watchlists_path(), watchlist_id))
 
 
     
@@ -416,7 +432,7 @@ def get_ticker_info(ticker):
     
 # Return dataframe containing data from 'all_tickers.csv'
 def get_all_tickers_data():
-    return pd.read_csv("{}/all_tickers.csv".format(UTILS_PATH), index_col='Symbol')
+    return pd.read_csv("{}/all_tickers.csv".format(config.get_utils_path()), index_col='Symbol')
     
 # Return list of tickers available in the masterlist
 def get_all_tickers():
@@ -448,7 +464,7 @@ def add_to_all_tickers(ticker):
 
     all_tickers = get_all_tickers_data()
     all_tickers = pd.concat([all_tickers, row])
-    all_tickers.to_csv("{}/all_tickers.csv".format(UTILS_PATH))
+    all_tickers.to_csv("{}/all_tickers.csv".format(config.get_utils_path()))
     logger.info("Added new row for ticker '{}' to all tickers".format(ticker))
 
 
@@ -457,7 +473,7 @@ def remove_from_all_tickers(ticker):
     
     data = get_all_tickers_data()
     data = data.drop(index=ticker)
-    data.to_csv("{}/all_tickers.csv".format(UTILS_PATH))
+    data.to_csv("{}/all_tickers.csv".format(config.get_utils_path()))
     logger.info("Removed ticker '{}' from all tickers".format(ticker))
 
 # Validate that data file for specified ticker has data up to yesterday
@@ -499,6 +515,7 @@ def get_supported_exchanges():
 def get_news(ticker):
     news = yf.Ticker(ticker, session=session).news
     return news
+    
 
 def get_premarket_gainers():
     num_rows, gainers = Scanner.premarket_gainers.get_scanner_data()
@@ -542,10 +559,8 @@ def get_postmarket_gainers_by_market_cap(market_cap):
 #########
 
 def test():
-    # Check otu Vader stock analaysis for reddit and other news sources
-    # Stocker and that one guy on reddit
-    # Use interaction.edit to allow for editing existing bot messages with new charts in a specified time frame
-    pass
+    news = News()
+    
 
 if __name__ == "__main__":
     logger.info("stockdata.py initialized")
