@@ -18,3 +18,4 @@ requests_ratelimiter
 Backtesting
 tradingview_screener
 newsapi-python
+table2ascii
