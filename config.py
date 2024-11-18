@@ -6,16 +6,18 @@ import discord
 # Logging configuration
 logger = logging.getLogger(__name__)
 
+CONFIG_PATH = "data/config.json"
+
 def get_config():
     try:
-        config = open("config.json")
+        config = open(CONFIG_PATH)
         data = json.load(config)
         return data 
     except FileNotFoundError as e:
         print("File not found")
 
 def write_config(data):
-    with open("config.json", 'w') as config_file:
+    with open(CONFIG_PATH, 'w') as config_file:
         json.dump(data, config_file)
 
 # Reports #
