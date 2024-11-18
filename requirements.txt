@@ -17,4 +17,4 @@ requests_cache
 requests_ratelimiter
 Backtesting
 tradingview_screener
-newsapi
+newsapi-python
