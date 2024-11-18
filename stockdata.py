@@ -4,11 +4,13 @@ import yfinance as yf
 from pandas_datareader import data as pdr
 import pandas as pd
 import pandas_ta as ta
+
 import strategies
 from newsapi import NewsApiClient
 import os
 import datetime
 from datetime import timedelta
+import requests
 from requests import Session
 from requests_cache import CacheMixin, SQLiteCache
 from requests_ratelimiter import LimiterMixin, MemoryQueueBucket
@@ -59,6 +61,26 @@ class News():
     def format_article_date(self, date):
         new_date = datetime.datetime.fromisoformat(date)
         return new_date.strftime("%m/%d/%y %H:%M:%S EST")
+
+class Nasdaq():
+    def __init__(self):
+        self.url_base = "https://api.nasdaq.com/api"
+        self.headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/96.0.4664.45 Safari/537.36'}
+
+
+    def get_all_tickers(self):
+        url = f"{self.url_base}/screener/stocks?tableonly=false&limit=25&download=true"
+        data = requests.get(url, headers=self.headers).json()
+        tickers = pd.DataFrame(data['data']['rows'])
+        return tickers
+
+    def get_earnings_by_date(self, date):
+        url = f"{self.url_base}/calendar/earnings"
+        params = {'date':date}
+        data = requests.get(url, headers=self.headers, params=params).json()
+        earnings = pd.DataFrame(data['data']['rows'])
+        return earnings
+
 
 
 #########################
@@ -559,8 +581,9 @@ def get_postmarket_gainers_by_market_cap(market_cap):
 #########
 
 def test():
-    news = News()
-    
+    nasdaq = Nasdaq()
+    earnings = nasdaq.get_earnings_by_date('2024-11-20')
+    print(earnings.head(50))
 
 if __name__ == "__main__":
     logger.info("stockdata.py initialized")
