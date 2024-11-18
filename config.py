@@ -1,21 +1,21 @@
 import json
 import logging
 import os
-import bot
+import discord
 
 # Logging configuration
 logger = logging.getLogger(__name__)
 
 def get_config():
     try:
-        config = open("./discord/config.json")
+        config = open("config.json")
         data = json.load(config)
         return data 
     except FileNotFoundError as e:
         print("File not found")
 
 def write_config(data):
-    with open("./discord/config.json", 'w') as config_file:
+    with open("config.json", 'w') as config_file:
         json.dump(data, config_file)
 
 # Reports #
@@ -23,11 +23,11 @@ def write_config(data):
 def update_gainer_message_id(market_time, message_id):
         data = get_config()
         if market_time == "premarket":
-            data['reports']['PREMARKET_MESSAGE_ID'] =  message_id
+            data['reports']['gainers']['PREMARKET_MESSAGE_ID'] =  message_id
         elif market_time == "intraday":
-            data['reports']['INTRADAY_MESSAGE_ID'] =  message_id
+            data['reports']['gainers']['INTRADAY_MESSAGE_ID'] =  message_id
         elif market_time == "afterhours":
-            data['reports']['AFTERHOURS_MESSAGE_ID'] =  message_id
+            data['reports']['gainers']['AFTERHOURS_MESSAGE_ID'] =  message_id
         else:
             return
         write_config(data)
@@ -35,11 +35,11 @@ def update_gainer_message_id(market_time, message_id):
 def get_gainer_message_id(market_time):
     data = get_config()
     if market_time == "premarket":
-        return data['reports']['PREMARKET_MESSAGE_ID']
+        return data['reports']['gainers']['PREMARKET_MESSAGE_ID']
     elif market_time == "intraday":
-        return data['reports']['INTRADAY_MESSAGE_ID']
+        return data['reports']['gainers']['INTRADAY_MESSAGE_ID']
     elif market_time == "afterhours":
-        return data['reports']['AFTERHOURS_MESSAGE_ID']
+        return data['reports']['gainers']['AFTERHOURS_MESSAGE_ID']
     else:
         return ""
 
@@ -78,7 +78,7 @@ def get_reports_channel_id():
     try:
         channel_id = os.getenv("REPORTS_CHANNEL_ID")
         logger.debug("Reports channel ID is {}".format(channel_id))
-        return channel_id
+        return int(channel_id)
     except Exception as e:
         logger.exception("Failed to fetch reports channel ID\n{}".format(e))
         return ""

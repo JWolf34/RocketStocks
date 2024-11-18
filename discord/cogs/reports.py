@@ -215,22 +215,22 @@ class GainerReport(Report):
         return report
 
     # Override
-    async def send_report(self):
+    async def send_report(self, channel):
         if self.in_premarket() or self.in_intraday() or self.in_afterhours():
-            channel = await discord.utils.get(id=config.get_reports_channel_id())
-            message_id = self.get_message_id()
+            market_period = self.get_market_period()
+            message_id = config.get_gainer_message_id(market_period)
             try:
                 curr_message = await channel.fetch_message(message_id)
                 if curr_message.created_at.date() < self.today.date():
                     message = await channel.send(self.message)
-                    self.update_message_id(message.id)
+                    config.update_gainer_message_id(market_period, message.id)
                 else:
                     await curr_message.edit(content=self.message)
 
             #if curr_message.created_at
             except discord.errors.NotFound as e:
                 message = await channel.send(self.message)
-                self.update_message_id(message.id)
+                config.update_gainer_message_id(market_period, message.id)
         else: 
             pass
             
@@ -266,6 +266,17 @@ class GainerReport(Report):
     
     def in_afterhours(self):
         return self.today > self.AFTERHOURS_START and self.today < self.MARKET_END
+
+    def get_market_period(self):
+        if self.in_premarket():
+            return "premarket"
+        elif self.in_intraday():
+            return "intraday"
+        if self.in_afterhours():
+            return "afterhours"
+        else:
+            return "EOD"
+        
     
 class NewsReport(Report):
     def __init__(self, query, breaking=False, **kwargs):
@@ -320,7 +331,9 @@ class Reports(commands.Cog):
     async def send_gainer_reports(self):
         report = GainerReport()
         if (report.today.weekday() < 5):
-            await report.send_report()
+            channel_id = config.get_reports_channel_id()
+            channel = self.bot.get_channel(channel_id)
+            await report.send_report(self.bot.get_channel(config.get_reports_channel_id()))
         else:
             # Not a weekday - do not post gainer reports
             pass
