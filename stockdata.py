@@ -81,6 +81,10 @@ class Nasdaq():
         earnings = pd.DataFrame(data['data']['rows'])
         return earnings
 
+class Postgres():
+    def __init__(self):
+        pass
+
 
 
 #########################
