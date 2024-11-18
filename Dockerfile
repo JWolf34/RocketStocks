@@ -1,6 +1,5 @@
 FROM python:3.12.2-slim-bullseye
 
-ADD . /RocketStocks
 WORKDIR /RocketStocks
 
 #RUN pip install pip==23.2.1
