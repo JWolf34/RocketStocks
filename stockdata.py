@@ -90,6 +90,7 @@ class Postgres():
         self.conn = None
         self.cur = None
         
+    # Open connection to PostgreSQL database
     def open_connection(self):
         self.conn = psycopg2.connect(
             host =self.host,
@@ -101,6 +102,7 @@ class Postgres():
         self.cur = self.conn.cursor()
         logger.debug("Opened connection to database.")
 
+    # Close connection to PostgreSQL database
     def close_connection(self):
         if self.cur is not None:
             self.cur.close()
@@ -110,20 +112,21 @@ class Postgres():
             self.conn = None
         logger.debug("Closed connection to database")
     
+    # Create database tables
     def create_tables(self):
         self.open_connection()
         create_script = """ CREATE TABLE IF NOT EXISTS tickers (
                             ticker          varchar(8) PRIMARY KEY,
                             name            varchar(255) NOT NULL,
-                            market_cap      int NOT NULL, 
+                            marketCap       varchar(20) NOT NULL, 
                             country         varchar(40), 
                             ipoyear         char(4),
                             industry        varchar(64),
                             sector          varchar(64),
-                            nasdaq_endpoint varchar(64)
+                            nasdaqEndpoint varchar(64)
                             );
 
-                            CREATE TABLE IF NOT EXISTS earnings (
+                            CREATE TABLE IF NOT EXISTS upcomingEarnings (
                             ticker              varchar(8) PRIMARY KEY,
                             date                char(10) NOT NULL,
                             fiscalQuarterEnding varchar(10),
@@ -145,7 +148,8 @@ class Postgres():
 
         self.close_connection()
     
-    def drop_tables(self):
+    # Drop database tables
+    def drop_all_tables(self):
         self.open_connection()
         drop_script = """DROP TABLE earnings;
                          DROP TABLE tickers;
@@ -155,18 +159,16 @@ class Postgres():
         self.cur.execute(drop_script)
         self.conn.commit()
         self.close_connection()
-
-
-    def get_ticker_info(self, ticker:str):
+    
+    def drop_table(self, table:str):
         self.open_connection()
-        select_script = f"""SELECT * FROM tickers
-                           WHERE ticker = '{ticker}'
-                        """
-        self.curr.execute(select_script)
-        ticker_info = curr.fetchone()
+        drop_script = f"""DROP TABLE {table};
+                       """
+        self.cur.execute(drop_script)
+        self.conn.commit()
         self.close_connection()
-        return ticker_info
 
+    # Insert row(s) into database
     def insert(self, table:str, fields:list, values:list):
         self.open_connection()
         insert_script = f"""INSERT INTO {table} ({",".join(fields)})
@@ -179,6 +181,7 @@ class Postgres():
         logger.debug(f"Inserted values {values} into table {table}")
         self.close_connection()
 
+    # Select a sigle row from database
     def select_one(self, query:str):
         self.open_connection()
         self.cur.execute(query)
@@ -186,6 +189,7 @@ class Postgres():
         self.close_connection()
         return result
 
+    # Select multiple rows from database
     def select_many(self, query:str):
         self.open_connection()
         self.cur.execute(query)
@@ -193,12 +197,14 @@ class Postgres():
         self.close_connection()
         return results
     
+    # Update row(s) in database
     def update(self, query:str):
         self.open_connection()
         self.cur.execute(query)
         self.conn.commit()
         self.close_connection()
     
+    # Delete row(s) from database
     def delete(self, table:str, where_condition:str):
         self.open_connection()
         delete_script = f"""DELETE FROM {table}
@@ -225,7 +231,6 @@ class Watchlists():
        
 
     # Return tickers from all available watchlists
-    #TODO - option to remove tickers that exist on personal watchlists
     def get_tickers_from_all_watchlists(self, no_personal=True):
         logger.debug("Fetching tickers from all available watchlists (besides personal)")
         select_script = f"""SELECT * FROM {self.db_table};
@@ -243,23 +248,6 @@ class Watchlists():
                 tickers += watchlist_tickers
                     
         return sorted(tickers)
-       
-
-    """
-    # Format string of tickers into list
-    def get_list_from_tickers(tickers):
-        logger.debug("Processing valid and invalid tickers from {}".format(tickers))
-        ticker_list = tickers.split(" ")
-        invalid_tickers = []
-        for ticker in ticker_list:
-            if not validate_ticker(ticker): 
-                invalid_tickers.append(ticker)
-        # Remove invalid tickers from list before returning
-        logger.debug("Identified invalid tickers from original list {} - removing...".format(invalid_tickers))
-        for ticker in invalid_tickers:
-            ticker_list.remove(ticker)
-        return ticker_list, invalid_tickers
-        """
 
     # Return list of existing watchlists
     def get_watchlists(self):
@@ -291,6 +279,99 @@ class Watchlists():
     def delete_watchlist(self, watchlist_id):
         logger.info("Deleting watchlist '{}'...".format(watchlist_id))
         Postgres().delete(table=self.db_table, where_condition=f"id = '{watchlist_id}'")
+
+class StockData():
+    def __init__(self):
+        pass
+
+    @staticmethod
+    def update_tickers():
+        column_map = {'symbol':'ticker',
+                      'name':'name',
+                      'marketCap':'marketCap',
+                      'country':'country',
+                      'ipoyear':'ipoyear',
+                      'industry':'industry',
+                      'sector':'sector',
+                      'url':'nasdaqEndpoint'}
+        drop_columns = ['lastsale',
+                        'netchange',
+                        'pctchange',
+                        'volume']
+        tickers_data = Nasdaq().get_all_tickers()
+        tickers_data = tickers_data.drop(columns=drop_columns)
+        tickers_data = tickers_data.rename(columns=column_map)
+        values = [tuple(row) for row in tickers_data.values]
+        Postgres().insert(table='tickers', fields=tickers_data.columns.to_list(), values=values)
+
+    @staticmethod
+    def get_ticker_info(ticker):
+        select_script = f"""SELECT * FROM tickers
+                            WHERE ticker = '{ticker}';
+                            """
+        return Postgres().select_one(select_script)
+
+    # Confirm we get valid data back when downloading data for ticker
+    @staticmethod
+    def validate_ticker(ticker):
+        logger.info("Verifying that ticker {} is valid".format(ticker))
+
+        select_script = f"""SELECT ticker FROM tickers
+                            WHERE ticker = '{ticker}';
+                            """
+        ticker = Postgres().select_one(select_script)
+        if ticker is None:
+            return False
+        else:
+            return True
+    
+    class Earnings():
+        def __init__(self):
+            pass
+
+class TradingView():
+    def __init__(self):
+        pass
+
+    @staticmethod
+    def get_premarket_gainers():
+        num_rows, gainers = Scanner.premarket_gainers.get_scanner_data()
+        return gainers
+
+    @staticmethod
+    def get_premarket_gainers_by_market_cap(market_cap):
+        num_rows, gainers = Scanner.premarket_gainers.get_scanner_data()
+        return gainers.loc[gainers['market_cap_basic'] >= market_cap]    
+
+    @staticmethod
+    def get_intraday_gainers():
+        num_rows, gainers = (Query()
+                            .select('name','close', 'change', 'volume')
+                            .get_scanner_data())
+        return gainers
+
+    @staticmethod
+    def get_intraday_gainers_by_market_cap(market_cap):
+        num_rows, gainers = (Query()
+                            .select('name','close', 'volume', 'market_cap_basic', 'change', 'exchange')
+                            .set_markets('america')
+                            .where(
+                                Column('market_cap_basic') > market_cap,
+                                Column('exchange').isin(get_supported_exchanges())
+                            )
+                            .order_by('change', ascending=False)
+                            .get_scanner_data())
+        return gainers
+                
+    @staticmethod
+    def get_postmarket_gainers():
+        num_rows, gainers = Scanner.postmarket_gainers.get_scanner_data()
+        return gainers
+
+    @staticmethod
+    def get_postmarket_gainers_by_market_cap(market_cap):
+        num_rows, gainers = Scanner.postmarket_gainers.get_scanner_data()
+        return gainers.loc[gainers['market_cap_basic'] >= market_cap]    
 
 
 #########################
@@ -535,21 +616,7 @@ def fetch_financials(ticker):
 # Helpers and data validation #
 ###############################
 
-# Confirm we get valid data back when downloading data for ticker
-def validate_ticker(ticker):
-    logger.info("Verifying that ticker {} is valid".format(ticker))
 
-    # Confirm if data file already exists
-    if os.path.isfile("{}/{}.csv".format(config.get_daily_data_path(), ticker)) or os.path.isfile("{}/{}.csv".format(config.get_minute_data_path(), ticker)):
-        logger.info("Data file exists for ticker '{}' - ticker is valid".format(ticker))
-        return True
-    data = download_data(ticker, period='1d')
-    if data.size == 0:
-        logger.warning("INVALID TICKER - Size of data for ticker {} is 0".format(ticker))
-        return False
-    else:
-        logger.info("Data for ticker {} successfully downloaded - ticker is valid".format(ticker))
-        return True
 
 # Validate specified path exists and create it if needed
 def validate_path(path):
@@ -678,45 +745,8 @@ def get_supported_exchanges():
 # Pre-market gainer logic #
 ###########################
 
-def get_news(ticker):
-    news = yf.Ticker(ticker, session=session).news
-    return news
-    
 
-def get_premarket_gainers():
-    num_rows, gainers = Scanner.premarket_gainers.get_scanner_data()
-    return gainers
 
-def get_premarket_gainers_by_market_cap(market_cap):
-    num_rows, gainers = Scanner.premarket_gainers.get_scanner_data()
-    return gainers.loc[gainers['market_cap_basic'] >= market_cap]    
-
-def get_intraday_gainers():
-    num_rows, gainers = (Query()
-                        .select('name','close', 'change', 'volume')
-                        .get_scanner_data())
-    return gainers
-
-def get_intraday_gainers_by_market_cap(market_cap):
-    num_rows, gainers = (Query()
-                        .select('name','close', 'volume', 'market_cap_basic', 'change', 'exchange')
-                        .set_markets('america')
-                        .where(
-                            Column('market_cap_basic') > market_cap,
-                            Column('exchange').isin(get_supported_exchanges())
-                        )
-                        .order_by('change', ascending=False)
-                        .get_scanner_data())
-    return gainers
-            
-
-def get_postmarket_gainers():
-    num_rows, gainers = Scanner.postmarket_gainers.get_scanner_data()
-    return gainers
-
-def get_postmarket_gainers_by_market_cap(market_cap):
-    num_rows, gainers = Scanner.postmarket_gainers.get_scanner_data()
-    return gainers.loc[gainers['market_cap_basic'] >= market_cap]    
 
 
 
@@ -725,39 +755,9 @@ def get_postmarket_gainers_by_market_cap(market_cap):
 #########
 
 def test():
-    #nd = Nasdaq()
-    #tickers =  nd.get_all_tickers()
-    #print(tickers.head(10))
-    #earnings = nd.get_earnings_by_date("2024-11-19")
-    #print(earnings.head(10))
-
-    postgres = Postgres()
-    # Create Tables
-    #postgres.create_tables()
-
-    #Insert into 'watchlists' table
-    #fields = ['ID', 'tickers']
-    #watchlists = [
-        #('mag7', "MSFT AMZN META APPL GOOG NVDA TSLA"),
-        #('crypto', "MARA MSTR SMCI"),
-        #('memestocks', "AISP FCEL ASTS BKKT"),
-    #    ('99721317451829248', "A AON CAVA")
-    #]
-    #postgres.insert(table='watchlists', fields=fields, values=watchlists)
-    
-
-    # Select from 'watchlists' table
-    #select_script = """SELECT * FROM watchlists;
-    #                   """
-    #results = postgres.select_many(select_script)
-    #print(results)
-
-    # Watchlist testing
-    watchlist_id = 'newlist'
-    tickers = 'BABA ABBA MDNA'
-    Watchlists().create_watchlist(watchlist_id=watchlist_id, tickers=tickers)
-    tickers = Watchlists().get_tickers_from_watchlist(watchlist_id)
-    print(tickers)
+    print(StockData.validate_ticker("BEEBEEBOOBOO"))
+    #Postgres().drop_tables()
+    #Postgres().create_tables()
 
 
 if __name__ == "__main__":
