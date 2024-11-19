@@ -4,7 +4,7 @@ import yfinance as yf
 from pandas_datareader import data as pdr
 import pandas as pd
 import pandas_ta as ta
-
+import psycopg2
 import strategies
 from newsapi import NewsApiClient
 import os
@@ -83,7 +83,46 @@ class Nasdaq():
 
 class Postgres():
     def __init__(self):
-        pass
+        self.user = config.get_db_user()
+        self.pwd = config.get_db_password()
+        self.db = config.get_db_name()
+        self.host = config.get_db_host()
+        self.conn = None
+        self.cur = None
+        
+    def open_connection(self):
+        self.conn = psycopg2.connect(
+            host =self.host,
+            dbname = self.db,
+            user = self.user,
+            password = self.pwd,
+            port = 5432)
+
+        self.cur = conn.cursor()
+
+    def close_connection(self):
+        if self.cur is not None:
+            self.cur.close()
+            self.cur = None
+        if self.conn is not None:
+            self.conn.close()
+            self.conn = None
+
+    
+    def create_tables(self):
+        self.open_connection()
+        create_script = ''' CREATE TABLE IF NOT EXISTS tickers (
+                            ticker          varchar(8) PRIMARY KEY,
+                            name            varchar(255) NOT NULL,
+                            market_cap      int NOT NULL, 
+                            country         varchar(40), 
+                            ipoyear         char(4),
+                            industry        varchar(64)
+                            sectory         varchar(64)
+                            nasdaq_endpoint varchar(64)
+                            )
+                            '''
+
 
 
 
@@ -585,9 +624,9 @@ def get_postmarket_gainers_by_market_cap(market_cap):
 #########
 
 def test():
-    nasdaq = Nasdaq()
-    earnings = nasdaq.get_earnings_by_date('2024-11-20')
-    print(earnings.head(50))
+    nd = Nasdaq()
+    tickers =  nd.get_all_tickers()
+    print(tickers.head(10))
 
 if __name__ == "__main__":
     logger.info("stockdata.py initialized")

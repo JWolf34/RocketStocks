@@ -10,6 +10,7 @@ import numpy as np
 import datetime as dt
 import json
 import config
+import psycopg2
 from table2ascii import table2ascii
 import logging
 

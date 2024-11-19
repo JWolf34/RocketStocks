@@ -111,7 +111,47 @@ def get_news_api_token():
             logger.debug("Successfully fetched token")
             return token
         except Exception as e:
-            logger.exception("Failed to fetch News API token token\n{}".format(e))
+            logger.exception("Failed to fetch News API token\n{}".format(e))
             return ""
+
+def get_db_user():
+        logger.debug("Fetching DB username")
+        try:
+            token = os.getenv('POSTGRES_USER')
+            logger.debug("Successfully fetched DB username")
+            return token
+        except Exception as e:
+            logger.exception("Failed to fetch  DB username\n{}".format(e))
+            return ""
+
+def get_db_password():
+        logger.debug("Fetching DB password")
+        try:
+            token = os.getenv('POSTGRES_PASSWORD')
+            logger.debug("Successfully fetched DB password")
+            return token
+        except Exception as e:
+            logger.exception("Failed to fetch  DB password\n{}".format(e))
+            return ""
+
+def get_db_name():
+    logger.debug("Fetching DB name")
+    try:
+        token = os.getenv('POSTGRES_DB')
+        logger.debug("Successfully fetched DB name")
+        return token
+    except Exception as e:
+        logger.exception("Failed to fetch  DB name\n{}".format(e))
+        return ""
+
+def get_db_host():
+    logger.debug("Fetching DB host")
+    try:
+        token = os.getenv('POSTGRES_HOST')
+        logger.debug("Successfully fetched DB host")
+        return token
+    except Exception as e:
+        logger.exception("Failed to fetch  DB host\n{}".format(e))
+        return ""
 
         
