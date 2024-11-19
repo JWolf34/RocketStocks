@@ -17,7 +17,7 @@ class Watchlists(commands.Cog):
         logger.info(f"Cog {__name__} loaded!")
 
     async def watchlist_options(self, interaction: discord.Interaction, current: str):
-        watchlists = sd.get_watchlists()
+        watchlists = sd.Watchlists().get_watchlists()
         return [
             app_commands.Choice(name = watchlist, value= watchlist)
             for watchlist in watchlists if current.lower() in watchlist.lower()
@@ -32,7 +32,7 @@ class Watchlists(commands.Cog):
         logger.info("/add-tickers function called by user {}".format(self, interaction.user.name))
         
         # Parse list from ticker input and identify invalid tickers
-        tickers, invalid_tickers = sd.get_list_from_tickers(tickers)
+        tickers, invalid_tickers = sd.StockData.get_list_from_tickers(tickers)
 
         message_flavor = watchlist
         is_personal = False
@@ -42,16 +42,20 @@ class Watchlists(commands.Cog):
         watchlist_id = watchlist
 
         if watchlist == 'personal':
-            watchlist_id = str(self, interaction.user.id)
+            watchlist_id = str(interaction.user.id)
             is_personal = True
             message_flavor = "your"
 
-        symbols = sd.get_tickers_from_watchlist(watchlist_id)
+        # Confirm watchlists exists, otherwise create it
+        if watchlist_id not in sd.Watchlists().get_watchlists(no_personal=False):
+            sd.Watchlists().create_watchlist(watchlist_id=watchlist_id, tickers=[])
+
+        symbols = sd.Watchlists().get_tickers_from_watchlist(watchlist_id)
         duplicate_tickers = [x for x in tickers if x in symbols]
         tickers = [x for x in tickers if x not in symbols]
 
         # Update watchlist with new tickers
-        sd.update_watchlist(watchlist_id=watchlist_id, tickers=symbols + tickers)
+        sd.Watchlists().update_watchlist(watchlist_id=watchlist_id, tickers=symbols + tickers)
         
         message = ''
         if len(tickers) > 0:
@@ -74,7 +78,7 @@ class Watchlists(commands.Cog):
         logger.info("/remove-tickers function called by user {}".format(self, interaction.user.name))
         
     # Parse list from ticker input and identify invalid tickers
-        tickers, invalid_tickers = sd.get_list_from_tickers(tickers)
+        tickers, invalid_tickers = sd.StockData.get_list_from_tickers(tickers)
 
         message_flavor = watchlist
         is_personal = False
@@ -84,16 +88,15 @@ class Watchlists(commands.Cog):
         watchlist_id = watchlist
 
         if watchlist == 'personal':
-            watchlist_id = str(self, interaction.user.id)
+            watchlist_id = str(interaction.user.id)
             is_personal = True
             message_flavor = "your"
 
-        symbols = sd.get_tickers_from_watchlist(watchlist_id)
+        symbols = sd.Watchlists().get_tickers_from_watchlist(watchlist_id)
         
         # If watchlist is empty, return
-        if len(symbols) == 0:
+        if symbols is None:
             await interaction.followup.send("There are no tickers in {} watchlist. Use /add-tickers or /create-watchlist to begin building a watchlist.".format(message_flavor), ephemeral=is_personal)
-            
         else:
             # Identify input tickers not in the watchlist
             NA_tickers = [ticker for ticker in tickers if ticker not in symbols]
@@ -101,7 +104,7 @@ class Watchlists(commands.Cog):
             
             
             # Update watchlist without input tickers                   
-            sd.update_watchlist(watchlist_id=watchlist_id, tickers=[ticker for ticker in symbols if ticker not in tickers])                   
+            sd.Watchlists().update_watchlist(watchlist_id=watchlist_id, tickers=[ticker for ticker in symbols if ticker not in tickers])                   
             
             message = ''
             if len(tickers) > 0:
@@ -115,8 +118,6 @@ class Watchlists(commands.Cog):
         
             await interaction.followup.send(message, ephemeral=is_personal)
             
-                      
-        
 
     @app_commands.command(name = "watchlist", description= "List the tickers on the selected watchlist",)
     @app_commands.describe(watchlist = "Which watchlist you want to make changes to")
@@ -128,11 +129,14 @@ class Watchlists(commands.Cog):
         is_personal = False
         watchlist_id = watchlist
         if watchlist == 'personal':
-            watchlist_id = str(self, interaction.user.id)
+            watchlist_id = str(interaction.user.id)
             is_personal = True
         
-        tickers = sd.get_tickers_from_watchlist(watchlist_id)
-        await interaction.response.send_message("Watchlist: " + ', '.join(tickers), ephemeral=is_personal)
+        tickers = sd.Watchlists().get_tickers_from_watchlist(watchlist_id)
+        if tickers is not None:
+            await interaction.response.send_message("Watchlist: " + ', '.join(tickers), ephemeral=is_personal)
+        else:
+            await interaction.response.send_message(f"No tickers on watchlist '{watchlist}'", ephemeral=is_personal)
 
     @app_commands.command(name = "set-watchlist", description= "Overwrite a watchlist with the specified tickers",)
     @app_commands.describe(tickers = "Tickers to add to watchlist (separated by spaces)")
@@ -143,7 +147,7 @@ class Watchlists(commands.Cog):
         logger.info("/set-watchlist function called by user {}".format(self, interaction.user.name))
 
         # Parse list from ticker input and identify invalid tickers
-        tickers, invalid_tickers = sd.get_list_from_tickers(tickers)
+        tickers, invalid_tickers = sd.StockData.get_list_from_tickers(tickers)
 
         symbols = []
         message_flavor = watchlist
@@ -152,27 +156,23 @@ class Watchlists(commands.Cog):
 
         # Get watchlist path and watchlist contents based on value of watchlist input
         if watchlist == 'personal':
-                watchlist_id = interaction.user.id
+                watchlist_id = str(interaction.user.id)
                 message_flavor = "your"
                 is_personal = True
-
-                  
-        try:
-            # Update watchlist with new tickers         
-            sd.update_watchlist(watchlist_id=watchlist_id, tickers=tickers)
-            if len(tickers) > 0 and len(invalid_tickers) > 0:
-                await interaction.followup.send("Set {} watchlist to {} but could not add the following tickers: {}".format(message_flavor, ", ".join(tickers), ", ".join(invalid_tickers)), ephemeral=is_personal)
-            elif len(tickers) > 0:
-                await interaction.followup.send("Set {} watchlist to {}.".format(message_flavor, ", ".join(tickers)), ephemeral=is_personal)
-            else:
-                await interaction.followup.send("No tickers added to {} watchlist. Invalid tickers: {}".format(message_flavor, ", ".join(invalid_tickers)), ephemeral=is_personal)
             
-        except FileNotFoundError as e:
-            logger.exception("Encountered FileNotFoundError when attempting to set watchlist '{}'".format(watchlist))
-            await interaction.followup.send("Watchlist '{}' does not exist".format(watchlist), ephemeral=False)            
+        # Confirm watchlists exists, otherwise create it
+        if watchlist_id not in sd.Watchlists().get_watchlists(no_personal=False):
+            sd.Watchlists().create_watchlist(watchlist_id=watchlist_id, tickers=[])
+    
+        # Update watchlist with new tickers         
+        sd.Watchlists().update_watchlist(watchlist_id=watchlist_id, tickers=tickers)
+        if len(tickers) > 0 and len(invalid_tickers) > 0:
+            await interaction.followup.send("Set {} watchlist to {} but could not add the following tickers: {}".format(message_flavor, ", ".join(tickers), ", ".join(invalid_tickers)), ephemeral=is_personal)
+        elif len(tickers) > 0:
+            await interaction.followup.send("Set {} watchlist to {}.".format(message_flavor, ", ".join(tickers)), ephemeral=is_personal)
+        else:
+            await interaction.followup.send("No tickers added to {} watchlist. Invalid tickers: {}".format(message_flavor, ", ".join(invalid_tickers)), ephemeral=is_personal)
         
-        
-
     @app_commands.command(name = "create-watchlist", description= "List the tickers on the selected watchlist",)
     @app_commands.describe(watchlist = "Name of the watchlist to create")
     @app_commands.describe(tickers = "Tickers to add to watchlist (separated by spaces)")
@@ -181,9 +181,9 @@ class Watchlists(commands.Cog):
         logger.info("/create-watchlist function called by user {}".format(self, interaction.user.name))
 
         # Parse list from ticker input and identify invalid tickers
-        tickers, invalid_tickers = sd.get_list_from_tickers(tickers)
+        tickers, invalid_tickers = sd.StockData.get_list_from_tickers(tickers)
 
-        sd.create_watchlist(watchlist_id=watchlist, tickers=tickers)
+        sd.Watchlists().create_watchlist(watchlist_id=watchlist, tickers=tickers)
         await interaction.followup.send("Created watchlist '{}' with tickers: ".format(watchlist) + ', '.join(tickers), ephemeral=False)
 
     @app_commands.command(name = "delete-watchlist", description= "Delete a watchlist",)
@@ -193,12 +193,11 @@ class Watchlists(commands.Cog):
         await interaction.response.defer(ephemeral=True)
         logger.info("/delete-watchlist function called by user {}".format(self, interaction.user.name))
 
-        try:
-            sd.delete_watchlist(watchlist_id=watchlist)
+        if watchlist == "personal":
+            await interaction.followup.send("Cannot delete a personal watchlist. Use /set-watchlist to clear its contents if you wish", ephemeral=True)
+        else:
+            sd.Watchlists().delete_watchlist(watchlist_id=watchlist)
             await interaction.followup.send("Deleted watchlist '{}'".format(watchlist), ephemeral=False)
-        except FileNotFoundError as e:
-            logger.exception("Encountered FileNotFoundError when attempting to delete watchlist '{}'".format(watchlist))
-            await interaction.followup.send("Watchlist '{}' does not exist".format(watchlist), ephemeral=False)
 
 
 #########        

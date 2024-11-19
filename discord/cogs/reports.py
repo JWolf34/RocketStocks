@@ -167,7 +167,7 @@ class GainerReport(Report):
     def build_gainer_table(self):
 
         if self.in_premarket():
-            gainers = sd.get_premarket_gainers_by_market_cap(100000000)[:15]
+            gainers = sd.TradingView.get_premarket_gainers_by_market_cap(100000000)[:15]
             headers = ["Ticker", "Close", "Volume", "Market Cap", "Premarket Change", "Premarket Volume"]
             rows = []
             for index, row in gainers.iterrows():
@@ -179,7 +179,7 @@ class GainerReport(Report):
                             self.format_large_num(row.premarket_volume)])
         elif self.in_intraday():
             # Placeholder - need to make query for intraday earners
-            gainers = sd.get_intraday_gainers_by_market_cap(100000000)[:15]
+            gainers = sd.TradingView.get_intraday_gainers_by_market_cap(100000000)[:15]
             headers = ["Ticker", "Close", "Volume", "Market Cap", "% Change"]
             rows = []
             for index, row in gainers.iterrows():
@@ -189,7 +189,7 @@ class GainerReport(Report):
                             self.format_large_num(row.market_cap_basic), 
                             "{:.2f}%".format(row.change)])
         elif self.in_afterhours():
-            gainers = sd.get_postmarket_gainers_by_market_cap(100000000)[:15] 
+            gainers = sd.TradingView.get_postmarket_gainers_by_market_cap(100000000)[:15] 
             headers = ["Ticker", "Close", "Volume", "Market Cap", "After Hours Change", "After Hours Volume"]
             rows = []
             for index, row in gainers.iterrows():
@@ -358,7 +358,7 @@ class Reports(commands.Cog):
         # Populate tickers based on value of watchlist
         if watchlist == 'personal':
             watchlist_id = str(interaction.user.id)
-        tickers = sd.get_tickers_from_watchlist(watchlist_id)
+        tickers = sd.Watchlists().get_tickers_from_watchlist(watchlist_id)
 
         if len(tickers) == 0:
             # Empty watchlist
@@ -389,7 +389,7 @@ class Reports(commands.Cog):
         logger.info("/fetch-reports function called by user {}".format(interaction.user.name))
     
         # Validate each ticker in the list is valid
-        tickers, invalid_tickers = sd.get_list_from_tickers(tickers)
+        tickers, invalid_tickers = sd.StockData.get_list_from_tickers(tickers)
         logger.debug("Validated tickers {} | Invalid tickers: {}".format(tickers, invalid_tickers))
 
         logger.info("Fetching reports for tickers {}".format(tickers))

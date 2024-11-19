@@ -226,8 +226,11 @@ class Watchlists():
         select_script = f"""SELECT tickers FROM {self.db_table}
                             WHERE id = '{watchlist_id}';
                             """
-        tickers = Postgres().select_one(query=select_script)[0].split()
-        return sorted(tickers)
+        tickers = Postgres().select_one(query=select_script)
+        if tickers is None:
+            return tickers
+        else:
+            return sorted(tickers[0].split())
        
 
     # Return tickers from all available watchlists
@@ -250,12 +253,12 @@ class Watchlists():
         return sorted(tickers)
 
     # Return list of existing watchlists
-    def get_watchlists(self):
+    def get_watchlists(self, no_personal=True):
         select_script = f"""SELECT id FROM {self.db_table}"""
         watchlist_ids = Postgres().select_many(query=select_script)
         watchlists = ['personal']
         for watchlist_id in watchlist_ids:
-            if watchlist_id[0].isdigit():
+            if watchlist_id[0].isdigit() and no_personal:
                 pass
             else: 
                 watchlists += watchlist_id
@@ -265,7 +268,7 @@ class Watchlists():
     def update_watchlist(self, watchlist_id, tickers):
         logger.info("Updating watchlist '{}': {}".format(watchlist_id, tickers))
         update_script = f""" UPDATE {self.db_table}
-                             SET tickers = '{tickers}'
+                             SET tickers = '{" ".join(tickers)}'
                              WHERE id = '{watchlist_id}';
                              """
         Postgres().update(query=update_script)
@@ -273,7 +276,7 @@ class Watchlists():
     # Create a new watchlist with id 'watchlist_id'
     def create_watchlist(self, watchlist_id, tickers):
         logger.info("Creating watchlist with ID '{}' and tickers {}".format(watchlist_id, tickers))
-        Postgres().insert(table=self.db_table, fields=self.db_fields, values=[(watchlist_id, tickers)])
+        Postgres().insert(table=self.db_table, fields=self.db_fields, values=[(watchlist_id, " ".join(tickers))])
 
     # Delete watchlist wityh id 'watchlist_id'
     def delete_watchlist(self, watchlist_id):
@@ -324,6 +327,20 @@ class StockData():
             return False
         else:
             return True
+    
+    # Get list of valid tickers from string
+    @staticmethod
+    def get_list_from_tickers(ticker_string:str):
+        tickers = ticker_string.split()
+        valid_tickers = []
+        invalid_tickers = []
+        for ticker in tickers:
+            if StockData.validate_ticker(ticker):
+                valid_tickers.append(ticker)
+            else:
+                invalid_tickers.append(ticker)
+
+        return valid_tickers, invalid_tickers
     
     class Earnings():
         def __init__(self):
