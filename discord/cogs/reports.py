@@ -40,19 +40,14 @@ class Report(object):
     def build_ticker_info(self):
 
         message = "### Ticker Info\n"
-        try:
-            ticker_data = sd.get_all_tickers_data().loc[self.ticker]
-        except KeyError as e:
-            logger.exception("Encountered KeyError when collecting ticker info:\n{}".format(e))
-            sd.add_to_all_tickers(self.ticker)
-            ticker_data = sd.get_all_tickers_data().loc[self.ticker]
+        ticker_data = sd.StockData.get_ticker_info(self.ticker)
     
-        message += "**Name:** {}\n".format(ticker_data['Name'] if ticker_data['Name'] is not np.nan else "N/A")
-        message += "**Sector:** {}\n".format(ticker_data['Sector']if ticker_data['Sector'] is not np.nan else "N/A")
-        message += "**Industry:** {}\n".format(ticker_data['Industry'] if ticker_data['Industry'] is not np.nan else "N/A")
-        message += "**Market Cap:** {}\n".format(("$"+ "{}".format(self.format_large_num(ticker_data['Market Cap']))) if ticker_data['Market Cap'] is not np.nan else "N/A") 
-        message += "**Country:** {}\n".format(ticker_data['Country'] if ticker_data['Country'] is not np.nan else "N/A")
-        message += "**Next earnings date:** {}".format(sd.get_next_earnings_date(self.ticker))
+        message += f"**Name:** {ticker_data[1]}\n"
+        message += f"**Sector:** {ticker_data[6] if ticker_data[6] else "N/A"}\n"
+        message += f"**Industry:** {ticker_data[5] if ticker_data[5] else "N/A"}\n"
+        message += f"**Market Cap:** ${self.format_large_num(ticker_data[2]) if ticker_data[2] else "N/A"}\n" 
+        message += f"**Country:** {ticker_data[3] if ticker_data[3] else "N/A"}\n"
+        #message += f"**Next earnings date:** {}".format(sd.get_next_earnings_date(self.ticker))
         
         return message + "\n"
 
@@ -84,7 +79,7 @@ class Report(object):
 
     # Tool to format large numbers
     def format_large_num(self, number):
-        number = float('{:.3g}'.format(number))
+        number = float('{:.3g}'.format(float(number)))
         magnitude = 0
         while abs(number) >= 1000:
             magnitude += 1
@@ -118,7 +113,7 @@ class StockReport(Report):
         report = ''
         report += self.build_report_header()
         report += self.build_ticker_info()
-        report += self.build_daily_summary()
+        #report += self.build_daily_summary()
         
         return report
 
