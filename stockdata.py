@@ -317,7 +317,7 @@ class StockData():
     # Confirm we get valid data back when downloading data for ticker
     @staticmethod
     def validate_ticker(ticker):
-        logger.info("Verifying that ticker {} is valid".format(ticker))
+        logger.debug("Verifying that ticker {} is valid".format(ticker))
 
         select_script = f"""SELECT ticker FROM tickers
                             WHERE ticker = '{ticker}';
