@@ -98,7 +98,7 @@ class Postgres():
             password = self.pwd,
             port = 5432)
 
-        self.cur = conn.cursor()
+        self.cur = self.conn.cursor()
 
     def close_connection(self):
         if self.cur is not None:
@@ -107,7 +107,6 @@ class Postgres():
         if self.conn is not None:
             self.conn.close()
             self.conn = None
-
     
     def create_tables(self):
         self.open_connection()
@@ -117,12 +116,36 @@ class Postgres():
                             market_cap      int NOT NULL, 
                             country         varchar(40), 
                             ipoyear         char(4),
-                            industry        varchar(64)
-                            sectory         varchar(64)
+                            industry        varchar(64),
+                            sector          varchar(64),
                             nasdaq_endpoint varchar(64)
-                            )
+                            );
+
+                            CREATE TABLE IF NOT EXISTS earnings (
+                            ticker              varchar(8) PRIMARY KEY,
+                            date                char(10) NOT NULL,
+                            fiscalQuarterEnding varchar(10),
+                            epsForcast          varchar(8),
+                            noOfEsts            varchar(8),
+                            lastYearRptDt       varchar(10),
+                            lastYearEPS         varchar(8)
+                            );
                             '''
 
+        self.cur.execute(create_script)
+        self.conn.commit()
+        self.close_connection()
+
+    def get_ticker_info(self, ticker:str):
+        self.open_connection()
+        select_script = f'''SELECT * FROM tickers
+                           WHERE ticker = '{ticker}'
+                        '''
+        self.curr.execute(select_script)
+        ticker_info = curr.fetchone()
+        self.close_connection()
+        return ticker_info
+        
 
 
 
@@ -624,9 +647,13 @@ def get_postmarket_gainers_by_market_cap(market_cap):
 #########
 
 def test():
-    nd = Nasdaq()
-    tickers =  nd.get_all_tickers()
-    print(tickers.head(10))
+    #nd = Nasdaq()
+    #tickers =  nd.get_all_tickers()
+    #print(tickers.head(10))
+    #earnings = nd.get_earnings_by_date("2024-11-19")
+    #print(earnings.head(10))
+    postgres = Postgres()
+    postgres.create_tables()
 
 if __name__ == "__main__":
     logger.info("stockdata.py initialized")
