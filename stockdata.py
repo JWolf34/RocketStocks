@@ -99,6 +99,7 @@ class Postgres():
             port = 5432)
 
         self.cur = self.conn.cursor()
+        logger.debug("Opened connection to database.")
 
     def close_connection(self):
         if self.cur is not None:
@@ -107,10 +108,11 @@ class Postgres():
         if self.conn is not None:
             self.conn.close()
             self.conn = None
+        logger.debug("Closed connection to database")
     
     def create_tables(self):
         self.open_connection()
-        create_script = ''' CREATE TABLE IF NOT EXISTS tickers (
+        create_script = """ CREATE TABLE IF NOT EXISTS tickers (
                             ticker          varchar(8) PRIMARY KEY,
                             name            varchar(255) NOT NULL,
                             market_cap      int NOT NULL, 
@@ -130,23 +132,165 @@ class Postgres():
                             lastYearRptDt       varchar(10),
                             lastYearEPS         varchar(8)
                             );
-                            '''
 
+                            CREATE TABLE IF NOT EXISTS watchlists (
+                            ID                  varchar(255) PRIMARY KEY,
+                            tickers             varchar(255)
+                            );
+                            """
+        logger.info("Running script to create tables in database...")
         self.cur.execute(create_script)
+        self.conn.commit()
+        logger.info("Create script completes successfully!")
+
+        self.close_connection()
+    
+    def drop_tables(self):
+        self.open_connection()
+        drop_script = """DROP TABLE earnings;
+                         DROP TABLE tickers;
+                         DROP TABLE watchlists;
+                        """
+
+        self.cur.execute(drop_script)
         self.conn.commit()
         self.close_connection()
 
+
     def get_ticker_info(self, ticker:str):
         self.open_connection()
-        select_script = f'''SELECT * FROM tickers
+        select_script = f"""SELECT * FROM tickers
                            WHERE ticker = '{ticker}'
-                        '''
+                        """
         self.curr.execute(select_script)
         ticker_info = curr.fetchone()
         self.close_connection()
         return ticker_info
-        
 
+    def insert(self, table:str, fields:list, values:list):
+        self.open_connection()
+        insert_script = f"""INSERT INTO {table} ({",".join(fields)})
+                            VALUES({",".join(["%s"]*len(fields))})
+                            """
+        for row in values:
+            self.cur.execute(insert_script, row)
+
+        self.conn.commit()
+        logger.debug(f"Inserted values {values} into table {table}")
+        self.close_connection()
+
+    def select_one(self, query:str):
+        self.open_connection()
+        self.cur.execute(query)
+        result = self.cur.fetchone()
+        self.close_connection()
+        return result
+
+    def select_many(self, query:str):
+        self.open_connection()
+        self.cur.execute(query)
+        results = self.cur.fetchall()
+        self.close_connection()
+        return results
+    
+    def update(self, query:str):
+        self.open_connection()
+        self.cur.execute(query)
+        self.conn.commit()
+        self.close_connection()
+    
+    def delete(self, table:str, where_condition:str):
+        self.open_connection()
+        delete_script = f"""DELETE FROM {table}
+                            WHERE {where_condition};
+                            """
+        self.cur.execute(delete_script)
+        self.conn.commit()
+        self.close_connection()
+  
+class Watchlists():
+    def __init__(self):
+        self.db_table = 'watchlists'
+        self.db_fields = ['id', 'tickers']
+        
+    # Return tickers from watchlist - global by default, personal if chosen by user
+    def get_tickers_from_watchlist(self, watchlist_id):
+        logger.info("Fetching tickers from watchlist with ID '{}'".format(watchlist_id))
+        
+        select_script = f"""SELECT tickers FROM {self.db_table}
+                            WHERE id = '{watchlist_id}';
+                            """
+        tickers = Postgres().select_one(query=select_script)[0].split()
+        return sorted(tickers)
+       
+
+    # Return tickers from all available watchlists
+    #TODO - option to remove tickers that exist on personal watchlists
+    def get_tickers_from_all_watchlists(self, no_personal=True):
+        logger.debug("Fetching tickers from all available watchlists (besides personal)")
+        select_script = f"""SELECT * FROM {self.db_table};
+                            """
+        watchlists = Postgres().select_many(query=select_script)
+        tickers = []
+        for watchlist in watchlists:
+            watchlist_id, watchlist_tickers = watchlist[0], watchlist[1].split()
+            if no_personal:
+                if watchlist_id.isdigit():
+                    pass
+                else:
+                    tickers += watchlist_tickers
+            else: 
+                tickers += watchlist_tickers
+                    
+        return sorted(tickers)
+       
+
+    """
+    # Format string of tickers into list
+    def get_list_from_tickers(tickers):
+        logger.debug("Processing valid and invalid tickers from {}".format(tickers))
+        ticker_list = tickers.split(" ")
+        invalid_tickers = []
+        for ticker in ticker_list:
+            if not validate_ticker(ticker): 
+                invalid_tickers.append(ticker)
+        # Remove invalid tickers from list before returning
+        logger.debug("Identified invalid tickers from original list {} - removing...".format(invalid_tickers))
+        for ticker in invalid_tickers:
+            ticker_list.remove(ticker)
+        return ticker_list, invalid_tickers
+        """
+
+    # Return list of existing watchlists
+    def get_watchlists(self):
+        select_script = f"""SELECT id FROM {self.db_table}"""
+        watchlist_ids = Postgres().select_many(query=select_script)
+        watchlists = ['personal']
+        for watchlist_id in watchlist_ids:
+            if watchlist_id[0].isdigit():
+                pass
+            else: 
+                watchlists += watchlist_id
+        return sorted(watchlists)
+
+    # Set content of watchlist to provided tickers
+    def update_watchlist(self, watchlist_id, tickers):
+        logger.info("Updating watchlist '{}': {}".format(watchlist_id, tickers))
+        update_script = f""" UPDATE {self.db_table}
+                             SET tickers = '{tickers}'
+                             WHERE id = '{watchlist_id}';
+                             """
+        Postgres().update(query=update_script)
+
+    # Create a new watchlist with id 'watchlist_id'
+    def create_watchlist(self, watchlist_id, tickers):
+        logger.info("Creating watchlist with ID '{}' and tickers {}".format(watchlist_id, tickers))
+        Postgres().insert(table=self.db_table, fields=self.db_fields, values=[(watchlist_id, tickers)])
+
+    # Delete watchlist wityh id 'watchlist_id'
+    def delete_watchlist(self, watchlist_id):
+        logger.info("Deleting watchlist '{}'...".format(watchlist_id))
+        Postgres().delete(table=self.db_table, where_condition=f"id = '{watchlist_id}'")
 
 
 #########################
@@ -418,73 +562,7 @@ def validate_path(path):
         logger.debug("Path {} exists in the filesystem".format(path))
         return True
        
-# Return tickers from watchlist - global by default, personal if chosen by user
-def get_tickers_from_watchlist(watchlist_id):
-    logger.info("Fetching tickers from watchlist with ID '{}'".format(watchlist_id))
-    watchlist_path = "{}/{}.txt".format(config.get_watchlists_path(), watchlist_id)
 
-    try:
-        with open(watchlist_path, 'r+') as watchlist:
-            tickers = watchlist.read().splitlines()
-            logger.debug("Found file for watchlist with ID {} with tickers: '{}'".format(watchlist_id, tickers))
-        return tickers
-    except FileNotFoundError as e:
-        logger.warning("Watchlist with ID {} does not exist".format(watchlist_id))
-        return []
-
-# Return tickers from all available watchlists
-def get_tickers_from_all_watchlists():
-    logger.debug("Fetching tickers from all available watchlists (besides personal)")
-    watchlists = get_watchlists()
-    logger.debug("Watchlists: {}".format(watchlists))
-    watchlists.remove('personal')
-    watchlists_tickers = []
-    for watchlist in watchlists:
-        watchlists_tickers = watchlists_tickers + get_tickers_from_watchlist(watchlist)
-    return watchlists_tickers
-
-
-# Format string of tickers into list
-def get_list_from_tickers(tickers):
-    logger.debug("Processing valid and invalid tickers from {}".format(tickers))
-    ticker_list = tickers.split(" ")
-    invalid_tickers = []
-    for ticker in ticker_list:
-        if not validate_ticker(ticker): 
-            invalid_tickers.append(ticker)
-    # Remove invalid tickers from list before returning
-    logger.debug("Identified invalid tickers from original list {} - removing...".format(invalid_tickers))
-    for ticker in invalid_tickers:
-        ticker_list.remove(ticker)
-    return ticker_list, invalid_tickers
-
-# Return list of existing watchlists
-def get_watchlists():
-    watchlists = [x.split('.')[0] for x in os.listdir(config.get_watchlists_path())]
-    watchlists = [x for x in watchlists if not x.isdigit()]
-    watchlists.append('personal')
-    watchlists.sort()
-    return watchlists
-
-# Set content of watchlist to provided tickers
-def update_watchlist(watchlist_id, tickers):
-    logger.info("Updating watchlist '{}': {}".format(watchlist_id, tickers))
-    with open("{}/{}.txt".format(config.get_watchlists_path(), watchlist_id), 'w') as watchlist:
-        watchlist.write("\n".join(sorted(tickers)))
-        watchlist.close()
-
-# Create a new watchlist with id 'watchlist_id'
-def create_watchlist(watchlist_id, tickers):
-    logger.info("Creating watchlist with ID '{}' and tickers {}".format(watchlist_id, tickers))
-    validate_path("{}".format(config.get_watchlists_path(), watchlist_id))
-    with open("{}/{}.txt".format(config.get_watchlists_path(), watchlist_id), 'w') as watchlist:
-        watchlist.write("\n".join(tickers))
-        watchlist.close()
-
-# Delete watchlist wityh id 'watchlist_id'
-def delete_watchlist(watchlist_id):
-    logger.info("Deleting watchlist '{}'...".format(watchlist_id))
-    os.remove("{}/{}.txt".format(config.get_watchlists_path(), watchlist_id))
 
 
     
@@ -652,8 +730,35 @@ def test():
     #print(tickers.head(10))
     #earnings = nd.get_earnings_by_date("2024-11-19")
     #print(earnings.head(10))
+
     postgres = Postgres()
-    postgres.create_tables()
+    # Create Tables
+    #postgres.create_tables()
+
+    #Insert into 'watchlists' table
+    #fields = ['ID', 'tickers']
+    #watchlists = [
+        #('mag7', "MSFT AMZN META APPL GOOG NVDA TSLA"),
+        #('crypto', "MARA MSTR SMCI"),
+        #('memestocks', "AISP FCEL ASTS BKKT"),
+    #    ('99721317451829248', "A AON CAVA")
+    #]
+    #postgres.insert(table='watchlists', fields=fields, values=watchlists)
+    
+
+    # Select from 'watchlists' table
+    #select_script = """SELECT * FROM watchlists;
+    #                   """
+    #results = postgres.select_many(select_script)
+    #print(results)
+
+    # Watchlist testing
+    watchlist_id = 'newlist'
+    tickers = 'BABA ABBA MDNA'
+    Watchlists().create_watchlist(watchlist_id=watchlist_id, tickers=tickers)
+    tickers = Watchlists().get_tickers_from_watchlist(watchlist_id)
+    print(tickers)
+
 
 if __name__ == "__main__":
     logger.info("stockdata.py initialized")
