@@ -11,15 +11,13 @@ import os
 import datetime
 from datetime import timedelta
 import requests
-from ratelimit import limits
+from ratelimit import limits, sleep_and_retry
 import config
 import logging
 from tradingview_screener import Scanner, Query, Column
 
 # Logging configuration
 logger = logging.getLogger(__name__)
-
-
 
 class News():
     def __init__(self):
@@ -53,15 +51,21 @@ class Nasdaq():
     def __init__(self):
         self.url_base = "https://api.nasdaq.com/api"
         self.headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/96.0.4664.45 Safari/537.36'}
+        self.MAX_CALLS = 10
+        self.MAX_PERIOD = 60
 
-
+    @sleep_and_retry
+    @limits(calls = 10, period = 600) # 10 calls per minute
     def get_all_tickers(self):
         url = f"{self.url_base}/screener/stocks?tableonly=false&limit=25&download=true"
         data = requests.get(url, headers=self.headers).json()
         tickers = pd.DataFrame(data['data']['rows'])
         return tickers
 
+    @sleep_and_retry
+    @limits(calls = 10, period = 600) # 10 calls per 10 minutes
     def get_earnings_by_date(self, date):
+        print(f"[{datetime.datetime.now()}] Getting earnings for {date}")
         url = f"{self.url_base}/calendar/earnings"
         params = {'date':date}
         data = requests.get(url, headers=self.headers, params=params).json()
@@ -110,14 +114,16 @@ class Postgres():
                             ipoyear         char(4),
                             industry        varchar(64),
                             sector          varchar(64),
-                            nasdaqEndpoint varchar(64)
+                            nasdaqEndpoint  varchar(64),
+                            cik             char(10)
                             );
 
                             CREATE TABLE IF NOT EXISTS upcomingEarnings (
                             ticker              varchar(8) PRIMARY KEY,
                             date                char(10) NOT NULL,
+                            time                varchar(32),
                             fiscalQuarterEnding varchar(10),
-                            epsForcast          varchar(8),
+                            epsForecast          varchar(8),
                             noOfEsts            varchar(8),
                             lastYearRptDt       varchar(10),
                             lastYearEPS         varchar(8)
@@ -284,14 +290,20 @@ class Watchlists():
 class SEC():
     def __init__(self):
         self.headers = {"User-Agent":"johnmwolf34@gmail.com"}
+        self.MAX_CALLS = 10
+        self.MAX_CALLS = 1
 
+    @sleep_and_retry
+    @limits(calls = 3, period = 1) # 10 calls per second
     def get_cik_from_ticker(self, ticker):
         tickers_data = requests.get("https://www.sec.gov/files/company_tickers.json", headers=self.headers).json()
         for company in tickers_data.values():
             if company['ticker'] == ticker:
                 cik = str(company['cik_str']).zfill(10)
                 return cik
-    
+
+    @sleep_and_retry
+    @limits(calls = 3, period = 1) # 10 calls per second
     def get_submissions_data(self, ticker):
         submissions_json = requests.get(f"https://data.sec.gov/submissions/CIK{self.get_cik_from_ticker(ticker)}.json", headers=self.headers).json()
         return submissions_json
@@ -301,11 +313,15 @@ class SEC():
 
     def get_link_to_filing(self, ticker, filing):
         return f"https://sec.gov/Archives/edgar/data/{self.get_cik_from_ticker(ticker).lstrip("0")}/{filing['accessionNumber'].replace("-","")}/{filing['primaryDocument']}"
-        
+
+    @sleep_and_retry
+    @limits(calls = 3, period = 1) # 10 calls per second
     def get_accounts_payable(self, ticker):
         json = requests.get(f"https://data.sec.gov/api/xbrl/companyconcept/CIK{self.get_cik_from_ticker(ticker)}/us-gaap/AccountsPayableCurrent.json", headers=self.headers).json()
         return pd.DataFrame.from_dict(json)
 
+    @sleep_and_retry
+    @limits(calls = 3, period = 1) # 10 calls per second
     def get_company_facts(self, ticker):
         json = requests.get(f"https://data.sec.gov/api/xbrl/companyfacts/CIK{self.get_cik_from_ticker(ticker)}.json", headers=self.headers).json()
         return pd.DataFrame.from_dict(json)
@@ -313,6 +329,55 @@ class SEC():
 class StockData():
     def __init__(self):
         pass
+
+    class Earnings():
+        def __init__(self):
+            pass
+    
+        @staticmethod
+        def update_upcoming_earnings():
+            nasdaq = Nasdaq()
+            columns = ['symbol',
+                       'date',
+                       'time',
+                       'fiscalQuarterEnding',
+                       'epsForecast',
+                       'noOfEsts',
+                       'lastYearRptDt', 
+                       'lastYearEPS']
+            
+            for i in range(0, 60): # Next 60 days of earnings
+                date = datetime.datetime.today() + datetime.timedelta(days=i)
+                if date.weekday() < 5:
+                    date_string = date.strftime("%Y-%m-%d")
+                    earnings_data = nasdaq.get_earnings_by_date(date_string)
+                    if earnings_data.size > 0:
+                        earnings_data['date'] = date_string
+                        earnings_data = earnings_data[columns]
+                        earnings_data = earnings_data.rename(columns={'symbol':'ticker'})
+                        values = [tuple(row) for row in earnings_data.values]
+                        Postgres().insert(table='upcomingearnings', fields=earnings_data.columns.to_list(), values=values)
+
+        @staticmethod
+        def get_next_earnings_date(ticker):
+            select_script = f"""SELECT date FROM upcomingearnings
+                               WHERE ticker = '{ticker}'
+                               """
+            result = Postgres().select_one(select_script)
+            if result is None:
+                return result
+            else:
+                return StockData.Earnings.format_earnings_date(result[0])
+        
+        @staticmethod
+        def format_earnings_date(date_string):
+            earnings_date_fmt = "%Y-%m-%d"
+            desired_date_fmt = "%m/%d/%Y"
+            date = datetime.datetime.strptime(date_string, earnings_date_fmt)
+            new_date_string = date.strftime(desired_date_fmt)
+            return new_date_string
+
+
 
     @staticmethod
     def update_tickers():
@@ -323,7 +388,8 @@ class StockData():
                       'ipoyear':'ipoyear',
                       'industry':'industry',
                       'sector':'sector',
-                      'url':'nasdaqEndpoint'}
+                      'url':'nasdaqEndpoint',
+                      'cik':'cik'}
         drop_columns = ['lastsale',
                         'netchange',
                         'pctchange',
@@ -331,6 +397,9 @@ class StockData():
         tickers_data = Nasdaq().get_all_tickers()
         tickers_data = tickers_data.drop(columns=drop_columns)
         tickers_data = tickers_data.rename(columns=column_map)
+        tickers_data['cik'] = ''
+        for index, row in tickers_data.iterrows():
+            row['cik'] = SEC().get_cik_from_ticker(row['ticker'])
         values = [tuple(row) for row in tickers_data.values]
         Postgres().insert(table='tickers', fields=tickers_data.columns.to_list(), values=values)
 
@@ -375,10 +444,6 @@ class StockData():
             else:
                 invalid_tickers.append(ticker)
         return valid_tickers, invalid_tickers
-    
-    class Earnings():
-        def __init__(self):
-            pass
 
 class TradingView():
     def __init__(self):
@@ -788,15 +853,14 @@ def get_supported_exchanges():
 # Tests #
 #########
 
+@limits(calls=5, period=900)
+def rate():
+    print("rate")
+
 def test():
     
-    ticker = "SMCI"
-    sec = SEC()
-    accounts_payable =  sec.get_accounts_payable(ticker)
-    recent_filings = sec.get_recent_filings(ticker)
-    for index, filing in recent_filings[:3].iterrows():
-        print(sec.get_link_to_filing(ticker=ticker, filing=filing))
-
+    ticker = "MSFT"
+    print(StockData.Earnings.get_next_earnings_date(ticker))
 
 
 if __name__ == "__main__":
