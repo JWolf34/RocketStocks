@@ -61,6 +61,13 @@ class Report(object):
             message += " | "
 
         return message + "\n"
+    
+    def build_recent_SEC_filings(self):
+        message = "### Recent SEC Filings\n\n"
+        filings = sd.SEC().get_recent_filings(ticker=self.ticker)
+        for index, filing in filings[:5].iterrows():
+            message += f"[{filing['form']} - {filing['filingDate']}]({sd.SEC().get_link_to_filing(ticker=self.ticker, filing=filing)})\n"
+        return message
 
     def build_report(self):
         report = ''
@@ -114,6 +121,7 @@ class StockReport(Report):
         report += self.build_report_header()
         report += self.build_ticker_info()
         #report += self.build_daily_summary()
+        report += self.build_recent_SEC_filings()
         
         return report
 
