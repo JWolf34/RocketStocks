@@ -34,13 +34,13 @@ class Report(object):
     def build_report_header(self):
         
         # Append ticker name, today's date, and external links to message
-        header = "## " + self.ticker + " Report " + dt.date.today().strftime("%m/%d/%Y") + "\n"
+        header = "# " + self.ticker + " Report " + dt.date.today().strftime("%m/%d/%Y") + "\n"
         return header + "\n"
 
     # Ticker Info
     def build_ticker_info(self):
 
-        message = "### Ticker Info\n"
+        message = "## Ticker Info\n"
         ticker_data = sd.StockData.get_ticker_info(self.ticker)
     
         message += f"**Name:** {ticker_data[1]}\n"
@@ -56,7 +56,7 @@ class Report(object):
     def build_daily_summary(self):
         # Append day's summary to message
         summary = sd.get_days_summary(self.data)
-        message = "### Summary \n| "
+        message = "## Summary \n| "
         for col in summary.keys():
             message += "**{}:** {}".format(col, f"{summary[col]:,.2f}")
             message += " | "
@@ -64,7 +64,7 @@ class Report(object):
         return message + "\n"
     
     def build_recent_SEC_filings(self):
-        message = "### Recent SEC Filings\n\n"
+        message = "## Recent SEC Filings\n\n"
         filings = sd.SEC().get_recent_filings(ticker=self.ticker)
         for index, filing in filings[:5].iterrows():
             message += f"[Form {filing['form']} - {filing['filingDate']}]({sd.SEC().get_link_to_filing(ticker=self.ticker, filing=filing)})\n"
@@ -147,6 +147,12 @@ class StockReport(Report):
             @discord.ui.button(label="Generate chart", style=discord.ButtonStyle.primary)
             async def generate_chart(self, interaction:discord.Interaction, button:discord.ui.Button,):
                 await interaction.response.send_message("Generate chart!")
+
+            @discord.ui.button(label="Get news", style=discord.ButtonStyle.primary)
+            async def get_news(self, interaction:discord.Interaction, button:discord.ui.Button):
+                news_report = NewsReport(self.ticker)
+                await news_report.send_report(interaction)
+                await interaction.response.send_message(f"Fetched news for {self.ticker}!", ephemeral=True)
 
 class GainerReport(Report):
     def __init__(self):
