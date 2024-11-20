@@ -20,3 +20,4 @@ tradingview_screener
 newsapi-python
 table2ascii
 psycopg2-binary
+ratelimit
