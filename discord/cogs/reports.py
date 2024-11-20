@@ -67,7 +67,7 @@ class Report(object):
         message = "### Recent SEC Filings\n\n"
         filings = sd.SEC().get_recent_filings(ticker=self.ticker)
         for index, filing in filings[:5].iterrows():
-            message += f"[{filing['form']} - {filing['filingDate']}]({sd.SEC().get_link_to_filing(ticker=self.ticker, filing=filing)})\n"
+            message += f"[Form {filing['form']} - {filing['filingDate']}]({sd.SEC().get_link_to_filing(ticker=self.ticker, filing=filing)})\n"
         return message
 
     def build_report(self):
@@ -357,6 +357,7 @@ class Reports(commands.Cog):
     # Create earnings events on calendar for all stocks on watchlists
     @tasks.loop(hours=24)
     async def update_earnings_calendar(self):
+        logger.debug("Creating events for upcoming earnings dates")
         guild = self.bot.get_guild(config.get_discord_guild_id())
         tickers = sd.Watchlists().get_tickers_from_all_watchlists()
         for ticker in tickers:
@@ -396,9 +397,10 @@ class Reports(commands.Cog):
                                                             entity_type = discord.EntityType.external,
                                                             privacy_level=discord.PrivacyLevel.guild_only,
                                                             location="Wall Street")
-                    print("Created event!")
+                    logger.debug(f"Event '{event.name} created at {event.start_time}")
                 else:
-                    print(f"Event '{name}' already exists")
+                    # Event already exists
+                    pass
 
 
 
