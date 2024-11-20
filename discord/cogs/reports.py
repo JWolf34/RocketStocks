@@ -507,7 +507,7 @@ class Reports(commands.Cog):
         logger.info("/news function called by user {}".format(interaction.user.name))
         kwargs = {'sort_by': sort_by}
         report = NewsReport(query=query, **kwargs )
-        await report.send_report(interaction=interaction)
+        await report.send_report(interaction=interaction, visibility=visibility.value)
         await interaction.response.send_message("News articles posted!", ephemeral=True)
 
     # Autocomplete functions
