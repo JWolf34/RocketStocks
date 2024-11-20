@@ -22,11 +22,9 @@ from tradingview_screener import Scanner, Query, Column
 # Logging configuration
 logger = logging.getLogger(__name__)
 
-
 # Class for limiting requests to avoid hitting the rate limit when downloading data
 class CachedLimiterSession(CacheMixin, LimiterMixin, Session):
     pass
-
 
 session = CachedLimiterSession(
     limiter=Limiter(RequestRate(2, Duration.SECOND*5)),  # max 2 requests per 5 seconds
@@ -295,9 +293,30 @@ class Watchlists():
         Postgres().delete(table=self.db_table, where_condition=f"id = '{watchlist_id}'")
 
 class SEC():
-    def __init__():
-        self.client = ""
+    def __init__(self):
+        self.headers = {"User-Agent":"johnmwolf34@gmail.com"}
 
+    def get_cik_from_ticker(self, ticker):
+        tickers_data = requests.get("https://www.sec.gov/files/company_tickers.json", headers=self.headers).json()
+        for company in tickers_data.values():
+            if company['ticker'] == ticker:
+                cik = str(company['cik_str']).zfill(10)
+                return cik
+    
+    def get_submissions_data(self, ticker):
+        submissions_json = requests.get(f"https://data.sec.gov/submissions/CIK{self.get_cik_from_ticker(ticker)}.json", headers=self.headers).json()
+        return submissions_json
+    
+    def get_recent_filings(self, ticker):
+        return pd.DataFrame.from_dict(self.get_submissions_data(ticker)['filings']['recent'])
+
+    def get_accounts_payable(self, ticker):
+        json = requests.get(f"https://data.sec.gov/api/xbrl/companyconcept/CIK{self.get_cik_from_ticker(ticker)}/us-gaap/AccountsPayableCurrent.json", headers=self.headers).json()
+        return pd.DataFrame.from_dict(json)
+
+    def get_company_facts(self, ticker):
+        json = requests.get(f"https://data.sec.gov/api/xbrl/companyfacts/CIK{self.get_cik_from_ticker(ticker)}.json", headers=self.headers).json()
+        return pd.DataFrame.from_dict(json)
     
 class StockData():
     def __init__(self):
@@ -363,7 +382,6 @@ class StockData():
                 valid_tickers.append(ticker)
             else:
                 invalid_tickers.append(ticker)
-
         return valid_tickers, invalid_tickers
     
     class Earnings():
@@ -465,8 +483,6 @@ def update_csv(data, ticker, path):
 
 # Generate indicator data on the provided Dataframe per the specified strategy
 # Can add or remove inidicators to the strategy as needed
-
-
 
 def generate_indicators(data):
 
@@ -657,8 +673,6 @@ def fetch_financials(ticker):
 # Helpers and data validation #
 ###############################
 
-
-
 # Validate specified path exists and create it if needed
 def validate_path(path):
     logger.debug("Validating that path {} exists".format(path))
@@ -670,10 +684,6 @@ def validate_path(path):
         logger.debug("Path {} exists in the filesystem".format(path))
         return True
        
-
-
-
-    
 # Return Dataframe with the latest OHLCV of requested ticker
 def get_days_summary(data):
     logger.info("Fetching today's OHLCV summary for provided data")
@@ -782,21 +792,19 @@ def validate_columns(data, columns):
 def get_supported_exchanges():
     return ['NASDAQ', 'NYSE', 'AMEX']
 
-###########################
-# Pre-market gainer logic #
-###########################
-
-
-
-
-
-
 #########
 # Tests #
 #########
 
 def test():
-    StockData.get_all_ticker_info()
+    
+    ticker = "ASTS"
+    sec = SEC()
+    accounts_payable =  sec.get_accounts_payable(ticker)
+    recent_filings = sec.get_recent_filings(ticker)
+    for index, filing in recent_filings.iterrows():
+        print(f"https://sec.gov/Archives/edgar/data/{sec.get_cik_from_ticker(ticker).lstrip("0")}/{filing['accessionNumber'].replace("-","")}/{ticker.lower()}-{filing['reportDate'].replace("-","")}.xml")
+
 
 
 if __name__ == "__main__":
