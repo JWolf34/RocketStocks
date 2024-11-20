@@ -4,6 +4,7 @@ from discord.ext import commands
 from discord.ext import tasks
 import stockdata as sd
 import config
+import csv
 import logging
 
 # Logging configuration
@@ -97,10 +98,13 @@ class Data(commands.Cog):
         await interaction.user.send(content = "Log file for RocketStocks :rocket:",file=log_file)
         await interaction.response.send_message("Log file has been sent", ephemeral=True)
 
-    @app_commands.command(name = "fetch-all-tickers-csv", description= "Return CSV with data on all tickers the bot runs analysis on",)
+    @app_commands.command(name = "fetch-all-tickers-info", description= "Return CSV with data on all tickers the bot runs analysis on",)
     async def fetch_all_tickers_csv(self, interaction: discord.Interaction):
-        logger.info("/fetch-all-tickers-csv function called by user {}".format(interaction.user.name))
-        csv_file = discord.File("{}/all_tickers.csv".format(config.get_utils_path()))
+        logger.info("/fetch-all-tickers-into function called by user {}".format(interaction.user.name))
+        data = sd.StockData.get_all_ticker_info()
+        filepath = f"{config.get_attachments_path()}/all-tickers-info.csv"
+        data.to_csv(filepath)
+        csv_file = discord.File(filepath)       
         await interaction.user.send(content = "All tickers",file=csv_file)
         await interaction.response.send_message("CSV file has been sent", ephemeral=True)
         

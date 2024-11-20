@@ -213,6 +213,17 @@ class Postgres():
         self.cur.execute(delete_script)
         self.conn.commit()
         self.close_connection()
+
+    # Return list of columns from selected table
+    def get_table_columns(self, table):
+        self.open_connection()
+        select_script = f"""SELECT column_name FROM INFORMATION_SCHEMA.COLUMNS
+                            WHERE TABLE_NAME = '{table}';
+                            """
+        self.cur.execute(select_script)
+        columns = [column[0] for column in self.cur.fetchall()]
+        self.close_connection()
+        return columns
   
 class Watchlists():
     def __init__(self):
@@ -283,6 +294,11 @@ class Watchlists():
         logger.info("Deleting watchlist '{}'...".format(watchlist_id))
         Postgres().delete(table=self.db_table, where_condition=f"id = '{watchlist_id}'")
 
+class SEC():
+    def __init__():
+        self.client = ""
+
+    
 class StockData():
     def __init__(self):
         pass
@@ -313,6 +329,14 @@ class StockData():
                             WHERE ticker = '{ticker}';
                             """
         return Postgres().select_one(select_script)
+    
+    @staticmethod
+    def get_all_ticker_info():
+        columns = Postgres().get_table_columns('tickers')
+        data = Postgres().select_many('SELECT * FROM tickers;')
+        data = pd.DataFrame(data, columns=columns)
+        data.index = data['ticker']
+        return data
 
     # Confirm we get valid data back when downloading data for ticker
     @staticmethod
@@ -772,9 +796,7 @@ def get_supported_exchanges():
 #########
 
 def test():
-    print(StockData.validate_ticker("BEEBEEBOOBOO"))
-    #Postgres().drop_tables()
-    #Postgres().create_tables()
+    StockData.get_all_ticker_info()
 
 
 if __name__ == "__main__":
