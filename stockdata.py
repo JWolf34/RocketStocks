@@ -71,6 +71,8 @@ class Nasdaq():
         data = requests.get(url, headers=self.headers, params=params).json()
         earnings = pd.DataFrame(data['data']['rows'])
         return earnings
+    
+    
 
 class Postgres():
     def __init__(self):
@@ -166,6 +168,7 @@ class Postgres():
         self.open_connection()
         insert_script = f"""INSERT INTO {table} ({",".join(fields)})
                             VALUES({",".join(["%s"]*len(fields))})
+                            ON CONFLICT DO NOTHING;
                             """
         for row in values:
             self.cur.execute(insert_script, row)
@@ -294,8 +297,9 @@ class SEC():
         self.MAX_CALLS = 1
 
     @sleep_and_retry
-    @limits(calls = 3, period = 1) # 10 calls per second
+    @limits(calls = 5, period = 1) # 5 calls per 1 second
     def get_cik_from_ticker(self, ticker):
+        logger.debug(f"Fetching CIK number for ticker {ticker}")
         tickers_data = requests.get("https://www.sec.gov/files/company_tickers.json", headers=self.headers).json()
         for company in tickers_data.values():
             if company['ticker'] == ticker:
@@ -303,7 +307,7 @@ class SEC():
                 return cik
 
     @sleep_and_retry
-    @limits(calls = 3, period = 1) # 10 calls per second
+    @limits(calls = 5, period = 1) # 5 calls per 1 second
     def get_submissions_data(self, ticker):
         submissions_json = requests.get(f"https://data.sec.gov/submissions/CIK{self.get_cik_from_ticker(ticker)}.json", headers=self.headers).json()
         return submissions_json
@@ -365,7 +369,7 @@ class StockData():
                                """
             result = Postgres().select_one(select_script)
             if result is None:
-                return result
+                return "N/A"
             else:
                 return StockData.Earnings.format_earnings_date(result[0])
         
@@ -397,9 +401,12 @@ class StockData():
         tickers_data = Nasdaq().get_all_tickers()
         tickers_data = tickers_data.drop(columns=drop_columns)
         tickers_data = tickers_data.rename(columns=column_map)
-        tickers_data['cik'] = ''
-        for index, row in tickers_data.iterrows():
-            row['cik'] = SEC().get_cik_from_ticker(row['ticker'])
+        cik_series = pd.Series(name='cik', index=tickers_data.index)
+        for i in range(0, tickers_data['ticker'].size):
+            ticker = tickers_data['ticker'].iloc[i]
+            print(f"[{datetime.datetime.now()}] Processing ticker {ticker}")
+            cik_series[i] = SEC().get_cik_from_ticker(ticker)
+        tickers_data = tickers_data.join(cik_series)
         values = [tuple(row) for row in tickers_data.values]
         Postgres().insert(table='tickers', fields=tickers_data.columns.to_list(), values=values)
 
@@ -859,9 +866,10 @@ def rate():
 
 def test():
     
-    ticker = "MSFT"
-    print(StockData.Earnings.get_next_earnings_date(ticker))
+    #ticker = "MSFT"
+    #print(StockData.Earnings.get_next_earnings_date(ticker))
 
+    StockData.update_tickers()
 
 if __name__ == "__main__":
     logger.info("stockdata.py initialized")

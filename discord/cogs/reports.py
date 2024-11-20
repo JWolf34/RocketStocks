@@ -47,7 +47,7 @@ class Report(object):
         message += f"**Industry:** {ticker_data[5] if ticker_data[5] else "N/A"}\n"
         message += f"**Market Cap:** ${self.format_large_num(ticker_data[2]) if ticker_data[2] else "N/A"}\n" 
         message += f"**Country:** {ticker_data[3] if ticker_data[3] else "N/A"}\n"
-        #message += f"**Next earnings date:** {}".format(sd.get_next_earnings_date(self.ticker))
+        message += f"**Next earnings date:** {sd.StockData.Earnings.get_next_earnings_date(self.ticker)}"
         
         return message + "\n"
 
