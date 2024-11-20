@@ -310,6 +310,9 @@ class SEC():
     def get_recent_filings(self, ticker):
         return pd.DataFrame.from_dict(self.get_submissions_data(ticker)['filings']['recent'])
 
+    def get_link_to_filing(self, ticker, filing):
+        return f"https://sec.gov/Archives/edgar/data/{self.get_cik_from_ticker(ticker).lstrip("0")}/{filing['accessionNumber'].replace("-","")}/{filing['primaryDocument']}"
+        
     def get_accounts_payable(self, ticker):
         json = requests.get(f"https://data.sec.gov/api/xbrl/companyconcept/CIK{self.get_cik_from_ticker(ticker)}/us-gaap/AccountsPayableCurrent.json", headers=self.headers).json()
         return pd.DataFrame.from_dict(json)
@@ -798,12 +801,12 @@ def get_supported_exchanges():
 
 def test():
     
-    ticker = "ASTS"
+    ticker = "SMCI"
     sec = SEC()
     accounts_payable =  sec.get_accounts_payable(ticker)
     recent_filings = sec.get_recent_filings(ticker)
-    for index, filing in recent_filings.iterrows():
-        print(f"https://sec.gov/Archives/edgar/data/{sec.get_cik_from_ticker(ticker).lstrip("0")}/{filing['accessionNumber'].replace("-","")}/{ticker.lower()}-{filing['reportDate'].replace("-","")}.xml")
+    for index, filing in recent_filings[:3].iterrows():
+        print(sec.get_link_to_filing(ticker=ticker, filing=filing))
 
 
 
