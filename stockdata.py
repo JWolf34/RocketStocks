@@ -72,7 +72,36 @@ class Nasdaq():
         earnings = pd.DataFrame(data['data']['rows'])
         return earnings
     
+    @sleep_and_retry
+    @limits(calls = 10, period = 600) # 10 calls per 10 minutes
+    def get_earnings_forecast(self, ticker):
+        url = f"https://api.nasdaq.com/api/analyst/{ticker}/earnings-forecast"
+        data = requests.get(url, headers=self.headers).json()
+        return data['data']
+
+    def get_earnings_forecast_quarterly(self, ticker):
+        return pd.DataFrame.from_dict(self.get_earnings_forecast(ticker)['quarterlyForecast']['rows'])
     
+    def get_earnings_forecast_yearly(self, ticker):
+        return pd.DataFrame.from_dict(self.get_earnings_forecast(ticker)['yearlyForecast']['rows'])
+
+    @sleep_and_retry
+    @limits(calls = 10, period = 600) # 10 calls per 10 minutes
+    def get_eps(self, ticker):
+        url = f"https://api.nasdaq.com/api/quote/{ticker}/eps"
+        eps = pd.DataFrame.from_dict(requests.get(url, headers=self.headers).json()['data']['earningsPerShare'])
+        return eps
+        
+    def get_prev_eps(self, ticker):
+        eps = self.get_eps(ticker)
+        return eps[eps['type'] == 'PreviousQuarter']
+
+    def get_future_eps(self, ticker):
+        eps = self.get_eps(ticker)
+        return eps[eps['type'] == 'UpcomingQuarter']
+
+
+        
 
 class Postgres():
     def __init__(self):
@@ -319,13 +348,13 @@ class SEC():
         return f"https://sec.gov/Archives/edgar/data/{self.get_cik_from_ticker(ticker).lstrip("0")}/{filing['accessionNumber'].replace("-","")}/{filing['primaryDocument']}"
 
     @sleep_and_retry
-    @limits(calls = 3, period = 1) # 10 calls per second
+    @limits(calls = 5, period = 1) # 10 calls per second
     def get_accounts_payable(self, ticker):
         json = requests.get(f"https://data.sec.gov/api/xbrl/companyconcept/CIK{self.get_cik_from_ticker(ticker)}/us-gaap/AccountsPayableCurrent.json", headers=self.headers).json()
         return pd.DataFrame.from_dict(json)
 
     @sleep_and_retry
-    @limits(calls = 3, period = 1) # 10 calls per second
+    @limits(calls = 5, period = 1) # 10 calls per second
     def get_company_facts(self, ticker):
         json = requests.get(f"https://data.sec.gov/api/xbrl/companyfacts/CIK{self.get_cik_from_ticker(ticker)}.json", headers=self.headers).json()
         return pd.DataFrame.from_dict(json)
@@ -380,6 +409,18 @@ class StockData():
             date = datetime.datetime.strptime(date_string, earnings_date_fmt)
             new_date_string = date.strftime(desired_date_fmt)
             return new_date_string
+
+        @staticmethod
+        def get_next_earnings_info(ticker):
+            columns = Postgres().get_table_columns('upcomingearnings')
+            select_script = f"""SELECT * FROM upcomingearnings
+                               WHERE ticker = '{ticker}'
+                               """
+            result = Postgres().select_one(select_script)
+            if result is None:
+                return pd.DataFrame()
+            else:
+                return pd.DataFrame([result], columns=columns)
 
 
 
@@ -860,16 +901,11 @@ def get_supported_exchanges():
 # Tests #
 #########
 
-@limits(calls=5, period=900)
-def rate():
-    print("rate")
-
 def test():
     
-    #ticker = "MSFT"
-    #print(StockData.Earnings.get_next_earnings_date(ticker))
-
-    StockData.update_tickers()
+    ticker = "NVDA"
+    earnings_info = StockData.Earnings.get_next_earnings_info(ticker)
+    print(earnings_info)
 
 if __name__ == "__main__":
     logger.info("stockdata.py initialized")

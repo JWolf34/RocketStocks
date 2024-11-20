@@ -5,6 +5,7 @@ from discord import app_commands
 from discord.ext import commands
 from discord.ext import tasks
 from watchlists import Watchlists
+import datetime
 import stockdata as sd
 import numpy as np
 import datetime as dt
@@ -291,8 +292,7 @@ class GainerReport(Report):
         if self.in_afterhours():
             return "afterhours"
         else:
-            return "EOD"
-        
+            return "EOD"       
     
 class NewsReport(Report):
     def __init__(self, query, breaking=False, **kwargs):
@@ -326,13 +326,13 @@ class NewsReport(Report):
         report = ''
         report += self.build_report_header()
         report += self.build_news()
-        return report + '\n'
-    
+        return report + '\n'  
 
 class Reports(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
         self.send_gainer_reports.start()
+        self.update_earnings_calendar.start()
 
     @commands.Cog.listener()
     async def on_ready(self):
@@ -353,6 +353,54 @@ class Reports(commands.Cog):
         else:
             # Not a weekday - do not post gainer reports
             pass
+
+    # Create earnings events on calendar for all stocks on watchlists
+    @tasks.loop(hours=24)
+    async def update_earnings_calendar(self):
+        guild = self.bot.get_guild(config.get_discord_guild_id())
+        tickers = sd.Watchlists().get_tickers_from_all_watchlists()
+        for ticker in tickers:
+            earnings_info = sd.StockData.Earnings.get_next_earnings_info(ticker).to_dict(orient='list')
+            if len(earnings_info) > 0:
+                event_exists = False
+                name = f"{ticker} Earnings"
+                curr_events = await guild.fetch_scheduled_events()
+                if curr_events:
+                    for event in curr_events:
+                        if event.name == name:
+                            event_exists = True
+                            break
+                
+                if not event_exists:
+                    release_time = "unspecified"
+                    start_time = datetime.datetime.strptime(earnings_info['date'][0], "%Y-%m-%d").astimezone()
+                    start_time= start_time.replace(hour=12, minute=0, second=0)
+                    if "pre-market" in earnings_info['time'][0]:
+                        start_time = start_time.replace(hour = 8, minute=30)
+                        release_time = "pre-market"
+                    elif "after-hours" in earnings_info['time'][0]:
+                        release_time = "after hours"
+                        start_time = start_time.replace(hour = 15, minute=0)
+
+                    description = f"""**Quarter:** {earnings_info['fiscalquarterending'][0]}
+**Release Time:** {release_time}
+**EPS Forecast:** {earnings_info['epsforecast'][0]}
+**Last Year's EPS:** {earnings_info['lastyeareps'][0]}
+**Last Year's Report Date:** {earnings_info['lastyearrptdt'][0]}
+                    """
+                    channel = self.bot.get_channel(config.get_alerts_channel_id())
+                    event = await guild.create_scheduled_event(name=name, 
+                                                            description=description,
+                                                            start_time=start_time,
+                                                            end_time= start_time + datetime.timedelta(minutes=30),
+                                                            entity_type = discord.EntityType.external,
+                                                            privacy_level=discord.PrivacyLevel.guild_only,
+                                                            location="Wall Street")
+                    print("Created event!")
+                else:
+                    print(f"Event '{name}' already exists")
+
+
 
     @app_commands.command(name = "run-reports", description= "Post analysis of a given watchlist (use /fetch-reports for individual or non-watchlist stocks)",)
     @app_commands.describe(watchlist = "Which watchlist to fetch reports for")

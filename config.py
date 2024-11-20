@@ -104,6 +104,16 @@ def get_discord_token():
             logger.exception("Failed to fetch Discord bot token\n{}".format(e))
             return ""
 
+def get_discord_guild_id():
+        logger.debug("Fetching Discord guild ID")
+        try:
+            guild_id = os.getenv('DISCORD_GUILD_ID')
+            logger.debug("Successfully fetched Discord guild ID")
+            return int(guild_id)
+        except Exception as e:
+            logger.exception("Failed to fetch Discord guild ID\n{}".format(e))
+            return ""
+
 def get_news_api_token():
         logger.debug("Fetching News API token")
         try:
