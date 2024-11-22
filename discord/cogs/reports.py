@@ -406,7 +406,7 @@ class Reports(commands.Cog):
     async def update_earnings_calendar(self):
         logger.debug("Creating events for upcoming earnings dates")
         guild = self.bot.get_guild(config.get_discord_guild_id())
-        tickers = sd.Watchlists().get_tickers_from_all_watchlists()
+        tickers = sd.Watchlists().get_tickers_from_all_watchlists(no_personal=False) # Get all tickers except from system-generated watchlists
         for ticker in tickers:
             earnings_info = sd.StockData.Earnings.get_next_earnings_info(ticker).to_dict(orient='list')
             if len(earnings_info) > 0:
