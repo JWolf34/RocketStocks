@@ -12,7 +12,7 @@ import logging
 # Logging configuration
 logger = logging.getLogger(__name__)
 
-def run_bot():
+async def run_bot():
 
     intents = discord.Intents.default()
     bot = commands.Bot(command_prefix='$', intents=intents)
@@ -33,5 +33,5 @@ def run_bot():
     await bot.run(token)
 
 if __name__ == "__main__":
-    run_bot()
+    await run_bot()
 
