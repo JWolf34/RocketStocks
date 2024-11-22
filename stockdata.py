@@ -321,6 +321,17 @@ class Watchlists():
         logger.info("Deleting watchlist '{}'...".format(watchlist_id))
         Postgres().delete(table=self.db_table, where_condition=f"id = '{watchlist_id}'")
 
+    # Validate watchlist exists in the database
+    def validate_watchlist(self, watchlist_id):
+        select_script = f"""SELECT id FROM {self.db_table}
+                            WHERE watchlist_id = '{watchlist_id}';
+                            """
+        result = Postgres.select_one(select_script)
+        if result is None:
+            return False
+        else:
+            return True
+
     
 
 class SEC():
