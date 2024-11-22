@@ -381,9 +381,11 @@ class Reports(commands.Cog):
     # Generate and send premarket gainer reports to the reports channel
     @tasks.loop(minutes=5)
     async def send_gainer_reports(self):
+        logger.info("Posting gainer reports...")
         report = GainerReport(self.gainers_channel)
         if (report.today.weekday() < 5):
             await report.send_report()
+            logger.info("Gainer reports posted!")
         else:
             # Not a weekday - do not post gainer reports
             pass
@@ -391,7 +393,7 @@ class Reports(commands.Cog):
     @send_gainer_reports.before_loop
     async def before_send_gainer_reports(self):
         # Start posting report at next 0 or 5 minute interval
-        now = datetime.datetime.now()
+        now = datetime.datetime.now().astimezone()
         if now.minute % 5 == 0:
             return 0
         minutes_by_five = now.minute // 5
@@ -399,6 +401,7 @@ class Reports(commands.Cog):
         diff = (minutes_by_five + 1) * 5 - now.minute
         future = now + datetime.timedelta(minutes=diff)
         difference = (future-now).total_seconds()
+        logger.info(f"Posting gainer reports in {difference} seconds")
         await asyncio.sleep((future-now).total_seconds())
 
     # Create earnings events on calendar for all stocks on watchlists

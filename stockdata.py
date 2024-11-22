@@ -930,8 +930,9 @@ def get_supported_exchanges():
 #########
 
 def test():
-    Postgres().drop_table("watchlists")
-    Postgres().create_tables()
+    StockData.update_tickers()
+    StockData.Earnings.update_upcoming_earnings()
+    print("Done!")
 
 if __name__ == "__main__":
     logger.info("stockdata.py initialized")
