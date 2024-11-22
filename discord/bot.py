@@ -21,6 +21,7 @@ def run_bot():
     async def load():
         for filename in os.listdir("./discord/cogs"):
             if filename.endswith(".py"):
+                logger.info(f"Loading {filename}")
                 await bot.load_extension(f"cogs.{filename[:-3]}")
 
     @bot.event
