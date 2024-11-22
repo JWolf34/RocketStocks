@@ -194,7 +194,6 @@ class GainerReport(Report):
                 else:
                     pass
         elif self.in_intraday():
-            # Placeholder - need to make query for intraday earners
             gainers = sd.TradingView.get_intraday_gainers_by_market_cap(100000000)[:15]
             headers = ["Ticker", "Close", "Volume", "Market Cap", "% Change"]
             rows = []
@@ -252,7 +251,6 @@ class GainerReport(Report):
                 else:
                     await curr_message.edit(content=self.message)
 
-            #if curr_message.created_at
             except discord.errors.NotFound as e:
                 message = await channel.send(self.message)
                 config.update_gainer_message_id(market_period, message.id)
@@ -364,6 +362,7 @@ class Reports(commands.Cog):
 
     @send_gainer_reports.before_loop
     async def before_send_gainer_reports(self):
+        # Start posting report at next 0 or 5 minute interval
         now = datetime.datetime.now()
         if now.minute % 5 == 0:
             return 0

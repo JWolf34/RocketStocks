@@ -343,18 +343,18 @@ class SEC():
         return pd.DataFrame.from_dict(self.get_submissions_data(ticker)['filings']['recent'])
 
     def get_link_to_filing(self, ticker, filing):
-        return f"https://sec.gov/Archives/edgar/data/{self.get_cik_from_ticker(ticker).lstrip("0")}/{filing['accessionNumber'].replace("-","")}/{filing['primaryDocument']}"
+        return f"https://sec.gov/Archives/edgar/data/{StockData.get_cik(ticker).lstrip("0")}/{filing['accessionNumber'].replace("-","")}/{filing['primaryDocument']}"
 
     @sleep_and_retry
     @limits(calls = 5, period = 1) # 10 calls per second
     def get_accounts_payable(self, ticker):
-        json = requests.get(f"https://data.sec.gov/api/xbrl/companyconcept/CIK{self.get_cik_from_ticker(ticker)}/us-gaap/AccountsPayableCurrent.json", headers=self.headers).json()
+        json = requests.get(f"https://data.sec.gov/api/xbrl/companyconcept/CIK{StockData.get_cik(ticker)}/us-gaap/AccountsPayableCurrent.json", headers=self.headers).json()
         return pd.DataFrame.from_dict(json)
 
     @sleep_and_retry
     @limits(calls = 5, period = 1) # 10 calls per second
     def get_company_facts(self, ticker):
-        json = requests.get(f"https://data.sec.gov/api/xbrl/companyfacts/CIK{self.get_cik_from_ticker(ticker)}.json", headers=self.headers).json()
+        json = requests.get(f"https://data.sec.gov/api/xbrl/companyfacts/CIK{StockData.get_cik(ticker)}.json", headers=self.headers).json()
         return pd.DataFrame.from_dict(json)
     
 class StockData():
@@ -472,7 +472,7 @@ class StockData():
         select_script = f"""SELECT cik from tickers
                             WHERE ticker = '{ticker}';
                             """
-        return Postgres().select_one(select_script)
+        return Postgres().select_one(select_script)[0]
 
     # Confirm we get valid data back when downloading data for ticker
     @staticmethod
@@ -910,9 +910,7 @@ def get_supported_exchanges():
 #########
 
 def test():
-
-
-    StockData.Earnings.remove_past_earnings()
+    pass
 
 if __name__ == "__main__":
     logger.info("stockdata.py initialized")
