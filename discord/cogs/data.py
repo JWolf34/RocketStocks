@@ -108,6 +108,17 @@ class Data(commands.Cog):
         await interaction.user.send(content = "All tickers",file=csv_file)
         await interaction.response.send_message("CSV file has been sent", ephemeral=True)
         
+    @app_commands.command(name = "eps", description= "Returns recent EPS data for the input tickers",)
+    @app_commands.describe(tickers = "Tickers to return EPS data for (separated by spaces)")
+    async def eps(self, interaction: discord.Interaction, tickers: str):
+        await interaction.response.defer(ephemeral=True)
+        logger.info("/eps function called by user {}".format(interaction.user.name))
+
+        tickers, invalid_tickers = sd.StockData.get_list_from_tickers(tickers)
+        for ticker in tickers:
+            eps = sd.Nasdaq().get_eps(ticker)
+            await interaction.channel.send(eps)
+        await interaction.followup.send("Posted EPS!")
 
 #########        
 # Setup #
