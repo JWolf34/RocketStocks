@@ -425,8 +425,6 @@ class StockData():
             where = "date < CURRENT_DATE"
             Postgres().delete(table='upcomingearnings', where_condition=where)
 
-
-
     @staticmethod
     def update_tickers():
         column_map = {'symbol':'ticker',
@@ -905,11 +903,9 @@ def get_supported_exchanges():
 #########
 
 def test():
-    
-    Postgres().drop_table('upcomingearnings')
-    Postgres().create_tables()
 
-    StockData.Earnings.update_upcoming_earnings()
+
+    StockData.Earnings.remove_past_earnings()
 
 if __name__ == "__main__":
     logger.info("stockdata.py initialized")
