@@ -89,9 +89,27 @@ def get_alerts_channel_id():
     try:
         channel_id = os.getenv("ALERTS_CHANNEL_ID")
         logger.debug("Alerts channel ID is {}".format(channel_id))
-        return channel_id
+        return int(channel_id)
     except Exception as e:
         logger.exception("Failed to fetch alerts channel ID\n{}".format(e))
+        return ""
+
+def get_gainers_channel_id():
+    try:
+        channel_id = os.getenv("GAINERS_CHANNEL_ID")
+        logger.debug("Gainers channel ID is {}".format(channel_id))
+        return int(channel_id)
+    except Exception as e:
+        logger.exception("Failed to fetch gainers channel ID\n{}".format(e))
+        return ""
+
+def get_charts_channel_id():
+    try:
+        channel_id = os.getenv("CHARTS_CHANNEL_ID")
+        logger.debug("Charts channel ID is {}".format(channel_id))
+        return int(channel_id)
+    except Exception as e:
+        logger.exception("Failed to fetch charts channel ID\n{}".format(e))
         return ""
 
 def get_discord_token():

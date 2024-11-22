@@ -14,7 +14,6 @@ class Utils(commands.Cog):
     async def on_ready(self):
         logger.info(f"Cog {__name__} loaded!")
 
-
     @app_commands.command(name='sync', description='Sync bot commands to the server')
     @commands.is_owner()
     async def sync(self, interaction:discord.Interaction):

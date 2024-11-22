@@ -5,6 +5,7 @@ from discord import app_commands
 from discord.ext import commands
 from discord.ext import tasks
 from watchlists import Watchlists
+from utils import Utils
 import datetime
 import stockdata as sd
 import numpy as np
@@ -24,8 +25,9 @@ logger = logging.getLogger(__name__)
 ##################
 
 class Report(object):
-    def __init__(self):
+    def __init__(self, channel):
         self.message = self.build_report() + "\n\n"
+        self.channel = channel
 
     ############################
     # Report Builder Functions #
@@ -78,9 +80,11 @@ class Report(object):
     
     async def send_report(self, interaction:discord.Interaction, visibility:str = "public"):
         if visibility == 'private':
-            await interaction.user.send(self.message)
+            message = await interaction.user.send(self.message)
+            return message
         else:
-            await interaction.channel.send(self.message)
+            message = await self.channel.send(self.message)
+            return message
 
     #####################
     # Utility functions #
@@ -111,11 +115,11 @@ class Report(object):
 
 class StockReport(Report):
     
-    def __init__(self, ticker : str):
+    def __init__(self, ticker : str, channel):
         self.ticker = ticker
         self.data =  sd.fetch_daily_data(self.ticker)
         self.buttons = self.Buttons(self.ticker)
-        super().__init__()
+        super().__init__(channel)
         
     # Override
     def build_report(self):
@@ -130,9 +134,11 @@ class StockReport(Report):
     # Override
     async def send_report(self, interaction:discord.Interaction, visibility:str = "public"):
         if visibility == 'private':
-            await interaction.user.send(self.message, view=self.buttons)
+            message = await interaction.user.send(self.message, view=self.buttons)
+            return message
         else:
-            await interaction.channel.send(self.message, view=self.buttons)
+            message = await self.channel.send(self.message, view=self.buttons)
+            return message
 
     # Override
     class Buttons(discord.ui.View):
@@ -156,13 +162,13 @@ class StockReport(Report):
                 await interaction.response.send_message(f"Fetched news for {self.ticker}!", ephemeral=True)
 
 class GainerReport(Report):
-    def __init__(self):
+    def __init__(self, channel):
         self.today = dt.datetime.now().astimezone()
         self.PREMARKET_START = self.today.replace(hour=7, minute=0, second=0, microsecond=0)
         self.INTRADAY_START= self.today.replace(hour=8, minute=30, second=0, microsecond=0)
         self.AFTERHOURS_START = self.today.replace(hour=15, minute=0, second=0, microsecond=0)
         self.MARKET_END = self.today.replace(hour=18, minute=0, second=0, microsecond=0)
-        super().__init__()
+        super().__init__(channel)
 
 
     # Override
@@ -239,21 +245,23 @@ class GainerReport(Report):
         return report
 
     # Override
-    async def send_report(self, channel):
+    async def send_report(self):
         if self.in_premarket() or self.in_intraday() or self.in_afterhours():
             market_period = self.get_market_period()
             message_id = config.get_gainer_message_id(market_period)
             try:
-                curr_message = await channel.fetch_message(message_id)
+                curr_message = await self.channel.fetch_message(message_id)
                 if curr_message.created_at.date() < self.today.date():
-                    message = await channel.send(self.message)
+                    message = await self.channel.send(self.message)
                     config.update_gainer_message_id(market_period, message.id)
+                    return message
                 else:
                     await curr_message.edit(content=self.message)
 
             except discord.errors.NotFound as e:
-                message = await channel.send(self.message)
+                message = await self.channel.send(self.message)
                 config.update_gainer_message_id(market_period, message.id)
+                return message
         else: 
             pass
             
@@ -306,7 +314,7 @@ class NewsReport(Report):
         self.query = query
         self.breaking=breaking
         self.news_kwargs=kwargs
-        super().__init__()
+        super().__init__(None) # no channel for this report
 
     # Override
     def build_report_header(self):
@@ -334,11 +342,18 @@ class NewsReport(Report):
         report += self.build_news()
         return report + '\n'  
 
+    # Override
+    async def send_report(self, interaction):
+        await interaction.response.send_message(self.message)
+
+
 class Reports(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
         self.send_gainer_reports.start()
         self.update_earnings_calendar.start()
+        self.reports_channel = self.bot.get_channel(config.get_reports_channel_id())
+        self.gainers_channel = self.bot.get_channel(config.get_gainers_channel_id())
 
     @commands.Cog.listener()
     async def on_ready(self):
@@ -351,11 +366,9 @@ class Reports(commands.Cog):
     # Generate and send premarket gainer reports to the reports channel
     @tasks.loop(minutes=5)
     async def send_gainer_reports(self):
-        report = GainerReport()
+        report = GainerReport(self.gainers_channel)
         if (report.today.weekday() < 5):
-            channel_id = config.get_reports_channel_id()
-            channel = self.bot.get_channel(channel_id)
-            await report.send_report(self.bot.get_channel(config.get_reports_channel_id()))
+            await report.send_report()
         else:
             # Not a weekday - do not post gainer reports
             pass
@@ -451,17 +464,21 @@ class Reports(commands.Cog):
             # Empty watchlist
             logger.warning("Selected watchlist '{}' is empty".format(watchlist))
             message = "No tickers on the watchlist. Use /addticker to build a watchlist."
+            await interaction.followup.send(message, ephemeral=True)
         else:
             # Send reports
             logger.info("Running reports on tickers {}".format(tickers))
+            message = None
             for ticker in tickers:
                 logger.debug("Processing ticker {}".format(ticker))
-                report = StockReport(ticker)
-                await report.send_report(interaction, visibility.value)
+                report = StockReport(ticker, self.reports_channel)
+                message = await report.send_report(interaction, visibility.value)
                 logger.info("Report posted for ticker {}".format(ticker))
-            message = "Reports have been posted!"
             logger.info("Reports have been posted")
-        await interaction.followup.send(message, ephemeral=True)
+
+            # Follow-up message
+            follow_up = f"Posted reports for tickers [{", ".join(tickers)}]({message.jump_url})!"
+            await interaction.followup.send(follow_up, ephemeral=True)
 
 
     @app_commands.command(name = "fetch-reports", description= "Fetch analysis reports of the specified tickers (use /run-reports to analyze a watchlist)",)
@@ -478,18 +495,23 @@ class Reports(commands.Cog):
         # Validate each ticker in the list is valid
         tickers, invalid_tickers = sd.StockData.get_list_from_tickers(tickers)
         logger.debug("Validated tickers {} | Invalid tickers: {}".format(tickers, invalid_tickers))
-
+        message = None
         logger.info("Fetching reports for tickers {}".format(tickers))
         for ticker in tickers:
             logger.debug("Processing ticker {}".format(ticker))
-            report = StockReport(ticker)
-            await report.send_report(interaction, visibility.value)
+            report = StockReport(ticker, self.reports_channel)
+            message = await report.send_report(interaction, visibility.value)
             logger.info("Report posted for ticker {}".format(ticker))
-        if len(invalid_tickers) > 0:
-            await interaction.followup.send("Fetched reports for {}. Failed to fetch reports for {}.".format(", ".join(tickers), ", ".join(invalid_tickers)), ephemeral=True)
-        else:
-            logger.info("Reports have been posted")
-            await interaction.followup.send("Fetched reports!", ephemeral=True)
+
+        # Follow-up message
+        follow_up = ""
+        if message is not None: # Message was generated
+            follow_up = f"Posted reports for tickers [{", ".join(tickers)}]({message.jump_url})!"
+            if len(invalid_tickers) > 0: # More than one invalid ticke input
+                follow_up += f"Invalid tickers: {", ".join(invalid_tickers)}"
+        if len(tickers) == 0: # No valid tickers input
+            follow_up = f" No valid tickers input: {", ".join(invalid_tickers)}"
+        await interaction.followup.send(follow_up, ephemeral=True)
 
     # Autocomplete functions
 
@@ -506,56 +528,14 @@ class Reports(commands.Cog):
         ]
 
     @app_commands.command(name="news", description="Fetch news on the query provided")
-    @app_commands.describe(query= "The search terms or terms to query for")
-    @app_commands.describe(visibility = "'private' to send to DMs, 'public' to send to the channel")
-    @app_commands.choices(visibility =[
-        app_commands.Choice(name = "private", value = 'private'),
-        app_commands.Choice(name = "public", value = 'public')
-    ])  
-    @app_commands.describe(visibility = "'private' to send to DMs, 'public' to send to the channel")
-    @app_commands.choices(visibility =[
-        app_commands.Choice(name = "private", value = 'private'),
-        app_commands.Choice(name = "public", value = 'public')
-    ])    
+    @app_commands.describe(query= "The search terms or terms to query for")  
     @app_commands.describe(sort_by = "Field by which to sort returned articles")
     @app_commands.autocomplete(sort_by=autocomplete_sortby,)
-    async def news(self, interaction:discord.Interaction, query:str, visibility:app_commands.Choice[str], sort_by:str = 'publishedAt'):
+    async def news(self, interaction:discord.Interaction, query:str, sort_by:str = 'publishedAt'):
         logger.info("/news function called by user {}".format(interaction.user.name))
         kwargs = {'sort_by': sort_by}
-        report = NewsReport(query=query, **kwargs )
-        await report.send_report(interaction=interaction, visibility=visibility.value)
-        await interaction.response.send_message("News articles posted!", ephemeral=True)
-
-    # Autocomplete functions
-
-    async def autocomplete_categories(self, interaction:discord.Interaction, current:str):
-        return [
-            app_commands.Choice(name = category_name, value= category_value)
-            for category_name, category_value in sd.News().categories.items() if current.lower() in category_name.lower()
-        ]
-
-    @app_commands.command(name="breaking-news", description="Fetch news on the query provided")
-    @app_commands.describe(query= "The search terms or terms to query for")
-    @app_commands.describe(visibility = "'private' to send to DMs, 'public' to send to the channel")
-    @app_commands.choices(visibility =[
-        app_commands.Choice(name = "private", value = 'private'),
-        app_commands.Choice(name = "public", value = 'public')
-    ])  
-    @app_commands.describe(visibility = "'private' to send to DMs, 'public' to send to the channel")
-    @app_commands.choices(visibility =[
-        app_commands.Choice(name = "private", value = 'private'),
-        app_commands.Choice(name = "public", value = 'public')
-    ])    
-    @app_commands.describe(category = "The element of the article to search for the query in")
-    @app_commands.autocomplete(category=autocomplete_categories,)   
-    async def breaking_news(self, interaction:discord.Interaction, query:str, visibility:app_commands.Choice[str], category:str = ""):
-        logger.info("/breaking_news function called by user {}".format(interaction.user.name))
-        kwargs = {}
-        if category:
-            kwargs['category'] = category
-        report = NewsReport(query=query, breaking=True, **kwargs )
-        await report.send_report(interaction=interaction)
-        await interaction.response.send_message("News articles posted!", ephemeral=True)
+        report = NewsReport(query=query, **kwargs)
+        message = await report.send_report(interaction=interaction)
 
 
         
