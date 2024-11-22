@@ -6,6 +6,7 @@ import stockdata as sd
 import config
 import csv
 import logging
+from table2ascii import table2ascii, Alignment, PresetStyle
 
 # Logging configuration
 logger = logging.getLogger(__name__)
@@ -110,15 +111,75 @@ class Data(commands.Cog):
         
     @app_commands.command(name = "eps", description= "Returns recent EPS data for the input tickers",)
     @app_commands.describe(tickers = "Tickers to return EPS data for (separated by spaces)")
-    async def eps(self, interaction: discord.Interaction, tickers: str):
+    @app_commands.describe(visibility = "'private' to send to DMs, 'public' to send to the channel")
+    @app_commands.choices(visibility =[
+        app_commands.Choice(name = "private", value = 'private'),
+        app_commands.Choice(name = "public", value = 'public')
+    ])
+    async def eps(self, interaction: discord.Interaction, tickers: str, visibility: app_commands.Choice[str]):
         await interaction.response.defer(ephemeral=True)
         logger.info("/eps function called by user {}".format(interaction.user.name))
 
         tickers, invalid_tickers = sd.StockData.get_list_from_tickers(tickers)
         for ticker in tickers:
             eps = sd.Nasdaq().get_eps(ticker)
-            await interaction.channel.send(eps)
-        await interaction.followup.send("Posted EPS!")
+            eps_table = table2ascii(
+                header = eps.columns.tolist(),
+                body = eps.values.tolist(),
+                style=PresetStyle.thick,
+                alignments=[Alignment.LEFT, Alignment.LEFT, Alignment.LEFT, Alignment.LEFT]
+            )
+            message = f"### {ticker} EPS\n ```{eps_table}```"
+            if visibility.value == "private":
+                await interaction.user.send(message)
+            else:
+                await interaction.channel.send(message)
+
+        follow_up = f"Posted EPS for tickers {", ".join(tickers)}!"
+        if len(invalid_tickers) > 0:
+            follow_up += f"Invalid tickers: {", ".join(invalid_tickers)}"
+        if len(tickers) == 0:
+            follow_up = f" No valid tickers input: {", ".join(invalid_tickers)}"
+        await interaction.followup.send(follow_up, ephemeral=True)
+    
+    @app_commands.command(name = "form", description= "Returns link to latest form of requested time",)
+    @app_commands.describe(tickers = "Tickers to return SEC forms for (separated by spaces)")
+    @app_commands.describe(form = "The form type to get a link to (10-K, 10-Q, 8-K, etc)")
+    @app_commands.describe(visibility = "'private' to send to DMs, 'public' to send to the channel")
+    @app_commands.choices(visibility =[
+        app_commands.Choice(name = "private", value = 'private'),
+        app_commands.Choice(name = "public", value = 'public')
+    ])
+    async def form(self, interaction: discord.Interaction, tickers: str, form:str, visibility: app_commands.Choice[str]):
+        await interaction.response.defer(ephemeral=True)
+        logger.info("/form function called by user {}".format(interaction.user.name))
+        
+        tickers, invalid_tickers = sd.StockData.get_list_from_tickers(tickers)
+        sec = sd.SEC()
+        for ticker in tickers:
+            recent_filings = sec.get_recent_filings(ticker)
+            target_filing = None
+            for index, filing in recent_filings.iterrows():
+                if filing['form'] == form:
+                    target_filing = filing
+                    break
+            if target_filing is None:
+                message = f"No form {form} found for ticker {ticker}"
+            else:
+                message = f"[{ticker} Form {form} - Filed {sd.StockData.Earnings.format_earnings_date(target_filing['filingDate'])}]({sec.get_link_to_filing(ticker, target_filing)})"
+            if visibility.value == "private":
+                await interaction.user.send(message)
+            else:
+                await interaction.channel.send(message)
+
+        follow_up = f"Posted forms for tickers {", ".join(tickers)}!"
+        if len(invalid_tickers) > 0:
+            follow_up += f"Invalid tickers: {", ".join(invalid_tickers)}"
+        if len(tickers) == 0:
+            follow_up = f" No valid tickers input: {", ".join(invalid_tickers)}"
+        await interaction.followup.send(follow_up, ephemeral=True)
+
+    
 
 #########        
 # Setup #
