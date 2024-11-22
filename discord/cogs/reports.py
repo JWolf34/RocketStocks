@@ -392,7 +392,7 @@ class Reports(commands.Cog):
             # Not a weekday - do not post gainer reports
             pass
 
-    @send_gainer_reports.before_loop
+    #@send_gainer_reports.before_loop
     async def before_send_gainer_reports(self):
         # Start posting report at next 0 or 5 minute interval
         now = datetime.datetime.now().astimezone()
