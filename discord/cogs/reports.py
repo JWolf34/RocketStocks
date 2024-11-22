@@ -183,8 +183,11 @@ class GainerReport(Report):
         return header
 
     def build_gainer_table(self):
+        watchlist_tickers = []
+        watchlist_id = ''
 
         if self.in_premarket():
+            watchlist_id = "premarket-gainers"
             gainers = sd.TradingView.get_premarket_gainers_by_market_cap(100000000)[:15]
             headers = ["Ticker", "Close", "Volume", "Market Cap", "Premarket Change", "Premarket Volume"]
             rows = []
@@ -197,39 +200,51 @@ class GainerReport(Report):
                                 self.format_large_num(row.market_cap_basic), 
                                 "{:.2f}%".format(row.premarket_change), 
                                 self.format_large_num(row.premarket_volume)])
+                    watchlist_tickers.append(ticker)
                 else:
                     pass
         elif self.in_intraday():
+            watchlist_id = "intraday-gainers"
             gainers = sd.TradingView.get_intraday_gainers_by_market_cap(100000000)[:15]
             headers = ["Ticker", "Close", "Volume", "Market Cap", "% Change"]
             rows = []
             for index, row in gainers.iterrows():
                 ticker = row.iloc[1]
                 if sd.StockData.validate_ticker(ticker):
-                    rows.append([row.iloc[1], 
+                    rows.append([ticker, 
                                 "${}".format(float('{:.2f}'.format(row.close))), 
                                 self.format_large_num(row.volume), 
                                 self.format_large_num(row.market_cap_basic), 
                                 "{:.2f}%".format(row.change)])
+                    watchlist_tickers.append(ticker)
                 else: 
                     pass
+                
         elif self.in_afterhours():
+            watchlist_id = "afterhours-gainers"
             gainers = sd.TradingView.get_postmarket_gainers_by_market_cap(100000000)[:15] 
             headers = ["Ticker", "Close", "Volume", "Market Cap", "After Hours Change", "After Hours Volume"]
             rows = []
             for index, row in gainers.iterrows():
                 ticker = row.iloc[1]
                 if sd.StockData.validate_ticker(ticker):
-                    rows.append([row.iloc[1], 
+                    rows.append([ticker, 
                                 "${}".format(float('{:.2f}'.format(row.close))), 
                                 self.format_large_num(row.volume), 
                                 self.format_large_num(row.market_cap_basic), 
                                 "{:.2f}%".format(row.postmarket_change), 
                                 self.format_large_num(row.postmarket_volume)])
+                    watchlist_tickers.append(ticker)
                 else: 
                     pass
+            
         else:
             return ""
+
+        if not sd.Watchlists().validate_watchlist(watchlist_id):
+            sd.Watchlists().create_watchlist(watchlist_id=watchlist_id, tickers=watchlist_tickers, systemGenerated=True)
+        else:
+            sd.Watchlists().update_watchlist(watchlist_id=watchlist_id, tickers=watchlist_tickers)
         
         table = table2ascii(
             header = headers,

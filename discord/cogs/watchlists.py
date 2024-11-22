@@ -17,7 +17,7 @@ class Watchlists(commands.Cog):
         logger.info(f"Cog {__name__} loaded!")
 
     async def watchlist_options(self, interaction: discord.Interaction, current: str):
-        watchlists = sd.Watchlists().get_watchlists()
+        watchlists = sd.Watchlists().get_watchlists(no_systemGenerated=False)
         return [
             app_commands.Choice(name = watchlist, value= watchlist)
             for watchlist in watchlists if current.lower() in watchlist.lower()

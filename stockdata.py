@@ -289,18 +289,21 @@ class Watchlists():
     # Return list of existing watchlists
     def get_watchlists(self, no_personal=True, no_systemGenerated=True):
         select_script = f"""SELECT * FROM {self.db_table}"""
-        watchlist = Postgres().select_many(query=select_script)
-        watchlists = ['personal']
-        for watchlist in watchlists:
+        filtered_watchlists = []
+        watchlists = Postgres().select_many(query=select_script)
+        for i in range(len(watchlists)):
+            watchlist = watchlists[i]
             watchlist_id = watchlist[0]
             is_systemGenerated = watchlist[2]
-            if watchlist_id[0].isdigit() and no_personal:
+            if watchlist_id.isdigit() and no_personal:
                 pass
             elif is_systemGenerated and no_systemGenerated:
                 pass
             else: 
-                watchlists += watchlist_id
-        return sorted(watchlists)
+                filtered_watchlists.append(watchlist_id)
+        if no_personal:
+            filtered_watchlists.append("personal")
+        return sorted(filtered_watchlists)
 
     # Set content of watchlist to provided tickers
     def update_watchlist(self, watchlist_id, tickers):
@@ -324,9 +327,9 @@ class Watchlists():
     # Validate watchlist exists in the database
     def validate_watchlist(self, watchlist_id):
         select_script = f"""SELECT id FROM {self.db_table}
-                            WHERE watchlist_id = '{watchlist_id}';
+                            WHERE id = '{watchlist_id}';
                             """
-        result = Postgres.select_one(select_script)
+        result = Postgres().select_one(select_script)
         if result is None:
             return False
         else:
