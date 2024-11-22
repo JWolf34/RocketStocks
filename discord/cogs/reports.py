@@ -397,7 +397,7 @@ class Reports(commands.Cog):
             # Not a weekday - do not post gainer reports
             pass
 
-    #@send_gainer_reports.before_loop
+    @send_gainer_reports.before_loop
     async def before_send_gainer_reports(self):
         await asyncio.sleep(10)
         print("got to before loop")
