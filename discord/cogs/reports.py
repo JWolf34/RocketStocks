@@ -364,7 +364,7 @@ class NewsReport(Report):
 
 class Reports(commands.Cog):
     def __init__(self, bot):
-        logger.info("Reports cog initialized")
+        print("Reports cog initialized")
         self.bot = bot
         self.send_gainer_reports.start()
         self.update_earnings_calendar.start()
