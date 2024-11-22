@@ -369,6 +369,7 @@ class Reports(commands.Cog):
         self.update_earnings_calendar.start()
         self.reports_channel = self.bot.get_channel(config.get_reports_channel_id())
         self.gainers_channel = self.bot.get_channel(config.get_gainers_channel_id())
+        logger.info("Reports cog initialized")
 
     @commands.Cog.listener()
     async def on_ready(self):
