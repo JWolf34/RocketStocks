@@ -55,7 +55,7 @@ class Nasdaq():
         self.MAX_PERIOD = 60
 
     @sleep_and_retry
-    @limits(calls = 10, period = 600) # 10 calls per minute
+    @limits(calls = 5, period = 60) # 10 calls per minute
     def get_all_tickers(self):
         url = f"{self.url_base}/screener/stocks?tableonly=false&limit=25&download=true"
         data = requests.get(url, headers=self.headers).json()
@@ -63,17 +63,18 @@ class Nasdaq():
         return tickers
 
     @sleep_and_retry
-    @limits(calls = 10, period = 600) # 10 calls per 10 minutes
+    @limits(calls = 5, period = 60) # 10 calls per 10 minutes
     def get_earnings_by_date(self, date):
-        print(f"[{datetime.datetime.now()}] Getting earnings for {date}")
         url = f"{self.url_base}/calendar/earnings"
         params = {'date':date}
         data = requests.get(url, headers=self.headers, params=params).json()
-        earnings = pd.DataFrame(data['data']['rows'])
-        return earnings
+        if data is None:
+            return data
+        else:
+            return pd.DataFrame(data['data']['rows'])
     
     @sleep_and_retry
-    @limits(calls = 10, period = 600) # 10 calls per 10 minutes
+    @limits(calls = 5, period = 60) # 10 calls per 10 minutes
     def get_earnings_forecast(self, ticker):
         url = f"https://api.nasdaq.com/api/analyst/{ticker}/earnings-forecast"
         data = requests.get(url, headers=self.headers).json()
@@ -86,7 +87,7 @@ class Nasdaq():
         return pd.DataFrame.from_dict(self.get_earnings_forecast(ticker)['yearlyForecast']['rows'])
 
     @sleep_and_retry
-    @limits(calls = 10, period = 600) # 10 calls per 10 minutes
+    @limits(calls = 5, period = 60) # 10 calls per 10 minutes
     def get_eps(self, ticker):
         url = f"https://api.nasdaq.com/api/quote/{ticker}/eps"
         eps = pd.DataFrame.from_dict(requests.get(url, headers=self.headers).json()['data']['earningsPerShare'])
@@ -99,9 +100,6 @@ class Nasdaq():
     def get_future_eps(self, ticker):
         eps = self.get_eps(ticker)
         return eps[eps['type'] == 'UpcomingQuarter']
-
-
-        
 
 class Postgres():
     def __init__(self):
@@ -151,7 +149,7 @@ class Postgres():
 
                             CREATE TABLE IF NOT EXISTS upcomingEarnings (
                             ticker              varchar(8) PRIMARY KEY,
-                            date                char(10) NOT NULL,
+                            date                date NOT NULL,
                             time                varchar(32),
                             fiscalQuarterEnding varchar(10),
                             epsForecast          varchar(8),
@@ -175,7 +173,7 @@ class Postgres():
     # Drop database tables
     def drop_all_tables(self):
         self.open_connection()
-        drop_script = """DROP TABLE earnings;
+        drop_script = """DROP TABLE upcomingearnings;
                          DROP TABLE tickers;
                          DROP TABLE watchlists;
                         """
@@ -421,6 +419,11 @@ class StockData():
                 return pd.DataFrame()
             else:
                 return pd.DataFrame([result], columns=columns)
+
+        @staticmethod
+        def remove_past_earnings():
+            where = "date < CURRENT_DATE"
+            Postgres().delete(table='upcomingearnings', where_condition=where)
 
 
 
@@ -903,9 +906,10 @@ def get_supported_exchanges():
 
 def test():
     
-    ticker = "NVDA"
-    earnings_info = StockData.Earnings.get_next_earnings_info(ticker)
-    print(earnings_info)
+    Postgres().drop_table('upcomingearnings')
+    Postgres().create_tables()
+
+    StockData.Earnings.update_upcoming_earnings()
 
 if __name__ == "__main__":
     logger.info("stockdata.py initialized")
