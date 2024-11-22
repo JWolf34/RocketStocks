@@ -399,6 +399,7 @@ class Reports(commands.Cog):
 
     #@send_gainer_reports.before_loop
     async def before_send_gainer_reports(self):
+        await asyncio.sleep(10)
         print("got to before loop")
         # Start posting report at next 0 or 5 minute interval
         now = datetime.datetime.now().astimezone()
