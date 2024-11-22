@@ -377,7 +377,7 @@ class StockData():
                        'lastYearRptDt', 
                        'lastYearEPS']
             
-            for i in range(0, 60): # Next 60 days of earnings
+            for i in range(0, 50): # Look at next 50 days of earnings
                 date = datetime.datetime.today() + datetime.timedelta(days=i)
                 if date.weekday() < 5:
                     date_string = date.strftime("%Y-%m-%d")
