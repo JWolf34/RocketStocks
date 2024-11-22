@@ -467,6 +467,13 @@ class StockData():
         data.index = data['ticker']
         return data
 
+    @staticmethod
+    def get_cik(ticker):
+        select_script = f"""SELECT cik from tickers
+                            WHERE ticker = '{ticker}';
+                            """
+        return Postgres().select_one(select_script)
+
     # Confirm we get valid data back when downloading data for ticker
     @staticmethod
     def validate_ticker(ticker):

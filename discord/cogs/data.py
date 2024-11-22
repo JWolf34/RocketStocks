@@ -166,6 +166,7 @@ class Data(commands.Cog):
             if target_filing is None:
                 message = f"No form {form} found for ticker {ticker}"
             else:
+                # Need to make universal date conversion function and make SEC module reference CIK value from database
                 message = f"[{ticker} Form {form} - Filed {sd.StockData.Earnings.format_earnings_date(target_filing['filingDate'])}]({sec.get_link_to_filing(ticker, target_filing)})"
             if visibility.value == "private":
                 await interaction.user.send(message)

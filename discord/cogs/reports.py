@@ -12,6 +12,7 @@ import datetime as dt
 import json
 import config
 import psycopg2
+import asyncio
 from table2ascii import table2ascii
 import logging
 
@@ -156,7 +157,7 @@ class StockReport(Report):
 
 class GainerReport(Report):
     def __init__(self):
-        self.today = dt.datetime.now()
+        self.today = dt.datetime.now().astimezone()
         self.PREMARKET_START = self.today.replace(hour=7, minute=0, second=0, microsecond=0)
         self.INTRADAY_START= self.today.replace(hour=8, minute=30, second=0, microsecond=0)
         self.AFTERHOURS_START = self.today.replace(hour=15, minute=0, second=0, microsecond=0)
@@ -166,12 +167,13 @@ class GainerReport(Report):
 
     # Override
     def build_report_header(self):
-        header = "### :rotating_light: {} Gainers {} (Market Cap > $100M)\n\n".format(
+        header = "### :rotating_light: {} Gainers {} (Market Cap > $100M) (Updated {})\n\n".format(
                     "Pre-market" if self.in_premarket()
                     else "Intraday" if self.in_intraday()
                     else "After Hours" if self.in_afterhours()
                     else "",
-                    self.today.strftime("%m/%d/%Y"))
+                    self.today.strftime("%m/%d/%Y"),
+                    self.today.strftime("%-I:%M %p"))
         return header
 
     def build_gainer_table(self):
@@ -360,8 +362,20 @@ class Reports(commands.Cog):
             # Not a weekday - do not post gainer reports
             pass
 
+    @send_gainer_reports.before_loop
+    async def before_send_gainer_reports(self):
+        now = datetime.datetime.now()
+        if now.minute % 5 == 0:
+            return 0
+        minutes_by_five = now.minute // 5
+        # get the difference in times
+        diff = (minutes_by_five + 1) * 5 - now.minute
+        future = now + datetime.timedelta(minutes=diff)
+        difference = (future-now).total_seconds()
+        await asyncio.sleep((future-now).total_seconds())
+
     # Create earnings events on calendar for all stocks on watchlists
-    @tasks.loop(hours=24)
+    @tasks.loop(time=datetime.time(hour=2, minute=0, second=0))
     async def update_earnings_calendar(self):
         logger.debug("Creating events for upcoming earnings dates")
         guild = self.bot.get_guild(config.get_discord_guild_id())
