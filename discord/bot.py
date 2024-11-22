@@ -12,7 +12,7 @@ import logging
 # Logging configuration
 logger = logging.getLogger(__name__)
 
-async def run_bot():
+def run_bot():
 
     intents = discord.Intents.default()
     bot = commands.Bot(command_prefix='$', intents=intents)
@@ -27,11 +27,11 @@ async def run_bot():
     @bot.event
     async def on_ready():
         logger.info("RocketStocks bot ready!")
-        #await load()
+        await load()
         #await bot.tree.sync()
-    await load()
-    await bot.run(token)
+    
+    bot.run(token)
 
-#if __name__ == "__main__":
-await run_bot()
+if __name__ == "__main__":
+    run_bot()
 
