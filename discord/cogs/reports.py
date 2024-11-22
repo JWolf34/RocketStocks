@@ -403,7 +403,7 @@ class Reports(commands.Cog):
         diff = (minutes_by_five + 1) * 5 - now.minute
         future = now + datetime.timedelta(minutes=diff)
         difference = (future-now).total_seconds()
-        logger.info(f"Posting gainer reports in {difference} seconds")
+        print(f"Posting gainer reports in {difference} seconds")
         await asyncio.sleep((future-now).total_seconds())
 
     # Create earnings events on calendar for all stocks on watchlists
