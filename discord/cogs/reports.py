@@ -366,10 +366,15 @@ class Reports(commands.Cog):
     def __init__(self, bot):
         print("Reports cog initialized")
         self.bot = bot
+        print("bot configured")
         self.send_gainer_reports.start()
+        print("started gainer reports loop configured")
         self.update_earnings_calendar.start()
+        print("started earnings calendar loop configured")
         self.reports_channel = self.bot.get_channel(config.get_reports_channel_id())
+        print("reports channel configured")
         self.gainers_channel = self.bot.get_channel(config.get_gainers_channel_id())
+        print("gainers channel configured")
         
 
     @commands.Cog.listener()
