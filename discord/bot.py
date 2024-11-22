@@ -32,6 +32,6 @@ async def run_bot():
     await load()
     await bot.run(token)
 
-if __name__ == "__main__":
-    await run_bot()
+#if __name__ == "__main__":
+await run_bot()
 
