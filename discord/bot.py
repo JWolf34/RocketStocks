@@ -27,10 +27,10 @@ def run_bot():
     @bot.event
     async def on_ready():
         logger.info("RocketStocks bot ready!")
-        await load()
+        #await load()
         #await bot.tree.sync()
-
-    bot.run(token)
+    await load()
+    await bot.run(token)
 
 if __name__ == "__main__":
     run_bot()
