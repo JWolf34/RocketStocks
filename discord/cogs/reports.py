@@ -379,8 +379,9 @@ class Reports(commands.Cog):
 
     @commands.Cog.listener()
     async def on_ready(self):
-        print("Cog Reports ready!")
-        logger.info(f"Cog {__name__} loaded!")
+        await self.bot.wait_until_ready()
+        print("hello!")
+
     
     #########
     # Tasks #
