@@ -152,7 +152,7 @@ class Postgres():
                             date                date NOT NULL,
                             time                varchar(32),
                             fiscalQuarterEnding varchar(10),
-                            epsForecast          varchar(8),
+                            epsForecast         varchar(8),
                             noOfEsts            varchar(8),
                             lastYearRptDt       varchar(10),
                             lastYearEPS         varchar(8)
@@ -160,7 +160,8 @@ class Postgres():
 
                             CREATE TABLE IF NOT EXISTS watchlists (
                             ID                  varchar(255) PRIMARY KEY,
-                            tickers             varchar(255)
+                            tickers             varchar(255),
+                            systemGenerated     boolean
                             );
                             """
         logger.info("Running script to create tables in database...")
@@ -184,7 +185,7 @@ class Postgres():
     
     def drop_table(self, table:str):
         self.open_connection()
-        drop_script = f"""DROP TABLE {table};
+        drop_script = f"""DROP TABLE IF EXISTS {table};
                        """
         self.cur.execute(drop_script)
         self.conn.commit()
@@ -251,7 +252,7 @@ class Postgres():
 class Watchlists():
     def __init__(self):
         self.db_table = 'watchlists'
-        self.db_fields = ['id', 'tickers']
+        self.db_fields = ['id', 'tickers', 'systemGenerated']
         
     # Return tickers from watchlist - global by default, personal if chosen by user
     def get_tickers_from_watchlist(self, watchlist_id):
@@ -268,31 +269,34 @@ class Watchlists():
        
 
     # Return tickers from all available watchlists
-    def get_tickers_from_all_watchlists(self, no_personal=True):
+    def get_tickers_from_all_watchlists(self, no_personal=True, no_systemGenerated=True):
         logger.debug("Fetching tickers from all available watchlists (besides personal)")
         select_script = f"""SELECT * FROM {self.db_table};
                             """
         watchlists = Postgres().select_many(query=select_script)
         tickers = []
         for watchlist in watchlists:
-            watchlist_id, watchlist_tickers = watchlist[0], watchlist[1].split()
-            if no_personal:
-                if watchlist_id.isdigit():
-                    pass
-                else:
-                    tickers += watchlist_tickers
+            watchlist_id, watchlist_tickers, is_systemGenerated = watchlist[0], watchlist[1].split(), watchlist[2]
+            if watchlist_id.isdigit() and no_personal:
+                pass
+            elif is_systemGenerated and no_systemGenerated:
+                pass
             else: 
                 tickers += watchlist_tickers
                     
-        return sorted(tickers)
+        return sorted(set(tickers))
 
     # Return list of existing watchlists
-    def get_watchlists(self, no_personal=True):
-        select_script = f"""SELECT id FROM {self.db_table}"""
-        watchlist_ids = Postgres().select_many(query=select_script)
+    def get_watchlists(self, no_personal=True, no_systemGenerated=True):
+        select_script = f"""SELECT * FROM {self.db_table}"""
+        watchlist = Postgres().select_many(query=select_script)
         watchlists = ['personal']
-        for watchlist_id in watchlist_ids:
+        for watchlist in watchlists:
+            watchlist_id = watchlist[0]
+            is_systemGenerated = watchlist[2]
             if watchlist_id[0].isdigit() and no_personal:
+                pass
+            elif is_systemGenerated and no_systemGenerated:
                 pass
             else: 
                 watchlists += watchlist_id
@@ -308,14 +312,16 @@ class Watchlists():
         Postgres().update(query=update_script)
 
     # Create a new watchlist with id 'watchlist_id'
-    def create_watchlist(self, watchlist_id, tickers):
+    def create_watchlist(self, watchlist_id, tickers, systemGenerated):
         logger.info("Creating watchlist with ID '{}' and tickers {}".format(watchlist_id, tickers))
-        Postgres().insert(table=self.db_table, fields=self.db_fields, values=[(watchlist_id, " ".join(tickers))])
+        Postgres().insert(table=self.db_table, fields=self.db_fields, values=[(watchlist_id, " ".join(tickers), systemGenerated)])
 
-    # Delete watchlist wityh id 'watchlist_id'
+    # Delete watchlist with id 'watchlist_id'
     def delete_watchlist(self, watchlist_id):
         logger.info("Deleting watchlist '{}'...".format(watchlist_id))
         Postgres().delete(table=self.db_table, where_condition=f"id = '{watchlist_id}'")
+
+    
 
 class SEC():
     def __init__(self):
@@ -910,7 +916,8 @@ def get_supported_exchanges():
 #########
 
 def test():
-    pass
+    Postgres().drop_table("watchlists")
+    Postgres().create_tables()
 
 if __name__ == "__main__":
     logger.info("stockdata.py initialized")

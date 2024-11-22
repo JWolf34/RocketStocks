@@ -183,7 +183,7 @@ class Watchlists(commands.Cog):
         # Parse list from ticker input and identify invalid tickers
         tickers, invalid_tickers = sd.StockData.get_list_from_tickers(tickers)
 
-        sd.Watchlists().create_watchlist(watchlist_id=watchlist, tickers=tickers)
+        sd.Watchlists().create_watchlist(watchlist_id=watchlist, tickers=tickers, systemGenerated=False)
         await interaction.followup.send("Created watchlist '{}' with tickers: ".format(watchlist) + ', '.join(tickers), ephemeral=False)
 
     @app_commands.command(name = "delete-watchlist", description= "Delete a watchlist",)
