@@ -389,21 +389,26 @@ class Reports(commands.Cog):
                         release_time = "after hours"
                         start_time = start_time.replace(hour = 15, minute=0)
 
-                    description = f"""**Quarter:** {earnings_info['fiscalquarterending'][0]}
-**Release Time:** {release_time}
-**EPS Forecast:** {earnings_info['epsforecast'][0]}
-**Last Year's EPS:** {earnings_info['lastyeareps'][0]}
-**Last Year's Report Date:** {earnings_info['lastyearrptdt'][0]}
-                    """
-                    channel = self.bot.get_channel(config.get_alerts_channel_id())
-                    event = await guild.create_scheduled_event(name=name, 
-                                                            description=description,
-                                                            start_time=start_time,
-                                                            end_time= start_time + datetime.timedelta(minutes=30),
-                                                            entity_type = discord.EntityType.external,
-                                                            privacy_level=discord.PrivacyLevel.guild_only,
-                                                            location="Wall Street")
-                    logger.debug(f"Event '{event.name} created at {event.start_time}")
+                    now = datetime.datetime.now().astimezone()
+                    if start_time > now:
+                        description = f"""**Quarter:** {earnings_info['fiscalquarterending'][0]}
+    **Release Time:** {release_time}
+    **EPS Forecast:** {earnings_info['epsforecast'][0]}
+    **Last Year's EPS:** {earnings_info['lastyeareps'][0]}
+    **Last Year's Report Date:** {earnings_info['lastyearrptdt'][0]}
+                        """
+                        channel = self.bot.get_channel(config.get_alerts_channel_id())
+                        event = await guild.create_scheduled_event(name=name, 
+                                                                description=description,
+                                                                start_time=start_time,
+                                                                end_time= start_time + datetime.timedelta(minutes=30),
+                                                                entity_type = discord.EntityType.external,
+                                                                privacy_level=discord.PrivacyLevel.guild_only,
+                                                                location="Wall Street")
+                        logger.debug(f"Event '{event.name} created at {event.start_time}")
+                    else:
+                        # Event start time is in the past
+                        pass
                 else:
                     # Event already exists
                     pass
