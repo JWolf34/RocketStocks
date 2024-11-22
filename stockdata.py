@@ -398,7 +398,7 @@ class StockData():
             if result is None:
                 return "N/A"
             else:
-                return StockData.Earnings.format_earnings_date(result[0])
+                return result[0].strftime("%m/%d/%Y")
         
         @staticmethod
         def format_earnings_date(date_string):
