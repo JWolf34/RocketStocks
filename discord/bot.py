@@ -28,6 +28,7 @@ def run_bot():
     async def on_ready():
         logger.info("RocketStocks bot ready!")
         await load()
+        bot.send_gainer_reports.start()
         #await bot.tree.sync()
     
     bot.run(token)
