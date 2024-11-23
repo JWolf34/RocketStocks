@@ -48,11 +48,11 @@ def rocketStocks():
     bot_thread.start()
     logger.debug("Bot thread initialized")
 
-    scheduler_thread.start()
-    logger.debug("Scheduler thread initialized")
+    #scheduler_thread.start()
+    #logger.debug("Scheduler thread initialized")
     
     bot_thread.join()
-    logger.debug("Threads joined")
+    #logger.debug("Threads joined")
     
 
 if (__name__ == '__main__'):

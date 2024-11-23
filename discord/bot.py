@@ -22,15 +22,17 @@ async def load():
             logger.info(f"Loading {filename}")
             await bot.load_extension(f"cogs.{filename[:-3]}")
 
-@bot.event
-async def on_ready():
-    logger.info("RocketStocks bot ready!")
-    
-    #bot.send_gainer_reports.start()
-    #await bot.tree.sync()
+
+
 
 def run_bot():
-    asyncio.run(load())
+    @bot.event
+    async def on_ready():
+        logger.info("RocketStocks bot ready!")
+        await load()
+    
+    #bot.send_gainer_reports.start()
+    
     bot.run(token)
 
 
