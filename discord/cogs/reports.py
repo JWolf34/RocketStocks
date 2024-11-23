@@ -381,6 +381,8 @@ class Reports(commands.Cog):
     async def on_ready(self):
         await self.bot.wait_until_ready()
         print("hello!")
+        await self.send_gainer_reports.start()
+        print("started gainer reports loop configured")
 
     
     #########
