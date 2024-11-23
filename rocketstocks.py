@@ -41,7 +41,7 @@ def setup_logging():
 def rocketStocks():
     logger.info('**********[START LOG]**********')
 
-    
+    Discord.run_bot()
     """
     bot_thread = threading.Thread(target=Discord.run_bot)
     scheduler_thread = threading.Thread(target=scheduler.scheduler)
