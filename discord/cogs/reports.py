@@ -265,6 +265,7 @@ class GainerReport(Report):
         await self.channel.send("We made it to send reports")
         try:
             await self.channel.send("try statement")
+            await self.channel.send(f"system time {datetime.datetime.now()}")
             if self.in_premarket() or self.in_intraday() or self.in_afterhours():
                 await self.channel.send("in market hours")
                 market_period = self.get_market_period()
