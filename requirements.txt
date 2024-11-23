@@ -1,15 +1,11 @@
 APScheduler
 discord
-pandas
+#pandas
 pandas-datareader
 yfinance
 pandas-ta
 numpy==1.26.4
-matplotlib
-#setuptools 
 mplfinance
-#requests_cache
-#requests_ratelimiter
 Backtesting
 tradingview_screener
 newsapi-python
