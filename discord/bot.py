@@ -29,9 +29,6 @@ async def on_ready():
     #bot.send_gainer_reports.start()
     #await bot.tree.sync()
 
-async def run_bot():
-    await load()
-    await bot.start(token)
-
-asyncio.run(run_bot())
+asyncio.run(load())
+bot.run(token)
 

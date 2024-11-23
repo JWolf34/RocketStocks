@@ -367,10 +367,10 @@ class Reports(commands.Cog):
         print("Reports cog initialized")
         self.bot = bot
         print("bot configured")
-        self.send_gainer_reports.start()
-        print("started gainer reports loop configured")
-        self.update_earnings_calendar.start()
-        print("started earnings calendar loop configured")
+        #self.send_gainer_reports.start()
+        #print("started gainer reports loop configured")
+        #self.update_earnings_calendar.start()
+        #print("started earnings calendar loop configured")
         self.reports_channel = self.bot.get_channel(config.get_reports_channel_id())
         print("reports channel configured")
         self.gainers_channel = self.bot.get_channel(config.get_gainers_channel_id())
@@ -476,7 +476,7 @@ class Reports(commands.Cog):
 
     @app_commands.command(name="start-tasks", description="Start report tasks")
     async def start_tasks(self, interaction:discord.Interaction):
-        self.send_gainer_reports.start()
+        await self.send_gainer_reports.start()
         print("Started tasks")
         interaction.response.send_message("Started tasks")
 
