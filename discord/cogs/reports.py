@@ -394,21 +394,21 @@ class Reports(commands.Cog):
     @tasks.loop(minutes=5)
     async def send_gainer_reports(self):
         try:
-            print("Posting gainer reports...")
+            await self.reports_channel.send("It's alive!")
             report = GainerReport(self.gainers_channel)
-            if (report.today.weekday() < 5):
-                await report.send_report()
-                logger.info("Gainer reports posted!")
-            else:
-                # Not a weekday - do not post gainer reports
-                pass
+            #if (report.today.weekday() < 5):
+            await report.send_report()
+            logger.info("Gainer reports posted!")
+            #else:
+            #    # Not a weekday - do not post gainer reports
+            #    pass
         except Exception as e:
             print(e)
 
-    @send_gainer_reports.before_loop
+    #@send_gainer_reports.before_loop
     async def before_send_gainer_reports(self):
         try:
-            self.reports_channel.send("it's alive!")
+            await self.reports_channel.send("it's alive!")
             await asyncio.sleep(10)
             # Start posting report at next 0 or 5 minute interval
             now = datetime.datetime.now().astimezone()
