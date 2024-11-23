@@ -3,7 +3,7 @@ discord
 pandas
 pandas-datareader
 yfinance
-#pandas-ta
+pandas-ta
 numpy==1.26.4
 matplotlib
 #setuptools 
