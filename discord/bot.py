@@ -12,28 +12,26 @@ import logging
 # Logging configuration
 logger = logging.getLogger(__name__)
 
-def run_bot():
+intents = discord.Intents.default()
+bot = commands.Bot(command_prefix='$', intents=intents)
+token = config.get_discord_token()
 
-    intents = discord.Intents.default()
-    bot = commands.Bot(command_prefix='$', intents=intents)
-    token = config.get_discord_token()
+async def load():
+    for filename in os.listdir("./discord/cogs"):
+        if filename.endswith(".py"):
+            logger.info(f"Loading {filename}")
+            await bot.load_extension(f"cogs.{filename[:-3]}")
 
-    async def load():
-        for filename in os.listdir("./discord/cogs"):
-            if filename.endswith(".py"):
-                logger.info(f"Loading {filename}")
-                await bot.load_extension(f"cogs.{filename[:-3]}")
-
-    @bot.event
-    async def on_ready():
-        logger.info("RocketStocks bot ready!")
-        await load()
-        bot.send_gainer_reports.start()
-        #await bot.tree.sync()
+@bot.event
+async def on_ready():
+    logger.info("RocketStocks bot ready!")
     
-    bot.run(token)
+    bot.send_gainer_reports.start()
+    #await bot.tree.sync()
 
+async def run_bot():
+    await load()
+    await bot.start(token)
 
-if __name__ == "__main__":
-    run_bot()
+asyncio.run(run_bot())
 
