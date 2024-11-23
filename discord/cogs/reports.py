@@ -16,6 +16,7 @@ import psycopg2
 import asyncio
 from table2ascii import table2ascii
 import logging
+import rocketstocks
 
 # Logging configuration
 logger = logging.getLogger(__name__)
@@ -380,9 +381,9 @@ class Reports(commands.Cog):
     @commands.Cog.listener()
     async def on_ready(self):
         await self.bot.wait_until_ready()
-        print("hello!")
+        
         await self.send_gainer_reports.start()
-        print("started gainer reports loop configured")
+        logger.info("started gainer reports loop configured")
 
     
     #########
@@ -407,7 +408,7 @@ class Reports(commands.Cog):
     @send_gainer_reports.before_loop
     async def before_send_gainer_reports(self):
         try:
-            print("got to before loop")
+            self.reports_channel.send("it's alive!")
             await asyncio.sleep(10)
             # Start posting report at next 0 or 5 minute interval
             now = datetime.datetime.now().astimezone()
