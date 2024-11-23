@@ -19,19 +19,14 @@ token = config.get_discord_token()
 async def load():
     for filename in os.listdir("./discord/cogs"):
         if filename.endswith(".py"):
-            logger.info(f"Loading {filename}")
             await bot.load_extension(f"cogs.{filename[:-3]}")
-
-
-
+    logger.info("Loaded extensions")
 
 def run_bot():
     @bot.event
     async def on_ready():
         logger.info("RocketStocks bot ready!")
         await load()
-    
-    #bot.send_gainer_reports.start()
     
     bot.run(token)
 

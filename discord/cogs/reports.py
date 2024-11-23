@@ -262,16 +262,9 @@ class GainerReport(Report):
 
     # Override
     async def send_report(self):
-        await self.channel.send("We made it to send reports")
-        try:
-            await self.channel.send("try statement")
-            await self.channel.send(f"system time {datetime.datetime.now()}")
             if self.in_premarket() or self.in_intraday() or self.in_afterhours():
-                await self.channel.send("in market hours")
                 market_period = self.get_market_period()
-                await self.channel.send("got market period")
                 message_id = config.get_gainer_message_id(market_period)
-                await self.channel.send("got message id")
                 try:
                     curr_message = await self.channel.fetch_message(message_id)
                     if curr_message.created_at.date() < self.today.date():
@@ -282,16 +275,13 @@ class GainerReport(Report):
                         await curr_message.edit(content=self.message)
 
                 except discord.errors.NotFound as e:
-                    await self.channel.send("message not found")
                     message = await self.channel.send(self.message)
-                    await self.channel.send("sent message")
                     config.update_gainer_message_id(market_period, message.id)
-                    await self.channel.send("update message id")
                     return message
             else: 
-                await self.channel.send("not in market hours")
-        except Exception as e:
-            await self.channel.send(e)
+                # Outside market hours
+                pass
+
             
     def update_message_id(self, message_id, report_type):
         data = get_config()
@@ -374,28 +364,18 @@ class NewsReport(Report):
     async def send_report(self, interaction):
         await interaction.response.send_message(self.message)
 
-
 class Reports(commands.Cog):
     def __init__(self, bot):
-        print("Reports cog initialized")
         self.bot = bot
-        print("bot configured")
         self.send_gainer_reports.start()
-        print("started gainer reports loop configured")
         self.update_earnings_calendar.start()
-        print("started earnings calendar loop configured")
         self.reports_channel = self.bot.get_channel(config.get_reports_channel_id())
-        print("reports channel configured")
         self.gainers_channel = self.bot.get_channel(config.get_gainers_channel_id())
-        print("gainers channel configured")
         
 
     @commands.Cog.listener()
     async def on_ready(self):
-        await self.bot.wait_until_ready()
-        
-        #await self.send_gainer_reports.start()
-        #logger.info("started gainer reports loop configured")
+        logger.info(f"{__name__} loaded")
 
     
     #########
@@ -405,37 +385,27 @@ class Reports(commands.Cog):
     # Generate and send premarket gainer reports to the reports channel
     @tasks.loop(minutes=5)
     async def send_gainer_reports(self):
-        try:
-            await self.reports_channel.send("It's alive!")
+        now = datetime.datetime.now()
+        if (now.weekday() < 5):
             report = GainerReport(self.gainers_channel)
-            await self.reports_channel.send("Created reports object")
-            #if (report.today.weekday() < 5):
             await report.send_report()
-            await self.reports_channel.send("Sent reports")
-            #else:
-            #    # Not a weekday - do not post gainer reports
-            #    pass
-        except Exception as e:
-            print(e)
+        else:
+            # Not a weekday - do not post gainer reports
+            pass
 
-    #@send_gainer_reports.before_loop
+
+    @send_gainer_reports.before_loop
     async def before_send_gainer_reports(self):
-        try:
-            await self.reports_channel.send("it's alive!")
-            await asyncio.sleep(10)
-            # Start posting report at next 0 or 5 minute interval
-            now = datetime.datetime.now().astimezone()
-            if now.minute % 5 == 0:
-                return 0
-            minutes_by_five = now.minute // 5
-            # get the difference in times
-            diff = (minutes_by_five + 1) * 5 - now.minute
-            future = now + datetime.timedelta(minutes=diff)
-            difference = (future-now).total_seconds()
-            print(f"Posting gainer reports in {difference} seconds")
-            await asyncio.sleep((future-now).total_seconds())
-        except Exception as e:
-            print(e)
+        # Start posting report at next 0 or 5 minute interval
+        now = datetime.datetime.now().astimezone()
+        if now.minute % 5 == 0:
+            return 0
+        minutes_by_five = now.minute // 5
+        # get the difference in times
+        diff = (minutes_by_five + 1) * 5 - now.minute
+        future = now + datetime.timedelta(minutes=diff)
+        await asyncio.sleep((future-now).total_seconds())
+
 
     # Create earnings events on calendar for all stocks on watchlists
     @tasks.loop(time=datetime.time(hour=2, minute=0, second=0))
