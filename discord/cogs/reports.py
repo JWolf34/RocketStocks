@@ -264,9 +264,13 @@ class GainerReport(Report):
     async def send_report(self):
         await self.channel.send("We made it to send reports")
         try:
+            await self.channel.send("try statement")
             if self.in_premarket() or self.in_intraday() or self.in_afterhours():
+                await self.channel.send("in market hours")
                 market_period = self.get_market_period()
+                await self.channel.send("got market period")
                 message_id = config.get_gainer_message_id(market_period)
+                await self.channel.send("got message id")
                 try:
                     curr_message = await self.channel.fetch_message(message_id)
                     if curr_message.created_at.date() < self.today.date():
@@ -277,11 +281,14 @@ class GainerReport(Report):
                         await curr_message.edit(content=self.message)
 
                 except discord.errors.NotFound as e:
+                    await self.channel.send("message not found")
                     message = await self.channel.send(self.message)
+                    await self.channel.send("sent message")
                     config.update_gainer_message_id(market_period, message.id)
+                    await self.channel.send("update message id")
                     return message
             else: 
-                pass
+                await self.channel.send("not in market hours")
         except Exception as e:
             await self.channel.send(e)
             
