@@ -1,6 +1,5 @@
 APScheduler
 discord
-#pandas
 pandas-datareader
 yfinance
 pandas-ta
