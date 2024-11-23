@@ -20,16 +20,16 @@ class Data(commands.Cog):
     async def on_ready(self):
         logger.info(f"Cog {__name__} loaded!")
 
-    @app_commands.command(name = "fetch-csv", description= "Returns data file for input ticker. Default: 1 year period.",)
+    @app_commands.command(name = "csv", description= "Returns data file for input ticker. Default: 1 year period.",)
     @app_commands.describe(tickers = "Tickers to return data for (separated by spaces)")
     @app_commands.describe(type="Type of data file to return - daily data or minute-by-minute data")
     @app_commands.choices(type=[
         app_commands.Choice(name='daily', value='daily'),
         app_commands.Choice(name='minute', value='minute')
     ])
-    async def fetch_csv(self, interaction: discord.Interaction, tickers: str, type: app_commands.Choice[str]):
+    async def csv(self, interaction: discord.Interaction, tickers: str, type: app_commands.Choice[str]):
         await interaction.response.defer(ephemeral=True)
-        logger.info("/fetch-csv function called by user {}".format(interaction.user.name))
+        logger.info("/csv function called by user {}".format(interaction.user.name))
         logger.debug("Data file(s) for {} requested".format(tickers))
 
         type = type.value
@@ -62,16 +62,16 @@ class Data(commands.Cog):
             logger.exception("Failed to fetch data file with following exception:\n{}".format(e))
             await interaction.followup.send("Failed to fetch data files. Please ensure your parameters are valid.")
     
-    @app_commands.command(name = "fetch-financials", description= "Fetch financial reports of the specified tickers ",)
+    @app_commands.command(name = "financials", description= "Fetch financial reports of the specified tickers ",)
     @app_commands.describe(tickers = "Tickers to return financials for (separated by spaces)")
     @app_commands.describe(visibility = "'private' to send to DMs, 'public' to send to the channel")
     @app_commands.choices(visibility =[
         app_commands.Choice(name = "private", value = 'private'),
         app_commands.Choice(name = "public", value = 'public')
     ])        
-    async def fetch_financials(self, interaction: discord.interactions, tickers: str, visibility: app_commands.Choice[str]):
+    async def financials(self, interaction: discord.interactions, tickers: str, visibility: app_commands.Choice[str]):
         await interaction.response.defer(ephemeral=True)
-        logger.info("/fetch-financials function called by user {}".format(interaction.user.name))
+        logger.info("/financials function called by user {}".format(interaction.user.name))
         logger.debug("Financials requested for {}".format(tickers))
 
 
@@ -92,16 +92,16 @@ class Data(commands.Cog):
             logger.warning("Found no valid tickers in {} to fetch fincancials for".format(tickers))
             await interaction.followup.send("No valid tickers in {}".format(",".join(invalid_tickers)), ephemeral=True)
 
-    @app_commands.command(name = "fetch-logs", description= "Return the log file for the bot",)
-    async def fetch_logs(self, interaction: discord.Interaction):
-        logger.info("/fetch-logs function called by user {}".format(interaction.user.name))
+    @app_commands.command(name = "logs", description= "Return the log file for the bot",)
+    async def logs(self, interaction: discord.Interaction):
+        logger.info("/logs function called by user {}".format(interaction.user.name))
         log_file = discord.File("logs/rocketstocks.log")
         await interaction.user.send(content = "Log file for RocketStocks :rocket:",file=log_file)
         await interaction.response.send_message("Log file has been sent", ephemeral=True)
 
-    @app_commands.command(name = "fetch-all-tickers-info", description= "Return CSV with data on all tickers the bot runs analysis on",)
-    async def fetch_all_tickers_csv(self, interaction: discord.Interaction):
-        logger.info("/fetch-all-tickers-into function called by user {}".format(interaction.user.name))
+    @app_commands.command(name = "all-tickers-info", description= "Return CSV with data on all tickers the bot runs analysis on",)
+    async def all_tickers_csv(self, interaction: discord.Interaction):
+        logger.info("/all-tickers-into function called by user {}".format(interaction.user.name))
         data = sd.StockData.get_all_ticker_info()
         filepath = f"{config.get_attachments_path()}/all-tickers-info.csv"
         data.to_csv(filepath)
@@ -145,13 +145,8 @@ class Data(commands.Cog):
     @app_commands.command(name = "form", description= "Returns link to latest form of requested time",)
     @app_commands.describe(tickers = "Tickers to return SEC forms for (separated by spaces)")
     @app_commands.describe(form = "The form type to get a link to (10-K, 10-Q, 8-K, etc)")
-    @app_commands.describe(visibility = "'private' to send to DMs, 'public' to send to the channel")
-    @app_commands.choices(visibility =[
-        app_commands.Choice(name = "private", value = 'private'),
-        app_commands.Choice(name = "public", value = 'public')
-    ])
-    async def form(self, interaction: discord.Interaction, tickers: str, form:str, visibility: app_commands.Choice[str]):
-        await interaction.response.defer(ephemeral=True)
+    async def form(self, interaction: discord.Interaction, tickers: str, form:str):
+        await interaction.response.defer()
         logger.info("/form function called by user {}".format(interaction.user.name))
         
         tickers, invalid_tickers = sd.StockData.get_list_from_tickers(tickers)
@@ -168,19 +163,8 @@ class Data(commands.Cog):
             else:
                 # Need to make universal date conversion function and make SEC module reference CIK value from database
                 message = f"[{ticker} Form {form} - Filed {sd.StockData.Earnings.format_earnings_date(target_filing['filingDate'])}]({sec.get_link_to_filing(ticker, target_filing)})"
-            if visibility.value == "private":
-                await interaction.user.send(message)
-            else:
-                await interaction.channel.send(message)
+            await interaction.followup.send(message)
 
-        follow_up = f"Posted forms for tickers {", ".join(tickers)}!"
-        if len(invalid_tickers) > 0:
-            follow_up += f"Invalid tickers: {", ".join(invalid_tickers)}"
-        if len(tickers) == 0:
-            follow_up = f" No valid tickers input: {", ".join(invalid_tickers)}"
-        await interaction.followup.send(follow_up, ephemeral=True)
-
-    
 
 #########        
 # Setup #
