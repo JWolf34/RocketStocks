@@ -390,30 +390,36 @@ class Reports(commands.Cog):
     # Generate and send premarket gainer reports to the reports channel
     @tasks.loop(minutes=5)
     async def send_gainer_reports(self):
-        print("Posting gainer reports...")
-        report = GainerReport(self.gainers_channel)
-        if (report.today.weekday() < 5):
-            await report.send_report()
-            logger.info("Gainer reports posted!")
-        else:
-            # Not a weekday - do not post gainer reports
-            pass
+        try:
+            print("Posting gainer reports...")
+            report = GainerReport(self.gainers_channel)
+            if (report.today.weekday() < 5):
+                await report.send_report()
+                logger.info("Gainer reports posted!")
+            else:
+                # Not a weekday - do not post gainer reports
+                pass
+        except Exception as e:
+            print(e)
 
     @send_gainer_reports.before_loop
     async def before_send_gainer_reports(self):
-        await asyncio.sleep(10)
-        print("got to before loop")
-        # Start posting report at next 0 or 5 minute interval
-        now = datetime.datetime.now().astimezone()
-        if now.minute % 5 == 0:
-            return 0
-        minutes_by_five = now.minute // 5
-        # get the difference in times
-        diff = (minutes_by_five + 1) * 5 - now.minute
-        future = now + datetime.timedelta(minutes=diff)
-        difference = (future-now).total_seconds()
-        print(f"Posting gainer reports in {difference} seconds")
-        await asyncio.sleep((future-now).total_seconds())
+        try:
+            await asyncio.sleep(10)
+            print("got to before loop")
+            # Start posting report at next 0 or 5 minute interval
+            now = datetime.datetime.now().astimezone()
+            if now.minute % 5 == 0:
+                return 0
+            minutes_by_five = now.minute // 5
+            # get the difference in times
+            diff = (minutes_by_five + 1) * 5 - now.minute
+            future = now + datetime.timedelta(minutes=diff)
+            difference = (future-now).total_seconds()
+            print(f"Posting gainer reports in {difference} seconds")
+            await asyncio.sleep((future-now).total_seconds())
+        except Exception as e:
+            print(e)
 
     # Create earnings events on calendar for all stocks on watchlists
     @tasks.loop(time=datetime.time(hour=2, minute=0, second=0))
