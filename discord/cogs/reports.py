@@ -262,6 +262,7 @@ class GainerReport(Report):
 
     # Override
     async def send_report(self):
+        await self.channel.send("We made it to send reports")
         if self.in_premarket() or self.in_intraday() or self.in_afterhours():
             market_period = self.get_market_period()
             message_id = config.get_gainer_message_id(market_period)
@@ -382,8 +383,8 @@ class Reports(commands.Cog):
     async def on_ready(self):
         await self.bot.wait_until_ready()
         
-        await self.send_gainer_reports.start()
-        logger.info("started gainer reports loop configured")
+        #await self.send_gainer_reports.start()
+        #logger.info("started gainer reports loop configured")
 
     
     #########
@@ -396,9 +397,10 @@ class Reports(commands.Cog):
         try:
             await self.reports_channel.send("It's alive!")
             report = GainerReport(self.gainers_channel)
+            await self.reports_channel.send("Created reports object")
             #if (report.today.weekday() < 5):
             await report.send_report()
-            logger.info("Gainer reports posted!")
+            await self.reports_channel.send("Sent reports")
             #else:
             #    # Not a weekday - do not post gainer reports
             #    pass
