@@ -474,6 +474,10 @@ class Reports(commands.Cog):
                     # Event already exists
                     pass
 
+    @app_commands.command(name="start-tasks", description="Start report tasks")
+    async def start_tasks(self, interaction:discord.Interaction):
+        self.send_gainer_reports.start()
+
     @app_commands.command(name = "run-reports", description= "Post analysis of a given watchlist (use /fetch-reports for individual or non-watchlist stocks)",)
     @app_commands.describe(watchlist = "Which watchlist to fetch reports for")
     @app_commands.autocomplete(watchlist=Watchlists.watchlist_options,)
