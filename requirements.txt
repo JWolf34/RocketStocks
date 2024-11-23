@@ -1,7 +1,7 @@
 APScheduler
 discord
-#discord.py
 pandas
+pandas-datareader
 yfinance
 #pandas-ta
 numpy==1.26.4
