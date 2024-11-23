@@ -263,24 +263,27 @@ class GainerReport(Report):
     # Override
     async def send_report(self):
         await self.channel.send("We made it to send reports")
-        if self.in_premarket() or self.in_intraday() or self.in_afterhours():
-            market_period = self.get_market_period()
-            message_id = config.get_gainer_message_id(market_period)
-            try:
-                curr_message = await self.channel.fetch_message(message_id)
-                if curr_message.created_at.date() < self.today.date():
+        try:
+            if self.in_premarket() or self.in_intraday() or self.in_afterhours():
+                market_period = self.get_market_period()
+                message_id = config.get_gainer_message_id(market_period)
+                try:
+                    curr_message = await self.channel.fetch_message(message_id)
+                    if curr_message.created_at.date() < self.today.date():
+                        message = await self.channel.send(self.message)
+                        config.update_gainer_message_id(market_period, message.id)
+                        return message
+                    else:
+                        await curr_message.edit(content=self.message)
+
+                except discord.errors.NotFound as e:
                     message = await self.channel.send(self.message)
                     config.update_gainer_message_id(market_period, message.id)
                     return message
-                else:
-                    await curr_message.edit(content=self.message)
-
-            except discord.errors.NotFound as e:
-                message = await self.channel.send(self.message)
-                config.update_gainer_message_id(market_period, message.id)
-                return message
-        else: 
-            pass
+            else: 
+                pass
+        except Exception as e:
+            await self.channel.send(e)
             
     def update_message_id(self, message_id, report_type):
         data = get_config()
