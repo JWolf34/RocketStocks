@@ -5,10 +5,10 @@ APScheduler
 discord
 discord.py
 pandas
-pandas-datareader
+#pandas-datareader
 #scipy
-yfinance
-pandas-ta
+#yfinance
+#pandas-ta
 numpy==1.26.4
 matplotlib
 #setuptools 
