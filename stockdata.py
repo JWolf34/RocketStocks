@@ -568,33 +568,35 @@ class TradingView():
 class ApeWisdom():
     def __init__(self):
         self.base_url = "https://apewisdom.io/api/v1.0/filter"
+        self.filters_map = {
+                    "all subreddits":"all",  # All subreddits combined
+                    'all stock subreddits':'all-stocks',  #  Only subreddits focusing on stocks such as r/wallstreetbets or r/stocks
+                    'all crypto subreddits':'all-crypto',  #  Only subreddits focusing on cryptocurrencies such as r/CryptoCurrency or r/SatoshiStreetBets
+                    '4chan':'4chan', 
+                    'r/Cryptocurrency':'CryptoCurrency', 
+                    'r/CryptoCurrencies':'CryptoCurrencies', 
+                    'r/Bitcoin':'Bitcoin', 
+                    'r/SatoshiStreetBets':'SatoshiStreetBets', 
+                    'r/CryptoMoonShots':'CryptoMoonShots', 
+                    'r/CryptoMarkets':'CryptoMarkets', 
+                    'r/stocks':'stocks', 
+                    'r/wallstreetbets':'wallstreetbets', 
+                    'r/options':'options', 
+                    'r/WallStreetbetsELITE':'WallStreetbetsELITE', 
+                    'r/Wallstreetbetsnew':'Wallstreetbetsnew', 
+                    'r/SPACs':'SPACs', 
+                    'r/investing':'investing', 
+                    'r/Daytrading':'Daytrading', 
+                    'r/Shortsqueeze':'Shortsqueeze',
+                    'r/SqueezePlays':"SqueezePlays"
+        }
+    
+    def get_filter(self, filter_name):
+        return self.filters_map[filter_name]
 
-    @staticmethod
-    def get_filters():
-        filters =[
-                    'all',  # All subreddits combined
-                    'all-stocks',  #  Only subreddits focusing on stocks such as r/wallstreetbets or r/stocks
-                    'all-crypto',  #  Only subreddits focusing on cryptocurrencies such as r/CryptoCurrency or r/SatoshiStreetBets
-                    '4chan', 
-                    'CryptoCurrency', 
-                    'CryptoCurrencies', 
-                    'Bitcoin', 
-                    'SatoshiStreetBets', 
-                    'CryptoMoonShots', 
-                    'CryptoMarkets', 
-                    'stocks', 
-                    'wallstreetbets', 
-                    'options', 
-                    'WallStreetbetsELITE', 
-                    'Wallstreetbetsnew', 
-                    'SPACs', 
-                    'investing', 
-                    'Daytrading', 
-                    ]
-        return filters
-
-    def get_top_stocks(self, filter = 'all-stocks'):
-        if filter in ApeWisdom.get_filters():
+    def get_top_stocks(self, filter_name = 'all stock subreddits'):
+        filter = self.get_filter(filter_name=filter_name)
+        if filter is not None:
             top_stocks_json = requests.get(f"{self.base_url}/{filter}").json()
             if top_stocks_json is not None:
                 top_stocks = pd.DataFrame(top_stocks_json['results'])

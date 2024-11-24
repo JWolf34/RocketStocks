@@ -375,9 +375,10 @@ class NewsReport(Report):
         await interaction.response.send_message(self.message)
 
 class PopularityReport(Report):
-    def __init__(self, channel, filter='all-stocks'):
-        self.filter = filter
-        self.top_stocks = sd.ApeWisdom().get_top_stocks(filter=filter)
+    def __init__(self, channel, filter_name='all stock subreddits'):
+        self.filter_name = filter_name
+        self.filter = sd.ApeWisdom().get_filter(filter_name=self.filter_name)
+        self.top_stocks = sd.ApeWisdom().get_top_stocks(filter_name=self.filter_name)
         self.filepath = f"{config.get_attachments_path()}/top-stocks-{datetime.datetime.today().strftime("%m-%d-%Y")}.csv"
         self.top_stocks.to_csv(self.filepath, index=False)
         self.file = discord.File(self.filepath)
@@ -386,12 +387,12 @@ class PopularityReport(Report):
 
     # Override
     def build_report_header(self):
-        return f"# Most Popular Stocks (filter: '{self.filter}') {datetime.datetime.today().strftime("%m/%d/%Y")}\n\n"
+        return f"# Most Popular Stocks ({self.filter_name}) {datetime.datetime.today().strftime("%m/%d/%Y")}\n\n"
 
     def build_report(self):
         report = ''
         report += self.build_report_header()
-        report += self.build_table(self.top_stocks[:12])
+        report += self.build_table(self.top_stocks[:10])
         return report
 
     async def send_report(self, interaction:discord.Interaction = None, visibility:str ="public"):
@@ -620,21 +621,21 @@ class Reports(commands.Cog):
     async def autocomplete_filter(self, interaction:discord.Interaction, current:str):
         return [
             app_commands.Choice(name = filter_name, value= filter_name)
-            for filter_name in sd.ApeWisdom.get_filters() if current.lower() in filter_name.lower()
+            for filter_name in sd.ApeWisdom().filters_map.keys() if current.lower() in filter_name.lower()
         ]
 
     @app_commands.command(name="popular-stocks", description="Fetch a report on the most popular stocks from the source provided")
-    @app_commands.describe(filter = "The filter to apply on the stocks returned, or the source to pull them from")
-    @app_commands.autocomplete(filter=autocomplete_filter,)
+    @app_commands.describe(source = "The source to pull popular stocks from")
+    @app_commands.autocomplete(source=autocomplete_filter,)
     @app_commands.describe(visibility = "'private' to send to DMs, 'public' to send to the channel")
     @app_commands.choices(visibility =[
         app_commands.Choice(name = "private", value = 'private'),
         app_commands.Choice(name = "public", value = 'public')
     ])   
-    async def popular_stocks(self, interaction:discord.Interaction, filter:str,  visibility: app_commands.Choice[str]):
+    async def popular_stocks(self, interaction:discord.Interaction, source:str,  visibility: app_commands.Choice[str]):
         await interaction.response.defer(ephemeral=True)
         logger.info("/popular-stocks function called by user {}".format(interaction.user.name))
-        report = PopularityReport(self.reports_channel, filter=filter)
+        report = PopularityReport(self.reports_channel, filter_name=source)
         message = await report.send_report(interaction=interaction, visibility=visibility.value)
 
         # Follow-up message
