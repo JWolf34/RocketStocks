@@ -23,6 +23,7 @@ class Tests(commands.Cog):
     # Test & Help Commands #
     ########################
    
+    @commands.is_owner()
     @app_commands.command(name = "test-gainer-reports", description= "Test posting premarket gainer reports",)
     async def test_premarket_reports(self, interaction: discord.Interaction):
         logger.info("/test-premarket-reports function called by user {}".format(interaction.user.name))
