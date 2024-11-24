@@ -2,6 +2,8 @@ import discord
 from discord import app_commands
 from discord.ext import commands
 from discord.ext import tasks
+from reports import GainerReport
+import config
 import logging
 
 # Logging configuration
@@ -10,6 +12,7 @@ logger = logging.getLogger(__name__)
 class Tests(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
+        self.gainers_channel = self.bot.get_channel(config.get_gainers_channel_id())
         
 
     @commands.Cog.listener()
@@ -25,13 +28,12 @@ class Tests(commands.Cog):
         logger.info("/test-premarket-reports function called by user {}".format(interaction.user.name))
         await interaction.response.defer(ephemeral=True)
 
-        report = GainerReport()
-        await report.send_report()
-
-        await interaction.followup.send("Posted premarket reports", ephemeral=True)
-
-
-
+        report = GainerReport(self.gainers_channel)
+        if report.get_market_period() == "EOD":
+            await interaction.followup.send("Market is closed - cannot post gainer reports", ephemeral=True)
+        else:
+            await report.send_report()
+            await interaction.followup.send("Gainer reports test complete!", ephemeral=True)
 
 #########        
 # Setup #
