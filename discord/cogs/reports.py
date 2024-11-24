@@ -9,6 +9,7 @@ from utils import Utils
 import datetime
 import stockdata as sd
 import numpy as np
+import pandas as pd
 import datetime as dt
 import json
 import config
@@ -74,10 +75,10 @@ class Report(object):
             message += f"[Form {filing['form']} - {filing['filingDate']}]({sd.SEC().get_link_to_filing(ticker=self.ticker, filing=filing)})\n"
         return message
 
-    def build_table(self, headers, rows):
+    def build_table(self, df:pd.DataFrame):
         table = table2ascii(
-            header = headers,
-            body = rows, 
+            header = df.columns.tolist(),
+            body = df.values.tolist(), 
         )
         return "```\n" + table + "\n```"
 
@@ -375,7 +376,7 @@ class NewsReport(Report):
 
 class PopularityReport(Report):
     def __init__(self, channel):
-        self.top_stocks = ApeWisdom().get_top_stocks()
+        self.top_stocks = sd.ApeWisdom().get_top_stocks()
         self.filepath = f"{config.get_attachments_path()}/top-stocks-{datetime.datetime.today().strftime("%m-%d-%Y")}.csv"
         self.top_stocks.to_csv(self.filepath)
         self.file = discord.File(self.filepath)
@@ -385,14 +386,33 @@ class PopularityReport(Report):
     def build_report_header(self):
         return f"# Most Popular Stocks {datetime.datetime.today().strftime("%m/%d/%Y")}\n\n"
 
-    def build_top_stocks_table():
-        pass
+    def build_report(self):
+        report = ''
+        report += self.build_report_header()
+        report += self.build_table(self.top_stocks[:15])
+        return report
+
+    async def send_report(self, interaction:discord.Interaction = None, visibility:str ="public"):
+        if interaction is not None:
+            if visibility == "private":
+                message = await interaction.user.send(self.message, files=[self.file])
+                return message
+            else:
+                message = await self.channel.send(self.message, files=[self.file])
+                return message
+        else:
+            message = await self.channel.send(self.message, files=[self.file])
+            return message
+
+
+    
 
 class Reports(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
         self.send_gainer_reports.start()
         self.update_earnings_calendar.start()
+        self.send_popularity_reports.start()
         self.reports_channel = self.bot.get_channel(config.get_reports_channel_id())
         self.gainers_channel = self.bot.get_channel(config.get_gainers_channel_id())
         
@@ -405,6 +425,12 @@ class Reports(commands.Cog):
     #########
     # Tasks #
     #########
+
+    # Report on most popular stocks across reddit daily
+    @tasks.loop(hours = 24)
+    async def send_popularity_reports(self):
+        report = PopularityReport(self.reports_channel)
+        await report.send_report()
 
     # Generate and send premarket gainer reports to the reports channel
     @tasks.loop(minutes=5)
