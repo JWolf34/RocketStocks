@@ -375,34 +375,43 @@ class NewsReport(Report):
         await interaction.response.send_message(self.message)
 
 class PopularityReport(Report):
-    def __init__(self, channel):
-        self.top_stocks = sd.ApeWisdom().get_top_stocks()
+    def __init__(self, channel, filter='all-stocks'):
+        self.filter = filter
+        self.top_stocks = sd.ApeWisdom().get_top_stocks(filter=filter)
         self.filepath = f"{config.get_attachments_path()}/top-stocks-{datetime.datetime.today().strftime("%m-%d-%Y")}.csv"
-        self.top_stocks.to_csv(self.filepath)
+        self.top_stocks.to_csv(self.filepath, index=False)
         self.file = discord.File(self.filepath)
+        self.buttons = self.Buttons()
         super().__init__(channel)
 
     # Override
     def build_report_header(self):
-        return f"# Most Popular Stocks {datetime.datetime.today().strftime("%m/%d/%Y")}\n\n"
+        return f"# Most Popular Stocks (filter: '{self.filter}') {datetime.datetime.today().strftime("%m/%d/%Y")}\n\n"
 
     def build_report(self):
         report = ''
         report += self.build_report_header()
-        report += self.build_table(self.top_stocks[:15])
+        report += self.build_table(self.top_stocks[:12])
         return report
 
     async def send_report(self, interaction:discord.Interaction = None, visibility:str ="public"):
         if interaction is not None:
             if visibility == "private":
-                message = await interaction.user.send(self.message, files=[self.file])
+                message = await interaction.user.send(self.message, files=[self.file], view=self.buttons)
                 return message
             else:
-                message = await self.channel.send(self.message, files=[self.file])
+                message = await self.channel.send(self.message, files=[self.file], view=self.buttons)
                 return message
         else:
-            message = await self.channel.send(self.message, files=[self.file])
+            message = await self.channel.send(self.message, files=[self.file], view=self.buttons)
             return message
+
+    # Override
+    class Buttons(discord.ui.View):
+        def __init__(self):
+            super().__init__()
+            self.add_item(discord.ui.Button(label="ApeWisdom", style=discord.ButtonStyle.url, url = "https://apewisdom.io/"))
+  
 
 
     
@@ -427,7 +436,7 @@ class Reports(commands.Cog):
     #########
 
     # Report on most popular stocks across reddit daily
-    @tasks.loop(hours = 24)
+    @tasks.loop(time=datetime.time(hour=18, minute=0, second=0))
     async def send_popularity_reports(self):
         report = PopularityReport(self.reports_channel)
         await report.send_report()
@@ -607,6 +616,30 @@ class Reports(commands.Cog):
         kwargs = {'sort_by': sort_by}
         report = NewsReport(query=query, **kwargs)
         message = await report.send_report(interaction=interaction)
+
+    async def autocomplete_filter(self, interaction:discord.Interaction, current:str):
+        return [
+            app_commands.Choice(name = filter_name, value= filter_name)
+            for filter_name in sd.ApeWisdom.get_filters() if current.lower() in filter_name.lower()
+        ]
+
+    @app_commands.command(name="popular-stocks", description="Fetch a report on the most popular stocks from the source provided")
+    @app_commands.describe(filter = "The filter to apply on the stocks returned, or the source to pull them from")
+    @app_commands.autocomplete(filter=autocomplete_filter,)
+    @app_commands.describe(visibility = "'private' to send to DMs, 'public' to send to the channel")
+    @app_commands.choices(visibility =[
+        app_commands.Choice(name = "private", value = 'private'),
+        app_commands.Choice(name = "public", value = 'public')
+    ])   
+    async def popular_stocks(self, interaction:discord.Interaction, filter:str,  visibility: app_commands.Choice[str]):
+        await interaction.response.defer(ephemeral=True)
+        logger.info("/popular-stocks function called by user {}".format(interaction.user.name))
+        report = PopularityReport(self.reports_channel, filter=filter)
+        message = await report.send_report(interaction=interaction, visibility=visibility.value)
+
+        # Follow-up message
+        follow_up = f"[Posted popularity reports!]({message.jump_url})"
+        await interaction.followup.send(follow_up, ephemeral=True)
 
 
         
