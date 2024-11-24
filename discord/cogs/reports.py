@@ -74,6 +74,13 @@ class Report(object):
             message += f"[Form {filing['form']} - {filing['filingDate']}]({sd.SEC().get_link_to_filing(ticker=self.ticker, filing=filing)})\n"
         return message
 
+    def build_table(self, headers, rows):
+        table = table2ascii(
+            header = headers,
+            body = rows, 
+        )
+        return "```\n" + table + "\n```"
+
     def build_report(self):
         report = ''
         report += self.build_report_header()
@@ -169,6 +176,8 @@ class GainerReport(Report):
         self.INTRADAY_START= self.today.replace(hour=8, minute=30, second=0, microsecond=0)
         self.AFTERHOURS_START = self.today.replace(hour=15, minute=0, second=0, microsecond=0)
         self.MARKET_END = self.today.replace(hour=18, minute=0, second=0, microsecond=0)
+        self.tickers = ""
+        self.update_gainer_watchlist()
         super().__init__(channel)
 
 
@@ -363,6 +372,21 @@ class NewsReport(Report):
     # Override
     async def send_report(self, interaction):
         await interaction.response.send_message(self.message)
+
+class PopularityReport(Report):
+    def __init__(self, channel):
+        self.top_stocks = ApeWisdom().get_top_stocks()
+        self.filepath = f"{config.get_attachments_path()}/top-stocks-{datetime.datetime.today().strftime("%m-%d-%Y")}.csv"
+        self.top_stocks.to_csv(self.filepath)
+        self.file = discord.File(self.filepath)
+        super().__init__(channel)
+
+    # Override
+    def build_report_header(self):
+        return f"# Most Popular Stocks {datetime.datetime.today().strftime("%m/%d/%Y")}\n\n"
+
+    def build_top_stocks_table():
+        pass
 
 class Reports(commands.Cog):
     def __init__(self, bot):

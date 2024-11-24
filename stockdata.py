@@ -565,7 +565,43 @@ class TradingView():
         num_rows, gainers = Scanner.postmarket_gainers.get_scanner_data()
         return gainers.loc[gainers['market_cap_basic'] >= market_cap]    
 
+class ApeWisdom():
+    def __init__(self):
+        self.base_url = "https://apewisdom.io/api/v1.0/filter"
 
+    @staticmethod
+    def get_filters():
+        filters =[
+                    'all',  # All subreddits combined
+                    'all-stocks',  #  Only subreddits focusing on stocks such as r/wallstreetbets or r/stocks
+                    'all-crypto',  #  Only subreddits focusing on cryptocurrencies such as r/CryptoCurrency or r/SatoshiStreetBets
+                    '4chan', 
+                    'CryptoCurrency', 
+                    'CryptoCurrencies', 
+                    'Bitcoin', 
+                    'SatoshiStreetBets', 
+                    'CryptoMoonShots', 
+                    'CryptoMarkets', 
+                    'stocks', 
+                    'wallstreetbets', 
+                    'options', 
+                    'WallStreetbetsELITE', 
+                    'Wallstreetbetsnew', 
+                    'SPACs', 
+                    'investing', 
+                    'Daytrading', 
+                    ]
+        return filters
+
+    def get_top_stocks(self, filter = 'all-stocks'):
+        if filter in ApeWisdom.get_filters():
+            top_stocks_json = requests.get(f"{self.base_url}/{filter}").json()
+            if top_stocks_json is not None:
+                top_stocks = pd.DataFrame(top_stocks_json['results'])
+                return top_stocks
+        else:
+            return None
+    
 #########################
 # Download and analysis #
 #########################
@@ -930,9 +966,8 @@ def get_supported_exchanges():
 #########
 
 def test():
-    StockData.update_tickers()
-    StockData.Earnings.update_upcoming_earnings()
-    print("Done!")
+    wisdom = ApeWisdom()
+    print(wisdom.get_top_stocks())
 
 if __name__ == "__main__":
     logger.info("stockdata.py initialized")
