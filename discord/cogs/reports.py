@@ -177,10 +177,74 @@ class GainerReport(Report):
         self.INTRADAY_START= self.today.replace(hour=8, minute=30, second=0, microsecond=0)
         self.AFTERHOURS_START = self.today.replace(hour=15, minute=0, second=0, microsecond=0)
         self.MARKET_END = self.today.replace(hour=18, minute=0, second=0, microsecond=0)
-        self.tickers = ""
+        self.gainers = self.get_gainers()
         self.update_gainer_watchlist()
         super().__init__(channel)
 
+    def get_gainers(self):
+        headers = []
+        rows = []
+        if self.in_premarket():
+            watchlist_id = "premarket-gainers"
+            gainers = sd.TradingView.get_premarket_gainers_by_market_cap(100000000)[:15]
+            headers = ["Ticker", "Close", "Volume", "Market Cap", "Premarket Change", "Premarket Volume"]
+            for index, row in gainers.iterrows():
+                ticker = row.iloc[1]
+                if sd.StockData.validate_ticker(ticker):
+                    rows.append([row.iloc[1], 
+                                "${}".format(float('{:.2f}'.format(row.close))), 
+                                self.format_large_num(row.volume), 
+                                self.format_large_num(row.market_cap_basic), 
+                                "{:.2f}%".format(row.premarket_change), 
+                                self.format_large_num(row.premarket_volume)])
+                    watchlist_tickers.append(ticker)
+                else:
+                    pass
+        elif self.in_intraday():
+            watchlist_id = "intraday-gainers"
+            gainers = sd.TradingView.get_intraday_gainers_by_market_cap(100000000)[:15]
+            headers = ["Ticker", "Close", "Volume", "Market Cap", "% Change"]
+            rows = []
+            for index, row in gainers.iterrows():
+                ticker = row.iloc[1]
+                if sd.StockData.validate_ticker(ticker):
+                    rows.append([ticker, 
+                                "${}".format(float('{:.2f}'.format(row.close))), 
+                                self.format_large_num(row.volume), 
+                                self.format_large_num(row.market_cap_basic), 
+                                "{:.2f}%".format(row.change)])
+                    watchlist_tickers.append(ticker)
+                else: 
+                    pass
+                
+        elif self.in_afterhours():
+            watchlist_id = "afterhours-gainers"
+            gainers = sd.TradingView.get_postmarket_gainers_by_market_cap(100000000)[:15] 
+            headers = ["Ticker", "Close", "Volume", "Market Cap", "After Hours Change", "After Hours Volume"]
+            rows = []
+            for index, row in gainers.iterrows():
+                ticker = row.iloc[1]
+                if sd.StockData.validate_ticker(ticker):
+                    rows.append([ticker, 
+                                "${}".format(float('{:.2f}'.format(row.close))), 
+                                self.format_large_num(row.volume), 
+                                self.format_large_num(row.market_cap_basic), 
+                                "{:.2f}%".format(row.postmarket_change), 
+                                self.format_large_num(row.postmarket_volume)])
+                    watchlist_tickers.append(ticker)
+                else: 
+                    pass
+
+        return pd.DataFrame(rows, columns=headers)
+
+    def update_gainer_watchlist(self):
+        watchlist_id = f"{self.get_market_period()}-gainers"
+        watchlist_tickers = self.gainers['Ticker'].to_list()
+
+        if not sd.Watchlists().validate_watchlist(watchlist_id):
+            sd.Watchlists().create_watchlist(watchlist_id=watchlist_id, tickers=watchlist_tickers, systemGenerated=True)
+        else:
+            sd.Watchlists().update_watchlist(watchlist_id=watchlist_id, tickers=watchlist_tickers)
 
     # Override
     def build_report_header(self):
@@ -267,7 +331,7 @@ class GainerReport(Report):
     def build_report(self):
         report = ""
         report += self.build_report_header()
-        report += self.build_gainer_table()
+        report += self.build_table(self.gainers)
         return report
 
     # Override
@@ -291,31 +355,6 @@ class GainerReport(Report):
             else: 
                 # Outside market hours
                 pass
-
-            
-    def update_message_id(self, message_id, report_type):
-        data = get_config()
-        if "gainers" not in data.keys():
-            self.write_gainer_config()
-        data = get_config()
-        if self.in_premarket():
-            data['reports']['gainers']['PREMARKET_MESSAGE_ID'] = message_id
-        elif self.in_intraday():
-            data['reports']['gainers']['INTRADAY_MESSAGE_ID'] = message_id
-        elif self.in_afterhours():
-            data['reports']['gainers']['AFTERHOURS_MESSAGE_ID'] = message_id
-        write_config(data)
-
-    def get_message_id(self):
-        data = config.get_config()
-        if self.in_premarket():
-            return data['reports']['gainers']['PREMARKET_MESSAGE_ID']
-        elif self.in_intraday():
-            return data['reports']['gainers']['INTRADAY_MESSAGE_ID']
-        elif self.in_afterhours():
-            return data['reports']['gainers']['AFTERHOURS_MESSAGE_ID']
-
-
 
     def in_premarket(self):
         return self.today > self.PREMARKET_START and self.today < self.INTRADAY_START
@@ -437,13 +476,13 @@ class Reports(commands.Cog):
     #########
 
     # Report on most popular stocks across reddit daily
-    @tasks.loop(hours=24)#time=datetime.time(hour=18, minute=0, second=0))
+    @tasks.loop(time=datetime.time(hour=18, minute=0, second=0))
     async def send_popularity_reports(self):
         report = PopularityReport(self.reports_channel)
         await report.send_report()
         # Update popular-stocks watchlist
         watchlist_id = 'popular-stocks'
-        tickers = report.top_stocks['ticker'].tolist()[:30]
+        tickers, invalid_tickers = sd.StockData.get_list_from_tickers(report.top_stocks['ticker'].tolist()[:30])
         if not sd.Watchlists().validate_watchlist(watchlist_id):
             sd.Watchlists().create_watchlist(watchlist_id=watchlist_id, tickers=tickers, systemGenerated=True)
         else:
