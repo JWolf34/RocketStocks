@@ -437,10 +437,18 @@ class Reports(commands.Cog):
     #########
 
     # Report on most popular stocks across reddit daily
-    @tasks.loop(time=datetime.time(hour=18, minute=0, second=0))
+    @tasks.loop(hours=24)#time=datetime.time(hour=18, minute=0, second=0))
     async def send_popularity_reports(self):
         report = PopularityReport(self.reports_channel)
         await report.send_report()
+        # Update popular-stocks watchlist
+        watchlist_id = 'popular-stocks'
+        tickers = report.top_stocks['ticker'].tolist()[:30]
+        if not sd.Watchlists().validate_watchlist(watchlist_id):
+            sd.Watchlists().create_watchlist(watchlist_id=watchlist_id, tickers=tickers, systemGenerated=True)
+        else:
+            sd.Watchlists().update_watchlist(watchlist_id=watchlist_id, tickers=watchlist_tickers)
+
 
     # Generate and send premarket gainer reports to the reports channel
     @tasks.loop(minutes=5)
