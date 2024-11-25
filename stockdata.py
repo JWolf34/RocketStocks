@@ -120,7 +120,6 @@ class Postgres():
             port = 5432)
 
         self.cur = self.conn.cursor()
-        logger.debug("Opened connection to database.")
 
     # Close connection to PostgreSQL database
     def close_connection(self):
@@ -130,7 +129,6 @@ class Postgres():
         if self.conn is not None:
             self.conn.close()
             self.conn = None
-        logger.debug("Closed connection to database")
     
     # Create database tables
     def create_tables(self):
@@ -164,10 +162,10 @@ class Postgres():
                             systemGenerated     boolean
                             );
                             """
-        logger.info("Running script to create tables in database...")
+        logger.debug("Running script to create tables in database...")
         self.cur.execute(create_script)
         self.conn.commit()
-        logger.info("Create script completes successfully!")
+        logger.debug("Create script completed successfully!")
 
         self.close_connection()
     
@@ -182,6 +180,7 @@ class Postgres():
         self.cur.execute(drop_script)
         self.conn.commit()
         self.close_connection()
+        logger.debug("All database tables dropped")
     
     def drop_table(self, table:str):
         self.open_connection()
@@ -190,6 +189,7 @@ class Postgres():
         self.cur.execute(drop_script)
         self.conn.commit()
         self.close_connection()
+        logger.debug(f"Dropped table '{table}' from database")
 
     # Insert row(s) into database
     def insert(self, table:str, fields:list, values:list):
@@ -237,6 +237,7 @@ class Postgres():
         self.cur.execute(delete_script)
         self.conn.commit()
         self.close_connection()
+        logger.debug(f"Deleted from table '{table}' where {where_condition}")
 
     # Return list of columns from selected table
     def get_table_columns(self, table):
@@ -256,7 +257,7 @@ class Watchlists():
         
     # Return tickers from watchlist - global by default, personal if chosen by user
     def get_tickers_from_watchlist(self, watchlist_id):
-        logger.info("Fetching tickers from watchlist with ID '{}'".format(watchlist_id))
+        logger.debug("Fetching tickers from watchlist with ID '{}'".format(watchlist_id))
         
         select_script = f"""SELECT tickers FROM {self.db_table}
                             WHERE id = '{watchlist_id}';
@@ -288,6 +289,7 @@ class Watchlists():
 
     # Return list of existing watchlists
     def get_watchlists(self, no_personal=True, no_systemGenerated=True):
+        logger.debug("Fetching all watchlists")
         select_script = f"""SELECT * FROM {self.db_table}"""
         filtered_watchlists = []
         watchlists = Postgres().select_many(query=select_script)
@@ -316,21 +318,23 @@ class Watchlists():
 
     # Create a new watchlist with id 'watchlist_id'
     def create_watchlist(self, watchlist_id, tickers, systemGenerated):
-        logger.info("Creating watchlist with ID '{}' and tickers {}".format(watchlist_id, tickers))
+        logger.debug("Creating watchlist with ID '{}' and tickers {}".format(watchlist_id, tickers))
         Postgres().insert(table=self.db_table, fields=self.db_fields, values=[(watchlist_id, " ".join(tickers), systemGenerated)])
 
     # Delete watchlist with id 'watchlist_id'
     def delete_watchlist(self, watchlist_id):
-        logger.info("Deleting watchlist '{}'...".format(watchlist_id))
+        logger.debug("Deleting watchlist '{}'...".format(watchlist_id))
         Postgres().delete(table=self.db_table, where_condition=f"id = '{watchlist_id}'")
 
     # Validate watchlist exists in the database
     def validate_watchlist(self, watchlist_id):
+        logger.info(f"Validating watchlist '{watchlist_id}' exists")
         select_script = f"""SELECT id FROM {self.db_table}
                             WHERE id = '{watchlist_id}';
                             """
         result = Postgres().select_one(select_script)
         if result is None:
+            logger.warning(f"Watchlist '{watchlist_id}' does not exist")
             return False
         else:
             return True
@@ -387,6 +391,7 @@ class StockData():
     
         @staticmethod
         def update_upcoming_earnings():
+            logger.info("Updating upcoming earnings in database")
             nasdaq = Nasdaq()
             columns = ['symbol',
                        'date',
@@ -408,6 +413,8 @@ class StockData():
                         earnings_data = earnings_data.rename(columns={'symbol':'ticker'})
                         values = [tuple(row) for row in earnings_data.values]
                         Postgres().insert(table='upcomingearnings', fields=earnings_data.columns.to_list(), values=values)
+                        logger.debug(f'Updated earnings for {date_string}')
+            logger.info("Upcoming earnings have been updated!")
 
         @staticmethod
         def get_next_earnings_date(ticker):
@@ -442,11 +449,14 @@ class StockData():
 
         @staticmethod
         def remove_past_earnings():
+            logger.info("Removing upcoming earnings that have past")
             where = "date < CURRENT_DATE"
             Postgres().delete(table='upcomingearnings', where_condition=where)
+            logger.info("Previous upcoming earnings removed from database")
 
     @staticmethod
     def update_tickers():
+        logger.info("Updating tickers database table with up-to-date tickers")
         column_map = {'symbol':'ticker',
                       'name':'name',
                       'marketCap':'marketCap',
@@ -461,16 +471,18 @@ class StockData():
                         'pctchange',
                         'volume']
         tickers_data = Nasdaq().get_all_tickers()
+        logger.debug("Fetched latest tickers from NASDAQ")
         tickers_data = tickers_data.drop(columns=drop_columns)
         tickers_data = tickers_data.rename(columns=column_map)
         cik_series = pd.Series(name='cik', index=tickers_data.index)
         for i in range(0, tickers_data['ticker'].size):
+            logger.debug(f"Getting CIK value for ticker '{ticker}'")
             ticker = tickers_data['ticker'].iloc[i]
-            print(f"[{datetime.datetime.now()}] Processing ticker {ticker}")
             cik_series[i] = SEC().get_cik_from_ticker(ticker)
         tickers_data = tickers_data.join(cik_series)
         values = [tuple(row) for row in tickers_data.values]
         Postgres().insert(table='tickers', fields=tickers_data.columns.to_list(), values=values)
+        logger.info("Tickers have been updated!")
 
     @staticmethod
     def get_ticker_info(ticker):
@@ -489,6 +501,7 @@ class StockData():
 
     @staticmethod
     def get_cik(ticker):
+        logger.debug(f"Retreiving CIK value for ticker '{ticker}' from database")
         select_script = f"""SELECT cik from tickers
                             WHERE ticker = '{ticker}';
                             """
@@ -527,16 +540,19 @@ class TradingView():
 
     @staticmethod
     def get_premarket_gainers():
+        logger.info("Fetching premarket gainers")
         num_rows, gainers = Scanner.premarket_gainers.get_scanner_data()
         return gainers
 
     @staticmethod
     def get_premarket_gainers_by_market_cap(market_cap):
+        logger.info("Fetching premarket gainers by market cap")
         num_rows, gainers = Scanner.premarket_gainers.get_scanner_data()
         return gainers.loc[gainers['market_cap_basic'] >= market_cap]    
 
     @staticmethod
     def get_intraday_gainers():
+        logger.info("Fetching intraday gainers")
         num_rows, gainers = (Query()
                             .select('name','close', 'change', 'volume')
                             .get_scanner_data())
@@ -544,6 +560,7 @@ class TradingView():
 
     @staticmethod
     def get_intraday_gainers_by_market_cap(market_cap):
+        logger.info("Fetching intrday gainers by market cap")
         num_rows, gainers = (Query()
                             .select('name','close', 'volume', 'market_cap_basic', 'change', 'exchange')
                             .set_markets('america')
@@ -557,11 +574,14 @@ class TradingView():
                 
     @staticmethod
     def get_postmarket_gainers():
+        logger.info("Fetching after hours gainers")
+
         num_rows, gainers = Scanner.postmarket_gainers.get_scanner_data()
         return gainers
 
     @staticmethod
     def get_postmarket_gainers_by_market_cap(market_cap):
+        logger.info("Fetching after hours gainers by market cap")
         num_rows, gainers = Scanner.postmarket_gainers.get_scanner_data()
         return gainers.loc[gainers['market_cap_basic'] >= market_cap]    
 
@@ -595,6 +615,7 @@ class ApeWisdom():
         return self.filters_map[filter_name]
 
     def get_top_stocks(self, filter_name = 'all stock subreddits'):
+        logger.debug(f"Fetching top stocks from source: '{filter_name}'")
         filter = self.get_filter(filter_name=filter_name)
         if filter is not None:
             top_stocks_json = requests.get(f"{self.base_url}/{filter}").json()
