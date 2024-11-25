@@ -989,8 +989,7 @@ def get_supported_exchanges():
 #########
 
 def test():
-    wisdom = ApeWisdom()
-    print(wisdom.get_top_stocks())
+    pass
 
 if __name__ == "__main__":
     logger.info("stockdata.py initialized")
