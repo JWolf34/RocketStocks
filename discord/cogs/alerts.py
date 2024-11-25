@@ -2,6 +2,8 @@ import discord
 from discord import app_commands
 from discord.ext import commands
 from discord.ext import tasks
+import reports
+import stockdata as sd
 import config
 import logging
 
@@ -12,10 +14,16 @@ class Alerts(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
         self.alerts_channel=self.bot.get_channel(config.get_alerts_channel_id())
+        self.send_earnings_movers.start()
 
     @commands.Cog.listener()
     async def on_ready(self):
         logger.info(f"Cog {__name__} loaded!")
+
+    @tasks.loop(minutes=5)
+    async def send_earnings_movers(self):
+        alert = EarningsMoverAlert(ticker="UXIN", channel=self.alerts_channel, pct_change=6.76)
+        await alert.send_alert()
 
 ##################
 # Alerts Classes #
@@ -39,7 +47,7 @@ class Alert():
     def build_earnings_date(self):
         earnings_info = sd.StockData.Earnings.get_next_earnings_info(self.ticker)
         message = "**Earnings Date:** "
-        message += f"{sd.StockData.Earnings.format_earnings_date(earnings_info['date'].iloc[0])}, "
+        message += f"{earnings_info['date'].iloc[0].strftime("%m/%d/%Y")}, "
         earnings_time = earnings_info['time'].iloc[0]
         if "pre-market" in earnings_time:
             message += "before market open"
@@ -66,20 +74,22 @@ class Alert():
         return message
 
     async def send_alert(self):
-        message = await self.channel.send(self.message, view=self.buttons)
+        message = await self.channel.send(self.message)
         return message
 
 class EarningsMoverAlert(Alert):
     def __init__(self, ticker, channel, pct_change):
-        super().__init__(ticker, channel)
         self.pct_change = pct_change
+        self.market_time="premarket"
+        super().__init__(ticker, channel)
 
     def build_alert_header(self):
-        header = f"# :rotatinglight: EARNINGS MOVER: {self.ticker} :rotatinglight:\n\n"
+        header = f"## :rotating_light: EARNINGS MOVER: {self.ticker} :rotating_light:\n\n"
+        return header
 
     def build_todays_change(self):
-        symbol = ":green_circle" if self.pct_change > 0 else ":small_red_triangle_down:"
-        return f"{symbol} {self.pct_change}%"
+        symbol = ":green_circle:" if self.pct_change > 0 else ":small_red_triangle_down:"
+        return f"**Movement:** {symbol} {self.pct_change}% {self.market_time}\n"
 
     def build_alert(self):
         alert = ""
