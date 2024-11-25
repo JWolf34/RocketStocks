@@ -384,6 +384,11 @@ class SEC():
     def get_recent_filings(self, ticker):
         return pd.DataFrame.from_dict(self.get_submissions_data(ticker)['filings']['recent'])
 
+    def get_filings_from_today(self, ticker):
+        recent_filings = self.get_recent_filings(ticker)
+        today_string = datetime.datetime.today().strftime("%Y-%m-%d")
+        return recent_filings.loc[recent_filings['filingDate'] == today_string]
+
     def get_link_to_filing(self, ticker, filing):
         return f"https://sec.gov/Archives/edgar/data/{StockData.get_cik(ticker).lstrip("0")}/{filing['accessionNumber'].replace("-","")}/{filing['primaryDocument']}"
 

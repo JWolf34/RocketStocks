@@ -145,7 +145,7 @@ class Data(commands.Cog):
             follow_up = f" No valid tickers input: {", ".join(invalid_tickers)}"
         await interaction.followup.send(follow_up, ephemeral=True)
     
-    @app_commands.command(name = "form", description= "Returns link to latest form of requested time",)
+    @app_commands.command(name = "form", description= "Returns links to latest form of requested type",)
     @app_commands.describe(tickers = "Tickers to return SEC forms for (separated by spaces)")
     @app_commands.describe(form = "The form type to get a link to (10-K, 10-Q, 8-K, etc)")
     async def form(self, interaction: discord.Interaction, tickers: str, form:str):
@@ -154,6 +154,7 @@ class Data(commands.Cog):
         
         tickers, invalid_tickers = sd.StockData.get_list_from_tickers(tickers)
         sec = sd.SEC()
+        message = ""
         for ticker in tickers:
             recent_filings = sec.get_recent_filings(ticker)
             target_filing = None
@@ -162,11 +163,11 @@ class Data(commands.Cog):
                     target_filing = filing
                     break
             if target_filing is None:
-                message = f"No form {form} found for ticker {ticker}"
+                message += f"No form {form} found for ticker {ticker}\n"
             else:
                 # Need to make universal date conversion function and make SEC module reference CIK value from database
-                message = f"[{ticker} Form {form} - Filed {sd.StockData.Earnings.format_earnings_date(target_filing['filingDate'])}]({sec.get_link_to_filing(ticker, target_filing)})"
-            await interaction.followup.send(message)
+                message += f"[{ticker} Form {form} - Filed {sd.StockData.Earnings.format_earnings_date(target_filing['filingDate'])}]({sec.get_link_to_filing(ticker, target_filing)})\n"
+        await interaction.followup.send(message)
 
 
 #########        
