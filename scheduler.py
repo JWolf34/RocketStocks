@@ -17,9 +17,9 @@ def scheduler():
     update_tickers_trigger = CronTrigger(day_of_week="sun", hour=0, minute=0, timezone=timezone)
     update_upcoming_earnings_trigger = CronTrigger(day_of_week="fri", hour=0, minute=0, timezone=timezone)
     remove_past_earnings_trigger =  CronTrigger(day_of_week="tue-sat", hour=0, minute=0, timezone=timezone)
+    update_historical_earnings_trigger = CronTrigger(day_of_week="sun", hour=2, minute=0, timezone=timezone)
     # daily data trigger
     # 5m data trigger
-
     
     # Update tickers table in database with newest NASDAQ data
     # Estimated runtime 20-25 minutes
@@ -32,6 +32,10 @@ def scheduler():
     # Delete rows in upcomingearnings with a date earlier than today
     # Estimated runtime seconds
     sched.add_job(sd.StockData.Earnings.remove_past_earnings, trigger=remove_past_earnings_trigger, name = "Remove past earnings", timezone=timezone, replace_existing=True)
+
+    # Update historicalearnings table with newly release earnings
+    # Estimated runtime ~2 hours
+    sched.add_job(sd.StockData.Earnings.update_historical_earnings, trigger=update_historical_earnings_trigger, name = "Update historical earnings", timezone=timezone, replace_existing=True)
 
     sched.start()
 
