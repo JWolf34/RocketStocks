@@ -142,6 +142,17 @@ def get_news_api_token():
             logger.exception("Failed to fetch News API token\n{}".format(e))
             return ""
 
+def get_dolthub_api_token():
+        logger.debug("Fetching Dolthub API token")
+        try:
+            token = os.getenv('DOLTHUB_API_TOKEN')
+            logger.debug("Successfully fetched Dolthub API token")
+            return token
+        except Exception as e:
+            logger.exception("Failed to fetch Dolthub API token\n{}".format(e))
+            return ""
+
+
 def get_db_user():
         logger.debug("Fetching DB username")
         try:

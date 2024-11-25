@@ -170,7 +170,15 @@ class Postgres():
                             mentions            int,
                             upvotes             int,
                             PRIMARY KEY (date, ticker)
-                            )
+                            );
+
+                            CREATE TABLE IF NOT EXISTS historicalearnings ()
+                            ticker              varchar(8),
+                            date                date,
+                            reported            float,
+                            estimate            float,
+                            PRIMARY KEY (ticker, date)
+                            );
                             """
         logger.debug("Running script to create tables in database...")
         self.cur.execute(create_script)
@@ -464,6 +472,14 @@ class StockData():
             Postgres().delete(table='upcomingearnings', where_condition=where)
             logger.info("Previous upcoming earnings removed from database")
 
+        @staticmethod
+        def update_historical_earnings():
+            logger.info("Updating historical earnings in database")
+            tickers = StockData.get_all_ticker_info()['ticker'].values.tolist()
+            for ticker in tickers:
+                earnings = Dolthub().get_historical_earnings_by_ticker(ticker)
+
+
     @staticmethod
     def update_tickers():
         logger.info("Updating tickers database table with up-to-date tickers")
@@ -634,7 +650,27 @@ class ApeWisdom():
                 return top_stocks
         else:
             return None
-    
+
+class Dolthub():
+    def __init__(self):
+        self.token = config.get_dolthub_api_token()
+        self.headers={"authorization": f"token {self.token}" }
+        
+    @sleep_and_retry
+    @limits(calls = 5, period = 5) # 5 calls per 1 second
+    def get_historical_earnings_by_ticker(self, ticker):
+        db_owner = "post-no-preference"
+        db_repo = "earnings"
+        db_branch = "master"
+        select_query = f"""SELECT * FROM eps_history WHERE act_symbol = '{ticker}'"""
+        earnings_http = requests.get(url=f"https://www.dolthub.com/api/v1alpha1/{db_owner}/{db_repo}/{db_branch}",
+                           params={"q": select_query},
+                           headers=self.headers)
+        earnings_json = earnings_http.json()
+        columns = [column.get('columnName') for column in earnings_json['schema']]
+        earnings_data = earnings_json['rows']
+        return pd.DataFrame(earnings_data, columns=columns)
+
 #########################
 # Download and analysis #
 #########################
@@ -999,8 +1035,7 @@ def get_supported_exchanges():
 #########
 
 def test():
-    Postgres().drop_table("popularstocks")
-    Postgres().create_tables()
+    print(Dolthub().get_historical_earnings_by_ticker('NVDA'))
 
 if __name__ == "__main__":
     logger.info("stockdata.py initialized")
