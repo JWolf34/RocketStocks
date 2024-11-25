@@ -172,12 +172,12 @@ class Postgres():
                             PRIMARY KEY (date, ticker)
                             );
 
-                            CREATE TABLE IF NOT EXISTS historicalearnings ()
+                            CREATE TABLE IF NOT EXISTS historicalearnings (
                             ticker              varchar(8),
-                            date                date,
+                            period_end_date     date,
                             reported            float,
                             estimate            float,
-                            PRIMARY KEY (ticker, date)
+                            PRIMARY KEY (ticker, period_end_date)
                             );
                             """
         logger.debug("Running script to create tables in database...")
@@ -388,13 +388,13 @@ class SEC():
         return f"https://sec.gov/Archives/edgar/data/{StockData.get_cik(ticker).lstrip("0")}/{filing['accessionNumber'].replace("-","")}/{filing['primaryDocument']}"
 
     @sleep_and_retry
-    @limits(calls = 5, period = 1) # 10 calls per second
+    @limits(calls = 5, period = 1) # 5 calls per second
     def get_accounts_payable(self, ticker):
         json = requests.get(f"https://data.sec.gov/api/xbrl/companyconcept/CIK{StockData.get_cik(ticker)}/us-gaap/AccountsPayableCurrent.json", headers=self.headers).json()
         return pd.DataFrame.from_dict(json)
 
     @sleep_and_retry
-    @limits(calls = 5, period = 1) # 10 calls per second
+    @limits(calls = 5, period = 1) # 5 calls per second
     def get_company_facts(self, ticker):
         json = requests.get(f"https://data.sec.gov/api/xbrl/companyfacts/CIK{StockData.get_cik(ticker)}.json", headers=self.headers).json()
         return pd.DataFrame.from_dict(json)
@@ -474,10 +474,14 @@ class StockData():
 
         @staticmethod
         def update_historical_earnings():
-            logger.info("Updating historical earnings in database")
+            print("Updating historical earnings in database...")
             tickers = StockData.get_all_ticker_info()['ticker'].values.tolist()
             for ticker in tickers:
+                print(f"Retrieving historical earnings for '{ticker}'")
                 earnings = Dolthub().get_historical_earnings_by_ticker(ticker)
+                earnings = earnings.rename(columns={'act_symbol':'ticker'})
+                Postgres().insert(table='historicalearnings', fields=earnings.columns.to_list(), values=[tuple(row) for row in earnings.values])
+            print("Finished updating historical earnings table!")
 
 
     @staticmethod
@@ -657,7 +661,7 @@ class Dolthub():
         self.headers={"authorization": f"token {self.token}" }
         
     @sleep_and_retry
-    @limits(calls = 5, period = 5) # 5 calls per 1 second
+    @limits(calls = 5, period = 1) # 5 calls per 1 second
     def get_historical_earnings_by_ticker(self, ticker):
         db_owner = "post-no-preference"
         db_repo = "earnings"
@@ -1035,7 +1039,9 @@ def get_supported_exchanges():
 #########
 
 def test():
-    print(Dolthub().get_historical_earnings_by_ticker('NVDA'))
+    #Postgres().drop_table('historicalearnings')
+    Postgres().create_tables()
+    StockData.Earnings.update_historical_earnings()
 
 if __name__ == "__main__":
     logger.info("stockdata.py initialized")
