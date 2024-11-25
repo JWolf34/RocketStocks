@@ -132,7 +132,7 @@ class Data(commands.Cog):
                 file = discord.File(filepath)
                 eps_table = table2ascii(
                     header = eps.columns.tolist(),
-                    body = eps.values.tolist()[:-4],
+                    body = eps.values.tolist()[-4:],
                     style=PresetStyle.thick,
                     alignments=[Alignment.LEFT, Alignment.LEFT, Alignment.LEFT, Alignment.LEFT]
                 )
@@ -152,15 +152,6 @@ class Data(commands.Cog):
                 follow_up += f" Invalid tickers: {", ".join(invalid_tickers)}"
         if len(tickers) == 0: # No valid tickers input
             follow_up = f"No valid tickers input: {", ".join(invalid_tickers)}"
-        await interaction.followup.send(follow_up, ephemeral=True)
-
-            
-
-        follow_up = f"Posted EPS for tickers {", ".join(tickers)}!"
-        if len(invalid_tickers) > 0:
-            follow_up += f"Invalid tickers: {", ".join(invalid_tickers)}"
-        if len(tickers) == 0:
-            follow_up = f" No valid tickers input: {", ".join(invalid_tickers)}"
         await interaction.followup.send(follow_up, ephemeral=True)
     
     @app_commands.command(name = "form", description= "Returns links to latest form of requested type",)

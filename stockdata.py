@@ -261,7 +261,8 @@ class Postgres():
     def get_table_columns(self, table):
         self.open_connection()
         select_script = f"""SELECT column_name FROM INFORMATION_SCHEMA.COLUMNS
-                            WHERE TABLE_NAME = '{table}';
+                            WHERE TABLE_NAME = '{table}'
+                            ORDER BY ordinal_position;
                             """
         self.cur.execute(select_script)
         columns = [column[0] for column in self.cur.fetchall()]
@@ -1058,7 +1059,7 @@ def get_supported_exchanges():
 #########
 
 def test():
-    print(SEC().get_filings_from_today('KODK'))
+    StockData.Earnings.update_historical_earnings()
 
 if __name__ == "__main__":
     logger.info("stockdata.py initialized")
