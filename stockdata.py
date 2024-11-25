@@ -162,6 +162,15 @@ class Postgres():
                             tickers             varchar(255),
                             systemGenerated     boolean
                             );
+                            
+                            CREATE TABLE IF NOT EXISTS popularstocks (
+                            date                date,
+                            ticker              varchar(8),
+                            rank                int,
+                            mentions            int,
+                            upvotes             int,
+                            PRIMARY KEY (date, ticker)
+                            )
                             """
         logger.debug("Running script to create tables in database...")
         self.cur.execute(create_script)
@@ -990,7 +999,8 @@ def get_supported_exchanges():
 #########
 
 def test():
-    pass
+    Postgres().drop_table("popularstocks")
+    Postgres().create_tables()
 
 if __name__ == "__main__":
     logger.info("stockdata.py initialized")

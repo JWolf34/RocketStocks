@@ -403,17 +403,28 @@ class Reports(commands.Cog):
     #########
 
     # Report on most popular stocks across reddit daily
-    @tasks.loop(time=datetime.time(hour=18, minute=0, second=0))
+    #@tasks.loop(time=datetime.time(hour=18, minute=0, second=0))
+    @tasks.loop(hours=24)
     async def send_popularity_reports(self):
         report = PopularityReport(self.reports_channel)
         await report.send_report()
+
         # Update popular-stocks watchlist
         watchlist_id = 'popular-stocks'
-        tickers, invalid_tickers = sd.StockData.get_list_from_tickers(report.top_stocks['ticker'].tolist()[:30])
+        tickers, invalid_tickers = sd.StockData.get_list_from_tickers(" ".join(report.top_stocks['ticker'].tolist()[:30]))
         if not sd.Watchlists().validate_watchlist(watchlist_id):
             sd.Watchlists().create_watchlist(watchlist_id=watchlist_id, tickers=tickers, systemGenerated=True)
         else:
-            sd.Watchlists().update_watchlist(watchlist_id=watchlist_id, tickers=watchlist_tickers)
+            sd.Watchlists().update_watchlist(watchlist_id=watchlist_id, tickers=tickers)
+
+        # Update DB table
+        fields = ['date', 'ticker', 'rank', 'mentions', 'upvotes']
+        popular_stocks = report.top_stocks.drop(columns=['rank_24h_ago',
+                                                       'mentions_24h_ago',
+                                                       'name'])
+        popular_stocks['date'] = datetime.datetime.today().strftime("%Y-%m-%d")
+        popular_stocks = popular_stocks[fields]
+        sd.Postgres().insert(table='popularstocks', fields=fields, values=[tuple(row) for row in popular_stocks.values])
 
 
     # Generate and send premarket gainer reports to the reports channel
