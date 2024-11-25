@@ -343,10 +343,12 @@ class PopularityReport(Report):
         self.filter_name = filter_name
         self.filter = sd.ApeWisdom().get_filter(filter_name=self.filter_name)
         self.top_stocks = sd.ApeWisdom().get_top_stocks(filter_name=self.filter_name)
+        sd.validate_path(config.get_attachments_path())
         self.filepath = f"{config.get_attachments_path()}/top-stocks-{datetime.datetime.today().strftime("%m-%d-%Y")}.csv"
         self.top_stocks.to_csv(self.filepath, index=False)
         self.file = discord.File(self.filepath)
         self.buttons = self.Buttons()
+        
         super().__init__(channel)
 
     # Override

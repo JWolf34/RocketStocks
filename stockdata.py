@@ -989,7 +989,7 @@ def get_supported_exchanges():
 #########
 
 def test():
-    pass
+    passvali
 
 if __name__ == "__main__":
     logger.info("stockdata.py initialized")
