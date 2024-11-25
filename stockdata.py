@@ -479,14 +479,28 @@ class StockData():
 
         @staticmethod
         def update_historical_earnings():
-            print("Updating historical earnings in database...")
+            logger.info("Updating historical earnings in database...")
             tickers = StockData.get_all_ticker_info()['ticker'].values.tolist()
             for ticker in tickers:
-                print(f"Retrieving historical earnings for '{ticker}'")
+                logger.debug(f"Retrieving historical earnings for '{ticker}'")
                 earnings = Dolthub().get_historical_earnings_by_ticker(ticker)
                 earnings = earnings.rename(columns={'act_symbol':'ticker'})
                 Postgres().insert(table='historicalearnings', fields=earnings.columns.to_list(), values=[tuple(row) for row in earnings.values])
-            print("Finished updating historical earnings table!")
+            logger.info("Finished updating historical earnings table!")
+
+        @staticmethod
+        def get_historical_earnings(ticker):
+            columns = Postgres().get_table_columns('historicalearnings')
+            select_script = f"""SELECT * FROM historicalearnings
+                               WHERE ticker = '{ticker}';
+                               """
+            results = Postgres().select_many(select_script)
+            if results is None:
+                return pd.DataFrame()
+            else:
+                return pd.DataFrame(results, columns=columns)
+
+        
 
 
     @staticmethod
@@ -1044,9 +1058,7 @@ def get_supported_exchanges():
 #########
 
 def test():
-    #Postgres().drop_table('historicalearnings')
-    Postgres().create_tables()
-    StockData.Earnings.update_historical_earnings()
+    print(SEC().get_filings_from_today('KODK'))
 
 if __name__ == "__main__":
     logger.info("stockdata.py initialized")

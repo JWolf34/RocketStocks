@@ -574,7 +574,7 @@ class Reports(commands.Cog):
         if message is not None: # Message was generated
             follow_up = f"Posted reports for tickers [{", ".join(tickers)}]({message.jump_url})!"
             if len(invalid_tickers) > 0: # More than one invalid ticke input
-                follow_up += f"Invalid tickers: {", ".join(invalid_tickers)}"
+                follow_up += f" Invalid tickers: {", ".join(invalid_tickers)}"
         if len(tickers) == 0: # No valid tickers input
             follow_up = f" No valid tickers input: {", ".join(invalid_tickers)}"
         await interaction.followup.send(follow_up, ephemeral=True)

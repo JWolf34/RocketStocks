@@ -14,6 +14,7 @@ logger = logging.getLogger(__name__)
 class Data(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
+        self.reports_channel=self.bot.get_channel(config.get_reports_channel_id())
         
 
     @commands.Cog.listener()
@@ -119,24 +120,41 @@ class Data(commands.Cog):
     async def eps(self, interaction: discord.Interaction, tickers: str, visibility: app_commands.Choice[str]):
         await interaction.response.defer(ephemeral=True)
         logger.info("/eps function called by user {}".format(interaction.user.name))
+        sd.validate_path(config.get_attachments_path())
         message = ""
+        file = None
         tickers, invalid_tickers = sd.StockData.get_list_from_tickers(tickers)
         for ticker in tickers:
-            eps = sd.Nasdaq().get_eps(ticker)
+            eps = sd.StockData.Earnings.get_historical_earnings(ticker)
             if eps.size > 0:
+                filepath = f"{config.get_attachments_path()}/{ticker}_eps.csv"
+                eps.to_csv(filepath, index=False)
+                file = discord.File(filepath)
                 eps_table = table2ascii(
                     header = eps.columns.tolist(),
-                    body = eps.values.tolist(),
+                    body = eps.values.tolist()[:-4],
                     style=PresetStyle.thick,
                     alignments=[Alignment.LEFT, Alignment.LEFT, Alignment.LEFT, Alignment.LEFT]
                 )
-                message = f"### {ticker} EPS\n ```{eps_table}```"
+                message = f"## Recent EPS for {ticker}\n ```{eps_table}```"
             else:
                 message = f"Could not retrieve EPS data for ticker {ticker}"
             if visibility.value == "private":
-                await interaction.user.send(message)
+                message = await interaction.user.send(message, files=[file])
             else:
-                await interaction.channel.send(message)
+                message = await self.reports_channel.send(message, files=[file])
+
+        # Follow-up
+        follow_up = ""
+        if message is not None: # Message was generated
+            follow_up = f"Posted EPS for tickers [{", ".join(tickers)}]({message.jump_url})!"
+            if len(invalid_tickers) > 0: # More than one invalid ticke input
+                follow_up += f" Invalid tickers: {", ".join(invalid_tickers)}"
+        if len(tickers) == 0: # No valid tickers input
+            follow_up = f"No valid tickers input: {", ".join(invalid_tickers)}"
+        await interaction.followup.send(follow_up, ephemeral=True)
+
+            
 
         follow_up = f"Posted EPS for tickers {", ".join(tickers)}!"
         if len(invalid_tickers) > 0:
