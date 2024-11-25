@@ -356,7 +356,7 @@ class PopularityReport(Report):
     def build_report(self):
         report = ''
         report += self.build_report_header()
-        report += self.build_table(self.top_stocks[:10])
+        report += self.build_table(self.top_stocks.drop(columns='name')[:15])
         return report
 
     async def send_report(self, interaction:discord.Interaction = None, visibility:str ="public"):
