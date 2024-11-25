@@ -90,7 +90,8 @@ class Nasdaq():
     @limits(calls = 5, period = 60) # 10 calls per 10 minutes
     def get_eps(self, ticker):
         url = f"https://api.nasdaq.com/api/quote/{ticker}/eps"
-        eps = pd.DataFrame.from_dict(requests.get(url, headers=self.headers).json()['data']['earningsPerShare'])
+        eps_request = requests.get(url, headers=self.headers)
+        eps = pd.DataFrame.from_dict(eps_request.json()['data']['earningsPerShare'])
         return eps
         
     def get_prev_eps(self, ticker):
@@ -989,7 +990,7 @@ def get_supported_exchanges():
 #########
 
 def test():
-    passvali
+    pass
 
 if __name__ == "__main__":
     logger.info("stockdata.py initialized")

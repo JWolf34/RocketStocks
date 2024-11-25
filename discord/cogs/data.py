@@ -119,17 +119,20 @@ class Data(commands.Cog):
     async def eps(self, interaction: discord.Interaction, tickers: str, visibility: app_commands.Choice[str]):
         await interaction.response.defer(ephemeral=True)
         logger.info("/eps function called by user {}".format(interaction.user.name))
-
+        message = ""
         tickers, invalid_tickers = sd.StockData.get_list_from_tickers(tickers)
         for ticker in tickers:
             eps = sd.Nasdaq().get_eps(ticker)
-            eps_table = table2ascii(
-                header = eps.columns.tolist(),
-                body = eps.values.tolist(),
-                style=PresetStyle.thick,
-                alignments=[Alignment.LEFT, Alignment.LEFT, Alignment.LEFT, Alignment.LEFT]
-            )
-            message = f"### {ticker} EPS\n ```{eps_table}```"
+            if eps.size > 0:
+                eps_table = table2ascii(
+                    header = eps.columns.tolist(),
+                    body = eps.values.tolist(),
+                    style=PresetStyle.thick,
+                    alignments=[Alignment.LEFT, Alignment.LEFT, Alignment.LEFT, Alignment.LEFT]
+                )
+                message = f"### {ticker} EPS\n ```{eps_table}```"
+            else:
+                message = f"Could not retrieve EPS data for ticker {ticker}"
             if visibility.value == "private":
                 await interaction.user.send(message)
             else:
