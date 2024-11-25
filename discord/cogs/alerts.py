@@ -14,7 +14,7 @@ class Alerts(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
         self.alerts_channel=self.bot.get_channel(config.get_alerts_channel_id())
-        self.send_earnings_movers.start()
+        #self.send_earnings_movers.start()
 
     @commands.Cog.listener()
     async def on_ready(self):
