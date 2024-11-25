@@ -17,7 +17,7 @@ def scheduler():
     update_tickers_trigger = CronTrigger(day_of_week="sun", hour=0, minute=0, timezone=timezone)
     update_upcoming_earnings_trigger = CronTrigger(day_of_week="fri", hour=0, minute=0, timezone=timezone)
     remove_past_earnings_trigger =  CronTrigger(day_of_week="tue-sat", hour=0, minute=0, timezone=timezone)
-    update_historical_earnings_trigger = CronTrigger(day_of_week="sun", hour=2, minute=0, timezone=timezone)
+    update_historical_earnings_trigger = CronTrigger(day_of_week="mon", hour=2, minute=0, timezone=timezone)
     # daily data trigger
     # 5m data trigger
     
