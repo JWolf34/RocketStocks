@@ -141,7 +141,7 @@ class StockReport(Report):
         return report
 
     # Override
-    async def send_report(self, interaction:discord.Interaction, visibility:str = "public"):
+    async def send_report(self):
         if visibility == 'private':
             message = await interaction.user.send(self.message, view=self.buttons)
             return message
