@@ -590,26 +590,26 @@ class VolumeReport(Report):
 
     # Override
     async def send_report(self):
-            if utils.in_premarket() or utils.in_intraday() or utils.in_afterhours():
-                today = datetime.datetime.today()
-                market_period = utils.get_market_period()
-                message_id = config.get_volume_message_id()
-                try:
-                    curr_message = await self.channel.fetch_message(message_id)
-                    if curr_message.created_at.date() < today.date():
-                        message = await self.channel.send(self.message)
-                        config.update_volume_message_id( message.id)
-                        return message
-                    else:
-                        await curr_message.edit(content=self.message)
-
-                except discord.errors.NotFound as e:
+        if utils.in_premarket() or utils.in_intraday() or utils.in_afterhours():
+            today = datetime.datetime.today()
+            market_period = utils.get_market_period()
+            message_id = config.get_volume_message_id()
+            try:
+                curr_message = await self.channel.fetch_message(message_id)
+                if curr_message.created_at.date() < today.date():
                     message = await self.channel.send(self.message)
-                    config.update_volume_message_id(message.id)
+                    config.update_volume_message_id( message.id)
                     return message
-            else: 
-                # Outside market hours
-                pass
+                else:
+                    await curr_message.edit(content=self.message)
+
+            except discord.errors.NotFound as e:
+                message = await self.channel.send(self.message)
+                config.update_volume_message_id(message.id)
+                return message
+        else: 
+            # Outside market hours
+            pass
 
     def get_volume_movers(self):
         headers = []

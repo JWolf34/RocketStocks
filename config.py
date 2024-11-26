@@ -54,6 +54,17 @@ def update_volume_message_id(message_id):
                         """
     sd.Postgres().update(update_script)
 
+def update_alert_message_id(date, ticker, type, message_id):
+    update_script = f"""UPDATE reports
+                        SET messageid = {message_id}
+                        WHERE 
+                        date = '{date}' AND
+                        ticker = '{ticker}
+                        type = '{type}' 
+                        ;
+                        """
+    sd.Postgres().update(update_script)
+
 def get_gainer_message_id():
     market_time = utils().get_market_period()
     if market_time == "premarket":
@@ -95,6 +106,27 @@ def get_volume_message_id():
         return result
     else:
         return result[0]
+
+def get_alert_message_id(date, ticker, alert_type):
+    select_script = f"""SELECT messageid FROM alerts
+                        WHERE 
+                        date = '{date}' AND
+                        ticker = '{ticker}' AND
+                        alert_type = '{alert_type}';
+                        """
+    result = sd.Postgres().select_one(select_script)
+    if result is None:
+        return result
+    else:
+        return result[0]
+
+def insert_alert_message_id(date, ticker, alert_type, message_id):
+    table = 'alerts'
+    fields = sd.Postgres().get_table_columns(table)
+    values = [(date, ticker, alert_type, message_id)]
+    sd.Postgres().insert(table=table, fields=fields, values=values)
+  
+
 
 # Data Path #
 

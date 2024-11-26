@@ -184,6 +184,14 @@ class Postgres():
                             type                varchar(64) PRIMARY KEY,
                             messageid           bigint
                             );
+
+                            CREATE TABLE IF NOT EXISTS alerts(
+                            date                date,
+                            ticker              varchar(8),
+                            alert_type          varchar(64),
+                            messageid           bigint,
+                            PRIMARY KEY (date, ticker, alert_type)
+                            )
                             """
         logger.debug("Running script to create tables in database...")
         self.cur.execute(create_script)

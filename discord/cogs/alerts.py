@@ -22,7 +22,9 @@ class Alerts(commands.Cog):
     async def on_ready(self):
         logger.info(f"Cog {__name__} loaded!")
 
-    #@tasks.loop(minutes=5)
+
+    @tasks.loop(time=datetime.datetime.tim)
+
     async def send_earnings_movers(self, gainers):
         today = datetime.datetime.today()
         for index, row in gainers.iterrows():
@@ -77,8 +79,21 @@ class Alert(Report):
         return message + "\n\n"
 
     async def send_alert(self):
-        message = await self.channel.send(self.message)
-        return message
+        if utils.in_premarket() or utils.in_intraday() or utils.in_afterhours():
+            today = datetime.datetime.today()
+            market_period = utils.get_market_period()
+            message_id = config.get_alert_message_id(date=today.date(), ticker=self.ticker, alert_type="EARNINGS_MOVER")
+            if message_id is not None:
+                curr_message = await self.channel.fetch_message(message_id)
+                await curr_message.edit(content=self.message)
+            else:
+                message = await self.channel.send(self.message)
+                config.insert_alert_message_id(date=today.date(), ticker=self.ticker, alert_type="EARNINGS_MOVER", message_id=message.id)
+                return message
+        else: 
+            # Outside market hours
+            pass
+
 
 class EarningsMoverAlert(Alert):
     def __init__(self, ticker, channel, pct_change):
