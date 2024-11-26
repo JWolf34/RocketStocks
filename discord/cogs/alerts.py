@@ -16,14 +16,18 @@ class Alerts(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
         self.alerts_channel=self.bot.get_channel(config.get_alerts_channel_id())
-        #self.send_earnings_movers.start()
+        self.post_alerts_date.start()
 
     @commands.Cog.listener()
     async def on_ready(self):
         logger.info(f"Cog {__name__} loaded!")
 
 
-    @tasks.loop(time=datetime.datetime.tim)
+    @tasks.loop(time=datetime.time(hour=12, minute=30, second=0)) # time in UTC
+    async def post_alerts_date(self):
+        now = datetime.datetime.now()
+        if (now.weekday() < 5):
+            await self.alerts_channel.send(f"# :rotating_light: Alerts for {utils.format_date_mdy(now.date())} :rotating_light:")
 
     async def send_earnings_movers(self, gainers):
         today = datetime.datetime.today()
