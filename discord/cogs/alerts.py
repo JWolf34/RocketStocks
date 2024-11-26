@@ -3,6 +3,7 @@ from discord import app_commands
 from discord.ext import commands
 from discord.ext import tasks
 from reports import Report
+from reports import StockReport
 import stockdata as sd
 import config
 from config import utils
@@ -16,6 +17,7 @@ class Alerts(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
         self.alerts_channel=self.bot.get_channel(config.get_alerts_channel_id())
+        self.reports_channel= self.bot.get_channel(config.get_reports_channel_id())
         self.post_alerts_date.start()
 
     @commands.Cog.listener()
@@ -58,6 +60,7 @@ class Alert(Report):
         self.ticker = ticker
         self.channel = channel
         self.message = self.build_alert()
+        self.buttons = self.Buttons(self.ticker, channel)
     
     def build_alert_header(self):
         header = f"# :rotatinglight: {self.ticker} ALERT :rotatinglight:\n\n"
@@ -86,22 +89,44 @@ class Alert(Report):
         if utils.in_premarket() or utils.in_intraday() or utils.in_afterhours():
             today = datetime.datetime.today()
             market_period = utils.get_market_period()
-            message_id = config.get_alert_message_id(date=today.date(), ticker=self.ticker, alert_type="EARNINGS_MOVER")
+            message_id = config.get_alert_message_id(date=today.date(), ticker=self.ticker, alert_type=self.alert_type)
             if message_id is not None:
                 curr_message = await self.channel.fetch_message(message_id)
-                await curr_message.edit(content=self.message)
+                await curr_message.edit(content=self.message, view=self.buttons)
             else:
-                message = await self.channel.send(self.message)
-                config.insert_alert_message_id(date=today.date(), ticker=self.ticker, alert_type="EARNINGS_MOVER", message_id=message.id)
+                message = await self.channel.send(self.message, view=self.buttons)
+                config.insert_alert_message_id(date=today.date(), ticker=self.ticker, alert_type=self.alert_type, message_id=message.id)
                 return message
         else: 
             # Outside market hours
             pass
 
+    class Buttons(discord.ui.View):
+            def __init__(self, ticker : str, channel):
+                super().__init__()
+                self.ticker = ticker
+                self.channel = channel
+                self.add_item(discord.ui.Button(label="Google it", style=discord.ButtonStyle.url, url = "https://www.google.com/search?q={}".format(self.ticker)))
+                self.add_item(discord.ui.Button(label="StockInvest", style=discord.ButtonStyle.url, url = "https://stockinvest.us/stock/{}".format(self.ticker)))
+                self.add_item(discord.ui.Button(label="FinViz", style=discord.ButtonStyle.url, url = "https://finviz.com/quote.ashx?t={}".format(self.ticker)))
+                self.add_item(discord.ui.Button(label="Yahoo! Finance", style=discord.ButtonStyle.url, url = "https://finance.yahoo.com/quote/{}".format(self.ticker)))
+
+                
+            @discord.ui.button(label="Generate reort", style=discord.ButtonStyle.primary)
+            async def generate_chart(self, interaction:discord.Interaction, button:discord.ui.Button,):
+                report = StockReport(ticker=self.ticker, channel=self.channel)
+                await report.send_report(interaction, visibility="public")
+
+            @discord.ui.button(label="Get news", style=discord.ButtonStyle.primary)
+            async def get_news(self, interaction:discord.Interaction, button:discord.ui.Button):
+                news_report = NewsReport(self.ticker)
+                await news_report.send_report(interaction)
+                await interaction.response.send_message(f"Fetched news for {self.ticker}!", ephemeral=True)
 
 class EarningsMoverAlert(Alert):
     def __init__(self, ticker, channel, pct_change):
         self.pct_change = pct_change
+        self.alert_type = "EARNINGS_MOVER"
         super().__init__(ticker, channel)
 
     def build_alert_header(self):
@@ -122,6 +147,7 @@ class EarningsMoverAlert(Alert):
 class SECFilingMoverAlert(Alert):
     def __init__(self, ticker, channel, pct_change):
         self.pct_change = pct_change
+        self.alert_type = "SEC_FILING_MOVER"
         super().__init__(ticker, channel)
 
     def build_alert_header(self):
@@ -137,8 +163,6 @@ class SECFilingMoverAlert(Alert):
         alert += self.build_todays_change()
         alert += self.build_todays_sec_filings()
         return alert
-
-        
 
 #########        
 # Setup #
