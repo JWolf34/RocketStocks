@@ -22,28 +22,60 @@ def write_config(data):
 
 # Reports #
 
-def update_gainer_message_id(market_time, message_id):
-        data = get_config()
+def update_gainer_message_id(message_id):
+        market_time = utils().get_market_period()
         if market_time == "premarket":
-            data['reports']['gainers']['PREMARKET_MESSAGE_ID'] =  message_id
+            update_script = f"""UPDATE reports
+                                SET messageid = {message_id}
+                                WHERE type = 'PREMARKET_GAINER_REPORT';
+                                """
+            Postgres().update(update_script)
         elif market_time == "intraday":
-            data['reports']['gainers']['INTRADAY_MESSAGE_ID'] =  message_id
+            update_script = f"""UPDATE reports
+                                SET messageid = {message_id}
+                                WHERE type = 'INTRADAY_GAINER_REPORT';
+                                """
+            Postgres().update(update_script)
         elif market_time == "afterhours":
-            data['reports']['gainers']['AFTERHOURS_MESSAGE_ID'] =  message_id
+            update_script = f"""UPDATE reports
+                                SET messageid = {message_id}
+                                WHERE type = 'AFTERHOURS_GAINER_REPORT';
+                                """
+            Postgres().update(update_script)
         else:
-            return
-        write_config(data)
+            return None
 
-def get_gainer_message_id(market_time):
-    data = get_config()
+def get_gainer_message_id():
+    market_time = utils().get_market_period()
     if market_time == "premarket":
-        return data['reports']['gainers']['PREMARKET_MESSAGE_ID']
+        select_script = f"""SELECT * messageid FROM reports
+                            WHERE type = 'PREMARKET_GAINER_REPORT';
+                            """
+        result = Postgres().select_one(select_script)
+        if result is None:
+            return result
+        else:
+            return result[0]
     elif market_time == "intraday":
-        return data['reports']['gainers']['INTRADAY_MESSAGE_ID']
+        select_script = f"""SELECT * messageid FROM reports
+                            WHERE type = 'INTRADAY_GAINER_REPORT';
+                            """
+        result = Postgres().select_one(select_script)
+        if result is None:
+            return result
+        else:
+            return result[0]
     elif market_time == "afterhours":
-        return data['reports']['gainers']['AFTERHOURS_MESSAGE_ID']
+        select_script = f"""SELECT * messageid FROM reports
+                            WHERE type = 'AFTERHOURS_GAINER_REPORT';
+                            """
+        result = Postgres().select_one(select_script)
+        if result is None:
+            return result
+        else:
+            return result[0]
     else:
-        return ""
+        return None
 
 # Data Path #
 
@@ -219,9 +251,11 @@ class utils():
         else:
             return "EOD"    
 
+    @staticmethod
     def format_date_ymd(date):
         return date.strftime("%Y-%m-%d")
 
+    @staticmethod
     def format_date_mdy(date):
         return date.strftime("%m/%d/%Y")
 
