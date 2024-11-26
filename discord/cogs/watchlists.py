@@ -162,7 +162,7 @@ class Watchlists(commands.Cog):
             
         # Confirm watchlists exists, otherwise create it
         if watchlist_id not in sd.Watchlists().get_watchlists(no_personal=False):
-            sd.Watchlists().create_watchlist(watchlist_id=watchlist_id, tickers=[])
+            sd.Watchlists().create_watchlist(watchlist_id=watchlist_id, tickers=[], systemGenerated=False)
     
         # Update watchlist with new tickers         
         sd.Watchlists().update_watchlist(watchlist_id=watchlist_id, tickers=tickers)
