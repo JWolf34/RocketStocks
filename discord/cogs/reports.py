@@ -321,34 +321,30 @@ class Report(object):
 
         message = "## Ticker Info\n"
         ticker_data = sd.StockData.get_ticker_info(self.ticker)
-    
-        message += f"**Name:** {ticker_data[1]}\n"
-        message += f"**Sector:** {ticker_data[6] if ticker_data[6] else "N/A"}\n"
-        message += f"**Industry:** {ticker_data[5] if ticker_data[5] else "N/A"}\n"
-        message += f"**Market Cap:** ${self.format_large_num(ticker_data[2]) if ticker_data[2] else "N/A"}\n" 
-        message += f"**Country:** {ticker_data[3] if ticker_data[3] else "N/A"}\n"
-        message += f"**Next earnings date:** {sd.StockData.Earnings.get_next_earnings_date(self.ticker)}"
-        
-        return message + "\n"
+        if ticker_data is not None:
+            message += f"**Name:** {ticker_data[1]}\n"
+            message += f"**Sector:** {ticker_data[6] if ticker_data[6] else "N/A"}\n"
+            message += f"**Industry:** {ticker_data[5] if ticker_data[5] else "N/A"}\n"
+            message += f"**Market Cap:** ${self.format_large_num(ticker_data[2]) if ticker_data[2] else "N/A"}\n" 
+            message += f"**Country:** {ticker_data[3] if ticker_data[3] else "N/A"}\n"
+            message += f"**Next earnings date:** {sd.StockData.Earnings.get_next_earnings_date(self.ticker)}"
+            return message + "\n"
+        else:
+            logger.warning("While generating report summary, ticker_data was 'None'. Ticker likely does not exist in database")
+            return message + f"Unable to get info for ticker {self.ticker}\n"
 
     # Daily Summary
     def build_daily_summary(self):
         # Append day's summary to message
         summary = sd.get_days_summary(self.data)
+
         message = "## Summary \n| "
         for col in summary.keys():
             message += "**{}:** {}".format(col, f"{summary[col]:,.2f}")
             message += " | "
 
         return message + "\n"
-    
-    def build_recent_SEC_filings(self):
-        message = "## Recent SEC Filings\n\n"
-        filings = sd.SEC().get_recent_filings(ticker=self.ticker)
-        for index, filing in filings[:5].iterrows():
-            message += f"[Form {filing['form']} - {filing['filingDate']}]({sd.SEC().get_link_to_filing(ticker=self.ticker, filing=filing)})\n"
-        return message
-
+        
     def build_recent_SEC_filings(self):
         message = "## Recent SEC Filings\n\n"
         filings = sd.SEC().get_recent_filings(ticker=self.ticker)
