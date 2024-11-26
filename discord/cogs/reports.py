@@ -6,6 +6,7 @@ from discord.ext import commands
 from discord.ext import tasks
 from watchlists import Watchlists
 from utils import Utils
+import alerts
 import datetime
 import stockdata as sd
 import numpy as np
@@ -75,12 +76,13 @@ class Reports(commands.Cog):
         if (now.weekday() < 5):
             report = GainerReport(self.screeners_channel)
             await report.send_report()
+            await self.bot.get_cog("Alerts").send_earnings_movers(report.gainers)
         else:
             # Not a weekday - do not post gainer reports
             pass
 
 
-    @send_gainer_reports.before_loop
+    #@send_gainer_reports.before_loop
     async def before_send_gainer_reports(self):
         # Start posting report at next 0 or 5 minute interval
         now = datetime.datetime.now().astimezone()
@@ -451,7 +453,7 @@ class GainerReport(Report):
         headers = []
         rows = []
         if utils.in_premarket():
-            gainers = sd.TradingView.get_premarket_gainers_by_market_cap(100000000)[:15]
+            gainers = sd.TradingView.get_premarket_gainers_by_market_cap(100000000)
             headers = ["Ticker", "Close", "Volume", "Market Cap", "Premarket Change", "Premarket Volume"]
             for index, row in gainers.iterrows():
                 ticker = row.iloc[1]
@@ -465,7 +467,7 @@ class GainerReport(Report):
                 else:
                     pass
         elif utils.in_intraday():
-            gainers = sd.TradingView.get_intraday_gainers_by_market_cap(100000000)[:15]
+            gainers = sd.TradingView.get_intraday_gainers_by_market_cap(100000000)
             headers = ["Ticker", "Close", "Volume", "Market Cap", "% Change"]
             rows = []
             for index, row in gainers.iterrows():
@@ -480,7 +482,7 @@ class GainerReport(Report):
                     pass
                 
         elif utils.in_afterhours():
-            gainers = sd.TradingView.get_postmarket_gainers_by_market_cap(100000000)[:15] 
+            gainers = sd.TradingView.get_postmarket_gainers_by_market_cap(100000000)
             headers = ["Ticker", "Close", "Volume", "Market Cap", "After Hours Change", "After Hours Volume"]
             rows = []
             for index, row in gainers.iterrows():
@@ -500,6 +502,7 @@ class GainerReport(Report):
     def update_gainer_watchlist(self):
         watchlist_id = f"{utils.get_market_period()}-gainers"
         watchlist_tickers = self.gainers['Ticker'].to_list()
+        watchlist_tickers = watchlist_tickers[:15]
 
         if not sd.Watchlists().validate_watchlist(watchlist_id):
             sd.Watchlists().create_watchlist(watchlist_id=watchlist_id, tickers=watchlist_tickers, systemGenerated=True)
@@ -522,7 +525,7 @@ class GainerReport(Report):
     def build_report(self):
         report = ""
         report += self.build_report_header()
-        report += self.build_table(self.gainers)
+        report += self.build_table(self.gainers[:15])
         return report
 
     # Override
@@ -567,7 +570,7 @@ class VolumeReport(Report):
     def build_report(self):
         report = ""
         report += self.build_report_header()
-        report += self.build_table(self.volume_movers)
+        report += self.build_table(self.volume_movers[:15])
         return report
 
     # Override
@@ -596,7 +599,7 @@ class VolumeReport(Report):
     def get_volume_movers(self):
         headers = []
         rows = []
-        unusual_volume = sd.TradingView.get_unusual_volume_movers()[:15]
+        unusual_volume = sd.TradingView.get_unusual_volume_movers()
         headers = ["Ticker", "Close", "% Change", "Volume", "Relative Volume", "Market Cap"]
         for index, row in unusual_volume.iterrows():
             ticker = row.iloc[1]
@@ -613,6 +616,9 @@ class VolumeReport(Report):
     def update_unusual_volume_watchlist(self):
         watchlist_id = "unusual-volume"
         watchlist_tickers = self.volume_movers['Ticker'].to_list()
+
+        watchlist_tickers, invalid_tickers = sd.StockData.get_list_from_tickers(' '.join(watchlist_tickers))
+        watchlist_tickers = watchlist_tickers[:15]
 
         if not sd.Watchlists().validate_watchlist(watchlist_id):
             sd.Watchlists().create_watchlist(watchlist_id=watchlist_id, tickers=watchlist_tickers, systemGenerated=True)

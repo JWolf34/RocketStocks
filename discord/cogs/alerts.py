@@ -5,6 +5,8 @@ from discord.ext import tasks
 import reports
 import stockdata as sd
 import config
+from config import utils
+import datetime
 import logging
 
 # Logging configuration
@@ -20,10 +22,14 @@ class Alerts(commands.Cog):
     async def on_ready(self):
         logger.info(f"Cog {__name__} loaded!")
 
-    @tasks.loop(minutes=5)
-    async def send_earnings_movers(self):
-        alert = EarningsMoverAlert(ticker="UXIN", channel=self.alerts_channel, pct_change=6.76)
-        await alert.send_alert()
+    #@tasks.loop(minutes=5)
+    async def send_earnings_movers(self, gainers):
+        for index, row in gainers.iterrows():
+            ticker = row['Ticker']
+            earnings_date = sd.StockData.Earnings.get_next_earnings_date(ticker)
+            if utils.format_date_mdy(earnings_date) == utils.format_date_mdy(datetime.datetime.today()):
+                alert = EarningsMoverAlert(ticker=ticker, channel=self.alerts_channel, pct_change= row['% Change'])
+                await alert.send_alert()
 
 ##################
 # Alerts Classes #
