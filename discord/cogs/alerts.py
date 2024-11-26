@@ -2,7 +2,7 @@ import discord
 from discord import app_commands
 from discord.ext import commands
 from discord.ext import tasks
-import reports
+from reports import Report
 import stockdata as sd
 import config
 from config import utils
@@ -27,15 +27,25 @@ class Alerts(commands.Cog):
         for index, row in gainers.iterrows():
             ticker = row['Ticker']
             earnings_date = sd.StockData.Earnings.get_next_earnings_date(ticker)
-            if utils.format_date_mdy(earnings_date) == utils.format_date_mdy(datetime.datetime.today()):
-                alert = EarningsMoverAlert(ticker=ticker, channel=self.alerts_channel, pct_change= row['% Change'])
+            if earnings_date != "N/A":
+                if earnings_date == datetime.datetime.today().date():
+                    alert = EarningsMoverAlert(ticker=ticker, channel=self.alerts_channel, pct_change= float(row['% Change'].strip("%")))
+                    await alert.send_alert()
+
+    async def send_sec_filing_movers(self, gainers):
+        for index, row in gainers.iterrows():
+            ticker = row['Ticker']
+            filings = sd.SEC().get_filings_from_today(ticker)
+            if filings.size > 0:
+                alert = SECFilingMoverAlert(ticker=ticker, channel=self.alerts_channel, pct_change= float(row['% Change'].strip("%")))
                 await alert.send_alert()
+
 
 ##################
 # Alerts Classes #
 ##################
     
-class Alert():
+class Alert(Report):
     def __init__(self, ticker, channel):
         self.ticker = ticker
         self.channel = channel
@@ -65,6 +75,7 @@ class Alert():
         return message + "\n\n"
 
 
+    """
     def build_recent_sec_filings(self):
         message = "## Recent SEC Filings\n\n"
         filings = sd.SEC().get_recent_filings(ticker=self.ticker)
@@ -78,6 +89,7 @@ class Alert():
         for index, filing in filings.iterrows():
             message += f"[Form {filing['form']} - {filing['filingDate']}]({sd.SEC().get_link_to_filing(ticker=self.ticker, filing=filing)})\n"
         return message
+        """
 
     async def send_alert(self):
         message = await self.channel.send(self.message)
@@ -86,22 +98,40 @@ class Alert():
 class EarningsMoverAlert(Alert):
     def __init__(self, ticker, channel, pct_change):
         self.pct_change = pct_change
-        self.market_time="premarket"
         super().__init__(ticker, channel)
 
     def build_alert_header(self):
-        header = f"## :rotating_light: EARNINGS MOVER: {self.ticker} :rotating_light:\n\n"
+        header = f"## :rotating_light: Earnings Mover: {self.ticker}\n\n\n"
         return header
 
     def build_todays_change(self):
         symbol = ":green_circle:" if self.pct_change > 0 else ":small_red_triangle_down:"
-        return f"**Movement:** {symbol} {self.pct_change}% {self.market_time}\n"
+        return f"**{self.ticker}** is up **{self.pct_change}%** {utils.get_market_period()} and has earnings today\n\n"
 
     def build_alert(self):
         alert = ""
         alert += self.build_alert_header()
         alert += self.build_todays_change()
         alert += self.build_earnings_date()
+        return alert
+
+class SECFilingMoverAlert(Alert):
+    def __init__(self, ticker, channel, pct_change):
+        self.pct_change = pct_change
+        super().__init__(ticker, channel)
+
+    def build_alert_header(self):
+        header = f"## :rotating_light: SEC Filing Mover: {self.ticker}\n\n\n"
+        return header
+
+    def build_todays_change(self):
+        return f"**{self.ticker}** is up **{self.pct_change}%** {utils.get_market_period()} and filed with the SEC today\n"
+
+    def build_alert(self):
+        alert = ""
+        alert += self.build_alert_header()
+        alert += self.build_todays_change()
+        alert += self.build_todays_sec_filings()
         return alert
 
         

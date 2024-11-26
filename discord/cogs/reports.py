@@ -77,6 +77,7 @@ class Reports(commands.Cog):
             report = GainerReport(self.screeners_channel)
             await report.send_report()
             await self.bot.get_cog("Alerts").send_earnings_movers(report.gainers)
+            await self.bot.get_cog("Alerts").send_sec_filing_movers(report.gainers)
         else:
             # Not a weekday - do not post gainer reports
             pass
@@ -344,6 +345,20 @@ class Report(object):
         message = "## Recent SEC Filings\n\n"
         filings = sd.SEC().get_recent_filings(ticker=self.ticker)
         for index, filing in filings[:5].iterrows():
+            message += f"[Form {filing['form']} - {filing['filingDate']}]({sd.SEC().get_link_to_filing(ticker=self.ticker, filing=filing)})\n"
+        return message
+
+    def build_recent_SEC_filings(self):
+        message = "## Recent SEC Filings\n\n"
+        filings = sd.SEC().get_recent_filings(ticker=self.ticker)
+        for index, filing in filings[:5].iterrows():
+            message += f"[Form {filing['form']} - {filing['filingDate']}]({sd.SEC().get_link_to_filing(ticker=self.ticker, filing=filing)})\n"
+        return message
+
+    def build_todays_sec_filings(self):
+        message = "## Today's SEC Filings\n\n"
+        filings = sd.SEC().get_filings_from_today(ticker=self.ticker)
+        for index, filing in filings.iterrows():
             message += f"[Form {filing['form']} - {filing['filingDate']}]({sd.SEC().get_link_to_filing(ticker=self.ticker, filing=filing)})\n"
         return message
 
