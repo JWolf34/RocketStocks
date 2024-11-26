@@ -634,6 +634,19 @@ class TradingView():
         logger.info("Fetching after hours gainers by market cap")
         num_rows, gainers = Scanner.postmarket_gainers.get_scanner_data()
         return gainers.loc[gainers['market_cap_basic'] >= market_cap]    
+    
+    @staticmethod
+    def get_unusual_volume_movers():
+        logger.info("Fetching stocks with ununsual volume")
+        num_rows, gainers = (Query()
+                            .select('name','close', 'change', 'volume','relative_volume', 'market_cap_basic', 'exchange')
+                            .set_markets('america')
+                            .where(
+                                Column('exchange').isin(get_supported_exchanges()),
+                            )
+                            .order_by('relative_volume', ascending=False)
+                            .get_scanner_data())
+        return gainers
 
 class ApeWisdom():
     def __init__(self):
@@ -1059,7 +1072,7 @@ def get_supported_exchanges():
 #########
 
 def test():
-    StockData.Earnings.update_historical_earnings()
+    print(TradingView.get_intraday_unusual_volume_movers())
 
 if __name__ == "__main__":
     logger.info("stockdata.py initialized")

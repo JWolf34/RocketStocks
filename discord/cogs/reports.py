@@ -22,6 +22,8 @@ import rocketstocks
 # Logging configuration
 logger = logging.getLogger(__name__)
 
+utils =  config.utils()
+
 ##################
 # Report Classes #
 ##################
@@ -141,7 +143,7 @@ class StockReport(Report):
         return report
 
     # Override
-    async def send_report(self):
+    async def send_report(self, interaction: discord.Interaction, visibility:str):
         if visibility == 'private':
             message = await interaction.user.send(self.message, view=self.buttons)
             return message
@@ -172,11 +174,6 @@ class StockReport(Report):
 
 class GainerReport(Report):
     def __init__(self, channel):
-        self.today = dt.datetime.now().astimezone()
-        self.PREMARKET_START = self.today.replace(hour=7, minute=0, second=0, microsecond=0)
-        self.INTRADAY_START= self.today.replace(hour=8, minute=30, second=0, microsecond=0)
-        self.AFTERHOURS_START = self.today.replace(hour=15, minute=0, second=0, microsecond=0)
-        self.MARKET_END = self.today.replace(hour=17, minute=0, second=0, microsecond=0)
         self.gainers = self.get_gainers()
         if self.gainers.size > 0:
             self.update_gainer_watchlist()
@@ -185,7 +182,7 @@ class GainerReport(Report):
     def get_gainers(self):
         headers = []
         rows = []
-        if self.in_premarket():
+        if utils.in_premarket():
             gainers = sd.TradingView.get_premarket_gainers_by_market_cap(100000000)[:15]
             headers = ["Ticker", "Close", "Volume", "Market Cap", "Premarket Change", "Premarket Volume"]
             for index, row in gainers.iterrows():
@@ -199,7 +196,7 @@ class GainerReport(Report):
                                 self.format_large_num(row.premarket_volume)])
                 else:
                     pass
-        elif self.in_intraday():
+        elif utils.in_intraday():
             gainers = sd.TradingView.get_intraday_gainers_by_market_cap(100000000)[:15]
             headers = ["Ticker", "Close", "Volume", "Market Cap", "% Change"]
             rows = []
@@ -214,7 +211,7 @@ class GainerReport(Report):
                 else: 
                     pass
                 
-        elif self.in_afterhours():
+        elif utils.in_afterhours():
             gainers = sd.TradingView.get_postmarket_gainers_by_market_cap(100000000)[:15] 
             headers = ["Ticker", "Close", "Volume", "Market Cap", "After Hours Change", "After Hours Volume"]
             rows = []
@@ -244,9 +241,9 @@ class GainerReport(Report):
     # Override
     def build_report_header(self):
         header = "### :rotating_light: {} Gainers {} (Market Cap > $100M) (Updated {})\n\n".format(
-                    "Pre-market" if self.in_premarket()
-                    else "Intraday" if self.in_intraday()
-                    else "After Hours" if self.in_afterhours()
+                    "Pre-market" if utils.in_premarket()
+                    else "Intraday" if utils.in_intraday()
+                    else "After Hours" if utils.in_afterhours()
                     else "",
                     self.today.strftime("%m/%d/%Y"),
                     self.today.strftime("%-I:%M %p"))
@@ -261,7 +258,7 @@ class GainerReport(Report):
 
     # Override
     async def send_report(self):
-            if self.in_premarket() or self.in_intraday() or self.in_afterhours():
+            if utils.in_premarket() or utils.in_intraday() or utils.in_afterhours():
                 market_period = self.get_market_period()
                 message_id = config.get_gainer_message_id(market_period)
                 try:
@@ -281,24 +278,58 @@ class GainerReport(Report):
                 # Outside market hours
                 pass
 
-    def in_premarket(self):
-        return self.today > self.PREMARKET_START and self.today < self.INTRADAY_START
-
-    def in_intraday(self):
-        return self.today > self.INTRADAY_START and self.today < self.AFTERHOURS_START
     
-    def in_afterhours(self):
-        return self.today > self.AFTERHOURS_START and self.today < self.MARKET_END
 
-    def get_market_period(self):
-        if self.in_premarket():
-            return "premarket"
-        elif self.in_intraday():
-            return "intraday"
-        if self.in_afterhours():
-            return "afterhours"
+class VolumeReport():
+    def __init__(self, channel):
+        self.volume_movers = self.get_volume_movers()
+        if self.volume_movers.size > 0:
+            self.update_unusual_volume_watchlist()
+        super().__init__(channel)
+
+    # Override
+    def build_report_header(self):
+        header = "### :rotating_light: Unusual Volume {} (Updated {})\n\n".format(
+                    self.today.strftime("%m/%d/%Y"),
+                    self.today.strftime("%-I:%M %p"))
+        return header
+
+    # Override
+    def build_report(self):
+        report = ""
+        report += self.build_report_header()
+        report += self.build_table(self.gainers)
+        return report
+
+    def get_volume_movers(self):
+        headers = []
+        rows = []
+        unusual_volume = sd.TradingView.get_unusual_volume_movers()[:15]
+        headers = ["Ticker", "Close", "% Change", "Volume", "Relative Volume", "Market Cap"]
+        for index, row in gainers.iterrows():
+            ticker = row.iloc[1]
+            if sd.StockData.validate_ticker(ticker):
+                rows.append([row.iloc[1], 
+                            "${}".format(float('{:.2f}'.format(row.close))), 
+                            "{:.2f}%".format(row.change),
+                            self.format_large_num(row.volume), 
+                            "{:.2f}%".format(row.relative_volume),
+                            self.format_large_num(row.market_cap_basic)]) 
+            else:
+                pass
+
+        return pd.DataFrame(rows, columns=headers)
+
+    def update_unusual_volume_watchlist(self):
+        watchlist_id = "unusual-volume"
+        watchlist_tickers = self.volume_movers['Ticker'].to_list()
+
+        if not sd.Watchlists().validate_watchlist(watchlist_id):
+            sd.Watchlists().create_watchlist(watchlist_id=watchlist_id, tickers=watchlist_tickers, systemGenerated=True)
         else:
-            return "EOD"       
+            sd.Watchlists().update_watchlist(watchlist_id=watchlist_id, tickers=watchlist_tickers)
+
+
     
 class NewsReport(Report):
     def __init__(self, query, breaking=False, **kwargs):
@@ -390,7 +421,7 @@ class Reports(commands.Cog):
         self.update_earnings_calendar.start()
         self.send_popularity_reports.start()
         self.reports_channel = self.bot.get_channel(config.get_reports_channel_id())
-        self.gainers_channel = self.bot.get_channel(config.get_gainers_channel_id())
+        self.screeners_channel = self.bot.get_channel(config.get_screeners_channel_id())
         
 
     @commands.Cog.listener()
@@ -432,7 +463,7 @@ class Reports(commands.Cog):
     async def send_gainer_reports(self):
         now = datetime.datetime.now()
         if (now.weekday() < 5):
-            report = GainerReport(self.gainers_channel)
+            report = GainerReport(self.screeners_channel)
             await report.send_report()
         else:
             # Not a weekday - do not post gainer reports
@@ -441,6 +472,30 @@ class Reports(commands.Cog):
 
     @send_gainer_reports.before_loop
     async def before_send_gainer_reports(self):
+        # Start posting report at next 0 or 5 minute interval
+        now = datetime.datetime.now().astimezone()
+        if now.minute % 5 == 0:
+            return 0
+        minutes_by_five = now.minute // 5
+        # get the difference in times
+        diff = (minutes_by_five + 1) * 5 - now.minute
+        future = now + datetime.timedelta(minutes=diff)
+        await asyncio.sleep((future-now).total_seconds())
+
+    # Generate and send premarket gainer reports to the reports channel
+    @tasks.loop(minutes=5)
+    async def send_volume_reports(self):
+        now = datetime.datetime.now()
+        if (now.weekday() < 5):
+            report = VolumeReport(self.screeners_channel)
+            await report.send_report()
+        else:
+            # Not a weekday - do not post gainer reports
+            pass
+
+
+    @send_volume_reports.before_loop
+    async def before_send_volume_reports(self):
         # Start posting report at next 0 or 5 minute interval
         now = datetime.datetime.now().astimezone()
         if now.minute % 5 == 0:

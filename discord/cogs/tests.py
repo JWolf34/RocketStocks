@@ -12,7 +12,7 @@ logger = logging.getLogger(__name__)
 class Tests(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
-        self.gainers_channel = self.bot.get_channel(config.get_gainers_channel_id())
+        self.gainers_channel = self.bot.get_channel(config.get_screeners_channel_id())
         
 
     @commands.Cog.listener()

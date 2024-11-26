@@ -94,13 +94,13 @@ def get_alerts_channel_id():
         logger.exception("Failed to fetch alerts channel ID\n{}".format(e))
         return ""
 
-def get_gainers_channel_id():
+def get_screeners_channel_id():
     try:
-        channel_id = os.getenv("GAINERS_CHANNEL_ID")
-        logger.debug("Gainers channel ID is {}".format(channel_id))
+        channel_id = os.getenv("SCREENERS_CHANNEL_ID")
+        logger.debug("Screeners channel ID is {}".format(channel_id))
         return int(channel_id)
     except Exception as e:
-        logger.exception("Failed to fetch gainers channel ID\n{}".format(e))
+        logger.exception("Failed to fetch screeners channel ID\n{}".format(e))
         return ""
 
 def get_charts_channel_id():
@@ -192,5 +192,39 @@ def get_db_host():
     except Exception as e:
         logger.exception("Failed to fetch  DB host\n{}".format(e))
         return ""
+
+class utils():
+    def __init__(self):
+        self.PREMARKET_START = self.today.replace(hour=7, minute=0, second=0, microsecond=0)
+        self.INTRADAY_START= self.today.replace(hour=8, minute=30, second=0, microsecond=0)
+        self.AFTERHOURS_START = self.today.replace(hour=15, minute=0, second=0, microsecond=0)
+        self.MARKET_END = self.today.replace(hour=17, minute=0, second=0, microsecond=0)
+
+    def in_premarket(self):
+        return self.today > self.PREMARKET_START and self.today < self.INTRADAY_START
+
+    def in_intraday(self):
+        return self.today > self.INTRADAY_START and self.today < self.AFTERHOURS_START
+    
+    def in_afterhours(self):
+        return self.today > self.AFTERHOURS_START and self.today < self.MARKET_END
+
+    def get_market_period(self):
+        if self.in_premarket():
+            return "premarket"
+        elif self.in_intraday():
+            return "intraday"
+        if self.in_afterhours():
+            return "afterhours"
+        else:
+            return "EOD"    
+
+    def format_date_ymd(date):
+        return date.strftime("%Y-%m-%d")
+
+    def format_date_mdy(date):
+        return date.strftime("%m/%d/%Y")
+
+
 
         
