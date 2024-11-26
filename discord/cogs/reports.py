@@ -83,7 +83,7 @@ class Reports(commands.Cog):
             pass
 
 
-    #@send_gainer_reports.before_loop
+    @send_gainer_reports.before_loop
     async def before_send_gainer_reports(self):
         # Start posting report at next 0 or 5 minute interval
         now = datetime.datetime.now().astimezone()
@@ -102,12 +102,13 @@ class Reports(commands.Cog):
         if (now.weekday() < 5):
             report = VolumeReport(self.screeners_channel)
             await report.send_report()
+            await self.bot.get_cog("Alerts").send_unusual_volume_movers(report.volume_movers)
         else:
             # Not a weekday - do not post gainer reports
             pass
 
 
-    @send_volume_reports.before_loop
+    #@send_volume_reports.before_loop
     async def before_send_volume_reports(self):
         # Start posting report at next 0 or 5 minute interval
         now = datetime.datetime.now().astimezone()

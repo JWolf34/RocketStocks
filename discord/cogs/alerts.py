@@ -38,7 +38,13 @@ class Alerts(commands.Cog):
             earnings_date = sd.StockData.Earnings.get_next_earnings_date(ticker)
             if earnings_date != "N/A":
                 if earnings_date == today.date():
-                    alert = EarningsMoverAlert(ticker=ticker, channel=self.alerts_channel, pct_change= float(row['% Change'].strip("%")))
+                    change_columns = ["Premarket Change", "% Change", "After Hours Change"]
+                    pct_change = 0.0
+                    for column in change_columns:
+                        if column in row.index:
+                            pct_change = float(row[column].strip("%"))
+                            break
+                    alert = EarningsMoverAlert(ticker=ticker, channel=self.alerts_channel, pct_change= pct_change)
                     await alert.send_alert()
 
     async def send_sec_filing_movers(self, gainers):
@@ -47,8 +53,26 @@ class Alerts(commands.Cog):
             ticker = row['Ticker']
             filings = sd.SEC().get_filings_from_today(ticker)
             if filings.size > 0:
-                alert = SECFilingMoverAlert(ticker=ticker, channel=self.alerts_channel, pct_change= float(row['% Change'].strip("%")))
+                change_columns = ["Premarket Change", "% Change", "After Hours Change"]
+                pct_change = 0.0
+                for column in change_columns:
+                    if column in row.index:
+                        pct_change = float(row[column].strip("%"))
+                        break
+                alert = SECFilingMoverAlert(ticker=ticker, channel=self.alerts_channel, pct_change= pct_change)
                 await alert.send_alert()
+    
+    async def send_unusual_volume_movers(self, volume_movers):
+        today = datetime.datetime.today()
+        for index, row in volume_movers.iterrows():
+            ticker = row['Ticker']
+            relative_volume = float(row['Relative Volume'].strip("%"))
+            if relative_volume > 100.0:
+                volume = row['Volume']
+                pct_change = float(row['% Change'].strip("%"))
+                alert = VolumeMoverAlert(ticker=ticker, channel=self.alerts_channel, pct_change= pct_change, volume=volume, relative_volume=relative_volume)
+                await alert.send_alert()
+
 
 
 ##################
@@ -112,7 +136,7 @@ class Alert(Report):
                 self.add_item(discord.ui.Button(label="Yahoo! Finance", style=discord.ButtonStyle.url, url = "https://finance.yahoo.com/quote/{}".format(self.ticker)))
 
                 
-            @discord.ui.button(label="Generate reort", style=discord.ButtonStyle.primary)
+            @discord.ui.button(label="Generate report", style=discord.ButtonStyle.primary)
             async def generate_chart(self, interaction:discord.Interaction, button:discord.ui.Button,):
                 report = StockReport(ticker=self.ticker, channel=self.channel)
                 await report.send_report(interaction, visibility="public")
@@ -134,7 +158,6 @@ class EarningsMoverAlert(Alert):
         return header
 
     def build_todays_change(self):
-        symbol = ":green_circle:" if self.pct_change > 0 else ":small_red_triangle_down:"
         return f"**{self.ticker}** is up **{self.pct_change}%** {utils.get_market_period()} and has earnings today\n\n"
 
     def build_alert(self):
@@ -163,6 +186,28 @@ class SECFilingMoverAlert(Alert):
         alert += self.build_todays_change()
         alert += self.build_todays_sec_filings()
         return alert
+
+class VolumeMoverAlert(Alert):
+    def __init__(self, ticker, channel, pct_change, volume, relative_volume):
+        self.pct_change = pct_change
+        self.alert_type = "VOLUME_MOVER"
+        self.volume = volume
+        self.relative_volume = relative_volume
+        super().__init__(ticker, channel)
+
+    def build_alert_header(self):
+        header = f"## :rotating_light: Volume Mover: {self.ticker}\n\n\n"
+        return header
+
+    def build_todays_change(self):
+        return f"**{self.ticker}** is up **{self.pct_change}%** with volume ({self.volume}) up **{"{:.2f}%".format(self.relative_volume)}** today\n"
+
+    def build_alert(self):
+        alert = ""
+        alert += self.build_alert_header()
+        alert += self.build_todays_change()
+        return alert
+
 
 #########        
 # Setup #
