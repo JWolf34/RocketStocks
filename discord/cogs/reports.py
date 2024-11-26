@@ -13,6 +13,7 @@ import pandas as pd
 import datetime as dt
 import json
 import config
+from config import utils
 import psycopg2
 import asyncio
 from table2ascii import table2ascii
@@ -20,404 +21,13 @@ import logging
 import rocketstocks
 
 # Logging configuration
-logger = logging.getLogger(__name__)
-
-utils =  config.utils()
-
-##################
-# Report Classes #
-##################
-
-class Report(object):
-    def __init__(self, channel):
-        self.message = self.build_report() + "\n\n"
-        self.channel = channel
-
-    ############################
-    # Report Builder Functions #
-    ############################
-
-    # Report Header
-    def build_report_header(self):
-        
-        # Append ticker name, today's date, and external links to message
-        header = "# " + self.ticker + " Report " + dt.date.today().strftime("%m/%d/%Y") + "\n"
-        return header + "\n"
-
-    # Ticker Info
-    def build_ticker_info(self):
-
-        message = "## Ticker Info\n"
-        ticker_data = sd.StockData.get_ticker_info(self.ticker)
-    
-        message += f"**Name:** {ticker_data[1]}\n"
-        message += f"**Sector:** {ticker_data[6] if ticker_data[6] else "N/A"}\n"
-        message += f"**Industry:** {ticker_data[5] if ticker_data[5] else "N/A"}\n"
-        message += f"**Market Cap:** ${self.format_large_num(ticker_data[2]) if ticker_data[2] else "N/A"}\n" 
-        message += f"**Country:** {ticker_data[3] if ticker_data[3] else "N/A"}\n"
-        message += f"**Next earnings date:** {sd.StockData.Earnings.get_next_earnings_date(self.ticker)}"
-        
-        return message + "\n"
-
-    # Daily Summary
-    def build_daily_summary(self):
-        # Append day's summary to message
-        summary = sd.get_days_summary(self.data)
-        message = "## Summary \n| "
-        for col in summary.keys():
-            message += "**{}:** {}".format(col, f"{summary[col]:,.2f}")
-            message += " | "
-
-        return message + "\n"
-    
-    def build_recent_SEC_filings(self):
-        message = "## Recent SEC Filings\n\n"
-        filings = sd.SEC().get_recent_filings(ticker=self.ticker)
-        for index, filing in filings[:5].iterrows():
-            message += f"[Form {filing['form']} - {filing['filingDate']}]({sd.SEC().get_link_to_filing(ticker=self.ticker, filing=filing)})\n"
-        return message
-
-    def build_table(self, df:pd.DataFrame):
-        table = table2ascii(
-            header = df.columns.tolist(),
-            body = df.values.tolist(), 
-        )
-        return "```\n" + table + "\n```"
-
-    def build_report(self):
-        report = ''
-        report += self.build_report_header()
-        return report   
-    
-    async def send_report(self, interaction:discord.Interaction, visibility:str = "public"):
-        if visibility == 'private':
-            message = await interaction.user.send(self.message)
-            return message
-        else:
-            message = await self.channel.send(self.message)
-            return message
-
-    #####################
-    # Utility functions #
-    #####################
-
-    # Tool to format large numbers
-    def format_large_num(self, number):
-        number = float('{:.3g}'.format(float(number)))
-        magnitude = 0
-        while abs(number) >= 1000:
-            magnitude += 1
-            number /= 1000.0
-        return '{}{}'.format('{:f}'.format(number).rstrip('0').rstrip('.'), ['', 'K', 'M', 'B', 'T'][magnitude])
-    
-    # Tool to determine percentage change
-    def percent_change(self, current, previous):
-        return float('{:.3g}'.format(((current - previous) / previous) * 100.0))
-
-    def percent_change_formatted(self, current, previous):
-        change = float('{:.3g}'.format(((current - previous) / previous) * 100.0))
-        return "{} {}%".format(":arrow_down_small:" if change > 0
-                                else ":arrow_up_small:",
-                                str(abs(change)))
-    
-    class Buttons(discord.ui.View):
-            def __init__(self):
-                super().__init__()
-
-class StockReport(Report):
-    
-    def __init__(self, ticker : str, channel):
-        self.ticker = ticker
-        self.data =  sd.fetch_daily_data(self.ticker)
-        self.buttons = self.Buttons(self.ticker)
-        super().__init__(channel)
-        
-    # Override
-    def build_report(self):
-        report = ''
-        report += self.build_report_header()
-        report += self.build_ticker_info()
-        #report += self.build_daily_summary()
-        report += self.build_recent_SEC_filings()
-        
-        return report
-
-    # Override
-    async def send_report(self, interaction: discord.Interaction, visibility:str):
-        if visibility == 'private':
-            message = await interaction.user.send(self.message, view=self.buttons)
-            return message
-        else:
-            message = await self.channel.send(self.message, view=self.buttons)
-            return message
-
-    # Override
-    class Buttons(discord.ui.View):
-            def __init__(self, ticker : str):
-                super().__init__()
-                self.ticker = ticker
-                self.add_item(discord.ui.Button(label="Google it", style=discord.ButtonStyle.url, url = "https://www.google.com/search?q={}".format(self.ticker)))
-                self.add_item(discord.ui.Button(label="StockInvest", style=discord.ButtonStyle.url, url = "https://stockinvest.us/stock/{}".format(self.ticker)))
-                self.add_item(discord.ui.Button(label="FinViz", style=discord.ButtonStyle.url, url = "https://finviz.com/quote.ashx?t={}".format(self.ticker)))
-                self.add_item(discord.ui.Button(label="Yahoo! Finance", style=discord.ButtonStyle.url, url = "https://finance.yahoo.com/quote/{}".format(self.ticker)))
-
-                
-            @discord.ui.button(label="Generate chart", style=discord.ButtonStyle.primary)
-            async def generate_chart(self, interaction:discord.Interaction, button:discord.ui.Button,):
-                await interaction.response.send_message("Generate chart!")
-
-            @discord.ui.button(label="Get news", style=discord.ButtonStyle.primary)
-            async def get_news(self, interaction:discord.Interaction, button:discord.ui.Button):
-                news_report = NewsReport(self.ticker)
-                await news_report.send_report(interaction)
-                await interaction.response.send_message(f"Fetched news for {self.ticker}!", ephemeral=True)
-
-class GainerReport(Report):
-    def __init__(self, channel):
-        self.gainers = self.get_gainers()
-        if self.gainers.size > 0:
-            self.update_gainer_watchlist()
-        super().__init__(channel)
-
-    def get_gainers(self):
-        headers = []
-        rows = []
-        if utils.in_premarket():
-            gainers = sd.TradingView.get_premarket_gainers_by_market_cap(100000000)[:15]
-            headers = ["Ticker", "Close", "Volume", "Market Cap", "Premarket Change", "Premarket Volume"]
-            for index, row in gainers.iterrows():
-                ticker = row.iloc[1]
-                if sd.StockData.validate_ticker(ticker):
-                    rows.append([row.iloc[1], 
-                                "${}".format(float('{:.2f}'.format(row.close))), 
-                                self.format_large_num(row.volume), 
-                                self.format_large_num(row.market_cap_basic), 
-                                "{:.2f}%".format(row.premarket_change), 
-                                self.format_large_num(row.premarket_volume)])
-                else:
-                    pass
-        elif utils.in_intraday():
-            gainers = sd.TradingView.get_intraday_gainers_by_market_cap(100000000)[:15]
-            headers = ["Ticker", "Close", "Volume", "Market Cap", "% Change"]
-            rows = []
-            for index, row in gainers.iterrows():
-                ticker = row.iloc[1]
-                if sd.StockData.validate_ticker(ticker):
-                    rows.append([ticker, 
-                                "${}".format(float('{:.2f}'.format(row.close))), 
-                                self.format_large_num(row.volume), 
-                                self.format_large_num(row.market_cap_basic), 
-                                "{:.2f}%".format(row.change)])
-                else: 
-                    pass
-                
-        elif utils.in_afterhours():
-            gainers = sd.TradingView.get_postmarket_gainers_by_market_cap(100000000)[:15] 
-            headers = ["Ticker", "Close", "Volume", "Market Cap", "After Hours Change", "After Hours Volume"]
-            rows = []
-            for index, row in gainers.iterrows():
-                ticker = row.iloc[1]
-                if sd.StockData.validate_ticker(ticker):
-                    rows.append([ticker, 
-                                "${}".format(float('{:.2f}'.format(row.close))), 
-                                self.format_large_num(row.volume), 
-                                self.format_large_num(row.market_cap_basic), 
-                                "{:.2f}%".format(row.postmarket_change), 
-                                self.format_large_num(row.postmarket_volume)])
-                else: 
-                    pass
-
-        return pd.DataFrame(rows, columns=headers)
-
-    def update_gainer_watchlist(self):
-        watchlist_id = f"{self.get_market_period()}-gainers"
-        watchlist_tickers = self.gainers['Ticker'].to_list()
-
-        if not sd.Watchlists().validate_watchlist(watchlist_id):
-            sd.Watchlists().create_watchlist(watchlist_id=watchlist_id, tickers=watchlist_tickers, systemGenerated=True)
-        else:
-            sd.Watchlists().update_watchlist(watchlist_id=watchlist_id, tickers=watchlist_tickers)
-
-    # Override
-    def build_report_header(self):
-        header = "### :rotating_light: {} Gainers {} (Market Cap > $100M) (Updated {})\n\n".format(
-                    "Pre-market" if utils.in_premarket()
-                    else "Intraday" if utils.in_intraday()
-                    else "After Hours" if utils.in_afterhours()
-                    else "",
-                    self.today.strftime("%m/%d/%Y"),
-                    self.today.strftime("%-I:%M %p"))
-        return header
-
-    # Override
-    def build_report(self):
-        report = ""
-        report += self.build_report_header()
-        report += self.build_table(self.gainers)
-        return report
-
-    # Override
-    async def send_report(self):
-            if utils.in_premarket() or utils.in_intraday() or utils.in_afterhours():
-                market_period = self.get_market_period()
-                message_id = config.get_gainer_message_id(market_period)
-                try:
-                    curr_message = await self.channel.fetch_message(message_id)
-                    if curr_message.created_at.date() < self.today.date():
-                        message = await self.channel.send(self.message)
-                        config.update_gainer_message_id(market_period, message.id)
-                        return message
-                    else:
-                        await curr_message.edit(content=self.message)
-
-                except discord.errors.NotFound as e:
-                    message = await self.channel.send(self.message)
-                    config.update_gainer_message_id(market_period, message.id)
-                    return message
-            else: 
-                # Outside market hours
-                pass
-
-    
-
-class VolumeReport():
-    def __init__(self, channel):
-        self.volume_movers = self.get_volume_movers()
-        if self.volume_movers.size > 0:
-            self.update_unusual_volume_watchlist()
-        super().__init__(channel)
-
-    # Override
-    def build_report_header(self):
-        header = "### :rotating_light: Unusual Volume {} (Updated {})\n\n".format(
-                    self.today.strftime("%m/%d/%Y"),
-                    self.today.strftime("%-I:%M %p"))
-        return header
-
-    # Override
-    def build_report(self):
-        report = ""
-        report += self.build_report_header()
-        report += self.build_table(self.gainers)
-        return report
-
-    def get_volume_movers(self):
-        headers = []
-        rows = []
-        unusual_volume = sd.TradingView.get_unusual_volume_movers()[:15]
-        headers = ["Ticker", "Close", "% Change", "Volume", "Relative Volume", "Market Cap"]
-        for index, row in gainers.iterrows():
-            ticker = row.iloc[1]
-            if sd.StockData.validate_ticker(ticker):
-                rows.append([row.iloc[1], 
-                            "${}".format(float('{:.2f}'.format(row.close))), 
-                            "{:.2f}%".format(row.change),
-                            self.format_large_num(row.volume), 
-                            "{:.2f}%".format(row.relative_volume),
-                            self.format_large_num(row.market_cap_basic)]) 
-            else:
-                pass
-
-        return pd.DataFrame(rows, columns=headers)
-
-    def update_unusual_volume_watchlist(self):
-        watchlist_id = "unusual-volume"
-        watchlist_tickers = self.volume_movers['Ticker'].to_list()
-
-        if not sd.Watchlists().validate_watchlist(watchlist_id):
-            sd.Watchlists().create_watchlist(watchlist_id=watchlist_id, tickers=watchlist_tickers, systemGenerated=True)
-        else:
-            sd.Watchlists().update_watchlist(watchlist_id=watchlist_id, tickers=watchlist_tickers)
-
-
-    
-class NewsReport(Report):
-    def __init__(self, query, breaking=False, **kwargs):
-        logger.debug(f"News report created with query '{query}'")
-        self.query = query
-        self.breaking=breaking
-        self.news_kwargs=kwargs
-        super().__init__(None) # no channel for this report
-
-    # Override
-    def build_report_header(self):
-        # Append ticker name, today's date, and external links to message
-        header = f"## News articles for '{self.query}'\n"
-        return header + "\n"
-
-    def build_news(self):
-        report = ''
-        if self.breaking:
-            news = sd.News().get_breaking_news(query=self.query, **self.news_kwargs)
-        else:
-            news = sd.News().get_news(query=self.query, **self.news_kwargs)
-        for article in news['articles'][:10]:
-            article = f"[{article['title']} - {article['source']['name']} ({sd.News().format_article_date(article['publishedAt'])})](<{article['url']}>)\n"
-            if len(report + article) <= 1900:
-                report += article
-            else:
-                break
-        return report
-
-    def build_report(self):
-        report = ''
-        report += self.build_report_header()
-        report += self.build_news()
-        return report + '\n'  
-
-    # Override
-    async def send_report(self, interaction):
-        await interaction.response.send_message(self.message)
-
-class PopularityReport(Report):
-    def __init__(self, channel, filter_name='all stock subreddits'):
-        self.filter_name = filter_name
-        self.filter = sd.ApeWisdom().get_filter(filter_name=self.filter_name)
-        self.top_stocks = sd.ApeWisdom().get_top_stocks(filter_name=self.filter_name)
-        sd.validate_path(config.get_attachments_path())
-        self.filepath = f"{config.get_attachments_path()}/top-stocks-{datetime.datetime.today().strftime("%m-%d-%Y")}.csv"
-        self.top_stocks.to_csv(self.filepath, index=False)
-        self.file = discord.File(self.filepath)
-        self.buttons = self.Buttons()
-        
-        super().__init__(channel)
-
-    # Override
-    def build_report_header(self):
-        return f"# Most Popular Stocks ({self.filter_name}) {datetime.datetime.today().strftime("%m/%d/%Y")}\n\n"
-
-    def build_report(self):
-        report = ''
-        report += self.build_report_header()
-        report += self.build_table(self.top_stocks.drop(columns='name')[:15])
-        return report
-
-    async def send_report(self, interaction:discord.Interaction = None, visibility:str ="public"):
-        if interaction is not None:
-            if visibility == "private":
-                message = await interaction.user.send(self.message, files=[self.file], view=self.buttons)
-                return message
-            else:
-                message = await self.channel.send(self.message, files=[self.file], view=self.buttons)
-                return message
-        else:
-            message = await self.channel.send(self.message, files=[self.file], view=self.buttons)
-            return message
-
-    # Override
-    class Buttons(discord.ui.View):
-        def __init__(self):
-            super().__init__()
-            self.add_item(discord.ui.Button(label="ApeWisdom", style=discord.ButtonStyle.url, url = "https://apewisdom.io/"))
-  
-
-
-    
+logger = logging.getLogger(__name__)  
 
 class Reports(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
         self.send_gainer_reports.start()
+        self.send_volume_reports.start()
         self.update_earnings_calendar.start()
         self.send_popularity_reports.start()
         self.reports_channel = self.bot.get_channel(config.get_reports_channel_id())
@@ -681,6 +291,413 @@ class Reports(commands.Cog):
         # Follow-up message
         follow_up = f"[Posted popularity reports!]({message.jump_url})"
         await interaction.followup.send(follow_up, ephemeral=True)
+
+##################
+# Report Classes #
+##################
+
+class Report(object):
+    def __init__(self, channel):
+        self.message = self.build_report() + "\n\n"
+        self.channel = channel
+
+    ############################
+    # Report Builder Functions #
+    ############################
+
+    # Report Header
+    def build_report_header(self):
+        
+        # Append ticker name, today's date, and external links to message
+        header = "# " + self.ticker + " Report " + dt.date.today().strftime("%m/%d/%Y") + "\n"
+        return header + "\n"
+
+    # Ticker Info
+    def build_ticker_info(self):
+
+        message = "## Ticker Info\n"
+        ticker_data = sd.StockData.get_ticker_info(self.ticker)
+    
+        message += f"**Name:** {ticker_data[1]}\n"
+        message += f"**Sector:** {ticker_data[6] if ticker_data[6] else "N/A"}\n"
+        message += f"**Industry:** {ticker_data[5] if ticker_data[5] else "N/A"}\n"
+        message += f"**Market Cap:** ${self.format_large_num(ticker_data[2]) if ticker_data[2] else "N/A"}\n" 
+        message += f"**Country:** {ticker_data[3] if ticker_data[3] else "N/A"}\n"
+        message += f"**Next earnings date:** {sd.StockData.Earnings.get_next_earnings_date(self.ticker)}"
+        
+        return message + "\n"
+
+    # Daily Summary
+    def build_daily_summary(self):
+        # Append day's summary to message
+        summary = sd.get_days_summary(self.data)
+        message = "## Summary \n| "
+        for col in summary.keys():
+            message += "**{}:** {}".format(col, f"{summary[col]:,.2f}")
+            message += " | "
+
+        return message + "\n"
+    
+    def build_recent_SEC_filings(self):
+        message = "## Recent SEC Filings\n\n"
+        filings = sd.SEC().get_recent_filings(ticker=self.ticker)
+        for index, filing in filings[:5].iterrows():
+            message += f"[Form {filing['form']} - {filing['filingDate']}]({sd.SEC().get_link_to_filing(ticker=self.ticker, filing=filing)})\n"
+        return message
+
+    def build_table(self, df:pd.DataFrame):
+        table = table2ascii(
+            header = df.columns.tolist(),
+            body = df.values.tolist(), 
+        )
+        return "```\n" + table + "\n```"
+
+    def build_report(self):
+        report = ''
+        report += self.build_report_header()
+        return report   
+    
+    async def send_report(self, interaction:discord.Interaction, visibility:str = "public"):
+        if visibility == 'private':
+            message = await interaction.user.send(self.message)
+            return message
+        else:
+            message = await self.channel.send(self.message)
+            return message
+
+    #####################
+    # Utility functions #
+    #####################
+
+    # Tool to format large numbers
+    def format_large_num(self, number):
+        number = float('{:.3g}'.format(float(number)))
+        magnitude = 0
+        while abs(number) >= 1000:
+            magnitude += 1
+            number /= 1000.0
+        return '{}{}'.format('{:f}'.format(number).rstrip('0').rstrip('.'), ['', 'K', 'M', 'B', 'T'][magnitude])
+    
+    # Tool to determine percentage change
+    def percent_change(self, current, previous):
+        return float('{:.3g}'.format(((current - previous) / previous) * 100.0))
+
+    def percent_change_formatted(self, current, previous):
+        change = float('{:.3g}'.format(((current - previous) / previous) * 100.0))
+        return "{} {}%".format(":arrow_down_small:" if change > 0
+                                else ":arrow_up_small:",
+                                str(abs(change)))
+    
+    class Buttons(discord.ui.View):
+            def __init__(self):
+                super().__init__()
+
+class StockReport(Report):
+    
+    def __init__(self, ticker : str, channel):
+        self.ticker = ticker
+        self.data =  sd.fetch_daily_data(self.ticker)
+        self.buttons = self.Buttons(self.ticker)
+        super().__init__(channel)
+        
+    # Override
+    def build_report(self):
+        report = ''
+        report += self.build_report_header()
+        report += self.build_ticker_info()
+        #report += self.build_daily_summary()
+        report += self.build_recent_SEC_filings()
+        
+        return report
+
+    # Override
+    async def send_report(self, interaction: discord.Interaction, visibility:str):
+        if visibility == 'private':
+            message = await interaction.user.send(self.message, view=self.buttons)
+            return message
+        else:
+            message = await self.channel.send(self.message, view=self.buttons)
+            return message
+
+    # Override
+    class Buttons(discord.ui.View):
+            def __init__(self, ticker : str):
+                super().__init__()
+                self.ticker = ticker
+                self.add_item(discord.ui.Button(label="Google it", style=discord.ButtonStyle.url, url = "https://www.google.com/search?q={}".format(self.ticker)))
+                self.add_item(discord.ui.Button(label="StockInvest", style=discord.ButtonStyle.url, url = "https://stockinvest.us/stock/{}".format(self.ticker)))
+                self.add_item(discord.ui.Button(label="FinViz", style=discord.ButtonStyle.url, url = "https://finviz.com/quote.ashx?t={}".format(self.ticker)))
+                self.add_item(discord.ui.Button(label="Yahoo! Finance", style=discord.ButtonStyle.url, url = "https://finance.yahoo.com/quote/{}".format(self.ticker)))
+
+                
+            @discord.ui.button(label="Generate chart", style=discord.ButtonStyle.primary)
+            async def generate_chart(self, interaction:discord.Interaction, button:discord.ui.Button,):
+                await interaction.response.send_message("Generate chart!")
+
+            @discord.ui.button(label="Get news", style=discord.ButtonStyle.primary)
+            async def get_news(self, interaction:discord.Interaction, button:discord.ui.Button):
+                news_report = NewsReport(self.ticker)
+                await news_report.send_report(interaction)
+                await interaction.response.send_message(f"Fetched news for {self.ticker}!", ephemeral=True)
+
+class GainerReport(Report):
+    def __init__(self, channel):
+        self.gainers = self.get_gainers()
+        if self.gainers.size > 0:
+            self.update_gainer_watchlist()
+        super().__init__(channel)
+
+    def get_gainers(self):
+        headers = []
+        rows = []
+        if utils.in_premarket():
+            gainers = sd.TradingView.get_premarket_gainers_by_market_cap(100000000)[:15]
+            headers = ["Ticker", "Close", "Volume", "Market Cap", "Premarket Change", "Premarket Volume"]
+            for index, row in gainers.iterrows():
+                ticker = row.iloc[1]
+                if sd.StockData.validate_ticker(ticker):
+                    rows.append([row.iloc[1], 
+                                "${}".format(float('{:.2f}'.format(row.close))), 
+                                self.format_large_num(row.volume), 
+                                self.format_large_num(row.market_cap_basic), 
+                                "{:.2f}%".format(row.premarket_change), 
+                                self.format_large_num(row.premarket_volume)])
+                else:
+                    pass
+        elif utils.in_intraday():
+            gainers = sd.TradingView.get_intraday_gainers_by_market_cap(100000000)[:15]
+            headers = ["Ticker", "Close", "Volume", "Market Cap", "% Change"]
+            rows = []
+            for index, row in gainers.iterrows():
+                ticker = row.iloc[1]
+                if sd.StockData.validate_ticker(ticker):
+                    rows.append([ticker, 
+                                "${}".format(float('{:.2f}'.format(row.close))), 
+                                self.format_large_num(row.volume), 
+                                self.format_large_num(row.market_cap_basic), 
+                                "{:.2f}%".format(row.change)])
+                else: 
+                    pass
+                
+        elif utils.in_afterhours():
+            gainers = sd.TradingView.get_postmarket_gainers_by_market_cap(100000000)[:15] 
+            headers = ["Ticker", "Close", "Volume", "Market Cap", "After Hours Change", "After Hours Volume"]
+            rows = []
+            for index, row in gainers.iterrows():
+                ticker = row.iloc[1]
+                if sd.StockData.validate_ticker(ticker):
+                    rows.append([ticker, 
+                                "${}".format(float('{:.2f}'.format(row.close))), 
+                                self.format_large_num(row.volume), 
+                                self.format_large_num(row.market_cap_basic), 
+                                "{:.2f}%".format(row.postmarket_change), 
+                                self.format_large_num(row.postmarket_volume)])
+                else: 
+                    pass
+
+        return pd.DataFrame(rows, columns=headers)
+
+    def update_gainer_watchlist(self):
+        watchlist_id = f"{utils.get_market_period()}-gainers"
+        watchlist_tickers = self.gainers['Ticker'].to_list()
+
+        if not sd.Watchlists().validate_watchlist(watchlist_id):
+            sd.Watchlists().create_watchlist(watchlist_id=watchlist_id, tickers=watchlist_tickers, systemGenerated=True)
+        else:
+            sd.Watchlists().update_watchlist(watchlist_id=watchlist_id, tickers=watchlist_tickers)
+
+    # Override
+    def build_report_header(self):
+        today = datetime.datetime.today()
+        header = "### :rotating_light: {} Gainers {} (Market Cap > $100M) (Updated {})\n\n".format(
+                    "Pre-market" if utils.in_premarket()
+                    else "Intraday" if utils.in_intraday()
+                    else "After Hours" if utils.in_afterhours()
+                    else "",
+                    today.strftime("%m/%d/%Y"),
+                    today.strftime("%-I:%M %p"))
+        return header
+
+    # Override
+    def build_report(self):
+        report = ""
+        report += self.build_report_header()
+        report += self.build_table(self.gainers)
+        return report
+
+    # Override
+    async def send_report(self):
+            if utils.in_premarket() or utils.in_intraday() or utils.in_afterhours():
+                today = datetime.datetime.today()
+                market_period = utils.get_market_period()
+                message_id = config.get_gainer_message_id()
+                try:
+                    curr_message = await self.channel.fetch_message(message_id)
+                    if curr_message.created_at.date() < today.date():
+                        message = await self.channel.send(self.message)
+                        config.update_gainer_message_id( message.id)
+                        return message
+                    else:
+                        await curr_message.edit(content=self.message)
+
+                except discord.errors.NotFound as e:
+                    message = await self.channel.send(self.message)
+                    config.update_gainer_message_id(message.id)
+                    return message
+            else: 
+                # Outside market hours
+                pass
+
+class VolumeReport(Report):
+    def __init__(self, channel):
+        self.volume_movers = self.get_volume_movers()
+        if self.volume_movers.size > 0:
+            self.update_unusual_volume_watchlist()
+        super().__init__(channel)
+
+    # Override
+    def build_report_header(self):
+        today = datetime.datetime.today()
+        header = "### :rotating_light: Unusual Volume {} (Volume > 1M)(Updated {})\n\n".format(
+                    today.strftime("%m/%d/%Y"),
+                    today.strftime("%-I:%M %p"))
+        return header
+
+    # Override
+    def build_report(self):
+        report = ""
+        report += self.build_report_header()
+        report += self.build_table(self.volume_movers)
+        return report
+
+    # Override
+    async def send_report(self):
+            if utils.in_premarket() or utils.in_intraday() or utils.in_afterhours():
+                today = datetime.datetime.today()
+                market_period = utils.get_market_period()
+                message_id = config.get_volume_message_id()
+                try:
+                    curr_message = await self.channel.fetch_message(message_id)
+                    if curr_message.created_at.date() < today.date():
+                        message = await self.channel.send(self.message)
+                        config.update_volume_message_id( message.id)
+                        return message
+                    else:
+                        await curr_message.edit(content=self.message)
+
+                except discord.errors.NotFound as e:
+                    message = await self.channel.send(self.message)
+                    config.update_volume_message_id(message.id)
+                    return message
+            else: 
+                # Outside market hours
+                pass
+
+    def get_volume_movers(self):
+        headers = []
+        rows = []
+        unusual_volume = sd.TradingView.get_unusual_volume_movers()[:15]
+        headers = ["Ticker", "Close", "% Change", "Volume", "Relative Volume", "Market Cap"]
+        for index, row in unusual_volume.iterrows():
+            ticker = row.iloc[1]
+            rows.append([ticker, 
+                        "{}".format(float('{:.2f}'.format(row.close))), 
+                        "{:.2f}%".format(row.change),
+                        self.format_large_num(row.volume), 
+                        "{:.2f}%".format(row.relative_volume_10d_calc),
+                        self.format_large_num(row.market_cap_basic)]) 
+            
+
+        return pd.DataFrame(rows, columns=headers)
+
+    def update_unusual_volume_watchlist(self):
+        watchlist_id = "unusual-volume"
+        watchlist_tickers = self.volume_movers['Ticker'].to_list()
+
+        if not sd.Watchlists().validate_watchlist(watchlist_id):
+            sd.Watchlists().create_watchlist(watchlist_id=watchlist_id, tickers=watchlist_tickers, systemGenerated=True)
+        else:
+            sd.Watchlists().update_watchlist(watchlist_id=watchlist_id, tickers=watchlist_tickers)
+
+class NewsReport(Report):
+    def __init__(self, query, breaking=False, **kwargs):
+        logger.debug(f"News report created with query '{query}'")
+        self.query = query
+        self.breaking=breaking
+        self.news_kwargs=kwargs
+        super().__init__(None) # no channel for this report
+
+    # Override
+    def build_report_header(self):
+        # Append ticker name, today's date, and external links to message
+        header = f"## News articles for '{self.query}'\n"
+        return header + "\n"
+
+    def build_news(self):
+        report = ''
+        if self.breaking:
+            news = sd.News().get_breaking_news(query=self.query, **self.news_kwargs)
+        else:
+            news = sd.News().get_news(query=self.query, **self.news_kwargs)
+        for article in news['articles'][:10]:
+            article = f"[{article['title']} - {article['source']['name']} ({sd.News().format_article_date(article['publishedAt'])})](<{article['url']}>)\n"
+            if len(report + article) <= 1900:
+                report += article
+            else:
+                break
+        return report
+
+    def build_report(self):
+        report = ''
+        report += self.build_report_header()
+        report += self.build_news()
+        return report + '\n'  
+
+    # Override
+    async def send_report(self, interaction):
+        await interaction.response.send_message(self.message)
+
+class PopularityReport(Report):
+    def __init__(self, channel, filter_name='all stock subreddits'):
+        self.filter_name = filter_name
+        self.filter = sd.ApeWisdom().get_filter(filter_name=self.filter_name)
+        self.top_stocks = sd.ApeWisdom().get_top_stocks(filter_name=self.filter_name)
+        sd.validate_path(config.get_attachments_path())
+        self.filepath = f"{config.get_attachments_path()}/top-stocks-{datetime.datetime.today().strftime("%m-%d-%Y")}.csv"
+        self.top_stocks.to_csv(self.filepath, index=False)
+        self.file = discord.File(self.filepath)
+        self.buttons = self.Buttons()
+        
+        super().__init__(channel)
+
+    # Override
+    def build_report_header(self):
+        return f"# Most Popular Stocks ({self.filter_name}) {datetime.datetime.today().strftime("%m/%d/%Y")}\n\n"
+
+    def build_report(self):
+        report = ''
+        report += self.build_report_header()
+        report += self.build_table(self.top_stocks.drop(columns='name')[:15])
+        return report
+
+    async def send_report(self, interaction:discord.Interaction = None, visibility:str ="public"):
+        if interaction is not None:
+            if visibility == "private":
+                message = await interaction.user.send(self.message, files=[self.file], view=self.buttons)
+                return message
+            else:
+                message = await self.channel.send(self.message, files=[self.file], view=self.buttons)
+                return message
+        else:
+            message = await self.channel.send(self.message, files=[self.file], view=self.buttons)
+            return message
+
+    # Override
+    class Buttons(discord.ui.View):
+        def __init__(self):
+            super().__init__()
+            self.add_item(discord.ui.Button(label="ApeWisdom", style=discord.ButtonStyle.url, url = "https://apewisdom.io/"))
+  
 
 
         

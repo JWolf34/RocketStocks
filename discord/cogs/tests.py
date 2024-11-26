@@ -4,6 +4,7 @@ from discord.ext import commands
 from discord.ext import tasks
 from reports import GainerReport
 import config
+from config import utils
 import logging
 
 # Logging configuration
@@ -30,7 +31,7 @@ class Tests(commands.Cog):
         await interaction.response.defer(ephemeral=True)
 
         report = GainerReport(self.gainers_channel)
-        if report.get_market_period() == "EOD":
+        if utils.get_market_period() == "EOD":
             await interaction.followup.send("Market is closed - cannot post gainer reports", ephemeral=True)
         else:
             await report.send_report()

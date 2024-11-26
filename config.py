@@ -2,6 +2,8 @@ import json
 import logging
 import os
 import discord
+import datetime
+import stockdata as sd
 
 # Logging configuration
 logger = logging.getLogger(__name__)
@@ -29,53 +31,70 @@ def update_gainer_message_id(message_id):
                                 SET messageid = {message_id}
                                 WHERE type = 'PREMARKET_GAINER_REPORT';
                                 """
-            Postgres().update(update_script)
+            sd.Postgres().update(update_script)
         elif market_time == "intraday":
             update_script = f"""UPDATE reports
                                 SET messageid = {message_id}
                                 WHERE type = 'INTRADAY_GAINER_REPORT';
                                 """
-            Postgres().update(update_script)
+            sd.Postgres().update(update_script)
         elif market_time == "afterhours":
             update_script = f"""UPDATE reports
                                 SET messageid = {message_id}
                                 WHERE type = 'AFTERHOURS_GAINER_REPORT';
                                 """
-            Postgres().update(update_script)
+            sd.Postgres().update(update_script)
         else:
             return None
+
+def update_volume_message_id(message_id):
+    update_script = f"""UPDATE reports
+                        SET messageid = {message_id}
+                        WHERE type = 'UNUSUAL_VOLUME_REPORT';
+                        """
+    sd.Postgres().update(update_script)
 
 def get_gainer_message_id():
     market_time = utils().get_market_period()
     if market_time == "premarket":
-        select_script = f"""SELECT * messageid FROM reports
+        select_script = f"""SELECT messageid FROM reports
                             WHERE type = 'PREMARKET_GAINER_REPORT';
                             """
-        result = Postgres().select_one(select_script)
+        result = sd.Postgres().select_one(select_script)
         if result is None:
             return result
         else:
             return result[0]
     elif market_time == "intraday":
-        select_script = f"""SELECT * messageid FROM reports
+        select_script = f"""SELECT messageid FROM reports
                             WHERE type = 'INTRADAY_GAINER_REPORT';
                             """
-        result = Postgres().select_one(select_script)
+        result = sd.Postgres().select_one(select_script)
         if result is None:
             return result
         else:
             return result[0]
     elif market_time == "afterhours":
-        select_script = f"""SELECT * messageid FROM reports
+        select_script = f"""SELECT messageid FROM reports
                             WHERE type = 'AFTERHOURS_GAINER_REPORT';
                             """
-        result = Postgres().select_one(select_script)
+        result = sd.Postgres().select_one(select_script)
         if result is None:
             return result
         else:
             return result[0]
     else:
         return None
+
+def get_volume_message_id():
+    select_script = f"""SELECT messageid FROM reports
+                        WHERE type = 'UNUSUAL_VOLUME_REPORT';
+                        """
+    result = sd.Postgres().select_one(select_script)
+    if result is None:
+        return result
+    else:
+        return result[0]
 
 # Data Path #
 
@@ -227,26 +246,36 @@ def get_db_host():
 
 class utils():
     def __init__(self):
-        self.PREMARKET_START = self.today.replace(hour=7, minute=0, second=0, microsecond=0)
-        self.INTRADAY_START= self.today.replace(hour=8, minute=30, second=0, microsecond=0)
-        self.AFTERHOURS_START = self.today.replace(hour=15, minute=0, second=0, microsecond=0)
-        self.MARKET_END = self.today.replace(hour=17, minute=0, second=0, microsecond=0)
+        pass
 
-    def in_premarket(self):
-        return self.today > self.PREMARKET_START and self.today < self.INTRADAY_START
+    @staticmethod
+    def in_premarket():
+        today = datetime.datetime.now()
+        PREMARKET_START = today.replace(hour=7, minute=0, second=0, microsecond=0)
+        INTRADAY_START = today.replace(hour=8, minute=30, second=0, microsecond=0)
+        return today > PREMARKET_START and today < INTRADAY_START
 
-    def in_intraday(self):
-        return self.today > self.INTRADAY_START and self.today < self.AFTERHOURS_START
+    @staticmethod
+    def in_intraday():
+        today = datetime.datetime.now()
+        INTRADAY_START = today.replace(hour=8, minute=30, second=0, microsecond=0)
+        AFTERHOURS_START = today.replace(hour=15, minute=0, second=0, microsecond=0)
+        return today > INTRADAY_START and today < AFTERHOURS_START
     
-    def in_afterhours(self):
-        return self.today > self.AFTERHOURS_START and self.today < self.MARKET_END
+    @staticmethod
+    def in_afterhours():
+        today = datetime.datetime.now()
+        AFTERHOURS_START = today.replace(hour=15, minute=0, second=0, microsecond=0)
+        MARKET_END = today.replace(hour=17, minute=0, second=0, microsecond=0)
+        return today > AFTERHOURS_START and today < MARKET_END
 
-    def get_market_period(self):
-        if self.in_premarket():
+    @staticmethod
+    def get_market_period():
+        if utils.in_premarket():
             return "premarket"
-        elif self.in_intraday():
+        elif utils.in_intraday():
             return "intraday"
-        if self.in_afterhours():
+        if utils.in_afterhours():
             return "afterhours"
         else:
             return "EOD"    

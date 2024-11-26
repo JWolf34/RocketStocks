@@ -182,7 +182,7 @@ class Postgres():
 
                             CREATE TABLE IF NOT EXISTS reports(
                             type                varchar(64) PRIMARY KEY,
-                            messageid           int
+                            messageid           bigint
                             );
                             """
         logger.debug("Running script to create tables in database...")
@@ -654,15 +654,16 @@ class TradingView():
     @staticmethod
     def get_unusual_volume_movers():
         logger.info("Fetching stocks with ununsual volume")
-        num_rows, gainers = (Query()
-                            .select('name','close', 'change', 'volume','relative_volume', 'market_cap_basic', 'exchange')
+        num_rows, unusual_volume = (Query()
+                            .select('name','close', 'change', 'volume','relative_volume_10d_calc', 'market_cap_basic', 'exchange')
                             .set_markets('america')
                             .where(
                                 Column('exchange').isin(get_supported_exchanges()),
+                                Column('volume') > 1000000
                             )
-                            .order_by('relative_volume', ascending=False)
+                            .order_by('relative_volume_10d_calc', ascending=False)
                             .get_scanner_data())
-        return gainers
+        return unusual_volume
 
 class ApeWisdom():
     def __init__(self):
