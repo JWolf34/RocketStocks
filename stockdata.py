@@ -179,6 +179,11 @@ class Postgres():
                             estimate            float,
                             PRIMARY KEY (ticker, period_end_date)
                             );
+
+                            CREATE TABLE IF NOT EXIST reports(
+                            type                varchar(64) PRIMARY KEY,
+                            messageid           int
+                            );
                             """
         logger.debug("Running script to create tables in database...")
         self.cur.execute(create_script)
