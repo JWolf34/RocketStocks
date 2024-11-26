@@ -108,7 +108,7 @@ class Reports(commands.Cog):
             pass
 
 
-    #@send_volume_reports.before_loop
+    @send_volume_reports.before_loop
     async def before_send_volume_reports(self):
         # Start posting report at next 0 or 5 minute interval
         now = datetime.datetime.now().astimezone()
