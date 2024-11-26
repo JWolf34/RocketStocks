@@ -24,15 +24,17 @@ class Alerts(commands.Cog):
 
     #@tasks.loop(minutes=5)
     async def send_earnings_movers(self, gainers):
+        today = datetime.datetime.today()
         for index, row in gainers.iterrows():
             ticker = row['Ticker']
             earnings_date = sd.StockData.Earnings.get_next_earnings_date(ticker)
             if earnings_date != "N/A":
-                if earnings_date == datetime.datetime.today().date():
+                if earnings_date == today.date():
                     alert = EarningsMoverAlert(ticker=ticker, channel=self.alerts_channel, pct_change= float(row['% Change'].strip("%")))
                     await alert.send_alert()
 
     async def send_sec_filing_movers(self, gainers):
+        today = datetime.datetime.today()
         for index, row in gainers.iterrows():
             ticker = row['Ticker']
             filings = sd.SEC().get_filings_from_today(ticker)
@@ -73,23 +75,6 @@ class Alert(Report):
             message += "time not specified"
 
         return message + "\n\n"
-
-
-    """
-    def build_recent_sec_filings(self):
-        message = "## Recent SEC Filings\n\n"
-        filings = sd.SEC().get_recent_filings(ticker=self.ticker)
-        for index, filing in filings[:5].iterrows():
-            message += f"[Form {filing['form']} - {filing['filingDate']}]({sd.SEC().get_link_to_filing(ticker=self.ticker, filing=filing)})\n"
-        return message
-
-    def build_todays_sec_filings(self):
-        message = "## Today's SEC Filings\n\n"
-        filings = sd.SEC().get_filings_from_today(ticker=self.ticker)
-        for index, filing in filings.iterrows():
-            message += f"[Form {filing['form']} - {filing['filingDate']}]({sd.SEC().get_link_to_filing(ticker=self.ticker, filing=filing)})\n"
-        return message
-        """
 
     async def send_alert(self):
         message = await self.channel.send(self.message)
