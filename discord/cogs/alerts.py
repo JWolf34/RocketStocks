@@ -115,8 +115,8 @@ class Alert(Report):
             market_period = utils.get_market_period()
             message_id = config.get_alert_message_id(date=today.date(), ticker=self.ticker, alert_type=self.alert_type)
             if message_id is not None:
-                curr_message = await self.channel.fetch_message(message_id)
-                await curr_message.edit(content=self.message, view=self.buttons)
+                logger.debug(f"Alert {self.alert_type} already reported for ticker {self.ticker} today")
+                pass
             else:
                 message = await self.channel.send(self.message, view=self.buttons)
                 config.insert_alert_message_id(date=today.date(), ticker=self.ticker, alert_type=self.alert_type, message_id=message.id)
