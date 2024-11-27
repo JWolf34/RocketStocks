@@ -73,7 +73,7 @@ class Reports(commands.Cog):
     @tasks.loop(minutes=5)
     async def send_gainer_reports(self):
         now = datetime.datetime.now()
-        if (now.weekday() < 5):
+        if (now.weekday() < 5 and utils.get_market_period() != "EOD"):
             report = GainerReport(self.screeners_channel)
             await report.send_report()
             await self.bot.get_cog("Alerts").send_earnings_movers(report.gainers)
@@ -99,7 +99,7 @@ class Reports(commands.Cog):
     @tasks.loop(minutes=5)
     async def send_volume_reports(self):
         now = datetime.datetime.now()
-        if (now.weekday() < 5):
+        if (now.weekday() < 5 and utils.get_market_period() != "EOD"):
             report = VolumeReport(self.screeners_channel)
             await report.send_report()
             await self.bot.get_cog("Alerts").send_unusual_volume_movers(report.volume_movers)
