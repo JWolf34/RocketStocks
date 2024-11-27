@@ -28,6 +28,7 @@ def run_bot():
         logger.info("RocketStocks bot ready!")
         await load()
     
+    
     bot.run(token)
 
 

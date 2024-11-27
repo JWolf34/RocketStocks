@@ -45,7 +45,7 @@ class Reports(commands.Cog):
     #########
 
     # Report on most popular stocks across reddit daily
-    @tasks.loop(time=datetime.time(hour=22, minute=0, second=0)) # time in UTC
+    @tasks.loop(time=datetime.time(hour=22 , minute=0, second=0)) # time in UTC
     #@tasks.loop(hours=24)
     async def send_popularity_reports(self):
         report = PopularityReport(self.screeners_channel)
@@ -122,7 +122,8 @@ class Reports(commands.Cog):
 
 
     # Create earnings events on calendar for all stocks on watchlists
-    @tasks.loop(time=datetime.time(hour=2, minute=0, second=0))
+    #@tasks.loop(time=datetime.time(hour=2, minute=0, second=0))
+    @tasks.loop(minutes=5)
     async def update_earnings_calendar(self):
         logger.debug("Creating events for upcoming earnings dates")
         guild = self.bot.get_guild(config.get_discord_guild_id())
@@ -141,8 +142,8 @@ class Reports(commands.Cog):
                 
                 if not event_exists:
                     release_time = "unspecified"
-                    start_time = datetime.datetime.strptime(earnings_info['date'][0], "%Y-%m-%d").astimezone()
-                    start_time= start_time.replace(hour=12, minute=0, second=0)
+                    start_time = datetime.datetime.combine(earnings_info['date'][0], datetime.datetime.strptime('1230','%H%M').time()).astimezone()
+                    #start_time= start_time.replace(hour=12, minute=0, second=0)
                     if "pre-market" in earnings_info['time'][0]:
                         start_time = start_time.replace(hour = 8, minute=30)
                         release_time = "pre-market"
