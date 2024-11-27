@@ -122,8 +122,8 @@ class Reports(commands.Cog):
 
 
     # Create earnings events on calendar for all stocks on watchlists
-    #@tasks.loop(time=datetime.time(hour=2, minute=0, second=0))
-    @tasks.loop(minutes=5)
+    @tasks.loop(time=datetime.time(hour=6, minute=0, second=0)) # time in UTC
+    #@tasks.loop(minutes=5)
     async def update_earnings_calendar(self):
         logger.debug("Creating events for upcoming earnings dates")
         guild = self.bot.get_guild(config.get_discord_guild_id())
