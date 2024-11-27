@@ -19,6 +19,11 @@ from tradingview_screener import Scanner, Query, Column
 # Logging configuration
 logger = logging.getLogger(__name__)
 
+# Initilaize database
+Postgres().create_tables()
+Postgres().init_tables()
+
+
 class News():
     def __init__(self):
         self.token = config.get_news_api_token()
@@ -1094,9 +1099,6 @@ def test():
 if __name__ == "__main__":
     logger.info("stockdata.py initialized")
     
-    # Initilaize database
-    Postgres().create_tables()
-    Postgres().init_tables()
     
     #test()
     
