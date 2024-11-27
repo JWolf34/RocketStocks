@@ -45,7 +45,7 @@ class Reports(commands.Cog):
     #########
 
     # Report on most popular stocks across reddit daily
-    @tasks.loop(time=datetime.time(hour=20, minute=0, second=0)) # time in UTC
+    @tasks.loop(time=datetime.time(hour=22, minute=0, second=0)) # time in UTC
     #@tasks.loop(hours=24)
     async def send_popularity_reports(self):
         report = PopularityReport(self.screeners_channel)
