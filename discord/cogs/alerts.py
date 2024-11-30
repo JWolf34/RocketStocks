@@ -66,11 +66,8 @@ class Alerts(commands.Cog):
         today = datetime.datetime.today()
         for index, row in volume_movers.iterrows():
             ticker = row['Ticker']
-            relative_volume = float(row['Relative Volume'].strip("%"))
-            if relative_volume > 100.0:
-                volume = row['Volume']
-                pct_change = float(row['% Change'].strip("%"))
-                alert = VolumeMoverAlert(ticker=ticker, channel=self.alerts_channel, pct_change= pct_change, volume=volume, relative_volume=relative_volume)
+            if float(row['Relative Volume']) > 100.0:
+                alert = VolumeMoverAlert(ticker=ticker, channel=self.alerts_channel, volume_row=row)
                 await alert.send_alert()
 
 
@@ -188,11 +185,12 @@ class SECFilingMoverAlert(Alert):
         return alert
 
 class VolumeMoverAlert(Alert):
-    def __init__(self, ticker, channel, pct_change, volume, relative_volume):
-        self.pct_change = pct_change
+    def __init__(self, ticker, channel, volume_row):
+        self.pct_change = volume_row['% Change']
         self.alert_type = "VOLUME_MOVER"
-        self.volume = volume
-        self.relative_volume = relative_volume
+        self.volume = volume_row['Volume']
+        self.average_volume = volume_row['Average Volume (10 Day)']
+        self.relative_volume = volume_row['Relative Volume']
         super().__init__(ticker, channel)
 
     def build_alert_header(self):
@@ -200,12 +198,16 @@ class VolumeMoverAlert(Alert):
         return header
 
     def build_todays_change(self):
-        return f"**{self.ticker}** is up **{self.pct_change}%** with volume ({self.volume}) up **{"{:.2f}%".format(self.relative_volume)}** today\n"
+        return f"**{self.ticker}** is up **{self.pct_change}%** with relative volume **{"{:.2f} times".format(self.relative_volume)}** the normal today\n\n"
+
+    def build_stats(self):
+        return f"### Stats\n**Today's Volume:** {self.volume}\n**Average Volume:** {self.average_volume}\n**Relative Volume:** {self.relative_volume}x\n\n"
 
     def build_alert(self):
         alert = ""
         alert += self.build_alert_header()
         alert += self.build_todays_change()
+        alert += self.build_stats()
         return alert
 
 

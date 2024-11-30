@@ -574,7 +574,7 @@ class VolumeReport(Report):
         super().__init__(channel)
 
     def format_df_for_table(self):
-        movers = self.volume_movers
+        movers = self.volume_movers.copy()
         movers['Volume'] = movers['Volume'].apply(lambda x: self.format_large_num(x))
         movers['Relative Volume'] = movers['Relative Volume'].apply(lambda x: "{:2f}x".format(x))
         movers['Average Volume (10 Day)'] = movers['Average Volume (10 Day)'].apply(lambda x: self.format_large_num(x))
