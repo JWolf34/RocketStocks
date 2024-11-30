@@ -98,17 +98,17 @@ class Reports(commands.Cog):
     # Generate and send premarket gainer reports to the reports channel
     @tasks.loop(minutes=5)
     async def send_volume_reports(self):
-        now = datetime.datetime.now()
-        if (now.weekday() < 5 and utils.get_market_period() != "EOD"):
+            now = datetime.datetime.now()
+        #if (now.weekday() < 5 and utils.get_market_period() != "EOD"):
             report = VolumeReport(self.screeners_channel)
             await report.send_report()
             await self.bot.get_cog("Alerts").send_unusual_volume_movers(report.volume_movers)
-        else:
+        #else:
             # Not a weekday - do not post gainer reports
             pass
 
 
-    @send_volume_reports.before_loop
+    #@send_volume_reports.before_loop
     async def before_send_volume_reports(self):
         # Start posting report at next 0 or 5 minute interval
         now = datetime.datetime.now().astimezone()
@@ -567,10 +567,19 @@ class GainerReport(Report):
 
 class VolumeReport(Report):
     def __init__(self, channel):
-        self.volume_movers = self.get_volume_movers()
+        self.volume_movers = sd.TradingView.get_unusual_volume_movers()
+        self.volume_movers_formatted = self.format_df_for_table()
         if self.volume_movers.size > 0:
             self.update_unusual_volume_watchlist()
         super().__init__(channel)
+
+    def format_df_for_table(self):
+        movers = self.volume_movers
+        movers['Volume'] = movers['Volume'].apply(lambda x: self.format_large_num(x))
+        movers['Relative Volume'] = movers['Relative Volume'].apply(lambda x: "{:2f}x".format(x))
+        movers['Average Volume (10 Day)'] = movers['Average Volume (10 Day)'].apply(lambda x: self.format_large_num(x))
+        movers['Market Cap'] = movers['Market Cap'].apply(lambda x: self.format_large_num(x))
+        return movers
 
     # Override
     def build_report_header(self):
@@ -584,12 +593,12 @@ class VolumeReport(Report):
     def build_report(self):
         report = ""
         report += self.build_report_header()
-        report += self.build_table(self.volume_movers[:15])
+        report += self.build_table(self.volume_movers_formatted[:10])
         return report
 
     # Override
     async def send_report(self):
-        if utils.in_premarket() or utils.in_intraday() or utils.in_afterhours():
+        if True: #utils.in_premarket() or utils.in_intraday() or utils.in_afterhours():
             today = datetime.datetime.today()
             market_period = utils.get_market_period()
             message_id = config.get_volume_message_id()

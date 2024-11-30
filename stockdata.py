@@ -654,15 +654,17 @@ class TradingView():
     @staticmethod
     def get_unusual_volume_movers():
         logger.info("Fetching stocks with ununsual volume")
+        columns = ['Ticker', 'Close', '% Change', 'Volume', 'Relative Volume', 'Average Volume (10 Day)', 'Market Cap']
         num_rows, unusual_volume = (Query()
-                            .select('name','close', 'change', 'volume','relative_volume_10d_calc', 'market_cap_basic', 'exchange')
+                            .select('name','Price', 'Change %', 'Volume', 'Relative Volume', 'Average Volume (10 day)','Market Capitalization')
                             .set_markets('america')
                             .where(
-                                Column('exchange').isin(get_supported_exchanges()),
                                 Column('volume') > 1000000
                             )
-                            .order_by('relative_volume_10d_calc', ascending=False)
+                            .order_by('relative_volume', ascending=False)
                             .get_scanner_data())
+        unusual_volume = unusual_volume.drop(columns = "ticker")
+        unusual_volume.columns = columns
         return unusual_volume
 
 class ApeWisdom():
@@ -1089,14 +1091,14 @@ def get_supported_exchanges():
 #########
 
 def test():
-    print(TradingView.get_unusual_volume_movers())
+    print(reports.VolumeReport().volume_movers_for_table)
 
 if __name__ == "__main__":
     #test    
     # Initilaize database
-    Postgres().create_tables()
-    Postgres().init_tables()
-
+    #Postgres().create_tables()
+    #Postgres().init_tables()
+    test()
     pass
 
     
