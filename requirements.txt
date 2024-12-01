@@ -12,3 +12,4 @@ table2ascii
 psycopg2-binary
 ratelimit
 pandas_market_calendars
+schwab-py

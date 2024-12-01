@@ -739,6 +739,10 @@ class Dolthub():
         earnings_data = earnings_json['rows']
         return pd.DataFrame(earnings_data, columns=columns)
 
+class Schwab():
+    def __init__(self):
+        schwab = ""
+
 #########################
 # Download and analysis #
 #########################
