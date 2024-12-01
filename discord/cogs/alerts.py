@@ -24,11 +24,9 @@ class Alerts(commands.Cog):
     async def on_ready(self):
         logger.info(f"Cog {__name__} loaded!")
 
-
     @tasks.loop(time=datetime.time(hour=12, minute=30, second=0)) # time in UTC
     async def post_alerts_date(self):
-        now = datetime.datetime.now()
-        if (now.weekday() < 5):
+        if (utils.market_open_today()):
             await self.alerts_channel.send(f"# :rotating_light: Alerts for {utils.format_date_mdy(now.date())} :rotating_light:")
 
     async def send_earnings_movers(self, gainers):
@@ -38,13 +36,7 @@ class Alerts(commands.Cog):
             earnings_date = sd.StockData.Earnings.get_next_earnings_date(ticker)
             if earnings_date != "N/A":
                 if earnings_date == today.date():
-                    change_columns = ["Premarket Change", "% Change", "After Hours Change"]
-                    pct_change = 0.0
-                    for column in change_columns:
-                        if column in row.index:
-                            pct_change = float(row[column].strip("%"))
-                            break
-                    alert = EarningsMoverAlert(ticker=ticker, channel=self.alerts_channel, pct_change= pct_change)
+                    alert = EarningsMoverAlert(ticker=ticker, channel=self.alerts_channel, gainer_row=row)
                     await alert.send_alert()
 
     async def send_sec_filing_movers(self, gainers):
@@ -53,13 +45,7 @@ class Alerts(commands.Cog):
             ticker = row['Ticker']
             filings = sd.SEC().get_filings_from_today(ticker)
             if filings.size > 0:
-                change_columns = ["Premarket Change", "% Change", "After Hours Change"]
-                pct_change = 0.0
-                for column in change_columns:
-                    if column in row.index:
-                        pct_change = float(row[column].strip("%"))
-                        break
-                alert = SECFilingMoverAlert(ticker=ticker, channel=self.alerts_channel, pct_change= pct_change)
+                alert = SECFilingMoverAlert(ticker=ticker, channel=self.alerts_channel, gainer_row=row)
                 await alert.send_alert()
 
     async def send_watchlist_movers(self, gainers):
@@ -80,8 +66,6 @@ class Alerts(commands.Cog):
             if relative_volume > 20.0:
                 alert = VolumeMoverAlert(ticker=ticker, channel=self.alerts_channel, volume_row=row)
                 await alert.send_alert()
-
-
 
 ##################
 # Alerts Classes #
@@ -162,8 +146,8 @@ class Alert(Report):
                 await interaction.response.send_message(f"Fetched news for {self.ticker}!", ephemeral=True)
 
 class EarningsMoverAlert(Alert):
-    def __init__(self, ticker, channel, pct_change):
-        self.pct_change = pct_change
+    def __init__(self, ticker, channel, gainer_row):
+        self.pct_change = self.get_pct_change(gainer_row)
         self.alert_type = "EARNINGS_MOVER"
         super().__init__(ticker, channel)
 
@@ -183,8 +167,8 @@ class EarningsMoverAlert(Alert):
         return alert
 
 class SECFilingMoverAlert(Alert):
-    def __init__(self, ticker, channel, pct_change):
-        self.pct_change = pct_change
+    def __init__(self, ticker, channel, gainer_row):
+        self.pct_change = self.get_pct_change(gainer_row)
         self.alert_type = "SEC_FILING_MOVER"
         super().__init__(ticker, channel)
 
