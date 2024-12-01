@@ -95,7 +95,7 @@ class Alert(Report):
 
     def build_earnings_date(self):
         earnings_info = sd.StockData.Earnings.get_next_earnings_info(self.ticker)
-        message = "**Earnings Date:** "
+        message = f"{self.ticker} reports earnings on"
         message += f"{earnings_info['date'].iloc[0].strftime("%m/%d/%Y")}, "
         earnings_time = earnings_info['time'].iloc[0]
         if "pre-market" in earnings_time:
