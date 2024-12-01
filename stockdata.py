@@ -517,6 +517,18 @@ class StockData():
             else:
                 return pd.DataFrame(results, columns=columns)
 
+        @staticmethod
+        def get_earnings_today(date):
+            select_script = f"""SELECT * FROM upcomingearnings
+                               WHERE date == '{date}';
+                               """
+            results = Postgres().select_many(select_script)
+            if results is None:
+                return results
+            else:
+                columns = Postgres().get_table_columns('upcomingearnings')
+                return pd.DataFrame(results, columns=columns)
+
         
 
 

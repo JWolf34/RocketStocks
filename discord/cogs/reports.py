@@ -107,8 +107,13 @@ class Reports(commands.Cog):
             # Not a weekday - do not post gainer reports
             pass
 
-
-    #@send_volume_reports.before_loop
+    @tasks.loop(time=datetime.time(hour=12, minute=0, second=0)) # time in UTC
+    async def pose_weekly_earnings(self):
+        today = datetime.datetime.today()
+        if datetime.datetime.today().weekday() == 0:
+            pass # Today is Monday
+            
+    @send_volume_reports.before_loop
     async def before_send_volume_reports(self):
         # Start posting report at next 0 or 5 minute interval
         now = datetime.datetime.now().astimezone()
@@ -119,6 +124,8 @@ class Reports(commands.Cog):
         diff = (minutes_by_five + 1) * 5 - now.minute
         future = now + datetime.timedelta(minutes=diff)
         await asyncio.sleep((future-now).total_seconds())
+
+    
 
 
     # Create earnings events on calendar for all stocks on watchlists
@@ -372,13 +379,13 @@ class Report(object):
         report = ''
         report += self.build_report_header()
         return report   
-    
-    async def send_report(self, interaction:discord.Interaction, visibility:str = "public"):
+
+    async def send_report(self, interaction:discord.Interaction, visibility:str = "public", files=None, view=None):
         if visibility == 'private':
-            message = await interaction.user.send(self.message)
+            message = await interaction.user.send(self.message, files=files, view=view)
             return message
         else:
-            message = await self.channel.send(self.message)
+            message = await self.channel.send(self.message, files=files, view=view)
             return message
 
     #####################
@@ -428,13 +435,9 @@ class StockReport(Report):
 
     # Override
     async def send_report(self, interaction: discord.Interaction, visibility:str):
-        if visibility == 'private':
-            message = await interaction.user.send(self.message, view=self.buttons)
-            return message
-        else:
-            message = await self.channel.send(self.message, view=self.buttons)
-            return message
-
+        message = await super().send_report(interaction=interaction, visibility=visibility, view=self.buttons)
+        return message
+        
     # Override
     class Buttons(discord.ui.View):
             def __init__(self, ticker : str):
@@ -722,7 +725,34 @@ class PopularityReport(Report):
         def __init__(self):
             super().__init__()
             self.add_item(discord.ui.Button(label="ApeWisdom", style=discord.ButtonStyle.url, url = "https://apewisdom.io/"))
-  
+
+class WeeklyEarningsReport():
+    def __init__(self, channel):
+        self.upcoming_earnings = self.get_upcoming_earnings()
+        filepath = f"{config.get_attachments_path()}/upcoming_earnings.csv"
+        self.upcoming_earnings.to_csv(filepath)
+        self.file = discord.File(filepath)
+        super().__init__(channel)
+    
+    def get_upcoming_earnings():
+        today = datetime.datetime.today()
+        weekly_earnings = pd.DataFrame()
+        for i in range(0, 5):
+            earnings_today = sd.StockData.Earnings.get_earnings_today(today + datetime.timedelta(days=i))
+            if earnings_today is None:
+                pass
+            else: 
+                weekly_earnings = pd.concat(weekly_earnings, earnings_today)
+
+    def build_report_header(self):
+        return f"# Earnings Releasing the Week of {utils.format_date_mdy(datetime.datetime.today())}\n\n"
+
+    def build_report(self):
+        report = ""
+        report += build_report_header()
+        return report
+
+    
 
 
         
