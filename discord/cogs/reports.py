@@ -20,6 +20,7 @@ import asyncio
 from table2ascii import table2ascii
 import logging
 import rocketstocks
+import random
 
 # Logging configuration
 logger = logging.getLogger(__name__)  
@@ -31,6 +32,7 @@ class Reports(commands.Cog):
         self.send_volume_reports.start()
         self.update_earnings_calendar.start()
         self.send_popularity_reports.start()
+        self.post_earnings_spotlight.start()
         self.post_weekly_earnings.start()
         self.reports_channel = self.bot.get_channel(config.get_reports_channel_id())
         self.screeners_channel = self.bot.get_channel(config.get_screeners_channel_id())
@@ -120,13 +122,21 @@ class Reports(commands.Cog):
         future = now + datetime.timedelta(minutes=diff)
         await asyncio.sleep((future-now).total_seconds())
 
-    #@tasks.loop(time=datetime.time(hour=12, minute=0, second=0)) # time in UTC
+    #@tasks.loop(time=datetime.time(hour=12, minute=30, second=0)) # time in UTC
     @tasks.loop(minutes=5)
+    async def post_earnings_spotlight(self):
+        #if utils.market_open_today():
+        report = EarningsSpotlightReport(self.reports_channel)
+        await report.send_report(self.reports_channel)
+
+
+    @tasks.loop(time=datetime.time(hour=12, minute=0, second=0)) # time in UTC
+    #@tasks.loop(minutes=5)
     async def post_weekly_earnings(self):
         today = datetime.datetime.today()
-        #if datetime.datetime.today().weekday() == 0:
-        report = WeeklyEarningsReport(self.reports_channel)
-        await report.send_report()
+        if datetime.datetime.today().weekday() == 0:
+            report = WeeklyEarningsReport(self.reports_channel)
+            await report.send_report()
 
 
     # Create earnings events on calendar for all stocks on watchlists
@@ -726,6 +736,20 @@ class PopularityReport(Report):
         def __init__(self):
             super().__init__()
             self.add_item(discord.ui.Button(label="ApeWisdom", style=discord.ButtonStyle.url, url = "https://apewisdom.io/"))
+
+class EarningsSpotlightReport(Report):
+    def __init__(self, channel):
+        earnings_today = sd.StockData.Earnings.get_earnings_today(datetime.datetime.today())
+        self.ticker = earnings_today['ticker'].iloc[random.randint(0, earnings_today['ticker'].size)]
+        super().__init__(channel)
+
+    def build_report_header(self):
+        return f"# Earnings Spotight: {self.ticker}\n\n"
+
+    def build_report(self):
+        report = ""
+        report += self.build_report_header()
+        return report
 
 class WeeklyEarningsReport(Report):
     def __init__(self, channel):
