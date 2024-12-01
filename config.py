@@ -4,6 +4,7 @@ import os
 import discord
 import datetime
 import stockdata as sd
+import pandas_market_calendars as mcal
 
 # Logging configuration
 logger = logging.getLogger(__name__)
@@ -253,7 +254,7 @@ def get_db_password():
             logger.debug("Successfully fetched DB password")
             return token
         except Exception as e:
-            logger.exception("Failed to fetch  DB password\n{}".format(e))
+            logger.exception("Failed to fetch DB password\n{}".format(e))
             return ""
 
 def get_db_name():
@@ -281,25 +282,54 @@ class utils():
         pass
 
     @staticmethod
+    def get_nyse_calendar():
+        return mcal.get_calendar('NYSE')
+
+    @staticmethod
+    def market_is_open_today(date):
+        nyse = utils.get_nyse_calendar()
+        valid_days = nyse.valid_days(start_date=date, end_date=date)
+        return valid_days
+
+    @staticmethod
+    def get_market_schedule(date):
+        nyse = utils.get_nyse_calendar()
+        schedule = nyse.schedule(start_date=date, end_date=date, start='pre', end='post')
+        return schedule
+
+    @staticmethod
     def in_premarket():
-        today = datetime.datetime.now()
-        PREMARKET_START = today.replace(hour=7, minute=0, second=0, microsecond=0)
-        INTRADAY_START = today.replace(hour=8, minute=30, second=0, microsecond=0)
-        return today > PREMARKET_START and today < INTRADAY_START
+        today = datetime.datetime.now(datetime.UTC)
+        schedule = utils.get_market_schedule(today)
+        if schedule.size > 0:
+            premarket_start = schedule['pre'].iloc[0]
+            intraday_start = schedule['market_open'].iloc[0]
+            return today > premarket_start and today < intraday_start
+        else: # Market is not open
+            return False
 
     @staticmethod
     def in_intraday():
-        today = datetime.datetime.now()
-        INTRADAY_START = today.replace(hour=8, minute=30, second=0, microsecond=0)
-        AFTERHOURS_START = today.replace(hour=15, minute=0, second=0, microsecond=0)
-        return today > INTRADAY_START and today < AFTERHOURS_START
+        today = datetime.datetime.now(datetime.UTC)
+        schedule = utils.get_market_schedule(today)
+        if schedule.size > 0:
+            intraday_start = schedule['market_open'].iloc[0]
+            afterhours_start = schedule['market_close'].iloc[0]
+            return today > intraday_start and today < afterhours_start
+        else: # Market is not open
+            return False
+
     
     @staticmethod
     def in_afterhours():
-        today = datetime.datetime.now()
-        AFTERHOURS_START = today.replace(hour=15, minute=0, second=0, microsecond=0)
-        MARKET_END = today.replace(hour=17, minute=0, second=0, microsecond=0)
-        return today > AFTERHOURS_START and today < MARKET_END
+        today = datetime.datetime.now(datetime.UTC)
+        schedule = utils.get_market_schedule(today)
+        if schedule.size > 0:
+            afterhours_start = schedule['market_close'].iloc[0]
+            market_end = schedule['post'].iloc[0]
+            return today > afterhours_start and today < market_end
+        else: # Market is not open
+            return False
 
     @staticmethod
     def get_market_period():
@@ -321,5 +351,7 @@ class utils():
         return date.strftime("%m/%d/%Y")
 
 
+if __name__ =="__main__":
+    print(utils.in_afterhours())
 
         
