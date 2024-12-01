@@ -286,10 +286,12 @@ class utils():
         return mcal.get_calendar('NYSE')
 
     @staticmethod
-    def market_is_open_today(date):
+    def market_open_today():
+        today = datetime.datetime.now(datetime.UTC).date()
         nyse = utils.get_nyse_calendar()
-        valid_days = nyse.valid_days(start_date=date, end_date=date)
-        return valid_days
+        valid_days = nyse.valid_days(start_date=today, end_date=today)
+        return today in valid_days.date
+    
 
     @staticmethod
     def get_market_schedule(date):
@@ -298,36 +300,40 @@ class utils():
         return schedule
 
     @staticmethod
+    def in_extended_hours():
+        return utils.in_premarket() or utils.in_afterhours()
+
+    @staticmethod
     def in_premarket():
-        today = datetime.datetime.now(datetime.UTC)
-        schedule = utils.get_market_schedule(today)
+        now = datetime.datetime.now(datetime.UTC)
+        schedule = utils.get_market_schedule(now)
         if schedule.size > 0:
             premarket_start = schedule['pre'].iloc[0]
             intraday_start = schedule['market_open'].iloc[0]
-            return today > premarket_start and today < intraday_start
+            return now > premarket_start and now < intraday_start
         else: # Market is not open
             return False
 
     @staticmethod
     def in_intraday():
-        today = datetime.datetime.now(datetime.UTC)
-        schedule = utils.get_market_schedule(today)
+        now = datetime.datetime.now(datetime.UTC)
+        schedule = utils.get_market_schedule(now)
         if schedule.size > 0:
             intraday_start = schedule['market_open'].iloc[0]
             afterhours_start = schedule['market_close'].iloc[0]
-            return today > intraday_start and today < afterhours_start
+            return now > intraday_start and now < afterhours_start
         else: # Market is not open
             return False
 
     
     @staticmethod
     def in_afterhours():
-        today = datetime.datetime.now(datetime.UTC)
-        schedule = utils.get_market_schedule(today)
+        now = datetime.datetime.now(datetime.UTC)
+        schedule = utils.get_market_schedule(now)
         if schedule.size > 0:
             afterhours_start = schedule['market_close'].iloc[0]
             market_end = schedule['post'].iloc[0]
-            return today > afterhours_start and today < market_end
+            return now > afterhours_start and now < market_end
         else: # Market is not open
             return False
 
@@ -352,6 +358,6 @@ class utils():
 
 
 if __name__ =="__main__":
-    print(utils.in_afterhours())
+    print(utils.market_open_today())
 
         
