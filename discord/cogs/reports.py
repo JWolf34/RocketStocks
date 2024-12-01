@@ -31,6 +31,7 @@ class Reports(commands.Cog):
         self.send_volume_reports.start()
         self.update_earnings_calendar.start()
         self.send_popularity_reports.start()
+        self.post_weekly_earnings.start()
         self.reports_channel = self.bot.get_channel(config.get_reports_channel_id())
         self.screeners_channel = self.bot.get_channel(config.get_screeners_channel_id())
         
@@ -73,7 +74,7 @@ class Reports(commands.Cog):
     @tasks.loop(minutes=5)
     async def send_gainer_reports(self):
         
-        if (utils.market_is_open_today() and (utils.in_extended_hours() or utils.in_intraday())):
+        if (utils.market_open_today() and (utils.in_extended_hours() or utils.in_intraday())):
             report = GainerReport(self.screeners_channel)
             await report.send_report()
             await self.bot.get_cog("Alerts").send_earnings_movers(report.gainers)
@@ -106,12 +107,6 @@ class Reports(commands.Cog):
         else:
             # Not a weekday - do not post gainer reports
             pass
-
-    @tasks.loop(time=datetime.time(hour=12, minute=0, second=0)) # time in UTC
-    async def pose_weekly_earnings(self):
-        today = datetime.datetime.today()
-        if datetime.datetime.today().weekday() == 0:
-            pass # Today is Monday
             
     @send_volume_reports.before_loop
     async def before_send_volume_reports(self):
@@ -125,7 +120,13 @@ class Reports(commands.Cog):
         future = now + datetime.timedelta(minutes=diff)
         await asyncio.sleep((future-now).total_seconds())
 
-    
+    #@tasks.loop(time=datetime.time(hour=12, minute=0, second=0)) # time in UTC
+    @tasks.loop(minutes=5)
+    async def post_weekly_earnings(self):
+        today = datetime.datetime.today()
+        #if datetime.datetime.today().weekday() == 0:
+        report = WeeklyEarningsReport(self.reports_channel)
+        await report.send_report()
 
 
     # Create earnings events on calendar for all stocks on watchlists
@@ -380,8 +381,8 @@ class Report(object):
         report += self.build_report_header()
         return report   
 
-    async def send_report(self, interaction:discord.Interaction, visibility:str = "public", files=None, view=None):
-        if visibility == 'private':
+    async def send_report(self, interaction:discord.Interaction = None, visibility:str = "public", files=None, view=None):
+        if visibility == 'private' and interaction is not None:
             message = await interaction.user.send(self.message, files=files, view=view)
             return message
         else:
@@ -437,7 +438,7 @@ class StockReport(Report):
     async def send_report(self, interaction: discord.Interaction, visibility:str):
         message = await super().send_report(interaction=interaction, visibility=visibility, view=self.buttons)
         return message
-        
+
     # Override
     class Buttons(discord.ui.View):
             def __init__(self, ticker : str):
@@ -726,31 +727,46 @@ class PopularityReport(Report):
             super().__init__()
             self.add_item(discord.ui.Button(label="ApeWisdom", style=discord.ButtonStyle.url, url = "https://apewisdom.io/"))
 
-class WeeklyEarningsReport():
+class WeeklyEarningsReport(Report):
     def __init__(self, channel):
         self.upcoming_earnings = self.get_upcoming_earnings()
         filepath = f"{config.get_attachments_path()}/upcoming_earnings.csv"
-        self.upcoming_earnings.to_csv(filepath)
+        self.upcoming_earnings.to_csv(filepath, index=False)
         self.file = discord.File(filepath)
         super().__init__(channel)
     
-    def get_upcoming_earnings():
+    def get_upcoming_earnings(self):
         today = datetime.datetime.today()
         weekly_earnings = pd.DataFrame()
         for i in range(0, 5):
             earnings_today = sd.StockData.Earnings.get_earnings_today(today + datetime.timedelta(days=i))
-            if earnings_today is None:
-                pass
+            if earnings_today.size > 0:
+                weekly_earnings = pd.concat([weekly_earnings, earnings_today], ignore_index=True)
             else: 
-                weekly_earnings = pd.concat(weekly_earnings, earnings_today)
+                pass
+        return weekly_earnings
 
     def build_report_header(self):
         return f"# Earnings Releasing the Week of {utils.format_date_mdy(datetime.datetime.today())}\n\n"
 
+    def build_watchlist_earnings(self):
+        watchlist_tickers = sd.Watchlists().get_tickers_from_all_watchlists(no_personal=False)
+        watchlist_earnings = self.upcoming_earnings[self.upcoming_earnings['ticker'].isin(watchlist_tickers)]
+        if watchlist_earnings.size > 0:
+            message = f" Tickers on your watchlists that report earnings this week:\n"
+            message += self.build_table(watchlist_earnings['ticker', 'date', 'time'])
+        else:
+            message = "No tickers on your watchlists report earnings this week"
+        return message
+
     def build_report(self):
         report = ""
-        report += build_report_header()
+        report += self.build_report_header()
+        report += self.build_watchlist_earnings()
         return report
+
+    async def send_report(self):
+        message = await super().send_report(files=[self.file])
 
     
 

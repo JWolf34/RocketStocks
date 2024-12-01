@@ -520,7 +520,7 @@ class StockData():
         @staticmethod
         def get_earnings_today(date):
             select_script = f"""SELECT * FROM upcomingearnings
-                               WHERE date == '{date}';
+                               WHERE date = '{date}';
                                """
             results = Postgres().select_many(select_script)
             if results is None:
