@@ -236,6 +236,28 @@ def get_dolthub_api_token():
             logger.exception("Failed to fetch Dolthub API token\n{}".format(e))
             return ""
 
+def get_schwab_api_key():
+        logger.debug("Fetching Schwab API key")
+        try:
+            token = os.getenv('SCHWAB_API_KEY')
+            logger.debug("Successfully fetched Schwab API key")
+            return token
+        except Exception as e:
+            logger.exception("Failed to fetch Schwab API key\n{}".format(e))
+            return ""
+
+def get_schwab_api_secret():
+        logger.debug("Fetching Schwab API secret")
+        try:
+            token = os.getenv('SCHWAB_API_SECRET')
+            logger.debug("Successfully fetched Schwab API secret")
+            return token
+        except Exception as e:
+            logger.exception("Failed to fetch Schwab API secret\n{}".format(e))
+            return ""
+
+
+
 
 def get_db_user():
         logger.debug("Fetching DB username")

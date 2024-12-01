@@ -15,6 +15,8 @@ from ratelimit import limits, sleep_and_retry
 import config
 import logging
 from tradingview_screener import Scanner, Query, Column
+import schwab
+import httpx
 
 # Logging configuration
 logger = logging.getLogger(__name__)
@@ -741,7 +743,45 @@ class Dolthub():
 
 class Schwab():
     def __init__(self):
-        schwab = ""
+        self.client = schwab.auth.easy_client(
+            api_key=config.get_schwab_api_key(),
+            app_secret=config.get_schwab_api_secret(),
+            callback_url="https://127.0.0.1:8182",
+            token_path="data/schwab-token.json"
+        )
+        self.START_DATETIME = datetime.datetime(
+            year = 2010,
+            month = 1,
+            day = 1,
+            hour = 0,
+            minute = 0,
+            second = 0
+        ).astimezone(datetime.timezone.utc)
+
+    def get_daily_price_history(self, ticker, start_datetime=None, end_datetime=datetime.datetime.now(datetime.timezone.utc)):
+        if start_datetime is None:
+            start_datetime = self.START_DATETIME
+        resp = self.client.get_price_history_every_day(
+            symbol=ticker, 
+            start_datetime=start_datetime,
+            end_datetime=end_datetime,
+            need_extended_hours_data=None,
+            need_previous_close=None
+        )
+        assert resp.status_code == httpx.codes.OK, resp.raise_for_status()
+        data = resp.json()
+        price_history = pd.DataFrame.from_dict(data['candles'])
+        price_history['datetime'] = price_history['datetime'].apply(lambda x: datetime.datetime.fromtimestamp(x/1000))
+        return price_history
+
+    def get_quote(self, ticker):
+        resp = self.client.get_quote(
+            symbol=ticker
+        )
+        assert resp.status_code == httpx.codes.OK, resp.raise_for_status()
+        data = resp.json()
+        return data[ticker]
+
 
 #########################
 # Download and analysis #
@@ -1107,7 +1147,10 @@ def get_supported_exchanges():
 #########
 
 def test():
-    print(reports.VolumeReport().volume_movers_for_table)
+    schwab = Schwab()
+    ticker = "MARA"
+    quote = schwab.get_quote(ticker=ticker)
+    print(quote['fundamental'])
 
 if __name__ == "__main__":
     #test    
