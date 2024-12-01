@@ -77,7 +77,7 @@ class Alerts(commands.Cog):
         for index, row in volume_movers.iterrows():
             ticker = row['Ticker']
             relative_volume = float(row['Relative Volume'])
-            if relative_volume > 10.0:
+            if relative_volume > 20.0:
                 alert = VolumeMoverAlert(ticker=ticker, channel=self.alerts_channel, volume_row=row)
                 await alert.send_alert()
 
@@ -124,7 +124,7 @@ class Alert(Report):
                 return df_row[column]
 
     async def send_alert(self):
-        if True: #utils.in_premarket() or utils.in_intraday() or utils.in_afterhours():
+        if utils.in_premarket() or utils.in_intraday() or utils.in_afterhours():
             today = datetime.datetime.today()
             market_period = utils.get_market_period()
             message_id = config.get_alert_message_id(date=today.date(), ticker=self.ticker, alert_type=self.alert_type)

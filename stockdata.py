@@ -659,7 +659,7 @@ class TradingView():
                             .select('name','Price', 'Change %', 'Volume', 'Relative Volume', 'Average Volume (10 day)','Market Capitalization')
                             .set_markets('america')
                             .where(
-                                Column('volume') > 1000000
+                                Column('Volume') > 1000000
                             )
                             .order_by('relative_volume', ascending=False)
                             .get_scanner_data())
