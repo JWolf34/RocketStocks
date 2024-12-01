@@ -193,7 +193,29 @@ class Postgres():
                             alert_type          varchar(64),
                             messageid           bigint,
                             PRIMARY KEY (date, ticker, alert_type)
-                            )
+                            );
+
+                            CREATE TABLE IF NOT EXISTS dailypricehistory(
+                            ticker              varchar(8),
+                            open                float,
+                            high                float,
+                            low                 float,
+                            close               float,
+                            volume              bigint,
+                            datetime            date
+                            PRIMARY KEY (ticker, datetime)
+                            );
+
+                            CREATE TABLE IF NOT EXISTS 5mpricehistory(
+                            ticker              varchar(8),
+                            open                float,
+                            high                float,
+                            low                 float,
+                            close               float,
+                            volume              bigint,
+                            datetime            date
+                            PRIMARY KEY (ticker, datetime)
+                            );
                             """
         logger.debug("Running script to create tables in database...")
         self.cur.execute(create_script)
@@ -749,29 +771,40 @@ class Schwab():
             callback_url="https://127.0.0.1:8182",
             token_path="data/schwab-token.json"
         )
-        self.START_DATETIME = datetime.datetime(
-            year = 2010,
-            month = 1,
-            day = 1,
-            hour = 0,
-            minute = 0,
-            second = 0
-        ).astimezone(datetime.timezone.utc)
 
     def get_daily_price_history(self, ticker, start_datetime=None, end_datetime=datetime.datetime.now(datetime.timezone.utc)):
-        if start_datetime is None:
-            start_datetime = self.START_DATETIME
+        if start_datetime is None: # If no start time, get data as far back as 2000
+            start_datetime = datetime.datetime(
+                                year = 2000,
+                                month = 1,
+                                day = 1,
+                                hour = 0,
+                                minute = 0,
+                                second = 0
+                                ).astimezone(datetime.timezone.utc)
         resp = self.client.get_price_history_every_day(
             symbol=ticker, 
             start_datetime=start_datetime,
             end_datetime=end_datetime,
-            need_extended_hours_data=None,
-            need_previous_close=None
         )
         assert resp.status_code == httpx.codes.OK, resp.raise_for_status()
         data = resp.json()
         price_history = pd.DataFrame.from_dict(data['candles'])
         price_history['datetime'] = price_history['datetime'].apply(lambda x: datetime.datetime.fromtimestamp(x/1000))
+        price_history.insert(loc=0, column='ticker', value=ticker)
+        return price_history
+
+    def get_5m_price_history(self, ticker, start_datetime=None, end_datetime=None):
+        resp = self.client.get_price_history_every_five_minutes(
+            symbol=ticker, 
+            start_datetime=start_datetime,
+            end_datetime=end_datetime,
+        )
+        assert resp.status_code == httpx.codes.OK, resp.raise_for_status()
+        data = resp.json()
+        price_history = pd.DataFrame.from_dict(data['candles'])
+        price_history['datetime'] = price_history['datetime'].apply(lambda x: datetime.datetime.fromtimestamp(x/1000))
+        price_history.insert(loc=0, column='ticker', value=ticker)
         return price_history
 
     def get_quote(self, ticker):
@@ -781,6 +814,13 @@ class Schwab():
         assert resp.status_code == httpx.codes.OK, resp.raise_for_status()
         data = resp.json()
         return data[ticker]
+    
+    def get_fundamentals(self, tickers):
+        resp = self.client.get_instruments(symbols=tickers, 
+                                           projection=self.client.Instrument.Projection.FUNDAMENTAL)
+        assert resp.status_code == httpx.codes.OK, resp.raise_for_status()
+        data = resp.json()
+        return data
 
 
 #########################
@@ -1148,9 +1188,8 @@ def get_supported_exchanges():
 
 def test():
     schwab = Schwab()
-    ticker = "MARA"
-    quote = schwab.get_quote(ticker=ticker)
-    print(quote['fundamental'])
+    ticker = "MSFT"
+    print(schwab.get_daily_price_history(ticker=ticker))
 
 if __name__ == "__main__":
     #test    
