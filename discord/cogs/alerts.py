@@ -87,20 +87,6 @@ class Alert(Report):
         alert += self.build_alert_header()
         return alert
 
-    def build_earnings_date(self):
-        earnings_info = sd.StockData.Earnings.get_next_earnings_info(self.ticker)
-        message = f"{self.ticker} reports earnings on"
-        message += f"{earnings_info['date'].iloc[0].strftime("%m/%d/%Y")}, "
-        earnings_time = earnings_info['time'].iloc[0]
-        if "pre-market" in earnings_time:
-            message += "before market open"
-        elif "after-hours" in earnings_time:
-            message += "after market close"
-        else:
-            message += "time not specified"
-
-        return message + "\n\n"
-
     def get_pct_change(self, df_row):
         change_columns = ["Premarket Change", "% Change", "After Hours Change"]
         for column in change_columns:

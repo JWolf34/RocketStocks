@@ -122,12 +122,12 @@ class Reports(commands.Cog):
         future = now + datetime.timedelta(minutes=diff)
         await asyncio.sleep((future-now).total_seconds())
 
-    #@tasks.loop(time=datetime.time(hour=12, minute=30, second=0)) # time in UTC
-    @tasks.loop(minutes=5)
+    @tasks.loop(time=datetime.time(hour=12, minute=30, second=0)) # time in UTC
+    #@tasks.loop(minutes=5)
     async def post_earnings_spotlight(self):
-        #if utils.market_open_today():
-        report = EarningsSpotlightReport(self.reports_channel)
-        await report.send_report(self.reports_channel)
+        if utils.market_open_today():
+            report = EarningsSpotlightReport(self.reports_channel)
+            await report.send_report()
 
 
     @tasks.loop(time=datetime.time(hour=12, minute=0, second=0)) # time in UTC
@@ -385,6 +385,36 @@ class Report(object):
             body = df.values.tolist(), 
         )
         return "```\n" + table + "\n```"
+
+    def build_earnings_date(self):
+        earnings_info = sd.StockData.Earnings.get_next_earnings_info(self.ticker)
+        message = f"{self.ticker} reports earnings on "
+        message += f"{earnings_info['date'].iloc[0].strftime("%m/%d/%Y")}, "
+        earnings_time = earnings_info['time'].iloc[0]
+        if "pre-market" in earnings_time:
+            message += "before market open"
+        elif "after-hours" in earnings_time:
+            message += "after market close"
+        else:
+            message += "time not specified"
+
+        return message + "\n"
+
+    def build_upcoming_earnings_summary(self):
+        earnings_info = sd.StockData.Earnings.get_next_earnings_info(self.ticker)
+        message = "### Earnings Summary\n\n"
+        message += f"**Date:** {earnings_info['date'].iloc[0]}\n"
+        message += "**Time:** {}\n".format("Premarket" if "pre-market" in earnings_info['time'].iloc[0]
+                                else "After hours" if "after-hours" in earnings_info['time'].iloc[0]
+                                else "Not supplied")
+        message += f"**Fiscal Quarter:** {earnings_info['fiscalquarterending'].iloc[0]}\n"
+        message += f"**EPS Forecast: ** {earnings_info['epsforecast'].iloc[0] if len(earnings_info['epsforecast'].iloc[0]) > 0 else "N/A"}\n"
+        message += f"**\# of Estimates:** {earnings_info['noofests'].iloc[0]}\n"
+        message += f"**Last Year Report Date:** {earnings_info['lastyearrptdt'].iloc[0]}\n"
+        message += f"**Last Year EPS:** {earnings_info['lastyeareps'].iloc[0]}\n"
+        return message + "\n\n"
+                    
+                
 
     def build_report(self):
         report = ''
@@ -741,15 +771,46 @@ class EarningsSpotlightReport(Report):
     def __init__(self, channel):
         earnings_today = sd.StockData.Earnings.get_earnings_today(datetime.datetime.today())
         self.ticker = earnings_today['ticker'].iloc[random.randint(0, earnings_today['ticker'].size)]
+        self.buttons = StockReport.Buttons(self.ticker)
         super().__init__(channel)
 
     def build_report_header(self):
-        return f"# Earnings Spotight: {self.ticker}\n\n"
+        return f"# :bulb: Earnings Spotight: {self.ticker}\n\n"
 
     def build_report(self):
         report = ""
         report += self.build_report_header()
+        report += self.build_earnings_date()
+        report += self.build_ticker_info()
+        report += self.build_upcoming_earnings_summary()
         return report
+    
+    async def send_report(self):
+        message = await super().send_report(view=self.buttons)
+        return message
+
+
+    # Override
+    class Buttons(discord.ui.View):
+            def __init__(self, ticker : str):
+                super().__init__()
+                self.ticker = ticker
+                self.add_item(discord.ui.Button(label="Google it", style=discord.ButtonStyle.url, url = "https://www.google.com/search?q={}".format(self.ticker)))
+                self.add_item(discord.ui.Button(label="StockInvest", style=discord.ButtonStyle.url, url = "https://stockinvest.us/stock/{}".format(self.ticker)))
+                self.add_item(discord.ui.Button(label="FinViz", style=discord.ButtonStyle.url, url = "https://finviz.com/quote.ashx?t={}".format(self.ticker)))
+                self.add_item(discord.ui.Button(label="Yahoo! Finance", style=discord.ButtonStyle.url, url = "https://finance.yahoo.com/quote/{}".format(self.ticker)))
+
+                
+            @discord.ui.button(label="Generate chart", style=discord.ButtonStyle.primary)
+            async def generate_chart(self, interaction:discord.Interaction, button:discord.ui.Button,):
+                await interaction.response.send_message("Generate chart!")
+
+            @discord.ui.button(label="Get news", style=discord.ButtonStyle.primary)
+            async def get_news(self, interaction:discord.Interaction, button:discord.ui.Button):
+                news_report = NewsReport(self.ticker)
+                await news_report.send_report(interaction)
+                await interaction.response.send_message(f"Fetched news for {self.ticker}!", ephemeral=True)
+
 
 class WeeklyEarningsReport(Report):
     def __init__(self, channel):
@@ -791,6 +852,7 @@ class WeeklyEarningsReport(Report):
 
     async def send_report(self):
         message = await super().send_report(files=[self.file])
+        return message
 
     
 
