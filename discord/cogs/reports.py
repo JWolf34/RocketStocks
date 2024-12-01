@@ -98,12 +98,12 @@ class Reports(commands.Cog):
     # Generate and send premarket gainer reports to the reports channel
     @tasks.loop(minutes=5)
     async def send_volume_reports(self):
-            now = datetime.datetime.now()
-        #if (now.weekday() < 5 and utils.get_market_period() != "EOD"):
+        now = datetime.datetime.now()
+        if (now.weekday() < 5 and utils.get_market_period() != "EOD"):
             report = VolumeReport(self.screeners_channel)
             await report.send_report()
             await self.bot.get_cog("Alerts").send_unusual_volume_movers(report.volume_movers)
-        #else:
+        else:
             # Not a weekday - do not post gainer reports
             pass
 
