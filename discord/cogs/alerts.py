@@ -61,6 +61,16 @@ class Alerts(commands.Cog):
                         break
                 alert = SECFilingMoverAlert(ticker=ticker, channel=self.alerts_channel, pct_change= pct_change)
                 await alert.send_alert()
+
+    async def send_watchlist_movers(self, gainers):
+        for index, row in gainers.iterrows():
+            ticker = row['Ticker']
+            watchlists = sd.Watchlists.get_watchlists()
+            for watchlist in watchlists:
+                watchlist_tickers = sd.Watchlists.get_tickers_from_watchlist(watchlist)
+                if ticker in watchlist_tickers:
+                    alert = watchlistMoverAlert(ticker=ticker, channel=self.alerts_channel, gainer_row = row, watchlist_id=watchlist)
+                    await alert.send_alert()
     
     async def send_unusual_volume_movers(self, volume_movers):
         today = datetime.datetime.today()
@@ -106,6 +116,12 @@ class Alert(Report):
             message += "time not specified"
 
         return message + "\n\n"
+
+    def get_pct_change(self, df_row):
+        change_columns = ["Premarket Change", "% Change", "After Hours Change"]
+        for column in change_columns:
+            if column in df_row.index.values:
+                return df_row[column]
 
     async def send_alert(self):
         if True: #utils.in_premarket() or utils.in_intraday() or utils.in_afterhours():
@@ -185,9 +201,29 @@ class SECFilingMoverAlert(Alert):
         alert += self.build_todays_sec_filings()
         return alert
 
+class WatchlistMoverAlert(Alert):
+    def __init__(self, ticker, channel, gainer_row, watchlist_id):
+        self.pct_change = self.get_pct_change(volume_row)
+        self.alert_type = "WATCHLIST_MOVER"
+        self.watchlist_id = watchlist_id
+        super().__init__(ticker, channel)
+
+    def build_alert_header(self):
+        header = f"## :rotating_light: Watchlist Mover: {self.ticker}\n\n\n"
+        return header
+
+    def build_todays_change(self):
+        return f"**{self.ticker}** is up **{self.pct_change}%** and is on your **{self.watchlist_id}** watchlist\n"
+
+    def build_alert(self):
+        alert = ""
+        alert += self.build_alert_header()
+        alert += self.build_todays_change()
+        return alert
+
 class VolumeMoverAlert(Alert):
     def __init__(self, ticker, channel, volume_row):
-        self.pct_change = volume_row['% Change']
+        self.pct_change = self.get_pct_change(volume_row)
         self.alert_type = "VOLUME_MOVER"
         self.volume = volume_row['Volume']
         self.average_volume = volume_row['Average Volume (10 Day)']
