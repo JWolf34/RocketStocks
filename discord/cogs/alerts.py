@@ -66,7 +66,8 @@ class Alerts(commands.Cog):
         today = datetime.datetime.today()
         for index, row in volume_movers.iterrows():
             ticker = row['Ticker']
-            if float(row['Relative Volume']) > 100.0:
+            relative_volume = float(row['Relative Volume'])
+            if relative_volume > 10.0:
                 alert = VolumeMoverAlert(ticker=ticker, channel=self.alerts_channel, volume_row=row)
                 await alert.send_alert()
 
@@ -107,7 +108,7 @@ class Alert(Report):
         return message + "\n\n"
 
     async def send_alert(self):
-        if utils.in_premarket() or utils.in_intraday() or utils.in_afterhours():
+        if True: #utils.in_premarket() or utils.in_intraday() or utils.in_afterhours():
             today = datetime.datetime.today()
             market_period = utils.get_market_period()
             message_id = config.get_alert_message_id(date=today.date(), ticker=self.ticker, alert_type=self.alert_type)
@@ -198,10 +199,13 @@ class VolumeMoverAlert(Alert):
         return header
 
     def build_todays_change(self):
-        return f"**{self.ticker}** is up **{self.pct_change}%** with relative volume **{"{:.2f} times".format(self.relative_volume)}** the normal today\n\n"
+        return f"**{self.ticker}** is up **{"{:.2f}".format(self.pct_change)}%** with relative volume **{"{:.2f} times".format(self.relative_volume)}** the 10-day average\n\n"
 
     def build_stats(self):
-        return f"### Stats\n**Today's Volume:** {self.volume}\n**Average Volume:** {self.average_volume}\n**Relative Volume:** {self.relative_volume}x\n\n"
+        return f"""## Volume Stats
+        - **Today's Volume:** {self.format_large_num(self.volume)}
+        - **Average Volume (10 Day):** {self.format_large_num(self.average_volume)}
+        - **Relative Volume:** {"{:.2f}x".format(self.relative_volume)}\n\n"""
 
     def build_alert(self):
         alert = ""
