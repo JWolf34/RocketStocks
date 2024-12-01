@@ -172,7 +172,8 @@ class EarningsMoverAlert(Alert):
         return header
 
     def build_todays_change(self):
-        return f"**{self.ticker}** is up **{self.pct_change}%** {utils.get_market_period()} and has earnings today\n\n"
+        symbol = ":green_circle:" if self.pct_change > 0 else ":small_red_triangle_down:"
+        return f"**{self.ticker}** is {symbol} **{self.pct_change}%** {utils.get_market_period()} and has earnings today\n\n"
 
     def build_alert(self):
         alert = ""
@@ -192,7 +193,8 @@ class SECFilingMoverAlert(Alert):
         return header
 
     def build_todays_change(self):
-        return f"**{self.ticker}** is up **{self.pct_change}%** {utils.get_market_period()} and filed with the SEC today\n"
+        symbol = ":green_circle:" if self.pct_change > 0 else ":small_red_triangle_down:"
+        return f"**{self.ticker}** is {symbol} **{self.pct_change}%** {utils.get_market_period()} and filed with the SEC today\n"
 
     def build_alert(self):
         alert = ""
@@ -213,7 +215,8 @@ class WatchlistMoverAlert(Alert):
         return header
 
     def build_todays_change(self):
-        return f"**{self.ticker}** is up **{self.pct_change}%** and is on your **{self.watchlist_id}** watchlist\n"
+        symbol = ":green_circle:" if self.pct_change > 0 else ":small_red_triangle_down:"
+        return f"**{self.ticker}** is {symbol} **{self.pct_change}%** and is on your **{self.watchlist_id}** watchlist\n"
 
     def build_alert(self):
         alert = ""
@@ -235,7 +238,8 @@ class VolumeMoverAlert(Alert):
         return header
 
     def build_todays_change(self):
-        return f"**{self.ticker}** is up **{"{:.2f}".format(self.pct_change)}%** with relative volume **{"{:.2f} times".format(self.relative_volume)}** the 10-day average\n\n"
+        symbol = ":green_circle:" if self.pct_change > 0 else ":small_red_triangle_down:"
+        return f"**{self.ticker}** is {symbol} **{"{:.2f}".format(self.pct_change)}%** with volume up **{"{:.2f} times".format(self.relative_volume)}** the 10-day average\n\n"
 
     def build_stats(self):
         return f"""## Volume Stats
