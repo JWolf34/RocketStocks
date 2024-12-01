@@ -108,20 +108,17 @@ class Alert(Report):
                 return df_row[column]
 
     async def send_alert(self):
-        if utils.in_premarket() or utils.in_intraday() or utils.in_afterhours():
-            today = datetime.datetime.today()
-            market_period = utils.get_market_period()
-            message_id = config.get_alert_message_id(date=today.date(), ticker=self.ticker, alert_type=self.alert_type)
-            if message_id is not None:
-                logger.debug(f"Alert {self.alert_type} already reported for ticker {self.ticker} today")
-                pass
-            else:
-                message = await self.channel.send(self.message, view=self.buttons)
-                config.insert_alert_message_id(date=today.date(), ticker=self.ticker, alert_type=self.alert_type, message_id=message.id)
-                return message
-        else: 
-            # Outside market hours
+        today = datetime.datetime.today()
+        market_period = utils.get_market_period()
+        message_id = config.get_alert_message_id(date=today.date(), ticker=self.ticker, alert_type=self.alert_type)
+        if message_id is not None:
+            logger.debug(f"Alert {self.alert_type} already reported for ticker {self.ticker} today")
             pass
+        else:
+            message = await self.channel.send(self.message, view=self.buttons)
+            config.insert_alert_message_id(date=today.date(), ticker=self.ticker, alert_type=self.alert_type, message_id=message.id)
+            return message
+
 
     class Buttons(discord.ui.View):
             def __init__(self, ticker : str, channel):
