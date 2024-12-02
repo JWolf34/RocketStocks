@@ -9,6 +9,7 @@ import config
 from config import utils
 import datetime
 import logging
+import asyncio
 
 # Logging configuration
 logger = logging.getLogger(__name__)
@@ -47,6 +48,7 @@ class Alerts(commands.Cog):
             if filings.size > 0:
                 alert = SECFilingMoverAlert(ticker=ticker, channel=self.alerts_channel, gainer_row=row)
                 await alert.send_alert()
+            await asyncio.sleep(1)
 
     async def send_watchlist_movers(self, gainers):
         for index, row in gainers.iterrows():
