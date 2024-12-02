@@ -24,34 +24,40 @@ class Data(commands.Cog):
     @app_commands.command(name = "csv", description= "Returns data file for input ticker. Default: 1 year period.",)
     @app_commands.describe(tickers = "Tickers to return data for (separated by spaces)")
     @app_commands.describe(type="Type of data file to return - daily data or minute-by-minute data")
-    @app_commands.choices(type=[
+    @app_commands.choices(frequency=[
         app_commands.Choice(name='daily', value='daily'),
-        app_commands.Choice(name='minute', value='minute')
+        app_commands.Choice(name='5m', value='5m')
     ])
-    async def csv(self, interaction: discord.Interaction, tickers: str, type: app_commands.Choice[str]):
+    async def csv(self, interaction: discord.Interaction, tickers: str, frequency: app_commands.Choice[str]):
         await interaction.response.defer(ephemeral=True)
         logger.info("/csv function called by user {}".format(interaction.user.name))
         logger.debug("Data file(s) for {} requested".format(tickers))
 
-        type = type.value
+        frequency = frequency.value
         
         files = []
         tickers, invalid_tickers = sd.get_list_from_tickers(tickers)
         try:
             for ticker in tickers:
-                if type == 'daily':
-                    data = sd.fetch_daily_data(ticker)
-                    csv_path = "{}/{}.csv".format(config.get_daily_data_path(),ticker)
-                    if not sd.daily_data_up_to_date(data):
-                        sd.download_analyze_data(ticker)
+                if frequency == 'daily':
+                    data = sd.StockData.fetch_daily_price_history()
+                    if data is None:
+                        data = sd.schwab.get_daily_price_history(ticker)
                 else:
-                    data = sd.fetch_minute_data(ticker)
-                    csv_path = "{}/{}.csv".format(config.get_minute_data_path(),ticker)
-                    data = sd.download_data(ticker, period='7d', interval='1m')
-                    sd.update_csv(data, ticker, config.get_minute_data_path())
-
-                file = discord.File(csv_path)
-                await interaction.user.send(content = "Data file for {}".format(ticker), file=file)
+                    data = sd.StockData.fetch_5m_price_history(ticker)
+                    if data is None:
+                        data = sd.schwab.get_5m_price_history(ticker)
+                message = ""
+                file = None
+                if data is not None:
+                    message = f"Data file for {ticker}"
+                    filepath = f"{config.get_attachments_path()}/{ticker}_{frequency}_data.csv"
+                    data.to_csv(filepath)
+                    file = discord.File(filepath)
+                else:
+                    message = f"Could not fetch data for ticker {ticker}"
+                
+                await interaction.user.send(content = message, file=file)
 
             if len(invalid_tickers) > 0:
                 await interaction.followup.send("Fetched data files for {}. Invalid tickers:".format(", ".join(tickers), ", ".join(invalid_tickers)), ephemeral=True)
