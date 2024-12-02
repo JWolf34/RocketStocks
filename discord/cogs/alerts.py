@@ -140,7 +140,7 @@ class EarningsMoverAlert(Alert):
 
     def build_todays_change(self):
         symbol = ":green_circle:" if self.pct_change > 0 else ":small_red_triangle_down:"
-        return f"**{self.ticker}** is {symbol} **{self.pct_change}%** {utils.get_market_period()} and has earnings today\n\n"
+        return f"**{self.ticker}** is {symbol} **{"{:.2f}".format(self.pct_change)}%**  {utils.get_market_period()} and has earnings today\n\n"
 
     def build_alert(self):
         alert = ""
@@ -161,7 +161,7 @@ class SECFilingMoverAlert(Alert):
 
     def build_todays_change(self):
         symbol = ":green_circle:" if self.pct_change > 0 else ":small_red_triangle_down:"
-        return f"**{self.ticker}** is {symbol} **{self.pct_change}%** {utils.get_market_period()} and filed with the SEC today\n"
+        return f"**{self.ticker}** is {symbol} **{"{:.2f}".format(self.pct_change)}%** {utils.get_market_period()} and filed with the SEC today\n"
 
     def build_alert(self):
         alert = ""
@@ -183,7 +183,7 @@ class WatchlistMoverAlert(Alert):
 
     def build_todays_change(self):
         symbol = ":green_circle:" if self.pct_change > 0 else ":small_red_triangle_down:"
-        return f"**{self.ticker}** is {symbol} **{self.pct_change}%** and is on your **{self.watchlist_id}** watchlist\n"
+        return f"**{self.ticker}** is {symbol} **{"{:.2f}".format(self.pct_change)}%**  and is on your **{self.watchlist_id}** watchlist\n"
 
     def build_alert(self):
         alert = ""
