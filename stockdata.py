@@ -612,7 +612,19 @@ class StockData():
         if results is None:
             return pd.DataFrame()
         else:
-            columns = postgres.get
+            columns = postgres.get_table_columns("dailypricehistory")
+            return pd.DataFrame(results, columns=columns)
+
+    @staticmethod
+    def fetch_5m_price_history(ticker):
+        select_script = f"""SELECT * FROM fiveminutepricehistory
+                           WHERE ticker = {ticker};
+                           """
+        results = postgres.select_many(select_script)
+        if results is None:
+            return pd.DataFrame()
+        else:
+            columns = postgres.get_table_columns('fiveminutepricehistory')
             return pd.DataFrame(results, columns=columns)
 
 
@@ -877,14 +889,18 @@ class Schwab():
             start_datetime=start_datetime,
             end_datetime=end_datetime,
         )
-        assert resp.status_code == httpx.codes.OK, resp.raise_for_status()
-        data = resp.json()
-        price_history = pd.DataFrame.from_dict(data['candles'])
-        if price_history.size > 0:
-            price_history['datetime'] = price_history['datetime'].apply(lambda x: datetime.datetime.fromtimestamp(x/1000))
-            price_history.insert(loc=0, column='ticker', value=ticker)
-            return price_history
-        else:
+        try:
+            assert resp.status_code == httpx.codes.OK, resp.raise_for_status()
+            data = resp.json()
+            price_history = pd.DataFrame.from_dict(data['candles'])
+            if price_history.size > 0:
+                price_history['datetime'] = price_history['datetime'].apply(lambda x: datetime.datetime.fromtimestamp(x/1000))
+                price_history.insert(loc=0, column='ticker', value=ticker)
+                return price_history
+            else:
+                return None
+        except httpx.HTTPStatusError as e:
+            print(f"Enountered HTTPStatusError when downloading daily price history for ticker {ticker}\n{e}")
             return None
 
     # This reports live market data!
