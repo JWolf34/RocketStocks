@@ -619,21 +619,31 @@ class TradingView():
     @staticmethod
     def get_premarket_gainers():
         logger.info("Fetching premarket gainers")
+        headers = ["Ticker", "Close", "Volume", "Market Cap", "Premarket Change", "Premarket CHange ABS", "Premarket Volume"]
         num_rows, gainers = Scanner.premarket_gainers.get_scanner_data()
+        gainers = gainers.drop(columns='ticker')
+        gainers.columns = headers
         return gainers
 
     @staticmethod
     def get_premarket_gainers_by_market_cap(market_cap):
         logger.info("Fetching premarket gainers by market cap")
+        headers = ["Ticker", "Close", "Volume", "Market Cap", "Premarket Change", "Premarket Change ABS", "Premarket Volume"]
         num_rows, gainers = Scanner.premarket_gainers.get_scanner_data()
-        return gainers.loc[gainers['market_cap_basic'] >= market_cap]    
+        gainers = gainers.drop(columns='ticker')
+        gainers.columns = headers
+        return gainers.loc[gainers['Market Cap'] >= market_cap]    
 
     @staticmethod
     def get_intraday_gainers():
         logger.info("Fetching intraday gainers")
+        ["Ticker", "Close", "Volume", "Market Cap", "% Change"]
         num_rows, gainers = (Query()
                             .select('name','close', 'change', 'volume')
                             .get_scanner_data())
+        gainers = gainers.drop(columns='ticker')
+        headers = ["Ticker", "Close", "Volume", "Market Cap", "% Change"]
+        gainers.columns = headers
         return gainers
 
     @staticmethod
@@ -648,6 +658,9 @@ class TradingView():
                             )
                             .order_by('change', ascending=False)
                             .get_scanner_data())
+        gainers = gainers.drop(columns='ticker')
+        headers = ["Ticker", "Close", "Volume", "Market Cap", "% Change", 'Exchange']
+        gainers.columns = headers
         return gainers
                 
     @staticmethod
@@ -655,12 +668,18 @@ class TradingView():
         logger.info("Fetching after hours gainers")
 
         num_rows, gainers = Scanner.postmarket_gainers.get_scanner_data()
+        gainers = gainers.drop(columns='ticker')
+        headers = ["Ticker", "Close", "Volume", "Market Cap", "After Hours Change", "After Hours Volume"]
+        gainers.columns = headers
         return gainers
 
     @staticmethod
     def get_postmarket_gainers_by_market_cap(market_cap):
         logger.info("Fetching after hours gainers by market cap")
         num_rows, gainers = Scanner.postmarket_gainers.get_scanner_data()
+        gainers = gainers.drop(columns='ticker')
+        headers = ["Ticker", "Close", "Volume", "Market Cap", "After Hours Change", "After Hours Volume"]
+        gainers.columns = headers
         return gainers.loc[gainers['market_cap_basic'] >= market_cap]    
     
     @staticmethod

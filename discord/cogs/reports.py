@@ -502,40 +502,50 @@ class StockReport(Report):
 
 class GainerReport(Report):
     def __init__(self, channel):
-        self.gainers = self.get_gainers()
+        self.gainers = None
+        self.market_period = utils.get_market_period()
+        if utils.in_premarket():
+            self.gainers = sd.TradingView.get_premarket_gainers_by_market_cap(1000000)
+        elif utils.in_intraday():
+            self.gainers = sd.TradingView.get_intraday_gainers_by_market_cap(1000000)
+        elif utils.in_afterhours():
+            self.gainers = sd.TradingView.get_postmarket_gainers_by_market_cap(1000000)
         if self.gainers.size > 0:
             self.update_gainer_watchlist()
+
+        self.gainers_formatted = self.format_df_for_table()
         super().__init__(channel)
 
-    def get_gainers(self):
+        
+
+    def format_df_for_table(self):
+        gainers = self.gainers.copy()
+        row = []
         headers = []
-        rows = []
         if utils.in_premarket():
-            gainers = sd.TradingView.get_premarket_gainers_by_market_cap(100000000)
             headers = ["Ticker", "Close", "Volume", "Market Cap", "Premarket Change", "Premarket Volume"]
             for index, row in gainers.iterrows():
-                ticker = row.iloc[1]
+                ticker = row['Ticker']
                 if sd.StockData.validate_ticker(ticker):
-                    rows.append([row.iloc[1], 
-                                "${}".format(float('{:.2f}'.format(row.close))), 
-                                self.format_large_num(row.volume), 
-                                self.format_large_num(row.market_cap_basic), 
-                                "{:.2f}%".format(row.premarket_change), 
-                                self.format_large_num(row.premarket_volume)])
+                    rows.append([ticker, 
+                                "${}".format(float('{:.2f}'.format(row.Close))), 
+                                self.format_large_num(row.Volume), 
+                                self.format_large_num(row['Market Cap']), 
+                                "{:.2f}%".format(row['Premarket Change']), 
+                                self.format_large_num(row['Premarket Volume'])])
                 else:
                     pass
         elif utils.in_intraday():
-            gainers = sd.TradingView.get_intraday_gainers_by_market_cap(100000000)
-            headers = ["Ticker", "Close", "Volume", "Market Cap", "% Change"]
             rows = []
+            headers = ["Ticker", "Close", "Volume", "Market Cap", "% Change"]
             for index, row in gainers.iterrows():
-                ticker = row.iloc[1]
+                ticker = row['Ticker']
                 if sd.StockData.validate_ticker(ticker):
                     rows.append([ticker, 
-                                "${}".format(float('{:.2f}'.format(row.close))), 
-                                self.format_large_num(row.volume), 
-                                self.format_large_num(row.market_cap_basic), 
-                                "{:.2f}%".format(row.change)])
+                                "${}".format(float('{:.2f}'.format(row.Close))), 
+                                self.format_large_num(row.Volume), 
+                                self.format_large_num(row['Market Cap']), 
+                                "{:.2f}%".format(row['% Change'])])
                 else: 
                     pass
                 
@@ -544,19 +554,18 @@ class GainerReport(Report):
             headers = ["Ticker", "Close", "Volume", "Market Cap", "After Hours Change", "After Hours Volume"]
             rows = []
             for index, row in gainers.iterrows():
-                ticker = row.iloc[1]
+                ticker = row['Ticker']
                 if sd.StockData.validate_ticker(ticker):
                     rows.append([ticker, 
-                                "${}".format(float('{:.2f}'.format(row.close))), 
-                                self.format_large_num(row.volume), 
-                                self.format_large_num(row.market_cap_basic), 
-                                "{:.2f}%".format(row.postmarket_change), 
-                                self.format_large_num(row.postmarket_volume)])
+                                "${}".format(float('{:.2f}'.format(row.Close))), 
+                                self.format_large_num(row.Volume), 
+                                self.format_large_num(row['Market Cap']), 
+                                "{:.2f}%".format(row['After Hours Change']), 
+                                self.format_large_num(row['After Hours Volume'])])
                 else: 
                     pass
 
         return pd.DataFrame(rows, columns=headers)
-
     def update_gainer_watchlist(self):
         watchlist_id = f"{utils.get_market_period()}-gainers"
         watchlist_tickers = self.gainers['Ticker'].to_list()
@@ -583,7 +592,7 @@ class GainerReport(Report):
     def build_report(self):
         report = ""
         report += self.build_report_header()
-        report += self.build_table(self.gainers[:15])
+        report += self.build_table(self.gainers_formatted[:15])
         return report
 
     # Override
