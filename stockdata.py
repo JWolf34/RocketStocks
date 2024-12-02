@@ -202,18 +202,18 @@ class Postgres():
                             low                 float,
                             close               float,
                             volume              bigint,
-                            datetime            date
+                            datetime            date,
                             PRIMARY KEY (ticker, datetime)
                             );
 
-                            CREATE TABLE IF NOT EXISTS 5mpricehistory(
+                            CREATE TABLE IF NOT EXISTS fiveminutepricehistory(
                             ticker              varchar(8),
                             open                float,
                             high                float,
                             low                 float,
                             close               float,
                             volume              bigint,
-                            datetime            date
+                            datetime            date,
                             PRIMARY KEY (ticker, datetime)
                             );
                             """
@@ -585,6 +585,36 @@ class StockData():
         values = [tuple(row) for row in tickers_data.values]
         Postgres().insert(table='tickers', fields=tickers_data.columns.to_list(), values=values)
         logger.info("Tickers have been updated!")
+    
+    @staticmethod
+    def update_daily_price_history():
+        tickers = get_all_tickers()
+        num_tickers = len(tickers)
+        curr_ticker = 1
+        for ticker in tickers:
+            price_history = Schwab().get_daily_price_history(ticker)
+            if price_history is not None:
+                fields = price_history.columns.to_list()
+                values = [tuple(row) for row in price_history.values]
+                print(f"Inserting daily price data for ticker {ticker}, {curr_ticker}/{num_tickers}")
+                postgres.insert(table='dailypricehistory', fields=fields, values=values)
+                curr_ticker += 1
+            else:
+                print(f"No daily price history found for ticker {ticker}, {curr_ticker}/{num_tickers}")
+                curr_ticker += 1
+    
+    @staticmethod
+    def fetch_daily_price_history(ticker):
+        select_script = f"""SELECT * FROM dailypricehistory
+                           WHERE ticker = {ticker};
+                           """
+        results = postgres.select_many(select_script)
+        if results is None:
+            return pd.DataFrame()
+        else:
+            columns = postgres.get
+            return pd.DataFrame(results, columns=columns)
+
 
     @staticmethod
     def get_ticker_info(ticker):
@@ -850,10 +880,14 @@ class Schwab():
         assert resp.status_code == httpx.codes.OK, resp.raise_for_status()
         data = resp.json()
         price_history = pd.DataFrame.from_dict(data['candles'])
-        price_history['datetime'] = price_history['datetime'].apply(lambda x: datetime.datetime.fromtimestamp(x/1000))
-        price_history.insert(loc=0, column='ticker', value=ticker)
-        return price_history
+        if price_history.size > 0:
+            price_history['datetime'] = price_history['datetime'].apply(lambda x: datetime.datetime.fromtimestamp(x/1000))
+            price_history.insert(loc=0, column='ticker', value=ticker)
+            return price_history
+        else:
+            return None
 
+    # This reports live market data!
     def get_5m_price_history(self, ticker, start_datetime=None, end_datetime=None):
         resp = self.client.get_price_history_every_five_minutes(
             symbol=ticker, 
@@ -908,7 +942,7 @@ def download_data(ticker, period='max', interval='1d'):
 
     return data
 
-# Write data to a CSV file at the path specifiede
+# Write data to a CSV file at the path specified
 def update_csv(data, ticker, path):
 
     validate_path(path)
@@ -1238,18 +1272,20 @@ def validate_columns(data, columns):
     logger.debug("Columns {} exist in data".format(columns))
     return True
 
-# Return supported exchanges
-def get_supported_exchanges():
-    return ['NASDAQ', 'NYSE', 'AMEX']
+####################
+# Global Variables #
+####################
+
+schwab_client = Schwab()
+postgres = Postgres()
 
 #########
 # Tests #
 #########
 
 def test():
-    schwab = Schwab()
-    ticker = "MSFT"
-    print(schwab.get_daily_price_history(ticker=ticker))
+    postgres.create_tables()
+    StockData.update_daily_price_history()
 
 if __name__ == "__main__":
     #test    
