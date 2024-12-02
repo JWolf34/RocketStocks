@@ -629,6 +629,7 @@ class TradingView():
                     .order_by('premarket_change', ascending=False)
                     .where(
                             Column('exchange').isin(StockData.get_supported_exchanges()))
+                    .limit(100)
                     .get_scanner_data())
         gainers = gainers.drop(columns='exchange')
         gainers = gainers.drop(columns='ticker')
@@ -645,6 +646,7 @@ class TradingView():
                 .where(
                     Column('market_cap_basic') >= market_cap,
                     Column('exchange').isin(StockData.get_supported_exchanges()))
+                .limit(100)
                 .get_scanner_data())
         gainers = gainers.drop(columns='exchange')
         gainers = gainers.drop(columns='ticker')
@@ -660,6 +662,7 @@ class TradingView():
                 .order_by('change', ascending=False)
                 .where(
                             Column('exchange').isin(StockData.get_supported_exchanges()))
+                .limit(100)
                 .get_scanner_data())
         gainers = gainers.drop(columns='exchange')
         gainers = gainers.drop(columns='ticker')
@@ -677,6 +680,7 @@ class TradingView():
                 .where(
                             Column('market_cap_basic') >= market_cap,
                             Column('exchange').isin(get_supported_exchanges()))
+                .limit(100)
                 .get_scanner_data())
         gainers = gainers.drop(columns='exchange')
         gainers = gainers.drop(columns='ticker')
@@ -692,6 +696,7 @@ class TradingView():
                 .order_by('postmarket_change', ascending=False)
                 .where(
                             Column('exchange').isin(StockData.get_supported_exchanges()))
+                .limit(100)
                 .get_scanner_data())
         gainers = gainers.drop(columns='exchange')
         gainers = gainers.drop(columns='ticker')
@@ -708,6 +713,7 @@ class TradingView():
                 .where(
                             Column('market_cap_basic') >= market_cap,
                             Column('exchange').isin(StockData.get_supported_exchanges()))
+                .limit(100)
                 .get_scanner_data())
         gainers = gainers.drop(columns='exchange')
         gainers = gainers.drop(columns='ticker')
@@ -726,6 +732,7 @@ class TradingView():
                             .where(
                                 Column('Volume') > 1000000
                             )
+                            .limit(100)
                             .order_by('relative_volume', ascending=False)
                             .get_scanner_data())
         unusual_volume = unusual_volume.drop(columns = "ticker")

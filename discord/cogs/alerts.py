@@ -51,12 +51,15 @@ class Alerts(commands.Cog):
     async def send_watchlist_movers(self, gainers):
         for index, row in gainers.iterrows():
             ticker = row['Ticker']
-            watchlists = sd.Watchlists.get_watchlists()
+            watchlists = sd.Watchlists().get_watchlists()
             for watchlist in watchlists:
-                watchlist_tickers = sd.Watchlists.get_tickers_from_watchlist(watchlist)
-                if ticker in watchlist_tickers:
-                    alert = watchlistMoverAlert(ticker=ticker, channel=self.alerts_channel, gainer_row = row, watchlist_id=watchlist)
-                    await alert.send_alert()
+                if watchlist == 'personal':
+                    pass
+                else:
+                    watchlist_tickers = sd.Watchlists().get_tickers_from_watchlist(watchlist)
+                    if ticker in watchlist_tickers:
+                        alert = WatchlistMoverAlert(ticker=ticker, channel=self.alerts_channel, gainer_row = row, watchlist_id=watchlist)
+                        await alert.send_alert()
     
     async def send_unusual_volume_movers(self, volume_movers):
         today = datetime.datetime.today()
@@ -172,7 +175,7 @@ class SECFilingMoverAlert(Alert):
 
 class WatchlistMoverAlert(Alert):
     def __init__(self, ticker, channel, gainer_row, watchlist_id):
-        self.pct_change = self.get_pct_change(volume_row)
+        self.pct_change = self.get_pct_change(gainer_row)
         self.alert_type = "WATCHLIST_MOVER"
         self.watchlist_id = watchlist_id
         super().__init__(ticker, channel)
