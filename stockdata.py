@@ -104,7 +104,7 @@ class Nasdaq():
         eps = self.get_eps(ticker)
         return eps[eps['type'] == 'UpcomingQuarter']
 
-class postgres:
+class Postgres():
     def __init__(self):
         self.user = config.get_db_user()
         self.pwd = config.get_db_password()
@@ -213,7 +213,7 @@ class postgres:
                             low                 float,
                             close               float,
                             volume              bigint,
-                            datetime            date,
+                            datetime            timestamp,
                             PRIMARY KEY (ticker, datetime)
                             );
                             """
@@ -329,7 +329,7 @@ class Watchlists():
         select_script = f"""SELECT tickers FROM {self.db_table}
                             WHERE id = '{watchlist_id}';
                             """
-        tickers = postgres.select_one(query=select_script)
+        tickers = Postgres().select_one(query=select_script)
         if tickers is None:
             return tickers
         else:
@@ -341,7 +341,7 @@ class Watchlists():
         logger.debug("Fetching tickers from all available watchlists (besides personal)")
         select_script = f"""SELECT * FROM {self.db_table};
                             """
-        watchlists = postgres.select_many(query=select_script)
+        watchlists = Postgres().select_many(query=select_script)
         tickers = []
         for watchlist in watchlists:
             watchlist_id, watchlist_tickers, is_systemGenerated = watchlist[0], watchlist[1].split(), watchlist[2]
@@ -359,7 +359,7 @@ class Watchlists():
         logger.debug("Fetching all watchlists")
         select_script = f"""SELECT * FROM {self.db_table}"""
         filtered_watchlists = []
-        watchlists = postgres.select_many(query=select_script)
+        watchlists = Postgres().select_many(query=select_script)
         for i in range(len(watchlists)):
             watchlist = watchlists[i]
             watchlist_id = watchlist[0]
@@ -381,17 +381,17 @@ class Watchlists():
                              SET tickers = '{" ".join(tickers)}'
                              WHERE id = '{watchlist_id}';
                              """
-        postgres.update(query=update_script)
+        Postgres().update(query=update_script)
 
     # Create a new watchlist with id 'watchlist_id'
     def create_watchlist(self, watchlist_id, tickers, systemGenerated):
         logger.debug("Creating watchlist with ID '{}' and tickers {}".format(watchlist_id, tickers))
-        postgres.insert(table=self.db_table, fields=self.db_fields, values=[(watchlist_id, " ".join(tickers), systemGenerated)])
+        Postgres().insert(table=self.db_table, fields=self.db_fields, values=[(watchlist_id, " ".join(tickers), systemGenerated)])
 
     # Delete watchlist with id 'watchlist_id'
     def delete_watchlist(self, watchlist_id):
         logger.debug("Deleting watchlist '{}'...".format(watchlist_id))
-        postgres.delete(table=self.db_table, where_condition=f"id = '{watchlist_id}'")
+        Postgres().delete(table=self.db_table, where_condition=f"id = '{watchlist_id}'")
 
     # Validate watchlist exists in the database
     def validate_watchlist(self, watchlist_id):
@@ -399,7 +399,7 @@ class Watchlists():
         select_script = f"""SELECT id FROM {self.db_table}
                             WHERE id = '{watchlist_id}';
                             """
-        result = postgres.select_one(select_script)
+        result = Postgres().select_one(select_script)
         if result is None:
             logger.warning(f"Watchlist '{watchlist_id}' does not exist")
             return False
@@ -484,7 +484,7 @@ class StockData():
                         earnings_data = earnings_data[columns]
                         earnings_data = earnings_data.rename(columns={'symbol':'ticker'})
                         values = [tuple(row) for row in earnings_data.values]
-                        postgres.insert(table='upcomingearnings', fields=earnings_data.columns.to_list(), values=values)
+                        Postgres().insert(table='upcomingearnings', fields=earnings_data.columns.to_list(), values=values)
                         logger.debug(f'Updated earnings for {date_string}')
             logger.info("Upcoming earnings have been updated!")
 
@@ -493,7 +493,7 @@ class StockData():
             select_script = f"""SELECT date FROM upcomingearnings
                                WHERE ticker = '{ticker}'
                                """
-            result = postgres.select_one(select_script)
+            result = Postgres().select_one(select_script)
             if result is None:
                 return "N/A"
             else:
@@ -501,11 +501,11 @@ class StockData():
 
         @staticmethod
         def get_next_earnings_info(ticker):
-            columns = postgres.get_table_columns('upcomingearnings')
+            columns = Postgres().get_table_columns('upcomingearnings')
             select_script = f"""SELECT * FROM upcomingearnings
                                WHERE ticker = '{ticker}'
                                """
-            result = postgres.select_one(select_script)
+            result = Postgres().select_one(select_script)
             if result is None:
                 return pd.DataFrame()
             else:
@@ -515,7 +515,7 @@ class StockData():
         def remove_past_earnings():
             logger.info("Removing upcoming earnings that have past")
             where = "date < CURRENT_DATE"
-            postgres.delete(table='upcomingearnings', where_condition=where)
+            Postgres().delete(table='upcomingearnings', where_condition=where)
             logger.info("Previous upcoming earnings removed from database")
 
         @staticmethod
@@ -526,16 +526,16 @@ class StockData():
                 logger.debug(f"Retrieving historical earnings for '{ticker}'")
                 earnings = Dolthub().get_historical_earnings_by_ticker(ticker)
                 earnings = earnings.rename(columns={'act_symbol':'ticker'})
-                postgres.insert(table='historicalearnings', fields=earnings.columns.to_list(), values=[tuple(row) for row in earnings.values])
+                Postgres().insert(table='historicalearnings', fields=earnings.columns.to_list(), values=[tuple(row) for row in earnings.values])
             logger.info("Finished updating historical earnings table!")
 
         @staticmethod
         def get_historical_earnings(ticker):
-            columns = postgres.get_table_columns('historicalearnings')
+            columns = Postgres().get_table_columns('historicalearnings')
             select_script = f"""SELECT * FROM historicalearnings
                                WHERE ticker = '{ticker}';
                                """
-            results = postgres.select_many(select_script)
+            results = Postgres().select_many(select_script)
             if results is None:
                 return pd.DataFrame()
             else:
@@ -546,11 +546,11 @@ class StockData():
             select_script = f"""SELECT * FROM upcomingearnings
                                WHERE date = '{date}';
                                """
-            results = postgres.select_many(select_script)
+            results = Postgres().select_many(select_script)
             if results is None:
                 return results
             else:
-                columns = postgres.get_table_columns('upcomingearnings')
+                columns = Postgres().get_table_columns('upcomingearnings')
                 return pd.DataFrame(results, columns=columns)
 
         
@@ -583,7 +583,7 @@ class StockData():
             cik_series[i] = SEC().get_cik_from_ticker(ticker)
         tickers_data = tickers_data.join(cik_series)
         values = [tuple(row) for row in tickers_data.values]
-        postgres.insert(table='tickers', fields=tickers_data.columns.to_list(), values=values)
+        Postgres().insert(table='tickers', fields=tickers_data.columns.to_list(), values=values)
         logger.info("Tickers have been updated!")
     
     @staticmethod
@@ -597,7 +597,7 @@ class StockData():
                 fields = price_history.columns.to_list()
                 values = [tuple(row) for row in price_history.values]
                 print(f"Inserting daily price data for ticker {ticker}, {curr_ticker}/{num_tickers}")
-                postgres.insert(table='dailypricehistory', fields=fields, values=values)
+                Postgres().insert(table='dailypricehistory', fields=fields, values=values)
                 curr_ticker += 1
             else:
                 print(f"No daily price history found for ticker {ticker}, {curr_ticker}/{num_tickers}")
@@ -609,12 +609,12 @@ class StockData():
         num_tickers = len(tickers)
         curr_ticker = 1
         for ticker in tickers:
-            price_history = Schwab().get_daily_price_history(ticker)
+            price_history = Schwab().get_5m_price_history(ticker)
             if price_history is not None:
                 fields = price_history.columns.to_list()
                 values = [tuple(row) for row in price_history.values]
                 print(f"Inserting 5m price data for ticker {ticker}, {curr_ticker}/{num_tickers}")
-                postgres.insert(table='dailypricehistory', fields=fields, values=values)
+                Postgres().insert(table='fiveminutepricehistory', fields=fields, values=values)
                 curr_ticker += 1
             else:
                 print(f"No 5m price history found for ticker {ticker}, {curr_ticker}/{num_tickers}")
@@ -624,25 +624,25 @@ class StockData():
     @staticmethod
     def fetch_daily_price_history(ticker):
         select_script = f"""SELECT * FROM dailypricehistory
-                           WHERE ticker = {ticker};
+                           WHERE ticker = '{ticker}';
                            """
-        results = postgres.select_many(select_script)
+        results = Postgres().select_many(select_script)
         if results is None:
             return pd.DataFrame()
         else:
-            columns = postgres.get_table_columns("dailypricehistory")
+            columns = Postgres().get_table_columns("dailypricehistory")
             return pd.DataFrame(results, columns=columns)
 
     @staticmethod
     def fetch_5m_price_history(ticker):
         select_script = f"""SELECT * FROM fiveminutepricehistory
-                           WHERE ticker = {ticker};
+                           WHERE ticker = '{ticker}';
                            """
-        results = postgres.select_many(select_script)
+        results = Postgres().select_many(select_script)
         if results is None:
             return pd.DataFrame()
         else:
-            columns = postgres.get_table_columns('fiveminutepricehistory')
+            columns = Postgres().get_table_columns('fiveminutepricehistory')
             return pd.DataFrame(results, columns=columns)
 
 
@@ -651,12 +651,12 @@ class StockData():
         select_script = f"""SELECT * FROM tickers
                             WHERE ticker = '{ticker}';
                             """
-        return postgres.select_one(select_script)
+        return Postgres().select_one(select_script)
     
     @staticmethod
     def get_all_ticker_info():
-        columns = postgres.get_table_columns('tickers')
-        data = postgres.select_many('SELECT * FROM tickers;')
+        columns = Postgres().get_table_columns('tickers')
+        data = Postgres().select_many('SELECT * FROM tickers;')
         data = pd.DataFrame(data, columns=columns)
         data.index = data['ticker']
         return data
@@ -667,7 +667,7 @@ class StockData():
         select_script = f"""SELECT cik from tickers
                             WHERE ticker = '{ticker}';
                             """
-        return postgres.select_one(select_script)[0]
+        return Postgres().select_one(select_script)[0]
 
     # Confirm we get valid data back when downloading data for ticker
     @staticmethod
@@ -677,7 +677,7 @@ class StockData():
         select_script = f"""SELECT ticker FROM tickers
                             WHERE ticker = '{ticker}';
                             """
-        ticker = postgres.select_one(select_script)
+        ticker = Postgres().select_one(select_script)
         if ticker is None:
             return False
         else:
@@ -1306,26 +1306,20 @@ def validate_columns(data, columns):
     logger.debug("Columns {} exist in data".format(columns))
     return True
 
-####################
-# Global Variables #
-####################
-
-schwab_client = Schwab()
-postgres = postgres
-
 #########
 # Tests #
 #########
 
 def test():
-    postgres.create_tables()
-    StockData.update_daily_price_history()
+    Postgres().drop_table('fiveminutepricehistory')
+    Postgres().create_tables()
+    StockData.update_5m_price_history()
 
 if __name__ == "__main__":
     #test    
     # Initilaize database
-    #postgres.create_tables()
-    #postgres.init_tables()
+    #Postgres().create_tables()
+    #Postgres().init_tables()
     test()
     pass
 

@@ -23,7 +23,7 @@ class Data(commands.Cog):
 
     @app_commands.command(name = "csv", description= "Returns data file for input ticker. Default: 1 year period.",)
     @app_commands.describe(tickers = "Tickers to return data for (separated by spaces)")
-    @app_commands.describe(type="Type of data file to return - daily data or minute-by-minute data")
+    @app_commands.describe(frequency="Type of data file to return - daily data or minute-by-minute data")
     @app_commands.choices(frequency=[
         app_commands.Choice(name='daily', value='daily'),
         app_commands.Choice(name='5m', value='5m')
@@ -36,23 +36,27 @@ class Data(commands.Cog):
         frequency = frequency.value
         
         files = []
-        tickers, invalid_tickers = sd.get_list_from_tickers(tickers)
+        tickers, invalid_tickers = sd.StockData.get_list_from_tickers(tickers)
         try:
             for ticker in tickers:
                 if frequency == 'daily':
-                    data = sd.StockData.fetch_daily_price_history()
-                    if data is None:
-                        data = sd.schwab.get_daily_price_history(ticker)
+                    data = sd.StockData.fetch_daily_price_history(ticker)
+                    if data.size > 0:
+                        pass
+                    else:
+                        data = sd.Schwab().get_daily_price_history(ticker)
                 else:
                     data = sd.StockData.fetch_5m_price_history(ticker)
-                    if data is None:
-                        data = sd.schwab.get_5m_price_history(ticker)
+                    if data.size > 0:
+                        pass
+                    else:
+                        data = sd.Schwab().get_5m_price_history(ticker)
                 message = ""
                 file = None
                 if data is not None:
                     message = f"Data file for {ticker}"
                     filepath = f"{config.get_attachments_path()}/{ticker}_{frequency}_data.csv"
-                    data.to_csv(filepath)
+                    data.to_csv(filepath, index=False)
                     file = discord.File(filepath)
                 else:
                     message = f"Could not fetch data for ticker {ticker}"
