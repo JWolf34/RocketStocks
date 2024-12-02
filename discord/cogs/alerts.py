@@ -66,9 +66,15 @@ class Alerts(commands.Cog):
         for index, row in volume_movers.iterrows():
             ticker = row['Ticker']
             relative_volume = float(row['Relative Volume'])
-            if relative_volume > 20.0:
-                alert = VolumeMoverAlert(ticker=ticker, channel=self.alerts_channel, volume_row=row)
-                await alert.send_alert()
+            if relative_volume > 10.0: # see that Relative Volume exceeds 20x
+                pct_change = 0.0
+                change_columns = ["Premarket Change", "% Change", "After Hours Change"]
+                for column in change_columns:
+                    if column in row.index.values:
+                        pct_change = float(row[column])
+                if abs(pct_change) >= 5.0: # See that stock movement is at least 5%
+                    alert = VolumeMoverAlert(ticker=ticker, channel=self.alerts_channel, volume_row=row)
+                    await alert.send_alert()
 
 ##################
 # Alerts Classes #
