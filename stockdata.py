@@ -636,6 +636,11 @@ class StockData():
                 invalid_tickers.append(ticker)
         return valid_tickers, invalid_tickers
 
+    @staticmethod
+    # Return supported exchanges
+    def get_supported_exchanges():
+        return ['NASDAQ', 'NYSE', 'AMEX']
+
 class TradingView():
     def __init__(self):
         pass
@@ -643,49 +648,103 @@ class TradingView():
     @staticmethod
     def get_premarket_gainers():
         logger.info("Fetching premarket gainers")
-        num_rows, gainers = Scanner.premarket_gainers.get_scanner_data()
+        num_rows, gainers = (Query()
+                    .select('name', 'close', 'volume', 'market_cap_basic', 'premarket_change', 'premarket_volume')
+                    .order_by('premarket_change', ascending=False)
+                    .where(
+                            Column('exchange').isin(StockData.get_supported_exchanges()))
+                    .limit(100)
+                    .get_scanner_data())
+        gainers = gainers.drop(columns='exchange')
+        gainers = gainers.drop(columns='ticker')
+        heaaders = ['Ticker', 'Close', 'Volume', 'Market Cap', 'Premarket Change', "Premarket Volume"]
+        gainers.columns = headers
         return gainers
 
     @staticmethod
     def get_premarket_gainers_by_market_cap(market_cap):
-        logger.info("Fetching premarket gainers by market cap")
-        num_rows, gainers = Scanner.premarket_gainers.get_scanner_data()
-        return gainers.loc[gainers['market_cap_basic'] >= market_cap]    
+        logger.info("Fetching intraday gainers")
+        num_rows, gainers = (Query()
+                .select('name', 'close', 'volume', 'market_cap_basic', 'premarket_change', 'premarket_volume')
+                .order_by('premarket_change', ascending=False)
+                .where(
+                    Column('market_cap_basic') >= market_cap,
+                    Column('exchange').isin(StockData.get_supported_exchanges()))
+                .limit(100)
+                .get_scanner_data())
+        gainers = gainers.drop(columns='exchange')
+        gainers = gainers.drop(columns='ticker')
+        headers = ['Ticker', 'Close', 'Volume', 'Market Cap', 'Premarket Change', 'Premarket Volume']
+        gainers.columns = headers
+        return gainers
 
     @staticmethod
     def get_intraday_gainers():
         logger.info("Fetching intraday gainers")
-        num_rows, gainers = (Query()
-                            .select('name','close', 'change', 'volume')
-                            .get_scanner_data())
+        gainers = (Query()
+                .select('name', 'close', 'volume', 'market_cap_basic', 'change', )
+                .order_by('change', ascending=False)
+                .where(
+                            Column('exchange').isin(StockData.get_supported_exchanges()))
+                .limit(100)
+                .get_scanner_data())
+        gainers = gainers.drop(columns='exchange')
+        gainers = gainers.drop(columns='ticker')
+        headers = ['Ticker', 'Close', 'Volume', 'Market Cap', '% Change']
+        gainers.columns = headers
         return gainers
 
     @staticmethod
     def get_intraday_gainers_by_market_cap(market_cap):
         logger.info("Fetching intrday gainers by market cap")
         num_rows, gainers = (Query()
-                            .select('name','close', 'volume', 'market_cap_basic', 'change', 'exchange')
-                            .set_markets('america')
-                            .where(
-                                Column('market_cap_basic') > market_cap,
-                                Column('exchange').isin(get_supported_exchanges())
-                            )
-                            .order_by('change', ascending=False)
-                            .get_scanner_data())
+                .select('name', 'close', 'volume', 'market_cap_basic', 'change', 'exchange')
+                .set_markets('america')
+                .order_by('change', ascending=False)
+                .where(
+                            Column('market_cap_basic') >= market_cap,
+                            Column('exchange').isin(get_supported_exchanges()))
+                .limit(100)
+                .get_scanner_data())
+        gainers = gainers.drop(columns='exchange')
+        gainers = gainers.drop(columns='ticker')
+        headers = ['Ticker', 'Close', 'Volume', 'Market Cap', '% Change']
+        gainers.columns = headers
         return gainers
                 
     @staticmethod
     def get_postmarket_gainers():
         logger.info("Fetching after hours gainers")
-
-        num_rows, gainers = Scanner.postmarket_gainers.get_scanner_data()
+        num_rows, gainers = (Query()
+                .select('name', 'close', 'volume', 'market_cap_basic', 'postmarket_change', 'postmarket_volume')
+                .order_by('postmarket_change', ascending=False)
+                .where(
+                            Column('exchange').isin(StockData.get_supported_exchanges()))
+                .limit(100)
+                .get_scanner_data())
+        gainers = gainers.drop(columns='exchange')
+        gainers = gainers.drop(columns='ticker')
+        headers = ['Ticker', 'Close', 'Volume', 'Market Cap', 'After Hours Change', 'After Hours Volume']
+        gainers.columns = headers
         return gainers
 
     @staticmethod
     def get_postmarket_gainers_by_market_cap(market_cap):
         logger.info("Fetching after hours gainers by market cap")
-        num_rows, gainers = Scanner.postmarket_gainers.get_scanner_data()
-        return gainers.loc[gainers['market_cap_basic'] >= market_cap]    
+        num_rows, gainers = (Query()
+                .select('name', 'close', 'volume', 'market_cap_basic', 'postmarket_change', 'postmarket_volume')
+                .order_by('postmarket_change', ascending=False)
+                .where(
+                            Column('market_cap_basic') >= market_cap,
+                            Column('exchange').isin(StockData.get_supported_exchanges()))
+                .limit(100)
+                .get_scanner_data())
+        gainers = gainers.drop(columns='exchange')
+        gainers = gainers.drop(columns='ticker')
+        headers = ['Ticker', 'Close', 'Volume', 'Market Cap', 'After Hours Change', 'After Hours Volume']
+        gainers.columns = headers
+        return gainers
+
     
     @staticmethod
     def get_unusual_volume_movers():
@@ -697,6 +756,7 @@ class TradingView():
                             .where(
                                 Column('Volume') > 1000000
                             )
+                            .limit(100)
                             .order_by('relative_volume', ascending=False)
                             .get_scanner_data())
         unusual_volume = unusual_volume.drop(columns = "ticker")

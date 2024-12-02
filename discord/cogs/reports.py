@@ -81,6 +81,7 @@ class Reports(commands.Cog):
             await report.send_report()
             await self.bot.get_cog("Alerts").send_earnings_movers(report.gainers)
             await self.bot.get_cog("Alerts").send_sec_filing_movers(report.gainers)
+            await self.bot.get_cog("Alerts").send_watchlist_movers(report.gainers)
         else:
             # Not a weekday - do not post gainer reports
             pass
@@ -502,61 +503,39 @@ class StockReport(Report):
 
 class GainerReport(Report):
     def __init__(self, channel):
-        self.gainers = self.get_gainers()
+        self.gainers = None
+        self.market_period = utils.get_market_period()
+        if utils.in_premarket():
+            self.gainers = sd.TradingView.get_premarket_gainers_by_market_cap(1000000)
+        elif utils.in_intraday():
+            self.gainers = sd.TradingView.get_intraday_gainers_by_market_cap(1000000)
+        elif utils.in_afterhours():
+            self.gainers = sd.TradingView.get_postmarket_gainers_by_market_cap(1000000)
         if self.gainers.size > 0:
             self.update_gainer_watchlist()
+
+        self.gainers_formatted = self.format_df_for_table()
         super().__init__(channel)
 
-    def get_gainers(self):
-        headers = []
-        rows = []
-        if utils.in_premarket():
-            gainers = sd.TradingView.get_premarket_gainers_by_market_cap(100000000)
-            headers = ["Ticker", "Close", "Volume", "Market Cap", "Premarket Change", "Premarket Volume"]
-            for index, row in gainers.iterrows():
-                ticker = row.iloc[1]
-                if sd.StockData.validate_ticker(ticker):
-                    rows.append([row.iloc[1], 
-                                "${}".format(float('{:.2f}'.format(row.close))), 
-                                self.format_large_num(row.volume), 
-                                self.format_large_num(row.market_cap_basic), 
-                                "{:.2f}%".format(row.premarket_change), 
-                                self.format_large_num(row.premarket_volume)])
-                else:
-                    pass
-        elif utils.in_intraday():
-            gainers = sd.TradingView.get_intraday_gainers_by_market_cap(100000000)
-            headers = ["Ticker", "Close", "Volume", "Market Cap", "% Change"]
-            rows = []
-            for index, row in gainers.iterrows():
-                ticker = row.iloc[1]
-                if sd.StockData.validate_ticker(ticker):
-                    rows.append([ticker, 
-                                "${}".format(float('{:.2f}'.format(row.close))), 
-                                self.format_large_num(row.volume), 
-                                self.format_large_num(row.market_cap_basic), 
-                                "{:.2f}%".format(row.change)])
-                else: 
-                    pass
-                
-        elif utils.in_afterhours():
-            gainers = sd.TradingView.get_postmarket_gainers_by_market_cap(100000000)
-            headers = ["Ticker", "Close", "Volume", "Market Cap", "After Hours Change", "After Hours Volume"]
-            rows = []
-            for index, row in gainers.iterrows():
-                ticker = row.iloc[1]
-                if sd.StockData.validate_ticker(ticker):
-                    rows.append([ticker, 
-                                "${}".format(float('{:.2f}'.format(row.close))), 
-                                self.format_large_num(row.volume), 
-                                self.format_large_num(row.market_cap_basic), 
-                                "{:.2f}%".format(row.postmarket_change), 
-                                self.format_large_num(row.postmarket_volume)])
-                else: 
-                    pass
+        
+
+    def format_df_for_table(self):
+        gainers = self.gainers.copy()
+        change_columns = ['Premarket Change', '% Change', 'After Hours Change']
+        volume_columns = ['Premarket Volume', "After Hours Volume"]
+        gainers['Volume'] = gainers['Volume'].apply(lambda x: self.format_large_num(x))
+        gainers['Market Cap'] = gainers['Market Cap'].apply(lambda x: self.format_large_num(x))
+        for column in change_columns:
+            if column in gainers.columns:
+                gainers[column] = gainers[column].apply(lambda x: "{:.2f}%".format(float(x)))
+        for column in volume_columns:
+            if column in gainers.columns:
+                gainers[column] = gainers[column].apply(lambda x: self.format_large_num(x))
+        return gainers
+
+        
 
         return pd.DataFrame(rows, columns=headers)
-
     def update_gainer_watchlist(self):
         watchlist_id = f"{utils.get_market_period()}-gainers"
         watchlist_tickers = self.gainers['Ticker'].to_list()
@@ -583,7 +562,7 @@ class GainerReport(Report):
     def build_report(self):
         report = ""
         report += self.build_report_header()
-        report += self.build_table(self.gainers[:15])
+        report += self.build_table(self.gainers_formatted[:15])
         return report
 
     # Override
@@ -616,9 +595,10 @@ class VolumeReport(Report):
     def format_df_for_table(self):
         movers = self.volume_movers.copy()
         movers['Volume'] = movers['Volume'].apply(lambda x: self.format_large_num(x))
-        movers['Relative Volume'] = movers['Relative Volume'].apply(lambda x: "{:2f}x".format(x))
+        movers['Relative Volume'] = movers['Relative Volume'].apply(lambda x: "{:.2f}x".format(x))
         movers['Average Volume (10 Day)'] = movers['Average Volume (10 Day)'].apply(lambda x: self.format_large_num(x))
         movers['Market Cap'] = movers['Market Cap'].apply(lambda x: self.format_large_num(x))
+        movers['% Change'] = movers['% Change'].apply(lambda x: "{:.2f}%".format(x))
         return movers
 
     # Override
