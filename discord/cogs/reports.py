@@ -410,7 +410,7 @@ class Report(object):
                                 else "Not supplied")
         message += f"**Fiscal Quarter:** {earnings_info['fiscalquarterending'].iloc[0]}\n"
         message += f"**EPS Forecast: ** {earnings_info['epsforecast'].iloc[0] if len(earnings_info['epsforecast'].iloc[0]) > 0 else "N/A"}\n"
-        message += f"**\# of Estimates:** {earnings_info['noofests'].iloc[0]}\n"
+        message += f"**No. of Estimates:** {earnings_info['noofests'].iloc[0]}\n"
         message += f"**Last Year Report Date:** {earnings_info['lastyearrptdt'].iloc[0]}\n"
         message += f"**Last Year EPS:** {earnings_info['lastyeareps'].iloc[0]}\n"
         return message + "\n\n"
