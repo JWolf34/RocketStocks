@@ -403,7 +403,7 @@ class SEC():
     @sleep_and_retry
     @limits(calls = 5, period = 1) # 5 calls per 1 second
     def get_submissions_data(self, ticker):
-        submissions_json = requests.get(f"https://data.sec.gov/submissions/CIK{self.get_cik_from_ticker(ticker)}.json", headers=self.headers).json()
+        submissions_json = requests.get(f"https://data.sec.gov/submissions/CIK{StockData.get_cik(ticker)}.json", headers=self.headers).json()
         return submissions_json
     
     def get_recent_filings(self, ticker):

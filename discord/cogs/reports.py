@@ -80,7 +80,7 @@ class Reports(commands.Cog):
             report = GainerReport(self.screeners_channel)
             await report.send_report()
             await self.bot.get_cog("Alerts").send_earnings_movers(report.gainers)
-            #await self.bot.get_cog("Alerts").send_sec_filing_movers(report.gainers)
+            await self.bot.get_cog("Alerts").send_sec_filing_movers(report.gainers)
             await self.bot.get_cog("Alerts").send_watchlist_movers(report.gainers)
         else:
             # Not a weekday - do not post gainer reports
