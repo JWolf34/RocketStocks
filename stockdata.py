@@ -268,7 +268,7 @@ class Postgres():
             self.cur.execute(insert_script, row)
 
         self.conn.commit()
-        logger.debug(f"Inserted values {values} into table {table}")
+        logger.debug(f"Inserted new row in table {table}")
         self.close_connection()
 
     # Select a sigle row from database
@@ -691,7 +691,11 @@ class StockData():
         select_script = f"""SELECT cik from tickers
                             WHERE ticker = '{ticker}';
                             """
-        return Postgres().select_one(select_script)[0]
+        result = Postgres().select_one(select_script)
+        if result is None:
+            return None
+        else:
+            return result[0]
 
     # Confirm we get valid data back when downloading data for ticker
     @staticmethod
