@@ -95,6 +95,7 @@ class Charts(commands.Cog):
         app_commands.Choice(name="True", value="True"),
         app_commands.Choice(name="False", value="False") 
     ]) 
+    @commands.is_owner()
     async def plot_charts(self, interaction: discord.interactions, tickers: str, chart: str, visibility: app_commands.Choice[str],
                     display_signals: app_commands.Choice[str] = 'True',
                     timeframe: str = "1y", 
@@ -192,6 +193,7 @@ class Charts(commands.Cog):
         app_commands.Choice(name="True", value="True"),
         app_commands.Choice(name="False", value="False") 
     ])  
+    @commands.is_owner()
     async def run_charts(self, interaction: discord.interactions, watchlist: str, chart: str, visibility: app_commands.Choice[str],
                     display_signals: app_commands.Choice[str] = 'True',
                     timeframe: app_commands.Choice[str] = "1y", 
@@ -349,7 +351,7 @@ class Charts(commands.Cog):
         app_commands.Choice(name="True", value="True"),
         app_commands.Choice(name="False", value="False") 
     ])  
-
+    @commands.is_owner()
     async def fetch_backtests(self, interaction: discord.interactions, tickers: str, strategy: str, visibility: app_commands.Choice[str],
                     cash: int = 10000,
                     timeframe: str = "1y", 
@@ -394,7 +396,7 @@ class Charts(commands.Cog):
         app_commands.Choice(name="True", value="True"),
         app_commands.Choice(name="False", value="False") 
     ])  
-
+    @commands.is_owner()
     async def run_backtests(self, interaction: discord.interactions, watchlist: str, strategy: str, visibility: app_commands.Choice[str],
                     cash: int = 10000,
                     timeframe: str = "10y", 
