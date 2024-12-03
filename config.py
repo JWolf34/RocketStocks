@@ -163,37 +163,29 @@ def get_financials_path():
 def get_reports_channel_id():
     try:
         channel_id = os.getenv("REPORTS_CHANNEL_ID")
-        logger.debug("Reports channel ID is {}".format(channel_id))
         return int(channel_id)
     except Exception as e:
-        logger.exception("Failed to fetch reports channel ID\n{}".format(e))
         return ""
 
 def get_alerts_channel_id():
     try:
         channel_id = os.getenv("ALERTS_CHANNEL_ID")
-        logger.debug("Alerts channel ID is {}".format(channel_id))
         return int(channel_id)
     except Exception as e:
-        logger.exception("Failed to fetch alerts channel ID\n{}".format(e))
         return ""
 
 def get_screeners_channel_id():
     try:
         channel_id = os.getenv("SCREENERS_CHANNEL_ID")
-        logger.debug("Screeners channel ID is {}".format(channel_id))
         return int(channel_id)
     except Exception as e:
-        logger.exception("Failed to fetch screeners channel ID\n{}".format(e))
         return ""
 
 def get_charts_channel_id():
     try:
         channel_id = os.getenv("CHARTS_CHANNEL_ID")
-        logger.debug("Charts channel ID is {}".format(channel_id))
         return int(channel_id)
     except Exception as e:
-        logger.exception("Failed to fetch charts channel ID\n{}".format(e))
         return ""
 
 def get_discord_token():
@@ -260,13 +252,10 @@ def get_schwab_api_secret():
 
 
 def get_db_user():
-        logger.debug("Fetching DB username")
         try:
             token = os.getenv('POSTGRES_USER')
-            logger.debug("Successfully fetched DB username")
             return token
         except Exception as e:
-            logger.exception("Failed to fetch  DB username\n{}".format(e))
             return ""
 
 def get_db_password():
