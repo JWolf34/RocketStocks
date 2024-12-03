@@ -845,7 +845,7 @@ class TradingView():
                                 Column('Volume') > 1000000
                             )
                             .limit(100)
-                            .order_by('relative_volume', ascending=False)
+                            .order_by('Relative Volume', ascending=False)
                             .get_scanner_data())
         unusual_volume = unusual_volume.drop(columns = "ticker")
         unusual_volume.columns = columns
