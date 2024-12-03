@@ -353,18 +353,6 @@ class Report(object):
         else:
             logger.warning("While generating report summary, ticker_data was 'None'. Ticker likely does not exist in database")
             return message + f"Unable to get info for ticker {self.ticker}\n"
-
-    # Daily Summary
-    def build_daily_summary(self):
-        # Append day's summary to message
-        summary = sd.get_days_summary(self.data)
-
-        message = "## Summary \n| "
-        for col in summary.keys():
-            message += "**{}:** {}".format(col, f"{summary[col]:,.2f}")
-            message += " | "
-
-        return message + "\n"
         
     def build_recent_SEC_filings(self):
         message = "## Recent SEC Filings\n\n"
@@ -416,14 +404,13 @@ class Report(object):
         return message + "\n\n"
 
     def build_performance(self):
-        quote = sd.Schwab().get_quote(self.ticker)
         message = "## Performance \n\n"
         performance_frequency = {'1D': 1,
                                  '5D': 5,
                                  '1M': 30,
                                  '3M': 90,
                                  '6M': 180}
-        curr_close = quote['quote']['closePrice']
+        curr_close = self.quote['closePrice']
         for frequency, days in performance_frequency.items():
             try:
                 old_close = float(self.data['close'].iloc[-abs(days)])
@@ -436,8 +423,15 @@ class Report(object):
         return message
 
     def build_daily_summary(self):
-        pass
-        
+        message = "## Summary\n\n"
+        OHLCV = {'Open': "{:.2f}".format(self.quote['openPrice']),
+                 'High': "{:.2f}".format(self.quote['highPrice']),
+                 'Low': "{:.2f}".format(self.quote['lowPrice']),
+                 'Close': "{:.2f}".format(self.quote['closePrice']),
+                 'Volume': self.format_large_num(self.quote['totalVolume'])
+                }
+        message += " | ".join(f"**{column}:** {value}" for column, value in OHLCV.items())
+        return message + "\n"        
                     
                 
 
@@ -486,6 +480,7 @@ class StockReport(Report):
     def __init__(self, ticker : str, channel):
         self.ticker = ticker
         self.data =  sd.StockData.fetch_daily_price_history(self.ticker)
+        self.quote = sd.Schwab().get_quote(self.ticker)['quote']
         self.buttons = self.Buttons(self.ticker)
         super().__init__(channel)
         
@@ -494,8 +489,8 @@ class StockReport(Report):
         report = ''
         report += self.build_report_header()
         report += self.build_ticker_info()
+        report += self.build_daily_summary()
         report += self.build_performance()
-        #report += self.build_daily_summary()
         report += self.build_recent_SEC_filings()
         
         return report
