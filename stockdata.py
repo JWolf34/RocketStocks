@@ -587,38 +587,44 @@ class StockData():
         logger.info("Tickers have been updated!")
     
     @staticmethod
-    def update_daily_price_history():
-        tickers = get_all_tickers()
-        num_tickers = len(tickers)
-        curr_ticker = 1
-        for ticker in tickers:
-            price_history = Schwab().get_daily_price_history(ticker)
-            if price_history is not None:
-                fields = price_history.columns.to_list()
-                values = [tuple(row) for row in price_history.values]
-                print(f"Inserting daily price data for ticker {ticker}, {curr_ticker}/{num_tickers}")
-                Postgres().insert(table='dailypricehistory', fields=fields, values=values)
-                curr_ticker += 1
-            else:
-                print(f"No daily price history found for ticker {ticker}, {curr_ticker}/{num_tickers}")
-                curr_ticker += 1
+    def update_daily_price_history(override_schedule=False):
+        if utils.market_open_today() or override_schedule:
+            logger.info(f"Updating daily price history for watchlist tickers")
+            tickers = get_all_tickers()
+            num_tickers = len(tickers)
+            curr_ticker = 1
+            for ticker in tickers:
+                price_history = Schwab().get_daily_price_history(ticker)
+                if price_history is not None:
+                    fields = price_history.columns.to_list()
+                    values = [tuple(row) for row in price_history.values]
+                    print(f"Inserting daily price data for ticker {ticker}, {curr_ticker}/{num_tickers}")
+                    Postgres().insert(table='dailypricehistory', fields=fields, values=values)
+                    curr_ticker += 1
+                else:
+                    logger.warning(f"No daily price history found for ticker {ticker}, {curr_ticker}/{num_tickers}")
+                    curr_ticker += 1
+            logger.info("Completed update to daily price history in database")
 
     @staticmethod
-    def update_5m_price_history():
-        tickers = Watchlists().get_tickers_from_all_watchlists(no_personal=False) # Only update for watchlist tickers
-        num_tickers = len(tickers)
-        curr_ticker = 1
-        for ticker in tickers:
-            price_history = Schwab().get_5m_price_history(ticker)
-            if price_history is not None:
-                fields = price_history.columns.to_list()
-                values = [tuple(row) for row in price_history.values]
-                print(f"Inserting 5m price data for ticker {ticker}, {curr_ticker}/{num_tickers}")
-                Postgres().insert(table='fiveminutepricehistory', fields=fields, values=values)
-                curr_ticker += 1
-            else:
-                print(f"No 5m price history found for ticker {ticker}, {curr_ticker}/{num_tickers}")
-                curr_ticker += 1
+    def update_5m_price_history(override_schedule=False):
+        if (utils.in_extended_hours() or utils.in_intraday()) or override_schedule:
+            logger.info(f"Updating 5m price history for watchlist tickers")
+            tickers = Watchlists().get_tickers_from_all_watchlists(no_personal=False) # Only update for watchlist tickers
+            num_tickers = len(tickers)
+            curr_ticker = 1
+            for ticker in tickers:
+                price_history = Schwab().get_5m_price_history(ticker)
+                if price_history is not None:
+                    fields = price_history.columns.to_list()
+                    values = [tuple(row) for row in price_history.values]
+                    logger.debug(f"Inserting 5m price data for ticker {ticker}, {curr_ticker}/{num_tickers}")
+                    Postgres().insert(table='fiveminutepricehistory', fields=fields, values=values)
+                    curr_ticker += 1
+                else:
+                    logger.warning(f"No 5m price history found for ticker {ticker}, {curr_ticker}/{num_tickers}")
+                    curr_ticker += 1
+            logger.info("Completed update to 5m price history in database")
     
     
     @staticmethod
