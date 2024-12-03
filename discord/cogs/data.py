@@ -220,9 +220,9 @@ class Data(commands.Cog):
             follow_up = f"No valid tickers input: {", ".join(invalid_tickers)}"
         await interaction.followup.send(follow_up, ephemeral=True)
 
-    @app_commands.command(name="fundamentals", description="Return JSON files of fundamental data for desired tickers")
+    @app_commands.command(name="options", description="Return JSON files of fundamental data for desired tickers")
     @app_commands.describe(tickers = "Tickers to return SEC forms for (separated by spaces)")
-    async def fundamentals(self, interaction: discord.Interaction, tickers: str):
+    async def options(self, interaction: discord.Interaction, tickers: str):
         await interaction.response.defer(ephemeral=True)
         logger.info(f"/fundamentals function called by user {interaction.user.name}")
         message = None
