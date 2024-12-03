@@ -772,7 +772,7 @@ class TradingView():
                 .order_by('change', ascending=False)
                 .where(
                             Column('market_cap_basic') >= market_cap,
-                            Column('exchange').isin(get_supported_exchanges()))
+                            Column('exchange').isin(StockData.get_supported_exchanges()))
                 .limit(100)
                 .get_scanner_data())
         gainers = gainers.drop(columns='exchange')

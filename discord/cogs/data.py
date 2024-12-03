@@ -87,7 +87,7 @@ class Data(commands.Cog):
         logger.debug("Financials requested for {}".format(tickers))
 
 
-        tickers, invalid_tickers = sd.get_list_from_tickers(tickers)
+        tickers, invalid_tickers = sd.StockData.get_valid_tickers(tickers)
 
         if(len(tickers) > 0):
             for ticker in tickers:
