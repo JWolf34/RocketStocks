@@ -958,6 +958,12 @@ class Schwab():
         assert resp.status_code == httpx.codes.OK, resp.raise_for_status()
         data = resp.json()
         return data
+    
+    def get_options_chain(self, ticker):
+        resp = self.client.get_option_chain(ticker)
+        assert resp.status_code == httpx.codes.OK, resp.raise_for_status()
+        data = resp.json()
+        return data
 
 
 #########################
@@ -1320,8 +1326,7 @@ def validate_columns(data, columns):
 #########
 
 def test():
-    Postgres().create_tables()
-    StockData.update_5m_price_history(override_schedule=True, last_hour=True)
+    pass
 
 if __name__ == "__main__":
     #test    
