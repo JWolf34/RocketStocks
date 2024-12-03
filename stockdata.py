@@ -654,6 +654,21 @@ class StockData():
             columns = Postgres().get_table_columns('fiveminutepricehistory')
             return pd.DataFrame(results, columns=columns)
 
+    # Download and write financials for specified ticker to the financials folder
+    @staticmethod
+    def fetch_financials(ticker):
+        logger.debug(f"Fetching financials for ticker {ticker}")
+        financials = {}
+        stock = yf.Ticker(ticker)
+        financials['income_statment'] = stock.income_stmt
+        financials['quarterly_income_statement'] = stock.quarterly_income_stmt
+        financials['balance_sheet'] = stock.balance_sheet
+        financials['quarterly_income_statement'] = stock.quarterly_balance_sheet
+        financials['cash_flow']=stock.cashflow
+        financials['quarterly_cash_flow'] = stock.quarterly_cashflow
+
+        return financials
+
 
     @staticmethod
     def get_ticker_info(ticker):

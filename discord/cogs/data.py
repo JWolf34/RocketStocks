@@ -75,13 +75,8 @@ class Data(commands.Cog):
             await interaction.followup.send("Failed to fetch data files. Please ensure your parameters are valid.")
     
     @app_commands.command(name = "financials", description= "Fetch financial reports of the specified tickers ",)
-    @app_commands.describe(tickers = "Tickers to return financials for (separated by spaces)")
-    @app_commands.describe(visibility = "'private' to send to DMs, 'public' to send to the channel")
-    @app_commands.choices(visibility =[
-        app_commands.Choice(name = "private", value = 'private'),
-        app_commands.Choice(name = "public", value = 'public')
-    ])        
-    async def financials(self, interaction: discord.interactions, tickers: str, visibility: app_commands.Choice[str]):
+    @app_commands.describe(tickers = "Tickers to return financials for (separated by spaces)")       
+    async def financials(self, interaction: discord.interactions, tickers: str):
         await interaction.response.defer(ephemeral=True)
         logger.info("/financials function called by user {}".format(interaction.user.name))
         logger.debug("Financials requested for {}".format(tickers))
@@ -89,21 +84,27 @@ class Data(commands.Cog):
 
         tickers, invalid_tickers = sd.StockData.get_valid_tickers(tickers)
 
-        if(len(tickers) > 0):
-            for ticker in tickers:
-                files = sd.fetch_financials(ticker)
-                for i in range(0, len(files)):
-                    files[i] = discord.File(files[i])
-                if visibility.value == 'private':
-                    await interaction.user.send("Financials for {}".format(ticker), files=files)
-                else:
-                    await interaction.channel.send("Financials for {}".format(ticker), files=files)
-
-            await interaction.followup.send("Posted financials for {}".format(",".join(tickers)), ephemeral=True)
-        else:
-            logger.warning("Found no valid tickers in {} to fetch fincancials for".format(tickers))
-            await interaction.followup.send("No valid tickers in {}".format(",".join(invalid_tickers)), ephemeral=True)
-
+        message = None
+        for ticker in tickers:
+            files = []
+            financials = sd.StockData.fetch_financials(ticker)
+            for statement, data in financials.items():
+                filepath = f"{config.get_attachments_path()}/{ticker}_{statement}.csv"
+                data.to_csv(filepath)
+                files.append(discord.File(filepath))
+            
+            message = await interaction.user.send("Financials for {}".format(ticker), files=files)
+      
+        # Follow-up
+        follow_up = ""
+        if message is not None: # Message was generated
+            follow_up = f"Posted EPS for tickers [{", ".join(tickers)}]({message.jump_url})!"
+            if len(invalid_tickers) > 0: # More than one invalid ticke input
+                follow_up += f" Invalid tickers: {", ".join(invalid_tickers)}"
+        if len(tickers) == 0: # No valid tickers input
+            follow_up = f"No valid tickers input: {", ".join(invalid_tickers)}"
+        await interaction.followup.send(follow_up, ephemeral=True)
+        
     @app_commands.command(name = "logs", description= "Return the log file for the bot",)
     async def logs(self, interaction: discord.Interaction):
         logger.info("/logs function called by user {}".format(interaction.user.name))
