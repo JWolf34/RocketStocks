@@ -709,7 +709,7 @@ class TradingView():
     def get_premarket_gainers():
         logger.info("Fetching premarket gainers")
         num_rows, gainers = (Query()
-                    .select('name', 'close', 'volume', 'market_cap_basic', 'premarket_change', 'premarket_volume')
+                    .select('name', 'close', 'volume', 'market_cap_basic', 'premarket_change', 'premarket_volume', 'exchange')
                     .order_by('premarket_change', ascending=False)
                     .where(
                             Column('exchange').isin(StockData.get_supported_exchanges()))
@@ -725,7 +725,7 @@ class TradingView():
     def get_premarket_gainers_by_market_cap(market_cap):
         logger.info("Fetching intraday gainers")
         num_rows, gainers = (Query()
-                .select('name', 'close', 'volume', 'market_cap_basic', 'premarket_change', 'premarket_volume')
+                .select('name', 'close', 'volume', 'market_cap_basic', 'premarket_change', 'premarket_volume', 'exchange')
                 .order_by('premarket_change', ascending=False)
                 .where(
                     Column('market_cap_basic') >= market_cap,
@@ -742,7 +742,7 @@ class TradingView():
     def get_intraday_gainers():
         logger.info("Fetching intraday gainers")
         gainers = (Query()
-                .select('name', 'close', 'volume', 'market_cap_basic', 'change', )
+                .select('name', 'close', 'volume', 'market_cap_basic', 'change', 'exchange' )
                 .order_by('change', ascending=False)
                 .where(
                             Column('exchange').isin(StockData.get_supported_exchanges()))
@@ -776,7 +776,7 @@ class TradingView():
     def get_postmarket_gainers():
         logger.info("Fetching after hours gainers")
         num_rows, gainers = (Query()
-                .select('name', 'close', 'volume', 'market_cap_basic', 'postmarket_change', 'postmarket_volume')
+                .select('name', 'close', 'volume', 'market_cap_basic', 'postmarket_change', 'postmarket_volume', 'exchange')
                 .order_by('postmarket_change', ascending=False)
                 .where(
                             Column('exchange').isin(StockData.get_supported_exchanges()))
@@ -792,7 +792,7 @@ class TradingView():
     def get_postmarket_gainers_by_market_cap(market_cap):
         logger.info("Fetching after hours gainers by market cap")
         num_rows, gainers = (Query()
-                .select('name', 'close', 'volume', 'market_cap_basic', 'postmarket_change', 'postmarket_volume')
+                .select('name', 'close', 'volume', 'market_cap_basic', 'postmarket_change', 'postmarket_volume', 'exchange')
                 .order_by('postmarket_change', ascending=False)
                 .where(
                             Column('market_cap_basic') >= market_cap,
