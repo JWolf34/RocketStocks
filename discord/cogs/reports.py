@@ -56,7 +56,7 @@ class Reports(commands.Cog):
 
         # Update popular-stocks watchlist
         watchlist_id = 'popular-stocks'
-        tickers, invalid_tickers = sd.StockData.get_list_from_tickers(" ".join(report.top_stocks['ticker'].tolist()[:30]))
+        tickers, invalid_tickers = sd.StockData.get_valid_tickers(" ".join(report.top_stocks['ticker'].tolist()[:30]))
         if not sd.Watchlists().validate_watchlist(watchlist_id):
             sd.Watchlists().create_watchlist(watchlist_id=watchlist_id, tickers=tickers, systemGenerated=True)
         else:
@@ -248,7 +248,7 @@ class Reports(commands.Cog):
         logger.info("/report function called by user {}".format(interaction.user.name))
     
         # Validate each ticker in the list is valid
-        tickers, invalid_tickers = sd.StockData.get_list_from_tickers(tickers)
+        tickers, invalid_tickers = sd.StockData.get_valid_tickers(tickers)
         logger.debug("Validated tickers {} | Invalid tickers: {}".format(tickers, invalid_tickers))
         message = None
         logger.info("Fetching reports for tickers {}".format(tickers))
@@ -660,7 +660,7 @@ class VolumeReport(Report):
         watchlist_id = "unusual-volume"
         watchlist_tickers = self.volume_movers['Ticker'].to_list()
 
-        watchlist_tickers, invalid_tickers = sd.StockData.get_list_from_tickers(' '.join(watchlist_tickers))
+        watchlist_tickers, invalid_tickers = sd.StockData.get_valid_tickers(' '.join(watchlist_tickers))
         watchlist_tickers = watchlist_tickers[:15]
 
         if not sd.Watchlists().validate_watchlist(watchlist_id):

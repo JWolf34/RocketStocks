@@ -587,38 +587,47 @@ class StockData():
         logger.info("Tickers have been updated!")
     
     @staticmethod
-    def update_daily_price_history():
-        tickers = get_all_tickers()
-        num_tickers = len(tickers)
-        curr_ticker = 1
-        for ticker in tickers:
-            price_history = Schwab().get_daily_price_history(ticker)
-            if price_history is not None:
-                fields = price_history.columns.to_list()
-                values = [tuple(row) for row in price_history.values]
-                print(f"Inserting daily price data for ticker {ticker}, {curr_ticker}/{num_tickers}")
-                Postgres().insert(table='dailypricehistory', fields=fields, values=values)
-                curr_ticker += 1
-            else:
-                print(f"No daily price history found for ticker {ticker}, {curr_ticker}/{num_tickers}")
-                curr_ticker += 1
+    def update_daily_price_history(override_schedule=False):
+        if utils.market_open_today() or override_schedule:
+            logger.info(f"Updating daily price history for watchlist tickers")
+            tickers = get_all_tickers()
+            num_tickers = len(tickers)
+            curr_ticker = 1
+            for ticker in tickers:
+                price_history = Schwab().get_daily_price_history(ticker)
+                if price_history is not None:
+                    fields = price_history.columns.to_list()
+                    values = [tuple(row) for row in price_history.values]
+                    print(f"Inserting daily price data for ticker {ticker}, {curr_ticker}/{num_tickers}")
+                    Postgres().insert(table='dailypricehistory', fields=fields, values=values)
+                    curr_ticker += 1
+                else:
+                    logger.warning(f"No daily price history found for ticker {ticker}, {curr_ticker}/{num_tickers}")
+                    curr_ticker += 1
+            logger.info("Completed update to daily price history in database")
 
     @staticmethod
-    def update_5m_price_history():
-        tickers = Watchlists().get_tickers_from_all_watchlists(no_personal=False) # Only update for watchlist tickers
-        num_tickers = len(tickers)
-        curr_ticker = 1
-        for ticker in tickers:
-            price_history = Schwab().get_5m_price_history(ticker)
-            if price_history is not None:
-                fields = price_history.columns.to_list()
-                values = [tuple(row) for row in price_history.values]
-                print(f"Inserting 5m price data for ticker {ticker}, {curr_ticker}/{num_tickers}")
-                Postgres().insert(table='fiveminutepricehistory', fields=fields, values=values)
-                curr_ticker += 1
-            else:
-                print(f"No 5m price history found for ticker {ticker}, {curr_ticker}/{num_tickers}")
-                curr_ticker += 1
+    def update_5m_price_history(override_schedule=False, only_last_hour=False):
+        if override_schedule or (config.utils.in_extended_hours() or config.utils.in_intraday()):
+            logger.info(f"Updating 5m price history for watchlist tickers")
+            start_datetime = None
+            if last_hour:
+                start_datetime = datetime.datetime.now() - datetime.timedelta(hours=1)
+            tickers = Watchlists().get_tickers_from_all_watchlists(no_personal=False) # Only update for watchlist tickers
+            num_tickers = len(tickers)
+            curr_ticker = 1
+            for ticker in tickers:
+                price_history = Schwab().get_5m_price_history(ticker, start_datetime=start_datetime)
+                if price_history is not None:
+                    fields = price_history.columns.to_list()
+                    values = [tuple(row) for row in price_history.values]
+                    logger.debug(f"Inserting 5m price data for ticker {ticker}, {curr_ticker}/{num_tickers}")
+                    Postgres().insert(table='fiveminutepricehistory', fields=fields, values=values)
+                    curr_ticker += 1
+                else:
+                    logger.warning(f"No 5m price history found for ticker {ticker}, {curr_ticker}/{num_tickers}")
+                    curr_ticker += 1
+            logger.info("Completed update to 5m price history in database")
     
     
     @staticmethod
@@ -685,7 +694,7 @@ class StockData():
     
     # Get list of valid tickers from string
     @staticmethod
-    def get_list_from_tickers(ticker_string:str):
+    def get_valid_tickers(ticker_string:str):
         tickers = ticker_string.split()
         valid_tickers = []
         invalid_tickers = []
@@ -946,6 +955,12 @@ class Schwab():
     def get_fundamentals(self, tickers):
         resp = self.client.get_instruments(symbols=tickers, 
                                            projection=self.client.Instrument.Projection.FUNDAMENTAL)
+        assert resp.status_code == httpx.codes.OK, resp.raise_for_status()
+        data = resp.json()
+        return data
+    
+    def get_options_chain(self, ticker):
+        resp = self.client.get_option_chain(ticker)
         assert resp.status_code == httpx.codes.OK, resp.raise_for_status()
         data = resp.json()
         return data
@@ -1311,9 +1326,7 @@ def validate_columns(data, columns):
 #########
 
 def test():
-    Postgres().drop_table('fiveminutepricehistory')
-    Postgres().create_tables()
-    StockData.update_5m_price_history()
+    pass
 
 if __name__ == "__main__":
     #test    
