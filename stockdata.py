@@ -611,7 +611,7 @@ class StockData():
         if override_schedule or (config.utils.in_extended_hours() or config.utils.in_intraday()):
             logger.info(f"Updating 5m price history for watchlist tickers")
             start_datetime = None
-            if last_hour:
+            if only_last_hour:
                 start_datetime = datetime.datetime.now() - datetime.timedelta(hours=1)
             tickers = Watchlists().get_tickers_from_all_watchlists(no_personal=False) # Only update for watchlist tickers
             num_tickers = len(tickers)
