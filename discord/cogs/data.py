@@ -6,6 +6,7 @@ import stockdata as sd
 import config
 import csv
 import logging
+import json
 from table2ascii import table2ascii, Alignment, PresetStyle
 
 # Logging configuration
@@ -36,7 +37,7 @@ class Data(commands.Cog):
         frequency = frequency.value
         
         files = []
-        tickers, invalid_tickers = sd.StockData.get_list_from_tickers(tickers)
+        tickers, invalid_tickers = sd.StockData.get_valid_tickers(tickers)
         try:
             for ticker in tickers:
                 if frequency == 'daily':
@@ -133,7 +134,7 @@ class Data(commands.Cog):
         sd.validate_path(config.get_attachments_path())
         message = ""
         file = None
-        tickers, invalid_tickers = sd.StockData.get_list_from_tickers(tickers)
+        tickers, invalid_tickers = sd.StockData.get_valid_tickers(tickers)
         for ticker in tickers:
             eps = sd.StockData.Earnings.get_historical_earnings(ticker)
             if eps.size > 0:
@@ -171,7 +172,7 @@ class Data(commands.Cog):
         await interaction.response.defer()
         logger.info("/form function called by user {}".format(interaction.user.name))
         
-        tickers, invalid_tickers = sd.StockData.get_list_from_tickers(tickers)
+        tickers, invalid_tickers = sd.StockData.get_valid_tickers(tickers)
         sec = sd.SEC()
         message = ""
         for ticker in tickers:
@@ -187,6 +188,37 @@ class Data(commands.Cog):
                 # Need to make universal date conversion function and make SEC module reference CIK value from database
                 message += f"[{ticker} Form {form} - Filed {sd.StockData.Earnings.format_earnings_date(target_filing['filingDate'])}]({sec.get_link_to_filing(ticker, target_filing)})\n"
         await interaction.followup.send(message)
+    
+    @app_commands.command(name="fundamentals", description="Return JSON files of fundamental data for desired tickers")
+    @app_commands.describe(tickers = "Tickers to return SEC forms for (separated by spaces)")
+    async def fundamentals(self, interaction: discord.Interaction, tickers: str):
+        await interaction.response.defer(ephemeral=True)
+        logger.info(f"/fundamentals function called by user {interaction.user.name}")
+        message = None
+        file = None
+        tickers, invalid_tickers = sd.StockData.get_valid_tickers(tickers)
+        for ticker in tickers:
+            fundamentals = sd.Schwab().get_fundamentals(ticker)
+            
+            if fundamentals is not None:
+                filepath = f"{config.get_attachments_path()}/{ticker}_fundamentals.json"
+                with open(filepath, 'w') as json_file:
+                    json.dump(fundamentals, json_file)
+                file = discord.File(filepath)
+                message = f"Fundamentals for ticker {ticker}"
+            else:
+                message = f"Could not retrieve fundamentals for ticker {ticker}"
+            message = await interaction.user.send(content=message, file=file)
+        
+        # Follow-up
+        follow_up = ""
+        if message is not None: # Message was generated
+            follow_up = f"Posted fundamentals for tickers [{", ".join(tickers)}]({message.jump_url})!"
+            if len(invalid_tickers) > 0: # More than one invalid ticke input
+                follow_up += f" Invalid tickers: {", ".join(invalid_tickers)}"
+        if len(tickers) == 0: # No valid tickers input
+            follow_up = f"No valid tickers input: {", ".join(invalid_tickers)}"
+        await interaction.followup.send(follow_up, ephemeral=True)
 
 
 #########        

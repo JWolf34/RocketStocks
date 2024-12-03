@@ -607,14 +607,17 @@ class StockData():
             logger.info("Completed update to daily price history in database")
 
     @staticmethod
-    def update_5m_price_history(override_schedule=False):
-        if (utils.in_extended_hours() or utils.in_intraday()) or override_schedule:
+    def update_5m_price_history(override_schedule=False, only_last_hour=False):
+        if override_schedule or (config.utils.in_extended_hours() or config.utils.in_intraday()):
             logger.info(f"Updating 5m price history for watchlist tickers")
+            start_datetime = None
+            if last_hour:
+                start_datetime = datetime.datetime.now() - datetime.timedelta(hours=1)
             tickers = Watchlists().get_tickers_from_all_watchlists(no_personal=False) # Only update for watchlist tickers
             num_tickers = len(tickers)
             curr_ticker = 1
             for ticker in tickers:
-                price_history = Schwab().get_5m_price_history(ticker)
+                price_history = Schwab().get_5m_price_history(ticker, start_datetime=start_datetime)
                 if price_history is not None:
                     fields = price_history.columns.to_list()
                     values = [tuple(row) for row in price_history.values]
@@ -691,7 +694,7 @@ class StockData():
     
     # Get list of valid tickers from string
     @staticmethod
-    def get_list_from_tickers(ticker_string:str):
+    def get_valid_tickers(ticker_string:str):
         tickers = ticker_string.split()
         valid_tickers = []
         invalid_tickers = []
@@ -1317,9 +1320,8 @@ def validate_columns(data, columns):
 #########
 
 def test():
-    Postgres().drop_table('fiveminutepricehistory')
     Postgres().create_tables()
-    StockData.update_5m_price_history()
+    StockData.update_5m_price_history(override_schedule=True, last_hour=True)
 
 if __name__ == "__main__":
     #test    
