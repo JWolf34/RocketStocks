@@ -213,8 +213,12 @@ class Reports(commands.Cog):
         # Populate tickers based on value of watchlist
         if watchlist == 'personal':
             watchlist_id = str(interaction.user.id)
-        tickers = sd.Watchlists().get_tickers_from_watchlist(watchlist_id)
+        
+        if watchlist_id not in sd.Watchlists().get_watchlists():
+            await interaction.followup.send(f"Watchlist '{watchlist_id}' does not exist")
+            return
 
+        tickers = sd.Watchlists().get_tickers_from_watchlist(watchlist_id)
         if len(tickers) == 0:
             # Empty watchlist
             logger.warning("Selected watchlist '{}' is empty".format(watchlist))
@@ -352,18 +356,6 @@ class Report(object):
         else:
             logger.warning("While generating report summary, ticker_data was 'None'. Ticker likely does not exist in database")
             return message + f"Unable to get info for ticker {self.ticker}\n"
-
-    # Daily Summary
-    def build_daily_summary(self):
-        # Append day's summary to message
-        summary = sd.get_days_summary(self.data)
-
-        message = "## Summary \n| "
-        for col in summary.keys():
-            message += "**{}:** {}".format(col, f"{summary[col]:,.2f}")
-            message += " | "
-
-        return message + "\n"
         
     def build_recent_SEC_filings(self):
         message = "## Recent SEC Filings\n\n"
@@ -402,7 +394,7 @@ class Report(object):
 
     def build_upcoming_earnings_summary(self):
         earnings_info = sd.StockData.Earnings.get_next_earnings_info(self.ticker)
-        message = "### Earnings Summary\n\n"
+        message = "## Earnings Summary\n\n"
         message += f"**Date:** {earnings_info['date'].iloc[0]}\n"
         message += "**Time:** {}\n".format("Premarket" if "pre-market" in earnings_info['time'].iloc[0]
                                 else "After hours" if "after-hours" in earnings_info['time'].iloc[0]
@@ -413,6 +405,36 @@ class Report(object):
         message += f"**Last Year Report Date:** {earnings_info['lastyearrptdt'].iloc[0]}\n"
         message += f"**Last Year EPS:** {earnings_info['lastyeareps'].iloc[0]}\n"
         return message + "\n\n"
+
+    def build_performance(self):
+        message = "## Performance \n\n"
+        performance_frequency = {'1D': 1,
+                                 '5D': 5,
+                                 '1M': 30,
+                                 '3M': 90,
+                                 '6M': 180}
+        curr_close = self.quote['closePrice']
+        for frequency, days in performance_frequency.items():
+            try:
+                old_close = float(self.data['close'].iloc[-abs(days)])
+                pct_change = ((curr_close - old_close) / old_close) * 100.0
+                symbol = ":green_circle:" if pct_change > 0.0 else ":small_red_triangle_down:"
+                message += f"**{frequency}:** {symbol} {"{:.2f}%".format(pct_change)}\n"
+            except IndexError as e:
+                # Stock has not been on the market long enough to generate full performance summary
+                break
+        return message
+
+    def build_daily_summary(self):
+        message = "## Summary\n\n"
+        OHLCV = {'Open': "{:.2f}".format(self.quote['openPrice']),
+                 'High': "{:.2f}".format(self.quote['highPrice']),
+                 'Low': "{:.2f}".format(self.quote['lowPrice']),
+                 'Close': "{:.2f}".format(self.quote['closePrice']),
+                 'Volume': self.format_large_num(self.quote['totalVolume'])
+                }
+        message += " | ".join(f"**{column}:** {value}" for column, value in OHLCV.items())
+        return message + "\n"        
                     
                 
 
@@ -460,7 +482,8 @@ class StockReport(Report):
     
     def __init__(self, ticker : str, channel):
         self.ticker = ticker
-        self.data =  sd.fetch_daily_data(self.ticker)
+        self.data =  sd.StockData.fetch_daily_price_history(self.ticker)
+        self.quote = sd.Schwab().get_quote(self.ticker)['quote']
         self.buttons = self.Buttons(self.ticker)
         super().__init__(channel)
         
@@ -469,7 +492,8 @@ class StockReport(Report):
         report = ''
         report += self.build_report_header()
         report += self.build_ticker_info()
-        #report += self.build_daily_summary()
+        report += self.build_daily_summary()
+        report += self.build_performance()
         report += self.build_recent_SEC_filings()
         
         return report

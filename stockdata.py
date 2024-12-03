@@ -268,7 +268,7 @@ class Postgres():
             self.cur.execute(insert_script, row)
 
         self.conn.commit()
-        logger.debug(f"Inserted values {values} into table {table}")
+        logger.debug(f"Inserted new row in table {table}")
         self.close_connection()
 
     # Select a sigle row from database
@@ -611,7 +611,7 @@ class StockData():
         if override_schedule or (config.utils.in_extended_hours() or config.utils.in_intraday()):
             logger.info(f"Updating 5m price history for watchlist tickers")
             start_datetime = None
-            if last_hour:
+            if only_last_hour:
                 start_datetime = datetime.datetime.now() - datetime.timedelta(hours=1)
             tickers = Watchlists().get_tickers_from_all_watchlists(no_personal=False) # Only update for watchlist tickers
             num_tickers = len(tickers)
@@ -654,6 +654,21 @@ class StockData():
             columns = Postgres().get_table_columns('fiveminutepricehistory')
             return pd.DataFrame(results, columns=columns)
 
+    # Download and write financials for specified ticker to the financials folder
+    @staticmethod
+    def fetch_financials(ticker):
+        logger.debug(f"Fetching financials for ticker {ticker}")
+        financials = {}
+        stock = yf.Ticker(ticker)
+        financials['income_statment'] = stock.income_stmt
+        financials['quarterly_income_statement'] = stock.quarterly_income_stmt
+        financials['balance_sheet'] = stock.balance_sheet
+        financials['quarterly_income_statement'] = stock.quarterly_balance_sheet
+        financials['cash_flow']=stock.cashflow
+        financials['quarterly_cash_flow'] = stock.quarterly_cashflow
+
+        return financials
+
 
     @staticmethod
     def get_ticker_info(ticker):
@@ -676,7 +691,11 @@ class StockData():
         select_script = f"""SELECT cik from tickers
                             WHERE ticker = '{ticker}';
                             """
-        return Postgres().select_one(select_script)[0]
+        result = Postgres().select_one(select_script)
+        if result is None:
+            return None
+        else:
+            return result[0]
 
     # Confirm we get valid data back when downloading data for ticker
     @staticmethod
@@ -772,7 +791,7 @@ class TradingView():
                 .order_by('change', ascending=False)
                 .where(
                             Column('market_cap_basic') >= market_cap,
-                            Column('exchange').isin(get_supported_exchanges()))
+                            Column('exchange').isin(StockData.get_supported_exchanges()))
                 .limit(100)
                 .get_scanner_data())
         gainers = gainers.drop(columns='exchange')
@@ -964,242 +983,6 @@ class Schwab():
         assert resp.status_code == httpx.codes.OK, resp.raise_for_status()
         data = resp.json()
         return data
-
-
-#########################
-# Download and analysis #
-#########################
-
-# Download data for the given ticker        
-def download_data(ticker, period='max', interval='1d'): 
-    logger.info("Downloading data for ticker {} (period: {}, interval: {})".format(ticker, period, interval))
-    data = pd.DataFrame()
-    try: 
-        data = yf.download(tickers=ticker, 
-                        period=period, 
-                        interval=interval, 
-                        prepost = True,
-                        auto_adjust = False,
-                        repair = True,
-                        session=session)
-        
-        data.fillna(0)
-
-    # yfinance occassionally encounters KeyErrors if separately threaded downloads are initiated   
-    except KeyError as e:
-        logger.exception("Encountered KeyError when downloading data for {} \n{}".format(ticker, e))
-
-    return data
-
-# Write data to a CSV file at the path specified
-def update_csv(data, ticker, path):
-
-    validate_path(path)
-    path += "/{}.csv".format(ticker)
-    logger.info("Writing data for ticker {} to path '{}'".format(ticker, path))
-
-    # If the CSV file already exists, read the existing data
-    if os.path.exists(path):
-        existing_data = pd.read_csv(path, index_col=0, parse_dates=True)
-        existing_data.fillna(0)
-        
-        # Append the new data to the existing data
-        combined_data = pd.concat([existing_data, data])
-    else:
-        combined_data = data
-    
-    # Remove duplicate rows, if any, and prefer most recent data
-    combined_data = combined_data[~combined_data.index.duplicated(keep='last')]
-    
-    # Save the combined data to the CSV file
-    combined_data.to_csv(path)
-
-# Generate indicator data on the provided Dataframe per the specified strategy
-# Can add or remove inidicators to the strategy as needed
-
-def generate_indicators(data):
-
-    ta_list = []
-    for strategy in strategies.get_indicator_strategies():
-        strategy = strategy()
-        ta_list += [x for x in strategy.ta if x not in ta_list]
-
-    IndicatorStrategy = ta.Strategy(name="Indicator Strategy", ta=ta_list)
-        
-    logger.info("Generating indicator data...")
-    
-    data.ta.strategy(IndicatorStrategy)
-
-# Download data and generate indicator data on specified ticker
-def download_analyze_data(ticker):
-    
-    data = download_data(ticker)
-    generate_indicators(data)
-    update_csv(data, ticker, config.get_daily_data_path())
-
-# Daily process to download daily ticker data and generate indicator data on all 
-# tickers in the masterlist
-def daily_download_analyze_data():
-    
-    logging.info("********** [START DAILY DOWNLOAD TASK] **********")
-    DATA_SHAPE_THRESHOLD = 60
-    
-    tickers = get_all_tickers()
-
-    num_ticker = 1
-    for ticker in tickers:
-        logger.info("Processesing {}, {}/{}".format(ticker, num_ticker, len(tickers)))
-        logger.debug("Validate if data file for {} is up-tp-date".format(ticker))
-        if not daily_data_up_to_date(fetch_daily_data(ticker)):
-            logger.debug("Data file for {} is either empty or not up-to-date".format(ticker))
-            
-            if validate_ticker(ticker):
-                # Ticker is valid - download data
-                
-                data = download_data(ticker)
-
-                # Validate quality of data
-                if data.shape[0] < DATA_SHAPE_THRESHOLD:
-                    logger.warn("INVALID TICKER - Data of {} has shape {} after download which is less than threshold {}".format(ticker, data.shape[0], DATA_SHAPE_THRESHOLD))
-                    remove_from_all_tickers(ticker)
-                else:
-                    generate_indicators(data)
-                    update_csv(data, ticker, config.get_daily_data_path())
-                    logger.debug("Download and analysis of {} complete.".format(ticker))
-            else:
-                logger.info("Ticker '{}' is not valid. Removing from all tickers".format(ticker))
-                remove_from_all_tickers(ticker)
-        else:
-            logger.info("Data for {} is up-to-date. Skipping...".format(ticker))
-        
-        num_ticker += 1
-    logger.info("Daily data download task complete!")
-   
-# Weekly process to download minute-by-minute ticker data on all tickers
-# in the masterlist
-def minute_download_data():
-    
-    logging.info("********** [START WEEKLY DOWNLOAD TASK] **********")
-    masterlist_file = "data/ticker_masterlist.txt"
-    tickers = get_all_tickers()
-    
-
-    # Verify that ticker_masterlist.txt exists
-    if isinstance(tickers, list):
-        num_ticker = 1
-        for ticker in tickers:    
-            logger.info("Processesing {}, {}/{}".format(ticker, num_ticker, len(tickers)))
-            data = download_data(ticker, period="7d", interval="1m")
-            logger.debug("Download and analysis of {} complete. Validate that data is valid".format(ticker))
-
-            # No CSV was written or data was bad:
-            if data.size == 0:
-                logger.warn("INVALID TICKER - Data of {} has size 0 after download. Attempting to remove from masterlist".format(ticker))
-                remove_from_all_tickers(ticker)
-            else: # Data downloaded 
-                logger.debug("Data downloaded for {} is valid.".format(ticker))
-                update_csv(data, ticker, config.get_minute_data_path())
-               
-            num_ticker += 1
-
-    else:
-        pass
-
-# Download and write financials for specified ticker to the financials folder
-def download_financials(ticker):
-    logger.info("Downloading financials for ticker {}".format(ticker))
-    path = "{}/{}".format(config.get_financials_path(),ticker)
-    validate_path(path)
-    
-    stock = yf.Ticker(ticker)
-    logger.debug("Downloading income statement for {}".format(ticker))
-    stock.income_stmt.to_csv("{}/income_stmt.csv".format(path))
-
-    logger.debug("Downloading quarterly income statement for {}".format(ticker))
-    stock.quarterly_income_stmt.to_csv("{}/quarterly_income_stmt.csv".format(path))
-
-    logger.debug("Downloading balance sheet for {}".format(ticker))
-    stock.balance_sheet.to_csv("{}/balance_sheet.csv".format(path))
-
-    logger.debug("Downloading quarterly balance sheet for {}".format(ticker))
-    stock.quarterly_balance_sheet.to_csv("{}/quarterly_balance_sheet.csv".format(path))
-
-    logger.debug("Downloading cashflow for {}".format(ticker))
-    stock.cashflow.to_csv("{}/cashflow.csv".format(path))
-
-    logger.debug("Downloading quarterly cashflow for {}".format(ticker))
-    stock.quarterly_cashflow.to_csv("{}/quarterly_cashflow.csv".format(path))
-
-    logger.debug("Downloading earnings dates for {}".format(ticker))
-    stock.get_earnings_dates(limit=8).to_csv("{}/earnings_dates.csv".format(path))
-    
-
-######################################################
-# 'Fetch' functions for returning data saved to disk #
-######################################################
-
-# Return all filepaths of all charts for a given ticker
-def fetch_charts(ticker):
-    logger.info("Fetching charts for ticker {}".format(ticker))
-    charts_path = "{}/{}/".format(config.get_plots_path(),ticker)
-    charts = os.listdir(charts_path)
-    for i in range(0, len(charts)):
-        logger.debug("Appending {} chart: {}".format(ticker, charts_path + charts[i]))
-        charts[i] = charts_path + charts[i]
-    return charts
-
-# Return the latest data with technical indicators as a Pandas dataframe.
-# If CSV does not exist or is not up-to-date, return empty DataFrame
-def fetch_daily_data(ticker):
-    logger.debug("Fetching daily data file for ticker {}".format(ticker))
-    data = pd.DataFrame()
-    data_path = "{}/{}.csv".format(config.get_daily_data_path(), ticker)
-    if not os.path.isfile(data_path):
-        logger.warning("CSV file for {} does not exist.".format(ticker))
-    else:
-        logging.debug("Data file for {} exists: {}".format(ticker, data_path))
-        data = pd.read_csv(data_path, parse_dates=True, index_col='Date').sort_index()
-    
-    return data
-
-# Return the latest minute-by-minute data with technical indicators as a Pandas dataframe.
-# If CSV does not exist or is not up-to-date, return empty DataFrame
-def fetch_minute_data(ticker):
-    logger.info("Fetching minute data file for ticker {}".format(ticker))
-    data = pd.DataFrame()
-    data_path = "{}/{}.csv".format(config.get_minute_data_path(), ticker)
-    if not os.path.isfile(data_path):
-        logger.warning("CSV file for {} does not exist.".format(ticker))
-    else:
-        logging.debug("Data file for {} exists: {}".format(ticker, data_path))
-        data = pd.read_csv(data_path, parse_dates=True, index_col='Datetime').sort_index()
-    
-    return data
-
-# Return analysis text for the given ticker
-def fetch_analysis(ticker):
-    logger.info("Fetching analysis for ticker {}".format(ticker))
-    analyis = ''
-    path = "{}/{}/".format(config.get_analysis_path(),ticker)
-    for file in os.listdir(path):
-        logger.debug("Analysis for ticker {} found at {}".format(ticker, path))
-        data = open(path + file)
-        analyis += data.read() + "\n"
-
-    return analyis
-
-# Return list of files that contain financials data for the specified ticker
-def fetch_financials(ticker):
-    logger.info("Fetching financials for ticker {}".format(ticker))
-    path = "{}/{}".format(config.get_financials_path(),ticker)
-    if not validate_path(path):
-        logger.debug("Path {} not found".format(path))
-        download_financials(ticker)
-    financials = os.listdir(path)
-    for i in range(0, len(financials)):
-        logger.debug("Appending path {} to list of financials".format(path + "/" + financials[i]))
-        financials[i] = path + "/" + financials[i]
-    return financials
     
 
 ###############################
@@ -1217,109 +1000,6 @@ def validate_path(path):
         logger.debug("Path {} exists in the filesystem".format(path))
         return True
        
-# Return Dataframe with the latest OHLCV of requested ticker
-def get_days_summary(data):
-    logger.info("Fetching today's OHLCV summary for provided data")
-    # Assumes data has been pulled recently. Mainly called when running or fetching reports. 
-    if len(data) > 0:
-        summary = data[["Open","High", "Low","Close","Volume"]].iloc[-1]
-        return summary
-    else:
-        logger.warning("Could not retrieve the day's summary for provided data")
-        return None
-    
-# Return next earnings date of the specified ticker, if available
-def get_next_earnings_date(ticker):
-    logger.info("Finding next earnings date for ticker {}".format(ticker))
-    try:
-        earnings_date = yf.Ticker(ticker).calendar['Earnings Date'][0]
-        logger.info("Next earnings date for ticker {} is {}".format(ticker, earnings_date))
-        return earnings_date
-    except IndexError as e:
-        logger.exception("Encountered IndexError when fetching next earnings date for ticker {}:\n{}".format(ticker, e))
-        return "Earnings date unavailable"
-    except KeyError as e:
-        logger.exception("Encountered KeyError when fetching next earnings date for ticker {}:\n{}".format(ticker, e))
-        return "Earnings Date unavailable"
-
-def get_ticker_info(ticker):
-    logger.debug("Retrieving info for ticker '{}'".format(ticker))
-    stock = yf.Ticker(ticker)
-    return stock.info
-    
-# Return dataframe containing data from 'all_tickers.csv'
-def get_all_tickers_data():
-    return pd.read_csv("{}/all_tickers.csv".format(config.get_utils_path()), index_col='Symbol')
-    
-# Return list of tickers available in the masterlist
-def get_all_tickers():
-    logger.debug("Fetching tickers from masterlist")
-    
-    try:
-        all_tickers_data = get_all_tickers_data()
-        return all_tickers_data.index.to_list()
-    except FileNotFoundError as e:
-        logger.exception("Encountered FileNotFoundError when attempting to load data from 'all_tickers.csv:\n{}".format(e))
-        logger.debug("'all_tickers.csv' file does not exist")
-        return []
-    
-def add_to_all_tickers(ticker):
-    ticker_info = get_ticker_info(ticker)
-                
-    #Init dict with columns to be added to all_tickers
-    columns = ["Name","Last","Sale","Net Change","% Change","Market Cap","Country","IPO Year","Volume","Sector","Industry"]
-    ticker_data = dict.fromkeys(columns, "N/A")
-
-    ticker_data['Name'] = ticker_info.get("longName")
-    ticker_data['Sector'] = ticker_info.get("sector")
-    ticker_data['Industry'] = ticker_info.get("industry")
-    ticker_data['Market Cap'] = ticker_info.get("marketCap")
-    ticker_data['Country'] = ticker_info.get('country')
-
-    row = pd.DataFrame(data=[ticker_data], index = [ticker])
-    row.index.name = 'Symbol'
-
-    all_tickers = get_all_tickers_data()
-    all_tickers = pd.concat([all_tickers, row])
-    all_tickers.to_csv("{}/all_tickers.csv".format(config.get_utils_path()))
-    logger.info("Added new row for ticker '{}' to all tickers".format(ticker))
-
-
-# Remove selected ticker row from 'all_tickers.csv'
-def remove_from_all_tickers(ticker):
-    
-    data = get_all_tickers_data()
-    data = data.drop(index=ticker)
-    data.to_csv("{}/all_tickers.csv".format(config.get_utils_path()))
-    logger.info("Removed ticker '{}' from all tickers".format(ticker))
-
-# Validate that data file for specified ticker has data up to yesterday
-def daily_data_up_to_date(data):
-    if data.size == 0:
-        logger.debug("Provided data has size 0 - failed to validate if up-to-date")
-        return False
-    else:
-        yesterday = datetime.date.today() - timedelta(days=1)
-        while yesterday.weekday() > 5:
-            yesterday = yesterday - timedelta(days=1)
-        data_dates = [date.date() for date in data.index]
-        latest_date = data_dates[-1]
-        if yesterday in data_dates:
-            logger.debug("Provided data is up-to-date")
-            return True
-        else:
-            logger.info("Provided data is not up-to-date")
-            return False
-
-# Validate that selected columns exist within DataFrame 'data'
-def validate_columns(data, columns):
-    logger.debug("Validating that columns {} exist in data".format(columns))
-    for column in columns: 
-        if column not in data.columns:
-            logger.debug("Column {} does not exist in data".format(column))
-            return False
-    logger.debug("Columns {} exist in data".format(columns))
-    return True
 
 #########
 # Tests #

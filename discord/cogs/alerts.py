@@ -77,6 +77,7 @@ class Alerts(commands.Cog):
                 if abs(pct_change) >= 5.0: # See that stock movement is at least 5%
                     alert = VolumeMoverAlert(ticker=ticker, channel=self.alerts_channel, volume_row=row)
                     await alert.send_alert()
+                await asyncio.sleep(1)
 
 ##################
 # Alerts Classes #

@@ -163,37 +163,29 @@ def get_financials_path():
 def get_reports_channel_id():
     try:
         channel_id = os.getenv("REPORTS_CHANNEL_ID")
-        logger.debug("Reports channel ID is {}".format(channel_id))
         return int(channel_id)
     except Exception as e:
-        logger.exception("Failed to fetch reports channel ID\n{}".format(e))
         return ""
 
 def get_alerts_channel_id():
     try:
         channel_id = os.getenv("ALERTS_CHANNEL_ID")
-        logger.debug("Alerts channel ID is {}".format(channel_id))
         return int(channel_id)
     except Exception as e:
-        logger.exception("Failed to fetch alerts channel ID\n{}".format(e))
         return ""
 
 def get_screeners_channel_id():
     try:
         channel_id = os.getenv("SCREENERS_CHANNEL_ID")
-        logger.debug("Screeners channel ID is {}".format(channel_id))
         return int(channel_id)
     except Exception as e:
-        logger.exception("Failed to fetch screeners channel ID\n{}".format(e))
         return ""
 
 def get_charts_channel_id():
     try:
         channel_id = os.getenv("CHARTS_CHANNEL_ID")
-        logger.debug("Charts channel ID is {}".format(channel_id))
         return int(channel_id)
     except Exception as e:
-        logger.exception("Failed to fetch charts channel ID\n{}".format(e))
         return ""
 
 def get_discord_token():
@@ -260,43 +252,31 @@ def get_schwab_api_secret():
 
 
 def get_db_user():
-        logger.debug("Fetching DB username")
         try:
             token = os.getenv('POSTGRES_USER')
-            logger.debug("Successfully fetched DB username")
             return token
         except Exception as e:
-            logger.exception("Failed to fetch  DB username\n{}".format(e))
             return ""
 
 def get_db_password():
-        logger.debug("Fetching DB password")
         try:
             token = os.getenv('POSTGRES_PASSWORD')
-            logger.debug("Successfully fetched DB password")
             return token
         except Exception as e:
-            logger.exception("Failed to fetch DB password\n{}".format(e))
             return ""
 
 def get_db_name():
-    logger.debug("Fetching DB name")
     try:
         token = os.getenv('POSTGRES_DB')
-        logger.debug("Successfully fetched DB name")
         return token
     except Exception as e:
-        logger.exception("Failed to fetch  DB name\n{}".format(e))
         return ""
 
 def get_db_host():
-    logger.debug("Fetching DB host")
     try:
         token = os.getenv('POSTGRES_HOST')
-        logger.debug("Successfully fetched DB host")
         return token
     except Exception as e:
-        logger.exception("Failed to fetch  DB host\n{}".format(e))
         return ""
 
 class utils():
