@@ -195,7 +195,7 @@ class Reports(commands.Cog):
                     pass
         logger.debug("Completed updating earnings calendar")
 
-    @app_commands.command(name = "run-reports", description= "Post analysis of a given watchlist (use /fetch-reports for individual or non-watchlist stocks)",)
+    @app_commands.command(name = "report-watchlist", description= "Post analysis of a given watchlist (use /fetch-reports for individual or non-watchlist stocks)",)
     @app_commands.describe(watchlist = "Which watchlist to fetch reports for")
     @app_commands.autocomplete(watchlist=Watchlists.watchlist_options,)
     @app_commands.describe(visibility = "'private' to send to DMs, 'public' to send to the channel")
@@ -203,9 +203,9 @@ class Reports(commands.Cog):
         app_commands.Choice(name = "private", value = 'private'),
         app_commands.Choice(name = "public", value = 'public')
     ])
-    async def runreports(self, interaction: discord.Interaction, watchlist: str, visibility: app_commands.Choice[str]):
+    async def report_watchlist(self, interaction: discord.Interaction, watchlist: str, visibility: app_commands.Choice[str]):
         await interaction.response.defer(ephemeral=True)
-        logger.info("/run-reports function called by user {}".format(interaction.user.name))
+        logger.info("/report-watchlist function called by user {}".format(interaction.user.name))
         logger.debug("Selected watchlist is '{}'".format(watchlist))
         
         message = ""
@@ -237,16 +237,16 @@ class Reports(commands.Cog):
             await interaction.followup.send(follow_up, ephemeral=True)
 
 
-    @app_commands.command(name = "fetch-reports", description= "Fetch analysis reports of the specified tickers (use /run-reports to analyze a watchlist)",)
+    @app_commands.command(name = "report", description= "Fetch analysis reports of the specified tickers (use /run-reports to analyze a watchlist)",)
     @app_commands.describe(tickers = "Tickers to post reports for (separated by spaces)")
     @app_commands.describe(visibility = "'private' to send to DMs, 'public' to send to the channel")
     @app_commands.choices(visibility =[
         app_commands.Choice(name = "private", value = 'private'),
         app_commands.Choice(name = "public", value = 'public')
     ])        
-    async def fetchreports(self, interaction: discord.interactions, tickers: str, visibility: app_commands.Choice[str]):
+    async def report(self, interaction: discord.interactions, tickers: str, visibility: app_commands.Choice[str]):
         await interaction.response.defer(ephemeral=True)
-        logger.info("/fetch-reports function called by user {}".format(interaction.user.name))
+        logger.info("/report function called by user {}".format(interaction.user.name))
     
         # Validate each ticker in the list is valid
         tickers, invalid_tickers = sd.StockData.get_list_from_tickers(tickers)
