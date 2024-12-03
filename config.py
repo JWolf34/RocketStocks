@@ -378,6 +378,14 @@ class utils():
     def format_date_mdy(date):
         return date.strftime("%m/%d/%Y")
 
+    @staticmethod
+    def bot_setup():
+        # Create database tables that do not exist
+        sd.Postgres().create_tables()
+
+        # Ensure data paths exist
+        sd.validate_path(get_attachments_path())
+
 
 if __name__ =="__main__":
     pass
