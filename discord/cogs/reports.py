@@ -527,6 +527,7 @@ class StockReport(Report):
 class GainerReport(Report):
     def __init__(self, channel):
         self.gainers = None
+        self.gainers_formatted = pd.DataFrame()
         self.market_period = utils.get_market_period()
         if self.market_period == 'premarket':
             self.gainers = sd.TradingView.get_premarket_gainers_by_market_cap(1000000)
@@ -536,8 +537,10 @@ class GainerReport(Report):
             self.gainers = sd.TradingView.get_postmarket_gainers_by_market_cap(1000000)
         if self.gainers.size > 0:
             self.update_gainer_watchlist()
+            self.gainers_formatted = self.format_df_for_table()
+        else:
+            self.gainers_formatted.columns = self.gainers.columns.to_list()
 
-        self.gainers_formatted = self.format_df_for_table()
         super().__init__(channel)
 
         
