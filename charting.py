@@ -7,11 +7,15 @@ import mplfinance as mpf
 class Chart():
     def __init__(self, ticker):
         self.ticker = ticker
-        self.daily_data = sd.StockData.fetch_daily_price_history(ticker=self.ticker)
-        self.daily_data = self.daily_data.drop(columns='ticker')
-        self.daily_data = self.daily_data.rename(columns={'datetime':'date'})
-        self.daily_data = self.daily_data.set_index(pd.DatetimeIndex(self.daily_data['date']))
+        self.daily_data = self.format_price_history_for_charts(sd.StockData.fetch_daily_price_history(ticker=self.ticker))
+        
         self._plot()
+    
+    def format_price_history_for_charts(self, price_history):
+        price_history = price_history.drop(columns='ticker')
+        price_history = price_history.rename(columns={'datetime':'date'})
+        price_history = price_history.set_index(pd.DatetimeIndex(price_history['date']))
+        return price_history
 
     def get_plot_types():
         return ['line', 'candle', 'ohlc', 'renko', 'pnf']
