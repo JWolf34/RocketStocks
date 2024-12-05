@@ -693,6 +693,13 @@ class StockData():
         return [result[0] for result in results]
 
     @staticmethod
+    def get_all_tickers_by_market_cap(market_cap):
+        select_script = """SELECT ticker, marketCap FROM tickers;
+                        """
+        results = Postgres().select_many(select_script)
+        return [result[0] for result in results if float(result[1]) >= market_cap]
+
+    @staticmethod
     def get_cik(ticker):
         logger.debug(f"Retreiving CIK value for ticker '{ticker}' from database")
         select_script = f"""SELECT cik from tickers
@@ -1013,7 +1020,8 @@ def validate_path(path):
 #########
 
 def test():
-    print(config.utils.market_open_today())
+    print(len(StockData.get_all_tickers()))
+    print(len(StockData.get_all_tickers_by_market_cap(100000000)))
 
 if __name__ == "__main__":
     #test    
