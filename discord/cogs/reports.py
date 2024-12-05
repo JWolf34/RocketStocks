@@ -102,7 +102,7 @@ class Reports(commands.Cog):
     @tasks.loop(minutes=5)
     async def send_volume_reports(self):
         now = datetime.datetime.now()
-        if True: #(utils.market_open_today() and utils.in_intraday()):
+        if (utils.market_open_today() and utils.in_intraday()):
             report = VolumeReport(self.screeners_channel)
             await report.send_report()
             await self.bot.get_cog("Alerts").send_unusual_volume_movers(report.volume_movers)
@@ -110,7 +110,7 @@ class Reports(commands.Cog):
             # Not a weekday - do not post gainer reports
             pass
             
-    #@send_volume_reports.before_loop
+    @send_volume_reports.before_loop
     async def before_send_volume_reports(self):
         # Start posting report at next 0 or 5 minute interval
         now = datetime.datetime.now().astimezone()
