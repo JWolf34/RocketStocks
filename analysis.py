@@ -2,7 +2,6 @@ import os
 import pandas as pd
 import stockdata as sd
 import numpy as np
-import pandas_ta as ta
 import mplfinance as mpf
 import stockdata as sd
 import csv

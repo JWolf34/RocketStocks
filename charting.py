@@ -1,29 +1,17 @@
 import stockdata as sd
 import pandas as pd
-import mplfinance
+import pandas_ta as ta
+import mplfinance as mpf
 
-class Chart(object):
-    def __init__(self, df: pd.DataFrame = None, ticker: str = "SPY", strategy: ta.Strategy = ta.CommonStrategy, *args, **kwargs):
-        self.verbose = kwargs.pop("verbose", False)
-        logging.info("Charting {} for ticker {}".format(strategy.name, ticker))
 
+class Chart():
+    def __init__(self, ticker):
         self.ticker = ticker
-        if isinstance(df, pd.DataFrame) and df.ta.datetime_ordered:
-            self.df = df
-            logging.debug("Loaded DataFrame {} {}".format(self.ticker, self.df.shape))
-        else:
-            logging.error("DataFrame missing 'ohlcv' data or index is not datetime ordered.\n")
-            return None
-
-        self._validate_chart_kwargs(**kwargs)
-        self._validate_mpf_kwargs(**kwargs)
-        self._validate_ta_strategy(strategy)
-
-        # Build TA and Plot
-        #logging.info("Generating TA...")
-        #self.df.ta.strategy(self.strategy, verbose=self.verbose)
-        logging.info("Building plot for ticker '{}'".format(self.ticker))
-        self._plot(**kwargs)
+        self.daily_data = sd.StockData.fetch_daily_price_history(ticker=self.ticker)
+        self.daily_data = self.daily_data.drop(columns='ticker')
+        self.daily_data = self.daily_data.rename(columns={'datetime':'date'})
+        self.daily_data = self.daily_data.set_index(pd.DatetimeIndex(self.daily_data['date']))
+        self._plot()
 
     def get_plot_types():
         return ['line', 'candle', 'ohlc', 'renko', 'pnf']
@@ -77,7 +65,6 @@ class Chart(object):
         
         self.mpfchart = mpfchart
 
-
     def _right_pad_df(self, rpad: int, delta_unit: str = "D", range_freq: str = "B"):
         if rpad > 0:
             dfpad = self.df[-rpad:].copy()
@@ -88,6 +75,36 @@ class Chart(object):
             new_dr = pd.date_range(start=self.df.index[-1] + freq_delta, periods=rpad, freq=range_freq)
             dfpad.index = new_dr # Update the padded index with new dates
             self.df = pd.concat([self.df, dfpad])
+    
+    def _plot(self):
+
+        # Build out path to save plot to
+
+        mpf.plot(self.daily_data.tail(365), type='candle', style='tradingview', savefig=f"{self.ticker}_plot.png")
+        
+
+class TA_Chart():
+    def __init__(self, df: pd.DataFrame = None, ticker: str = "SPY", strategy: ta.Strategy = ta.CommonStrategy, *args, **kwargs):
+        self.verbose = kwargs.pop("verbose", False)
+        logging.info("Charting {} for ticker {}".format(strategy.name, ticker))
+
+        self.ticker = ticker
+        if isinstance(df, pd.DataFrame) and df.ta.datetime_ordered:
+            self.df = df
+            logging.debug("Loaded DataFrame {} {}".format(self.ticker, self.df.shape))
+        else:
+            logging.error("DataFrame missing 'ohlcv' data or index is not datetime ordered.\n")
+            return None
+
+        self._validate_chart_kwargs(**kwargs)
+        self._validate_mpf_kwargs(**kwargs)
+        self._validate_ta_strategy(strategy)
+
+        # Build TA and Plot
+        #logging.info("Generating TA...")
+        #self.df.ta.strategy(self.strategy, verbose=self.verbose)
+        logging.info("Building plot for ticker '{}'".format(self.ticker))
+        self._plot(**kwargs)
         
             
     def _plot(self, **kwargs):
@@ -463,4 +480,7 @@ class Chart(object):
             savefig=save
         )
         logging.info("Plot success!")
+
+if __name__ == '__main__':
+    Chart('NVDA')
 
