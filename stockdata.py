@@ -588,9 +588,9 @@ class StockData():
     
     @staticmethod
     def update_daily_price_history(override_schedule=False):
-        if utils.market_open_today() or override_schedule:
+        if config.utils.market_open_today() or override_schedule:
             logger.info(f"Updating daily price history for watchlist tickers")
-            tickers = get_all_tickers()
+            tickers = StockData.get_all_tickers()
             num_tickers = len(tickers)
             curr_ticker = 1
             for ticker in tickers:
@@ -684,6 +684,13 @@ class StockData():
         data = pd.DataFrame(data, columns=columns)
         data.index = data['ticker']
         return data
+    
+    @staticmethod
+    def get_all_tickers():
+        select_script = """SELECT ticker FROM tickers;
+                        """
+        results = Postgres().select_many(select_script)
+        return [result[0] for result in results]
 
     @staticmethod
     def get_cik(ticker):
@@ -1006,7 +1013,7 @@ def validate_path(path):
 #########
 
 def test():
-    pass
+    print(config.utils.market_open_today())
 
 if __name__ == "__main__":
     #test    
