@@ -587,18 +587,21 @@ class StockData():
         logger.info("Tickers have been updated!")
     
     @staticmethod
-    def update_daily_price_history(override_schedule=False):
+    def update_daily_price_history(override_schedule = False, only_today = False):
         if config.utils.market_open_today() or override_schedule:
+            start_date = None
+            if only_today:
+                start_date = datetime.datetime.today()
             logger.info(f"Updating daily price history for watchlist tickers")
             tickers = StockData.get_all_tickers()
             num_tickers = len(tickers)
             curr_ticker = 1
             for ticker in tickers:
-                price_history = Schwab().get_daily_price_history(ticker)
+                price_history = Schwab().get_daily_price_history(ticker, start_datetime=start_date)
                 if price_history is not None:
                     fields = price_history.columns.to_list()
                     values = [tuple(row) for row in price_history.values]
-                    print(f"Inserting daily price data for ticker {ticker}, {curr_ticker}/{num_tickers}")
+                    logger.debug(f"Inserting daily price data for ticker {ticker}, {curr_ticker}/{num_tickers}")
                     Postgres().insert(table='dailypricehistory', fields=fields, values=values)
                     curr_ticker += 1
                 else:
@@ -1020,8 +1023,7 @@ def validate_path(path):
 #########
 
 def test():
-    print(len(StockData.get_all_tickers()))
-    print(len(StockData.get_all_tickers_by_market_cap(100000000)))
+    StockData.update_daily_price_history(only_today=True)
 
 if __name__ == "__main__":
     #test    
