@@ -616,7 +616,7 @@ class StockData():
             start_datetime = None
             if only_last_hour:
                 start_datetime = datetime.datetime.now() - datetime.timedelta(hours=1)
-            tickers = Watchlists().get_tickers_from_all_watchlists(no_personal=False) # Only update for watchlist tickers
+            tickers = StockData.get_all_tickers_by_market_cap(100000000) # Only tickers with market cap > $1M
             num_tickers = len(tickers)
             curr_ticker = 1
             for ticker in tickers:
@@ -624,7 +624,7 @@ class StockData():
                 if price_history is not None:
                     fields = price_history.columns.to_list()
                     values = [tuple(row) for row in price_history.values]
-                    logger.debug(f"Inserting 5m price data for ticker {ticker}, {curr_ticker}/{num_tickers}")
+                    print(f"Inserting 5m price data for ticker {ticker}, {curr_ticker}/{num_tickers}")
                     Postgres().insert(table='fiveminutepricehistory', fields=fields, values=values)
                     curr_ticker += 1
                 else:
@@ -700,7 +700,12 @@ class StockData():
         select_script = """SELECT ticker, marketCap FROM tickers;
                         """
         results = Postgres().select_many(select_script)
-        return [result[0] for result in results if float(result[1]) >= market_cap]
+        tickers = []
+        for result in results:
+            if len(result[1]) > 0: # Market cap is not empty string
+                if float(result[1]) >= market_cap:
+                    tickers.append(result[0])
+        return tickers
 
     @staticmethod
     def get_cik(ticker):
@@ -1023,7 +1028,9 @@ def validate_path(path):
 #########
 
 def test():
-    StockData.update_daily_price_history(only_today=True)
+    print(f"Start updating 5m price data {datetime.datetime.now().strftime("%H:%M:%S")}")
+    StockData.update_5m_price_history(only_last_hour=True)
+    print(f"Finished updating 5m price data {datetime.datetime.now().strftime("%H:%M:%S")}")
 
 if __name__ == "__main__":
     #test    
