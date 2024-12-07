@@ -45,7 +45,7 @@ def scheduler():
     sched.add_job(lambda: sd.StockData.update_daily_price_history(only_today=True), trigger=update_daily_data_daily_trigger, name = "Update daily price history (daily)", timezone=timezone, replace_existing=True)
 
     # Update fiveminutepricehistorytable with recent market data (daily job)
-    # Estimated runtime ~30 seconds, but scales with the number of tickers on watchlists
+    # Estimated runtime ~15 minutes
     sched.add_job(lambda: sd.StockData.update_5m_price_history(only_last_hour=True), trigger= update_5m_data_daily_trigger, name = "Update 5m price history (daily)", timezone=timezone, replace_existing=True)
 
     # Update dailypricehistory table with today's market data (weekly job)
