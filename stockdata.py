@@ -1063,11 +1063,11 @@ def validate_path(path):
 #########
 
 def test():
-    #Postgres().drop_table('historicalearnings')
-    #Postgres().create_tables()
-    #earnings = Nasdaq().get_earnings_by_date('2024-12-06')
-    StockData.Earnings.update_historical_earnings()
-    print(earnings)
+    ticker = 'ACHR'
+    quote = Schwab().get_quote(ticker)
+    print(quote)
+    #StockData.Earnings.update_historical_earnings()
+    
 
 if __name__ == "__main__":
     #test    
