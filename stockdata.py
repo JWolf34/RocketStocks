@@ -13,6 +13,7 @@ from datetime import timedelta
 import requests
 from ratelimit import limits, sleep_and_retry
 import config
+from config import utils
 import logging
 from tradingview_screener import Scanner, Query, Column
 import schwab
@@ -175,11 +176,13 @@ class Postgres():
                             );
 
                             CREATE TABLE IF NOT EXISTS historicalearnings (
+                            date                date,
                             ticker              varchar(8),
-                            period_end_date     date,
-                            reported            float,
-                            estimate            float,
-                            PRIMARY KEY (ticker, period_end_date)
+                            eps                 float,
+                            surprise            float,
+                            epsForecast         float,
+                            fiscalQuarterEnding varchar(10),            
+                            PRIMARY KEY (date, ticker)
                             );
 
                             CREATE TABLE IF NOT EXISTS reports(
@@ -521,13 +524,41 @@ class StockData():
         @staticmethod
         def update_historical_earnings():
             logger.info("Updating historical earnings in database...")
-            tickers = StockData.get_all_ticker_info()['ticker'].values.tolist()
-            for ticker in tickers:
-                logger.debug(f"Retrieving historical earnings for '{ticker}'")
-                earnings = Dolthub().get_historical_earnings_by_ticker(ticker)
-                earnings = earnings.rename(columns={'act_symbol':'ticker'})
-                Postgres().insert(table='historicalearnings', fields=earnings.columns.to_list(), values=[tuple(row) for row in earnings.values])
-            logger.info("Finished updating historical earnings table!")
+            column_map = {'date':'date',
+                          'symbol':'ticker',
+                          'eps':'eps',
+                          'surprise':'surprise',
+                          'epsForecast':'epsForecast',
+                          'fiscalQuarterEnding':'fiscalQuarterEnding'}
+            today = datetime.date.today()
+            
+            # Get most recently inserted date in database
+            select_script = """SELECT date FROM historicalearnings
+                               ORDER BY date DESC;
+                               """
+            result = Postgres().select_one(select_script)
+            if result is None:
+                start_date = datetime.date(year=2008, month=1, day=3) # Earliest day I can find earnings for on Nasdaq 1/3/2008
+            else:
+                start_date = result[0]
+
+            num_days = (today - start_date).days
+            for i in range(1, num_days):
+                date = start_date + datetime.timedelta(days=i)
+                date_string = utils.format_date_ymd(date)
+                earnings = Nasdaq().get_earnings_by_date(date_string)
+                earnings = earnings.rename(columns=column_map)
+                earnings = earnings.drop(columns=[x for x in earnings.columns.to_list() if x not in column_map.values()])
+                earnings['date'] = date
+                earnings = earnings[column_map.values()]
+
+                # Format columns
+                earnings ['eps'] = earnings['eps'].apply(lambda x: float(x.replace('(', '-').replace(")", "").replace('$', "")) if len(x) > 0 else np.nan)
+                earnings ['epsForecast'] = earnings['epsForecast'].apply(lambda x: float(x.replace('(', '-').replace(")", "").replace('$', "")) if len(x) > 0 else None)
+                earnings ['surprise'] = earnings['surprise'].apply(lambda x: float(x) if x != 'N/A' else None)
+
+                print(earnings)
+
 
         @staticmethod
         def get_historical_earnings(ticker):
@@ -1028,9 +1059,11 @@ def validate_path(path):
 #########
 
 def test():
-    print(f"Start updating 5m price data {datetime.datetime.now().strftime("%H:%M:%S")}")
-    StockData.update_5m_price_history(only_last_hour=True)
-    print(f"Finished updating 5m price data {datetime.datetime.now().strftime("%H:%M:%S")}")
+    #Postgres().drop_table('historicalearnings')
+    #Postgres().create_tables()
+    #earnings = Nasdaq().get_earnings_by_date('2024-12-06')
+    StockData.Earnings.update_historical_earnings()
+    print(earnings)
 
 if __name__ == "__main__":
     #test    
