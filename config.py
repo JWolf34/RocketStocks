@@ -293,6 +293,12 @@ class utils():
         nyse = utils.get_nyse_calendar()
         valid_days = nyse.valid_days(start_date=today, end_date=today)
         return today in valid_days.date
+
+    @staticmethod 
+    def market_open_on_date(date):
+        nyse = utils.get_nyse_calendar()
+        return date in nyse.valid_days(start_date=date, end_date=date).date
+
     
 
     @staticmethod

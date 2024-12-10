@@ -58,7 +58,7 @@ class Nasdaq():
         self.MAX_PERIOD = 60
 
     @sleep_and_retry
-    @limits(calls = 5, period = 60) # 10 calls per minute
+    @limits(calls = 5, period = 60)
     def get_all_tickers(self):
         url = f"{self.url_base}/screener/stocks?tableonly=false&limit=25&download=true"
         data = requests.get(url, headers=self.headers).json()
@@ -66,7 +66,7 @@ class Nasdaq():
         return tickers
 
     @sleep_and_retry
-    @limits(calls = 5, period = 60) # 10 calls per 10 minutes
+    @limits(calls = 5, period = 60) 
     def get_earnings_by_date(self, date):
         url = f"{self.url_base}/calendar/earnings"
         params = {'date':date}
@@ -77,7 +77,7 @@ class Nasdaq():
             return pd.DataFrame(data['data']['rows'])
     
     @sleep_and_retry
-    @limits(calls = 5, period = 60) # 10 calls per 10 minutes
+    @limits(calls = 5, period = 60) 
     def get_earnings_forecast(self, ticker):
         url = f"https://api.nasdaq.com/api/analyst/{ticker}/earnings-forecast"
         data = requests.get(url, headers=self.headers).json()
@@ -90,7 +90,7 @@ class Nasdaq():
         return pd.DataFrame.from_dict(self.get_earnings_forecast(ticker)['yearlyForecast']['rows'])
 
     @sleep_and_retry
-    @limits(calls = 5, period = 60) # 10 calls per 10 minutes
+    @limits(calls = 5, period = 60) 
     def get_eps(self, ticker):
         url = f"https://api.nasdaq.com/api/quote/{ticker}/eps"
         eps_request = requests.get(url, headers=self.headers)
@@ -545,19 +545,23 @@ class StockData():
             num_days = (today - start_date).days
             for i in range(1, num_days):
                 date = start_date + datetime.timedelta(days=i)
-                date_string = utils.format_date_ymd(date)
-                earnings = Nasdaq().get_earnings_by_date(date_string)
-                earnings = earnings.rename(columns=column_map)
-                earnings = earnings.drop(columns=[x for x in earnings.columns.to_list() if x not in column_map.values()])
-                earnings['date'] = date
-                earnings = earnings[column_map.values()]
+                if utils.market_open_on_date(date):
+                    date_string = utils.format_date_ymd(date)
+                    earnings = Nasdaq().get_earnings_by_date(date_string)
+                    earnings = earnings.rename(columns=column_map)
+                    earnings = earnings.drop(columns=[x for x in earnings.columns.to_list() if x not in column_map.values()])
+                    earnings['date'] = date
+                    earnings = earnings[column_map.values()]
 
-                # Format columns
-                earnings ['eps'] = earnings['eps'].apply(lambda x: float(x.replace('(', '-').replace(")", "").replace('$', "")) if len(x) > 0 else np.nan)
-                earnings ['epsForecast'] = earnings['epsForecast'].apply(lambda x: float(x.replace('(', '-').replace(")", "").replace('$', "")) if len(x) > 0 else None)
-                earnings ['surprise'] = earnings['surprise'].apply(lambda x: float(x) if x != 'N/A' else None)
+                    # Format EPS and surprise columns
+                    earnings ['eps'] = earnings['eps'].apply(lambda x: float(x.replace('(', '-').replace(")", "").replace('$', "")) if len(x) > 0 else np.nan)
+                    earnings ['epsForecast'] = earnings['epsForecast'].apply(lambda x: float(x.replace('(', '-').replace(")", "").replace('$', "")) if len(x) > 0 else None)
+                    earnings ['surprise'] = earnings['surprise'].apply(lambda x: float(x) if x != 'N/A' else None)
 
-                print(earnings)
+                    values = [tuple(row) for row in earnings.values]
+                    Postgres().insert(table='historicalearnings', fields=earnings.columns.to_list(), values=values)
+                else: # Market is not open on target date
+                    pass
 
 
         @staticmethod
