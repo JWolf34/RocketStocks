@@ -69,7 +69,7 @@ class Reports(commands.Cog):
                                                        'name'])
         popular_stocks['date'] = datetime.datetime.today().strftime("%Y-%m-%d")
         popular_stocks = popular_stocks[fields]
-        sd.Postgres().insert(table='popularstocks', fields=fields, values=[tuple(row) for row in popular_stocks.values])
+        sd.Postgres().insert(table='popular_stocks', fields=fields, values=[tuple(row) for row in popular_stocks.values])
 
 
     # Generate and send premarket gainer reports to the reports channel
