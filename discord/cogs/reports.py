@@ -413,10 +413,11 @@ class Report(object):
                                  '1M': 30,
                                  '3M': 90,
                                  '6M': 180}
-        curr_close = self.quote['closePrice']
+        curr_close = self.quote['regular']['regularMarketLastPrice']
         for frequency, days in performance_frequency.items():
             try:
                 old_close = float(self.data['close'].iloc[-abs(days)])
+                print(self.data.tail(abs(days)))
                 pct_change = ((curr_close - old_close) / old_close) * 100.0
                 symbol = ":green_circle:" if pct_change > 0.0 else ":small_red_triangle_down:"
                 message += f"**{frequency}:** {symbol} {"{:.2f}%".format(pct_change)}\n"
@@ -427,11 +428,11 @@ class Report(object):
 
     def build_daily_summary(self):
         message = "## Summary\n\n"
-        OHLCV = {'Open': "{:.2f}".format(self.quote['openPrice']),
-                 'High': "{:.2f}".format(self.quote['highPrice']),
-                 'Low': "{:.2f}".format(self.quote['lowPrice']),
-                 'Close': "{:.2f}".format(self.quote['closePrice']),
-                 'Volume': self.format_large_num(self.quote['totalVolume'])
+        OHLCV = {'Open': "{:.2f}".format(self.quote['quote']['openPrice']),
+                 'High': "{:.2f}".format(self.quote['quote']['highPrice']),
+                 'Low': "{:.2f}".format(self.quote['quote']['lowPrice']),
+                 'Close': "{:.2f}".format(self.quote['regular']['regularMarketLastPrice']),
+                 'Volume': self.format_large_num(self.quote['quote']['totalVolume'])
                 }
         message += " | ".join(f"**{column}:** {value}" for column, value in OHLCV.items())
         return message + "\n"        
@@ -483,7 +484,7 @@ class StockReport(Report):
     def __init__(self, ticker : str, channel):
         self.ticker = ticker
         self.data =  sd.StockData.fetch_daily_price_history(self.ticker)
-        self.quote = sd.Schwab().get_quote(self.ticker)['quote']
+        self.quote = sd.Schwab().get_quote(self.ticker)
         self.buttons = self.Buttons(self.ticker)
         super().__init__(channel)
         
