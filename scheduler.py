@@ -15,18 +15,23 @@ def scheduler():
     
     sched = BlockingScheduler()
 
-    update_tickers_trigger = CronTrigger(day_of_week="sun", hour=0, minute=0, timezone=timezone)
+    update_tickers_trigger = CronTrigger(day_of_week="mon-sun", hour=6, minute=0, timezone=timezone)
+    insert_new_tickers_trigger = CronTrigger(day_of_week="sun", hour=0, minute=0, timezone=timezone)
     update_upcoming_earnings_trigger = CronTrigger(day_of_week="fri", hour=0, minute=0, timezone=timezone)
     remove_past_earnings_trigger =  CronTrigger(day_of_week="tue-sat", hour=0, minute=0, timezone=timezone)
-    update_historical_earnings_trigger = CronTrigger(day_of_week="tue-sat", hour=2, minute=0, timezone=timezone)
+    update_historical_earnings_trigger = CronTrigger(day_of_week="tue-sat", hour=1, minute=0, timezone=timezone)
     update_daily_data_daily_trigger = CronTrigger(day_of_week="mon-fri", hour=17, minute=0, timezone=timezone)
     update_5m_data_daily_trigger = IntervalTrigger(hours=1, timezone=timezone)
     update_daily_data_weekly_trigger = CronTrigger(day_of_week="sat", hour=5, minute=0, timezone=timezone)
     update_5m_data_weekly_trigger = CronTrigger(day_of_week="sat", hour=2, minute=0, timezone=timezone)
     
-    # Update tickers table in database with newest NASDAQ data
-    # Estimated runtime 20-25 minutes
-    sched.add_job(sd.StockData.update_tickers, trigger=update_tickers_trigger, name = "Update tickers", timezone=timezone, replace_existing=True)
+    # Update tickers table in database with lastest NASDAQ data
+    # Estimated runtime seconds
+    sched.add_job(sd.StockData.update_tickers, trigger=update_tickers_trigger, name = "Update tickers data in DB", timezone=timezone, replace_existing=True)
+
+    # Insert new tickers from NASDAQ into table in database 
+    # Estimated runtime seconds
+    sched.add_job(sd.StockData.insert_new_tickers, trigger=insert_new_tickers_trigger, name = "Insert new tickers into DB", timezone=timezone, replace_existing=True)
 
     # Update upcomingearnings table with newly reported earnings dates
     # Estimated runtime ~10 minutes
@@ -37,7 +42,7 @@ def scheduler():
     sched.add_job(sd.StockData.Earnings.remove_past_earnings, trigger=remove_past_earnings_trigger, name = "Remove past earnings", timezone=timezone, replace_existing=True)
 
     # Update historicalearnings table with newly release earnings
-    # Estimated runtime ~2 hours
+    # Estimated runtime seconds (once up-to-date)
     sched.add_job(sd.StockData.Earnings.update_historical_earnings, trigger=update_historical_earnings_trigger, name = "Update historical earnings", timezone=timezone, replace_existing=True)
 
     # Update dailypricehistory table with today's market data (daily job)

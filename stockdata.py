@@ -696,7 +696,7 @@ class StockData():
             start_datetime = None
             if only_last_hour:
                 start_datetime = datetime.datetime.now() - datetime.timedelta(hours=1)
-            tickers = StockData.get_all_tickers_by_market_cap(100000000) # Only tickers with market cap > $1M
+            tickers = StockData.get_all_tickers()
             num_tickers = len(tickers)
             curr_ticker = 1
             for ticker in tickers:
@@ -1143,7 +1143,7 @@ def test():
     #tickers = StockData.get_all_tickers_by_sector('Technology')
     #print(tickers)
 
-    StockData.insert_new_tickers()
+    StockData.update_tickers()
     
 
 if __name__ == "__main__":
