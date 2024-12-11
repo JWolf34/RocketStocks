@@ -50,21 +50,21 @@ def update_gainer_message_id(message_id):
 
 def update_volume_message_id(message_id):
     update_script = f"""UPDATE reports
-                        SET messageid = {message_id}
+                        SET messageid = (%s)
                         WHERE type = 'UNUSUAL_VOLUME_REPORT';
                         """
-    sd.Postgres().update(update_script)
+    sd.Postgres().update(update_script, values=[(message_id,)])
 
 def update_alert_message_id(date, ticker, type, message_id):
     update_script = f"""UPDATE reports
-                        SET messageid = {message_id}
+                        SET messageid = (%s)
                         WHERE 
-                        date = '{date}' AND
-                        ticker = '{ticker}
-                        type = '{type}' 
+                        date = (%s) AND
+                        ticker = (%s)
+                        type = (%s)
                         ;
                         """
-    sd.Postgres().update(update_script)
+    sd.Postgres().update(update_script, values=[(message_id, date, ticker, type)])
 
 def get_gainer_message_id():
     market_time = utils().get_market_period()
