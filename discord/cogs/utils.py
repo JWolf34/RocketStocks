@@ -1,6 +1,7 @@
 import discord
 from discord import app_commands
 from discord.ext import commands
+import stockdata as sd
 import logging
 
 # Logging configuration
@@ -28,6 +29,17 @@ class Utils(commands.Cog):
         for command in client.tree.get_commands():
             embed.add_field(name=command.name, value=command.description)
         await interaction.response.send_message(embed=embed)
+
+    @app_commands.command(name='force-update-5m-data', description="Forcefully update the 5m price history db table")
+    @commands.is_owner()
+    async def force_update_5m_data(self, interaction:discord.Interaction):
+        await interaction.response.defer(ephemeral=True)
+        logger.info("/force-update-5m-data function called by user {}".format(interaction.user.name))
+        sd.StockData.update_5m_price_history(override_schedule=True)
+        await interaction.followup.send("5m price history table updated")
+        
+
+
 
 
 #########        

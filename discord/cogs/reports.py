@@ -75,12 +75,11 @@ class Reports(commands.Cog):
     # Generate and send premarket gainer reports to the reports channel
     @tasks.loop(minutes=5)
     async def send_gainer_reports(self):
-        
         if (utils.market_open_today() and (utils.in_extended_hours() or utils.in_intraday())):
             report = GainerReport(self.screeners_channel)
             await report.send_report()
             await self.bot.get_cog("Alerts").send_earnings_movers(report.gainers)
-            await self.bot.get_cog("Alerts").send_sec_filing_movers(report.gainers)
+            #await self.bot.get_cog("Alerts").send_sec_filing_movers(report.gainers)
             await self.bot.get_cog("Alerts").send_watchlist_movers(report.gainers)
         else:
             # Not a weekday - do not post gainer reports
@@ -248,7 +247,7 @@ class Reports(commands.Cog):
         app_commands.Choice(name = "private", value = 'private'),
         app_commands.Choice(name = "public", value = 'public')
     ])        
-    async def fetchreports(self, interaction: discord.interactions, tickers: str, visibility: app_commands.Choice[str]):
+    async def report(self, interaction: discord.interactions, tickers: str, visibility: app_commands.Choice[str]):
         await interaction.response.defer(ephemeral=True)
         logger.info("/report function called by user {}".format(interaction.user.name))
     
@@ -528,17 +527,20 @@ class StockReport(Report):
 class GainerReport(Report):
     def __init__(self, channel):
         self.gainers = None
+        self.gainers_formatted = pd.DataFrame()
         self.market_period = utils.get_market_period()
-        if utils.in_premarket():
+        if self.market_period == 'premarket':
             self.gainers = sd.TradingView.get_premarket_gainers_by_market_cap(1000000)
-        elif utils.in_intraday():
+        elif self.market_period == 'intraday':
             self.gainers = sd.TradingView.get_intraday_gainers_by_market_cap(1000000)
-        elif utils.in_afterhours():
+        elif self.market_period == 'afterhours':
             self.gainers = sd.TradingView.get_postmarket_gainers_by_market_cap(1000000)
         if self.gainers.size > 0:
             self.update_gainer_watchlist()
+            self.gainers_formatted = self.format_df_for_table()
+        else:
+            self.gainers_formatted.columns = self.gainers.columns.to_list()
 
-        self.gainers_formatted = self.format_df_for_table()
         super().__init__(channel)
 
         
@@ -574,9 +576,9 @@ class GainerReport(Report):
     def build_report_header(self):
         today = datetime.datetime.today()
         header = "### :rotating_light: {} Gainers {} (Market Cap > $100M) (Updated {})\n\n".format(
-                    "Pre-market" if utils.in_premarket()
-                    else "Intraday" if utils.in_intraday()
-                    else "After Hours" if utils.in_afterhours()
+                    "Pre-market" if self.market_period == 'premarket'
+                    else "Intraday" if self.market_period == 'intraday'
+                    else "After Hours" if self.market_period == 'afterhours'
                     else "",
                     today.strftime("%m/%d/%Y"),
                     today.strftime("%-I:%M %p"))
@@ -612,6 +614,7 @@ class VolumeReport(Report):
     def __init__(self, channel):
         self.volume_movers = sd.TradingView.get_unusual_volume_movers()
         self.volume_movers_formatted = self.format_df_for_table()
+        self.market_period = utils.get_market_period()
         if self.volume_movers.size > 0:
             self.update_unusual_volume_watchlist()
         super().__init__(channel)
@@ -642,7 +645,7 @@ class VolumeReport(Report):
 
     # Override
     async def send_report(self):
-        if True: #utils.in_premarket() or utils.in_intraday() or utils.in_afterhours():
+        if self.market_period != "EOD":
             today = datetime.datetime.today()
             market_period = utils.get_market_period()
             message_id = config.get_volume_message_id()

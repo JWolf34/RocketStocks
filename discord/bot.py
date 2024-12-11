@@ -6,6 +6,7 @@ from discord import app_commands
 from discord.ext import commands
 import asyncio
 import config
+from config import utils
 import logging
 
 
@@ -27,6 +28,7 @@ def run_bot():
     async def on_ready():
         logger.info("RocketStocks bot ready!")
         await load()
+        utils.bot_setup()
     
     
     bot.run(token)
