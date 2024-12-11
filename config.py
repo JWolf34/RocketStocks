@@ -32,21 +32,20 @@ def update_gainer_message_id(message_id):
                                 SET messageid = (%s)
                                 WHERE type = 'PREMARKET_GAINER_REPORT';
                                 """
-            sd.Postgres().update(update_script)
         elif market_time == "intraday":
             update_script = f"""UPDATE reports
                                 SET messageid = (%s)
                                 WHERE type = 'INTRADAY_GAINER_REPORT';
                                 """
-            sd.Postgres().update(update_script)
         elif market_time == "afterhours":
             update_script = f"""UPDATE reports
                                 SET messageid = (%s)
                                 WHERE type = 'AFTERHOURS_GAINER_REPORT';
                                 """
-            sd.Postgres().update(query=update_script, values=[(message_id,)])
         else:
             return None
+            
+        sd.Postgres().update(query=update_script, values=[(message_id,)])
 
 def update_volume_message_id(message_id):
     update_script = f"""UPDATE reports
