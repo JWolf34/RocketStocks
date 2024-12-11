@@ -29,22 +29,22 @@ def update_gainer_message_id(message_id):
         market_time = utils().get_market_period()
         if market_time == "premarket":
             update_script = f"""UPDATE reports
-                                SET messageid = {message_id}
+                                SET messageid = (%s)
                                 WHERE type = 'PREMARKET_GAINER_REPORT';
                                 """
             sd.Postgres().update(update_script)
         elif market_time == "intraday":
             update_script = f"""UPDATE reports
-                                SET messageid = {message_id}
+                                SET messageid = (%s)
                                 WHERE type = 'INTRADAY_GAINER_REPORT';
                                 """
             sd.Postgres().update(update_script)
         elif market_time == "afterhours":
             update_script = f"""UPDATE reports
-                                SET messageid = {message_id}
+                                SET messageid = (%s)
                                 WHERE type = 'AFTERHOURS_GAINER_REPORT';
                                 """
-            sd.Postgres().update(update_script)
+            sd.Postgres().update(query=update_script, values=[(message_id,)])
         else:
             return None
 

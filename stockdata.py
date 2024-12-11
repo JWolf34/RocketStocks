@@ -387,12 +387,12 @@ class Watchlists():
     # Set content of watchlist to provided tickers
     def update_watchlist(self, watchlist_id, tickers):
         logger.info("Updating watchlist '{}': {}".format(watchlist_id, tickers))
-        update_script = f""" UPDATE (%s)
+        update_script = f""" UPDATE watchlists
                              SET tickers = (%s)
                              WHERE id = (%s);
                              """
-        values = [(self.db_table, " ".join(tickers), watchlist_id)]
-        Postgres().update(query=update_script)
+        values = [(" ".join(tickers), watchlist_id)]
+        Postgres().update(query=update_script, values=values)
 
     # Create a new watchlist with id 'watchlist_id'
     def create_watchlist(self, watchlist_id, tickers, systemGenerated):
@@ -953,7 +953,7 @@ class TradingView():
                             Column('exchange').isin(StockData.get_supported_exchanges()))
                 .limit(100)
                 .get_scanner_data())
-        #gainers = gainers.drop(columns='exchange')
+        gainers = gainers.drop(columns='exchange')
         gainers = gainers.drop(columns='ticker')
         headers = ['Ticker', 'Close', 'Volume', 'Market Cap', 'After Hours Change', 'After Hours Volume']
         gainers.columns = headers
@@ -970,7 +970,7 @@ class TradingView():
                             Column('exchange').isin(StockData.get_supported_exchanges()))
                 .limit(100)
                 .get_scanner_data())
-        #gainers = gainers.drop(columns='exchange')
+        gainers = gainers.drop(columns='exchange')
         gainers = gainers.drop(columns='ticker')
         headers = ['Ticker', 'Close', 'Volume', 'Market Cap', 'After Hours Change', 'After Hours Volume']
         gainers.columns = headers

@@ -553,7 +553,7 @@ class GainerReport(Report):
         gainers['Market Cap'] = gainers['Market Cap'].apply(lambda x: self.format_large_num(x))
         for column in change_columns:
             if column in gainers.columns:
-                gainers[column] = gainers[column].apply(lambda x: "{:.2f}%".format(float(x)))
+                gainers[column] = gainers[column].apply(lambda x: "{:.2f}%".format(float(x)) if x is not None else 0.00)
         for column in volume_columns:
             if column in gainers.columns:
                 gainers[column] = gainers[column].apply(lambda x: self.format_large_num(x))
