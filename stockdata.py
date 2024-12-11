@@ -653,12 +653,13 @@ class StockData():
                         'volume']
         tickers_data = Nasdaq().get_all_tickers()
         logger.debug("Fetched latest tickers from NASDAQ")
+        tickers_data = tickers_data[~tickers_data['symbol'].isin(StockData.get_all_tickers())]
         tickers_data = tickers_data.drop(columns=drop_columns)
         tickers_data = tickers_data.rename(columns=column_map)
         cik_series = pd.Series(name='cik', index=tickers_data.index)
         for i in range(0, tickers_data['ticker'].size):
-            logger.debug(f"Getting CIK value for ticker '{ticker}'")
             ticker = tickers_data['ticker'].iloc[i]
+            logger.debug(f"Getting CIK value for ticker '{ticker}'")
             cik_series[i] = SEC().get_cik_from_ticker(ticker)
         tickers_data = tickers_data.join(cik_series)
         values = [tuple(row) for row in tickers_data.values]
@@ -1142,7 +1143,7 @@ def test():
     #tickers = StockData.get_all_tickers_by_sector('Technology')
     #print(tickers)
 
-    StockData.update_tickers()
+    StockData.insert_new_tickers()
     
 
 if __name__ == "__main__":
