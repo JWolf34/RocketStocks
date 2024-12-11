@@ -150,7 +150,7 @@ class Postgres():
                             cik             char(10)
                             );
 
-                            CREATE TABLE IF NOT EXISTS upcomingEarnings (
+                            CREATE TABLE IF NOT EXISTS upcoming_earnings (
                             ticker              varchar(8) PRIMARY KEY,
                             date                date NOT NULL,
                             time                varchar(32),
@@ -167,7 +167,7 @@ class Postgres():
                             systemGenerated     boolean
                             );
                             
-                            CREATE TABLE IF NOT EXISTS popularstocks (
+                            CREATE TABLE IF NOT EXISTS popular_stocks (
                             date                date,
                             ticker              varchar(8),
                             rank                int,
@@ -176,7 +176,7 @@ class Postgres():
                             PRIMARY KEY (date, ticker)
                             );
 
-                            CREATE TABLE IF NOT EXISTS historicalearnings (
+                            CREATE TABLE IF NOT EXISTS historical_earnings (
                             date                date,
                             ticker              varchar(8),
                             eps                 float,
@@ -199,18 +199,18 @@ class Postgres():
                             PRIMARY KEY (date, ticker, alert_type)
                             );
 
-                            CREATE TABLE IF NOT EXISTS dailypricehistory(
+                            CREATE TABLE IF NOT EXISTS daily_price_history(
                             ticker              varchar(8),
                             open                float,
                             high                float,
                             low                 float,
                             close               float,
                             volume              bigint,
-                            datetime            date,
+                            datetime            timestamp,
                             PRIMARY KEY (ticker, datetime)
                             );
 
-                            CREATE TABLE IF NOT EXISTS fiveminutepricehistory(
+                            CREATE TABLE IF NOT EXISTS five_minute_price_history(
                             ticker              varchar(8),
                             open                float,
                             high                float,
@@ -242,8 +242,14 @@ class Postgres():
     # Drop database tables
     def drop_all_tables(self):
         self.open_connection()
-        drop_script = """DROP TABLE upcomingearnings;
+        drop_script = """DROP TABLE alerts;
+                         DROP TABLE daily_price_history;
+                         DROP TABLE five_minute_price_history;
+                         DROP TABLE historical_earnings;
+                         DROP TABLE popular_stocks;
+                         DROP TABLE reports;
                          DROP TABLE tickers;
+                         DROP TABLE upcoming_earnings;
                          DROP TABLE watchlists;
                         """
 
@@ -489,13 +495,13 @@ class StockData():
                         earnings_data = earnings_data[columns]
                         earnings_data = earnings_data.rename(columns={'symbol':'ticker'})
                         values = [tuple(row) for row in earnings_data.values]
-                        Postgres().insert(table='upcomingearnings', fields=earnings_data.columns.to_list(), values=values)
+                        Postgres().insert(table='upcoming_earnings', fields=earnings_data.columns.to_list(), values=values)
                         logger.debug(f'Updated earnings for {date_string}')
             logger.info("Upcoming earnings have been updated!")
 
         @staticmethod
         def get_next_earnings_date(ticker):
-            select_script = f"""SELECT date FROM upcomingearnings
+            select_script = f"""SELECT date FROM upcoming_earnings
                                WHERE ticker = '{ticker}'
                                """
             result = Postgres().select_one(select_script)
@@ -506,8 +512,8 @@ class StockData():
 
         @staticmethod
         def get_next_earnings_info(ticker):
-            columns = Postgres().get_table_columns('upcomingearnings')
-            select_script = f"""SELECT * FROM upcomingearnings
+            columns = Postgres().get_table_columns('upcoming_earnings')
+            select_script = f"""SELECT * FROM upcoming_earnings
                                WHERE ticker = '{ticker}'
                                """
             result = Postgres().select_one(select_script)
@@ -520,7 +526,7 @@ class StockData():
         def remove_past_earnings():
             logger.info("Removing upcoming earnings that have past")
             where = "date < CURRENT_DATE"
-            Postgres().delete(table='upcomingearnings', where_condition=where)
+            Postgres().delete(table='upcoming_earnings', where_condition=where)
             logger.info("Previous upcoming earnings removed from database")
 
         @staticmethod
@@ -535,7 +541,7 @@ class StockData():
             today = datetime.date.today()
             
             # Get most recently inserted date in database
-            select_script = """SELECT date FROM historicalearnings
+            select_script = """SELECT date FROM historical_earnings
                                ORDER BY date DESC;
                                """
             result = Postgres().select_one(select_script)
@@ -570,7 +576,7 @@ class StockData():
                         earnings ['surprise'] = earnings['surprise'].apply(lambda x: float(x) if x != 'N/A' else None)
 
                         values = [tuple(row) for row in earnings.values]
-                        Postgres().insert(table='historicalearnings', fields=earnings.columns.to_list(), values=values)
+                        Postgres().insert(table='historical_earnings', fields=earnings.columns.to_list(), values=values)
                         print(f"Updated historical earnings for {date_string}")
                     else: # No earnings recorded on target date
                         pass
@@ -580,8 +586,8 @@ class StockData():
 
         @staticmethod
         def get_historical_earnings(ticker):
-            columns = Postgres().get_table_columns('historicalearnings')
-            select_script = f"""SELECT * FROM historicalearnings
+            columns = Postgres().get_table_columns('historical_earnings')
+            select_script = f"""SELECT * FROM historical_earnings
                                WHERE ticker = '{ticker}';
                                """
             results = Postgres().select_many(select_script)
@@ -592,14 +598,14 @@ class StockData():
 
         @staticmethod
         def get_earnings_today(date):
-            select_script = f"""SELECT * FROM upcomingearnings
+            select_script = f"""SELECT * FROM upcoming_earnings
                                WHERE date = '{date}';
                                """
             results = Postgres().select_many(select_script)
             if results is None:
                 return results
             else:
-                columns = Postgres().get_table_columns('upcomingearnings')
+                columns = Postgres().get_table_columns('upcoming_earnings')
                 return pd.DataFrame(results, columns=columns)
 
         
@@ -667,74 +673,93 @@ class StockData():
         logger.info("Tickers have been updated!")
     
     @staticmethod
-    def update_daily_price_history(override_schedule = False, only_today = False):
-        if config.utils.market_open_today() or override_schedule:
-            start_date = None
-            if only_today:
-                start_date = datetime.datetime.today()
-            logger.info(f"Updating daily price history for watchlist tickers")
-            tickers = StockData.get_all_tickers()
-            num_tickers = len(tickers)
-            curr_ticker = 1
-            for ticker in tickers:
-                price_history = Schwab().get_daily_price_history(ticker, start_datetime=start_date)
-                if price_history is not None:
-                    fields = price_history.columns.to_list()
-                    values = [tuple(row) for row in price_history.values]
-                    logger.debug(f"Inserting daily price data for ticker {ticker}, {curr_ticker}/{num_tickers}")
-                    Postgres().insert(table='dailypricehistory', fields=fields, values=values)
-                    curr_ticker += 1
-                else:
-                    logger.warning(f"No daily price history found for ticker {ticker}, {curr_ticker}/{num_tickers}")
-                    curr_ticker += 1
-            logger.info("Completed update to daily price history in database")
+    def update_daily_price_history():
+        logger.info(f"Updating daily price history for watchlist tickers")
+        tickers = StockData.get_all_tickers()
+        num_tickers = len(tickers)
+        curr_ticker = 1
+        for ticker in tickers:
+            logger.debug(f"Inserting daily price data for ticker {ticker}, {curr_ticker}/{num_tickers}")
+            StockData.update_daily_price_history_by_ticker(ticker)
+            curr_ticker += 1
+        logger.info("Completed update to daily price history in database")
 
     @staticmethod
-    def update_5m_price_history(override_schedule=False, only_last_hour=False):
-        if override_schedule or (config.utils.in_extended_hours() or config.utils.in_intraday()):
-            logger.info(f"Updating 5m price history for watchlist tickers")
-            start_datetime = None
-            if only_last_hour:
-                start_datetime = datetime.datetime.now() - datetime.timedelta(hours=1)
-            tickers = StockData.get_all_tickers()
-            num_tickers = len(tickers)
-            curr_ticker = 1
-            for ticker in tickers:
-                price_history = Schwab().get_5m_price_history(ticker, start_datetime=start_datetime)
-                if price_history is not None:
-                    fields = price_history.columns.to_list()
-                    values = [tuple(row) for row in price_history.values]
-                    print(f"Inserting 5m price data for ticker {ticker}, {curr_ticker}/{num_tickers}")
-                    Postgres().insert(table='fiveminutepricehistory', fields=fields, values=values)
-                    curr_ticker += 1
-                else:
-                    logger.warning(f"No 5m price history found for ticker {ticker}, {curr_ticker}/{num_tickers}")
-                    curr_ticker += 1
-            logger.info("Completed update to 5m price history in database")
+    def update_daily_price_history_by_ticker(ticker):
+        select_script = f"""SELECT datetime FROM daily_price_history
+                        WHERE ticker = '{ticker}'
+                        ORDER BY datetime DESC;
+                        """
+        result = Postgres().select_one(select_script)
+        if result is None:
+            start_datetime = result # No data found
+        else:
+            start_datetime = result[0]
+        price_history = Schwab().get_daily_price_history(ticker, start_datetime=start_datetime)
+        if price_history.size > 0:
+            fields = price_history.columns.to_list()
+            values = [tuple(row) for row in price_history.values]
+            Postgres().insert(table='daily_price_history', fields=fields, values=values)
+        else:
+            logger.warning(f"No daily price history found for ticker {ticker}")
+    
+
+    @staticmethod
+    def update_5m_price_history():
+        logger.info(f"Updating 5m price history for watchlist tickers")
+
+        tickers = StockData.get_all_tickers()
+        num_tickers = len(tickers)
+        curr_ticker = 1
+        for ticker in tickers:
+            print(f"Inserting 5m price data for ticker {ticker}, {curr_ticker}/{num_tickers}")
+            StockData.update_5m_price_history_by_ticker(ticker)
+            curr_ticker += 1
+        logger.info("Completed update to 5m price history in database")
+    
+    @staticmethod
+    def update_5m_price_history_by_ticker(ticker):
+        # Get datetime of most recently inserted data
+        select_script = f"""SELECT datetime FROM five_minute_price_history
+                        WHERE ticker = '{ticker}'
+                        ORDER BY datetime DESC;
+                        """
+        result = Postgres().select_one(select_script)
+        if result is None:
+            start_datetime = result # No data found
+        else:
+            start_datetime = result[0]
+        price_history = Schwab().get_5m_price_history(ticker, start_datetime=start_datetime)
+        if price_history.size > 0:
+            fields = price_history.columns.to_list()
+            values = [tuple(row) for row in price_history.values]
+            Postgres().insert(table='five_minute_price_history', fields=fields, values=values)
+        else:
+            logger.warning(f"No 5m price history found for ticker {ticker}")
     
     
     @staticmethod
     def fetch_daily_price_history(ticker):
-        select_script = f"""SELECT * FROM dailypricehistory
+        select_script = f"""SELECT * FROM daily_price_history
                            WHERE ticker = '{ticker}';
                            """
         results = Postgres().select_many(select_script)
         if results is None:
             return pd.DataFrame()
         else:
-            columns = Postgres().get_table_columns("dailypricehistory")
+            columns = Postgres().get_table_columns("daily_price_history")
             return pd.DataFrame(results, columns=columns)
 
     @staticmethod
     def fetch_5m_price_history(ticker):
-        select_script = f"""SELECT * FROM fiveminutepricehistory
+        select_script = f"""SELECT * FROM five_minute_price_history
                            WHERE ticker = '{ticker}';
                            """
         results = Postgres().select_many(select_script)
         if results is None:
             return pd.DataFrame()
         else:
-            columns = Postgres().get_table_columns('fiveminutepricehistory')
+            columns = Postgres().get_table_columns('five_minute_price_history')
             return pd.DataFrame(results, columns=columns)
 
     # Download and write financials for specified ticker to the financials folder
@@ -1057,9 +1082,9 @@ class Schwab():
                 price_history.insert(loc=0, column='ticker', value=ticker)
                 return price_history
             else:
-                return None
+                return pd.DataFrame()
         except httpx.HTTPStatusError as e:
-            print(f"Enountered HTTPStatusError when downloading daily price history for ticker {ticker}\n{e}")
+            logger.error(f"Enountered HTTPStatusError when downloading daily price history for ticker {ticker}\n{e}")
             return None
 
     # This reports live market data!
@@ -1072,9 +1097,12 @@ class Schwab():
         assert resp.status_code == httpx.codes.OK, resp.raise_for_status()
         data = resp.json()
         price_history = pd.DataFrame.from_dict(data['candles'])
-        price_history['datetime'] = price_history['datetime'].apply(lambda x: datetime.datetime.fromtimestamp(x/1000))
-        price_history.insert(loc=0, column='ticker', value=ticker)
-        return price_history
+        if price_history.size > 0:
+            price_history['datetime'] = price_history['datetime'].apply(lambda x: datetime.datetime.fromtimestamp(x/1000))
+            price_history.insert(loc=0, column='ticker', value=ticker)
+            return price_history
+        else:
+            return price_history
 
     def get_quote(self, ticker):
         resp = self.client.get_quote(
@@ -1142,8 +1170,9 @@ def test():
     #StockData.Earnings.update_historical_earnings()
     #tickers = StockData.get_all_tickers_by_sector('Technology')
     #print(tickers)
-
-    StockData.update_tickers()
+    #Postgres().drop_table('daily_price_history')
+    Postgres().create_tables()
+    StockData.update_daily_price_history()
     
 
 if __name__ == "__main__":
