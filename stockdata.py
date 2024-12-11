@@ -292,9 +292,10 @@ class Postgres():
         return results
     
     # Update row(s) in database
-    def update(self, query:str):
+    def update(self, query:str, values):
         self.open_connection()
-        self.cur.execute(query)
+        for row in values:
+            self.cur.execute(query, row)
         self.conn.commit()
         self.close_connection()
     
@@ -606,7 +607,37 @@ class StockData():
 
     @staticmethod
     def update_tickers():
-        logger.info("Updating tickers database table with up-to-date tickers")
+        logger.info("Updating tickers database table with up-to-date ticker data")
+        column_map = {'name':'name',
+                      'marketCap':'marketCap',
+                      'country':'country',
+                      'ipoyear':'ipoyear',
+                      'industry':'industry',
+                      'sector':'sector',
+                      'url':'nasdaqEndpoint',
+                      'symbol':'ticker'}
+        drop_columns = ['lastsale',
+                        'netchange',
+                        'pctchange',
+                        'volume']
+        tickers_data = Nasdaq().get_all_tickers()
+        logger.debug("Fetched latest tickers from NASDAQ")
+        tickers_data = tickers_data[tickers_data['symbol'].isin(StockData.get_all_tickers())]
+        tickers_data = tickers_data.drop(columns=drop_columns)
+        tickers_data = tickers_data.rename(columns=column_map)
+        tickers_data = tickers_data[column_map.values()]
+        
+        update_script = f"""UPDATE tickers SET
+                            {",".join(f"{column} = (%s)" for column in tickers_data.columns.to_list()[:-1])}
+                            WHERE ticker = (%s);
+                            """
+        values = [tuple(row) for row in tickers_data.values]
+        Postgres().update(update_script, values)
+        logger.info("Tickers have been updated!")
+    
+    @staticmethod
+    def insert_new_tickers():
+        logger.info("Updating tickers database table with up-to-date ticker data")
         column_map = {'symbol':'ticker',
                       'name':'name',
                       'marketCap':'marketCap',
@@ -1108,8 +1139,10 @@ def test():
     #movers = Schwab().get_movers()
     
     #StockData.Earnings.update_historical_earnings()
-    tickers = StockData.get_all_tickers_by_sector('Technology')
-    print(tickers)
+    #tickers = StockData.get_all_tickers_by_sector('Technology')
+    #print(tickers)
+
+    StockData.update_tickers()
     
 
 if __name__ == "__main__":
