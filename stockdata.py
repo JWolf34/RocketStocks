@@ -13,11 +13,10 @@ from datetime import timedelta
 import requests
 from ratelimit import limits, sleep_and_retry
 import config
-from config import utils
 import logging
 from tradingview_screener import Scanner, Query, Column
 import schwab
-
+import time
 import httpx
 
 # Logging configuration
@@ -553,8 +552,8 @@ class StockData():
             num_days = (today - start_date).days
             for i in range(1, num_days):
                 date = start_date + datetime.timedelta(days=i)
-                if utils.market_open_on_date(date):
-                    date_string = utils.format_date_ymd(date)
+                if config.utils.market_open_on_date(date):
+                    date_string = config.utils.format_date_ymd(date)
                     earnings = Nasdaq().get_earnings_by_date(date_string)
                     if earnings.size > 0:
                         earnings = earnings.rename(columns=column_map)
@@ -692,7 +691,7 @@ class StockData():
                         """
         result = Postgres().select_one(select_script)
         if result is None:
-            start_datetime = result # No data found
+            start_datetime = datetime.datetime(year=2000, month=1, day=1) # No data found
         else:
             start_datetime = result[0]
         price_history = Schwab().get_daily_price_history(ticker, start_datetime=start_datetime)
@@ -711,10 +710,15 @@ class StockData():
         tickers = StockData.get_all_tickers()
         num_tickers = len(tickers)
         curr_ticker = 1
+        start =  time.time()
         for ticker in tickers:
             print(f"Inserting 5m price data for ticker {ticker}, {curr_ticker}/{num_tickers}")
             StockData.update_5m_price_history_by_ticker(ticker)
             curr_ticker += 1
+
+        end = time.time()
+        elapsed = end-start
+        print(f"Done! Time elapsed: {end-start} seconds")
         logger.info("Completed update to 5m price history in database")
     
     @staticmethod
@@ -1085,7 +1089,7 @@ class Schwab():
                 return pd.DataFrame()
         except httpx.HTTPStatusError as e:
             logger.error(f"Enountered HTTPStatusError when downloading daily price history for ticker {ticker}\n{e}")
-            return None
+            return pd.DataFrame()
 
     # This reports live market data!
     def get_5m_price_history(self, ticker, start_datetime=None, end_datetime=None):
@@ -1163,19 +1167,14 @@ def validate_path(path):
 #########
 
 def test():
-    #tickers = StockData.get_all_tickers_by_market_cap(100000000)
-    #quotes = Schwab().get_quotes(tickers[:1000])
-    #movers = Schwab().get_movers()
-    
-    #StockData.Earnings.update_historical_earnings()
-    #tickers = StockData.get_all_tickers_by_sector('Technology')
-    #print(tickers)
-    #Postgres().drop_table('daily_price_history')
-    Postgres().create_tables()
-    StockData.update_daily_price_history()
-    
+    # TODO
+    # Time update_5m_date
+    # update historical earnings
 
-if __name__ == "__main__":
+    #StockData.update_5m_price_history()
+    pass
+
+if __name__ == "__main__":#
     #test    
     # Initilaize database
     #Postgres().create_tables()
