@@ -17,6 +17,7 @@ from config import utils
 import logging
 from tradingview_screener import Scanner, Query, Column
 import schwab
+
 import httpx
 
 # Logging configuration
@@ -71,8 +72,8 @@ class Nasdaq():
         url = f"{self.url_base}/calendar/earnings"
         params = {'date':date}
         data = requests.get(url, headers=self.headers, params=params).json()
-        if data is None:
-            return data
+        if data['data'] is None:
+            return pd.DataFrame()
         else:
             return pd.DataFrame(data['data']['rows'])
     
@@ -548,18 +549,30 @@ class StockData():
                 if utils.market_open_on_date(date):
                     date_string = utils.format_date_ymd(date)
                     earnings = Nasdaq().get_earnings_by_date(date_string)
-                    earnings = earnings.rename(columns=column_map)
-                    earnings = earnings.drop(columns=[x for x in earnings.columns.to_list() if x not in column_map.values()])
-                    earnings['date'] = date
-                    earnings = earnings[column_map.values()]
+                    if earnings.size > 0:
+                        earnings = earnings.rename(columns=column_map)
+                        earnings = earnings.drop(columns=[x for x in earnings.columns.to_list() if x not in column_map.values()])
+                        earnings['date'] = date
+                        earnings = earnings[column_map.values()]
 
-                    # Format EPS and surprise columns
-                    earnings ['eps'] = earnings['eps'].apply(lambda x: float(x.replace('(', '-').replace(")", "").replace('$', "")) if len(x) > 0 else np.nan)
-                    earnings ['epsForecast'] = earnings['epsForecast'].apply(lambda x: float(x.replace('(', '-').replace(")", "").replace('$', "")) if len(x) > 0 else None)
-                    earnings ['surprise'] = earnings['surprise'].apply(lambda x: float(x) if x != 'N/A' else None)
+                        # Format EPS and surprise columns
+                        earnings ['eps'] = earnings['eps'].apply(lambda x: float(x.replace('(', '-')
+                                                                                .replace(")", "")
+                                                                                .replace('$', "")
+                                                                                .replace(',',"")) 
+                                                                                if len(x) > 0 else None)
+                        earnings ['epsForecast'] = earnings['epsForecast'].apply(lambda x: float(x.replace('(', '-')
+                                                                                .replace(")", "")
+                                                                                .replace('$', "")
+                                                                                .replace(',',"")) 
+                                                                                if len(x) > 0 else None)
+                        earnings ['surprise'] = earnings['surprise'].apply(lambda x: float(x) if x != 'N/A' else None)
 
-                    values = [tuple(row) for row in earnings.values]
-                    Postgres().insert(table='historicalearnings', fields=earnings.columns.to_list(), values=values)
+                        values = [tuple(row) for row in earnings.values]
+                        Postgres().insert(table='historicalearnings', fields=earnings.columns.to_list(), values=values)
+                        print(f"Updated historical earnings for {date_string}")
+                    else: # No earnings recorded on target date
+                        pass
                 else: # Market is not open on target date
                     pass
 
@@ -741,6 +754,17 @@ class StockData():
                 if float(result[1]) >= market_cap:
                     tickers.append(result[0])
         return tickers
+
+    @staticmethod
+    def get_all_tickers_by_sector(sector):
+        select_script = f"""SELECT ticker FROM tickers
+                           WHERE sector LIKE '%{sector}%';
+                        """
+        results = Postgres().select_many(select_script)
+        if results is None:
+            return results
+        else:
+            return [result[0] for result in results]
 
     @staticmethod
     def get_cik(ticker):
@@ -1027,6 +1051,14 @@ class Schwab():
         assert resp.status_code == httpx.codes.OK, resp.raise_for_status()
         data = resp.json()
         return data[ticker]
+
+    def get_quotes(self, tickers):
+        resp = self.client.get_quotes(
+            symbols=tickers
+        )
+        assert resp.status_code == httpx.codes.OK, resp.raise_for_status()
+        data = resp.json()
+        return data
     
     def get_fundamentals(self, tickers):
         resp = self.client.get_instruments(symbols=tickers, 
@@ -1037,6 +1069,14 @@ class Schwab():
     
     def get_options_chain(self, ticker):
         resp = self.client.get_option_chain(ticker)
+        assert resp.status_code == httpx.codes.OK, resp.raise_for_status()
+        data = resp.json()
+        return data
+
+    def get_movers(self):
+        resp = self.client.get_movers(index=self.client.Movers.Index.EQUITY_ALL, 
+                                      sort_order=self.client.Movers.SortOrder.PERCENT_CHANGE_UP,
+                                      frequency=self.client.Movers.Frequency.TEN)
         assert resp.status_code == httpx.codes.OK, resp.raise_for_status()
         data = resp.json()
         return data
@@ -1063,10 +1103,13 @@ def validate_path(path):
 #########
 
 def test():
-    ticker = 'ACHR'
-    quote = Schwab().get_quote(ticker)
-    print(quote)
+    #tickers = StockData.get_all_tickers_by_market_cap(100000000)
+    #quotes = Schwab().get_quotes(tickers[:1000])
+    #movers = Schwab().get_movers()
+    
     #StockData.Earnings.update_historical_earnings()
+    tickers = StockData.get_all_tickers_by_sector('Technology')
+    print(tickers)
     
 
 if __name__ == "__main__":
