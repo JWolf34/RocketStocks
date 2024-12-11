@@ -417,7 +417,6 @@ class Report(object):
         for frequency, days in performance_frequency.items():
             try:
                 old_close = float(self.data['close'].iloc[-abs(days)])
-                print(self.data.tail(abs(days)))
                 pct_change = ((curr_close - old_close) / old_close) * 100.0
                 symbol = ":green_circle:" if pct_change > 0.0 else ":small_red_triangle_down:"
                 message += f"**{frequency}:** {symbol} {"{:.2f}%".format(pct_change)}\n"
