@@ -205,8 +205,8 @@ class Postgres():
                             low                 float,
                             close               float,
                             volume              bigint,
-                            datetime            timestamp,
-                            PRIMARY KEY (ticker, datetime)
+                            date                date,
+                            PRIMARY KEY (ticker, date)
                             );
 
                             CREATE TABLE IF NOT EXISTS five_minute_price_history(
@@ -577,7 +577,7 @@ class StockData():
 
                         values = [tuple(row) for row in earnings.values]
                         Postgres().insert(table='historical_earnings', fields=earnings.columns.to_list(), values=values)
-                        print(f"Updated historical earnings for {date_string}")
+                        logger.info(f"Updated historical earnings for {date_string}")
                     else: # No earnings recorded on target date
                         pass
                 else: # Market is not open on target date
@@ -686,17 +686,19 @@ class StockData():
 
     @staticmethod
     def update_daily_price_history_by_ticker(ticker):
-        select_script = f"""SELECT datetime FROM daily_price_history
+        select_script = f"""SELECT date FROM daily_price_history
                         WHERE ticker = '{ticker}'
-                        ORDER BY datetime DESC;
+                        ORDER BY date DESC;
                         """
         result = Postgres().select_one(select_script)
         if result is None:
             start_datetime = datetime.datetime(year=2000, month=1, day=1) # No data found
         else:
-            start_datetime = result[0]
+            start_datetime = datetime.datetime.combine(result[0], datetime.time(hour=0, minute=0, second=0))
         price_history = Schwab().get_daily_price_history(ticker, start_datetime=start_datetime)
         if price_history.size > 0:
+            price_history = price_history.rename(columns={'datetime':'date'})
+            price_history['date'] = price_history['date'].apply(lambda x: x.date())
             fields = price_history.columns.to_list()
             values = [tuple(row) for row in price_history.values]
             Postgres().insert(table='daily_price_history', fields=fields, values=values)
@@ -1173,6 +1175,11 @@ def test():
     # update historical earnings
 
     #StockData.update_5m_price_history()
+    #Postgres().drop_table("daily_price_history")
+    #Postgres().create_tables()
+    #StockData.update_daily_price_history()
+    #data = StockData.fetch_daily_price_history('LUV')
+    #print(data.tail(30))
     pass
 
 if __name__ == "__main__":#
