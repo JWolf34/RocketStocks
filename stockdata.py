@@ -577,7 +577,7 @@ class StockData():
 
                         values = [tuple(row) for row in earnings.values]
                         Postgres().insert(table='historical_earnings', fields=earnings.columns.to_list(), values=values)
-                        logger.info(f"Updated historical earnings for {date_string}")
+                        print(f"Updated historical earnings for {date_string}")
                     else: # No earnings recorded on target date
                         pass
                 else: # Market is not open on target date
@@ -1174,12 +1174,8 @@ def test():
     # Time update_5m_date
     # update historical earnings
 
-    #StockData.update_5m_price_history()
-    #Postgres().drop_table("daily_price_history")
-    #Postgres().create_tables()
-    #StockData.update_daily_price_history()
-    #data = StockData.fetch_daily_price_history('LUV')
-    #print(data.tail(30))
+    StockData.Earnings.update_historical_earnings()
+
     pass
 
 if __name__ == "__main__":#
