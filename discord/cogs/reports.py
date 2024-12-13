@@ -467,6 +467,34 @@ class Report(object):
         message += f"**P/E Ratio:** {"{:.2f}".format(self.quote['fundamental']['peRatio'])}\n"
         return message
 
+    def build_popularity(self):
+        message = "## Popularity\n"
+        
+        try:
+            todays_top_stocks = sd.ApeWisdom().get_top_stocks()
+            todays_rank = todays_top_stocks[todays_top_stocks['ticker'] == self.ticker]['rank'].iloc[0]
+        except IndexError as e:
+            message += "No popularity records available"
+            return message + "\n"    
+        popularity = sd.StockData.get_historical_popularity(self.ticker)
+        if popularity is None:
+            message += "No popularity records available"
+            return message + "\n"
+        else:
+            message += f"**Today:** {todays_rank}\n"
+            for i in range(1, 5):
+                date = datetime.date.today() - datetime.timedelta(i)
+                try:
+                    old_rank = popularity[popularity['date'] == date]['rank'].iloc[0]
+                    symbol = ":green_circle:" if (old_rank-todays_rank) > 0 else ":small_red_triangle_down:"
+                    change = f"{old_rank - todays_rank} spots"
+                except IndexError as e:
+                    old_rank = 'N/A'
+                    symbol = ''
+                    change = ''
+                message +=f"**{i} Day(s) Ago:** {old_rank}, {symbol} {change}\n"
+            return message
+
     def build_report(self):
         report = ''
         report += self.build_report_header()
@@ -524,6 +552,7 @@ class StockReport(Report):
         report += self.build_daily_summary()
         report += self.build_performance()
         report += self.build_stats()
+        report += self.build_popularity()
         report += self.build_recent_earnings()
         report += self.build_recent_SEC_filings()
         
