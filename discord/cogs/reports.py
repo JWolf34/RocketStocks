@@ -407,6 +407,7 @@ class Report(object):
         return message + "\n\n"
 
     def build_performance(self):
+        today =  datetime.datetime.today().date()
         message = "## Performance \n\n"
         performance_frequency = {'1D': 1,
                                  '5D': 5,
@@ -416,7 +417,9 @@ class Report(object):
         curr_close = self.quote['regular']['regularMarketLastPrice']
         for frequency, days in performance_frequency.items():
             try:
-                old_close = float(self.data['close'].iloc[-abs(days)])
+                #close_df = self.data.loc[self.data['date'] == (today - datetime.timedelta(days=days)), 'close'].iloc[0]
+                # Get old_close based on date offset from today's date
+                old_close = float(self.data.loc[self.data['date'] == (today - datetime.timedelta(days=days)), 'close'].iloc[0])
                 pct_change = ((curr_close - old_close) / old_close) * 100.0
                 symbol = ":green_circle:" if pct_change > 0.0 else ":small_red_triangle_down:"
                 message += f"**{frequency}:** {symbol} {"{:.2f}%".format(pct_change)}\n"

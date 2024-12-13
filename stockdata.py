@@ -205,8 +205,8 @@ class Postgres():
                             low                 float,
                             close               float,
                             volume              bigint,
-                            datetime            timestamp,
-                            PRIMARY KEY (ticker, datetime)
+                            date                date,
+                            PRIMARY KEY (ticker, date)
                             );
 
                             CREATE TABLE IF NOT EXISTS five_minute_price_history(
@@ -686,17 +686,19 @@ class StockData():
 
     @staticmethod
     def update_daily_price_history_by_ticker(ticker):
-        select_script = f"""SELECT datetime FROM daily_price_history
+        select_script = f"""SELECT date FROM daily_price_history
                         WHERE ticker = '{ticker}'
-                        ORDER BY datetime DESC;
+                        ORDER BY date DESC;
                         """
         result = Postgres().select_one(select_script)
         if result is None:
             start_datetime = datetime.datetime(year=2000, month=1, day=1) # No data found
         else:
-            start_datetime = result[0]
+            start_datetime = datetime.datetime.combine(result[0], datetime.time(hour=0, minute=0, second=0))
         price_history = Schwab().get_daily_price_history(ticker, start_datetime=start_datetime)
         if price_history.size > 0:
+            price_history = price_history.rename(columns={'datetime':'date'})
+            price_history['date'] = price_history['date'].apply(lambda x: x.date())
             fields = price_history.columns.to_list()
             values = [tuple(row) for row in price_history.values]
             Postgres().insert(table='daily_price_history', fields=fields, values=values)
@@ -1172,7 +1174,8 @@ def test():
     # Time update_5m_date
     # update historical earnings
 
-    #StockData.update_5m_price_history()
+    StockData.Earnings.update_historical_earnings()
+
     pass
 
 if __name__ == "__main__":#
