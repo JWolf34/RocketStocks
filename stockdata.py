@@ -679,7 +679,7 @@ class StockData():
         num_tickers = len(tickers)
         curr_ticker = 1
         for ticker in tickers:
-            logger.debug(f"Inserting daily price data for ticker {ticker}, {curr_ticker}/{num_tickers}")
+            print(f"Inserting daily price data for ticker {ticker}, {curr_ticker}/{num_tickers}")
             StockData.update_daily_price_history_by_ticker(ticker)
             curr_ticker += 1
         logger.info("Completed update to daily price history in database")
@@ -841,6 +841,19 @@ class StockData():
             return None
         else:
             return result[0]
+
+    @staticmethod
+    def get_market_cap(ticker):
+        logger.debug(f"Retreiving CIK value for ticker '{ticker}' from database")
+        select_script = f"""SELECT marketCap from tickers
+                            WHERE ticker = '{ticker}';
+                            """
+        result = Postgres().select_one(select_script)
+        if result is None:
+            return None
+        else:
+            return float(result[0])
+
 
     # Confirm we get valid data back when downloading data for ticker
     @staticmethod
@@ -1175,7 +1188,9 @@ def test():
     # Time update_5m_date
     # update historical earnings
 
-    StockData.update_daily_price_history_by_ticker('RDDT')
+    Postgres().drop_table('daily_price_history')
+    Postgres().create_tables()
+    StockData.update_daily_price_history()
 
     pass
 

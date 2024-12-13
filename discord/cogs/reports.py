@@ -348,9 +348,9 @@ class Report(object):
         if ticker_data is not None:
             message += f"**Name:** {ticker_data[1]}\n"
             message += f"**Sector:** {ticker_data[6] if ticker_data[6] else "N/A"}\n"
-            message += f"**Industry:** {ticker_data[5] if ticker_data[5] else "N/A"}\n"
-            message += f"**Market Cap:** ${self.format_large_num(ticker_data[2]) if ticker_data[2] else "N/A"}\n" 
+            message += f"**Industry:** {ticker_data[5] if ticker_data[5] else "N/A"}\n" 
             message += f"**Country:** {ticker_data[3] if ticker_data[3] else "N/A"}\n"
+            message += f"**Exchange:** {self.quote['reference']['exchangeName']}\n"
             message += f"**Next earnings date:** {sd.StockData.Earnings.get_next_earnings_date(self.ticker)}"
             return message + "\n"
         else:
@@ -406,6 +406,11 @@ class Report(object):
         message += f"**Last Year EPS:** {earnings_info['lastyeareps'].iloc[0]}\n"
         return message + "\n\n"
 
+    def build_recent_earnings(self):
+        message = "## Earnings\n"
+        recent_earnings = sd.StockData.Earnings.get_historical_earnings(self.ticker)
+        print(recent_earnings.tail(4))
+
     def build_performance(self):
         today =  datetime.datetime.today().date()
         message = "## Performance \n\n"
@@ -432,7 +437,7 @@ class Report(object):
         return message
 
     def build_daily_summary(self):
-        message = "## Summary\n\n"
+        message = "## Today's Summary\n\n"
         OHLCV = {'Open': "{:.2f}".format(self.quote['quote']['openPrice']),
                  'High': "{:.2f}".format(self.quote['quote']['highPrice']),
                  'Low': "{:.2f}".format(self.quote['quote']['lowPrice']),
@@ -440,7 +445,18 @@ class Report(object):
                  'Volume': self.format_large_num(self.quote['quote']['totalVolume'])
                 }
         message += " | ".join(f"**{column}:** {value}" for column, value in OHLCV.items())
-        return message + "\n"        
+        return message + "\n"  
+
+    def build_stats(self):
+        message = "## Stats\n"
+        message += f"**Market Cap:** {self.format_large_num(sd.StockData.get_market_cap(self.ticker))}\n"
+        message += f"**52 Week High:** {self.quote['quote']['52WeekHigh']}\n"
+        message += f"**52 Week Low:** {self.quote['quote']['52WeekLow']}\n"
+        message += f"**Average Volume 10D:** {self.format_large_num(self.quote['fundamental']['avg10DaysVolume'])}\n"
+        message += f"**Average Volume 1Y:** {self.format_large_num(self.quote['fundamental']['avg1YearVolume'])}\n"
+        message += f"**P/E Ratio:** {"{:.2f}".format(self.quote['fundamental']['peRatio'])}\n"
+        return message + "\n"
+
                     
                 
 
@@ -500,6 +516,8 @@ class StockReport(Report):
         report += self.build_ticker_info()
         report += self.build_daily_summary()
         report += self.build_performance()
+        report += self.build_stats()
+        report += self.build_recent_earnings()
         report += self.build_recent_SEC_filings()
         
         return report
