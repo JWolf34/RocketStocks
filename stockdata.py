@@ -697,8 +697,8 @@ class StockData():
             start_datetime = datetime.datetime.combine(result[0], datetime.time(hour=0, minute=0, second=0))
         price_history = Schwab().get_daily_price_history(ticker, start_datetime=start_datetime)
         if price_history.size > 0:
-            price_history = price_history.rename(columns={'datetime':'date'})
-            price_history['date'] = price_history['date'].apply(lambda x: x.date())
+            
+            #price_history['date'] = price_history['date'].apply(lambda x: datetime.datetime.strptime(x, "%Y-%m-%d").date())
             fields = price_history.columns.to_list()
             values = [tuple(row) for row in price_history.values]
             Postgres().insert(table='daily_price_history', fields=fields, values=values)
@@ -1085,7 +1085,8 @@ class Schwab():
             data = resp.json()
             price_history = pd.DataFrame.from_dict(data['candles'])
             if price_history.size > 0:
-                price_history['datetime'] = price_history['datetime'].apply(lambda x: datetime.datetime.fromtimestamp(x/1000))
+                price_history['datetime'] = price_history['datetime'].apply(lambda x: datetime.date.fromtimestamp(x/1000))
+                price_history = price_history.rename(columns={'datetime':'date'})
                 price_history.insert(loc=0, column='ticker', value=ticker)
                 return price_history
             else:
@@ -1174,7 +1175,7 @@ def test():
     # Time update_5m_date
     # update historical earnings
 
-    StockData.Earnings.update_historical_earnings()
+    StockData.update_daily_price_history_by_ticker('RDDT')
 
     pass
 
