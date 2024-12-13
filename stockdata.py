@@ -854,6 +854,20 @@ class StockData():
         else:
             return float(result[0])
 
+    @staticmethod
+    def get_historical_popularity(ticker=None):
+        select_script = """SELECT * from popular_stocks\n"""
+        if ticker != None:
+            select_script += f"""WHERE ticker = '{ticker}'\n"""
+        select_script += """ORDER BY date DESC;"""
+        results = Postgres().select_many(select_script)
+        if results is None:
+            return results
+        else:
+            columns = Postgres().get_table_columns('popular_stocks')
+            return pd.DataFrame(results, columns=columns)
+
+
 
     # Confirm we get valid data back when downloading data for ticker
     @staticmethod
@@ -1049,25 +1063,6 @@ class ApeWisdom():
         else:
             return None
 
-class Dolthub():
-    def __init__(self):
-        self.token = config.get_dolthub_api_token()
-        self.headers={"authorization": f"token {self.token}" }
-        
-    @sleep_and_retry
-    @limits(calls = 5, period = 1) # 5 calls per 1 second
-    def get_historical_earnings_by_ticker(self, ticker):
-        db_owner = "post-no-preference"
-        db_repo = "earnings"
-        db_branch = "master"
-        select_query = f"""SELECT * FROM eps_history WHERE act_symbol = '{ticker}'"""
-        earnings_http = requests.get(url=f"https://www.dolthub.com/api/v1alpha1/{db_owner}/{db_repo}/{db_branch}",
-                           params={"q": select_query},
-                           headers=self.headers)
-        earnings_json = earnings_http.json()
-        columns = [column.get('columnName') for column in earnings_json['schema']]
-        earnings_data = earnings_json['rows']
-        return pd.DataFrame(earnings_data, columns=columns)
 
 class Schwab():
     def __init__(self):
@@ -1188,10 +1183,7 @@ def test():
     # Time update_5m_date
     # update historical earnings
 
-    pop_stocks = pd.read_csv('Sheet1.csv')
-    fields = pop_stocks.columns.to_list()
-    values = [tuple(row) for row in pop_stocks.values]
-    Postgres().insert(table='popular_stocks', fields=fields, values=values)
+
 
     pass
 
