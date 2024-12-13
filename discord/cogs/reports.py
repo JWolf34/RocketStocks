@@ -86,7 +86,7 @@ class Reports(commands.Cog):
             pass
 
 
-    @send_gainer_reports.before_loop
+    #@send_gainer_reports.before_loop
     async def before_send_gainer_reports(self):
         # Start posting report at next 0 or 5 minute interval
         now = datetime.datetime.now().astimezone()
@@ -514,12 +514,15 @@ class Report(object):
 
     # Tool to format large numbers
     def format_large_num(self, number):
-        number = float('{:.3g}'.format(float(number)))
-        magnitude = 0
-        while abs(number) >= 1000:
-            magnitude += 1
-            number /= 1000.0
-        return '{}{}'.format('{:f}'.format(number).rstrip('0').rstrip('.'), ['', 'K', 'M', 'B', 'T'][magnitude])
+        try:
+            number = float('{:.3g}'.format(float(number)))
+            magnitude = 0
+            while abs(number) >= 1000:
+                magnitude += 1
+                number /= 1000.0
+            return '{}{}'.format('{:f}'.format(number).rstrip('0').rstrip('.'), ['', 'K', 'M', 'B', 'T'][magnitude])
+        except TypeError as e:
+            return "N/A"
     
     # Tool to determine percentage change
     def percent_change(self, current, previous):
