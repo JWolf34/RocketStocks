@@ -1188,9 +1188,10 @@ def test():
     # Time update_5m_date
     # update historical earnings
 
-    Postgres().drop_table('daily_price_history')
-    Postgres().create_tables()
-    StockData.update_daily_price_history()
+    pop_stocks = pd.read_csv('Sheet1.csv')
+    fields = pop_stocks.columns.to_list()
+    values = [tuple(row) for row in pop_stocks.values]
+    Postgres().insert(table='popular_stocks', fields=fields, values=values)
 
     pass
 
