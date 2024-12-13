@@ -5,6 +5,7 @@ from discord.ext import tasks
 from reports import Report
 from reports import StockReport
 import stockdata as sd
+import pandas as pd
 import config
 from config import utils
 import datetime
@@ -20,6 +21,7 @@ class Alerts(commands.Cog):
         self.alerts_channel=self.bot.get_channel(config.get_alerts_channel_id())
         self.reports_channel= self.bot.get_channel(config.get_reports_channel_id())
         self.post_alerts_date.start()
+        self.send_popularity_movers.start()
 
     @commands.Cog.listener()
     async def on_ready(self):
@@ -79,6 +81,26 @@ class Alerts(commands.Cog):
                     alert = VolumeMoverAlert(ticker=ticker, channel=self.alerts_channel, volume_row=row)
                     await alert.send_alert()
                 await asyncio.sleep(1)
+    
+    @tasks.loop(minutes=5)
+    async def send_popularity_movers(self):
+        top_stocks = sd.ApeWisdom().get_top_stocks()
+        for index, row in top_stocks.iterrows():
+            ticker = row['ticker']
+            todays_rank = row['rank']
+            popularity = sd.StockData.get_historical_popularity(ticker).tail(5)
+            for i in range(1, 5):
+                date = datetime.date.today() - datetime.timedelta(i)
+                try:
+                    old_rank = popularity[popularity['date'] == date]['rank'].iloc[0]
+                    if old_rank - todays_rank > 30:
+                        alert = PopularityAlert(ticker = ticker, channel = self.alerts_channel, todays_popularity=row, historical_popularity=popularity)
+                        await alert.send_alert()
+                        break
+                except IndexError as e:
+                    pass
+                
+
 
 ##################
 # Alerts Classes #
@@ -221,7 +243,7 @@ class VolumeMoverAlert(Alert):
         symbol = ":green_circle:" if self.pct_change > 0 else ":small_red_triangle_down:"
         return f"**{self.ticker}** is {symbol} **{"{:.2f}".format(self.pct_change)}%** with volume up **{"{:.2f} times".format(self.relative_volume)}** the 10-day average\n\n"
 
-    def build_stats(self):
+    def build_volume_stats(self):
         return f"""## Volume Stats
         - **Today's Volume:** {self.format_large_num(self.volume)}
         - **Average Volume (10 Day):** {self.format_large_num(self.average_volume)}
@@ -231,7 +253,47 @@ class VolumeMoverAlert(Alert):
         alert = ""
         alert += self.build_alert_header()
         alert += self.build_todays_change()
-        alert += self.build_stats()
+        alert += self.build_volume_stats()
+        return alert
+
+class PopularityAlert(Alert):
+    def __init__(self, ticker, channel, todays_popularity, historical_popularity):
+        self.alert_type = "POPULARITY"
+        self.todays_popularity = todays_popularity
+        self.historical_popularity = historical_popularity
+        self.popularity_stats = self.get_popularity_stats()
+        super().__init__(ticker, channel)
+    
+    def get_popularity_stats(self):
+        stats = {'todays_rank':self.todays_popularity['rank'],
+                 'low_rank': None,
+                 'low_rank_date':None,
+                 'high_rank': None, 
+                 'high_rank_date':None}
+        popularity = pd.concat([self.todays_popularity, self.historical_popularity], ignore_index=True)
+        for index, row in self.historical_popularity.iterrows():
+            rank = row['rank']
+            date = row['date']
+            if stats.get('low_rank') is None or stats.get('low_rank') > rank:
+                stats['low_rank'] = rank
+                stats['low_rank_date'] = date
+            if stats.get('high_rank') is None or stats.get('high_rank') < rank:
+                stats['high_rank'] = rank
+                stats['high_rank_date'] = date
+        return stats
+            
+    def build_alert_header(self):
+        header = f"## :rotating_light: Popularity Mover: {self.ticker}\n\n\n"
+        return header
+
+    def build_todays_change(self):
+        return f"**{self.ticker}** has moved {self.popularity_stats['high_rank'] - self.popularity_stats['low_rank']} spots between {utils.format_date_mdy(self.popularity_stats['low_rank_date'])} and {utils.format_date_mdy(self.popularity_stats['high_rank_date'])} \n\n"
+
+    def build_alert(self):
+        alert = ""
+        alert += self.build_alert_header()
+        alert += self.build_todays_change()
+        alert += self.build_popularity()
         return alert
 
 

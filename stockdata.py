@@ -1182,7 +1182,7 @@ def test():
     # TODO
     # Time update_5m_date
     # update historical earnings
-
+    StockData.update_5m_price_history()
 
 
     pass
