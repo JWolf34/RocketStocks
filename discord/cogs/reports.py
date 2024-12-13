@@ -351,8 +351,7 @@ class Report(object):
             message += f"**Industry:** {ticker_data[5] if ticker_data[5] else "N/A"}\n" 
             message += f"**Country:** {ticker_data[3] if ticker_data[3] else "N/A"}\n"
             message += f"**Exchange:** {self.quote['reference']['exchangeName']}\n"
-            message += f"**Next earnings date:** {sd.StockData.Earnings.get_next_earnings_date(self.ticker)}"
-            return message + "\n"
+            return message 
         else:
             logger.warning("While generating report summary, ticker_data was 'None'. Ticker likely does not exist in database")
             return message + f"Unable to get info for ticker {self.ticker}\n"
@@ -408,8 +407,19 @@ class Report(object):
 
     def build_recent_earnings(self):
         message = "## Earnings\n"
-        recent_earnings = sd.StockData.Earnings.get_historical_earnings(self.ticker)
-        print(recent_earnings.tail(4))
+        message += f"**Next earnings date:** {sd.StockData.Earnings.get_next_earnings_date(self.ticker)}\n"
+        column_map = {'date':'Date Reported', 
+                      'eps':'EPS',
+                      'surprise':'Surprise',
+                      'epsforecast':'Estimate',
+                      'fiscalquarterending':'Quarter'}
+        recent_earnings = sd.StockData.Earnings.get_historical_earnings(self.ticker).tail(4)
+        recent_earnings = recent_earnings.drop(columns='ticker')
+        recent_earnings = recent_earnings.rename(columns=column_map)
+        recent_earnings['Date Reported'] = recent_earnings['Date Reported'].apply(lambda x: utils.format_date_mdy(x))
+        recent_earnings['Surprise'] =  recent_earnings['Surprise'].apply(lambda x: f"{x}%")
+        message += self.build_table(recent_earnings)
+        return message + "\n"
 
     def build_performance(self):
         today =  datetime.datetime.today().date()
@@ -455,10 +465,7 @@ class Report(object):
         message += f"**Average Volume 10D:** {self.format_large_num(self.quote['fundamental']['avg10DaysVolume'])}\n"
         message += f"**Average Volume 1Y:** {self.format_large_num(self.quote['fundamental']['avg1YearVolume'])}\n"
         message += f"**P/E Ratio:** {"{:.2f}".format(self.quote['fundamental']['peRatio'])}\n"
-        return message + "\n"
-
-                    
-                
+        return message
 
     def build_report(self):
         report = ''
