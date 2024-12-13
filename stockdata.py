@@ -567,17 +567,17 @@ class StockData():
                                                                                 .replace(")", "")
                                                                                 .replace('$', "")
                                                                                 .replace(',',"")) 
-                                                                                if len(x) > 0 else None)
+                                                                                if (len(x) > 0 and x != "N/A") else None)
                         earnings ['epsForecast'] = earnings['epsForecast'].apply(lambda x: float(x.replace('(', '-')
                                                                                 .replace(")", "")
                                                                                 .replace('$', "")
                                                                                 .replace(',',"")) 
-                                                                                if len(x) > 0 else None)
+                                                                                if (len(x) > 0 and x != "N/A") else None)
                         earnings ['surprise'] = earnings['surprise'].apply(lambda x: float(x) if x != 'N/A' else None)
 
                         values = [tuple(row) for row in earnings.values]
                         Postgres().insert(table='historical_earnings', fields=earnings.columns.to_list(), values=values)
-                        print(f"Updated historical earnings for {date_string}")
+                        print (f"Updated historical earnings for {date_string}")
                     else: # No earnings recorded on target date
                         pass
                 else: # Market is not open on target date
