@@ -88,8 +88,9 @@ class Alerts(commands.Cog):
         for index, row in top_stocks.iterrows():
             ticker = row['ticker']
             todays_rank = row['rank']
-            popularity = sd.StockData.get_historical_popularity(ticker).tail(5)
-            for i in range(1, 5):
+            popularity = sd.StockData.get_historical_popularity(ticker)
+            popularity = popularity[popularity['date'] > (datetime.date.today() - datetime.timedelta(days=5))]
+            for i in range(1, 5): # replace with iterrows logic
                 date = datetime.date.today() - datetime.timedelta(i)
                 try:
                     old_rank = popularity[popularity['date'] == date]['rank'].iloc[0]

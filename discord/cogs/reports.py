@@ -801,6 +801,8 @@ class PopularityReport(Report):
         self.filter_name = filter_name
         self.filter = sd.ApeWisdom().get_filter(filter_name=self.filter_name)
         self.top_stocks = sd.ApeWisdom().get_top_stocks(filter_name=self.filter_name)
+        for i in range(2, 6):
+            self.top_stocks = pd.concat([self.top_stocks, sd.ApeWisdom().get_top_stocks(page=i)])
         sd.validate_path(config.get_attachments_path())
         self.filepath = f"{config.get_attachments_path()}/top-stocks-{datetime.datetime.today().strftime("%m-%d-%Y")}.csv"
         self.top_stocks.to_csv(self.filepath, index=False)
@@ -923,8 +925,6 @@ class WeeklyEarningsReport(Report):
     async def send_report(self):
         message = await super().send_report(files=[self.file])
         return message
-
-    
 
 
         

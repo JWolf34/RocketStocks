@@ -1052,11 +1052,11 @@ class ApeWisdom():
     def get_filter(self, filter_name):
         return self.filters_map[filter_name]
 
-    def get_top_stocks(self, filter_name = 'all stock subreddits'):
-        logger.debug(f"Fetching top stocks from source: '{filter_name}'")
+    def get_top_stocks(self, filter_name = 'all stock subreddits', page = 1):
+        logger.debug(f"Fetching top stocks from source: '{filter_name}', page {page}")
         filter = self.get_filter(filter_name=filter_name)
         if filter is not None:
-            top_stocks_json = requests.get(f"{self.base_url}/{filter}").json()
+            top_stocks_json = requests.get(f"{self.base_url}/{filter}/page/{page}").json()
             if top_stocks_json is not None:
                 top_stocks = pd.DataFrame(top_stocks_json['results'])
                 return top_stocks
@@ -1182,9 +1182,8 @@ def test():
     # TODO
     # Time update_5m_date
     # update historical earnings
-    StockData.update_5m_price_history()
-
-
+    report = PopularityReport(channel = None)
+    print(report.top_stocks)
     pass
 
 if __name__ == "__main__":#
