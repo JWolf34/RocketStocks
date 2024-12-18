@@ -97,7 +97,8 @@ class Alerts(commands.Cog):
                     min_rank = popular_row['rank']
                 if max_rank > popular_row['rank'] or max_rank == 0:
                     max_rank = popular_row['rank']
-            if ((float(min_rank) / float(max_rank)) * 100.0 > 50.0) and min_rank > 10:
+            if ((float(max_rank) / float(min_rank)) * 100.0 > 50.0) and min_rank > 10:
+                print((float(max_rank) / float(min_rank)) * 100.0)
                 alert = PopularityAlert(ticker = ticker, 
                                         channel=self.alerts_channel,
                                         todays_popularity=popular_row,

@@ -59,7 +59,7 @@ def scheduler():
 
     # Update fiveminutepricehistorytable with recent market data (weekly job)
     # Estimated runtime ~3 minutes, but scales with the number of tickers on watchlists
-    sched.add_job(d.StockData.update_5m_price_history, trigger= update_5m_data_weekly_trigger, name = "Update 5m price history (weekly)", timezone=timezone, replace_existing=True)
+    sched.add_job(sd.StockData.update_5m_price_history, trigger= update_5m_data_weekly_trigger, name = "Update 5m price history (weekly)", timezone=timezone, replace_existing=True)
 
     sched.start()
 
