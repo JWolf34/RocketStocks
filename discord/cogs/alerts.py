@@ -97,11 +97,18 @@ class Alerts(commands.Cog):
                     min_rank = popular_row['rank']
                 if max_rank > popular_row['rank'] or max_rank == 0:
                     max_rank = popular_row['rank']
-            if ((float(max_rank) / float(min_rank)) * 100.0 > 50.0) and min_rank > 10:
-                print((float(max_rank) / float(min_rank)) * 100.0)
+
+            
+            if min_rank < todays_rank:
+                min_rank = todays_rank
+            if max_rank > todays_rank:
+                max_rank = todays_rank
+                
+        
+            if (((float(min_rank) - float(max_rank)) / float(min_rank)) * 100.0 > 50.0) and min_rank > 10 and sd.StockData.validate_ticker(ticker):
                 alert = PopularityAlert(ticker = ticker, 
                                         channel=self.alerts_channel,
-                                        todays_popularity=popular_row,
+                                        todays_popularity=row,
                                         historical_popularity=popularity) 
                 await alert.send_alert()
 
@@ -283,6 +290,12 @@ class PopularityAlert(Alert):
             if stats.get('high_rank') is None or stats.get('high_rank') < rank:
                 stats['high_rank'] = rank
                 stats['high_rank_date'] = date
+        if stats.get('low_rank') is None or stats.get('low_rank') > stats.get('todays_rank'):
+                stats['low_rank'] = stats.get('todays_rank')
+                stats['low_rank_date'] = datetime.date.today()
+        if stats.get('high_rank') is None or stats.get('high_rank') < stats.get('todays_rank'):
+            stats['high_rank'] = stats.get('todays_rank')
+            stats['high_rank_date'] = datetime.date.today()
         return stats
             
     def build_alert_header(self):
@@ -290,7 +303,7 @@ class PopularityAlert(Alert):
         return header
 
     def build_todays_change(self):
-        return f"**{self.ticker}** has moved {self.popularity_stats['high_rank'] - self.popularity_stats['low_rank']} spots between {utils.format_date_mdy(self.popularity_stats['low_rank_date'])} and {utils.format_date_mdy(self.popularity_stats['high_rank_date'])} \n\n"
+        return f"**{self.ticker}** has moved {self.popularity_stats['high_rank'] - self.popularity_stats['low_rank']} spots between {utils.format_date_mdy(self.popularity_stats['low_rank_date'])} **({self.popularity_stats['low_rank']})** and {utils.format_date_mdy(self.popularity_stats['high_rank_date'])} **({self.popularity_stats['high_rank']})** \n\n"
 
     def build_alert(self):
         alert = ""

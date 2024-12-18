@@ -482,7 +482,7 @@ class Report(object):
             return message + "\n"
         else:
             message += f"**Today:** {todays_rank}\n"
-            for i in range(1, 5):
+            for i in range(1, 6):
                 date = datetime.date.today() - datetime.timedelta(i)
                 try:
                     old_rank = popularity[popularity['date'] == date]['rank'].iloc[0]
