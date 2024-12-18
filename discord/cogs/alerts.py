@@ -84,24 +84,25 @@ class Alerts(commands.Cog):
     
     @tasks.loop(minutes=5)
     async def send_popularity_movers(self):
-        top_stocks = sd.ApeWisdom().get_top_stocks()
+        top_stocks = sd.ApeWisdom().get_top_stocks()[:50]
         for index, row in top_stocks.iterrows():
             ticker = row['ticker']
             todays_rank = row['rank']
             popularity = sd.StockData.get_historical_popularity(ticker)
             popularity = popularity[popularity['date'] > (datetime.date.today() - datetime.timedelta(days=5))]
-            for i in range(1, 5): # replace with iterrows logic
-                date = datetime.date.today() - datetime.timedelta(i)
-                try:
-                    old_rank = popularity[popularity['date'] == date]['rank'].iloc[0]
-                    if old_rank - todays_rank > 30:
-                        alert = PopularityAlert(ticker = ticker, channel = self.alerts_channel, todays_popularity=row, historical_popularity=popularity)
-                        await alert.send_alert()
-                        break
-                except IndexError as e:
-                    pass
-                
-
+            min_rank = 0
+            max_rank = 0
+            for index, popular_row in popularity.iterrows(): # replace with iterrows logic
+                if min_rank < popular_row['rank'] or min_rank == 0:
+                    min_rank = popular_row['rank']
+                if max_rank > popular_row['rank'] or max_rank == 0:
+                    max_rank = popular_row['rank']
+            if ((float(min_rank) / float(max_rank)) * 100.0 > 50.0) and min_rank > 10:
+                alert = PopularityAlert(ticker = ticker, 
+                                        channel=self.alerts_channel,
+                                        todays_popularity=popular_row,
+                                        historical_popularity=popularity) 
+                await alert.send_alert()
 
 ##################
 # Alerts Classes #
