@@ -137,7 +137,11 @@ class Alert(Report):
         change_columns = ["Premarket Change", "% Change", "After Hours Change"]
         for column in change_columns:
             if column in df_row.index.values:
-                return float(df_row[column])
+                change = df_row[column]
+                if change is None:
+                    return 0.0
+                else:
+                    return float(df_row[column])
 
     async def send_alert(self):
         today = datetime.datetime.today()
