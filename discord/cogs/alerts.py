@@ -154,7 +154,7 @@ class Alert(Report):
 
     class Buttons(discord.ui.View):
             def __init__(self, ticker : str, channel):
-                super().__init__()
+                super().__init__(timeout=None)
                 self.ticker = ticker
                 self.channel = channel
                 self.add_item(discord.ui.Button(label="Google it", style=discord.ButtonStyle.url, url = "https://www.google.com/search?q={}".format(self.ticker)))

@@ -536,7 +536,7 @@ class Report(object):
     
     class Buttons(discord.ui.View):
             def __init__(self):
-                super().__init__()
+                super().__init__(timeout=None)
 
 class StockReport(Report):
     
@@ -569,7 +569,7 @@ class StockReport(Report):
     # Override
     class Buttons(discord.ui.View):
             def __init__(self, ticker : str):
-                super().__init__()
+                super().__init__(timeout=None)
                 self.ticker = ticker
                 self.add_item(discord.ui.Button(label="Google it", style=discord.ButtonStyle.url, url = "https://www.google.com/search?q={}".format(self.ticker)))
                 self.add_item(discord.ui.Button(label="StockInvest", style=discord.ButtonStyle.url, url = "https://stockinvest.us/stock/{}".format(self.ticker)))
@@ -836,7 +836,7 @@ class PopularityReport(Report):
     # Override
     class Buttons(discord.ui.View):
         def __init__(self):
-            super().__init__()
+            super().__init__(timeout=None)
             self.add_item(discord.ui.Button(label="ApeWisdom", style=discord.ButtonStyle.url, url = "https://apewisdom.io/"))
 
 class EarningsSpotlightReport(Report):
@@ -865,7 +865,7 @@ class EarningsSpotlightReport(Report):
     # Override
     class Buttons(discord.ui.View):
             def __init__(self, ticker : str):
-                super().__init__()
+                super().__init__(timeout=None)
                 self.ticker = ticker
                 self.add_item(discord.ui.Button(label="Google it", style=discord.ButtonStyle.url, url = "https://www.google.com/search?q={}".format(self.ticker)))
                 self.add_item(discord.ui.Button(label="StockInvest", style=discord.ButtonStyle.url, url = "https://stockinvest.us/stock/{}".format(self.ticker)))
