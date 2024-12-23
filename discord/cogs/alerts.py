@@ -82,7 +82,7 @@ class Alerts(commands.Cog):
                     await alert.send_alert()
                 await asyncio.sleep(1)
     
-    @tasks.loop(minutes=5)
+    @tasks.loop(minutes=30)
     async def send_popularity_movers(self):
         top_stocks = sd.ApeWisdom().get_top_stocks()[:50]
         for index, row in top_stocks.iterrows():
@@ -98,14 +98,15 @@ class Alerts(commands.Cog):
                 if max_rank > popular_row['rank'] or max_rank == 0:
                     max_rank = popular_row['rank']
 
-            
+            today_is_max = False
             if min_rank < todays_rank:
                 min_rank = todays_rank
             if max_rank > todays_rank:
+                today_is_max = True
                 max_rank = todays_rank
                 
         
-            if (((float(min_rank) - float(max_rank)) / float(min_rank)) * 100.0 > 50.0) and min_rank > 10 and sd.StockData.validate_ticker(ticker):
+            if (((float(min_rank) - float(max_rank)) / float(min_rank)) * 100.0 > 50.0) and min_rank > 10 and sd.StockData.validate_ticker(ticker) and today_is_max:
                 alert = PopularityAlert(ticker = ticker, 
                                         channel=self.alerts_channel,
                                         todays_popularity=row,
