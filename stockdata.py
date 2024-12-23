@@ -1182,8 +1182,7 @@ def test():
     # TODO
     # Time update_5m_date
     # update historical earnings
-    report = PopularityReport(channel = None)
-    print(report.top_stocks)
+    StockData.update_daily_price_history()
     pass
 
 if __name__ == "__main__":#
