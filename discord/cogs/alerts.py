@@ -27,7 +27,7 @@ class Alerts(commands.Cog):
     async def on_ready(self):
         logger.info(f"Cog {__name__} loaded!")
 
-    @tasks.loop(time=datetime.time(hour=12, minute=30, second=0)) # time in UTC
+    @tasks.loop(time=datetime.time(hour=6, minute=0, second=0)) # time in UTC
     async def post_alerts_date(self):
         if (utils.market_open_today()):
             await self.alerts_channel.send(f"# :rotating_light: Alerts for {utils.format_date_mdy(datetime.datetime.today())} :rotating_light:")
