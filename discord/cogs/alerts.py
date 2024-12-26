@@ -77,7 +77,7 @@ class Alerts(commands.Cog):
                     if column in row.index.values:
                         pct_change = float(row[column])
                 market_cap = row['Market Cap']
-                if abs(pct_change) >= 5.0 and market_cap > 50000000: # See that stock movement is at least 5% and market cap > 1M
+                if abs(pct_change) >= 10.0 and market_cap > 50000000: # See that stock movement is at least 10% and market cap > 50M
                     alert = VolumeMoverAlert(ticker=ticker, channel=self.alerts_channel, volume_row=row)
                     await alert.send_alert()
                 await asyncio.sleep(1)
