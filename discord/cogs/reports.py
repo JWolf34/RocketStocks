@@ -476,7 +476,7 @@ class Report(object):
                 message += f"**{frequency}:** {symbol} {"{:.2f}%".format(pct_change)}\n"
             except IndexError as e:
                 # Stock has not been on the market long enough to generate full performance summary
-                break
+                pass
         return message
 
     def build_daily_summary(self):
