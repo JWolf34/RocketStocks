@@ -679,7 +679,7 @@ class StockData():
         num_tickers = len(tickers)
         curr_ticker = 1
         for ticker in tickers:
-            print(f"Inserting daily price data for ticker {ticker}, {curr_ticker}/{num_tickers}")
+            logger.debug(f"Inserting daily price data for ticker {ticker}, {curr_ticker}/{num_tickers}")
             StockData.update_daily_price_history_by_ticker(ticker)
             curr_ticker += 1
         logger.info("Completed update to daily price history in database")
@@ -715,13 +715,13 @@ class StockData():
         curr_ticker = 1
         start =  time.time()
         for ticker in tickers:
-            print(f"Inserting 5m price data for ticker {ticker}, {curr_ticker}/{num_tickers}")
+            logger.debug(f"Inserting 5m price data for ticker {ticker}, {curr_ticker}/{num_tickers}")
             StockData.update_5m_price_history_by_ticker(ticker)
             curr_ticker += 1
 
         end = time.time()
         elapsed = end-start
-        print(f"Done! Time elapsed: {end-start} seconds")
+        logger.info(f"Done! Time elapsed: {end-start} seconds")
         logger.info("Completed update to 5m price history in database")
     
     @staticmethod
