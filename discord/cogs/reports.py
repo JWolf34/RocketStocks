@@ -17,7 +17,7 @@ import config
 from config import utils
 import psycopg2
 import asyncio
-from table2ascii import table2ascii
+from table2ascii import table2ascii, PresetStyle
 import logging
 import rocketstocks
 import random
@@ -328,6 +328,37 @@ class Report(object):
     def __init__(self, channel):
         self.message = self.build_report() + "\n\n"
         self.channel = channel
+        self.table_styles = {'ascii':PresetStyle.ascii,
+                             'asci_borderless':PresetStyle.ascii_borderless,
+                             'ascii_box':PresetStyle.ascii_box,
+                             'ascii_compact':PresetStyle.ascii_compact,
+                             'ascii_double':PresetStyle.ascii_double,
+                             'ascii_minimalist':PresetStyle.ascii_minimalist,
+                             'ascii_rounded':PresetStyle.ascii_rounded,
+                             'ascii_rounded_box':PresetStyle.ascii_rounded_box,
+                             'ascii_simple':PresetStyle.ascii_simple,
+                             'borderless':PresetStyle.borderless,
+                             'double':PresetStyle.double_box,
+                             'double_box':PresetStyle.double_box,
+                             'double_compact':PresetStyle.double_compact,
+                             'double_thin_box':PresetStyle.double_thin_box,
+                             'double_thin_compact':PresetStyle.double_thin_compact,
+                             'markdown':PresetStyle.markdown,
+                             'minimalist':PresetStyle.minimalist,
+                             'plain':PresetStyle.plain,
+                             'simple':PresetStyle.simple,
+                             'thick':PresetStyle.thick,
+                             'thick_box':PresetStyle.thick_box,
+                             'thick_compact':PresetStyle.thick_compact,
+                             'thin':PresetStyle.thin,
+                             'thin_box':PresetStyle.thin_box,
+                             'thin_compact':PresetStyle.thin_compact,
+                             'thin_compact_rounded':PresetStyle.thin_compact_rounded,
+                             'thin_double':PresetStyle.thin_double,
+                             'thin_double_rounded':PresetStyle.thin_double_rounded,
+                             'thin_rounded':PresetStyle.thin_rounded,
+                             'thin_thick':PresetStyle.thin_thick,
+                             'thin_thick_rounded':PresetStyle.thin_thick_rounded}
 
     ############################
     # Report Builder Functions #
@@ -370,10 +401,12 @@ class Report(object):
             message += f"[Form {filing['form']} - {filing['filingDate']}]({sd.SEC().get_link_to_filing(ticker=self.ticker, filing=filing)})\n"
         return message
 
-    def build_table(self, df:pd.DataFrame):
+    def build_table(self, df:pd.DataFrame, style='double_thin_compact'):
+        table_style = self.table_styles.get(style, PresetStyle.double_thin_compact)
         table = table2ascii(
             header = df.columns.tolist(),
-            body = df.values.tolist(), 
+            body = df.values.tolist(),
+            style=table_style 
         )
         return "```\n" + table + "\n```"
 
