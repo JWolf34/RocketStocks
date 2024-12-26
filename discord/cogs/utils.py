@@ -37,6 +37,14 @@ class Utils(commands.Cog):
         logger.info("/force-update-5m-data function called by user {}".format(interaction.user.name))
         sd.StockData.update_5m_price_history(override_schedule=True)
         await interaction.followup.send("5m price history table updated")
+
+    @app_commands.command(name='force-update-daily-data', description="Forcefully update the 5m price history db table")
+    @commands.is_owner()
+    async def force_update_daily_data(self, interaction:discord.Interaction):
+        await interaction.response.defer(ephemeral=True)
+        logger.info("/force-update-daily-data function called by user {}".format(interaction.user.name))
+        sd.StockData.update_daily_price_history()
+        await interaction.followup.send("Daily price history table updated")
         
 
 
