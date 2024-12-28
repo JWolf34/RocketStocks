@@ -1,9 +1,21 @@
-#Config
-config.json
-
-#Data folder
+# Data folder
 data/
 
-#Plots folder
-plots/
+# Attachments folder
+discord/attachments
 
+# VS Code and Python cache
+__pycache__/
+.vscode/
+discord/__pycache__
+.venv/
+
+# ENV file
+.env
+
+# yfinance cache file
+yfinance.cache
+http_cache.sqlite
+
+# Logging
+logs/

@@ -5,4 +5,9 @@ services:
     build:
       context: . 
     restart: always
+    environment:
+      DISCORD_TOKEN: "1"
+      REPORTS_CHANNEL_ID: "1"
+    volumes:
+      - "/path/to/persistent/data:/RocketStocks/data"
 
