@@ -331,27 +331,6 @@ class Postgres():
             result = self.cur.fetchone()
         self.close_connection()
         return result
-
-
-    # Select a sigle row from database
-    def select_one(self, table:str, fields:list, where_conditions:list = [], order_by:tuple = tuple()):
-        self.open_connection()
-        query = self.select_query(table=table, fields=fields, where_conditions=where_conditions)
-        values = tuple([value for (field, value) in where_conditions])
-        self.cur.execute(query, values)
-        result = self.cur.fetchone()
-        self.close_connection()
-        return result
-
-    # Select multiple rows from database
-    def select_many(self, table:str, fields:list, where_conditions:list = [], order_by:tuple = tuple()):
-        self.open_connection()
-        query = self.select_query(table=table, fields=fields, where_conditions=where_conditions)
-        values = tuple([value for (field, value) in where_conditions])
-        self.cur.execute(query, values)
-        results = self.cur.fetchall()
-        self.close_connection()
-        return results
     
     # Update row(s) in database
     def update(self, table:str, set_fields:list, where_conditions:list = []):
@@ -477,8 +456,9 @@ class Watchlists():
     def get_tickers_from_all_watchlists(self, no_personal=True, no_systemGenerated=True):
         logger.debug("Fetching tickers from all available watchlists (besides personal)")
         
-        watchlists = Postgres().select_many(table='watchlists',
-                                            fields=['id', 'tickers', 'systemgenerated'],)
+        watchlists = Postgres().select(table='watchlists',
+                                       fields=['id', 'tickers', 'systemgenerated'],
+                                       fetchall=True)
         tickers = []
         for watchlist in watchlists:
             watchlist_id, watchlist_tickers, is_systemGenerated = watchlist[0], watchlist[1].split(), watchlist[2]
@@ -987,7 +967,9 @@ class StockData():
         select_script = f"""SELECT ticker FROM tickers
                            WHERE sector LIKE '%{sector}%';
                         """
-        results = Postgres().select_many(select_script)
+        results = Postgres().select(table='tickers',
+                                    fields=['tickers'],
+                                    where_conditions=[('sector', 'LIKE', f"%{sector}%")])
         if results is None:
             return results
         else:
@@ -1364,7 +1346,6 @@ def test():
     #postgres = Postgres()
     #postgres.create_tables()
     #print(StockData.get_ticker_info('NVDA'))
-
     pass
 
     
