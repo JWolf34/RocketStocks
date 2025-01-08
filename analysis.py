@@ -9,6 +9,10 @@ import logging
 
 # Logging configuration
 logger = logging.getLogger(__name__)
+
+class indicators():
+    def __init__(self):
+        pass
          
 ###########
 # Signals #
