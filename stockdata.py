@@ -1227,7 +1227,7 @@ def test():
 
     table = 'daily_price_history'
     fields = ["ticker", 'open', 'high', 'low', 'close', 'volume', 'date']
-    where_tuples = [('ticker', 'NVDA'), ('open', 137.7)]
+    where_tuples = [('ticker', 'NVDA or 1=1; DROP TABLE alerts --'), ('open', 137.7)]
 
     result =  postgres.select_many(table=table, fields=fields, where_tuples=where_tuples)
     print(result)
