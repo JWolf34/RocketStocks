@@ -289,7 +289,6 @@ class Postgres():
             self.cur.execute(insert_script, row)
 
         self.conn.commit()
-        logger.debug(f"Inserted new row in table {table}")
         self.close_connection()
 
     # Build select query for select methods
@@ -369,15 +368,29 @@ class Postgres():
         self.close_connection()
     
     # Delete row(s) from database
-    def delete(self, table:str, where_condition:str):
+    def delete(self, table:str, where_tuples:list):
         self.open_connection()
         delete_script = f"""DELETE FROM {table}
                             WHERE {where_condition};
                             """
-        self.cur.execute(delete_script)
+        values = tuple()
+        # Delete
+        delete_script = sql.SQL("DELETE FROM {sql_table} ").format(
+                                                            sql_table = sql.Identifier(table)
+        )
+
+        # Where conditions
+        if len(where_tuples) > 0:
+            delete__script += self.where_clauses(where_fields=[field for (field, value) in where_tuples])
+            # Add where values to values tuple for execute statement
+            values += tuple([value for (field, value) in where_tuples])
+        
+        # End script
+        delete_script += sql.SQL(';')
+
+        self.cur.execute(delete_script, values)
         self.conn.commit()
         self.close_connection()
-        logger.debug(f"Deleted from table '{table}' where {where_condition}")
 
     # Generate sql with where clauses
     def where_clauses(self, where_fields:list):
