@@ -5,6 +5,7 @@ from pandas_datareader import data as pdr
 import pandas as pd
 import pandas_ta as ta
 import psycopg2
+from psycopg2 import sql
 from newsapi import NewsApiClient
 import os
 import datetime
@@ -268,10 +269,27 @@ class Postgres():
     # Insert row(s) into database
     def insert(self, table:str, fields:list, values:list):
         self.open_connection()
+        '''
         insert_script = f"""INSERT INTO {table} ({",".join(fields)})
                             VALUES({",".join(["%s"]*len(fields))})
                             ON CONFLICT DO NOTHING;
                             """
+                            '''
+        
+        # Insert into
+        insert_script =  sql.SQL("INSERT INTO {sql_table} ({sql_fields})").format(
+                                    sql_table = sql.Identifier(table),
+                                    sql_fields = sql.SQL(',').join([
+                                        sql.Identifier(field) for field in fields
+                                    ]))
+
+        # Values
+        values_string = ','.join(["%s" for i in range(0, len(fields))])
+        insert_script += sql.SQL(f"VALUES ({values_string})")
+
+        # On conflict, do nothing
+        insert_script += sql.SQL("ON CONFLICT DO NOTHING;")
+        
         for row in values:
             self.cur.execute(insert_script, row)
 
