@@ -163,7 +163,7 @@ class Postgres():
                             CREATE TABLE IF NOT EXISTS watchlists (
                             ID                  varchar(255) PRIMARY KEY,
                             tickers             varchar(255),
-                            systemGenerated     boolean
+                            systemgenerated     boolean
                             );
                             
                             CREATE TABLE IF NOT EXISTS popular_stocks (
@@ -406,16 +406,15 @@ class Postgres():
 class Watchlists():
     def __init__(self):
         self.db_table = 'watchlists'
-        self.db_fields = ['id', 'tickers', 'systemGenerated']
+        self.db_fields = ['id', 'tickers', 'systemgenerated']
         
     # Return tickers from watchlist - global by default, personal if chosen by user
     def get_tickers_from_watchlist(self, watchlist_id):
         logger.debug("Fetching tickers from watchlist with ID '{}'".format(watchlist_id))
         
-        select_script = f"""SELECT tickers FROM {self.db_table}
-                            WHERE id = '{watchlist_id}';
-                            """
-        tickers = Postgres().select_one(query=select_script)
+        tickers = Postgres().select_one(table='watchlists',
+                                        fields=['tickers'],
+                                        where_tuples=[('id', watchlist_id)])
         if tickers is None:
             return tickers
         else:
@@ -425,9 +424,9 @@ class Watchlists():
     # Return tickers from all available watchlists
     def get_tickers_from_all_watchlists(self, no_personal=True, no_systemGenerated=True):
         logger.debug("Fetching tickers from all available watchlists (besides personal)")
-        select_script = f"""SELECT * FROM {self.db_table};
-                            """
-        watchlists = Postgres().select_many(query=select_script)
+        
+        watchlists = Postgres().select_many(table='watchlists',
+                                            fields=['id', 'tickers', 'systemgenerated'],)
         tickers = []
         for watchlist in watchlists:
             watchlist_id, watchlist_tickers, is_systemGenerated = watchlist[0], watchlist[1].split(), watchlist[2]
@@ -1267,7 +1266,7 @@ def test():
     # update historical earnings
     # StockData.update_daily_price_history()
     postgres = Postgres()
-    print(result)
+    postgres.create_tables()
 
 if __name__ == "__main__":#
     #test    
