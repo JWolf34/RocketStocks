@@ -259,8 +259,9 @@ class Postgres():
     
     def drop_table(self, table:str):
         self.open_connection()
-        drop_script = f"""DROP TABLE IF EXISTS {table};
-                       """
+        drop_script = sql.SQL("DROP TABLE IF EXISTS {sql_table};").format(
+                                                                sql_table = sql.Identifier(table)
+        )
         self.cur.execute(drop_script)
         self.conn.commit()
         self.close_connection()
