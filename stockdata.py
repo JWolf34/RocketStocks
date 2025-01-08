@@ -295,7 +295,7 @@ class Postgres():
     def select_query(self, table:str, fields:list, where_tuples:list = []):
 
         # Select
-        select_script = sql.SQL("SELECT {sql_fields} FROM {sql_table}").format(
+        select_script = sql.SQL("SELECT {sql_fields} FROM {sql_table} ").format(
                                                                     sql_fields = sql.SQL(",").join([
                                                                         sql.Identifier(field) for field in fields
                                                                     ]),
@@ -304,29 +304,34 @@ class Postgres():
 
         # Where conditions
         if len(where_tuples) > 0:
-            select_script += sql.SQL("WHERE")
-            select_script += sql.SQL("AND").join([
-                sql.SQL("{sql_field} = {sql_value}").format(
-                    sql_field = sql.Identifier(condition[0]),
-                    sql_value = sql.Identifier(condition[1])
+            select_script += sql.SQL("WHERE ")
+            select_script += sql.SQL(" AND ").join([
+                sql.SQL("{sql_field} = %s").format(
+                    sql_field = sql.Identifier(condition[0])
                 ) for condition in where_tuples
             ])
         
         # End script
         select_script += sql.SQL(';')
 
+        return select_script
+
     # Select a sigle row from database
-    def select_one(self, query:str, ):
+    def select_one(self, table:str, fields:list, where_tuples:list = []):
         self.open_connection()
-        self.cur.execute(query)
+        query = self.select_query(table=table, fields=fields, where_tuples=where_tuples)
+        values = tuple([value for (field, value) in where_tuples])
+        self.cur.execute(query, values)
         result = self.cur.fetchone()
         self.close_connection()
         return result
 
     # Select multiple rows from database
-    def select_many(self, query:str):
+    def select_many(self, table:str, fields:list, where_tuples:list = []):
         self.open_connection()
-        self.cur.execute(query)
+        query = self.select_query(table=table, fields=fields, where_tuples=where_tuples)
+        values = tuple([value for (field, value) in where_tuples])
+        self.cur.execute(query, values)
         results = self.cur.fetchall()
         self.close_connection()
         return results
@@ -1217,8 +1222,15 @@ def test():
     # TODO
     # Time update_5m_date
     # update historical earnings
-    StockData.update_daily_price_history()
-    pass
+    # StockData.update_daily_price_history()
+    postgres = Postgres()
+
+    table = 'daily_price_history'
+    fields = ["ticker", 'open', 'high', 'low', 'close', 'volume', 'date']
+    where_tuples = [('ticker', 'NVDA'), ('open', 137.7)]
+
+    result =  postgres.select_many(table=table, fields=fields, where_tuples=where_tuples)
+    print(result)
 
 if __name__ == "__main__":#
     #test    
