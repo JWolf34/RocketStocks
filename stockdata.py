@@ -305,12 +305,7 @@ class Postgres():
 
         # Where conditions
         if len(where_tuples) > 0:
-            select_script += sql.SQL("WHERE ")
-            select_script += sql.SQL(" AND ").join([
-                sql.SQL("{sql_field} = %s").format(
-                    sql_field = sql.Identifier(condition[0])
-                ) for condition in where_tuples
-            ])
+            select_script += self.where_clauses(where_fields=[field for (field, value) in where_tuples])
         
         # End script
         select_script += sql.SQL(';')
@@ -338,10 +333,35 @@ class Postgres():
         return results
     
     # Update row(s) in database
-    def update(self, query:str, values):
+    def update(self, table:str, set_tuples:list, where_tuples:list = []):
         self.open_connection()
-        for row in values:
-            self.cur.execute(query, row)
+
+        # Update
+        update_script = sql.SQL("UPDATE {sql_table} ").format(
+                                                            sql_table = sql.Identifier(table)
+        )
+
+
+
+        # Set
+        set_values = [value for (field, value) in set_tuples]
+        set_fields = [field for (field, value) in set_tuples]
+
+        update_script += sql.SQL("SET ")
+        update_script =+ sql.SQL(',').join([
+            sql.SQL("{sql_field} = %s").format(
+                sql_field = sql.Identifier(condition[0])
+            ) for field in set_fields
+        ])
+
+        # Where conditions
+        if len(where_tuples) > 0:
+            select_script += self.where_clauses(where_fields=[field for (field, value) in where_tuples])
+        
+        # End script
+        select_script += sql.SQL(';')
+
+        return select_script
         self.conn.commit()
         self.close_connection()
     
@@ -355,6 +375,18 @@ class Postgres():
         self.conn.commit()
         self.close_connection()
         logger.debug(f"Deleted from table '{table}' where {where_condition}")
+
+    # Generate sql with where clauses
+    def where_clauses(self, where_fields:list):
+        
+        where_script += sql.SQL("WHERE ")
+        select_script += sql.SQL(" AND ").join([
+            sql.SQL("{sql_field} = %s").format(
+                sql_field = sql.Identifier(condition[0])
+            ) for field in where_fields
+        ])
+
+        return where_script
 
     # Return list of columns from selected table
     def get_table_columns(self, table):
@@ -1225,12 +1257,6 @@ def test():
     # update historical earnings
     # StockData.update_daily_price_history()
     postgres = Postgres()
-
-    table = 'daily_price_history'
-    fields = ["ticker", 'open', 'high', 'low', 'close', 'volume', 'date']
-    where_tuples = [('ticker', 'NVDA or 1=1; DROP TABLE alerts --'), ('open', 137.7)]
-
-    result =  postgres.select_many(table=table, fields=fields, where_tuples=where_tuples)
     print(result)
 
 if __name__ == "__main__":#
