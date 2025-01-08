@@ -749,8 +749,13 @@ class StockData():
                             WHERE ticker = (%s);
                             """
         values = [tuple(row) for row in tickers_data.values]
-        Postgres().update(table='tickers',
-                          set)
+
+        for row in tickers_data.values:
+            ticker = row.iloc[0]
+            set_tuples = [(tickers_data.columns.to_list()[i], row.iloc[i]) for i in range(0, row.size)]
+            Postgres().update(table='tickers',
+                            set_tuples=set_tuples,
+                            where_tuples=[('ticker', ticker)])
         logger.info("Tickers have been updated!")
     
     @staticmethod
@@ -798,11 +803,15 @@ class StockData():
 
     @staticmethod
     def update_daily_price_history_by_ticker(ticker):
-        select_script = f"""SELECT date FROM daily_price_history
-                        WHERE ticker = '{ticker}'
-                        ORDER BY date DESC;
-                        """
-        result = Postgres().select_one(select_script)
+        """SELECT date FROM daily_price_history
+           WHERE ticker = '{ticker}'
+           ORDER BY date DESC;
+           """
+        result = Postgres().select(table='daily_price_history',
+                                   fields=['date'],
+                                   where_tuples=[('ticker', ticker)],
+                                   order_by=('date', 'DESC'),
+                                   fetchall=False)
         if result is None:
             start_datetime = datetime.datetime(year=2000, month=1, day=1) # No data found
         else:
@@ -839,11 +848,15 @@ class StockData():
     @staticmethod
     def update_5m_price_history_by_ticker(ticker):
         # Get datetime of most recently inserted data
-        select_script = f"""SELECT datetime FROM five_minute_price_history
-                        WHERE ticker = '{ticker}'
-                        ORDER BY datetime DESC;
-                        """
-        result = Postgres().select_one(select_script)
+        """SELECT datetime FROM five_minute_price_history
+           WHERE ticker = '{ticker}'
+           ORDER BY datetime DESC;
+            """
+        result = Postgres().select(table='five_minute_price_history',
+                                   fields=['datetime'],
+                                   where_tuples=[('ticker', ticker)],
+                                   order_by=('datetime', 'DESC'),
+                                   fetchall=False)
         if result is None:
             start_datetime = result # No data found
         else:
@@ -859,10 +872,13 @@ class StockData():
     
     @staticmethod
     def fetch_daily_price_history(ticker):
-        select_script = f"""SELECT * FROM daily_price_history
-                           WHERE ticker = '{ticker}';
-                           """
-        results = Postgres().select_many(select_script)
+        """SELECT * FROM daily_price_history
+           WHERE ticker = '{ticker}';
+           """
+        results = Postgres().select(table='daily_price_history',
+                                    fields=['ticker', 'open', 'high', 'low', 'close', 'volume', 'date'],
+                                    where_tuples=[('ticker', ticker)],
+                                    fetchall=True)
         if results is None:
             return pd.DataFrame()
         else:
@@ -871,10 +887,13 @@ class StockData():
 
     @staticmethod
     def fetch_5m_price_history(ticker):
-        select_script = f"""SELECT * FROM five_minute_price_history
-                           WHERE ticker = '{ticker}';
-                           """
-        results = Postgres().select_many(select_script)
+        """SELECT * FROM five_minute_price_history
+           WHERE ticker = '{ticker}';
+           """
+        results = Postgres().select(table='five_minute_price_history',
+                                    fields=['ticker', 'open', 'high', 'low', 'close', 'volume', 'datetime'],
+                                    where_tuples=[('ticker', ticker)],
+                                    fetchall=True)
         if results is None:
             return pd.DataFrame()
         else:
@@ -899,31 +918,41 @@ class StockData():
 
     @staticmethod
     def get_ticker_info(ticker):
-        select_script = f"""SELECT * FROM tickers
-                            WHERE ticker = '{ticker}';
-                            """
-        return Postgres().select_one(select_script)
+        """SELECT * FROM tickers
+           WHERE ticker = '{ticker}';
+           """
+        
+        fields = Postgres().get_table_columns('tickers')
+        return Postgres().select(table='tickers',
+                                 fields=fields,
+                                 where_tuples=[('ticker', ticker)])
     
     @staticmethod
     def get_all_ticker_info():
         columns = Postgres().get_table_columns('tickers')
-        data = Postgres().select_many('SELECT * FROM tickers;')
+        data = Postgres().select(table='tickers',
+                                 fields=columns,
+                                 fetchall=True)
         data = pd.DataFrame(data, columns=columns)
         data.index = data['ticker']
         return data
     
     @staticmethod
     def get_all_tickers():
-        select_script = """SELECT ticker FROM tickers;
-                        """
-        results = Postgres().select_many(select_script)
+        """SELECT ticker FROM tickers;
+        """
+        results = Postgres().select(table='tickers',
+                                    fields=['ticker'],
+                                    fetchall=True)
         return [result[0] for result in results]
 
     @staticmethod
     def get_all_tickers_by_market_cap(market_cap):
-        select_script = """SELECT ticker, marketCap FROM tickers;
-                        """
-        results = Postgres().select_many(select_script)
+        """SELECT ticker, marketCap FROM tickers;
+        """
+        results = Postgres().select(table='tickers',
+                                    fields=['ticker', 'marketCap'],
+                                    fetchall=True)
         tickers = []
         for result in results:
             if len(result[1]) > 0: # Market cap is not empty string
@@ -945,10 +974,13 @@ class StockData():
     @staticmethod
     def get_cik(ticker):
         logger.debug(f"Retreiving CIK value for ticker '{ticker}' from database")
-        select_script = f"""SELECT cik from tickers
-                            WHERE ticker = '{ticker}';
-                            """
-        result = Postgres().select_one(select_script)
+        """SELECT cik from tickers
+           WHERE ticker = '{ticker}';
+           """
+        result = Postgres().select(table='tickers',
+                                   fields=['cik'],
+                                   where_tuples=[('ticker', ticker)], 
+                                   fetchall=False)
         if result is None:
             return None
         else:
@@ -957,10 +989,13 @@ class StockData():
     @staticmethod
     def get_market_cap(ticker):
         logger.debug(f"Retreiving CIK value for ticker '{ticker}' from database")
-        select_script = f"""SELECT marketCap from tickers
-                            WHERE ticker = '{ticker}';
-                            """
-        result = Postgres().select_one(select_script)
+        """SELECT marketCap from tickers
+           WHERE ticker = '{ticker}';
+           """
+        result = Postgres().select(table='tickers',
+                                   fields=['marketCap'],
+                                   where_tuples=[('ticker', ticker)], 
+                                   fetchall=False)
         if result is None:
             return None
         else:
@@ -968,15 +1003,22 @@ class StockData():
 
     @staticmethod
     def get_historical_popularity(ticker=None):
+        columns = Postgres().get_table_columns('popular_stocks')
+        where_tuples = []
+        order_by = ('date', 'DESC')
         select_script = """SELECT * from popular_stocks\n"""
         if ticker != None:
-            select_script += f"""WHERE ticker = '{ticker}'\n"""
-        select_script += """ORDER BY date DESC;"""
-        results = Postgres().select_many(select_script)
+            where_tuples.append(('ticker', ticker))
+        
+    
+        results = Postgres().select(table='populat_stocks',
+                                    fields=columns,
+                                    where_tuples=where_tuples,
+                                    order_by=order_by,
+                                    fetchall=True)
         if results is None:
             return results
         else:
-            columns = Postgres().get_table_columns('popular_stocks')
             return pd.DataFrame(results, columns=columns)
 
 
@@ -985,13 +1027,13 @@ class StockData():
     @staticmethod
     def validate_ticker(ticker):
         logger.debug("Verifying that ticker {} is valid".format(ticker))
-
-        select_script = f"""SELECT ticker FROM tickers
-                            WHERE ticker = '{ticker}';
-                            """
-        ticker = Postgres().select_one(table='tickers',
+        """SELECT ticker FROM tickers
+           WHERE ticker = '{ticker}';
+           """
+        ticker = Postgres().select(table='tickers',
                                        fields=['ticker'],
-                                       where_tuples=[('ticker', ticker)])
+                                       where_tuples=[('ticker', ticker)],
+                                       fetchall=False)
         if ticker is None:
             return False
         else:
@@ -1031,7 +1073,7 @@ class TradingView():
                     .get_scanner_data())
         gainers = gainers.drop(columns='exchange')
         gainers = gainers.drop(columns='ticker')
-        heaaders = ['Ticker', 'Close', 'Volume', 'Market Cap', 'Premarket Change', "Premarket Volume"]
+        headers = ['Ticker', 'Close', 'Volume', 'Market Cap', 'Premarket Change', "Premarket Volume"]
         gainers.columns = headers
         return gainers
 
@@ -1297,8 +1339,14 @@ def test():
     # Time update_5m_date
     # update historical earnings
     # StockData.update_daily_price_history()
-    postgres = Postgres()
-    postgres.create_tables()
+    #postgres = Postgres()
+    #postgres.create_tables()
+    print(StockData.get_ticker_info('NVDA'))
+
+    # To test
+    #StockData.Earnings.get_next_earnings_info()
+    #StockData.Earnings.remove_past_earnings()
+    #StockData.update_tickers()
 
 if __name__ == "__main__":#
     #test    
