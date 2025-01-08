@@ -27,25 +27,19 @@ def write_config(data):
 
 def update_gainer_message_id(message_id):
         market_time = utils().get_market_period()
+        where_conditions = tuple()
         if market_time == "premarket":
-            update_script = f"""UPDATE reports
-                                SET messageid = (%s)
-                                WHERE type = 'PREMARKET_GAINER_REPORT';
-                                """
+            where_conditions += ('type', 'PREMARKET_GAINER_REPORT')
         elif market_time == "intraday":
-            update_script = f"""UPDATE reports
-                                SET messageid = (%s)
-                                WHERE type = 'INTRADAY_GAINER_REPORT';
-                                """
+            where_conditions += ('type', 'INTRADAY_GAINER_REPORT')
         elif market_time == "afterhours":
-            update_script = f"""UPDATE reports
-                                SET messageid = (%s)
-                                WHERE type = 'AFTERHOURS_GAINER_REPORT';
-                                """
+            where_conditions += ('type', 'AFTERHOURS_GAINER_REPORT')
         else:
             return None
             
-        sd.Postgres().update(query=update_script, values=[(message_id,)])
+        sd.Postgres().update(table = 'reports',
+                            set_tuples=[('messageid', message_id)],
+                            where_conditions=where_conditions)
 
 def update_volume_message_id(message_id):
     update_script = f"""UPDATE reports
