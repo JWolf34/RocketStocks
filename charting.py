@@ -1,4 +1,5 @@
 import pandas as pd
+import mplfinance as mpf
 import logging
 
 
