@@ -315,10 +315,10 @@ class Postgres():
 
         # Order by
         if len(order_by) > 0:
-            select_script += swl.SQL("ORDER BY {sql_field} %s").format(
-                                                                sql_field = sql.Identifier(order_by[0])
+            select_script += sql.SQL("ORDER BY {sql_field} {sql_order}").format(
+                                                                sql_field = sql.Identifier(order_by[0]),
+                                                                sql_order = sql.SQL(order_by[1])
             )
-            values += (order_by[1],)
 
         
         # End script
@@ -1032,7 +1032,7 @@ class StockData():
             where_conditions.append(('ticker', ticker))
         
     
-        results = Postgres().select(table='populat_stocks',
+        results = Postgres().select(table='popular_stocks',
                                     fields=columns,
                                     where_conditions=where_conditions,
                                     order_by=order_by,
