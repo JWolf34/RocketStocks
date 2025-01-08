@@ -269,12 +269,6 @@ class Postgres():
     # Insert row(s) into database
     def insert(self, table:str, fields:list, values:list):
         self.open_connection()
-        '''
-        insert_script = f"""INSERT INTO {table} ({",".join(fields)})
-                            VALUES({",".join(["%s"]*len(fields))})
-                            ON CONFLICT DO NOTHING;
-                            """
-                            '''
         
         # Insert into
         insert_script =  sql.SQL("INSERT INTO {sql_table} ({sql_fields})").format(
@@ -296,6 +290,30 @@ class Postgres():
         self.conn.commit()
         logger.debug(f"Inserted new row in table {table}")
         self.close_connection()
+
+    # Build select query for select methods
+    def select_query(self, table:str, fields:list, where_tuples:list = []):
+
+        # Select
+        select_script = sql.SQL("SELECT {sql_fields} FROM {sql_table}").format(
+                                                                    sql_fields = sql.SQL(",").join([
+                                                                        sql.Identifier(field) for field in fields
+                                                                    ]),
+                                                                    sql_table = sql.Identifier(table)
+        )
+
+        # Where conditions
+        if len(where_tuples) > 0:
+            select_script += sql.SQL("WHERE")
+            select_script += sql.SQL("AND").join([
+                sql.SQL("{sql_field} = {sql_value}").format(
+                    sql_field = sql.Identifier(condition[0]),
+                    sql_value = sql.Identifier(condition[1])
+                ) for condition in where_tuples
+            ])
+        
+        # End script
+        select_script += sql.SQL(';')
 
     # Select a sigle row from database
     def select_one(self, query:str, ):
