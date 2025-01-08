@@ -364,7 +364,7 @@ class Postgres():
         )
 
         # Set
-        set_fields = [field for (field, value) in set_fields]
+        set_columns = [field for (field, value) in set_fields]
         set_values = tuple([value for (field, value) in set_fields])
         values += set_values
         
@@ -373,7 +373,7 @@ class Postgres():
         update_script += sql.SQL(',').join([
             sql.SQL("{sql_field} = %s").format(
                 sql_field = sql.Identifier(field)
-            ) for field in set_fields
+            ) for field in set_columns
         ])
 
         # Where conditions
@@ -421,7 +421,7 @@ class Postgres():
     # Generate sql with where clauses
     def where_clauses(self, where_conditions:list):
         
-        where_script = sql.SQL("WHERE ")
+        where_script = sql.SQL(" WHERE ")
         values = tuple()
 
         where_clauses = []
@@ -495,8 +495,9 @@ class Watchlists():
     def get_watchlists(self, no_personal=True, no_systemGenerated=True):
         logger.debug("Fetching all watchlists")
         filtered_watchlists = []
-        watchlists = Postgres().select_many(table='watchlists',
-                                            fields = ['id', 'tickers', 'systemgenerated'])
+        watchlists = Postgres().select(table='watchlists',
+                                       fields = ['id', 'tickers', 'systemgenerated'],
+                                       fetchall=True)
         for i in range(len(watchlists)):
             watchlist = watchlists[i]
             watchlist_id = watchlist[0]
