@@ -344,24 +344,27 @@ class Postgres():
 
 
         # Set
-        set_values = [value for (field, value) in set_tuples]
+        values = tuple([value for (field, value) in set_tuples])
         set_fields = [field for (field, value) in set_tuples]
 
         update_script += sql.SQL("SET ")
-        update_script =+ sql.SQL(',').join([
+        update_script += sql.SQL(',').join([
             sql.SQL("{sql_field} = %s").format(
-                sql_field = sql.Identifier(condition[0])
+                sql_field = sql.Identifier(field)
             ) for field in set_fields
         ])
 
         # Where conditions
         if len(where_tuples) > 0:
-            select_script += self.where_clauses(where_fields=[field for (field, value) in where_tuples])
+            update_script += self.where_clauses(where_fields=[field for (field, value) in where_tuples])
+            # Add where values to values tuple for execute statement
+            values += tuple([value for (field, value) in where_tuples])
         
         # End script
-        select_script += sql.SQL(';')
+        update_script += sql.SQL(';')
 
-        return select_script
+        self.cur.execute(update_script, values)
+        
         self.conn.commit()
         self.close_connection()
     
@@ -379,10 +382,10 @@ class Postgres():
     # Generate sql with where clauses
     def where_clauses(self, where_fields:list):
         
-        where_script += sql.SQL("WHERE ")
-        select_script += sql.SQL(" AND ").join([
+        where_script = sql.SQL("WHERE ")
+        where_script += sql.SQL(" AND ").join([
             sql.SQL("{sql_field} = %s").format(
-                sql_field = sql.Identifier(condition[0])
+                sql_field = sql.Identifier(field)
             ) for field in where_fields
         ])
 
@@ -442,7 +445,8 @@ class Watchlists():
         logger.debug("Fetching all watchlists")
         select_script = f"""SELECT * FROM {self.db_table}"""
         filtered_watchlists = []
-        watchlists = Postgres().select_many(query=select_script)
+        watchlists = Postgres().select_many(table='watchlists',
+                                            fields = ['id', 'tickers', 'systemgenerated'])
         for i in range(len(watchlists)):
             watchlist = watchlists[i]
             watchlist_id = watchlist[0]
@@ -460,12 +464,16 @@ class Watchlists():
     # Set content of watchlist to provided tickers
     def update_watchlist(self, watchlist_id, tickers):
         logger.info("Updating watchlist '{}': {}".format(watchlist_id, tickers))
+        '''
         update_script = f""" UPDATE watchlists
                              SET tickers = (%s)
                              WHERE id = (%s);
                              """
         values = [(" ".join(tickers), watchlist_id)]
-        Postgres().update(query=update_script, values=values)
+        '''
+        Postgres().update(table='watchlists', 
+                          set_tuples=[('tickers', ' '.join(tickers))], 
+                          where_tuples=[('id', watchlist_id)])
 
     # Create a new watchlist with id 'watchlist_id'
     def create_watchlist(self, watchlist_id, tickers, systemGenerated):
@@ -950,7 +958,9 @@ class StockData():
         select_script = f"""SELECT ticker FROM tickers
                             WHERE ticker = '{ticker}';
                             """
-        ticker = Postgres().select_one(select_script)
+        ticker = Postgres().select_one(table='tickers',
+                                       fields=['ticker'],
+                                       where_tuples=[('ticker', ticker)])
         if ticker is None:
             return False
         else:
