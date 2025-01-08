@@ -326,28 +326,32 @@ class config:
                     logger.exception("Failed to fetch Schwab API secret\n{}".format(e))
                     return ""
 
-        def get_db_user():
+        @property
+        def db_user():
                 try:
                     token = os.getenv('POSTGRES_USER')
                     return token
                 except Exception as e:
                     return ""
 
-        def get_db_password():
+        @property
+        def db_password():
                 try:
                     token = os.getenv('POSTGRES_PASSWORD')
                     return token
                 except Exception as e:
                     return ""
-
-        def get_db_name():
+        
+        @property
+        def db_name():
             try:
                 token = os.getenv('POSTGRES_DB')
                 return token
             except Exception as e:
                 return ""
 
-        def get_db_host():
+        @property
+        def db_host():
             try:
                 token = os.getenv('POSTGRES_HOST')
                 return token
@@ -362,7 +366,7 @@ class utils():
 
     
 if __name__  == "__main__":
-    config.secrets.
+    config.secrets.db_host
 
 
         
