@@ -7,7 +7,6 @@ from discord.ext import commands
 from discord.ext import tasks
 import stockdata as sd
 import analysis as an
-import strategies
 import logging
 
 # Logging configuration
@@ -22,7 +21,7 @@ class Charts(commands.Cog):
         logger.info(f"Cog {__name__} loaded!")
 
     async def chart_options(self, interaction: discord.Interaction, current: str):
-        charts = strategies.get_strategies().keys()
+        charts = []
         return [
             app_commands.Choice(name = chart, value= chart)
             for chart in charts if current.lower() in chart.lower()
@@ -243,7 +242,8 @@ class Charts(commands.Cog):
             visibility = kwargs.pop("visibility").value
 
             # Parse strategy and signal information
-            strategy = strategies.get_strategy(kwargs.pop('chart'))()
+            #strategy = strategies.get_strategy(kwargs.pop('chart'))()
+            strategy = None
             plot_args['strategy'] = strategy
             plot_args['long_trend'] = strategy.signals(data)
             plot_name = strategy.name
@@ -321,7 +321,7 @@ class Charts(commands.Cog):
     ###############
     
     async def backtest_options(self, interaction: discord.Interaction, current: str):
-        charts = strategies.get_combination_strategies()
+        charts = []
         bt_strategies = [chart().name for chart in charts]
         return [
             app_commands.Choice(name = strategy, value= strategy)
@@ -438,7 +438,8 @@ class Charts(commands.Cog):
         visibility = kwargs.pop("visibility").value
 
         # Parse strategy
-        strategy = strategies.get_strategy(kwargs.pop('strategy'))()
+        #strategy = strategies.get_strategy(kwargs.pop('strategy'))()
+        strategy = None
         
             # Args for saving backtest HTML file 
         backtest_args['filepathroot'] = "{}/{}".format(ATTACHMENTS_PATH, "backtests")

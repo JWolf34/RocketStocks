@@ -5,7 +5,6 @@ from pandas_datareader import data as pdr
 import pandas as pd
 import pandas_ta as ta
 import psycopg2
-import strategies
 from newsapi import NewsApiClient
 import os
 import datetime
