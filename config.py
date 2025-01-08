@@ -27,75 +27,65 @@ def write_config(data):
 
 def update_gainer_message_id(message_id):
         market_time = utils().get_market_period()
-        where_conditions = tuple()
+        where_conditions = []
         if market_time == "premarket":
-            where_conditions += ('type', 'PREMARKET_GAINER_REPORT')
+            where_conditions.append(('type', 'PREMARKET_GAINER_REPORT'))
         elif market_time == "intraday":
-            where_conditions += ('type', 'INTRADAY_GAINER_REPORT')
+            where_conditions.append(('type', 'INTRADAY_GAINER_REPORT'))
         elif market_time == "afterhours":
-            where_conditions += ('type', 'AFTERHOURS_GAINER_REPORT')
+            where_conditions.append(('type', 'AFTERHOURS_GAINER_REPORT'))
         else:
             return None
             
         sd.Postgres().update(table = 'reports',
-                            set_tuples=[('messageid', message_id)],
+                            set_fields=[('messageid', message_id)],
                             where_conditions=where_conditions)
 
 def update_volume_message_id(message_id):
-    update_script = f"""UPDATE reports
-                        SET messageid = (%s)
-                        WHERE type = 'UNUSUAL_VOLUME_REPORT';
-                        """
-    sd.Postgres().update(update_script, values=[(message_id,)])
+    sd.Postgres().update(table='reports',
+                         set_fields=[('messageid', message_id)],
+                         where_conditions=[('type', 'UNUSUAL_COLUME_REPORT')])
 
 def update_alert_message_id(date, ticker, type, message_id):
-    update_script = f"""UPDATE reports
-                        SET messageid = (%s)
-                        WHERE 
-                        date = (%s) AND
-                        ticker = (%s)
-                        type = (%s)
-                        ;
-                        """
-    sd.Postgres().update(update_script, values=[(message_id, date, ticker, type)])
+    sd.Postgres().update(table='reports',
+                        set_fields = [('messageid', message_id)],
+                        where_conditions=[
+                            ('date', date),
+                            ('ticker', ticker),
+                            ('type', type)
+                        ])
 
 def get_gainer_message_id():
     market_time = utils().get_market_period()
+    where_conditions = []
     if market_time == "premarket":
-        select_script = f"""SELECT messageid FROM reports
-                            WHERE type = 'PREMARKET_GAINER_REPORT';
-                            """
-        result = sd.Postgres().select_one(select_script)
-        if result is None:
-            return result
-        else:
-            return result[0]
+        where_conditions.append(('type', 'PREMARKET_GAINER_REPORT'))
     elif market_time == "intraday":
-        select_script = f"""SELECT messageid FROM reports
-                            WHERE type = 'INTRADAY_GAINER_REPORT';
-                            """
-        result = sd.Postgres().select_one(select_script)
-        if result is None:
-            return result
-        else:
-            return result[0]
+        where_conditions.append(('type', 'INTRADAY_GAINER_REPORT'))
     elif market_time == "afterhours":
-        select_script = f"""SELECT messageid FROM reports
-                            WHERE type = 'AFTERHOURS_GAINER_REPORT';
-                            """
-        result = sd.Postgres().select_one(select_script)
-        if result is None:
-            return result
-        else:
-            return result[0]
+        where_conditions.append(('type', 'AFTERHOURS_GAINER_REPORT'))  
     else:
+        # Outside of market hours
         return None
+
+    # During market hours
+    result = sd.Postgres().select(table='reports',
+                                  fields=['messageid'],
+                                  where_conditions=where_conditions, 
+                                  fetchall=False)
+    if result is None:
+        return result
+    else:
+        return result[0]
 
 def get_volume_message_id():
     select_script = f"""SELECT messageid FROM reports
                         WHERE type = 'UNUSUAL_VOLUME_REPORT';
                         """
-    result = sd.Postgres().select_one(select_script)
+    result = sd.Postgres().select(table='reports',
+                                  fields=['messageid'],  
+                                  where_conditions=[('type', 'UNUSUAL_VOLUME_REPORT')],
+                                  fetchall=False)
     if result is None:
         return result
     else:
@@ -108,7 +98,13 @@ def get_alert_message_id(date, ticker, alert_type):
                         ticker = '{ticker}' AND
                         alert_type = '{alert_type}';
                         """
-    result = sd.Postgres().select_one(select_script)
+    result = sd.Postgres().select(table='alerts',
+                                  fields=['messageid'],
+                                  where_conditions=[
+                                    ('date', date),
+                                    ('ticker', ticker),
+                                    ('alert_type', alert_type)
+                                  ])
     if result is None:
         return result
     else:

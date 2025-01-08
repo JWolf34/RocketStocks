@@ -354,7 +354,7 @@ class Postgres():
         return results
     
     # Update row(s) in database
-    def update(self, table:str, set_tuples:list, where_conditions:list = []):
+    def update(self, table:str, set_fields:list, where_conditions:list = []):
         self.open_connection()
 
         values = tuple()
@@ -364,8 +364,8 @@ class Postgres():
         )
 
         # Set
-        set_fields = [field for (field, value) in set_tuples]
-        set_values = tuple([value for (field, value) in set_tuples])
+        set_fields = [field for (field, value) in set_fields]
+        set_values = tuple([value for (field, value) in set_fields])
         values += set_values
         
 
@@ -516,7 +516,7 @@ class Watchlists():
         logger.info("Updating watchlist '{}': {}".format(watchlist_id, tickers))
 
         Postgres().update(table='watchlists', 
-                          set_tuples=[('tickers', ' '.join(tickers))], 
+                          set_fields=[('tickers', ' '.join(tickers))], 
                           where_conditions=[('id', watchlist_id)])
 
     # Create a new watchlist with id 'watchlist_id'
@@ -773,9 +773,9 @@ class StockData():
 
         for row in tickers_data.values:
             ticker = row[0]
-            set_tuples = [(tickers_data.columns.to_list()[i], row[i]) for i in range(0, row.size)]
+            set_fields = [(tickers_data.columns.to_list()[i], row[i]) for i in range(0, row.size)]
             Postgres().update(table='tickers',
-                            set_tuples=set_tuples,
+                            set_fields=set_fields,
                             where_conditions=[('ticker', ticker)])
         logger.info("Tickers have been updated!")
     
