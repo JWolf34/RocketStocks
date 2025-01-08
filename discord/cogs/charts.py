@@ -12,6 +12,7 @@ import logging
 # Logging configuration
 logger = logging.getLogger(__name__)
 
+
 class Charts(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
@@ -20,6 +21,7 @@ class Charts(commands.Cog):
     async def on_ready(self):
         logger.info(f"Cog {__name__} loaded!")
 
+'''
     async def chart_options(self, interaction: discord.Interaction, current: str):
         charts = []
         return [
@@ -515,6 +517,7 @@ class Charts(commands.Cog):
             await interaction.user.send(message)
         else:
             await interaction.channel.send(message)
+            '''
 
     
 #########        
