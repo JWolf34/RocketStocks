@@ -140,12 +140,12 @@ class Postgres():
         create_script = """ CREATE TABLE IF NOT EXISTS tickers (
                             ticker          varchar(8) PRIMARY KEY,
                             name            varchar(255) NOT NULL,
-                            marketCap       varchar(20) NOT NULL, 
+                            marketcap       varchar(20) NOT NULL, 
                             country         varchar(40), 
                             ipoyear         char(4),
                             industry        varchar(64),
                             sector          varchar(64),
-                            nasdaqEndpoint  varchar(64),
+                            nasdaqendpoint  varchar(64),
                             cik             char(10)
                             );
 
@@ -292,7 +292,7 @@ class Postgres():
         self.close_connection()
 
     # Build select query for select methods
-    def select(self, table:str, fields:list, where_tuples:list = [], order_by:tuple = tuple(), fetchall:bool = True):
+    def select(self, table:str, fields:list, where_conditions:list = [], order_by:tuple = tuple(), fetchall:bool = True):
         self.open_connection()
         values = tuple()
         
@@ -305,9 +305,13 @@ class Postgres():
         )
 
         # Where conditions
-        if len(where_tuples) > 0:
-            select_script += self.where_clauses(where_fields=[field for (field, value) in where_tuples])
-            values += tuple([value for (field, value) in where_tuples])
+        if len(where_conditions) > 0:
+            where_script, where_values = self.where_clauses(where_conditions=where_conditions)
+           
+            # Update script and values
+            select_script += where_script
+            values += where_values
+        
 
         # Order by
         if len(order_by) > 0:
@@ -330,39 +334,40 @@ class Postgres():
 
 
     # Select a sigle row from database
-    def select_one(self, table:str, fields:list, where_tuples:list = [], order_by:tuple = tuple()):
+    def select_one(self, table:str, fields:list, where_conditions:list = [], order_by:tuple = tuple()):
         self.open_connection()
-        query = self.select_query(table=table, fields=fields, where_tuples=where_tuples)
-        values = tuple([value for (field, value) in where_tuples])
+        query = self.select_query(table=table, fields=fields, where_conditions=where_conditions)
+        values = tuple([value for (field, value) in where_conditions])
         self.cur.execute(query, values)
         result = self.cur.fetchone()
         self.close_connection()
         return result
 
     # Select multiple rows from database
-    def select_many(self, table:str, fields:list, where_tuples:list = [], order_by:tuple = tuple()):
+    def select_many(self, table:str, fields:list, where_conditions:list = [], order_by:tuple = tuple()):
         self.open_connection()
-        query = self.select_query(table=table, fields=fields, where_tuples=where_tuples)
-        values = tuple([value for (field, value) in where_tuples])
+        query = self.select_query(table=table, fields=fields, where_conditions=where_conditions)
+        values = tuple([value for (field, value) in where_conditions])
         self.cur.execute(query, values)
         results = self.cur.fetchall()
         self.close_connection()
         return results
     
     # Update row(s) in database
-    def update(self, table:str, set_tuples:list, where_tuples:list = []):
+    def update(self, table:str, set_tuples:list, where_conditions:list = []):
         self.open_connection()
 
+        values = tuple()
         # Update
         update_script = sql.SQL("UPDATE {sql_table} ").format(
                                                             sql_table = sql.Identifier(table)
         )
 
-
-
         # Set
-        values = tuple([value for (field, value) in set_tuples])
         set_fields = [field for (field, value) in set_tuples]
+        set_values = tuple([value for (field, value) in set_tuples])
+        values += set_values
+        
 
         update_script += sql.SQL("SET ")
         update_script += sql.SQL(',').join([
@@ -372,10 +377,13 @@ class Postgres():
         ])
 
         # Where conditions
-        if len(where_tuples) > 0:
-            update_script += self.where_clauses(where_fields=[field for (field, value) in where_tuples])
-            # Add where values to values tuple for execute statement
-            values += tuple([value for (field, value) in where_tuples])
+        if len(where_conditions) > 0:
+            where_script, where_values = self.where_clauses(where_conditions=where_conditions)
+           
+            # Update script and values
+            update_script += where_script
+            values += where_values
+        
         
         # End script
         update_script += sql.SQL(';')
@@ -386,11 +394,9 @@ class Postgres():
         self.close_connection()
     
     # Delete row(s) from database
-    def delete(self, table:str, where_tuples:list):
+    def delete(self, table:str, where_conditions:list):
         self.open_connection()
-        delete_script = f"""DELETE FROM {table}
-                            WHERE {where_condition};
-                            """
+
         values = tuple()
         # Delete
         delete_script = sql.SQL("DELETE FROM {sql_table} ").format(
@@ -398,10 +404,12 @@ class Postgres():
         )
 
         # Where conditions
-        if len(where_tuples) > 0:
-            delete__script += self.where_clauses(where_fields=[field for (field, value) in where_tuples])
-            # Add where values to values tuple for execute statement
-            values += tuple([value for (field, value) in where_tuples])
+        if len(where_conditions) > 0:
+            where_script, where_values = self.where_clauses(where_conditions=where_conditions)
+           
+            # Update script and values
+            delete_script += where_script
+            values += where_values
         
         # End script
         delete_script += sql.SQL(';')
@@ -411,16 +419,28 @@ class Postgres():
         self.close_connection()
 
     # Generate sql with where clauses
-    def where_clauses(self, where_fields:list):
+    def where_clauses(self, where_conditions:list):
         
         where_script = sql.SQL("WHERE ")
-        where_script += sql.SQL(" AND ").join([
-            sql.SQL("{sql_field} = %s").format(
-                sql_field = sql.Identifier(field)
-            ) for field in where_fields
-        ])
+        values = tuple()
 
-        return where_script
+        where_clauses = []
+        for condition in where_conditions:
+            if len(condition) == 2:
+                # Only field and value; use = operator
+                where_clauses.append(sql.SQL("{sql_field} = %s").format(
+                                    sql_field = sql.Identifier(condition[0])))
+                values += (condition[1],)
+
+            elif len(condition) == 3:
+                # Operator specified
+                where_clauses.append(sql.SQL("{sql_field} {sql_operator} %s").format(
+                                    sql_field = sql.Identifier(condition[0]),
+                                    sql_operator = sql.SQL(condition[1])))
+                values += (condition[2],)
+        where_script += sql.SQL(" AND ").join(where_clauses)
+
+        return where_script, values
 
     # Return list of columns from selected table
     def get_table_columns(self, table):
@@ -445,7 +465,7 @@ class Watchlists():
         
         tickers = Postgres().select(table='watchlists',
                                         fields=['tickers'],
-                                        where_tuples=[('id', watchlist_id)],
+                                        where_conditions=[('id', watchlist_id)],
                                         fetchall=False)
         if tickers is None:
             return tickers
@@ -497,7 +517,7 @@ class Watchlists():
 
         Postgres().update(table='watchlists', 
                           set_tuples=[('tickers', ' '.join(tickers))], 
-                          where_tuples=[('id', watchlist_id)])
+                          where_conditions=[('id', watchlist_id)])
 
     # Create a new watchlist with id 'watchlist_id'
     def create_watchlist(self, watchlist_id, tickers, systemGenerated):
@@ -507,7 +527,7 @@ class Watchlists():
     # Delete watchlist with id 'watchlist_id'
     def delete_watchlist(self, watchlist_id):
         logger.debug("Deleting watchlist '{}'...".format(watchlist_id))
-        Postgres().delete(table=self.db_table, where_tuples=[('id', watchlist_id)])
+        Postgres().delete(table=self.db_table, where_conditions=[('id', watchlist_id)])
 
     # Validate watchlist exists in the database
     def validate_watchlist(self, watchlist_id):
@@ -515,7 +535,7 @@ class Watchlists():
 
         result = Postgres().select(table='watchlists',
                                        fields=['id'],
-                                       where_tuples=[('id', watchlist_id)],
+                                       where_conditions=[('id', watchlist_id)],
                                        fetchall=False)
         if result is None:
             logger.warning(f"Watchlist '{watchlist_id}' does not exist")
@@ -609,7 +629,7 @@ class StockData():
         def get_next_earnings_date(ticker):
             result = Postgres().select(table='upcoming_earnings',
                                            fields=['date'],
-                                           where_tuples=[('ticker', ticker)], 
+                                           where_conditions=[('ticker', ticker)], 
                                            fetchall=False)
             if result is None:
                 return "N/A"
@@ -622,7 +642,7 @@ class StockData():
 
             result = Postgres().select(table='upcoming_earnings',
                                            fields=columns, 
-                                           where_tuples=('ticker', ticker), 
+                                           where_conditions=[('ticker', ticker)], 
                                            fetchall=False)
             if result is None:
                 return pd.DataFrame()
@@ -632,8 +652,9 @@ class StockData():
         @staticmethod
         def remove_past_earnings():
             logger.info("Removing upcoming earnings that have past")
-            where = "date < CURRENT_DATE"
-            Postgres().delete(table='upcoming_earnings', where_condition=where)
+
+            Postgres().delete(table='upcoming_earnings',
+                              where_conditions=[('date', '<', datetime.date.today())])
             logger.info("Previous upcoming earnings removed from database")
 
         @staticmethod
@@ -700,7 +721,7 @@ class StockData():
             columns = Postgres().get_table_columns('historical_earnings')
             results = Postgres().select(table='historical_earnings',
                                         fields=columns,
-                                        where_tuples=[('ticker', ticker)], 
+                                        where_conditions=[('ticker', ticker)], 
                                         fetchall=True)
             if results is None:
                 return pd.DataFrame()
@@ -712,7 +733,7 @@ class StockData():
             columns = Postgres().get_table_columns('upcoming_earnings')
             results = Postgres().select(table='upcoming_earnings',
                                         fields=columns, 
-                                        where_tuples=[('date', date)],
+                                        where_conditions=[('date', date)],
                                         fetchall=True)
             if results is None:
                 return results
@@ -726,12 +747,12 @@ class StockData():
     def update_tickers():
         logger.info("Updating tickers database table with up-to-date ticker data")
         column_map = {'name':'name',
-                      'marketCap':'marketCap',
+                      'marketCap':'marketcap',
                       'country':'country',
                       'ipoyear':'ipoyear',
                       'industry':'industry',
                       'sector':'sector',
-                      'url':'nasdaqEndpoint',
+                      'url':'nasdaqendpoint',
                       'symbol':'ticker'}
         drop_columns = ['lastsale',
                         'netchange',
@@ -751,11 +772,11 @@ class StockData():
         values = [tuple(row) for row in tickers_data.values]
 
         for row in tickers_data.values:
-            ticker = row.iloc[0]
-            set_tuples = [(tickers_data.columns.to_list()[i], row.iloc[i]) for i in range(0, row.size)]
+            ticker = row[0]
+            set_tuples = [(tickers_data.columns.to_list()[i], row[i]) for i in range(0, row.size)]
             Postgres().update(table='tickers',
                             set_tuples=set_tuples,
-                            where_tuples=[('ticker', ticker)])
+                            where_conditions=[('ticker', ticker)])
         logger.info("Tickers have been updated!")
     
     @staticmethod
@@ -763,12 +784,12 @@ class StockData():
         logger.info("Updating tickers database table with up-to-date ticker data")
         column_map = {'symbol':'ticker',
                       'name':'name',
-                      'marketCap':'marketCap',
+                      'marketCap':'marketcap',
                       'country':'country',
                       'ipoyear':'ipoyear',
                       'industry':'industry',
                       'sector':'sector',
-                      'url':'nasdaqEndpoint',
+                      'url':'nasdaqendpoint',
                       'cik':'cik'}
         drop_columns = ['lastsale',
                         'netchange',
@@ -809,7 +830,7 @@ class StockData():
            """
         result = Postgres().select(table='daily_price_history',
                                    fields=['date'],
-                                   where_tuples=[('ticker', ticker)],
+                                   where_conditions=[('ticker', ticker)],
                                    order_by=('date', 'DESC'),
                                    fetchall=False)
         if result is None:
@@ -854,7 +875,7 @@ class StockData():
             """
         result = Postgres().select(table='five_minute_price_history',
                                    fields=['datetime'],
-                                   where_tuples=[('ticker', ticker)],
+                                   where_conditions=[('ticker', ticker)],
                                    order_by=('datetime', 'DESC'),
                                    fetchall=False)
         if result is None:
@@ -877,7 +898,7 @@ class StockData():
            """
         results = Postgres().select(table='daily_price_history',
                                     fields=['ticker', 'open', 'high', 'low', 'close', 'volume', 'date'],
-                                    where_tuples=[('ticker', ticker)],
+                                    where_conditions=[('ticker', ticker)],
                                     fetchall=True)
         if results is None:
             return pd.DataFrame()
@@ -892,7 +913,7 @@ class StockData():
            """
         results = Postgres().select(table='five_minute_price_history',
                                     fields=['ticker', 'open', 'high', 'low', 'close', 'volume', 'datetime'],
-                                    where_tuples=[('ticker', ticker)],
+                                    where_conditions=[('ticker', ticker)],
                                     fetchall=True)
         if results is None:
             return pd.DataFrame()
@@ -925,7 +946,7 @@ class StockData():
         fields = Postgres().get_table_columns('tickers')
         return Postgres().select(table='tickers',
                                  fields=fields,
-                                 where_tuples=[('ticker', ticker)])
+                                 where_conditions=[('ticker', ticker)])
     
     @staticmethod
     def get_all_ticker_info():
@@ -948,10 +969,10 @@ class StockData():
 
     @staticmethod
     def get_all_tickers_by_market_cap(market_cap):
-        """SELECT ticker, marketCap FROM tickers;
+        """SELECT ticker, marketcap FROM tickers;
         """
         results = Postgres().select(table='tickers',
-                                    fields=['ticker', 'marketCap'],
+                                    fields=['ticker', 'marketcap'],
                                     fetchall=True)
         tickers = []
         for result in results:
@@ -979,7 +1000,7 @@ class StockData():
            """
         result = Postgres().select(table='tickers',
                                    fields=['cik'],
-                                   where_tuples=[('ticker', ticker)], 
+                                   where_conditions=[('ticker', ticker)], 
                                    fetchall=False)
         if result is None:
             return None
@@ -989,12 +1010,12 @@ class StockData():
     @staticmethod
     def get_market_cap(ticker):
         logger.debug(f"Retreiving CIK value for ticker '{ticker}' from database")
-        """SELECT marketCap from tickers
+        """SELECT marketcap from tickers
            WHERE ticker = '{ticker}';
            """
         result = Postgres().select(table='tickers',
-                                   fields=['marketCap'],
-                                   where_tuples=[('ticker', ticker)], 
+                                   fields=['marketcap'],
+                                   where_conditions=[('ticker', ticker)], 
                                    fetchall=False)
         if result is None:
             return None
@@ -1004,16 +1025,16 @@ class StockData():
     @staticmethod
     def get_historical_popularity(ticker=None):
         columns = Postgres().get_table_columns('popular_stocks')
-        where_tuples = []
+        where_conditions = []
         order_by = ('date', 'DESC')
         select_script = """SELECT * from popular_stocks\n"""
         if ticker != None:
-            where_tuples.append(('ticker', ticker))
+            where_conditions.append(('ticker', ticker))
         
     
         results = Postgres().select(table='populat_stocks',
                                     fields=columns,
-                                    where_tuples=where_tuples,
+                                    where_conditions=where_conditions,
                                     order_by=order_by,
                                     fetchall=True)
         if results is None:
@@ -1032,7 +1053,7 @@ class StockData():
            """
         ticker = Postgres().select(table='tickers',
                                        fields=['ticker'],
-                                       where_tuples=[('ticker', ticker)],
+                                       where_conditions=[('ticker', ticker)],
                                        fetchall=False)
         if ticker is None:
             return False
@@ -1337,16 +1358,15 @@ def validate_path(path):
 def test():
     # TODO
     # Time update_5m_date
-    # update historical earnings
-    # StockData.update_daily_price_history()
+    #update historical earnings
+    #StockData.update_daily_price_history()
     #postgres = Postgres()
     #postgres.create_tables()
-    print(StockData.get_ticker_info('NVDA'))
+    #print(StockData.get_ticker_info('NVDA'))
 
-    # To test
-    #StockData.Earnings.get_next_earnings_info()
-    #StockData.Earnings.remove_past_earnings()
-    #StockData.update_tickers()
+    pass
+
+    
 
 if __name__ == "__main__":#
     #test    
