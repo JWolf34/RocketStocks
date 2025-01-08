@@ -292,8 +292,10 @@ class Postgres():
         self.close_connection()
 
     # Build select query for select methods
-    def select_query(self, table:str, fields:list, where_tuples:list = []):
-
+    def select(self, table:str, fields:list, where_tuples:list = [], order_by:tuple = tuple(), fetchall:bool = True):
+        self.open_connection()
+        values = tuple()
+        
         # Select
         select_script = sql.SQL("SELECT {sql_fields} FROM {sql_table} ").format(
                                                                     sql_fields = sql.SQL(",").join([
@@ -305,14 +307,30 @@ class Postgres():
         # Where conditions
         if len(where_tuples) > 0:
             select_script += self.where_clauses(where_fields=[field for (field, value) in where_tuples])
+            values += tuple([value for (field, value) in where_tuples])
+
+        # Order by
+        if len(order_by) > 0:
+            select_script += swl.SQL("ORDER BY {sql_field} %s").format(
+                                                                sql_field = sql.Identifier(order_by[0])
+            )
+            values += (order_by[1],)
+
         
         # End script
         select_script += sql.SQL(';')
 
-        return select_script
+        self.cur.execute(select_script, values)
+        if fetchall:
+            result = self.cur.fetchall()
+        else:
+            result = self.cur.fetchone()
+        self.close_connection()
+        return result
+
 
     # Select a sigle row from database
-    def select_one(self, table:str, fields:list, where_tuples:list = []):
+    def select_one(self, table:str, fields:list, where_tuples:list = [], order_by:tuple = tuple()):
         self.open_connection()
         query = self.select_query(table=table, fields=fields, where_tuples=where_tuples)
         values = tuple([value for (field, value) in where_tuples])
@@ -322,7 +340,7 @@ class Postgres():
         return result
 
     # Select multiple rows from database
-    def select_many(self, table:str, fields:list, where_tuples:list = []):
+    def select_many(self, table:str, fields:list, where_tuples:list = [], order_by:tuple = tuple()):
         self.open_connection()
         query = self.select_query(table=table, fields=fields, where_tuples=where_tuples)
         values = tuple([value for (field, value) in where_tuples])
@@ -425,9 +443,10 @@ class Watchlists():
     def get_tickers_from_watchlist(self, watchlist_id):
         logger.debug("Fetching tickers from watchlist with ID '{}'".format(watchlist_id))
         
-        tickers = Postgres().select_one(table='watchlists',
+        tickers = Postgres().select(table='watchlists',
                                         fields=['tickers'],
-                                        where_tuples=[('id', watchlist_id)])
+                                        where_tuples=[('id', watchlist_id)],
+                                        fetchall=False)
         if tickers is None:
             return tickers
         else:
@@ -494,9 +513,10 @@ class Watchlists():
     def validate_watchlist(self, watchlist_id):
         logger.info(f"Validating watchlist '{watchlist_id}' exists")
 
-        result = Postgres().select_one(table='watchlists',
+        result = Postgres().select(table='watchlists',
                                        fields=['id'],
-                                       where_tuples=[('id', watchlist_id)])
+                                       where_tuples=[('id', watchlist_id)],
+                                       fetchall=False)
         if result is None:
             logger.warning(f"Watchlist '{watchlist_id}' does not exist")
             return False
@@ -587,9 +607,10 @@ class StockData():
 
         @staticmethod
         def get_next_earnings_date(ticker):
-            result = Postgres().select_one(table='upcoming_earnings',
+            result = Postgres().select(table='upcoming_earnings',
                                            fields=['date'],
-                                           where_tuples=[('ticker', ticker)])
+                                           where_tuples=[('ticker', ticker)], 
+                                           fetchall=False)
             if result is None:
                 return "N/A"
             else:
@@ -599,9 +620,10 @@ class StockData():
         def get_next_earnings_info(ticker):
             columns = Postgres().get_table_columns('upcoming_earnings')
 
-            result = Postgres().select_one(table='upcoming_earnings',
+            result = Postgres().select(table='upcoming_earnings',
                                            fields=columns, 
-                                           where_tuples=('ticker', ticker))
+                                           where_tuples=('ticker', ticker), 
+                                           fetchall=False)
             if result is None:
                 return pd.DataFrame()
             else:
@@ -629,8 +651,11 @@ class StockData():
             select_script = """SELECT date FROM historical_earnings
                                ORDER BY date DESC;
                                """
-            result = Postgres().select_one(table='historical_earnings',
-                                            
+            result = Postgres().select(table='historical_earnings',
+                                           fields=['date'],
+                                           order_by=('date', 'DESC'),
+                                           fetchall=False)
+
             if result is None:
                 start_date = datetime.date(year=2008, month=1, day=3) # Earliest day I can find earnings for on Nasdaq 1/3/2008
             else:
@@ -673,10 +698,10 @@ class StockData():
         @staticmethod
         def get_historical_earnings(ticker):
             columns = Postgres().get_table_columns('historical_earnings')
-            select_script = f"""SELECT * FROM historical_earnings
-                               WHERE ticker = '{ticker}';
-                               """
-            results = Postgres().select_many(select_script)
+            results = Postgres().select(table='historical_earnings',
+                                        fields=columns,
+                                        where_tuples=[('ticker', ticker)], 
+                                        fetchall=True)
             if results is None:
                 return pd.DataFrame()
             else:
@@ -684,14 +709,14 @@ class StockData():
 
         @staticmethod
         def get_earnings_today(date):
-            select_script = f"""SELECT * FROM upcoming_earnings
-                               WHERE date = '{date}';
-                               """
-            results = Postgres().select_many(select_script)
+            columns = Postgres().get_table_columns('upcoming_earnings')
+            results = Postgres().select(table='upcoming_earnings',
+                                        fields=columns, 
+                                        where_tuples=[('date', date)],
+                                        fetchall=True)
             if results is None:
                 return results
             else:
-                columns = Postgres().get_table_columns('upcoming_earnings')
                 return pd.DataFrame(results, columns=columns)
 
         
@@ -724,7 +749,8 @@ class StockData():
                             WHERE ticker = (%s);
                             """
         values = [tuple(row) for row in tickers_data.values]
-        Postgres().update(update_script, values)
+        Postgres().update(table='tickers',
+                          set)
         logger.info("Tickers have been updated!")
     
     @staticmethod
