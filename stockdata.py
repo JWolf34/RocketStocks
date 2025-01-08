@@ -455,7 +455,6 @@ class Watchlists():
     # Return list of existing watchlists
     def get_watchlists(self, no_personal=True, no_systemGenerated=True):
         logger.debug("Fetching all watchlists")
-        select_script = f"""SELECT * FROM {self.db_table}"""
         filtered_watchlists = []
         watchlists = Postgres().select_many(table='watchlists',
                                             fields = ['id', 'tickers', 'systemgenerated'])
@@ -476,13 +475,7 @@ class Watchlists():
     # Set content of watchlist to provided tickers
     def update_watchlist(self, watchlist_id, tickers):
         logger.info("Updating watchlist '{}': {}".format(watchlist_id, tickers))
-        '''
-        update_script = f""" UPDATE watchlists
-                             SET tickers = (%s)
-                             WHERE id = (%s);
-                             """
-        values = [(" ".join(tickers), watchlist_id)]
-        '''
+
         Postgres().update(table='watchlists', 
                           set_tuples=[('tickers', ' '.join(tickers))], 
                           where_tuples=[('id', watchlist_id)])
@@ -495,15 +488,15 @@ class Watchlists():
     # Delete watchlist with id 'watchlist_id'
     def delete_watchlist(self, watchlist_id):
         logger.debug("Deleting watchlist '{}'...".format(watchlist_id))
-        Postgres().delete(table=self.db_table, where_condition=f"id = '{watchlist_id}'")
+        Postgres().delete(table=self.db_table, where_tuples=[('id', watchlist_id)])
 
     # Validate watchlist exists in the database
     def validate_watchlist(self, watchlist_id):
         logger.info(f"Validating watchlist '{watchlist_id}' exists")
-        select_script = f"""SELECT id FROM {self.db_table}
-                            WHERE id = '{watchlist_id}';
-                            """
-        result = Postgres().select_one(select_script)
+
+        result = Postgres().select_one(table='watchlists',
+                                       fields=['id'],
+                                       where_tuples=[('id', watchlist_id)])
         if result is None:
             logger.warning(f"Watchlist '{watchlist_id}' does not exist")
             return False
@@ -594,10 +587,9 @@ class StockData():
 
         @staticmethod
         def get_next_earnings_date(ticker):
-            select_script = f"""SELECT date FROM upcoming_earnings
-                               WHERE ticker = '{ticker}'
-                               """
-            result = Postgres().select_one(select_script)
+            result = Postgres().select_one(table='upcoming_earnings',
+                                           fields=['date'],
+                                           where_tuples=[('ticker', ticker)])
             if result is None:
                 return "N/A"
             else:
@@ -606,10 +598,10 @@ class StockData():
         @staticmethod
         def get_next_earnings_info(ticker):
             columns = Postgres().get_table_columns('upcoming_earnings')
-            select_script = f"""SELECT * FROM upcoming_earnings
-                               WHERE ticker = '{ticker}'
-                               """
-            result = Postgres().select_one(select_script)
+
+            result = Postgres().select_one(table='upcoming_earnings',
+                                           fields=columns, 
+                                           where_tuples=('ticker', ticker))
             if result is None:
                 return pd.DataFrame()
             else:
@@ -637,7 +629,8 @@ class StockData():
             select_script = """SELECT date FROM historical_earnings
                                ORDER BY date DESC;
                                """
-            result = Postgres().select_one(select_script)
+            result = Postgres().select_one(table='historical_earnings',
+                                            
             if result is None:
                 start_date = datetime.date(year=2008, month=1, day=3) # Earliest day I can find earnings for on Nasdaq 1/3/2008
             else:
