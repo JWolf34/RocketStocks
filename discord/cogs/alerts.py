@@ -86,33 +86,37 @@ class Alerts(commands.Cog):
     @tasks.loop(minutes=30)
     async def send_popularity_movers(self):
         top_stocks = sd.ApeWisdom().get_top_stocks()[:80]
+        blacklist_tickers = ['DTE', 'AM', 'PM']
         for index, row in top_stocks.iterrows():
             ticker = row['ticker']
-            todays_rank = row['rank']
-            popularity = sd.StockData.get_historical_popularity(ticker)
-            popularity = popularity[popularity['date'] > (datetime.date.today() - datetime.timedelta(days=5))]
-            min_rank = 0
-            max_rank = 0
-            for index, popular_row in popularity.iterrows(): # replace with iterrows logic
-                if min_rank < popular_row['rank'] or min_rank == 0:
-                    min_rank = popular_row['rank']
-                if max_rank > popular_row['rank'] or max_rank == 0:
-                    max_rank = popular_row['rank']
+            if ticker not in blacklist_tickers:
+                todays_rank = row['rank']
+                popularity = sd.StockData.get_historical_popularity(ticker)
+                popularity = popularity[popularity['date'] > (datetime.date.today() - datetime.timedelta(days=5))]
+                min_rank = 0
+                max_rank = 0
+                for index, popular_row in popularity.iterrows(): # replace with iterrows logic
+                    if min_rank < popular_row['rank'] or min_rank == 0:
+                        min_rank = popular_row['rank']
+                    if max_rank > popular_row['rank'] or max_rank == 0:
+                        max_rank = popular_row['rank']
 
-            today_is_max = False
-            if min_rank < todays_rank:
-                min_rank = todays_rank
-            if max_rank > todays_rank:
-                today_is_max = True
-                max_rank = todays_rank
-                
-        
-            if (((float(min_rank) - float(max_rank)) / float(min_rank)) * 100.0 > 50.0) and min_rank > 10 and sd.StockData.validate_ticker(ticker) and today_is_max:
-                alert = PopularityAlert(ticker = ticker, 
-                                        channel=self.alerts_channel,
-                                        todays_popularity=row,
-                                        historical_popularity=popularity) 
-                await alert.send_alert()
+                today_is_max = False
+                if min_rank < todays_rank:
+                    min_rank = todays_rank
+                if max_rank > todays_rank:
+                    today_is_max = True
+                    max_rank = todays_rank
+                    
+            
+                if (((float(min_rank) - float(max_rank)) / float(min_rank)) * 100.0 > 50.0) and min_rank > 10 and sd.StockData.validate_ticker(ticker) and today_is_max:
+                    alert = PopularityAlert(ticker = ticker, 
+                                            channel=self.alerts_channel,
+                                            todays_popularity=row,
+                                            historical_popularity=popularity) 
+                    await alert.send_alert()
+            else:
+                pass
 
 ##################
 # Alerts Classes #
