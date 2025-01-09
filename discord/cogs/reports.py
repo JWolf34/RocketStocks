@@ -14,7 +14,7 @@ import pandas as pd
 import datetime as dt
 import json
 import config
-from config import utils
+from config import market_utils, date_utils
 import psycopg2
 import asyncio
 from table2ascii import table2ascii, PresetStyle
@@ -34,8 +34,8 @@ class Reports(commands.Cog):
         self.send_popularity_reports.start()
         self.post_earnings_spotlight.start()
         self.post_weekly_earnings.start()
-        self.reports_channel = self.bot.get_channel(config.get_reports_channel_id())
-        self.screeners_channel = self.bot.get_channel(config.get_screeners_channel_id())
+        self.reports_channel = self.bot.get_channel(config.discord_utils.reports_channel_id)
+        self.screeners_channel = self.bot.get_channel(config.discord_utils.reports_channel_id)
         
 
     @commands.Cog.listener()
@@ -75,7 +75,7 @@ class Reports(commands.Cog):
     # Generate and send premarket gainer reports to the reports channel
     @tasks.loop(minutes=5)
     async def send_gainer_reports(self):
-        if (utils.market_open_today() and (utils.in_extended_hours() or utils.in_intraday())):
+        if (market_utils.market_open_today() and (market_utils.in_extended_hours() or market_utils.in_intraday())):
             report = GainerReport(self.screeners_channel)
             await report.send_report()
             await self.bot.get_cog("Alerts").send_earnings_movers(report.gainers)
@@ -86,7 +86,7 @@ class Reports(commands.Cog):
             pass
 
 
-    @send_gainer_reports.before_loop
+    #@send_gainer_reports.before_loop
     async def before_send_gainer_reports(self):
         # Start posting report at next 0 or 5 minute interval
         now = datetime.datetime.now().astimezone()
@@ -102,7 +102,7 @@ class Reports(commands.Cog):
     @tasks.loop(minutes=5)
     async def send_volume_reports(self):
         now = datetime.datetime.now()
-        if (utils.market_open_today() and utils.in_intraday()):
+        if (market_utils.market_open_today() and market_utils.in_intraday()):
             report = VolumeReport(self.screeners_channel)
             await report.send_report()
             await self.bot.get_cog("Alerts").send_unusual_volume_movers(report.volume_movers)
@@ -110,7 +110,7 @@ class Reports(commands.Cog):
             # Not a weekday - do not post gainer reports
             pass
             
-    @send_volume_reports.before_loop
+    #@send_volume_reports.before_loop
     async def before_send_volume_reports(self):
         # Start posting report at next 0 or 5 minute interval
         now = datetime.datetime.now().astimezone()
@@ -125,7 +125,7 @@ class Reports(commands.Cog):
     @tasks.loop(time=datetime.time(hour=12, minute=30, second=0)) # time in UTC
     #@tasks.loop(minutes=5)
     async def post_earnings_spotlight(self):
-        if utils.market_open_today():
+        if market_utils.market_open_today():
             report = EarningsSpotlightReport(self.reports_channel)
             await report.send_report()
 
@@ -144,7 +144,7 @@ class Reports(commands.Cog):
     #@tasks.loop(minutes=5)
     async def update_earnings_calendar(self):
         logger.debug("Creating events for upcoming earnings dates")
-        guild = self.bot.get_guild(config.get_discord_guild_id())
+        guild = self.bot.get_guild(config.discord_utils.guild_id)
         tickers = sd.Watchlists().get_tickers_from_all_watchlists(no_personal=False) # Get all tickers except from system-generated watchlists
         for ticker in tickers:
             earnings_info = sd.StockData.Earnings.get_next_earnings_info(ticker).to_dict(orient='list')
@@ -177,7 +177,7 @@ class Reports(commands.Cog):
     **Last Year's EPS:** {earnings_info['lastyeareps'][0]}
     **Last Year's Report Date:** {earnings_info['lastyearrptdt'][0]}
                         """
-                        channel = self.bot.get_channel(config.get_alerts_channel_id())
+                        channel = self.bot.get_channel(config.discord_utils.alerts_channel_id)
                         event = await guild.create_scheduled_event(name=name, 
                                                                 description=description,
                                                                 start_time=start_time,
@@ -449,7 +449,7 @@ class Report(object):
         recent_earnings = sd.StockData.Earnings.get_historical_earnings(self.ticker).tail(4)
         recent_earnings = recent_earnings.drop(columns='ticker')
         recent_earnings = recent_earnings.rename(columns=column_map)
-        recent_earnings['Date Reported'] = recent_earnings['Date Reported'].apply(lambda x: utils.format_date_mdy(x))
+        recent_earnings['Date Reported'] = recent_earnings['Date Reported'].apply(lambda x: date_utils.format_date_mdy(x))
         recent_earnings['Surprise'] =  recent_earnings['Surprise'].apply(lambda x: f"{x}%")
         message += self.build_table(df=recent_earnings, style='plain')
         return message + "\n"
@@ -624,7 +624,7 @@ class GainerReport(Report):
     def __init__(self, channel):
         self.gainers = None
         self.gainers_formatted = pd.DataFrame()
-        self.market_period = utils.get_market_period()
+        self.market_period = market_utils.get_market_period()
         if self.market_period == 'premarket':
             self.gainers = sd.TradingView.get_premarket_gainers_by_market_cap(1000000)
         elif self.market_period == 'intraday':
@@ -659,7 +659,7 @@ class GainerReport(Report):
 
         return pd.DataFrame(rows, columns=headers)
     def update_gainer_watchlist(self):
-        watchlist_id = f"{utils.get_market_period()}-gainers"
+        watchlist_id = f"{market_utils.get_market_period()}-gainers"
         watchlist_tickers = self.gainers['Ticker'].to_list()
         watchlist_tickers = watchlist_tickers[:15]
 
@@ -690,27 +690,27 @@ class GainerReport(Report):
     # Override
     async def send_report(self):
         today = datetime.datetime.today()
-        market_period = utils.get_market_period()
-        message_id = config.get_gainer_message_id()
+        market_period = market_utils.get_market_period()
+        message_id = config.discord_utils.get_gainer_message_id()
         try:
             curr_message = await self.channel.fetch_message(message_id)
             if curr_message.created_at.date() < today.date():
                 message = await self.channel.send(self.message)
-                config.update_gainer_message_id( message.id)
+                config.discord_utils.update_gainer_message_id( message.id)
                 return message
             else:
                 await curr_message.edit(content=self.message)
 
         except discord.errors.NotFound as e:
             message = await self.channel.send(self.message)
-            config.update_gainer_message_id(message.id)
+            config.discord_utils.update_gainer_message_id(message.id)
             return message
 
 class VolumeReport(Report):
     def __init__(self, channel):
         self.volume_movers = sd.TradingView.get_unusual_volume_movers()
         self.volume_movers_formatted = self.format_df_for_table()
-        self.market_period = utils.get_market_period()
+        self.market_period = market_utils.get_market_period()
         if self.volume_movers.size > 0:
             self.update_unusual_volume_watchlist()
         super().__init__(channel)
@@ -743,20 +743,20 @@ class VolumeReport(Report):
     async def send_report(self):
         if self.market_period != "EOD":
             today = datetime.datetime.today()
-            market_period = utils.get_market_period()
-            message_id = config.get_volume_message_id()
+            market_period = market_utils.get_market_period()
+            message_id = config.discord_utils.get_volume_message_id()
             try:
                 curr_message = await self.channel.fetch_message(message_id)
                 if curr_message.created_at.date() < today.date():
                     message = await self.channel.send(self.message)
-                    config.update_volume_message_id( message.id)
+                    config.discord_utils.update_volume_message_id( message.id)
                     return message
                 else:
                     await curr_message.edit(content=self.message)
 
             except discord.errors.NotFound as e:
                 message = await self.channel.send(self.message)
-                config.update_volume_message_id(message.id)
+                config.discord_utils.update_volume_message_id(message.id)
                 return message
         else: 
             # Outside market hours
@@ -836,8 +836,8 @@ class PopularityReport(Report):
         self.top_stocks = sd.ApeWisdom().get_top_stocks(filter_name=self.filter_name)
         for i in range(2, 6):
             self.top_stocks = pd.concat([self.top_stocks, sd.ApeWisdom().get_top_stocks(page=i)])
-        sd.validate_path(config.get_attachments_path())
-        self.filepath = f"{config.get_attachments_path()}/top-stocks-{datetime.datetime.today().strftime("%m-%d-%Y")}.csv"
+        sd.validate_path(config.datapaths.attachments_path)
+        self.filepath = f"{config.datapaths.attachments_path}/top-stocks-{datetime.datetime.today().strftime("%m-%d-%Y")}.csv"
         self.top_stocks.to_csv(self.filepath, index=False)
         self.file = discord.File(self.filepath)
         self.buttons = self.Buttons()
@@ -920,7 +920,7 @@ class EarningsSpotlightReport(Report):
 class WeeklyEarningsReport(Report):
     def __init__(self, channel):
         self.upcoming_earnings = self.get_upcoming_earnings()
-        filepath = f"{config.get_attachments_path()}/upcoming_earnings.csv"
+        filepath = f"{config.datapaths.attachments_path}/upcoming_earnings.csv"
         self.upcoming_earnings.to_csv(filepath, index=False)
         self.file = discord.File(filepath)
         super().__init__(channel)
@@ -937,7 +937,7 @@ class WeeklyEarningsReport(Report):
         return weekly_earnings
 
     def build_report_header(self):
-        return f"# Earnings Releasing the Week of {utils.format_date_mdy(datetime.datetime.today())}\n\n"
+        return f"# Earnings Releasing the Week of {market_utils.format_date_mdy(datetime.datetime.today())}\n\n"
 
     def build_watchlist_earnings(self):
         watchlist_tickers = sd.Watchlists().get_tickers_from_all_watchlists(no_personal=False)

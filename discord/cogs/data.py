@@ -15,7 +15,7 @@ logger = logging.getLogger(__name__)
 class Data(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
-        self.reports_channel=self.bot.get_channel(config.get_reports_channel_id())
+        self.reports_channel=self.bot.get_channel(config.discord_utils.reports_channel_id)
         
 
     @commands.Cog.listener()
@@ -56,7 +56,7 @@ class Data(commands.Cog):
                 file = None
                 if data is not None:
                     message = f"Data file for {ticker}"
-                    filepath = f"{config.get_attachments_path()}/{ticker}_{frequency}_data.csv"
+                    filepath = f"{config.datapaths.attachments_path}/{ticker}_{frequency}_data.csv"
                     data.to_csv(filepath, index=False)
                     file = discord.File(filepath)
                 else:
@@ -89,7 +89,7 @@ class Data(commands.Cog):
             files = []
             financials = sd.StockData.fetch_financials(ticker)
             for statement, data in financials.items():
-                filepath = f"{config.get_attachments_path()}/{ticker}_{statement}.csv"
+                filepath = f"{config.datapaths.attachments_path}/{ticker}_{statement}.csv"
                 data.to_csv(filepath)
                 files.append(discord.File(filepath))
             
@@ -116,7 +116,7 @@ class Data(commands.Cog):
     async def all_tickers_csv(self, interaction: discord.Interaction):
         logger.info("/all-tickers-into function called by user {}".format(interaction.user.name))
         data = sd.StockData.get_all_ticker_info()
-        filepath = f"{config.get_attachments_path()}/all-tickers-info.csv"
+        filepath = f"{config.datapaths.attachments_path}/all-tickers-info.csv"
         data.to_csv(filepath)
         csv_file = discord.File(filepath)       
         await interaction.user.send(content = "All tickers",file=csv_file)
@@ -132,14 +132,14 @@ class Data(commands.Cog):
     async def eps(self, interaction: discord.Interaction, tickers: str, visibility: app_commands.Choice[str]):
         await interaction.response.defer(ephemeral=True)
         logger.info("/eps function called by user {}".format(interaction.user.name))
-        sd.validate_path(config.get_attachments_path())
+        sd.validate_path(config.datapaths.attachments_path)
         message = ""
         file = None
         tickers, invalid_tickers = sd.StockData.get_valid_tickers(tickers)
         for ticker in tickers:
             eps = sd.StockData.Earnings.get_historical_earnings(ticker)
             if eps.size > 0:
-                filepath = f"{config.get_attachments_path()}/{ticker}_eps.csv"
+                filepath = f"{config.datapaths.attachments_path}/{ticker}_eps.csv"
                 eps.to_csv(filepath, index=False)
                 file = discord.File(filepath)
                 eps_table = table2ascii(
@@ -202,7 +202,7 @@ class Data(commands.Cog):
             fundamentals = sd.Schwab().get_fundamentals(ticker)
             
             if fundamentals is not None:
-                filepath = f"{config.get_attachments_path()}/{ticker}_fundamentals.json"
+                filepath = f"{config.datapaths.attachments_path}/{ticker}_fundamentals.json"
                 with open(filepath, 'w') as json_file:
                     json.dump(fundamentals, json_file)
                 file = discord.File(filepath)
@@ -233,7 +233,7 @@ class Data(commands.Cog):
             fundamentals = sd.Schwab().get_options_chain(ticker)
             
             if fundamentals is not None:
-                filepath = f"{config.get_attachments_path()}/{ticker}_options_chain.json"
+                filepath = f"{config.datapaths.attachments_path}/{ticker}_options_chain.json"
                 with open(filepath, 'w') as json_file:
                     json.dump(fundamentals, json_file)
                 file = discord.File(filepath)

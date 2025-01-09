@@ -7,7 +7,8 @@ from reports import StockReport
 import stockdata as sd
 import pandas as pd
 import config
-from config import utils
+from config import market_utils
+from config import date_utils
 import datetime
 import logging
 import asyncio
@@ -18,8 +19,8 @@ logger = logging.getLogger(__name__)
 class Alerts(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
-        self.alerts_channel=self.bot.get_channel(config.get_alerts_channel_id())
-        self.reports_channel= self.bot.get_channel(config.get_reports_channel_id())
+        self.alerts_channel=self.bot.get_channel(config.discord_utils.alerts_channel_id)
+        self.reports_channel= self.bot.get_channel(config.discord_utils.reports_channel_id)
         self.post_alerts_date.start()
         self.send_popularity_movers.start()
 
@@ -29,8 +30,8 @@ class Alerts(commands.Cog):
 
     @tasks.loop(time=datetime.time(hour=6, minute=0, second=0)) # time in UTC
     async def post_alerts_date(self):
-        if (utils.market_open_today()):
-            await self.alerts_channel.send(f"# :rotating_light: Alerts for {utils.format_date_mdy(datetime.datetime.today())} :rotating_light:")
+        if (market_utils.market_open_today()):
+            await self.alerts_channel.send(f"# :rotating_light: Alerts for {date_utils.format_date_mdy(datetime.datetime.today())} :rotating_light:")
 
     async def send_earnings_movers(self, gainers):
         today = datetime.datetime.today()
@@ -145,14 +146,14 @@ class Alert(Report):
 
     async def send_alert(self):
         today = datetime.datetime.today()
-        market_period = utils.get_market_period()
-        message_id = config.get_alert_message_id(date=today.date(), ticker=self.ticker, alert_type=self.alert_type)
+        market_period = market_utils.get_market_period()
+        message_id = config.discord_utils.get_alert_message_id(date=today.date(), ticker=self.ticker, alert_type=self.alert_type)
         if message_id is not None:
             logger.debug(f"Alert {self.alert_type} already reported for ticker {self.ticker} today")
             pass
         else:
             message = await self.channel.send(self.message, view=self.buttons)
-            config.insert_alert_message_id(date=today.date(), ticker=self.ticker, alert_type=self.alert_type, message_id=message.id)
+            config.discord_utils.insert_alert_message_id(date=today.date(), ticker=self.ticker, alert_type=self.alert_type, message_id=message.id)
             return message
 
 
@@ -190,7 +191,7 @@ class EarningsMoverAlert(Alert):
 
     def build_todays_change(self):
         symbol = ":green_circle:" if self.pct_change > 0 else ":small_red_triangle_down:"
-        return f"**{self.ticker}** is {symbol} **{"{:.2f}".format(self.pct_change)}%**  {utils.get_market_period()} and has earnings today\n\n"
+        return f"**{self.ticker}** is {symbol} **{"{:.2f}".format(self.pct_change)}%**  {market_utils.get_market_period()} and has earnings today\n\n"
 
     def build_alert(self):
         alert = ""
@@ -211,7 +212,7 @@ class SECFilingMoverAlert(Alert):
 
     def build_todays_change(self):
         symbol = ":green_circle:" if self.pct_change > 0 else ":small_red_triangle_down:"
-        return f"**{self.ticker}** is {symbol} **{"{:.2f}".format(self.pct_change)}%** {utils.get_market_period()} and filed with the SEC today\n"
+        return f"**{self.ticker}** is {symbol} **{"{:.2f}".format(self.pct_change)}%** {market_utils.get_market_period()} and filed with the SEC today\n"
 
     def build_alert(self):
         alert = ""
@@ -308,7 +309,7 @@ class PopularityAlert(Alert):
         return header
 
     def build_todays_change(self):
-        return f"**{self.ticker}** has moved {self.popularity_stats['high_rank'] - self.popularity_stats['low_rank']} spots between {utils.format_date_mdy(self.popularity_stats['low_rank_date'])} **({self.popularity_stats['low_rank']})** and {utils.format_date_mdy(self.popularity_stats['high_rank_date'])} **({self.popularity_stats['high_rank']})** \n\n"
+        return f"**{self.ticker}** has moved {self.popularity_stats['high_rank'] - self.popularity_stats['low_rank']} spots between {date_utils.format_date_mdy(self.popularity_stats['low_rank_date'])} **({self.popularity_stats['low_rank']})** and {date_utils.format_date_mdy(self.popularity_stats['high_rank_date'])} **({self.popularity_stats['high_rank']})** \n\n"
 
     def build_alert(self):
         alert = ""

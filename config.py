@@ -14,7 +14,6 @@ logger = logging.getLogger(__name__)
 CONFIG_PATH = os.getenv("CONFIG_PATH")
 
 def get_config():
-    
     try:
         config = open(CONFIG_PATH)
         data = json.load(config)
@@ -31,7 +30,7 @@ def get_env(var_name:str):
     if variable is not None:
         return variable
     else:
-        logger.error(f"Failed to fetch environment variable '{var_name}'\n{e}".format(e))
+        logger.error(f"Failed to fetch environment variable '{var_name}'")
         return variable
 
 def bot_setup():
@@ -39,49 +38,23 @@ def bot_setup():
     sd.Postgres().create_tables()
 
     # Ensure data paths exist
-    sd.validate_path(get_attachments_path())
+    sd.validate_path(datapaths.attachments_path)
 
 class discord_utils:
 
-    # Fetch Guild ID
-    @property
-    def discord_guild_id():
-        return get_env('DISCORD_GUILD_ID')    
+    # Guild ID
+    guild_id = get_env('DISCORD_GUILD_ID')    
 
-    # Channel IDs #
-
-    def get_reports_channel_id():
-        try:
-            channel_id = os.getenv("REPORTS_CHANNEL_ID")
-            return int(channel_id)
-        except Exception as e:
-            return ""
-
-    def get_alerts_channel_id():
-        try:
-            channel_id = os.getenv("ALERTS_CHANNEL_ID")
-            return int(channel_id)
-        except Exception as e:
-            return ""
-
-    def get_screeners_channel_id():
-        try:
-            channel_id = os.getenv("SCREENERS_CHANNEL_ID")
-            return int(channel_id)
-        except Exception as e:
-            return ""
-
-    def get_charts_channel_id():
-        try:
-            channel_id = os.getenv("CHARTS_CHANNEL_ID")
-            return int(channel_id)
-        except Exception as e:
-            return ""
+    # Channel IDs 
+    reports_channel_id = int(get_env("REPORTS_CHANNEL_ID"))
+    alerts_channel_id = int(get_env("ALERTS_CHANNEL_ID"))
+    screeners_channel_id = int(get_env("SCREENERS_CHANNEL_ID"))
+    charts_channel_id = int(get_env("CHARTS_CHANNEL_ID"))
 
     # Screener and alert message IDs #
 
     def update_gainer_message_id(message_id):
-            market_time = utils().get_market_period()
+            market_time = market_utils.get_market_period()
             where_conditions = []
             if market_time == "premarket":
                 where_conditions.append(('type', 'PREMARKET_GAINER_REPORT'))
@@ -102,7 +75,7 @@ class discord_utils:
                             where_conditions=[('type', 'UNUSUAL_COLUME_REPORT')])
 
     def get_gainer_message_id():
-        market_time = utils().get_market_period()
+        market_time = market_utils.get_market_period()
         where_conditions = []
         if market_time == "premarket":
             where_conditions.append(('type', 'PREMARKET_GAINER_REPORT'))
@@ -159,7 +132,8 @@ class discord_utils:
                                         ('date', date),
                                         ('ticker', ticker),
                                         ('alert_type', alert_type)
-                                    ])
+                                    ], 
+                                    fetchall=False)
         if result is None:
             return result
         else:
@@ -178,25 +152,25 @@ class market_utils:
 
     def market_open_today():
         today = datetime.datetime.now(datetime.UTC).date()
-        nyse = utils.get_nyse_calendar()
+        nyse = market_utils.get_nyse_calendar()
         valid_days = nyse.valid_days(start_date=today, end_date=today)
         return today in valid_days.date
 
     def market_open_on_date(date):
-        nyse = utils.get_nyse_calendar()
+        nyse = market_utils.get_nyse_calendar()
         return date in nyse.valid_days(start_date=date, end_date=date).date
 
     def get_market_schedule(date):
-        nyse = utils.get_nyse_calendar()
+        nyse = market_utils.get_nyse_calendar()
         schedule = nyse.schedule(start_date=date, end_date=date, start='pre', end='post')
         return schedule
 
     def in_extended_hours():
-        return utils.in_premarket() or utils.in_afterhours()
+        return market_utils.in_premarket() or market_utils.in_afterhours()
 
     def in_premarket():
         now = datetime.datetime.now(datetime.UTC)
-        schedule = utils.get_market_schedule(now)
+        schedule = market_utils.get_market_schedule(now)
         if schedule.size > 0:
             premarket_start = schedule['pre'].iloc[0]
             intraday_start = schedule['market_open'].iloc[0]
@@ -206,7 +180,7 @@ class market_utils:
 
     def in_intraday():
         now = datetime.datetime.now(datetime.UTC)
-        schedule = utils.get_market_schedule(now)
+        schedule = market_utils.get_market_schedule(now)
         if schedule.size > 0:
             intraday_start = schedule['market_open'].iloc[0]
             afterhours_start = schedule['market_close'].iloc[0]
@@ -217,7 +191,7 @@ class market_utils:
     
     def in_afterhours():
         now = datetime.datetime.now(datetime.UTC)
-        schedule = utils.get_market_schedule(now)
+        schedule = market_utils.get_market_schedule(now)
         if schedule.size > 0:
             afterhours_start = schedule['market_close'].iloc[0]
             market_end = schedule['post'].iloc[0]
@@ -226,11 +200,11 @@ class market_utils:
             return False
 
     def get_market_period():
-        if utils.in_premarket():
+        if market_utils.in_premarket():
             return "premarket"
-        elif utils.in_intraday():
+        elif market_utils.in_intraday():
             return "intraday"
-        if utils.in_afterhours():
+        if market_utils.in_afterhours():
             return "afterhours"
         else:
             return "EOD"    
@@ -246,33 +220,9 @@ class date_utils:
         return date.strftime("%m/%d/%Y")
 
 
-class datapath:
-    def get_daily_data_path():
-        return get_config()['data_paths']['DAILY_DATA_PATH']
+class datapaths:
 
-    def get_minute_data_path():
-        return get_config()['data_paths']['MINUTE_DATA_PATH']
-
-    def get_intraday_data_path():
-        return get_config()['data paths']['INTRADAY_DATA_PATH']
-
-    def get_attachments_path():
-        return get_config()['data_paths']['ATTACHMENTS_PATH']
-
-    def get_utils_path():
-        return get_config()['data_paths']['UTILS_PATH']
-
-    def get_watchlists_path():
-        return get_config()['data paths']['WATCHLISTS_PATH']
-
-    def get_analysis_path():
-        return get_config()['data paths']['ANALYSIS_PATH']
-
-    def get_plots_path():
-        return get_config()['data paths']['PLOTS_PATH']
-
-    def get_financials_path():
-        return get_config()['data paths']['FINANCIALS_PATH']
+    attachments_path = "discord/attachments"
 
 class secrets:
 
@@ -288,7 +238,7 @@ class secrets:
 
     # Postgres
     db_user = get_env('POSTGRES_USER')
-    db_password = get_env('POSTGRESS_PASSWORD')
+    db_password = get_env('POSTGRES_PASSWORD')
     db_name = get_env('POSTGRES_DB')
     db_host = get_env('POSTGRES_HOST')
     

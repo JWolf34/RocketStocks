@@ -24,8 +24,8 @@ logger = logging.getLogger(__name__)
 
 class News():
     def __init__(self):
-        self.token = config.get_news_api_token()
-        self.news = NewsApiClient(api_key=config.get_news_api_token())
+        self.token = config.secrets.news_api_token
+        self.news = NewsApiClient(api_key=self.token)
         self.categories= {'Business':'business',
                           'Entertainment':'entertainment',
                           'General':'eeneral',
@@ -107,10 +107,10 @@ class Nasdaq():
 
 class Postgres():
     def __init__(self):
-        self.user = config.get_db_user()
-        self.pwd = config.get_db_password()
-        self.db = config.get_db_name()
-        self.host = config.get_db_host()
+        self.user = config.secrets.db_user
+        self.pwd = config.secrets.db_password
+        self.db = config.secrets.db_name
+        self.host = config.secrets.db_host
         self.conn = None
         self.cur = None
         
@@ -666,8 +666,8 @@ class StockData():
             num_days = (today - start_date).days
             for i in range(1, num_days):
                 date = start_date + datetime.timedelta(days=i)
-                if config.utils.market_open_on_date(date):
-                    date_string = config.utils.format_date_ymd(date)
+                if config.market_utils.market_open_on_date(date):
+                    date_string = config.date_utils.format_date_ymd(date)
                     earnings = Nasdaq().get_earnings_by_date(date_string)
                     if earnings.size > 0:
                         earnings = earnings.rename(columns=column_map)
@@ -1227,8 +1227,8 @@ class ApeWisdom():
 class Schwab():
     def __init__(self):
         self.client = schwab.auth.easy_client(
-            api_key=config.get_schwab_api_key(),
-            app_secret=config.get_schwab_api_secret(),
+            api_key=config.secrets.schwab_api_key,
+            app_secret=config.secrets.schwab_api_secret,
             callback_url="https://127.0.0.1:8182",
             token_path="data/schwab-token.json"
         )
