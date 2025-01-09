@@ -424,14 +424,19 @@ class Postgres():
     # Return list of columns from selected table
     def get_table_columns(self, table):
         self.open_connection()
-        select_script = sql.SQL("""SELECT column_name FROM INFORMATION_SCHEMA.COLUMNS
-                            WHERE TABLE_NAME = '{sql_table}'
-                            ORDER BY ordinal_position;
-                            """).format(
-                                sql_table = sql.Identifier(table)
-                            )
+
+        # Select 
+        select_script = sql.SQL("SELECT column_name FROM INFORMATION_SCHEMA.COLUMNS")
+
+        # Where
+        select_script += sql.SQL(f" WHERE TABLE_NAME = '{table}'")
+                                                                
+        # Order by
+        select_script += sql.SQL(" ORDER BY ordinal_position;")
+
         self.cur.execute(select_script)
-        columns = [column[0] for column in self.cur.fetchall()]
+        result = self.cur.fetchall()
+        columns = [column[0] for column in result]
         self.close_connection()
         return columns
   
@@ -929,7 +934,8 @@ class StockData():
         fields = Postgres().get_table_columns('tickers')
         return Postgres().select(table='tickers',
                                  fields=fields,
-                                 where_conditions=[('ticker', ticker)])
+                                 where_conditions=[('ticker', ticker)],
+                                 fetchall=False)
     
     @staticmethod
     def get_all_ticker_info():
@@ -1348,7 +1354,7 @@ def test():
     #postgres = Postgres()
     #postgres.create_tables()
     #print(StockData.get_ticker_info('NVDA'))
-    pass
+    print(Postgres().get_table_columns('tickers'))
 
     
 
