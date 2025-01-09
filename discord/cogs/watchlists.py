@@ -134,7 +134,7 @@ class Watchlists(commands.Cog):
         
         tickers = sd.Watchlists().get_tickers_from_watchlist(watchlist_id)
         if tickers is not None:
-            await interaction.response.send_message("Watchlist: " + ', '.join(tickers), ephemeral=is_personal)
+            await interaction.response.send_message(f"Watchlist '{watchlist_id}': {', '.join(tickers)}", ephemeral=is_personal)
         else:
             await interaction.response.send_message(f"No tickers on watchlist '{watchlist}'", ephemeral=is_personal)
 
