@@ -256,7 +256,7 @@ class VolumeMoverAlert(Alert):
         super().__init__(ticker, channel)
 
     def build_alert_header(self):
-        header = f"## :rotating_light: Volume Mover: {self.ticker}\n\n\n"
+        header = f"## :rotating_light: Intraday Volume Mover: {self.ticker}\n\n\n"
         return header
 
     def build_todays_change(self):
