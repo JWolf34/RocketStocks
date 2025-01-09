@@ -35,7 +35,7 @@ class Reports(commands.Cog):
         self.post_earnings_spotlight.start()
         self.post_weekly_earnings.start()
         self.reports_channel = self.bot.get_channel(config.discord_utils.reports_channel_id)
-        self.screeners_channel = self.bot.get_channel(config.discord_utils.reports_channel_id)
+        self.screeners_channel = self.bot.get_channel(config.discord_utils.screeners_channel_id)
         
 
     @commands.Cog.listener()
@@ -86,7 +86,7 @@ class Reports(commands.Cog):
             pass
 
 
-    @send_gainer_reports.before_loop
+    #@send_gainer_reports.before_loop
     async def before_send_gainer_reports(self):
         # Start posting report at next 0 or 5 minute interval
         now = datetime.datetime.now().astimezone()

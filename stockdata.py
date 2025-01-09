@@ -821,7 +821,7 @@ class StockData():
                                    where_conditions=[('ticker', ticker)],
                                    order_by=('date', 'DESC'),
                                    fetchall=False)
-        if result is None:
+        if not result:
             start_datetime = datetime.datetime(year=2000, month=1, day=1) # No data found
         else:
             start_datetime = datetime.datetime.combine(result[0], datetime.time(hour=0, minute=0, second=0))
