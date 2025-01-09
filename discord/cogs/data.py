@@ -62,12 +62,12 @@ class Data(commands.Cog):
                 else:
                     message = f"Could not fetch data for ticker {ticker}"
                 
-                await interaction.user.send(content = message, file=file)
+                message = await interaction.user.send(content = message, file=file)
 
             if len(invalid_tickers) > 0:
-                await interaction.followup.send("Fetched data files for {}. Invalid tickers:".format(", ".join(tickers), ", ".join(invalid_tickers)), ephemeral=True)
+                await interaction.followup.send("Fetched data files for [{}]({}). Invalid tickers:".format(", ".join(tickers), message.jump_url, ", ".join(invalid_tickers)), ephemeral=True)
             else:
-                await interaction.followup.send("Fetched data files for {}".format(", ".join(tickers)), ephemeral=True)
+                await interaction.followup.send("Fetched data files for [{}]({})".format(", ".join(tickers), message.jump_url), ephemeral=True)
 
 
         except Exception as e:
@@ -98,7 +98,7 @@ class Data(commands.Cog):
         # Follow-up
         follow_up = ""
         if message is not None: # Message was generated
-            follow_up = f"Posted EPS for tickers [{", ".join(tickers)}]({message.jump_url})!"
+            follow_up = f"Posted financials for tickers [{", ".join(tickers)}]({message.jump_url})!"
             if len(invalid_tickers) > 0: # More than one invalid ticke input
                 follow_up += f" Invalid tickers: {", ".join(invalid_tickers)}"
         if len(tickers) == 0: # No valid tickers input
@@ -187,7 +187,9 @@ class Data(commands.Cog):
                 message += f"No form {form} found for ticker {ticker}\n"
             else:
                 # Need to make universal date conversion function and make SEC module reference CIK value from database
-                message += f"[{ticker} Form {form} - Filed {sd.StockData.Earnings.format_earnings_date(target_filing['filingDate'])}]({sec.get_link_to_filing(ticker, target_filing)})\n"
+                filing_date = config.date_utils.format_date_mdy(target_filing['filingDate'])
+                sec_link = sec.get_link_to_filing(ticker, target_filing)
+                message += f"[{ticker} Form {form} - Filed {filing_date}]({sec_link})\n"
         await interaction.followup.send(message)
     
     @app_commands.command(name="fundamentals", description="Return JSON files of fundamental data for desired tickers")
@@ -245,12 +247,46 @@ class Data(commands.Cog):
         # Follow-up
         follow_up = ""
         if message is not None: # Message was generated
-            follow_up = f"Posted otpions chains for tickers [{", ".join(tickers)}]({message.jump_url})!"
+            follow_up = f"Posted options chains for tickers [{", ".join(tickers)}]({message.jump_url})!"
             if len(invalid_tickers) > 0: # More than one invalid ticke input
                 follow_up += f" Invalid tickers: {", ".join(invalid_tickers)}"
         if len(tickers) == 0: # No valid tickers input
             follow_up = f"No valid tickers input: {", ".join(invalid_tickers)}"
         await interaction.followup.send(follow_up, ephemeral=True)
+
+    @app_commands.command(name="popularity", description="Return historical popularity of desired tickers in CSV format")
+    @app_commands.describe(tickers = "Tickers to return popularity for (separated by spaces)")
+    async def popularity(self, interaction: discord.Interaction, tickers: str):
+        await interaction.response.defer(ephemeral=True)
+        logger.info("/csv function called by user {}".format(interaction.user.name))
+        logger.debug("Data file(s) for {} requested".format(tickers))
+        
+        files = []
+        tickers, invalid_tickers = sd.StockData.get_valid_tickers(tickers)
+        try:
+            for ticker in tickers:
+                message = ""
+                file = None
+                data = sd.StockData.get_historical_popularity(ticker=ticker)  
+                if data.size:
+                    message = f"Popularity for {ticker}"
+                    filepath = f"{config.datapaths.attachments_path}/{ticker}_popularity.csv"
+                    data.to_csv(filepath, index=False)
+                    file = discord.File(filepath)
+                else:
+                    message = f"No popularity data available for ticker {ticker}"
+                
+                message = await interaction.user.send(content = message, file=file)
+
+            if len(invalid_tickers) > 0:
+                await interaction.followup.send("Fetched popularity for [{}]({}). Invalid tickers:".format(", ".join(tickers), message.jump_url, ", ".join(invalid_tickers)), ephemeral=True)
+            else:
+                await interaction.followup.send("Fetched popularity for [{}]({})".format(", ".join(tickers), message.jump_url), ephemeral=True)
+
+
+        except Exception as e:
+            logger.exception("Failed to fetch popularity with following exception:\n{}".format(e))
+            await interaction.followup.send("Failed to popularity reports. Please ensure your parameters are valid.")
 
 
 #########        

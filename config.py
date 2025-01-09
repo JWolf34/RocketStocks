@@ -214,9 +214,13 @@ class market_utils:
 class date_utils:
 
     def format_date_ymd(date):
+        if isinstance(date, str):
+            date = datetime.datetime.strptime(date, "%m/%d/%Y")
         return date.strftime("%Y-%m-%d")
 
     def format_date_mdy(date):
+        if isinstance(date, str):
+            date = datetime.datetime.strptime(date, "%Y-%m-%d")
         return date.strftime("%m/%d/%Y")
 
 
