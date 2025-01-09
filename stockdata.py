@@ -1191,6 +1191,23 @@ class TradingView():
         unusual_volume.columns = columns
         return unusual_volume
 
+    @staticmethod
+    def get_unusual_volume_at_time_movers():
+        logger.info("Fetching stocks with ununsual volume at given time")
+        columns = ['Ticker', 'Close', '% Change', 'Volume', 'Relative Volume At Time', 'Average Volume (10 Day)', 'Market Cap']
+        num_rows, unusual_volume_at_time = (Query()
+                            .select('name','Price', 'Change %', 'Volume', 'relative_volume_intraday|5', 'Average Volume (10 day)','Market Capitalization')
+                            .set_markets('america')
+                            .where(
+                                Column('Volume') > 1000000
+                            )
+                            .limit(100)
+                            .order_by('relative_volume_intraday|5', ascending=False)
+                            .get_scanner_data())
+        unusual_volume_at_time = unusual_volume_at_time.drop(columns = "ticker")
+        unusual_volume_at_time.columns = columns
+        return unusual_volume_at_time
+
 class ApeWisdom():
     def __init__(self):
         self.base_url = "https://apewisdom.io/api/v1.0/filter"
@@ -1354,7 +1371,7 @@ def test():
     #postgres = Postgres()
     #postgres.create_tables()
     #print(StockData.get_ticker_info('NVDA'))
-    print(Postgres().get_table_columns('tickers'))
+    print(TradingView.get_unusual_volume_at_time_movers())
 
     
 
