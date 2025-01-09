@@ -71,7 +71,7 @@ class Alerts(commands.Cog):
         for index, row in volume_movers.iterrows():
             ticker = row['Ticker']
             relative_volume = float(row['Relative Volume'])
-            if relative_volume > 10.0: # see that Relative Volume exceeds 20x
+            if relative_volume > 25.0: # see that Relative Volume exceeds 20x
                 pct_change = 0.0
                 change_columns = ["Premarket Change", "% Change", "After Hours Change"]
                 for column in change_columns:
