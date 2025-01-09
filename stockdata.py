@@ -424,10 +424,12 @@ class Postgres():
     # Return list of columns from selected table
     def get_table_columns(self, table):
         self.open_connection()
-        select_script = f"""SELECT column_name FROM INFORMATION_SCHEMA.COLUMNS
-                            WHERE TABLE_NAME = '{table}'
+        select_script = sql.SQL("""SELECT column_name FROM INFORMATION_SCHEMA.COLUMNS
+                            WHERE TABLE_NAME = '{sql_table}'
                             ORDER BY ordinal_position;
-                            """
+                            """).format(
+                                sql_table = sql.Identifier(table)
+                            )
         self.cur.execute(select_script)
         columns = [column[0] for column in self.cur.fetchall()]
         self.close_connection()
