@@ -86,7 +86,7 @@ class Alerts(commands.Cog):
     @tasks.loop(minutes=30)
     async def send_popularity_movers(self):
         top_stocks = sd.ApeWisdom().get_top_stocks()[:80]
-        blacklist_tickers = ['DTE', 'AM', 'PM']
+        blacklist_tickers = ['DTE', 'AM', 'PM', 'DM']
         for index, row in top_stocks.iterrows():
             ticker = row['ticker']
             if ticker not in blacklist_tickers:
