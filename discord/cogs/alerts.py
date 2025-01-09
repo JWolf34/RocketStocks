@@ -85,7 +85,7 @@ class Alerts(commands.Cog):
     
     @tasks.loop(minutes=30)
     async def send_popularity_movers(self):
-        top_stocks = sd.ApeWisdom().get_top_stocks()[:50]
+        top_stocks = sd.ApeWisdom().get_top_stocks()[:80]
         for index, row in top_stocks.iterrows():
             ticker = row['ticker']
             todays_rank = row['rank']
