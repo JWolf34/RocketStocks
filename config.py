@@ -284,55 +284,13 @@ class secrets:
     
     # Schwab
     schwab_api_key = get_env('SCHWAB_API_KEY')
+    schwab_api_secret = get_env('SCHWAB_API_SECRET')
 
-
-
-    def schwab_api_secret():
-        logger.debug("Fetching Schwab API secret")
-        try:
-            token = os.getenv('SCHWAB_API_SECRET')
-            logger.debug("Successfully fetched Schwab API secret")
-            return token
-        except Exception as e:
-            logger.exception("Failed to fetch Schwab API secret\n{}".format(e))
-            return ""
-
-    def db_user():
-        try:
-            token = os.getenv('POSTGRES_USER')
-            return token
-        except Exception as e:
-            return ""
-
-    def db_password():
-        try:
-            token = os.getenv('POSTGRES_PASSWORD')
-            return token
-        except Exception as e:
-            return ""
-    
-
-    def db_name():
-        try:
-            token = os.getenv('POSTGRES_DB')
-            return token
-        except Exception as e:
-            return ""
-
-    @property
-    def db_host():
-        try:
-            token = os.getenv('POSTGRES_HOST')
-            return token
-        except Exception as e:
-            return ""
-
-
-
-class utils():
-    def __init__(self):
-        pass
-
+    # Postgres
+    db_user = get_env('POSTGRES_USER')
+    db_password = get_env('POSTGRESS_PASSWORD')
+    db_name = get_env('POSTGRES_DB')
+    db_host = get_env('POSTGRES_HOST')
     
 if __name__  == "__main__":
     print(secrets.discord_token)
