@@ -5,6 +5,7 @@ from discord.ext import tasks
 from reports import Report
 from reports import StockReport
 import stockdata as sd
+import analysis as an
 import pandas as pd
 import config
 from config import market_utils
@@ -41,20 +42,33 @@ class Alerts(commands.Cog):
 
     @tasks.loop(seconds=30)
     async def send_alerts(self):
-        all_alert_tickers = list(set([ticker for tickers in self.alert_tickers.values() for ticker in tickers]))
-        #quotes = sd.Schwab().get_quotes(tickers=all_alert_tickers)
-        print(all_alert_tickers)
+        #all_alert_tickers = list(set([ticker for tickers in self.alert_tickers.values() for ticker in tickers]))
+        all_alert_tickers = ['ZVSA']
+        quotes = {}
+        chunk_size = 10
+        for i in range(0, len(all_alert_tickers), chunk_size):
+            tickers = all_alert_tickers[i:i+chunk_size]
+            quotes = quotes | sd.Schwab().get_quotes(tickers=tickers)
+        quotes.pop('errors', None)
+        all_alert_tickers = [ticker for ticker in quotes]
+
+        # Send alerts
+        await self.send_unusual_volume_movers(tickers=all_alert_tickers, quotes=quotes)
+        await self.send_earnings_movers(tickers=all_alert_tickers, quotes=quotes)
+        #await self.send_sec_filing_movers(tickers= all_alert_tickers, quotes=quotes)
+        await self.send_watchlist_movers(tickers=all_alert_tickers, quotes=quotes)
 
     async def send_earnings_movers(self, tickers:list, quotes:dict):
         today = datetime.datetime.today()
         for ticker in tickers:
             earnings_date = sd.StockData.Earnings.get_next_earnings_date(ticker)
             if earnings_date != "N/A":
-                if earnings_date == today.date():
-                    quote = quotes[ticker]
-                    earnings_mover_data = {}
-                    earnings_mover_data['pct_change'] = None
-                    alert = EarningsMoverAlert(ticker=ticker, channel=self.alerts_channel, gainer_row=row)
+                pct_change = quotes[ticker]['quote']['netPercentChange']   
+                if earnings_date == today.date() and pct_change > 10.0:
+                    alert_data = {}
+                    alert_data['pct_change'] = pct_change
+                    alert_data['earnings_date'] = earnings_date
+                    alert = EarningsMoverAlert(ticker=ticker, channel=self.alerts_channel, alert_data=alert_dta)
                     await alert.send_alert()
 
     async def send_sec_filing_movers(self, gainers):
@@ -67,34 +81,39 @@ class Alerts(commands.Cog):
                 await alert.send_alert()
             await asyncio.sleep(1)
 
-    async def send_watchlist_movers(self, gainers):
-        for index, row in gainers.iterrows():
-            ticker = row['Ticker']
+    async def send_watchlist_movers(self, tickers:list, quotes:dict):
+        for ticker in tickers:
             watchlists = sd.Watchlists().get_watchlists()
             for watchlist in watchlists:
                 if watchlist == 'personal':
                     pass
                 else:
                     watchlist_tickers = sd.Watchlists().get_tickers_from_watchlist(watchlist)
-                    if ticker in watchlist_tickers:
-                        alert = WatchlistMoverAlert(ticker=ticker, channel=self.alerts_channel, gainer_row = row, watchlist_id=watchlist)
+                    pct_change = quotes[ticker]['quote']['netPercentChange']   
+                    if ticker in watchlist_tickers and pct_change > 10.0:
+                        alert_data = {}
+                        alert_data['pct_change'] = pct_change
+                        alert_data['watchlist'] = watchlist
+                        alert = WatchlistMoverAlert(ticker=ticker, channel=self.alerts_channel, alert_data-alert_data)
                         await alert.send_alert()
-    
-    async def send_unusual_volume_movers(self, volume_movers):
-        today = datetime.datetime.today()
-        for index, row in volume_movers.iterrows():
-            ticker = row['Ticker']
-            relative_volume = float(row['Relative Volume'])
-            if relative_volume > 25.0: # see that Relative Volume exceeds 20x
-                pct_change = 0.0
-                change_columns = ["Premarket Change", "% Change", "After Hours Change"]
-                for column in change_columns:
-                    if column in row.index.values:
-                        pct_change = float(row[column])
-                market_cap = row['Market Cap']
-                if abs(pct_change) >= 10.0 and market_cap > 50000000: # See that stock movement is at least 10% and market cap > 50M
-                    alert = VolumeMoverAlert(ticker=ticker, channel=self.alerts_channel, volume_row=row)
-                    await alert.send_alert()
+        
+    async def send_unusual_volume_movers(self, tickers:list, quotes:dict):
+        for ticker in tickers:
+            data = sd.StockData.fetch_daily_price_history(ticker)
+            curr_volume = quotes[ticker]['quote']['totalVolume']
+            rvol = an.indicators.volume.rvol(data=data, curr_volume=curr_volume)
+            pct_change = quotes[ticker]['quote']['netPercentChange']   
+            market_cap = sd.StockData.get_market_cap(ticker=ticker) 
+            if rvol > 25.0 and pct_change > 10.0 and market_cap > 50000000: # see that Relative Volume exceeds 25x and change > 10%
+                alert_data = {}
+                alert_data['pct_change'] = pct_change
+                alert_data['rvol'] = rvol,
+                alert_data['volume'] = curr_volume
+                alert_data['avg_vol_10'] = data['volume'].tail(10).mean()
+                alert_data['avg_vol_30'] = data['volume'].tail(30).mean()
+                alert_data['avg_vol_90'] = data['volume'].tail(90).mean()
+                alert = VolumeMoverAlert(ticker=ticker, channel=self.alerts_channel, alert_data=alert_data)
+                await alert.send_alert()
                 await asyncio.sleep(1)
     
     @tasks.loop(minutes=30)
@@ -137,9 +156,10 @@ class Alerts(commands.Cog):
 ##################
     
 class Alert(Report):
-    def __init__(self, ticker, channel):
+    def __init__(self, ticker, channel, alert_data):
         self.ticker = ticker
         self.channel = channel
+        self.alert_data = alert_data
         self.message = self.build_alert()
         self.buttons = self.Buttons(self.ticker, channel)
     
@@ -198,10 +218,10 @@ class Alert(Report):
                 await interaction.response.send_message(f"Fetched news for {self.ticker}!", ephemeral=True)
 
 class EarningsMoverAlert(Alert):
-    def __init__(self, ticker, channel, gainer_row):
+    def __init__(self, ticker, channel, alert_data):
         self.pct_change = self.get_pct_change(gainer_row)
         self.alert_type = "EARNINGS_MOVER"
-        super().__init__(ticker, channel)
+        super().__init__(ticker, channel, alert_data)
 
     def build_alert_header(self):
         header = f"## :rotating_light: Earnings Mover: {self.ticker}\n\n\n"
@@ -209,13 +229,14 @@ class EarningsMoverAlert(Alert):
 
     def build_todays_change(self):
         symbol = ":green_circle:" if self.pct_change > 0 else ":small_red_triangle_down:"
-        return f"**{self.ticker}** is {symbol} **{"{:.2f}".format(self.pct_change)}%**  {market_utils.get_market_period()} and has earnings today\n\n"
+        return f"**{self.ticker}** is {symbol} **{"{:.2f}".format(self.alert_data['pct_change'])}%**  {market_utils.get_market_period()} and has earnings today\n\n"
 
     def build_alert(self):
         alert = ""
         alert += self.build_alert_header()
         alert += self.build_todays_change()
         alert += self.build_earnings_date()
+        alert += self.build_recent_earnings()
         return alert
 
 class SECFilingMoverAlert(Alert):
@@ -252,7 +273,7 @@ class WatchlistMoverAlert(Alert):
 
     def build_todays_change(self):
         symbol = ":green_circle:" if self.pct_change > 0 else ":small_red_triangle_down:"
-        return f"**{self.ticker}** is {symbol} **{"{:.2f}".format(self.pct_change)}%**  and is on your **{self.watchlist_id}** watchlist\n"
+        return f"**{self.ticker}** is {symbol} **{"{:.2f}".format(self.alert_data['pct_change'])}%**  and is on your **{self.alert_data['watchlist']}** watchlist\n"
 
     def build_alert(self):
         alert = ""
@@ -261,13 +282,10 @@ class WatchlistMoverAlert(Alert):
         return alert
 
 class VolumeMoverAlert(Alert):
-    def __init__(self, ticker, channel, volume_row):
+    def __init__(self, ticker, channel, alert_data):
         self.pct_change = self.get_pct_change(volume_row)
         self.alert_type = "VOLUME_MOVER"
-        self.volume = volume_row['Volume']
-        self.average_volume = volume_row['Average Volume (10 Day)']
-        self.relative_volume = volume_row['Relative Volume']
-        super().__init__(ticker, channel)
+        super().__init__(ticker, channel, alert_data)
 
     def build_alert_header(self):
         header = f"## :rotating_light: Intraday Volume Mover: {self.ticker}\n\n\n"
@@ -275,13 +293,15 @@ class VolumeMoverAlert(Alert):
 
     def build_todays_change(self):
         symbol = ":green_circle:" if self.pct_change > 0 else ":small_red_triangle_down:"
-        return f"**{self.ticker}** is {symbol} **{"{:.2f}".format(self.pct_change)}%** with volume up **{"{:.2f} times".format(self.relative_volume)}** the 10-day average\n\n"
+        return f"**{self.ticker}** is {symbol} **{"{:.2f}".format(self.alert_data['pct_change'])}%** with volume up **{"{:.2f} times".format(self.alert_data['rvol'])}** the 10-day average\n\n"
 
     def build_volume_stats(self):
         return f"""## Volume Stats
-        - **Today's Volume:** {self.format_large_num(self.volume)}
-        - **Average Volume (10 Day):** {self.format_large_num(self.average_volume)}
-        - **Relative Volume:** {"{:.2f}x".format(self.relative_volume)}\n\n"""
+        - **Today's Volume:** {self.format_large_num(self.alert_data['volume'])}
+        - **Average Volume (10 Day):** {self.format_large_num(self.alert_data['avg_vol_10'])}
+        - **Average Volume (30 Day):** {self.format_large_num(self.alert_data['avg_vol_30'])}
+        - **Average Volume (90 Day):** {self.format_large_num(self.alert_data['avg_vol_90'])}
+        - **Relative Volume:** {"{:.2f}x".format(self.alert_data['rvol'])}\n\n"""
 
     def build_alert(self):
         alert = ""
