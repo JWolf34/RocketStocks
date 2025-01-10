@@ -223,6 +223,11 @@ class date_utils:
             date = datetime.datetime.strptime(date, "%Y-%m-%d")
         return date.strftime("%m/%d/%Y")
 
+    def dt_round_down(dt:datetime.datetime):
+        delta = dt.minute % 5
+        return dt.replace(minute = dt.minute - delta)
+
+
 
 class datapaths:
 
