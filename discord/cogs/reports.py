@@ -88,7 +88,8 @@ class Reports(commands.Cog):
     @tasks.loop(minutes=5)
     async def send_volume_reports(self):
         now = datetime.datetime.now()
-        if (market_utils.market_open_today() and market_utils.in_intraday()):
+        #if (market_utils.market_open_today() and market_utils.in_intraday()):
+        if (market_utils.market_open_today() and (market_utils.in_extended_hours() or market_utils.in_intraday())):
             report = VolumeReport(self.screeners_channel)
             await report.send_report()
             await self.bot.get_cog("Alerts").update_alert_tickers(key='volume_movers',
@@ -98,8 +99,8 @@ class Reports(commands.Cog):
             pass
 
     # Start posting report at next 0 or 5 minute interval
-    #@send_gainer_reports.before_loop
-    #@send_volume_reports.before_loop
+    @send_gainer_reports.before_loop
+    @send_volume_reports.before_loop
     async def sleep_until_5m_interval(self):
         now = datetime.datetime.now().astimezone()
         if now.minute % 5 == 0:

@@ -1376,7 +1376,7 @@ def test():
     #tickers = ['ZVSA', 'AKYA', 'VMAR', 'IINN', 'GLXG']
     #for ticker in tickers:
     #    StockData.update_daily_price_history_by_ticker(ticker)
-    StockData.update_daily_price_history()
+    StockData.update_5m
     
 
 if __name__ == "__main__":#

@@ -24,7 +24,7 @@ class Alerts(commands.Cog):
         self.reports_channel= self.bot.get_channel(config.discord_utils.reports_channel_id)
         self.alert_tickers = {}
         self.post_alerts_date.start()
-        self.send_popularity_movers.start()
+        #self.send_popularity_movers.start()
         self.send_alerts.start()
         
 
@@ -40,23 +40,38 @@ class Alerts(commands.Cog):
         if (market_utils.market_open_today()):
             await self.alerts_channel.send(f"# :rotating_light: Alerts for {date_utils.format_date_mdy(datetime.datetime.today())} :rotating_light:")
 
-    @tasks.loop(seconds=30)
+    @tasks.loop(minutes = 5)
     async def send_alerts(self):
-        #all_alert_tickers = list(set([ticker for tickers in self.alert_tickers.values() for ticker in tickers]))
-        all_alert_tickers = ['ZVSA']
-        quotes = {}
-        chunk_size = 10
-        for i in range(0, len(all_alert_tickers), chunk_size):
-            tickers = all_alert_tickers[i:i+chunk_size]
-            quotes = quotes | sd.Schwab().get_quotes(tickers=tickers)
-        quotes.pop('errors', None)
-        all_alert_tickers = [ticker for ticker in quotes]
+        if (market_utils.market_open_today() and (market_utils.in_extended_hours() or market_utils.in_intraday())):
+            all_alert_tickers = list(set([ticker for tickers in self.alert_tickers.values() for ticker in tickers]))
+            #all_alert_tickers = ['ZVSA']
+            quotes = {}
+            chunk_size = 10
+            for i in range(0, len(all_alert_tickers), chunk_size):
+                tickers = all_alert_tickers[i:i+chunk_size]
+                quotes = quotes | sd.Schwab().get_quotes(tickers=tickers)
+            quotes.pop('errors', None)
+            all_alert_tickers = [ticker for ticker in quotes]
 
-        # Send alerts
-        await self.send_unusual_volume_movers(tickers=all_alert_tickers, quotes=quotes)
-        await self.send_earnings_movers(tickers=all_alert_tickers, quotes=quotes)
-        #await self.send_sec_filing_movers(tickers= all_alert_tickers, quotes=quotes)
-        await self.send_watchlist_movers(tickers=all_alert_tickers, quotes=quotes)
+            # Send alerts
+            await self.send_unusual_volume_movers(tickers=all_alert_tickers, quotes=quotes)
+            await self.send_earnings_movers(tickers=all_alert_tickers, quotes=quotes)
+            #await self.send_sec_filing_movers(tickers= all_alert_tickers, quotes=quotes)
+            await self.send_watchlist_movers(tickers=all_alert_tickers, quotes=quotes)
+
+    # Start posting report at next 0 or 5 minute interval
+    # + 30 seconds to allow for reports to generate and add tickers to the alert list
+    @send_alerts.before_loop
+    async def sleep_until_5m_interval(self):
+        now = datetime.datetime.now().astimezone()
+        if now.minute % 5 == 0:
+            return 0
+        minutes_by_five = now.minute // 5
+        # get the difference in times
+        diff = (minutes_by_five + 1) * 5 - now.minute
+        future = now + datetime.timedelta(minutes=diff)
+        delta = datetime.timedelta(seconds=30)
+        await asyncio.sleep(((future-now) + delta).total_seconds())
 
     async def send_earnings_movers(self, tickers:list, quotes:dict):
         today = datetime.datetime.today()
@@ -94,7 +109,7 @@ class Alerts(commands.Cog):
                         alert_data = {}
                         alert_data['pct_change'] = pct_change
                         alert_data['watchlist'] = watchlist
-                        alert = WatchlistMoverAlert(ticker=ticker, channel=self.alerts_channel, alert_data-alert_data)
+                        alert = WatchlistMoverAlert(ticker=ticker, channel=self.alerts_channel, alert_data=alert_data)
                         await alert.send_alert()
         
     async def send_unusual_volume_movers(self, tickers:list, quotes:dict):
@@ -107,7 +122,7 @@ class Alerts(commands.Cog):
             if rvol > 25.0 and pct_change > 10.0 and market_cap > 50000000: # see that Relative Volume exceeds 25x and change > 10%
                 alert_data = {}
                 alert_data['pct_change'] = pct_change
-                alert_data['rvol'] = rvol,
+                alert_data['rvol'] = rvol
                 alert_data['volume'] = curr_volume
                 alert_data['avg_vol_10'] = data['volume'].tail(10).mean()
                 alert_data['avg_vol_30'] = data['volume'].tail(30).mean()
@@ -172,16 +187,6 @@ class Alert(Report):
         alert += self.build_alert_header()
         return alert
 
-    def get_pct_change(self, df_row):
-        change_columns = ["Premarket Change", "% Change", "After Hours Change"]
-        for column in change_columns:
-            if column in df_row.index.values:
-                change = df_row[column]
-                if change is None:
-                    return 0.0
-                else:
-                    return float(df_row[column])
-
     async def send_alert(self):
         today = datetime.datetime.today()
         market_period = market_utils.get_market_period()
@@ -219,7 +224,6 @@ class Alert(Report):
 
 class EarningsMoverAlert(Alert):
     def __init__(self, ticker, channel, alert_data):
-        self.pct_change = self.get_pct_change(gainer_row)
         self.alert_type = "EARNINGS_MOVER"
         super().__init__(ticker, channel, alert_data)
 
@@ -228,7 +232,7 @@ class EarningsMoverAlert(Alert):
         return header
 
     def build_todays_change(self):
-        symbol = ":green_circle:" if self.pct_change > 0 else ":small_red_triangle_down:"
+        symbol = ":green_circle:" if self.alert_data['pct_change'] > 0 else ":small_red_triangle_down:"
         return f"**{self.ticker}** is {symbol} **{"{:.2f}".format(self.alert_data['pct_change'])}%**  {market_utils.get_market_period()} and has earnings today\n\n"
 
     def build_alert(self):
@@ -240,18 +244,17 @@ class EarningsMoverAlert(Alert):
         return alert
 
 class SECFilingMoverAlert(Alert):
-    def __init__(self, ticker, channel, gainer_row):
-        self.pct_change = self.get_pct_change(gainer_row)
+    def __init__(self, ticker, channel, alert_data):
         self.alert_type = "SEC_FILING_MOVER"
-        super().__init__(ticker, channel)
+        super().__init__(ticker, channel, alert_data)
 
     def build_alert_header(self):
         header = f"## :rotating_light: SEC Filing Mover: {self.ticker}\n\n\n"
         return header
 
     def build_todays_change(self):
-        symbol = ":green_circle:" if self.pct_change > 0 else ":small_red_triangle_down:"
-        return f"**{self.ticker}** is {symbol} **{"{:.2f}".format(self.pct_change)}%** {market_utils.get_market_period()} and filed with the SEC today\n"
+        symbol = ":green_circle:" if self.alert_data['pct_change']> 0 else ":small_red_triangle_down:"
+        return f"**{self.ticker}** is {symbol} **{"{:.2f}".format(self.alert_data['pct_change'])}%** {market_utils.get_market_period()} and filed with the SEC today\n"
 
     def build_alert(self):
         alert = ""
@@ -261,18 +264,16 @@ class SECFilingMoverAlert(Alert):
         return alert
 
 class WatchlistMoverAlert(Alert):
-    def __init__(self, ticker, channel, gainer_row, watchlist_id):
-        self.pct_change = self.get_pct_change(gainer_row)
+    def __init__(self, ticker, channel, alert_data):
         self.alert_type = "WATCHLIST_MOVER"
-        self.watchlist_id = watchlist_id
-        super().__init__(ticker, channel)
+        super().__init__(ticker, channel, alert_data)
 
     def build_alert_header(self):
         header = f"## :rotating_light: Watchlist Mover: {self.ticker}\n\n\n"
         return header
 
     def build_todays_change(self):
-        symbol = ":green_circle:" if self.pct_change > 0 else ":small_red_triangle_down:"
+        symbol = ":green_circle:" if self.alert_data['pct_change'] > 0 else ":small_red_triangle_down:"
         return f"**{self.ticker}** is {symbol} **{"{:.2f}".format(self.alert_data['pct_change'])}%**  and is on your **{self.alert_data['watchlist']}** watchlist\n"
 
     def build_alert(self):
@@ -283,7 +284,6 @@ class WatchlistMoverAlert(Alert):
 
 class VolumeMoverAlert(Alert):
     def __init__(self, ticker, channel, alert_data):
-        self.pct_change = self.get_pct_change(volume_row)
         self.alert_type = "VOLUME_MOVER"
         super().__init__(ticker, channel, alert_data)
 
@@ -292,16 +292,17 @@ class VolumeMoverAlert(Alert):
         return header
 
     def build_todays_change(self):
-        symbol = ":green_circle:" if self.pct_change > 0 else ":small_red_triangle_down:"
+        symbol = ":green_circle:" if self.alert_data['pct_change'] > 0 else ":small_red_triangle_down:"
         return f"**{self.ticker}** is {symbol} **{"{:.2f}".format(self.alert_data['pct_change'])}%** with volume up **{"{:.2f} times".format(self.alert_data['rvol'])}** the 10-day average\n\n"
 
     def build_volume_stats(self):
         return f"""## Volume Stats
         - **Today's Volume:** {self.format_large_num(self.alert_data['volume'])}
-        - **Average Volume (10 Day):** {self.format_large_num(self.alert_data['avg_vol_10'])}
-        - **Average Volume (30 Day):** {self.format_large_num(self.alert_data['avg_vol_30'])}
-        - **Average Volume (90 Day):** {self.format_large_num(self.alert_data['avg_vol_90'])}
-        - **Relative Volume:** {"{:.2f}x".format(self.alert_data['rvol'])}\n\n"""
+        - **Relative Volume (10 Day):** {"{:.2f}x".format(self.alert_data['rvol'])}
+        - **Average Volume  (10 Day):** {self.format_large_num(self.alert_data['avg_vol_10'])}
+        - **Average Volume  (30 Day):** {self.format_large_num(self.alert_data['avg_vol_30'])}
+        - **Average Volume  (90 Day):** {self.format_large_num(self.alert_data['avg_vol_90'])}
+        \n\n"""
 
     def build_alert(self):
         alert = ""
