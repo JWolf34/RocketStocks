@@ -78,9 +78,8 @@ class Reports(commands.Cog):
         if (market_utils.market_open_today() and (market_utils.in_extended_hours() or market_utils.in_intraday())):
             report = GainerReport(self.screeners_channel)
             await report.send_report()
-            await self.bot.get_cog("Alerts").send_earnings_movers(report.gainers)
-            #await self.bot.get_cog("Alerts").send_sec_filing_movers(report.gainers)
-            await self.bot.get_cog("Alerts").send_watchlist_movers(report.gainers)
+            await self.bot.get_cog("Alerts").update_alert_tickers(key='gainers',
+                                                                  tickers = report.get_tickers())
         else:
             # Not a weekday - do not post gainer reports
             pass
@@ -92,14 +91,15 @@ class Reports(commands.Cog):
         if (market_utils.market_open_today() and market_utils.in_intraday()):
             report = VolumeReport(self.screeners_channel)
             await report.send_report()
-            await self.bot.get_cog("Alerts").send_unusual_volume_movers(report.volume_movers)
+            await self.bot.get_cog("Alerts").update_alert_tickers(key='volume_movers',
+                                                                  tickers = report.get_tickers())
         else:
             # Not a weekday - do not post gainer reports
             pass
 
     # Start posting report at next 0 or 5 minute interval
-    @send_gainer_reports.before_loop
-    @send_volume_reports.before_loop
+    #@send_gainer_reports.before_loop
+    #@send_volume_reports.before_loop
     async def sleep_until_5m_interval(self):
         now = datetime.datetime.now().astimezone()
         if now.minute % 5 == 0:
@@ -628,7 +628,8 @@ class GainerReport(Report):
 
         super().__init__(channel)
 
-        
+    def get_tickers(self):
+        return self.gainers['Ticker'].to_list()
 
     def format_df_for_table(self):
         gainers = self.gainers.copy()
@@ -644,12 +645,9 @@ class GainerReport(Report):
                 gainers[column] = gainers[column].apply(lambda x: self.format_large_num(x))
         return gainers
 
-        
-
-        return pd.DataFrame(rows, columns=headers)
     def update_gainer_watchlist(self):
         watchlist_id = f"{market_utils.get_market_period()}-gainers"
-        watchlist_tickers = self.gainers['Ticker'].to_list()
+        watchlist_tickers = self.get_tickers()
         watchlist_tickers = watchlist_tickers[:15]
 
         if not sd.Watchlists().validate_watchlist(watchlist_id):
@@ -703,6 +701,9 @@ class VolumeReport(Report):
         if self.volume_movers.size > 0:
             self.update_unusual_volume_watchlist()
         super().__init__(channel)
+
+    def get_tickers(self):
+        return self.volume_movers['Ticker'].to_list()
 
     def format_df_for_table(self):
         movers = self.volume_movers.copy()
@@ -770,7 +771,7 @@ class VolumeReport(Report):
 
     def update_unusual_volume_watchlist(self):
         watchlist_id = "unusual-volume"
-        watchlist_tickers = self.volume_movers['Ticker'].to_list()
+        watchlist_tickers = self.get_tickers()
 
         watchlist_tickers, invalid_tickers = sd.StockData.get_valid_tickers(' '.join(watchlist_tickers))
         watchlist_tickers = watchlist_tickers[:15]

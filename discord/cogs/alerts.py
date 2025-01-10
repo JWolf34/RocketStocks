@@ -21,19 +21,30 @@ class Alerts(commands.Cog):
         self.bot = bot
         self.alerts_channel=self.bot.get_channel(config.discord_utils.alerts_channel_id)
         self.reports_channel= self.bot.get_channel(config.discord_utils.reports_channel_id)
+        self.alert_tickers = {}
         self.post_alerts_date.start()
         self.send_popularity_movers.start()
+        self.send_alerts.start()
+        
 
     @commands.Cog.listener()
     async def on_ready(self):
         logger.info(f"Cog {__name__} loaded!")
+
+    async def update_alert_tickers(self, key:str, tickers:list):
+        self.alert_tickers[key] = tickers
 
     @tasks.loop(time=datetime.time(hour=6, minute=0, second=0)) # time in UTC
     async def post_alerts_date(self):
         if (market_utils.market_open_today()):
             await self.alerts_channel.send(f"# :rotating_light: Alerts for {date_utils.format_date_mdy(datetime.datetime.today())} :rotating_light:")
 
-    
+    @tasks.loop(seconds=30)
+    async def send_alerts(self):
+        all_alert_tickers = list(set([ticker for tickers in self.alert_tickers.values() for ticker in tickers]))
+        #quotes = sd.Schwab().get_quotes(tickers=all_alert_tickers)
+        print(all_alert_tickers)
+
     async def send_earnings_movers(self, tickers:list, quotes:dict):
         today = datetime.datetime.today()
         for ticker in tickers:
