@@ -33,13 +33,16 @@ class Alerts(commands.Cog):
         if (market_utils.market_open_today()):
             await self.alerts_channel.send(f"# :rotating_light: Alerts for {date_utils.format_date_mdy(datetime.datetime.today())} :rotating_light:")
 
-    async def send_earnings_movers(self, gainers):
+    
+    async def send_earnings_movers(self, tickers:list, quotes:dict):
         today = datetime.datetime.today()
-        for index, row in gainers.iterrows():
-            ticker = row['Ticker']
+        for ticker in tickers:
             earnings_date = sd.StockData.Earnings.get_next_earnings_date(ticker)
             if earnings_date != "N/A":
                 if earnings_date == today.date():
+                    quote = quotes[ticker]
+                    earnings_mover_data = {}
+                    earnings_mover_data['pct_change'] = None
                     alert = EarningsMoverAlert(ticker=ticker, channel=self.alerts_channel, gainer_row=row)
                     await alert.send_alert()
 
