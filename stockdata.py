@@ -41,9 +41,11 @@ class News():
         return self.news.get_sources()
 
     def get_news(self, query, **kwargs):
+        logger.debug(f"Fetching news with query '{query}'")
         return self.news.get_everything(q=query, language='en', **kwargs)
     
     def get_breaking_news(self, query, **kwargs):
+        logger.debug(f"Fetching breaking news with query '{query}'")
         return self.news.get_top_headlines(q=query, **kwargs)
 
     def format_article_date(self, date):
@@ -57,17 +59,21 @@ class Nasdaq():
         self.MAX_CALLS = 10
         self.MAX_PERIOD = 60
 
+    # Retrieve latest tickers and their properties on the NASDAQ
     @sleep_and_retry
     @limits(calls = 5, period = 60)
     def get_all_tickers(self):
+        logger.debug("Retrieving latest tickers and their properties from NASDAQ")
         url = f"{self.url_base}/screener/stocks?tableonly=false&limit=25&download=true"
         data = requests.get(url, headers=self.headers).json()
         tickers = pd.DataFrame(data['data']['rows'])
         return tickers
 
+    # Retrieve all earnings on a given date
     @sleep_and_retry
     @limits(calls = 5, period = 60) 
     def get_earnings_by_date(self, date):
+        logger.debug(f"Retrieving earnings on date {date}")
         url = f"{self.url_base}/calendar/earnings"
         params = {'date':date}
         data = requests.get(url, headers=self.headers, params=params).json()
@@ -76,9 +82,11 @@ class Nasdaq():
         else:
             return pd.DataFrame(data['data']['rows'])
     
+    # Retrieve earnings forecast for target tickert from NASDAQ
     @sleep_and_retry
     @limits(calls = 5, period = 60) 
     def get_earnings_forecast(self, ticker):
+        logger.debug(f"Retrieving earnings forecast for ticker '{ticker}'")
         url = f"https://api.nasdaq.com/api/analyst/{ticker}/earnings-forecast"
         data = requests.get(url, headers=self.headers).json()
         return data['data']
@@ -89,9 +97,11 @@ class Nasdaq():
     def get_earnings_forecast_yearly(self, ticker):
         return pd.DataFrame.from_dict(self.get_earnings_forecast(ticker)['yearlyForecast']['rows'])
 
+    # Retrieve historical EPS for target ticker from NASDAQ
     @sleep_and_retry
     @limits(calls = 5, period = 60) 
     def get_eps(self, ticker):
+        logger.debug(F"Retrieving eps for ticker '{ticker}'")
         url = f"https://api.nasdaq.com/api/quote/{ticker}/eps"
         eps_request = requests.get(url, headers=self.headers)
         eps = pd.DataFrame.from_dict(eps_request.json()['data']['earningsPerShare'])
@@ -267,7 +277,7 @@ class Postgres():
         self.close_connection()
         logger.debug(f"Dropped table '{table}' from database")
 
-    # Insert row(s) into database
+  
     def insert(self, table:str, fields:list, values:list):
         self.open_connection()
         
@@ -291,7 +301,7 @@ class Postgres():
         self.conn.commit()
         self.close_connection()
 
-    # Build select query for select methods
+    # Select row(s) from database
     def select(self, table:str, fields:list, where_conditions:list = [], order_by:tuple = tuple(), fetchall:bool = True):
         self.open_connection()
         values = tuple()
@@ -397,7 +407,7 @@ class Postgres():
         self.conn.commit()
         self.close_connection()
 
-    # Generate sql with where clauses
+    # Generate where clauses SQL
     def where_clauses(self, where_conditions:list):
         
         where_script = sql.SQL(" WHERE ")
@@ -501,7 +511,7 @@ class Watchlists():
 
     # Set content of watchlist to provided tickers
     def update_watchlist(self, watchlist_id, tickers):
-        logger.info("Updating watchlist '{}': {}".format(watchlist_id, tickers))
+        logger.debug("Updating watchlist '{}': {}".format(watchlist_id, tickers))
 
         Postgres().update(table='watchlists', 
                           set_fields=[('tickers', ' '.join(tickers))], 
@@ -519,7 +529,7 @@ class Watchlists():
 
     # Validate watchlist exists in the database
     def validate_watchlist(self, watchlist_id):
-        logger.info(f"Validating watchlist '{watchlist_id}' exists")
+        logger.debug(f"Validating watchlist '{watchlist_id}' exists")
 
         result = Postgres().select(table='watchlists',
                                        fields=['id'],
@@ -531,7 +541,6 @@ class Watchlists():
         else:
             return True
 
-    
 
 class SEC():
     def __init__(self):
