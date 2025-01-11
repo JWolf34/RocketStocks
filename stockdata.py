@@ -561,6 +561,7 @@ class SEC():
     @sleep_and_retry
     @limits(calls = 5, period = 1) # 5 calls per 1 second
     def get_submissions_data(self, ticker):
+        logger.debug(f"Fetching  SEC submissions for ticker {ticker}")
         submissions_json = requests.get(f"https://data.sec.gov/submissions/CIK{StockData.get_cik(ticker)}.json", headers=self.headers).json()
         return submissions_json
     
@@ -578,12 +579,14 @@ class SEC():
     @sleep_and_retry
     @limits(calls = 5, period = 1) # 5 calls per second
     def get_accounts_payable(self, ticker):
+        logger.debug(f"Fetching accounts payable from SEC for ticker {ticker}")
         json = requests.get(f"https://data.sec.gov/api/xbrl/companyconcept/CIK{StockData.get_cik(ticker)}/us-gaap/AccountsPayableCurrent.json", headers=self.headers).json()
         return pd.DataFrame.from_dict(json)
 
     @sleep_and_retry
     @limits(calls = 5, period = 1) # 5 calls per second
     def get_company_facts(self, ticker):
+        logger.debug(f"Fetching company facts from SEC for ticker {ticker}")
         json = requests.get(f"https://data.sec.gov/api/xbrl/companyfacts/CIK{StockData.get_cik(ticker)}.json", headers=self.headers).json()
         return pd.DataFrame.from_dict(json)
     
@@ -706,7 +709,7 @@ class StockData():
 
                         values = [tuple(row) for row in earnings.values]
                         Postgres().insert(table='historical_earnings', fields=earnings.columns.to_list(), values=values)
-                        print (f"Updated historical earnings for {date_string}")
+                        logger.debug(f"Updated historical earnings for {date_string}")
                     else: # No earnings recorded on target date
                         pass
                 else: # Market is not open on target date
@@ -715,6 +718,7 @@ class StockData():
 
         @staticmethod
         def get_historical_earnings(ticker):
+            logger.debug(f"Fetching historical earnings for ticker '{ticker}' from database")
             columns = Postgres().get_table_columns('historical_earnings')
             results = Postgres().select(table='historical_earnings',
                                         fields=columns,
@@ -774,6 +778,7 @@ class StockData():
             Postgres().update(table='tickers',
                             set_fields=set_fields,
                             where_conditions=[('ticker', ticker)])
+            logger.debug(f"Updated ticker '{ticker}' in database")
         logger.info("Tickers have been updated!")
     
     @staticmethod
