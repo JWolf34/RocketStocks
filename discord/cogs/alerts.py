@@ -157,26 +157,35 @@ class Alerts(commands.Cog):
                 todays_rank = row['rank']
                 popularity = sd.StockData.get_historical_popularity(ticker)
                 popularity = popularity[popularity['date'] > (datetime.date.today() - datetime.timedelta(days=5))]
-                min_rank = 0
-                max_rank = 0
+                low_rank = 0
+                low_rank_date = None
+                high_rank = 0
+                high_rank_date = None
                 for index, popular_row in popularity.iterrows(): # replace with iterrows logic
-                    if min_rank < popular_row['rank'] or min_rank == 0:
-                        min_rank = popular_row['rank']
-                    if max_rank > popular_row['rank'] or max_rank == 0:
-                        max_rank = popular_row['rank']
+                    if low_rank < popular_row['rank'] or low_rank == 0:
+                        low_rank = popular_row['rank']
+                        low_rank_date = datetime.date.today() - datetime.timedelta(days=index)
+                    if high_rank > popular_row['rank'] or high_rank == 0:
+                        high_rank = popular_row['rank']
+                        high_rank_date = datetime.date.today() - datetime.timedelta(days=index)
 
                 today_is_max = False
-                if min_rank < todays_rank:
-                    min_rank = todays_rank
-                if max_rank > todays_rank:
+                if low_rank < todays_rank:
+                    low_rank = todays_rank
+                    low_rank_date = datetime.date.today()
+                if high_rank > todays_rank:
                     today_is_max = True
-                    max_rank = todays_rank
+                    high_rank = todays_rank
+                    high_rank_date = datetime.date.today() - datetime.timedelta(days=index)
                     
             
-                if (((float(min_rank) - float(max_rank)) / float(min_rank)) * 100.0 > 50.0) and min_rank > 10 and sd.StockData.validate_ticker(ticker) and today_is_max:
+                if (((float(low_rank) - float(high_rank)) / float(low_rank)) * 100.0 > 50.0) and low_rank > 10 and sd.StockData.validate_ticker(ticker) and today_is_max:
                     alert_data = {}
-                    alert_data['todays_popularity'] = row
-                    alert_data['historical_popularity'] = popularity
+                    alert_data['todays_rank'] = row['rank']
+                    alert_data['high_rank'] = high_rank
+                    alert_data['high_rank_date'] = high_rank_date
+                    alert_data['low_rank'] = low_rank
+                    alert_data['low_rank_date'] = low_rank_date
                     alert = PopularityAlert(ticker = ticker, 
                                             channel=self.alerts_channel,
                                             alert_data=alert_data) 
@@ -364,39 +373,14 @@ class VolumeSpikeAlert(Alert):
 class PopularityAlert(Alert):
     def __init__(self, ticker, channel, alert_data):
         self.alert_type = "POPULARITY"
-        self.popularity_stats = self.get_popularity_stats()
         super().__init__(ticker, channel, alert_data)
-    
-    def get_popularity_stats(self):
-        stats = {'todays_rank':self.alert_data['todays_popularity']['rank'],
-                 'low_rank': None,
-                 'low_rank_date':None,
-                 'high_rank': None, 
-                 'high_rank_date':None}
-        popularity = pd.concat([self.alert_data['todays_popularity'], self.alert_data['historical_popularity']], ignore_index=True)
-        for index, row in self.alert_data['historical_popularity'].iterrows():
-            rank = row['rank']
-            date = row['date']
-            if stats.get('low_rank') is None or stats.get('low_rank') > rank:
-                stats['low_rank'] = rank
-                stats['low_rank_date'] = date
-            if stats.get('high_rank') is None or stats.get('high_rank') < rank:
-                stats['high_rank'] = rank
-                stats['high_rank_date'] = date
-        if stats.get('low_rank') is None or stats.get('low_rank') > stats.get('todays_rank'):
-                stats['low_rank'] = stats.get('todays_rank')
-                stats['low_rank_date'] = datetime.date.today()
-        if stats.get('high_rank') is None or stats.get('high_rank') < stats.get('todays_rank'):
-            stats['high_rank'] = stats.get('todays_rank')
-            stats['high_rank_date'] = datetime.date.today()
-        return stats
             
     def build_alert_header(self):
         header = f"## :rotating_light: Popularity Mover: {self.ticker}\n\n\n"
         return header
 
     def build_todays_change(self):
-        return f"**{self.ticker}** has moved {self.popularity_stats['high_rank'] - self.popularity_stats['low_rank']} spots between {date_utils.format_date_mdy(self.popularity_stats['low_rank_date'])} **({self.popularity_stats['low_rank']})** and {date_utils.format_date_mdy(self.popularity_stats['high_rank_date'])} **({self.popularity_stats['high_rank']})** \n"
+        return f"**{self.ticker}** has moved {self.alert_data['low_rank'] - self.alert_data['high_rank']} spots between {date_utils.format_date_mdy(self.alert_data['high_rank_date'])} **({self.alert_data['high_rank']})** and {date_utils.format_date_mdy(self.alert_data['low_rank_date'])} **({self.alert_data['low_rank']})** \n"
 
     def build_alert(self):
         alert = ""

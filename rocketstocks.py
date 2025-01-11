@@ -45,7 +45,7 @@ def setup_logging():
     with open(config_file) as f:
         config = json.load(f)
 
-    logging.config.dictConfig(config)
+    logging.config.dictConfig(config)*
 
 
 def rocketStocks():
