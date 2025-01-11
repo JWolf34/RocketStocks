@@ -24,7 +24,7 @@ class Alerts(commands.Cog):
         self.reports_channel= self.bot.get_channel(config.discord_utils.reports_channel_id)
         self.alert_tickers = {}
         self.post_alerts_date.start()
-        #self.send_popularity_movers.start()
+        self.send_popularity_movers.start()
         self.send_alerts.start()
         
 
@@ -146,9 +146,11 @@ class Alerts(commands.Cog):
     
     @tasks.loop(minutes=1)
     async def send_popularity_movers(self):
-        top_stocks = sd.ApeWisdom().get_top_stocks()[:80]
-        self.update_alert_tickers(key='popular-stocks', tickers=top_stocks['ticker'].to_list())
         blacklist_tickers = ['DTE', 'AM', 'PM', 'DM']
+        top_stocks = sd.ApeWisdom().get_top_stocks()[:50]
+        top_stocks = top_stocks[~top_stocks['ticker'].isin(blacklist_tickers)]
+        await self.update_alert_tickers(key='popular-stocks', tickers=top_stocks['ticker'].to_list())
+        
         for index, row in top_stocks.iterrows():
             ticker = row['ticker']
             if ticker not in blacklist_tickers:
@@ -172,16 +174,18 @@ class Alerts(commands.Cog):
                     
             
                 if (((float(min_rank) - float(max_rank)) / float(min_rank)) * 100.0 > 50.0) and min_rank > 10 and sd.StockData.validate_ticker(ticker) and today_is_max:
+                    alert_data = {}
+                    alert_data['todays_popularity'] = row
+                    alert_data['historical_popularity'] = popularity
                     alert = PopularityAlert(ticker = ticker, 
                                             channel=self.alerts_channel,
-                                            todays_popularity=row,
-                                            historical_popularity=popularity) 
+                                            alert_data=alert_data) 
                     await alert.send_alert()
             else:
                 pass
 
     # Start posting report at next 0 or 5 minute interval
-    @send_popularity_movers.before_loop
+    #@send_popularity_movers.before_loop
     async def sleep_until_5m_interval(self):
         await asyncio.sleep(config.date_utils.seconds_until_5m_interval())
 
@@ -358,21 +362,19 @@ class VolumeSpikeAlert(Alert):
         return alert
 
 class PopularityAlert(Alert):
-    def __init__(self, ticker, channel, todays_popularity, historical_popularity):
+    def __init__(self, ticker, channel, alert_data):
         self.alert_type = "POPULARITY"
-        self.todays_popularity = todays_popularity
-        self.historical_popularity = historical_popularity
         self.popularity_stats = self.get_popularity_stats()
-        super().__init__(ticker, channel)
+        super().__init__(ticker, channel, alert_data)
     
     def get_popularity_stats(self):
-        stats = {'todays_rank':self.todays_popularity['rank'],
+        stats = {'todays_rank':self.alert_data['todays_popularity']['rank'],
                  'low_rank': None,
                  'low_rank_date':None,
                  'high_rank': None, 
                  'high_rank_date':None}
-        popularity = pd.concat([self.todays_popularity, self.historical_popularity], ignore_index=True)
-        for index, row in self.historical_popularity.iterrows():
+        popularity = pd.concat([self.alert_data['todays_popularity'], self.alert_data['historical_popularity']], ignore_index=True)
+        for index, row in self.alert_data['historical_popularity'].iterrows():
             rank = row['rank']
             date = row['date']
             if stats.get('low_rank') is None or stats.get('low_rank') > rank:
@@ -394,7 +396,7 @@ class PopularityAlert(Alert):
         return header
 
     def build_todays_change(self):
-        return f"**{self.ticker}** has moved {self.popularity_stats['high_rank'] - self.popularity_stats['low_rank']} spots between {date_utils.format_date_mdy(self.popularity_stats['low_rank_date'])} **({self.popularity_stats['low_rank']})** and {date_utils.format_date_mdy(self.popularity_stats['high_rank_date'])} **({self.popularity_stats['high_rank']})** \n\n"
+        return f"**{self.ticker}** has moved {self.popularity_stats['high_rank'] - self.popularity_stats['low_rank']} spots between {date_utils.format_date_mdy(self.popularity_stats['low_rank_date'])} **({self.popularity_stats['low_rank']})** and {date_utils.format_date_mdy(self.popularity_stats['high_rank_date'])} **({self.popularity_stats['high_rank']})** \n"
 
     def build_alert(self):
         alert = ""
