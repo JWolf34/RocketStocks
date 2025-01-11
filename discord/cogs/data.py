@@ -32,7 +32,7 @@ class Data(commands.Cog):
     async def csv(self, interaction: discord.Interaction, tickers: str, frequency: app_commands.Choice[str]):
         await interaction.response.defer(ephemeral=True)
         logger.info("/csv function called by user {}".format(interaction.user.name))
-        logger.debug("Data file(s) for {} requested".format(tickers))
+        logger.info("Data file(s) for {} requested".format(tickers))
 
         frequency = frequency.value
         
@@ -65,8 +65,10 @@ class Data(commands.Cog):
                 message = await interaction.user.send(content = message, file=file)
 
             if len(invalid_tickers) > 0:
+                logger.info(f"Sent data files for tickers {tickers}. Invalid tickers: {invalid_tickers}")
                 await interaction.followup.send("Fetched data files for [{}]({}). Invalid tickers:".format(", ".join(tickers), message.jump_url, ", ".join(invalid_tickers)), ephemeral=True)
             else:
+                logger.info(f"Sent data files for tickers {tickers}")
                 await interaction.followup.send("Fetched data files for [{}]({})".format(", ".join(tickers), message.jump_url), ephemeral=True)
 
 
@@ -79,7 +81,7 @@ class Data(commands.Cog):
     async def financials(self, interaction: discord.interactions, tickers: str):
         await interaction.response.defer(ephemeral=True)
         logger.info("/financials function called by user {}".format(interaction.user.name))
-        logger.debug("Financials requested for {}".format(tickers))
+        logger.info("Financials requested for {}".format(tickers))
 
 
         tickers, invalid_tickers = sd.StockData.get_valid_tickers(tickers)
@@ -98,10 +100,12 @@ class Data(commands.Cog):
         # Follow-up
         follow_up = ""
         if message is not None: # Message was generated
+            logger.info(f"Provided financials for tickers {tickers}")
             follow_up = f"Posted financials for tickers [{", ".join(tickers)}]({message.jump_url})!"
             if len(invalid_tickers) > 0: # More than one invalid ticke input
                 follow_up += f" Invalid tickers: {", ".join(invalid_tickers)}"
         if len(tickers) == 0: # No valid tickers input
+            logger.info("No valid tickers input. No fincancials returned")
             follow_up = f"No valid tickers input: {", ".join(invalid_tickers)}"
         await interaction.followup.send(follow_up, ephemeral=True)
         
@@ -111,6 +115,7 @@ class Data(commands.Cog):
         log_file = discord.File("logs/rocketstocks.log")
         await interaction.user.send(content = "Log file for RocketStocks :rocket:",file=log_file)
         await interaction.response.send_message("Log file has been sent", ephemeral=True)
+        logger.info("Log file successfully sent")
 
     @app_commands.command(name = "all-tickers-info", description= "Return CSV with data on all tickers the bot runs analysis on",)
     async def all_tickers_csv(self, interaction: discord.Interaction):
@@ -121,6 +126,7 @@ class Data(commands.Cog):
         csv_file = discord.File(filepath)       
         await interaction.user.send(content = "All tickers",file=csv_file)
         await interaction.response.send_message("CSV file has been sent", ephemeral=True)
+        logger.info(f"Provided data file for all {len(data)} tickers")
         
     @app_commands.command(name = "eps", description= "Returns recent EPS data for the input tickers",)
     @app_commands.describe(tickers = "Tickers to return EPS data for (separated by spaces)")
@@ -132,6 +138,7 @@ class Data(commands.Cog):
     async def eps(self, interaction: discord.Interaction, tickers: str, visibility: app_commands.Choice[str]):
         await interaction.response.defer(ephemeral=True)
         logger.info("/eps function called by user {}".format(interaction.user.name))
+        logger.info(f"EPS requested for tickers {tickers}")
         sd.validate_path(config.datapaths.attachments_path)
         message = ""
         file = None
@@ -159,10 +166,12 @@ class Data(commands.Cog):
         # Follow-up
         follow_up = ""
         if message is not None: # Message was generated
+            logger.info(f"Provided EPS data for tickers {tickers}")
             follow_up = f"Posted EPS for tickers [{", ".join(tickers)}]({message.jump_url})!"
             if len(invalid_tickers) > 0: # More than one invalid ticke input
                 follow_up += f" Invalid tickers: {", ".join(invalid_tickers)}"
         if len(tickers) == 0: # No valid tickers input
+            logger.info(f"No valid tickers input. No EPS data provided")
             follow_up = f"No valid tickers input: {", ".join(invalid_tickers)}"
         await interaction.followup.send(follow_up, ephemeral=True)
     
@@ -172,6 +181,7 @@ class Data(commands.Cog):
     async def form(self, interaction: discord.Interaction, tickers: str, form:str):
         await interaction.response.defer()
         logger.info("/form function called by user {}".format(interaction.user.name))
+        logger.info(f"Form {form} requested for tickers {tickers}")
         
         tickers, invalid_tickers = sd.StockData.get_valid_tickers(tickers)
         sec = sd.SEC()
@@ -191,12 +201,14 @@ class Data(commands.Cog):
                 sec_link = sec.get_link_to_filing(ticker, target_filing)
                 message += f"[{ticker} Form {form} - Filed {filing_date}]({sec_link})\n"
         await interaction.followup.send(message)
+        logger.info(f"Form {form} provided for tickers {tickers}")
     
     @app_commands.command(name="fundamentals", description="Return JSON files of fundamental data for desired tickers")
     @app_commands.describe(tickers = "Tickers to return SEC forms for (separated by spaces)")
     async def fundamentals(self, interaction: discord.Interaction, tickers: str):
         await interaction.response.defer(ephemeral=True)
         logger.info(f"/fundamentals function called by user {interaction.user.name}")
+        logger.info(f"Fundamentals requested for tickers {tickers}")
         message = None
         file = None
         tickers, invalid_tickers = sd.StockData.get_valid_tickers(tickers)
@@ -216,10 +228,12 @@ class Data(commands.Cog):
         # Follow-up
         follow_up = ""
         if message is not None: # Message was generated
+            logger.info(f"Fundamentals provided for tickers {tickers}")
             follow_up = f"Posted fundamentals for tickers [{", ".join(tickers)}]({message.jump_url})!"
             if len(invalid_tickers) > 0: # More than one invalid ticke input
                 follow_up += f" Invalid tickers: {", ".join(invalid_tickers)}"
         if len(tickers) == 0: # No valid tickers input
+            logger.info("No valid tickers input. No fincancials provided")
             follow_up = f"No valid tickers input: {", ".join(invalid_tickers)}"
         await interaction.followup.send(follow_up, ephemeral=True)
 
@@ -227,17 +241,18 @@ class Data(commands.Cog):
     @app_commands.describe(tickers = "Tickers to return SEC forms for (separated by spaces)")
     async def options(self, interaction: discord.Interaction, tickers: str):
         await interaction.response.defer(ephemeral=True)
-        logger.info(f"/fundamentals function called by user {interaction.user.name}")
+        logger.info(f"/options function called by user {interaction.user.name}")
+        logger.info(f"Options chain(s) requested for tickers {tickers}")
         message = None
         file = None
         tickers, invalid_tickers = sd.StockData.get_valid_tickers(tickers)
         for ticker in tickers:
-            fundamentals = sd.Schwab().get_options_chain(ticker)
+            options = sd.Schwab().get_options_chain(ticker)
             
-            if fundamentals is not None:
+            if options is not None:
                 filepath = f"{config.datapaths.attachments_path}/{ticker}_options_chain.json"
                 with open(filepath, 'w') as json_file:
-                    json.dump(fundamentals, json_file)
+                    json.dump(options, json_file)
                 file = discord.File(filepath)
                 message = f"Options chain for ticker {ticker}"
             else:
@@ -247,10 +262,12 @@ class Data(commands.Cog):
         # Follow-up
         follow_up = ""
         if message is not None: # Message was generated
+            logger.info(f"Options chain(s) provided for tickers {tickers}")
             follow_up = f"Posted options chains for tickers [{", ".join(tickers)}]({message.jump_url})!"
             if len(invalid_tickers) > 0: # More than one invalid ticke input
                 follow_up += f" Invalid tickers: {", ".join(invalid_tickers)}"
         if len(tickers) == 0: # No valid tickers input
+            logger.info("No valid tickers input. No options chains provided")
             follow_up = f"No valid tickers input: {", ".join(invalid_tickers)}"
         await interaction.followup.send(follow_up, ephemeral=True)
 
@@ -258,9 +275,8 @@ class Data(commands.Cog):
     @app_commands.describe(tickers = "Tickers to return popularity for (separated by spaces)")
     async def popularity(self, interaction: discord.Interaction, tickers: str):
         await interaction.response.defer(ephemeral=True)
-        logger.info("/csv function called by user {}".format(interaction.user.name))
-        logger.debug("Data file(s) for {} requested".format(tickers))
-        
+        logger.info("/popularity function called by user {}".format(interaction.user.name))
+        logger.info(f"Historical popularity requested for tickers {tickers}")
         files = []
         tickers, invalid_tickers = sd.StockData.get_valid_tickers(tickers)
         try:
@@ -279,8 +295,10 @@ class Data(commands.Cog):
                 message = await interaction.user.send(content = message, file=file)
 
             if len(invalid_tickers) > 0:
+                logger.info(f"Provided popualrity for tickers {tickers}. Invalid tickers: {invalid_tickers}")
                 await interaction.followup.send("Fetched popularity for [{}]({}). Invalid tickers:".format(", ".join(tickers), message.jump_url, ", ".join(invalid_tickers)), ephemeral=True)
             else:
+                logger.info(f"Provided popualrity for tickers {tickers}")
                 await interaction.followup.send("Fetched popularity for [{}]({})".format(", ".join(tickers), message.jump_url), ephemeral=True)
 
 
