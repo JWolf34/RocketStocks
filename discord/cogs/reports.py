@@ -51,6 +51,7 @@ class Reports(commands.Cog):
     @tasks.loop(time=datetime.time(hour=22 , minute=0, second=0)) # time in UTC
     #@tasks.loop(hours=24)
     async def send_popularity_reports(self):
+        logger.info(f"Sending today's popularity report")
         report = PopularityReport(self.screeners_channel)
         await report.send_report()
 
@@ -63,6 +64,7 @@ class Reports(commands.Cog):
             sd.Watchlists().update_watchlist(watchlist_id=watchlist_id, tickers=tickers)
 
         # Update DB table
+        logger.debug(f"Updating popular-stocks table with latest tickers")
         fields = ['date', 'ticker', 'rank', 'mentions', 'upvotes']
         popular_stocks = report.top_stocks.drop(columns=['rank_24h_ago',
                                                        'mentions_24h_ago',
@@ -77,6 +79,7 @@ class Reports(commands.Cog):
     async def send_gainer_reports(self):
         if (market_utils.market_open_today() and (market_utils.in_extended_hours() or market_utils.in_intraday())):
             report = GainerReport(self.screeners_channel)
+            logger.info(f"Sending {report.market_period} gainers report")
             await report.send_report()
             await self.bot.get_cog("Alerts").update_alert_tickers(key='gainers',
                                                                   tickers = report.get_tickers())
@@ -91,6 +94,7 @@ class Reports(commands.Cog):
         #if (market_utils.market_open_today() and market_utils.in_intraday()):
         if (market_utils.market_open_today() and (market_utils.in_extended_hours() or market_utils.in_intraday())):
             report = VolumeReport(self.screeners_channel)
+            logger.info(f"Sending {report.market_period} unusual volume report")
             await report.send_report()
             await self.bot.get_cog("Alerts").update_alert_tickers(key='volume_movers',
                                                                   tickers = report.get_tickers())
@@ -102,7 +106,9 @@ class Reports(commands.Cog):
     @send_gainer_reports.before_loop
     @send_volume_reports.before_loop
     async def reports_before_loop(self):
-        await asyncio.sleep(config.date_utils.seconds_until_5m_interval())
+        sleep_time = config.date_utils.seconds_until_5m_interval()
+        logger.info(f"Reports will begin posting in {sleep_time} seconds")
+        await asyncio.sleep(sleep_time)
             
 
     @tasks.loop(time=datetime.time(hour=12, minute=30, second=0)) # time in UTC
@@ -110,6 +116,7 @@ class Reports(commands.Cog):
     async def post_earnings_spotlight(self):
         if market_utils.market_open_today():
             report = EarningsSpotlightReport(self.reports_channel)
+            logger.info(f"Posting today's earnings spotlight: '{report.ticker}'")
             await report.send_report()
 
 
@@ -119,6 +126,7 @@ class Reports(commands.Cog):
         today = datetime.datetime.today()
         if datetime.datetime.today().weekday() == 0:
             report = WeeklyEarningsReport(self.reports_channel)
+            logger.info(f"Posting weekly earnings report. Earnings reporting this week: {report.upcoming_earnings}")
             await report.send_report()
 
 
@@ -126,7 +134,7 @@ class Reports(commands.Cog):
     @tasks.loop(time=datetime.time(hour=6, minute=0, second=0)) # time in UTC
     #@tasks.loop(minutes=5)
     async def update_earnings_calendar(self):
-        logger.debug("Creating events for upcoming earnings dates")
+        logger.info("Creating events for upcoming earnings dates")
         guild = self.bot.get_guild(config.discord_utils.guild_id)
         tickers = sd.Watchlists().get_tickers_from_all_watchlists(no_personal=False) # Get all tickers except from system-generated watchlists
         for ticker in tickers:
@@ -171,11 +179,13 @@ class Reports(commands.Cog):
                         logger.debug(f"Event '{event.name} created at {event.start_time}")
                     else:
                         # Event start time is in the past
+                        logger.debug(f"Event start time {start_time} is in the past. Skipping...")
                         pass
                 else:
                     # Event already exists
+                    logger.debug(f"Event '{event.name}' already exists. Skipping...")
                     pass
-        logger.debug("Completed updating earnings calendar")
+        logger.info("Completed updating earnings calendar")
 
     @app_commands.command(name = "report-watchlist", description= "Post analysis of a given watchlist (use /fetch-reports for individual or non-watchlist stocks)",)
     @app_commands.describe(watchlist = "Which watchlist to fetch reports for")
@@ -188,7 +198,7 @@ class Reports(commands.Cog):
     async def report_watchlist(self, interaction: discord.Interaction, watchlist: str, visibility: app_commands.Choice[str]):
         await interaction.response.defer(ephemeral=True)
         logger.info("/report-watchlist function called by user {}".format(interaction.user.name))
-        logger.debug("Selected watchlist is '{}'".format(watchlist))
+        
         
         message = ""
         watchlist_id = watchlist
@@ -199,23 +209,24 @@ class Reports(commands.Cog):
         
         if watchlist_id not in sd.Watchlists().get_watchlists():
             await interaction.followup.send(f"Watchlist '{watchlist_id}' does not exist")
+            logger.debug(f"Watchlist '{watchlist}' does not exist. No reports generated. ")
             return
 
         tickers = sd.Watchlists().get_tickers_from_watchlist(watchlist_id)
+        logger.info(f"Reports requested for watchlist '{watchlist}' with tickers {tickers}")
+
         if len(tickers) == 0:
             # Empty watchlist
-            logger.warning("Selected watchlist '{}' is empty".format(watchlist))
+            logger.debug("Selected watchlist '{}' is empty".format(watchlist))
             message = "No tickers on the watchlist. Use /addticker to build a watchlist."
             await interaction.followup.send(message, ephemeral=True)
         else:
             # Send reports
-            logger.info("Running reports on tickers {}".format(tickers))
+            logger.info(f"Generating reports for tickers {tickers}")
             message = None
             for ticker in tickers:
-                logger.debug("Processing ticker {}".format(ticker))
                 report = StockReport(ticker, self.reports_channel)
                 message = await report.send_report(interaction, visibility.value)
-                logger.info("Report posted for ticker {}".format(ticker))
             logger.info("Reports have been posted")
 
             # Follow-up message
@@ -233,25 +244,24 @@ class Reports(commands.Cog):
     async def report(self, interaction: discord.interactions, tickers: str, visibility: app_commands.Choice[str]):
         await interaction.response.defer(ephemeral=True)
         logger.info("/report function called by user {}".format(interaction.user.name))
+        logger.info(f"Reports requested for tickers '{tickers}'")
     
         # Validate each ticker in the list is valid
         tickers, invalid_tickers = sd.StockData.get_valid_tickers(tickers)
-        logger.debug("Validated tickers {} | Invalid tickers: {}".format(tickers, invalid_tickers))
         message = None
-        logger.info("Fetching reports for tickers {}".format(tickers))
         for ticker in tickers:
-            logger.debug("Processing ticker {}".format(ticker))
             report = StockReport(ticker, self.reports_channel)
             message = await report.send_report(interaction, visibility.value)
-            logger.info("Report posted for ticker {}".format(ticker))
 
         # Follow-up message
         follow_up = ""
         if message is not None: # Message was generated
+            logger.info(f"Reports posted for tickers {tickers}")
             follow_up = f"Posted reports for tickers [{", ".join(tickers)}]({message.jump_url})!"
             if len(invalid_tickers) > 0: # More than one invalid ticke input
                 follow_up += f" Invalid tickers: {", ".join(invalid_tickers)}"
         if len(tickers) == 0: # No valid tickers input
+            logger.info(f"No valid tickers input. No reports generated")
             follow_up = f" No valid tickers input: {", ".join(invalid_tickers)}"
         await interaction.followup.send(follow_up, ephemeral=True)
 
@@ -278,6 +288,7 @@ class Reports(commands.Cog):
         kwargs = {'sort_by': sort_by}
         report = NewsReport(query=query, **kwargs)
         message = await report.send_report(interaction=interaction)
+        logger.info(f"Posted news for query '{query}'")
 
     async def autocomplete_filter(self, interaction:discord.Interaction, current:str):
         return [
@@ -296,12 +307,14 @@ class Reports(commands.Cog):
     async def popular_stocks(self, interaction:discord.Interaction, source:str,  visibility: app_commands.Choice[str]):
         await interaction.response.defer(ephemeral=True)
         logger.info("/popular-stocks function called by user {}".format(interaction.user.name))
+        logger.info(f"Latest popularity request from source '{source}'")
         report = PopularityReport(self.reports_channel, filter_name=source)
         message = await report.send_report(interaction=interaction, visibility=visibility.value)
 
         # Follow-up message
         follow_up = f"[Posted popularity reports!]({message.jump_url})"
         await interaction.followup.send(follow_up, ephemeral=True)
+        logger.info(f"Popularity posted from source {source}")
 
 ##################
 # Report Classes #
@@ -349,14 +362,14 @@ class Report(object):
 
     # Report Header
     def build_report_header(self):
-        
+        logger.debug("Building report header...")
         # Append ticker name, today's date, and external links to message
         header = "# " + self.ticker + " Report " + dt.date.today().strftime("%m/%d/%Y") + "\n"
         return header + "\n"
 
     # Ticker Info
     def build_ticker_info(self):
-
+        logger.debug("Building ticker info...")
         message = "## Ticker Info\n"
         ticker_data = sd.StockData.get_ticker_info(self.ticker)
         if ticker_data is not None:
@@ -371,6 +384,7 @@ class Report(object):
             return message + f"Unable to get info for ticker {self.ticker}\n"
         
     def build_recent_SEC_filings(self):
+        logger.debug("Building latest SEC filings...")
         message = "## Recent SEC Filings\n\n"
         filings = sd.SEC().get_recent_filings(ticker=self.ticker)
         for index, filing in filings[:5].iterrows():
@@ -378,6 +392,7 @@ class Report(object):
         return message
 
     def build_todays_sec_filings(self):
+        logger.debug("Building today's SEC filings...")
         message = "## Today's SEC Filings\n\n"
         filings = sd.SEC().get_filings_from_today(ticker=self.ticker)
         for index, filing in filings.iterrows():
@@ -385,6 +400,7 @@ class Report(object):
         return message
 
     def build_table(self, df:pd.DataFrame, style='double_thin_compact'):
+        logger.debug(f"Building table of size {df.size} with headers {df.columns.to_list()} and of style '{style}'")
         table_style = self.table_styles.get(style, PresetStyle.double_thin_compact)
         table = table2ascii(
             header = df.columns.tolist(),
@@ -394,6 +410,7 @@ class Report(object):
         return "```\n" + table + "\n```"
 
     def build_earnings_date(self):
+        logger.debug(f"Building earnings date...")
         earnings_info = sd.StockData.Earnings.get_next_earnings_info(self.ticker)
         message = f"{self.ticker} reports earnings on "
         message += f"{earnings_info['date'].iloc[0].strftime("%m/%d/%Y")}, "
