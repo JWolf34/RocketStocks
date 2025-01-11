@@ -11,19 +11,20 @@ logger = logging.getLogger(__name__)
 
 
 def scheduler():
-    timezone = 'America/Chicago'
+    timezone = 'UTC'
     
     sched = BlockingScheduler()
 
-    update_tickers_trigger = CronTrigger(day_of_week="mon-sun", hour=6, minute=0, timezone=timezone)
-    insert_new_tickers_trigger = CronTrigger(day_of_week="sun", hour=0, minute=0, timezone=timezone)
-    update_upcoming_earnings_trigger = CronTrigger(day_of_week="fri", hour=0, minute=0, timezone=timezone)
-    remove_past_earnings_trigger =  CronTrigger(day_of_week="tue-sat", hour=0, minute=0, timezone=timezone)
-    update_historical_earnings_trigger = CronTrigger(day_of_week="tue-sat", hour=1, minute=0, timezone=timezone)
-    update_daily_data_daily_trigger = CronTrigger(day_of_week="mon-fri", hour=17, minute=0, timezone=timezone)
-    update_5m_data_daily_trigger = IntervalTrigger(hours=1, timezone=timezone)
-    update_daily_data_weekly_trigger = CronTrigger(day_of_week="sat", hour=5, minute=0, timezone=timezone)
-    update_5m_data_weekly_trigger = CronTrigger(day_of_week="sat", hour=2, minute=0, timezone=timezone)
+    update_tickers_trigger = CronTrigger(day_of_week="mon-sun", hour=5, minute=0, timezone=timezone)
+    insert_new_tickers_trigger = CronTrigger(day_of_week="sun", hour=6, minute=0, timezone=timezone)
+    update_upcoming_earnings_trigger = CronTrigger(day_of_week="fri", hour=6, minute=0, timezone=timezone)
+    remove_past_earnings_trigger =  CronTrigger(day_of_week="tue-sat", hour=6, minute=0, timezone=timezone)
+    update_historical_earnings_trigger = CronTrigger(day_of_week="tue-sat", hour=7, minute=0, timezone=timezone)
+    update_daily_data_daily_trigger = CronTrigger(day_of_week="tues-sat", hour=6, minute=0, timezone=timezone)
+    update_5m_data_daily_trigger = CronTrigger(day_of_week="tues-sat", hour=7, minute=30, timezone=timezone)
+
+    test_trigger = IntervalTrigger(minutes=5, timezone=timezone)
+
     
     # Update tickers table in database with lastest NASDAQ data
     # Estimated runtime seconds
@@ -50,16 +51,8 @@ def scheduler():
     sched.add_job(sd.StockData.update_daily_price_history, trigger=update_daily_data_daily_trigger, name = "Update daily price history (daily)", timezone=timezone, replace_existing=True)
 
     # Update fiveminutepricehistorytable with recent market data (daily job)
-    # Estimated runtime ~15 minutes
-    #sched.add_job(lambda: sd.StockData.update_5m_price_history(only_last_hour=True), trigger= update_5m_data_daily_trigger, name = "Update 5m price history (daily)", timezone=timezone, replace_existing=True)
-
-    # Update dailypricehistory table with today's market data (weekly job)
-    # Estimated runtime ~90 minutes
-    sched.add_job(sd.StockData.update_daily_price_history, trigger=update_daily_data_weekly_trigger, name = "Update daily price history (weekly)", timezone=timezone, replace_existing=True)
-
-    # Update fiveminutepricehistorytable with recent market data (weekly job)
-    # Estimated runtime ~3 minutes, but scales with the number of tickers on watchlists
-    sched.add_job(sd.StockData.update_5m_price_history, trigger= update_5m_data_weekly_trigger, name = "Update 5m price history (weekly)", timezone=timezone, replace_existing=True)
+    # Estimated runtime unknown
+    sched.add_job(sd.StockData.update_5m_price_history, trigger= update_5m_data_daily_trigger, name = "Update 5m price history (daily)", timezone=timezone, replace_existing=True)
 
     sched.start()
 
