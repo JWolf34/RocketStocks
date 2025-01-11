@@ -20,8 +20,8 @@ def scheduler():
     update_upcoming_earnings_trigger = CronTrigger(day_of_week="fri", hour=6, minute=0, timezone=timezone)
     remove_past_earnings_trigger =  CronTrigger(day_of_week="tue-sat", hour=6, minute=0, timezone=timezone)
     update_historical_earnings_trigger = CronTrigger(day_of_week="tue-sat", hour=7, minute=0, timezone=timezone)
-    update_daily_data_daily_trigger = CronTrigger(day_of_week="tues-sat", hour=6, minute=0, timezone=timezone)
-    update_5m_data_daily_trigger = CronTrigger(day_of_week="tues-sat", hour=7, minute=30, timezone=timezone)
+    update_daily_data_daily_trigger = CronTrigger(day_of_week="tue-sat", hour=6, minute=0, timezone=timezone)
+    update_5m_data_daily_trigger = CronTrigger(day_of_week="tue-sat", hour=7, minute=30, timezone=timezone)
 
     test_trigger = IntervalTrigger(minutes=5, timezone=timezone)
 
