@@ -72,7 +72,7 @@ class discord_utils:
     def update_volume_message_id(message_id):
         sd.Postgres().update(table='reports',
                             set_fields=[('messageid', message_id)],
-                            where_conditions=[('type', 'UNUSUAL_COLUME_REPORT')])
+                            where_conditions=[('type', 'UNUSUAL_VOLUME_REPORT')])
 
     def get_gainer_message_id():
         market_time = market_utils.get_market_period()
@@ -222,6 +222,11 @@ class date_utils:
         if isinstance(date, str):
             date = datetime.datetime.strptime(date, "%Y-%m-%d")
         return date.strftime("%m/%d/%Y")
+
+    def dt_round_down(dt:datetime.datetime):
+        delta = dt.minute % 5
+        return dt.replace(minute = dt.minute - delta)
+
 
 
 class datapaths:

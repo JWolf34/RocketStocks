@@ -85,19 +85,6 @@ class Reports(commands.Cog):
             # Not a weekday - do not post gainer reports
             pass
 
-
-    @send_gainer_reports.before_loop
-    async def before_send_gainer_reports(self):
-        # Start posting report at next 0 or 5 minute interval
-        now = datetime.datetime.now().astimezone()
-        if now.minute % 5 == 0:
-            return 0
-        minutes_by_five = now.minute // 5
-        # get the difference in times
-        diff = (minutes_by_five + 1) * 5 - now.minute
-        future = now + datetime.timedelta(minutes=diff)
-        await asyncio.sleep((future-now).total_seconds())
-
     # Generate and send premarket gainer reports to the reports channel
     @tasks.loop(minutes=5)
     async def send_volume_reports(self):
@@ -109,10 +96,11 @@ class Reports(commands.Cog):
         else:
             # Not a weekday - do not post gainer reports
             pass
-            
+
+    # Start posting report at next 0 or 5 minute interval
+    @send_gainer_reports.before_loop
     @send_volume_reports.before_loop
-    async def before_send_volume_reports(self):
-        # Start posting report at next 0 or 5 minute interval
+    async def sleep_until_5m_interval(self):
         now = datetime.datetime.now().astimezone()
         if now.minute % 5 == 0:
             return 0
@@ -121,6 +109,7 @@ class Reports(commands.Cog):
         diff = (minutes_by_five + 1) * 5 - now.minute
         future = now + datetime.timedelta(minutes=diff)
         await asyncio.sleep((future-now).total_seconds())
+            
 
     @tasks.loop(time=datetime.time(hour=12, minute=30, second=0)) # time in UTC
     #@tasks.loop(minutes=5)
