@@ -227,6 +227,16 @@ class date_utils:
         delta = dt.minute % 5
         return dt.replace(minute = dt.minute - delta)
 
+    def seconds_until_5m_interval():
+        now = datetime.datetime.now().astimezone()
+        if now.minute % 5 == 0:
+            return 0
+        minutes_by_five = now.minute // 5
+        # get the difference in times
+        diff = (minutes_by_five + 1) * 5 - now.minute
+        future = now + datetime.timedelta(minutes=diff)
+        return (future-now).total_seconds()
+
 
 
 class datapaths:

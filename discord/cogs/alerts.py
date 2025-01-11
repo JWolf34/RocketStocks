@@ -5,6 +5,7 @@ from discord.ext import tasks
 from reports import Report
 from reports import StockReport
 import stockdata as sd
+import analysis as an
 import pandas as pd
 import config
 from config import market_utils
@@ -21,26 +22,62 @@ class Alerts(commands.Cog):
         self.bot = bot
         self.alerts_channel=self.bot.get_channel(config.discord_utils.alerts_channel_id)
         self.reports_channel= self.bot.get_channel(config.discord_utils.reports_channel_id)
+        self.alert_tickers = {}
         self.post_alerts_date.start()
         self.send_popularity_movers.start()
+        self.send_alerts.start()
+        
 
     @commands.Cog.listener()
     async def on_ready(self):
         logger.info(f"Cog {__name__} loaded!")
+
+    async def update_alert_tickers(self, key:str, tickers:list):
+        self.alert_tickers[key] = tickers
 
     @tasks.loop(time=datetime.time(hour=6, minute=0, second=0)) # time in UTC
     async def post_alerts_date(self):
         if (market_utils.market_open_today()):
             await self.alerts_channel.send(f"# :rotating_light: Alerts for {date_utils.format_date_mdy(datetime.datetime.today())} :rotating_light:")
 
-    async def send_earnings_movers(self, gainers):
+    @tasks.loop(minutes = 2)
+    async def send_alerts(self):
+        #if (market_utils.market_open_today() and (market_utils.in_extended_hours() or market_utils.in_intraday())):
+            all_alert_tickers = list(set([ticker for tickers in self.alert_tickers.values() for ticker in tickers]))
+            #all_alert_tickers = ['ZVSA']
+            quotes = {}
+            chunk_size = 10
+            for i in range(0, len(all_alert_tickers), chunk_size):
+                tickers = all_alert_tickers[i:i+chunk_size]
+                quotes = quotes | sd.Schwab().get_quotes(tickers=tickers)
+            quotes.pop('errors', None)
+            all_alert_tickers = [ticker for ticker in quotes]
+
+            # Send alerts
+            #await self.send_unusual_volume_movers(tickers=all_alert_tickers, quotes=quotes)
+            await self.send_volume_spike_movers(tickers=all_alert_tickers, quotes=quotes)
+            #await self.send_earnings_movers(tickers=all_alert_tickers, quotes=quotes)
+            #await self.send_sec_filing_movers(tickers= all_alert_tickers, quotes=quotes)
+            #await self.send_watchlist_movers(tickers=all_alert_tickers, quotes=quotes)
+
+    # Start posting report at next 0 or 5 minute interval
+    # + 30 seconds to allow for reports to generate and add tickers to the alert list
+    #@send_alerts.before_loop
+    async def send_alerts_before_loop(self):
+        DELTA = 30
+        await asyncio.sleep(config.date_utils.seconds_until_5m_interval() + DELTA)
+
+    async def send_earnings_movers(self, tickers:list, quotes:dict):
         today = datetime.datetime.today()
-        for index, row in gainers.iterrows():
-            ticker = row['Ticker']
+        for ticker in tickers:
             earnings_date = sd.StockData.Earnings.get_next_earnings_date(ticker)
             if earnings_date != "N/A":
-                if earnings_date == today.date():
-                    alert = EarningsMoverAlert(ticker=ticker, channel=self.alerts_channel, gainer_row=row)
+                pct_change = quotes[ticker]['quote']['netPercentChange']   
+                if earnings_date == today.date() and pct_change > 10.0:
+                    alert_data = {}
+                    alert_data['pct_change'] = pct_change
+                    alert_data['earnings_date'] = earnings_date
+                    alert = EarningsMoverAlert(ticker=ticker, channel=self.alerts_channel, alert_data=alert_dta)
                     await alert.send_alert()
 
     async def send_sec_filing_movers(self, gainers):
@@ -53,79 +90,123 @@ class Alerts(commands.Cog):
                 await alert.send_alert()
             await asyncio.sleep(1)
 
-    async def send_watchlist_movers(self, gainers):
-        for index, row in gainers.iterrows():
-            ticker = row['Ticker']
+    async def send_watchlist_movers(self, tickers:list, quotes:dict):
+        for ticker in tickers:
             watchlists = sd.Watchlists().get_watchlists()
             for watchlist in watchlists:
                 if watchlist == 'personal':
                     pass
                 else:
                     watchlist_tickers = sd.Watchlists().get_tickers_from_watchlist(watchlist)
-                    if ticker in watchlist_tickers:
-                        alert = WatchlistMoverAlert(ticker=ticker, channel=self.alerts_channel, gainer_row = row, watchlist_id=watchlist)
+                    pct_change = quotes[ticker]['quote']['netPercentChange']   
+                    if ticker in watchlist_tickers and pct_change > 10.0:
+                        alert_data = {}
+                        alert_data['pct_change'] = pct_change
+                        alert_data['watchlist'] = watchlist
+                        alert = WatchlistMoverAlert(ticker=ticker, channel=self.alerts_channel, alert_data=alert_data)
                         await alert.send_alert()
-    
-    async def send_unusual_volume_movers(self, volume_movers):
-        today = datetime.datetime.today()
-        for index, row in volume_movers.iterrows():
-            ticker = row['Ticker']
-            relative_volume = float(row['Relative Volume'])
-            if relative_volume > 25.0: # see that Relative Volume exceeds 20x
-                pct_change = 0.0
-                change_columns = ["Premarket Change", "% Change", "After Hours Change"]
-                for column in change_columns:
-                    if column in row.index.values:
-                        pct_change = float(row[column])
-                market_cap = row['Market Cap']
-                if abs(pct_change) >= 10.0 and market_cap > 50000000: # See that stock movement is at least 10% and market cap > 50M
-                    alert = VolumeMoverAlert(ticker=ticker, channel=self.alerts_channel, volume_row=row)
-                    await alert.send_alert()
+        
+    async def send_unusual_volume_movers(self, tickers:list, quotes:dict):
+        for ticker in tickers:
+            data = sd.StockData.fetch_daily_price_history(ticker)
+            curr_volume = quotes[ticker]['quote']['totalVolume']
+            rvol = an.indicators.volume.rvol(data=data, curr_volume=curr_volume)
+            pct_change = quotes[ticker]['quote']['netPercentChange']   
+            market_cap = sd.StockData.get_market_cap(ticker=ticker) 
+            if rvol > 25.0 and pct_change > 10.0 and market_cap > 50000000: # see that Relative Volume exceeds 25x and change > 10% and market cap is > 50M
+                alert_data = {}
+                alert_data = {}
+                alert_data['pct_change'] = pct_change
+                alert_data['rvol'] = rvol
+                alert_data['volume'] = curr_volume
+                alert_data['avg_vol_10'] = data['volume'].tail(10).mean()
+                alert_data['avg_vol_30'] = data['volume'].tail(30).mean()
+                alert_data['avg_vol_90'] = data['volume'].tail(90).mean()
+                alert = VolumeMoverAlert(ticker=ticker, channel=self.alerts_channel, alert_data=alert_data)
+                await alert.send_alert()
+                await asyncio.sleep(1)
+
+    async def send_volume_spike_movers(self, tickers:list, quotes:dict):
+        for ticker in tickers:
+            data = sd.StockData.fetch_5m_price_history(ticker)
+            now = datetime.datetime.now()
+            rvol_at_time = an.indicators.volume.rvol_at_time(data=data, dt=now)
+            pct_change = quotes[ticker]['quote']['netPercentChange']   
+            market_cap = sd.StockData.get_market_cap(ticker=ticker) 
+            if rvol_at_time > 60.0 and pct_change > 10.0 and market_cap > 50000000: # see that Relative Volume at Time exceeds 60x and change > 10% and market cap is > 50M
+                alert_data = {}
+                alert_data['pct_change'] = pct_change
+                alert_data['rvol_at_time'] = rvol_at_time
+                alert_data['avg_vol_at_time'] = an.indicators.volume.avg_vol_at_time(data=data)
+                alert_data['volume'] = quotes[ticker]['quote']['totalVolume']
+                alert_data['time'] = now.strptime("%-I:%M %p %z")
+                alert = VolumeSpikeAlert(ticker=ticker, channel=self.alerts_channel, alert_data=alert_data)
+                await alert.send_alert()
                 await asyncio.sleep(1)
     
-    @tasks.loop(minutes=30)
+    @tasks.loop(minutes=1)
     async def send_popularity_movers(self):
-        top_stocks = sd.ApeWisdom().get_top_stocks()[:80]
         blacklist_tickers = ['DTE', 'AM', 'PM', 'DM']
+        top_stocks = sd.ApeWisdom().get_top_stocks()[:50]
+        top_stocks = top_stocks[~top_stocks['ticker'].isin(blacklist_tickers)]
+        await self.update_alert_tickers(key='popular-stocks', tickers=top_stocks['ticker'].to_list())
+        
         for index, row in top_stocks.iterrows():
             ticker = row['ticker']
             if ticker not in blacklist_tickers:
                 todays_rank = row['rank']
                 popularity = sd.StockData.get_historical_popularity(ticker)
                 popularity = popularity[popularity['date'] > (datetime.date.today() - datetime.timedelta(days=5))]
-                min_rank = 0
-                max_rank = 0
+                low_rank = 0
+                low_rank_date = None
+                high_rank = 0
+                high_rank_date = None
                 for index, popular_row in popularity.iterrows(): # replace with iterrows logic
-                    if min_rank < popular_row['rank'] or min_rank == 0:
-                        min_rank = popular_row['rank']
-                    if max_rank > popular_row['rank'] or max_rank == 0:
-                        max_rank = popular_row['rank']
+                    if low_rank < popular_row['rank'] or low_rank == 0:
+                        low_rank = popular_row['rank']
+                        low_rank_date = datetime.date.today() - datetime.timedelta(days=index)
+                    if high_rank > popular_row['rank'] or high_rank == 0:
+                        high_rank = popular_row['rank']
+                        high_rank_date = datetime.date.today() - datetime.timedelta(days=index)
 
                 today_is_max = False
-                if min_rank < todays_rank:
-                    min_rank = todays_rank
-                if max_rank > todays_rank:
+                if low_rank < todays_rank:
+                    low_rank = todays_rank
+                    low_rank_date = datetime.date.today()
+                if high_rank > todays_rank:
                     today_is_max = True
-                    max_rank = todays_rank
+                    high_rank = todays_rank
+                    high_rank_date = datetime.date.today() - datetime.timedelta(days=index)
                     
             
-                if (((float(min_rank) - float(max_rank)) / float(min_rank)) * 100.0 > 50.0) and min_rank > 10 and sd.StockData.validate_ticker(ticker) and today_is_max:
+                if (((float(low_rank) - float(high_rank)) / float(low_rank)) * 100.0 > 50.0) and low_rank > 10 and sd.StockData.validate_ticker(ticker) and today_is_max:
+                    alert_data = {}
+                    alert_data['todays_rank'] = row['rank']
+                    alert_data['high_rank'] = high_rank
+                    alert_data['high_rank_date'] = high_rank_date
+                    alert_data['low_rank'] = low_rank
+                    alert_data['low_rank_date'] = low_rank_date
                     alert = PopularityAlert(ticker = ticker, 
                                             channel=self.alerts_channel,
-                                            todays_popularity=row,
-                                            historical_popularity=popularity) 
+                                            alert_data=alert_data) 
                     await alert.send_alert()
             else:
                 pass
+
+    # Start posting report at next 0 or 5 minute interval
+    #@send_popularity_movers.before_loop
+    async def sleep_until_5m_interval(self):
+        await asyncio.sleep(config.date_utils.seconds_until_5m_interval())
 
 ##################
 # Alerts Classes #
 ##################
     
 class Alert(Report):
-    def __init__(self, ticker, channel):
+    def __init__(self, ticker, channel, alert_data):
         self.ticker = ticker
         self.channel = channel
+        self.alert_data = alert_data
         self.message = self.build_alert()
         self.buttons = self.Buttons(self.ticker, channel)
     
@@ -137,16 +218,6 @@ class Alert(Report):
         alert = ''
         alert += self.build_alert_header()
         return alert
-
-    def get_pct_change(self, df_row):
-        change_columns = ["Premarket Change", "% Change", "After Hours Change"]
-        for column in change_columns:
-            if column in df_row.index.values:
-                change = df_row[column]
-                if change is None:
-                    return 0.0
-                else:
-                    return float(df_row[column])
 
     async def send_alert(self):
         today = datetime.datetime.today()
@@ -184,39 +255,38 @@ class Alert(Report):
                 await interaction.response.send_message(f"Fetched news for {self.ticker}!", ephemeral=True)
 
 class EarningsMoverAlert(Alert):
-    def __init__(self, ticker, channel, gainer_row):
-        self.pct_change = self.get_pct_change(gainer_row)
+    def __init__(self, ticker, channel, alert_data):
         self.alert_type = "EARNINGS_MOVER"
-        super().__init__(ticker, channel)
+        super().__init__(ticker, channel, alert_data)
 
     def build_alert_header(self):
         header = f"## :rotating_light: Earnings Mover: {self.ticker}\n\n\n"
         return header
 
     def build_todays_change(self):
-        symbol = ":green_circle:" if self.pct_change > 0 else ":small_red_triangle_down:"
-        return f"**{self.ticker}** is {symbol} **{"{:.2f}".format(self.pct_change)}%**  {market_utils.get_market_period()} and has earnings today\n\n"
+        symbol = ":green_circle:" if self.alert_data['pct_change'] > 0 else ":small_red_triangle_down:"
+        return f"**{self.ticker}** is {symbol} **{"{:.2f}".format(self.alert_data['pct_change'])}%**  {market_utils.get_market_period()} and has earnings today\n\n"
 
     def build_alert(self):
         alert = ""
         alert += self.build_alert_header()
         alert += self.build_todays_change()
         alert += self.build_earnings_date()
+        alert += self.build_recent_earnings()
         return alert
 
 class SECFilingMoverAlert(Alert):
-    def __init__(self, ticker, channel, gainer_row):
-        self.pct_change = self.get_pct_change(gainer_row)
+    def __init__(self, ticker, channel, alert_data):
         self.alert_type = "SEC_FILING_MOVER"
-        super().__init__(ticker, channel)
+        super().__init__(ticker, channel, alert_data)
 
     def build_alert_header(self):
         header = f"## :rotating_light: SEC Filing Mover: {self.ticker}\n\n\n"
         return header
 
     def build_todays_change(self):
-        symbol = ":green_circle:" if self.pct_change > 0 else ":small_red_triangle_down:"
-        return f"**{self.ticker}** is {symbol} **{"{:.2f}".format(self.pct_change)}%** {market_utils.get_market_period()} and filed with the SEC today\n"
+        symbol = ":green_circle:" if self.alert_data['pct_change']> 0 else ":small_red_triangle_down:"
+        return f"**{self.ticker}** is {symbol} **{"{:.2f}".format(self.alert_data['pct_change'])}%** {market_utils.get_market_period()} and filed with the SEC today\n"
 
     def build_alert(self):
         alert = ""
@@ -226,19 +296,17 @@ class SECFilingMoverAlert(Alert):
         return alert
 
 class WatchlistMoverAlert(Alert):
-    def __init__(self, ticker, channel, gainer_row, watchlist_id):
-        self.pct_change = self.get_pct_change(gainer_row)
+    def __init__(self, ticker, channel, alert_data):
         self.alert_type = "WATCHLIST_MOVER"
-        self.watchlist_id = watchlist_id
-        super().__init__(ticker, channel)
+        super().__init__(ticker, channel, alert_data)
 
     def build_alert_header(self):
         header = f"## :rotating_light: Watchlist Mover: {self.ticker}\n\n\n"
         return header
 
     def build_todays_change(self):
-        symbol = ":green_circle:" if self.pct_change > 0 else ":small_red_triangle_down:"
-        return f"**{self.ticker}** is {symbol} **{"{:.2f}".format(self.pct_change)}%**  and is on your **{self.watchlist_id}** watchlist\n"
+        symbol = ":green_circle:" if self.alert_data['pct_change'] > 0 else ":small_red_triangle_down:"
+        return f"**{self.ticker}** is {symbol} **{"{:.2f}".format(self.alert_data['pct_change'])}%**  and is on your **{self.alert_data['watchlist']}** watchlist\n"
 
     def build_alert(self):
         alert = ""
@@ -247,27 +315,53 @@ class WatchlistMoverAlert(Alert):
         return alert
 
 class VolumeMoverAlert(Alert):
-    def __init__(self, ticker, channel, volume_row):
-        self.pct_change = self.get_pct_change(volume_row)
+    def __init__(self, ticker, channel, alert_data):
         self.alert_type = "VOLUME_MOVER"
-        self.volume = volume_row['Volume']
-        self.average_volume = volume_row['Average Volume (10 Day)']
-        self.relative_volume = volume_row['Relative Volume']
-        super().__init__(ticker, channel)
+        super().__init__(ticker, channel, alert_data)
 
     def build_alert_header(self):
         header = f"## :rotating_light: Intraday Volume Mover: {self.ticker}\n\n\n"
         return header
 
     def build_todays_change(self):
-        symbol = ":green_circle:" if self.pct_change > 0 else ":small_red_triangle_down:"
-        return f"**{self.ticker}** is {symbol} **{"{:.2f}".format(self.pct_change)}%** with volume up **{"{:.2f} times".format(self.relative_volume)}** the 10-day average\n\n"
+        symbol = ":green_circle:" if self.alert_data['pct_change'] > 0 else ":small_red_triangle_down:"
+        return f"**{self.ticker}** is {symbol} **{"{:.2f}".format(self.alert_data['pct_change'])}%** with volume up **{"{:.2f} times".format(self.alert_data['rvol'])}** the 10-day average\n\n"
 
     def build_volume_stats(self):
         return f"""## Volume Stats
-        - **Today's Volume:** {self.format_large_num(self.volume)}
-        - **Average Volume (10 Day):** {self.format_large_num(self.average_volume)}
-        - **Relative Volume:** {"{:.2f}x".format(self.relative_volume)}\n\n"""
+        - **Today's Volume:** {self.format_large_num(self.alert_data['volume'])}
+        - **Relative Volume (10 Day):** {"{:.2f}x".format(self.alert_data['rvol'])}
+        - **Average Volume  (10 Day):** {self.format_large_num(self.alert_data['avg_vol_10'])}
+        - **Average Volume  (30 Day):** {self.format_large_num(self.alert_data['avg_vol_30'])}
+        - **Average Volume  (90 Day):** {self.format_large_num(self.alert_data['avg_vol_90'])}
+        \n\n"""
+
+    def build_alert(self):
+        alert = ""
+        alert += self.build_alert_header()
+        alert += self.build_todays_change()
+        alert += self.build_volume_stats()
+        return alert
+
+class VolumeSpikeAlert(Alert):
+    def __init__(self, ticker, channel, alert_data):
+        self.alert_type = "VOLUME_SPIKE"
+        super().__init__(ticker, channel, alert_data)
+
+    def build_alert_header(self):
+        header = f"## :rotating_light: Volume Spike: {self.ticker}\n\n\n"
+        return header
+
+    def build_todays_change(self):
+        symbol = ":green_circle:" if self.alert_data['pct_change'] > 0 else ":small_red_triangle_down:"
+        return f"**{self.ticker}** is {symbol} **{"{:.2f}".format(self.alert_data['pct_change'])}%** with volume up **{"{:.2f} times".format(self.alert_data['rvol'])}** the 10-day average\n\n"
+
+    def build_volume_stats(self):
+        return f"""## Volume Stats
+        - **Today's Volume:** {self.format_large_num(self.alert_data['volume'])}
+        - **Relative Volume at Time ({self.alert_data['time']}):** {"{:.2f}x".format(self.alert_data['rvol_at_time'])}
+        - **Average Volume at Time  ({self.alert_data['time']}):** {"{:.2f}x".format(self.alert_data['avg_vol_at_time'])}
+        \n\n"""
 
     def build_alert(self):
         alert = ""
@@ -277,43 +371,16 @@ class VolumeMoverAlert(Alert):
         return alert
 
 class PopularityAlert(Alert):
-    def __init__(self, ticker, channel, todays_popularity, historical_popularity):
+    def __init__(self, ticker, channel, alert_data):
         self.alert_type = "POPULARITY"
-        self.todays_popularity = todays_popularity
-        self.historical_popularity = historical_popularity
-        self.popularity_stats = self.get_popularity_stats()
-        super().__init__(ticker, channel)
-    
-    def get_popularity_stats(self):
-        stats = {'todays_rank':self.todays_popularity['rank'],
-                 'low_rank': None,
-                 'low_rank_date':None,
-                 'high_rank': None, 
-                 'high_rank_date':None}
-        popularity = pd.concat([self.todays_popularity, self.historical_popularity], ignore_index=True)
-        for index, row in self.historical_popularity.iterrows():
-            rank = row['rank']
-            date = row['date']
-            if stats.get('low_rank') is None or stats.get('low_rank') > rank:
-                stats['low_rank'] = rank
-                stats['low_rank_date'] = date
-            if stats.get('high_rank') is None or stats.get('high_rank') < rank:
-                stats['high_rank'] = rank
-                stats['high_rank_date'] = date
-        if stats.get('low_rank') is None or stats.get('low_rank') > stats.get('todays_rank'):
-                stats['low_rank'] = stats.get('todays_rank')
-                stats['low_rank_date'] = datetime.date.today()
-        if stats.get('high_rank') is None or stats.get('high_rank') < stats.get('todays_rank'):
-            stats['high_rank'] = stats.get('todays_rank')
-            stats['high_rank_date'] = datetime.date.today()
-        return stats
+        super().__init__(ticker, channel, alert_data)
             
     def build_alert_header(self):
         header = f"## :rotating_light: Popularity Mover: {self.ticker}\n\n\n"
         return header
 
     def build_todays_change(self):
-        return f"**{self.ticker}** has moved {self.popularity_stats['high_rank'] - self.popularity_stats['low_rank']} spots between {date_utils.format_date_mdy(self.popularity_stats['low_rank_date'])} **({self.popularity_stats['low_rank']})** and {date_utils.format_date_mdy(self.popularity_stats['high_rank_date'])} **({self.popularity_stats['high_rank']})** \n\n"
+        return f"**{self.ticker}** has moved {self.alert_data['low_rank'] - self.alert_data['high_rank']} spots between {date_utils.format_date_mdy(self.alert_data['high_rank_date'])} **({self.alert_data['high_rank']})** and {date_utils.format_date_mdy(self.alert_data['low_rank_date'])} **({self.alert_data['low_rank']})** \n"
 
     def build_alert(self):
         alert = ""
