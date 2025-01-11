@@ -711,9 +711,9 @@ class StockData():
                         Postgres().insert(table='historical_earnings', fields=earnings.columns.to_list(), values=values)
                         logger.debug(f"Updated historical earnings for {date_string}")
                     else: # No earnings recorded on target date
-                        pass
+                        logger.debug(f"No earnings reported on date {date_string}")
                 else: # Market is not open on target date
-                    pass
+                    logger.debug(f"Market is not open on {date_string} - no earning to pull")
 
 
         @staticmethod
@@ -731,6 +731,7 @@ class StockData():
 
         @staticmethod
         def get_earnings_today(date):
+            logger.debug(f"Fetching all earnings reported on date {date}")
             columns = Postgres().get_table_columns('upcoming_earnings')
             results = Postgres().select(table='upcoming_earnings',
                                         fields=columns, 
@@ -814,7 +815,7 @@ class StockData():
     
     @staticmethod
     def update_daily_price_history():
-        logger.info(f"Updating daily price history for watchlist tickers")
+        logger.info(f"Updating daily price history for all tickers")
         tickers = StockData.get_all_tickers()
         num_tickers = len(tickers)
         curr_ticker = 1
@@ -852,7 +853,7 @@ class StockData():
 
     @staticmethod
     def update_5m_price_history():
-        logger.info(f"Updating 5m price history for watchlist tickers")
+        logger.info(f"Updating 5m price history for all tickers")
 
         tickers = StockData.get_all_tickers()
         num_tickers = len(tickers)
@@ -895,6 +896,7 @@ class StockData():
     
     @staticmethod
     def fetch_daily_price_history(ticker):
+        logger.debug(f"Fetching daily price history for ticker '{ticker}' from database")
         """SELECT * FROM daily_price_history
            WHERE ticker = '{ticker}';
            """
@@ -903,13 +905,16 @@ class StockData():
                                     where_conditions=[('ticker', ticker)],
                                     fetchall=True)
         if results is None:
+            logger.debug(f"No daily price history available for ticker '{ticker}'")
             return pd.DataFrame()
         else:
+            logger.debug(f"Returned {len(results)} row(s) for ticker '{ticker}'")
             columns = Postgres().get_table_columns("daily_price_history")
             return pd.DataFrame(results, columns=columns)
 
     @staticmethod
     def fetch_5m_price_history(ticker):
+        logger.debug(f"Fetching 5m price history for ticker '{ticker}' from database")
         """SELECT * FROM five_minute_price_history
            WHERE ticker = '{ticker}';
            """
@@ -918,8 +923,10 @@ class StockData():
                                     where_conditions=[('ticker', ticker)],
                                     fetchall=True)
         if results is None:
+            logger.debug(f"No 5m price history available for ticker '{ticker}'")
             return pd.DataFrame()
         else:
+            logger.debug(f"Returned {len(results)} row(s) for ticker '{ticker}'")
             columns = Postgres().get_table_columns('five_minute_price_history')
             return pd.DataFrame(results, columns=columns)
 
@@ -941,6 +948,7 @@ class StockData():
 
     @staticmethod
     def get_ticker_info(ticker):
+        logger.debug(f"Fetching info for ticker '{ticker}' from database")
         """SELECT * FROM tickers
            WHERE ticker = '{ticker}';
            """
@@ -953,6 +961,7 @@ class StockData():
     
     @staticmethod
     def get_all_ticker_info():
+        logger.debug(f"Fetching info for all tickers in database")
         columns = Postgres().get_table_columns('tickers')
         data = Postgres().select(table='tickers',
                                  fields=columns,
@@ -963,6 +972,7 @@ class StockData():
     
     @staticmethod
     def get_all_tickers():
+        logger.debug('Fetching all tickers in database')
         """SELECT ticker FROM tickers;
         """
         results = Postgres().select(table='tickers',
@@ -972,6 +982,7 @@ class StockData():
 
     @staticmethod
     def get_all_tickers_by_market_cap(market_cap):
+        logger.debug(f"Fetching all tickers with market cap > {market_cap} from database")
         """SELECT ticker, marketcap FROM tickers;
         """
         results = Postgres().select(table='tickers',
@@ -986,6 +997,7 @@ class StockData():
 
     @staticmethod
     def get_all_tickers_by_sector(sector):
+        logger.debug(f"Fetching all tickers in sector {sector} from database")
         select_script = f"""SELECT ticker FROM tickers
                            WHERE sector LIKE '%{sector}%';
                         """
@@ -1014,7 +1026,7 @@ class StockData():
 
     @staticmethod
     def get_market_cap(ticker):
-        logger.debug(f"Retreiving CIK value for ticker '{ticker}' from database")
+        logger.debug(f"Retreiving market cap for ticker '{ticker}' from database")
         """SELECT marketcap from tickers
            WHERE ticker = '{ticker}';
            """
@@ -1029,6 +1041,7 @@ class StockData():
 
     @staticmethod
     def get_historical_popularity(ticker=None):
+        logger.debug(f"Retrieving historical popularity {f"for ticker '{ticker}'" if ticker is not None else ''} from database")
         columns = Postgres().get_table_columns('popular_stocks')
         where_conditions = []
         order_by = ('date', 'DESC')
@@ -1068,6 +1081,7 @@ class StockData():
     # Get list of valid tickers from string
     @staticmethod
     def get_valid_tickers(ticker_string:str):
+        logger.debug(f"Parsing valid tickers from string: '{ticker_string}'")
         tickers = ticker_string.split()
         valid_tickers = []
         invalid_tickers = []
@@ -1076,6 +1090,7 @@ class StockData():
                 valid_tickers.append(ticker)
             else:
                 invalid_tickers.append(ticker)
+        logger.debug(f"Parsed valid tickers: {valid_tickers}, invalid tickers: {invalid_tickers}")
         return valid_tickers, invalid_tickers
 
     @staticmethod
@@ -1089,7 +1104,7 @@ class TradingView():
 
     @staticmethod
     def get_premarket_gainers():
-        logger.info("Fetching premarket gainers")
+        logger.debug("Fetching premarket gainers from TradingView")
         num_rows, gainers = (Query()
                     .select('name', 'close', 'volume', 'market_cap_basic', 'premarket_change', 'premarket_volume', 'exchange')
                     .order_by('premarket_change', ascending=False)
@@ -1101,11 +1116,12 @@ class TradingView():
         gainers = gainers.drop(columns='ticker')
         headers = ['Ticker', 'Close', 'Volume', 'Market Cap', 'Premarket Change', "Premarket Volume"]
         gainers.columns = headers
+        logger.debug(f"Returned gainers dataframe with shape {gainers.shape}")
         return gainers
 
     @staticmethod
     def get_premarket_gainers_by_market_cap(market_cap):
-        logger.info("Fetching intraday gainers")
+        logger.debug(f"Fetching premarket gainers from TradingView with market cap  > {market_cap}")
         num_rows, gainers = (Query()
                 .select('name', 'close', 'volume', 'market_cap_basic', 'premarket_change', 'premarket_volume', 'exchange')
                 .order_by('premarket_change', ascending=False)
@@ -1118,11 +1134,12 @@ class TradingView():
         gainers = gainers.drop(columns='ticker')
         headers = ['Ticker', 'Close', 'Volume', 'Market Cap', 'Premarket Change', 'Premarket Volume']
         gainers.columns = headers
+        logger.debug(f"Returned gainers dataframe with shape {gainers.shape}")
         return gainers
 
     @staticmethod
     def get_intraday_gainers():
-        logger.info("Fetching intraday gainers")
+        logger.debug(f"Fetching intraday gainers from TradingView")
         gainers = (Query()
                 .select('name', 'close', 'volume', 'market_cap_basic', 'change', 'exchange' )
                 .order_by('change', ascending=False)
@@ -1134,11 +1151,12 @@ class TradingView():
         gainers = gainers.drop(columns='ticker')
         headers = ['Ticker', 'Close', 'Volume', 'Market Cap', '% Change']
         gainers.columns = headers
+        logger.debug(f"Returned gainers dataframe with shape {gainers.shape}")
         return gainers
 
     @staticmethod
     def get_intraday_gainers_by_market_cap(market_cap):
-        logger.info("Fetching intrday gainers by market cap")
+        logger.debug(f"Fetching intrday gainers with market cap > {market_cap} from TradingView")
         num_rows, gainers = (Query()
                 .select('name', 'close', 'volume', 'market_cap_basic', 'change', 'exchange')
                 .set_markets('america')
@@ -1152,11 +1170,12 @@ class TradingView():
         gainers = gainers.drop(columns='ticker')
         headers = ['Ticker', 'Close', 'Volume', 'Market Cap', '% Change']
         gainers.columns = headers
+        logger.debug(f"Returned gainers dataframe with shape {gainers.shape}")
         return gainers
                 
     @staticmethod
     def get_postmarket_gainers():
-        logger.info("Fetching after hours gainers")
+        logger.debug(f"Fetching after hours gainers from TradingView")
         num_rows, gainers = (Query()
                 .select('name', 'close', 'volume', 'market_cap_basic', 'postmarket_change', 'postmarket_volume', 'exchange')
                 .order_by('postmarket_change', ascending=False)
@@ -1168,11 +1187,12 @@ class TradingView():
         gainers = gainers.drop(columns='ticker')
         headers = ['Ticker', 'Close', 'Volume', 'Market Cap', 'After Hours Change', 'After Hours Volume']
         gainers.columns = headers
+        logger.debug(f"Returned gainers dataframe with shape {gainers.shape}")
         return gainers
 
     @staticmethod
     def get_postmarket_gainers_by_market_cap(market_cap):
-        logger.info("Fetching after hours gainers by market cap")
+        logger.debug(f"Fetching after hours gainers with market cap > {markrt_cap} from TradingView")
         num_rows, gainers = (Query()
                 .select('name', 'close', 'volume', 'market_cap_basic', 'postmarket_change', 'postmarket_volume', 'exchange')
                 .order_by('postmarket_change', ascending=False)
@@ -1185,12 +1205,13 @@ class TradingView():
         gainers = gainers.drop(columns='ticker')
         headers = ['Ticker', 'Close', 'Volume', 'Market Cap', 'After Hours Change', 'After Hours Volume']
         gainers.columns = headers
+        logger.debug(f"Returned gainers dataframe with shape {gainers.shape}")
         return gainers
 
     
     @staticmethod
     def get_unusual_volume_movers():
-        logger.info("Fetching stocks with ununsual volume")
+        logger.debug("Fetching stocks with ununsual volume from TradingView")
         columns = ['Ticker', 'Close', '% Change', 'Volume', 'Relative Volume', 'Average Volume (10 Day)', 'Market Cap']
         num_rows, unusual_volume = (Query()
                             .select('name','Price', 'Change %', 'Volume', 'Relative Volume', 'Average Volume (10 day)','Market Capitalization')
@@ -1203,11 +1224,12 @@ class TradingView():
                             .get_scanner_data())
         unusual_volume = unusual_volume.drop(columns = "ticker")
         unusual_volume.columns = columns
+        logger.debug(f"Returned gainers dataframe with shape {gainers.shape}")
         return unusual_volume
 
     @staticmethod
     def get_unusual_volume_at_time_movers():
-        logger.info("Fetching stocks with ununsual volume at given time")
+        logger.debug("Fetching stocks with ununsual volume at time form TradingView")
         columns = ['Ticker', 'Close', '% Change', 'Volume', 'Relative Volume At Time', 'Average Volume (10 Day)', 'Market Cap']
         num_rows, unusual_volume_at_time = (Query()
                             .select('name','Price', 'Change %', 'Volume', 'relative_volume_intraday|5', 'Average Volume (10 day)','Market Capitalization')
@@ -1220,6 +1242,7 @@ class TradingView():
                             .get_scanner_data())
         unusual_volume_at_time = unusual_volume_at_time.drop(columns = "ticker")
         unusual_volume_at_time.columns = columns
+        logger.debug(f"Returned volume moovers dataframe with shape {gainers.shape}")
         return unusual_volume_at_time
 
 class ApeWisdom():
@@ -1272,7 +1295,9 @@ class Schwab():
             token_path="data/schwab-token.json"
         )
 
+    # Request daily price history from Schwab between start_datetime and end_datetime
     def get_daily_price_history(self, ticker, start_datetime=None, end_datetime=datetime.datetime.now(datetime.timezone.utc)):
+        logger.debug(f"Requesting daily price history from Schwab for ticker: '{ticker}' - start: {start_datetime}, end: {end_datetime}")
         if start_datetime is None: # If no start time, get data as far back as 2000
             start_datetime = datetime.datetime(
                                 year = 2000,
@@ -1287,6 +1312,7 @@ class Schwab():
             start_datetime=start_datetime,
             end_datetime=end_datetime,
         )
+        logger.debug(f"Reponse status code is {resp.status_code}")
         try:
             assert resp.status_code == httpx.codes.OK, resp.raise_for_status()
             data = resp.json()
@@ -1302,13 +1328,15 @@ class Schwab():
             logger.error(f"Enountered HTTPStatusError when downloading daily price history for ticker {ticker}\n{e}")
             return pd.DataFrame()
 
-    # This reports live market data!
+    # Request 5m price history from Schwab between start_datetime and end_datetime
     def get_5m_price_history(self, ticker, start_datetime=None, end_datetime=None):
+        logger.debug(f"Requesting 5m price history from Schwab for ticker: '{ticker}' - start: {start_datetime}, end: {end_datetime}")
         resp = self.client.get_price_history_every_five_minutes(
             symbol=ticker, 
             start_datetime=start_datetime,
             end_datetime=end_datetime,
         )
+        logger.debug(f"Reponse status code is {resp.status_code}")
         assert resp.status_code == httpx.codes.OK, resp.raise_for_status()
         data = resp.json()
         price_history = pd.DataFrame.from_dict(data['candles'])
@@ -1319,39 +1347,53 @@ class Schwab():
         else:
             return price_history
 
+    # Get latest quote for ticker from Schwab
     def get_quote(self, ticker):
+        logger.debug(f"Retrieving quote for ticker '{ticker}' from Schwab")
         resp = self.client.get_quote(
             symbol=ticker
         )
+        logger.debug(f"Reponse status code is {resp.status_code}")
         assert resp.status_code == httpx.codes.OK, resp.raise_for_status()
         data = resp.json()
         return data[ticker]
 
+    # Get quotes for multiple tickers from Schwab
     def get_quotes(self, tickers):
+        logger.debug(f"Retrieving quotes for tickers {tickers} from Schwab")
         resp = self.client.get_quotes(
             symbols=tickers
         )
+        logger.debug(f"Reponse status code is {resp.status_code}")
         assert resp.status_code == httpx.codes.OK, resp.raise_for_status()
         data = resp.json()
         return data
     
+    # Get latest fundamental data from Schwab
     def get_fundamentals(self, tickers):
+        logger.debug(f"Retrieving latest fundamental data for tickers {tickers}")
         resp = self.client.get_instruments(symbols=tickers, 
                                            projection=self.client.Instrument.Projection.FUNDAMENTAL)
+        logger.debug(f"Reponse status code is {resp.status_code}")
         assert resp.status_code == httpx.codes.OK, resp.raise_for_status()
         data = resp.json()
         return data
     
+    # Get latest option chain for target ticker
     def get_options_chain(self, ticker):
+        logger.debug(f"Retreiving latest options chain for ticker '{ticker}'")
         resp = self.client.get_option_chain(ticker)
         assert resp.status_code == httpx.codes.OK, resp.raise_for_status()
         data = resp.json()
         return data
 
+    # Get top 10 price movers for the day
     def get_movers(self):
+        logger.debug("Retrieving top 10 price movers from Schwab")
         resp = self.client.get_movers(index=self.client.Movers.Index.EQUITY_ALL, 
                                       sort_order=self.client.Movers.SortOrder.PERCENT_CHANGE_UP,
                                       frequency=self.client.Movers.Frequency.TEN)
+        logger.debug(f"Reponse status code is {resp.status_code}")
         assert resp.status_code == httpx.codes.OK, resp.raise_for_status()
         data = resp.json()
         return data
@@ -1363,7 +1405,7 @@ class Schwab():
 
 # Validate specified path exists and create it if needed
 def validate_path(path):
-    logger.debug("Validating that path {} exists".format(path))
+    logger.info("Validating that path {} exists".format(path))
     if not (os.path.isdir(path)):
         logger.warning("Path {} does not exist. Creating path...".format(path))
         os.makedirs(path) 
