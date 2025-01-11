@@ -3,6 +3,8 @@ import pandas as pd
 import stockdata as sd
 import pandas_ta as ta
 import stockdata as sd
+import config
+import datetime
 import logging
 
 
@@ -10,10 +12,44 @@ import logging
 # Logging configuration
 logger = logging.getLogger(__name__)
 
-class indicators():
-    def __init__(self):
-        pass
-         
+class indicators:
+
+    class volume:
+        
+        def avg_vol_at_time(data:pd.DataFrame, period:int = 10, dt:datetime.datetime = None):
+            data = sd.StockData.fetch_daily_price_history(ticker=ticker)
+            return data['volume'].tail(period).mean()
+        
+        def rvol(data:pd.DataFrame, period:int = 10, curr_volume:float = None):
+            avg_volume = data['volume'].tail(period).mean()
+            if curr_volume is None:
+                curr_volume = sd.Schwab().get_quote(ticker)['quote']['totalVolume']      
+            return curr_volume / avg_volume    
+
+        def rvol_at_time(data:pd.DataFrame, period:int = 10, dt:datetime.datetime = None):
+            # Round down to nearest 5m, looking for last complete 5m candle
+            if dt is None:
+                dt = config.date_utils.dt_round_down(datetime.datetime.now() - datetime.timedelta(minutes=5))
+            time = datetime.time(hour=dt.hour, minute=dt.minute)
+
+            # Filter data to include candles in specified interval
+            # Calculate average volume over period
+            filtered_data = data[data['datetime'].apply(lambda x: x.time()) == time]
+            avg_vol_at_time = filtered_data['volume'].tail(period).mean()
+
+            # Get latest complete 5m candle
+            ticker = data['ticker'].iloc[0]
+            curr_data = sd.Schwab().get_5m_price_history(ticker=ticker,
+                                                        start_datetime=dt, 
+                                                        end_datetime=dt)
+            print(curr_data.tail(5))
+            curr_vol_at_time = curr_data[curr_data['datetime'].apply(lambda x: x.time()) == time]['volume'].iloc[0]
+
+            return curr_vol_at_time / avg_vol_at_time
+        
+    
+
+
 ###########
 # Signals #
 ###########
@@ -83,7 +119,11 @@ class signals():
         return ta.roc(close=close, length=length) > 0
 
 def test():
-    pass
+    #tickers = ['ZVSA', 'AKYA', 'VMAR', 'IINN', 'GLXG']
+    tickers = ['NVDA', 'MSFT']
+    for ticker in tickers:
+        data = sd.StockData.fetch_5m_price_history(ticker=ticker)
+        print(f"{ticker} Average Volume at Time: {indicators.volume.rvol_at_time(data=data)}")
 
 if __name__ == '__main__':
     test()

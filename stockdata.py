@@ -1371,7 +1371,11 @@ def test():
     #postgres = Postgres()
     #postgres.create_tables()
     #print(StockData.get_ticker_info('NVDA'))
-    print(TradingView.get_unusual_volume_at_time_movers())
+    #print(TradingView.get_unusual_volume_at_time_movers())
+
+    tickers = ['ZVSA', 'AKYA', 'VMAR', 'IINN', 'GLXG']
+    for ticker in tickers:
+        StockData.update_daily_price_history_by_ticker(ticker)
 
     
 
