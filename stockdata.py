@@ -1376,7 +1376,12 @@ def test():
     #tickers = ['ZVSA', 'AKYA', 'VMAR', 'IINN', 'GLXG']
     #for ticker in tickers:
     #    StockData.update_daily_price_history_by_ticker(ticker)
-    StockData.update_5m
+    for i in range(0, 100):
+        now = datetime.datetime.now()
+        print(f"+++++++++++++++++++++++++\n{now}\n{Schwab().get_daily_price_history(ticker='NVDA', start_datetime=now).tail(1)}")
+        time.sleep(300)
+    #StockData.update_daily_price_history()
+    #StockData.update_5m_price_history()
     
 
 if __name__ == "__main__":#

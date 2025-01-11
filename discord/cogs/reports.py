@@ -101,15 +101,8 @@ class Reports(commands.Cog):
     # Start posting report at next 0 or 5 minute interval
     @send_gainer_reports.before_loop
     @send_volume_reports.before_loop
-    async def sleep_until_5m_interval(self):
-        now = datetime.datetime.now().astimezone()
-        if now.minute % 5 == 0:
-            return 0
-        minutes_by_five = now.minute // 5
-        # get the difference in times
-        diff = (minutes_by_five + 1) * 5 - now.minute
-        future = now + datetime.timedelta(minutes=diff)
-        await asyncio.sleep((future-now).total_seconds())
+    async def reports_before_loop(self):
+        await asyncio.sleep(config.date_utils.seconds_until_5m_interval())
             
 
     @tasks.loop(time=datetime.time(hour=12, minute=30, second=0)) # time in UTC

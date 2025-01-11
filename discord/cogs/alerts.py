@@ -40,7 +40,7 @@ class Alerts(commands.Cog):
         if (market_utils.market_open_today()):
             await self.alerts_channel.send(f"# :rotating_light: Alerts for {date_utils.format_date_mdy(datetime.datetime.today())} :rotating_light:")
 
-    @tasks.loop(minutes = 5)
+    @tasks.loop(minutes = 2)
     async def send_alerts(self):
         if (market_utils.market_open_today() and (market_utils.in_extended_hours() or market_utils.in_intraday())):
             all_alert_tickers = list(set([ticker for tickers in self.alert_tickers.values() for ticker in tickers]))
@@ -55,6 +55,7 @@ class Alerts(commands.Cog):
 
             # Send alerts
             await self.send_unusual_volume_movers(tickers=all_alert_tickers, quotes=quotes)
+            await self.send_volume_spike_movers(tickers=all_alert_tickers, quotes=quotes)
             await self.send_earnings_movers(tickers=all_alert_tickers, quotes=quotes)
             #await self.send_sec_filing_movers(tickers= all_alert_tickers, quotes=quotes)
             await self.send_watchlist_movers(tickers=all_alert_tickers, quotes=quotes)
@@ -62,16 +63,9 @@ class Alerts(commands.Cog):
     # Start posting report at next 0 or 5 minute interval
     # + 30 seconds to allow for reports to generate and add tickers to the alert list
     @send_alerts.before_loop
-    async def sleep_until_5m_interval(self):
-        now = datetime.datetime.now().astimezone()
-        if now.minute % 5 == 0:
-            return 0
-        minutes_by_five = now.minute // 5
-        # get the difference in times
-        diff = (minutes_by_five + 1) * 5 - now.minute
-        future = now + datetime.timedelta(minutes=diff)
-        delta = datetime.timedelta(seconds=30)
-        await asyncio.sleep(((future-now) + delta).total_seconds())
+    async def send_alerts_before_loop(self):
+        DELTA = 30
+        await asyncio.sleep(config.date_utils.seconds_until_5m_interval() + DELTA)
 
     async def send_earnings_movers(self, tickers:list, quotes:dict):
         today = datetime.datetime.today()
@@ -119,7 +113,8 @@ class Alerts(commands.Cog):
             rvol = an.indicators.volume.rvol(data=data, curr_volume=curr_volume)
             pct_change = quotes[ticker]['quote']['netPercentChange']   
             market_cap = sd.StockData.get_market_cap(ticker=ticker) 
-            if rvol > 25.0 and pct_change > 10.0 and market_cap > 50000000: # see that Relative Volume exceeds 25x and change > 10%
+            if rvol > 25.0 and pct_change > 10.0 and market_cap > 50000000: # see that Relative Volume exceeds 25x and change > 10% and market cap is > 50M
+                alert_data = {}
                 alert_data = {}
                 alert_data['pct_change'] = pct_change
                 alert_data['rvol'] = rvol
@@ -130,10 +125,29 @@ class Alerts(commands.Cog):
                 alert = VolumeMoverAlert(ticker=ticker, channel=self.alerts_channel, alert_data=alert_data)
                 await alert.send_alert()
                 await asyncio.sleep(1)
+
+    async def send_volume_spike_movers(self, tickers:list, quotes:dict):
+        for ticker in tickers:
+            data = sd.StockData.fetch_5m_price_history(ticker)
+            now = datetime.datetime.now()
+            rvol_at_time = an.indicators.volume.rvol_at_time(data=data, curr_volume=curr_volume, dt=now)
+            pct_change = quotes[ticker]['quote']['netPercentChange']   
+            market_cap = sd.StockData.get_market_cap(ticker=ticker) 
+            if rvol_at_time > 60.0 and pct_change > 10.0 and market_cap > 50000000: # see that Relative Volume at Time exceeds 60x and change > 10% and market cap is > 50M
+                alert_data = {}
+                alert_data['pct_change'] = pct_change
+                alert_data['rvol_at_time'] = rvol_at_time
+                alert_data['avg_vol_at_time'] = an.indicators.volume.avg_vol_at_time(data=data)
+                alert_data['volume'] = quotes[ticker]['quote']['totalVolume']
+                alert_data['time'] = now.strptime("%-I:%M %p %z")
+                alert = VolumeSpikeAlert(ticker=ticker, channel=self.alerts_channel, alert_data=alert_data)
+                await alert.send_alert()
+                await asyncio.sleep(1)
     
-    @tasks.loop(minutes=30)
+    @tasks.loop(minutes=1)
     async def send_popularity_movers(self):
         top_stocks = sd.ApeWisdom().get_top_stocks()[:80]
+        self.update_alert_tickers(key='popular-stocks', tickers=top_stocks['ticker'].to_list())
         blacklist_tickers = ['DTE', 'AM', 'PM', 'DM']
         for index, row in top_stocks.iterrows():
             ticker = row['ticker']
@@ -165,6 +179,11 @@ class Alerts(commands.Cog):
                     await alert.send_alert()
             else:
                 pass
+
+    # Start posting report at next 0 or 5 minute interval
+    @send_popularity_movers.before_loop
+    async def sleep_until_5m_interval(self):
+        await asyncio.sleep(config.date_utils.seconds_until_5m_interval())
 
 ##################
 # Alerts Classes #
@@ -302,6 +321,33 @@ class VolumeMoverAlert(Alert):
         - **Average Volume  (10 Day):** {self.format_large_num(self.alert_data['avg_vol_10'])}
         - **Average Volume  (30 Day):** {self.format_large_num(self.alert_data['avg_vol_30'])}
         - **Average Volume  (90 Day):** {self.format_large_num(self.alert_data['avg_vol_90'])}
+        \n\n"""
+
+    def build_alert(self):
+        alert = ""
+        alert += self.build_alert_header()
+        alert += self.build_todays_change()
+        alert += self.build_volume_stats()
+        return alert
+
+class VolumeSpikeAlert(Alert):
+    def __init__(self, ticker, channel, alert_data):
+        self.alert_type = "VOLUME_SPIKE"
+        super().__init__(ticker, channel, alert_data)
+
+    def build_alert_header(self):
+        header = f"## :rotating_light: Volume Spike: {self.ticker}\n\n\n"
+        return header
+
+    def build_todays_change(self):
+        symbol = ":green_circle:" if self.alert_data['pct_change'] > 0 else ":small_red_triangle_down:"
+        return f"**{self.ticker}** is {symbol} **{"{:.2f}".format(self.alert_data['pct_change'])}%** with volume up **{"{:.2f} times".format(self.alert_data['rvol'])}** the 10-day average\n\n"
+
+    def build_volume_stats(self):
+        return f"""## Volume Stats
+        - **Today's Volume:** {self.format_large_num(self.alert_data['volume'])}
+        - **Relative Volume at Time ({self.alert_data['time']}):** {"{:.2f}x".format(self.alert_data['rvol_at_time'])}
+        - **Average Volume at Time  ({self.alert_data['time']}):** {"{:.2f}x".format(self.alert_data['avg_vol_at_time'])}
         \n\n"""
 
     def build_alert(self):
