@@ -42,7 +42,7 @@ class Alerts(commands.Cog):
 
     @tasks.loop(minutes = 2)
     async def send_alerts(self):
-        if (market_utils.market_open_today() and (market_utils.in_extended_hours() or market_utils.in_intraday())):
+        #if (market_utils.market_open_today() and (market_utils.in_extended_hours() or market_utils.in_intraday())):
             all_alert_tickers = list(set([ticker for tickers in self.alert_tickers.values() for ticker in tickers]))
             #all_alert_tickers = ['ZVSA']
             quotes = {}
@@ -54,15 +54,15 @@ class Alerts(commands.Cog):
             all_alert_tickers = [ticker for ticker in quotes]
 
             # Send alerts
-            await self.send_unusual_volume_movers(tickers=all_alert_tickers, quotes=quotes)
+            #await self.send_unusual_volume_movers(tickers=all_alert_tickers, quotes=quotes)
             await self.send_volume_spike_movers(tickers=all_alert_tickers, quotes=quotes)
-            await self.send_earnings_movers(tickers=all_alert_tickers, quotes=quotes)
+            #await self.send_earnings_movers(tickers=all_alert_tickers, quotes=quotes)
             #await self.send_sec_filing_movers(tickers= all_alert_tickers, quotes=quotes)
-            await self.send_watchlist_movers(tickers=all_alert_tickers, quotes=quotes)
+            #await self.send_watchlist_movers(tickers=all_alert_tickers, quotes=quotes)
 
     # Start posting report at next 0 or 5 minute interval
     # + 30 seconds to allow for reports to generate and add tickers to the alert list
-    @send_alerts.before_loop
+    #@send_alerts.before_loop
     async def send_alerts_before_loop(self):
         DELTA = 30
         await asyncio.sleep(config.date_utils.seconds_until_5m_interval() + DELTA)
@@ -130,7 +130,7 @@ class Alerts(commands.Cog):
         for ticker in tickers:
             data = sd.StockData.fetch_5m_price_history(ticker)
             now = datetime.datetime.now()
-            rvol_at_time = an.indicators.volume.rvol_at_time(data=data, curr_volume=curr_volume, dt=now)
+            rvol_at_time = an.indicators.volume.rvol_at_time(data=data, dt=now)
             pct_change = quotes[ticker]['quote']['netPercentChange']   
             market_cap = sd.StockData.get_market_cap(ticker=ticker) 
             if rvol_at_time > 60.0 and pct_change > 10.0 and market_cap > 50000000: # see that Relative Volume at Time exceeds 60x and change > 10% and market cap is > 50M
