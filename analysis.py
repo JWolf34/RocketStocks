@@ -17,7 +17,7 @@ class indicators:
 
     class volume:
         
-        def avg_vol_at_time(data:pd.DataFrame, period:int = 10, dt:datetime.datetime = None):
+        def avg_vol_at_time(data:pd.DataFrame, periods:int = 10, dt:datetime.datetime = None):
             # Round down to nearest 5m, looking for last complete 5m candle
             if dt is None:
                 dt = config.date_utils.dt_round_down(datetime.datetime.now() - datetime.timedelta(minutes=5))
@@ -26,18 +26,18 @@ class indicators:
             time = datetime.time(hour=dt.hour, minute=dt.minute)
 
             # Filter data to include candles in specified interval
-            # Calculate average volume over period
+            # Calculate average volume over periods
             filtered_data = data[data['datetime'].apply(lambda x: x.time()) == time]
-            return filtered_data['volume'].tail(period).mean(), time
+            return filtered_data['volume'].tail(periods).mean(), time
         
-        def rvol(data:pd.DataFrame, period:int = 10, curr_volume:float = None):
-            avg_volume = data['volume'].tail(period).mean()
+        def rvol(data:pd.DataFrame, periods:int = 10, curr_volume:float = None):
+            avg_volume = data['volume'].tail(periods).mean()
             if curr_volume is None:
                 curr_volume = sd.Schwab().get_quote(ticker)['quote']['totalVolume']      
             return curr_volume / avg_volume    
 
-        def rvol_at_time(data:pd.DataFrame, period:int = 10, dt:datetime.datetime = None):
-            avg_vol_at_time, time = indicators.volume.avg_vol_at_time(data=data, period=period, dt=dt)
+        def rvol_at_time(data:pd.DataFrame, periods:int = 10, dt:datetime.datetime = None):
+            avg_vol_at_time, time = indicators.volume.avg_vol_at_time(data=data, periods=periods, dt=dt)
 
             # Get latest complete 5m candle
             ticker = data['ticker'].iloc[0]

@@ -895,14 +895,21 @@ class StockData():
     
     
     @staticmethod
-    def fetch_daily_price_history(ticker):
+    def fetch_daily_price_history(ticker, start_date:datetime.date = None, end_date:datetime.date = None):
         logger.debug(f"Fetching daily price history for ticker '{ticker}' from database")
         """SELECT * FROM daily_price_history
            WHERE ticker = '{ticker}';
            """
+        where_conditions = [('ticker', ticker)]
+
+        if start_date is not None:
+            where_conditions.append(('date', '>', start_date))
+        if end_date is not None:
+            where_conditions.append(('date', '<', end_date))
+
         results = Postgres().select(table='daily_price_history',
                                     fields=['ticker', 'open', 'high', 'low', 'close', 'volume', 'date'],
-                                    where_conditions=[('ticker', ticker)],
+                                    where_conditions=where_conditions,
                                     fetchall=True)
         if results is None:
             logger.debug(f"No daily price history available for ticker '{ticker}'")
@@ -913,14 +920,22 @@ class StockData():
             return pd.DataFrame(results, columns=columns)
 
     @staticmethod
-    def fetch_5m_price_history(ticker):
+    def fetch_5m_price_history(ticker, start_datetime:datetime.datetime = None, end_datetime:datetime.datetime = None):
         logger.debug(f"Fetching 5m price history for ticker '{ticker}' from database")
         """SELECT * FROM five_minute_price_history
            WHERE ticker = '{ticker}';
            """
+
+        where_conditions = [('ticker', ticker)]
+
+        if start_datetime is not None:
+            where_conditions.append(('datetime', '>=', start_datetime))
+        if end_datetime is not None:
+            where_conditions.append(('datetime', '<=', end_datetime))
+
         results = Postgres().select(table='five_minute_price_history',
                                     fields=['ticker', 'open', 'high', 'low', 'close', 'volume', 'datetime'],
-                                    where_conditions=[('ticker', ticker)],
+                                    where_conditions=where_conditions,
                                     fetchall=True)
         if results is None:
             logger.debug(f"No 5m price history available for ticker '{ticker}'")
@@ -1192,7 +1207,7 @@ class TradingView():
 
     @staticmethod
     def get_postmarket_gainers_by_market_cap(market_cap):
-        logger.debug(f"Fetching after hours gainers with market cap > {markrt_cap} from TradingView")
+        logger.debug(f"Fetching after hours gainers with market cap > {market_cap} from TradingView")
         num_rows, gainers = (Query()
                 .select('name', 'close', 'volume', 'market_cap_basic', 'postmarket_change', 'postmarket_volume', 'exchange')
                 .order_by('postmarket_change', ascending=False)
@@ -1420,25 +1435,7 @@ def validate_path(path):
 #########
 
 def test():
-    # TODO
-    # Time update_5m_date
-    #update historical earnings
-    #StockData.update_daily_price_history()
-    #postgres = Postgres()
-    #postgres.create_tables()
-    #print(StockData.get_ticker_info('NVDA'))
-    #print(TradingView.get_unusual_volume_at_time_movers())
-
-    #tickers = ['ZVSA', 'AKYA', 'VMAR', 'IINN', 'GLXG']
-    #for ticker in tickers:
-    #    StockData.update_daily_price_history_by_ticker(ticker)
-    for i in range(0, 100):
-        now = datetime.datetime.now()
-        print(f"+++++++++++++++++++++++++\n{now}\n{Schwab().get_daily_price_history(ticker='NVDA', start_datetime=now).tail(1)}")
-        time.sleep(300)
-    #StockData.update_daily_price_history()
-    #StockData.update_5m_price_history()
-    
+    pass
 
 if __name__ == "__main__":#
     #test    

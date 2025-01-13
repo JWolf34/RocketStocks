@@ -40,7 +40,7 @@ class Alerts(commands.Cog):
         if (market_utils.market_open_today()):
             await self.alerts_channel.send(f"# :rotating_light: Alerts for {date_utils.format_date_mdy(datetime.datetime.today())} :rotating_light:")
 
-    @tasks.loop(minutes = 2)
+    @tasks.loop(minutes = 5)
     async def send_alerts(self):
         if (market_utils.market_open_today() and (market_utils.in_extended_hours() or market_utils.in_intraday())):
             all_alert_tickers = list(set([ticker for tickers in self.alert_tickers.values() for ticker in tickers]))
@@ -110,9 +110,12 @@ class Alerts(commands.Cog):
         
     async def send_unusual_volume_movers(self, tickers:list, quotes:dict):
         for ticker in tickers:
-            data = sd.StockData.fetch_daily_price_history(ticker)
+            periods = 10
+            num_days_back = (periods / 5) * 7
+            start_date = datetime.date.today() - datetime.timedelta(days = num_days_back)
+            data = sd.StockData.fetch_daily_price_history(ticker=ticker, start_date=start_date)
             curr_volume = quotes[ticker]['quote']['totalVolume']
-            rvol = an.indicators.volume.rvol(data=data, curr_volume=curr_volume)
+            rvol = an.indicators.volume.rvol(data=data, periods=periods, curr_volume=curr_volume)
             pct_change = quotes[ticker]['quote']['netPercentChange']   
             #market_cap = sd.StockData.get_market_cap(ticker=ticker) 
             if rvol > 25.0 and abs(pct_change) > 10.0: # and market_cap > 50000000: # see that Relative Volume exceeds 25x and change > 10% and market cap is > 50M
@@ -130,13 +133,17 @@ class Alerts(commands.Cog):
 
     async def send_volume_spike_movers(self, tickers:list, quotes:dict):
         for ticker in tickers:
-            data = sd.StockData.fetch_5m_price_history(ticker)
+            periods = 10
+            num_days_back = (periods / 5) * 7
+            now = datetime.datetime.now()
+            start_datetime = now - datetime.timedelta(days = num_days_back)
+            data = sd.StockData.fetch_5m_price_history(ticker=ticker, start_datetime=start_datetime)
             if data.empty:
                 sd.StockData.update_5m_price_history_by_ticker(ticker=ticker)
                 data = sd.StockData.fetch_5m_price_history(ticker=ticker)
-            now = datetime.datetime.now()
-            rvol_at_time = an.indicators.volume.rvol_at_time(data=data, dt=now)
-            avg_vol_at_time, time = an.indicators.volume.avg_vol_at_time(data=data)
+            
+            rvol_at_time = an.indicators.volume.rvol_at_time(data=data, periods=periods, dt=now)
+            avg_vol_at_time, time = an.indicators.volume.avg_vol_at_time(data=data, periods=periods)
             pct_change = quotes[ticker]['quote']['netPercentChange']   
             #market_cap = sd.StockData.get_market_cap(ticker=ticker) 
             if rvol_at_time > 50.0 and abs(pct_change) > 10.0: # and market_cap > 50000000: # see that Relative Volume at Time exceeds 60x and change > 10% and market cap is > 50M
