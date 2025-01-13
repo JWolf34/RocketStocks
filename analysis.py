@@ -41,7 +41,6 @@ class indicators:
 
             # Get latest complete 5m candle
             ticker = data['ticker'].iloc[0]
-            logger.info(f"Ticker: {ticker}")
             curr_data = sd.Schwab().get_5m_price_history(ticker=ticker,
                                                         start_datetime=dt, 
                                                         end_datetime=dt)
