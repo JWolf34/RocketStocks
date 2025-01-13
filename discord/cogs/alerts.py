@@ -49,7 +49,7 @@ class Alerts(commands.Cog):
             chunk_size = 10
             for i in range(0, len(all_alert_tickers), chunk_size):
                 tickers = all_alert_tickers[i:i+chunk_size]
-                quotes = quotes | sd.Schwab().get_quotes(tickers=tickers)
+                quotes = quotes | await sd.Schwab().get_quotes(tickers=tickers)
             quotes.pop('errors', None)
             all_alert_tickers = [ticker for ticker in quotes]
 

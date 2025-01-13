@@ -814,19 +814,19 @@ class StockData():
         logger.info("Tickers have been updated!")
     
     @staticmethod
-    def update_daily_price_history():
+    async def update_daily_price_history():
         logger.info(f"Updating daily price history for all tickers")
         tickers = StockData.get_all_tickers()
         num_tickers = len(tickers)
         curr_ticker = 1
         for ticker in tickers:
             logger.debug(f"Inserting daily price data for ticker {ticker}, {curr_ticker}/{num_tickers}")
-            StockData.update_daily_price_history_by_ticker(ticker)
+            await StockData.update_daily_price_history_by_ticker(ticker)
             curr_ticker += 1
         logger.info("Completed update to daily price history in database")
 
     @staticmethod
-    def update_daily_price_history_by_ticker(ticker):
+    async def update_daily_price_history_by_ticker(ticker):
         """SELECT date FROM daily_price_history
            WHERE ticker = '{ticker}'
            ORDER BY date DESC;
@@ -852,7 +852,7 @@ class StockData():
     
 
     @staticmethod
-    def update_5m_price_history():
+    async def update_5m_price_history():
         logger.info(f"Updating 5m price history for all tickers")
 
         tickers = StockData.get_all_tickers()
@@ -861,7 +861,7 @@ class StockData():
         start =  time.time()
         for ticker in tickers:
             logger.debug(f"Inserting 5m price data for ticker {ticker}, {curr_ticker}/{num_tickers}")
-            StockData.update_5m_price_history_by_ticker(ticker)
+            await StockData.update_5m_price_history_by_ticker(ticker)
             curr_ticker += 1
 
         end = time.time()
@@ -870,7 +870,7 @@ class StockData():
         logger.info("Completed update to 5m price history in database")
     
     @staticmethod
-    def update_5m_price_history_by_ticker(ticker):
+    async def update_5m_price_history_by_ticker(ticker):
         # Get datetime of most recently inserted data
         """SELECT datetime FROM five_minute_price_history
            WHERE ticker = '{ticker}'
@@ -1364,9 +1364,9 @@ class Schwab():
             return price_history
 
     # Get latest quote for ticker from Schwab
-    async def get_quote(self, ticker):
+    def get_quote(self, ticker):
         logger.debug(f"Retrieving quote for ticker '{ticker}' from Schwab")
-        resp = await self.client.get_quote(
+        resp = self.client.get_quote(
             symbol=ticker
         )
         logger.debug(f"Reponse status code is {resp.status_code}")
