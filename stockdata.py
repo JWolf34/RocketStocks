@@ -840,7 +840,7 @@ class StockData():
             start_datetime = datetime.datetime(year=2000, month=1, day=1) # No data found
         else:
             start_datetime = datetime.datetime.combine(result[0], datetime.time(hour=0, minute=0, second=0))
-        price_history = Schwab().get_daily_price_history(ticker, start_datetime=start_datetime)
+        price_history = await Schwab().get_daily_price_history(ticker, start_datetime=start_datetime)
         if price_history.size > 0:
             
             #price_history['date'] = price_history['date'].apply(lambda x: datetime.datetime.strptime(x, "%Y-%m-%d").date())
@@ -885,7 +885,7 @@ class StockData():
             start_datetime = result # No data found
         else:
             start_datetime = result[0]
-        price_history = Schwab().get_5m_price_history(ticker, start_datetime=start_datetime)
+        price_history = await Schwab().get_5m_price_history(ticker, start_datetime=start_datetime)
         if price_history.size > 0:
             fields = price_history.columns.to_list()
             values = [tuple(row) for row in price_history.values]
@@ -1390,7 +1390,7 @@ class Schwab():
         logger.debug(f"Retrieving latest fundamental data for tickers {tickers}")
         resp = await self.client.get_instruments(symbols=tickers, 
                                            projection=self.client.Instrument.Projection.FUNDAMENTAL)
-        logger.debug(f"Reponse status code is {resp.status_code}")
+        logger.debug(f"Reponse status code is {resp.status_code}") 
         assert resp.status_code == httpx.codes.OK, resp.raise_for_status()
         data = resp.json()
         return data
