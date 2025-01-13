@@ -157,7 +157,7 @@ class Alerts(commands.Cog):
                 await alert.send_alert()
                 await asyncio.sleep(1)
     
-    @tasks.loop(minutes=1)
+    @tasks.loop(minutes=30)
     async def send_popularity_movers(self):
         blacklist_tickers = ['DTE', 'AM', 'PM', 'DM']
         top_stocks = sd.ApeWisdom().get_top_stocks()[:50]
