@@ -101,7 +101,7 @@ class Alerts(commands.Cog):
                 else:
                     watchlist_tickers = sd.Watchlists().get_tickers_from_watchlist(watchlist)
                     pct_change = quotes[ticker]['quote']['netPercentChange']   
-                    if ticker in watchlist_tickers and pct_change > 10.0:
+                    if ticker in watchlist_tickers and abs(pct_change) > 10.0:
                         alert_data = {}
                         alert_data['pct_change'] = pct_change
                         alert_data['watchlist'] = watchlist
@@ -114,8 +114,8 @@ class Alerts(commands.Cog):
             curr_volume = quotes[ticker]['quote']['totalVolume']
             rvol = an.indicators.volume.rvol(data=data, curr_volume=curr_volume)
             pct_change = quotes[ticker]['quote']['netPercentChange']   
-            market_cap = sd.StockData.get_market_cap(ticker=ticker) 
-            if rvol > 25.0 and pct_change > 10.0: # and market_cap > 50000000: # see that Relative Volume exceeds 25x and change > 10% and market cap is > 50M
+            #market_cap = sd.StockData.get_market_cap(ticker=ticker) 
+            if rvol > 25.0 and abs(pct_change) > 10.0: # and market_cap > 50000000: # see that Relative Volume exceeds 25x and change > 10% and market cap is > 50M
                 alert_data = {}
                 alert_data = {}
                 alert_data['pct_change'] = pct_change
@@ -138,8 +138,8 @@ class Alerts(commands.Cog):
             rvol_at_time = an.indicators.volume.rvol_at_time(data=data, dt=now)
             avg_vol_at_time, time = an.indicators.volume.avg_vol_at_time(data=data)
             pct_change = quotes[ticker]['quote']['netPercentChange']   
-            market_cap = sd.StockData.get_market_cap(ticker=ticker) 
-            if rvol_at_time > 50.0 and pct_change > 10.0: # and market_cap > 50000000: # see that Relative Volume at Time exceeds 60x and change > 10% and market cap is > 50M
+            #market_cap = sd.StockData.get_market_cap(ticker=ticker) 
+            if rvol_at_time > 50.0 and abs(pct_change) > 10.0: # and market_cap > 50000000: # see that Relative Volume at Time exceeds 60x and change > 10% and market cap is > 50M
                 alert_data = {}
                 alert_data['pct_change'] = pct_change
                 alert_data['rvol_at_time'] = rvol_at_time
@@ -167,7 +167,7 @@ class Alerts(commands.Cog):
                 low_rank_date = None
                 high_rank = 0
                 high_rank_date = None
-                for index, popular_row in popularity.iterrows(): # replace with iterrows logic
+                for index, popular_row in popularity.iterrows():
                     if low_rank < popular_row['rank'] or low_rank == 0:
                         low_rank = popular_row['rank']
                         low_rank_date = datetime.date.today() - datetime.timedelta(days=index)

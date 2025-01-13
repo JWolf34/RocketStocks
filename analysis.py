@@ -47,7 +47,6 @@ class indicators:
             try:
                 curr_vol_at_time = curr_data[curr_data['datetime'].apply(lambda x: x.time()) == time]['volume'].iloc[0]
                 return curr_vol_at_time / avg_vol_at_time
-                
             except IndexError as e:
                 logger.error(f"Could not process rvol_at_time for ticker {ticker} - no data volume data exists at time {time}")
                 return np.nan
