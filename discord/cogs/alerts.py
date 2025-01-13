@@ -42,9 +42,9 @@ class Alerts(commands.Cog):
 
     @tasks.loop(minutes = 2)
     async def send_alerts(self):
-        #if (market_utils.market_open_today() and (market_utils.in_extended_hours() or market_utils.in_intraday())):
+        if (market_utils.market_open_today() and (market_utils.in_extended_hours() or market_utils.in_intraday())):
             all_alert_tickers = list(set([ticker for tickers in self.alert_tickers.values() for ticker in tickers]))
-            #all_alert_tickers = ['ZVSA']
+            #all_alert_tickers = ['RMD']
             quotes = {}
             chunk_size = 10
             for i in range(0, len(all_alert_tickers), chunk_size):
@@ -54,11 +54,13 @@ class Alerts(commands.Cog):
             all_alert_tickers = [ticker for ticker in quotes]
 
             # Send alerts
-            #await self.send_unusual_volume_movers(tickers=all_alert_tickers, quotes=quotes)
+            logger.info("Processing alerts")
+            await self.send_unusual_volume_movers(tickers=all_alert_tickers, quotes=quotes)
             await self.send_volume_spike_movers(tickers=all_alert_tickers, quotes=quotes)
-            #await self.send_earnings_movers(tickers=all_alert_tickers, quotes=quotes)
+            await self.send_earnings_movers(tickers=all_alert_tickers, quotes=quotes)
             #await self.send_sec_filing_movers(tickers= all_alert_tickers, quotes=quotes)
-            #await self.send_watchlist_movers(tickers=all_alert_tickers, quotes=quotes)
+            await self.send_watchlist_movers(tickers=all_alert_tickers, quotes=quotes)
+            logger.info("Alerts posted")
 
     # Start posting report at next 0 or 5 minute interval
     # + 30 seconds to allow for reports to generate and add tickers to the alert list
@@ -129,15 +131,19 @@ class Alerts(commands.Cog):
     async def send_volume_spike_movers(self, tickers:list, quotes:dict):
         for ticker in tickers:
             data = sd.StockData.fetch_5m_price_history(ticker)
+            if data.empty:
+                sd.StockData.update_5m_price_history_by_ticker(ticker=ticker)
+                data = sd.StockData.fetch_5m_price_history(ticker=ticker)
             now = datetime.datetime.now()
             rvol_at_time = an.indicators.volume.rvol_at_time(data=data, dt=now)
+            avg_vol_at_time = an.indicators.volume.avg_vol_at_time(data=data)
             pct_change = quotes[ticker]['quote']['netPercentChange']   
             market_cap = sd.StockData.get_market_cap(ticker=ticker) 
             if rvol_at_time > 60.0 and pct_change > 10.0 and market_cap > 50000000: # see that Relative Volume at Time exceeds 60x and change > 10% and market cap is > 50M
                 alert_data = {}
                 alert_data['pct_change'] = pct_change
                 alert_data['rvol_at_time'] = rvol_at_time
-                alert_data['avg_vol_at_time'] = an.indicators.volume.avg_vol_at_time(data=data)
+                alert_data['avg_vol_at_time'] = avg_vol_at_time
                 alert_data['volume'] = quotes[ticker]['quote']['totalVolume']
                 alert_data['time'] = now.strptime("%-I:%M %p %z")
                 alert = VolumeSpikeAlert(ticker=ticker, channel=self.alerts_channel, alert_data=alert_data)
@@ -179,7 +185,7 @@ class Alerts(commands.Cog):
                     high_rank_date = datetime.date.today() - datetime.timedelta(days=index)
                     
             
-                if (((float(low_rank) - float(high_rank)) / float(low_rank)) * 100.0 > 50.0) and low_rank > 10 and sd.StockData.validate_ticker(ticker) and today_is_max:
+                if (((float(low_rank) - float(high_rank)) / float(low_rank)) * 100.0 > 70.0) and low_rank > 10 and sd.StockData.validate_ticker(ticker) and today_is_max:
                     alert_data = {}
                     alert_data['todays_rank'] = row['rank']
                     alert_data['high_rank'] = high_rank

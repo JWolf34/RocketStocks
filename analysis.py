@@ -1,5 +1,6 @@
 import os
 import pandas as pd
+import numpy as np
 import stockdata as sd
 import pandas_ta as ta
 import stockdata as sd
@@ -21,13 +22,13 @@ class indicators:
             if dt is None:
                 dt = config.date_utils.dt_round_down(datetime.datetime.now() - datetime.timedelta(minutes=5))
             else:
-                dt = confg.date_utils.dt_round_down(dt)
+                dt = config.date_utils.dt_round_down(dt)
             time = datetime.time(hour=dt.hour, minute=dt.minute)
 
             # Filter data to include candles in specified interval
             # Calculate average volume over period
             filtered_data = data[data['datetime'].apply(lambda x: x.time()) == time]
-            return filtered_data['volume'].tail(period).mean()
+            return filtered_data['volume'].tail(period).mean(), time
         
         def rvol(data:pd.DataFrame, period:int = 10, curr_volume:float = None):
             avg_volume = data['volume'].tail(period).mean()
@@ -36,16 +37,22 @@ class indicators:
             return curr_volume / avg_volume    
 
         def rvol_at_time(data:pd.DataFrame, period:int = 10, dt:datetime.datetime = None):
-            avg_vol_at_time = indicators.avg_vol_at_time(data=data, period=period, dt=dt)
+            avg_vol_at_time, time = indicators.volume.avg_vol_at_time(data=data, period=period, dt=dt)
 
             # Get latest complete 5m candle
             ticker = data['ticker'].iloc[0]
+            logger.info(f"Ticker: {ticker}")
             curr_data = sd.Schwab().get_5m_price_history(ticker=ticker,
                                                         start_datetime=dt, 
                                                         end_datetime=dt)
-            curr_vol_at_time = curr_data[curr_data['datetime'].apply(lambda x: x.time()) == time]['volume'].iloc[0]
-
-            return curr_vol_at_time / avg_vol_at_time
+            try:
+                curr_vol_at_time = curr_data[curr_data['datetime'].apply(lambda x: x.time()) == time]['volume'].iloc[0]
+                return curr_vol_at_time / avg_vol_at_time
+                
+            except IndexError as e:
+                logger.error(f"Could not process rvol_at_time for ticker {ticker} - no data volume data exists at time {time}")
+                return np.nan
+            
         
     
 

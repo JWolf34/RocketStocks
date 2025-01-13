@@ -1224,7 +1224,7 @@ class TradingView():
                             .get_scanner_data())
         unusual_volume = unusual_volume.drop(columns = "ticker")
         unusual_volume.columns = columns
-        logger.debug(f"Returned gainers dataframe with shape {gainers.shape}")
+        logger.debug(f"Returned gainers dataframe with shape {unusual_volume.shape}")
         return unusual_volume
 
     @staticmethod
