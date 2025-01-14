@@ -18,8 +18,7 @@ class indicators:
     class volume:
         
         def avg_vol_at_time(data:pd.DataFrame, periods:int = 10, dt:datetime.datetime = None):
-            ticker = data['ticker'].iloc[0]
-            logger.debug(f"Calculating avg_vol_at_time for ticker {ticker} at time {dt} over last {periods} periods")
+            logger.debug(f"Calculating avg_vol_at_time {dt} over last {periods} periods")
             # Round down to nearest 5m, looking for last complete 5m candle
             if dt is None:
                 dt = config.date_utils.dt_round_down(datetime.datetime.now() - datetime.timedelta(minutes=5))
@@ -37,28 +36,23 @@ class indicators:
             if curr_volume is None:
                 curr_volume = sd.Schwab().get_quote(ticker)['quote']['totalVolume']  
 
-            ticker = data['ticker'].iloc[0]
-            logger.debug(f"Calculating rvol for ticker {ticker} over last {periods} periods")
+            logger.debug(f"Calculating rvol over last {periods} periods")
             rvol = curr_volume / avg_volume
             logger.debug(f"avg_volume ({avg_volume}) / curr_volume ({curr_volume}) = rvol ({rvol})")
             return rvol
 
-        def rvol_at_time(data:pd.DataFrame, periods:int = 10, dt:datetime.datetime = None):
+        def rvol_at_time(data:pd.DataFrame, today_data:pd.DataFrame, periods:int = 10, dt:datetime.datetime = None):
             avg_vol_at_time, time = indicators.volume.avg_vol_at_time(data=data, periods=periods, dt=dt)
 
             # Get latest complete 5m candle
-            ticker = data['ticker'].iloc[0]
-            logger.debug(f"Calculating rvol_at_time for ticker {ticker} at time {dt} over last {periods} periods")
-            curr_data = sd.Schwab().get_5m_price_history(ticker=ticker,
-                                                        start_datetime=dt, 
-                                                        end_datetime=dt)
+            logger.debug(f"Calculating rvol_at_time {dt} over last {periods} periods")
             try:
-                curr_vol_at_time = curr_data[curr_data['datetime'].apply(lambda x: x.time()) == time]['volume'].iloc[0]
+                curr_vol_at_time = today_data[today_data['datetime'].apply(lambda x: x.time()) == time]['volume'].iloc[0]
                 rvol = curr_vol_at_time / avg_vol_at_time
                 logger.debug(f"avg_vol_at_time ({avg_vol_at_time}) / curr_vol_at_time ({curr_vol_at_time}) = rvol ({rvol})")
                 return rvol
             except IndexError as e:
-                logger.debug(f"Could not process rvol_at_time for ticker {ticker} - no data volume data exists at time {time}. Latest row:\n{curr_data.iloc[0]}")
+                logger.debug(f"Could not process rvol_at_time - no volume data exists at time {time}. Latest row:\n{today_data.iloc[0]}")
                 return np.nan
             
         

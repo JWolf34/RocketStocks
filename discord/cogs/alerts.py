@@ -25,7 +25,7 @@ class Alerts(commands.Cog):
         self.alert_tickers = {}
         self.post_alerts_date.start()
         self.send_popularity_movers.start()
-        #self.send_alerts.start()
+        self.send_alerts.start()
         
 
     @commands.Cog.listener()
@@ -150,11 +150,8 @@ class Alerts(commands.Cog):
             now = datetime.datetime.now()
             start_datetime = now - datetime.timedelta(days = num_days_back)
             data = sd.StockData.fetch_5m_price_history(ticker=ticker, start_datetime=start_datetime)
-            if data.empty:
-                sd.StockData.update_5m_price_history_by_ticker(ticker=ticker)
-                data = sd.StockData.fetch_5m_price_history(ticker=ticker)
-            
-            rvol_at_time = an.indicators.volume.rvol_at_time(data=data, periods=periods, dt=now)
+            today_data = await sd.Schwab().get_5m_price_history(ticker=ticker, start_datetime=now)
+            rvol_at_time = an.indicators.volume.rvol_at_time(data=data, today_data=today_data, periods=periods, dt=now)
             avg_vol_at_time, time = an.indicators.volume.avg_vol_at_time(data=data, periods=periods)
             pct_change = quotes[ticker]['quote']['netPercentChange']   
             #market_cap = sd.StockData.get_market_cap(ticker=ticker) 

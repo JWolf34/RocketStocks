@@ -370,7 +370,7 @@ class Report(object):
         return header + "\n"
 
     # Ticker Info
-    async def build_ticker_info(self):
+    def build_ticker_info(self):
         logger.debug("Building ticker info...")
         message = "## Ticker Info\n"
         ticker_data = sd.StockData.get_ticker_info(self.ticker)
@@ -385,7 +385,7 @@ class Report(object):
             logger.warning("While generating report summary, ticker_data was 'None'. Ticker likely does not exist in database")
             return message + f"Unable to get info for ticker {self.ticker}\n"
         
-    async def build_recent_SEC_filings(self):
+    def build_recent_SEC_filings(self):
         logger.debug("Building latest SEC filings...")
         message = "## Recent SEC Filings\n\n"
         filings = sd.SEC().get_recent_filings(ticker=self.ticker)
@@ -393,7 +393,7 @@ class Report(object):
             message += f"[Form {filing['form']} - {filing['filingDate']}]({sd.SEC().get_link_to_filing(ticker=self.ticker, filing=filing)})\n"
         return message
 
-    async def build_todays_sec_filings(self):
+    def build_todays_sec_filings(self):
         logger.debug("Building today's SEC filings...")
         message = "## Today's SEC Filings\n\n"
         filings = sd.SEC().get_filings_from_today(ticker=self.ticker)
@@ -411,7 +411,7 @@ class Report(object):
         )
         return "```\n" + table + "\n```"
 
-    async def build_earnings_date(self):
+    def build_earnings_date(self):
         logger.debug(f"Building earnings date...")
         earnings_info = sd.StockData.Earnings.get_next_earnings_info(self.ticker)
         message = f"{self.ticker} reports earnings on "
@@ -426,7 +426,7 @@ class Report(object):
 
         return message + "\n"
 
-    async def build_upcoming_earnings_summary(self):
+    def build_upcoming_earnings_summary(self):
         logger.debug("Building upcoming earnings summary...")
         earnings_info = sd.StockData.Earnings.get_next_earnings_info(self.ticker)
         message = "## Earnings Summary\n\n"
@@ -441,7 +441,7 @@ class Report(object):
         message += f"**Last Year EPS:** {earnings_info['lastyeareps'].iloc[0]}\n"
         return message + "\n\n"
 
-    async def build_recent_earnings(self):
+    def build_recent_earnings(self):
         logger.debug("Building recent earnings...")
         message = "## Earnings\n"
         message += f"**Next earnings date:** {sd.StockData.Earnings.get_next_earnings_date(self.ticker)}\n"
@@ -507,7 +507,7 @@ class Report(object):
         message += f"**P/E Ratio:** {"{:.2f}".format(self.quote['fundamental']['peRatio'])}\n"
         return message
 
-    async def build_popularity(self):
+    def build_popularity(self):
         logger.debug("Building popularity...")
         message = "## Popularity\n"
         
@@ -536,14 +536,14 @@ class Report(object):
                 message +=f"**{i} Day(s) Ago:** {old_rank}, {symbol} {change}\n"
             return message
 
-    async def build_report(self):
+    def build_report(self):
         report = ''
         report += self.build_report_header()
         return report   
 
     async def send_report(self, interaction:discord.Interaction = None, visibility:str = "public", files=None, view=None):
         await self.init()
-        self.message =  await self.build_report() + "\n\n"
+        self.message = self.build_report() + "\n\n"
         if visibility == 'private' and interaction is not None:
             message = await interaction.user.send(self.message, files=files, view=view)
             return message
@@ -583,17 +583,17 @@ class StockReport(Report):
         self.quote = await sd.Schwab().get_quote(self.ticker)
         
     # Override
-    async def build_report(self):
+    def build_report(self):
         logger.debug("Building Stock Report...")
         report = ''
         report += self.build_report_header()
-        report += await self.build_ticker_info()
+        report += self.build_ticker_info()
         report += self.build_daily_summary()
         report += self.build_performance()
         report += self.build_stats()
-        report += await self.build_popularity()
-        report += await self.build_recent_earnings()
-        report += await self.build_recent_SEC_filings()
+        report += self.build_popularity()
+        report += self.build_recent_earnings()
+        report += self.build_recent_SEC_filings()
         
         return report
 
@@ -626,9 +626,6 @@ class StockReport(Report):
 
 class GainerReport(Report):
     def __init__(self, channel):
-        super().__init__(channel)
-
-    async def init(self):
         self.gainers = None
         self.gainers_formatted = pd.DataFrame()
         self.market_period = market_utils.get_market_period()
@@ -643,6 +640,11 @@ class GainerReport(Report):
             self.gainers_formatted = self.format_df_for_table()
         else:
             self.gainers_formatted.columns = self.gainers.columns.to_list()
+        super().__init__(channel)
+
+    async def init(self):
+        pass
+        
 
     def get_tickers(self):
         return self.gainers['Ticker'].to_list()
@@ -673,7 +675,7 @@ class GainerReport(Report):
             sd.Watchlists().update_watchlist(watchlist_id=watchlist_id, tickers=watchlist_tickers)
 
     # Override
-    async def build_report_header(self):
+    def build_report_header(self):
         logger.debug("Building report header...")
         today = datetime.datetime.today()
         header = "### :rotating_light: {} Gainers {} (Market Cap > $100M) (Updated {})\n\n".format(
@@ -686,17 +688,17 @@ class GainerReport(Report):
         return header
 
     # Override
-    async def build_report(self):
+    def build_report(self):
         logger.debug("Building Gainer Report...")
         report = ""
-        report += await self.build_report_header()
-        report += await self.build_table(self.gainers_formatted[:15])
+        report +=  self.build_report_header()
+        report +=  self.build_table(self.gainers_formatted[:15])
         return report
 
     # Override
     async def send_report(self):
-        await self.init()
-        self.message =  await self.build_report() + "\n\n"
+        #await self.init()
+        self.message = self.build_report() + "\n\n"
 
         logger.debug("Sending Gainer Report...")
         today = datetime.datetime.today()
@@ -718,16 +720,16 @@ class GainerReport(Report):
 
 class VolumeReport(Report):
     def __init__(self, channel):
-        
-        super().__init__(channel)
-
-    async def init(self):
         self.volume_movers = sd.TradingView.get_unusual_volume_movers()
         self.volume_movers_formatted = self.format_df_for_table()
         self.market_period = market_utils.get_market_period()
         if self.volume_movers.size > 0:
             self.update_unusual_volume_watchlist()
+        super().__init__(channel)
 
+    async def init(self):
+        pass
+        
     def get_tickers(self):
         return self.volume_movers['Ticker'].to_list()
 
@@ -742,7 +744,7 @@ class VolumeReport(Report):
         return movers
 
     # Override
-    async def build_report_header(self):
+    def build_report_header(self):
         logger.debug("Building report header...")
         today = datetime.datetime.today()
         header = "### :rotating_light: Unusual Volume {} (Volume > 1M)(Updated {})\n\n".format(
@@ -751,17 +753,17 @@ class VolumeReport(Report):
         return header
 
     # Override
-    async def build_report(self):
+    def build_report(self):
         logger.debug("Building Volume Mover Report...")
         report = ""
-        report += await self.build_report_header()
-        report += await self.build_table(self.volume_movers_formatted[:10])
+        report += self.build_report_header()
+        report += self.build_table(self.volume_movers_formatted[:10])
         return report
 
     # Override
     async def send_report(self):
-        await self.init()
-        self.message =  await self.build_report() + "\n\n"
+        #await self.init()
+        self.message = self.build_report() + "\n\n"
 
         logger.debug("Sending Volume Mover Report...")
         today = datetime.datetime.today()
@@ -782,7 +784,7 @@ class VolumeReport(Report):
             config.discord_utils.update_volume_message_id(message.id)
             return message
 
-    async def get_volume_movers(self):
+    def get_volume_movers(self):
         headers = []
         rows = []
         unusual_volume = sd.TradingView.get_unusual_volume_movers()
@@ -820,13 +822,13 @@ class NewsReport(Report):
         super().__init__(None) # no channel for this report
 
     # Override
-    async def build_report_header(self):
+    def build_report_header(self):
         logger.debug("Building report header...")
         # Append ticker name, today's date, and external links to message
         header = f"## News articles for '{self.query}'\n"
         return header + "\n"
 
-    async def build_news(self):
+    def build_news(self):
         logger.debug("Building news...")
         report = ''
         if self.breaking:
@@ -841,7 +843,7 @@ class NewsReport(Report):
                 break
         return report
 
-    async def build_report(self):
+    def build_report(self):
         logger.debug("Building News Report...")
         report = ''
         report += self.build_report_header()
@@ -850,7 +852,7 @@ class NewsReport(Report):
 
     # Override
     async def send_report(self, interaction):
-        self.message =  await self.build_report() + "\n\n"
+        self.message = self.build_report() + "\n\n"
         logger.debug("Sending News Report...")
         await interaction.response.send_message(self.message)
 
