@@ -205,6 +205,7 @@ class Postgres():
                             ticker              varchar(8),
                             alert_type          varchar(64),
                             messageid           bigint,
+                            alert_data          json,
                             PRIMARY KEY (date, ticker, alert_type)
                             );
 
@@ -1435,7 +1436,8 @@ def validate_path(path):
 #########
 
 def test():
-    pass
+    #Postgres().drop_table('alerts')
+    #Postgres().create_tables()
 
 if __name__ == "__main__":#
     #test    

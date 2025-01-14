@@ -241,7 +241,7 @@ class Alert(Report):
             pass
         else:
             message = await self.channel.send(self.message, view=self.buttons)
-            config.discord_utils.insert_alert_message_id(date=today.date(), ticker=self.ticker, alert_type=self.alert_type, message_id=message.id)
+            config.discord_utils.insert_alert_message_id(date=today.date(), ticker=self.ticker, alert_type=self.alert_type, message_id=message.id, alert_data = self.alert_data)
             return message
 
 

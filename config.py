@@ -138,6 +138,22 @@ class discord_utils:
             return result
         else:
             return result[0]
+    
+    '''
+    def get_alert_message_data(date, ticker, type):
+        result = sd.Postgres().select(table='alerts',
+                                    fields=['alert_data'],
+                                    where_conditions=[
+                                        ('date', date),
+                                        ('ticker', ticker),
+                                        ('alert_type', alert_type)
+                                    ], 
+                                    fetchall=False)
+        if result is None:
+            return result
+        else:
+            return json.loads(result[0])
+            '''
 
     def insert_alert_message_id(date, ticker, alert_type, message_id):
         table = 'alerts'
