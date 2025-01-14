@@ -363,7 +363,7 @@ class Report(object):
     ############################
 
     # Report Header
-    async def build_report_header(self):
+    def build_report_header(self):
         logger.debug("Building report header...")
         # Append ticker name, today's date, and external links to message
         header = "# " + self.ticker + " Report " + dt.date.today().strftime("%m/%d/%Y") + "\n"
@@ -401,7 +401,7 @@ class Report(object):
             message += f"[Form {filing['form']} - {filing['filingDate']}]({sd.SEC().get_link_to_filing(ticker=self.ticker, filing=filing)})\n"
         return message
 
-    async def build_table(self, df:pd.DataFrame, style='double_thin_compact'):
+    def build_table(self, df:pd.DataFrame, style='double_thin_compact'):
         logger.debug(f"Building table of shape {df.shape} with headers {df.columns.to_list()} and of style '{style}'")
         table_style = self.table_styles.get(style, PresetStyle.double_thin_compact)
         table = table2ascii(
@@ -458,7 +458,7 @@ class Report(object):
         message += self.build_table(df=recent_earnings, style='plain')
         return message + "\n"
 
-    async def build_performance(self):
+    def build_performance(self):
         logger.debug("Building performance...")
         today =  datetime.datetime.today().date()
         message = "## Performance \n\n"
@@ -484,7 +484,7 @@ class Report(object):
                 pass
         return message
 
-    async def build_daily_summary(self):
+    def build_daily_summary(self):
         logger.debug("Building daily summary...")
         message = "## Today's Summary\n\n"
         OHLCV = {'Open': "{:.2f}".format(self.quote['quote']['openPrice']),
@@ -496,7 +496,7 @@ class Report(object):
         message += " | ".join(f"**{column}:** {value}" for column, value in OHLCV.items())
         return message + "\n"  
 
-    async def build_stats(self):
+    def build_stats(self):
         logger.debug("Building ticker stats...")
         message = "## Stats\n"
         message += f"**Market Cap:** {self.format_large_num(sd.StockData.get_market_cap(self.ticker))}\n"
@@ -538,7 +538,7 @@ class Report(object):
 
     async def build_report(self):
         report = ''
-        report += await self.build_report_header()
+        report += self.build_report_header()
         return report   
 
     async def send_report(self, interaction:discord.Interaction = None, visibility:str = "public", files=None, view=None):
@@ -586,11 +586,11 @@ class StockReport(Report):
     async def build_report(self):
         logger.debug("Building Stock Report...")
         report = ''
-        report += await self.build_report_header()
+        report += self.build_report_header()
         report += await self.build_ticker_info()
-        report += await self.build_daily_summary()
-        report += await self.build_performance()
-        report += await self.build_stats()
+        report += self.build_daily_summary()
+        report += self.build_performance()
+        report += self.build_stats()
         report += await self.build_popularity()
         report += await self.build_recent_earnings()
         report += await self.build_recent_SEC_filings()
@@ -673,7 +673,7 @@ class GainerReport(Report):
             sd.Watchlists().update_watchlist(watchlist_id=watchlist_id, tickers=watchlist_tickers)
 
     # Override
-    def build_report_header(self):
+    async def build_report_header(self):
         logger.debug("Building report header...")
         today = datetime.datetime.today()
         header = "### :rotating_light: {} Gainers {} (Market Cap > $100M) (Updated {})\n\n".format(
@@ -686,7 +686,7 @@ class GainerReport(Report):
         return header
 
     # Override
-    def build_report(self):
+    async def build_report(self):
         logger.debug("Building Gainer Report...")
         report = ""
         report += await self.build_report_header()
@@ -718,12 +718,15 @@ class GainerReport(Report):
 
 class VolumeReport(Report):
     def __init__(self, channel):
+        
+        super().__init__(channel)
+
+    async def init(self):
         self.volume_movers = sd.TradingView.get_unusual_volume_movers()
         self.volume_movers_formatted = self.format_df_for_table()
         self.market_period = market_utils.get_market_period()
         if self.volume_movers.size > 0:
             self.update_unusual_volume_watchlist()
-        super().__init__(channel)
 
     def get_tickers(self):
         return self.volume_movers['Ticker'].to_list()
@@ -739,7 +742,7 @@ class VolumeReport(Report):
         return movers
 
     # Override
-    def build_report_header(self):
+    async def build_report_header(self):
         logger.debug("Building report header...")
         today = datetime.datetime.today()
         header = "### :rotating_light: Unusual Volume {} (Volume > 1M)(Updated {})\n\n".format(
@@ -748,39 +751,38 @@ class VolumeReport(Report):
         return header
 
     # Override
-    def build_report(self):
+    async def build_report(self):
         logger.debug("Building Volume Mover Report...")
         report = ""
-        report += self.build_report_header()
-        report += self.build_table(self.volume_movers_formatted[:10])
+        report += await self.build_report_header()
+        report += await self.build_table(self.volume_movers_formatted[:10])
         return report
 
     # Override
     async def send_report(self):
-        if self.market_period != "EOD":
-            logger.debug("Sending Volume Mover Report...")
-            today = datetime.datetime.today()
-            market_period = market_utils.get_market_period()
-            message_id = config.discord_utils.get_volume_message_id()
-            try:
-                curr_message = await self.channel.fetch_message(message_id)
-                if curr_message.created_at.date() < today.date():
-                    message = await self.channel.send(self.message)
-                    config.discord_utils.update_volume_message_id( message.id)
-                    return message
-                else:
-                    logger.debug(f"Volume Mover Report already exists today. Updating... ")
-                    await curr_message.edit(content=self.message)
+        await self.init()
+        self.message =  await self.build_report() + "\n\n"
 
-            except discord.errors.NotFound as e:
+        logger.debug("Sending Volume Mover Report...")
+        today = datetime.datetime.today()
+        market_period = market_utils.get_market_period()
+        message_id = config.discord_utils.get_volume_message_id()
+        try:
+            curr_message = await self.channel.fetch_message(message_id)
+            if curr_message.created_at.date() < today.date():
                 message = await self.channel.send(self.message)
-                config.discord_utils.update_volume_message_id(message.id)
+                config.discord_utils.update_volume_message_id( message.id)
                 return message
-        else: 
-            # Outside market hours
-            pass
+            else:
+                logger.debug(f"Volume Mover Report already exists today. Updating... ")
+                await curr_message.edit(content=self.message)
 
-    def get_volume_movers(self):
+        except discord.errors.NotFound as e:
+            message = await self.channel.send(self.message)
+            config.discord_utils.update_volume_message_id(message.id)
+            return message
+
+    async def get_volume_movers(self):
         headers = []
         rows = []
         unusual_volume = sd.TradingView.get_unusual_volume_movers()
@@ -818,13 +820,13 @@ class NewsReport(Report):
         super().__init__(None) # no channel for this report
 
     # Override
-    def build_report_header(self):
+    async def build_report_header(self):
         logger.debug("Building report header...")
         # Append ticker name, today's date, and external links to message
         header = f"## News articles for '{self.query}'\n"
         return header + "\n"
 
-    def build_news(self):
+    async def build_news(self):
         logger.debug("Building news...")
         report = ''
         if self.breaking:
@@ -839,7 +841,7 @@ class NewsReport(Report):
                 break
         return report
 
-    def build_report(self):
+    async def build_report(self):
         logger.debug("Building News Report...")
         report = ''
         report += self.build_report_header()
@@ -848,6 +850,7 @@ class NewsReport(Report):
 
     # Override
     async def send_report(self, interaction):
+        self.message =  await self.build_report() + "\n\n"
         logger.debug("Sending News Report...")
         await interaction.response.send_message(self.message)
 

@@ -1366,7 +1366,7 @@ class Schwab():
     # Get latest quote for ticker from Schwab
     async def get_quote(self, ticker):
         logger.debug(f"Retrieving quote for ticker '{ticker}' from Schwab")
-        resp = self.client.get_quote(
+        resp = await self.client.get_quote(
             symbol=ticker
         )
         logger.debug(f"Reponse status code is {resp.status_code}")

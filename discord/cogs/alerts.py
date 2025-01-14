@@ -25,7 +25,7 @@ class Alerts(commands.Cog):
         self.alert_tickers = {}
         self.post_alerts_date.start()
         self.send_popularity_movers.start()
-        self.send_alerts.start()
+        #self.send_alerts.start()
         
 
     @commands.Cog.listener()
