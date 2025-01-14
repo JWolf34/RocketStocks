@@ -783,7 +783,7 @@ class StockData():
         logger.info("Tickers have been updated!")
     
     @staticmethod
-    def insert_new_tickers():
+    async def insert_new_tickers():
         logger.info("Updating tickers database table with up-to-date ticker data")
         column_map = {'symbol':'ticker',
                       'name':'name',
