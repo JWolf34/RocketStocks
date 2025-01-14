@@ -129,7 +129,7 @@ class Watchlists(commands.Cog):
     @app_commands.autocomplete(watchlist=watchlist_options,)
     async def watchlist(self, interaction: discord.Interaction, watchlist: str):
         logger.info("/watchlist function called by user {}".format(self, interaction.user.name))
-    
+
         is_personal = False
         watchlist_id = watchlist
         if watchlist == 'personal':
@@ -139,8 +139,10 @@ class Watchlists(commands.Cog):
         tickers = sd.Watchlists().get_tickers_from_watchlist(watchlist_id)
         if tickers is not None:
             await interaction.response.send_message(f"Watchlist '{watchlist_id}': {', '.join(tickers)}", ephemeral=is_personal)
+            logger.info(f"Watchlist '{watchlist}' has tickers {tickers}")
         else:
             await interaction.response.send_message(f"No tickers on watchlist '{watchlist}'", ephemeral=is_personal)
+            logger.info(f"Watchlist '{watchlist}' has no tickers")
 
     @app_commands.command(name = "set-watchlist", description= "Overwrite a watchlist with the specified tickers",)
     @app_commands.describe(tickers = "Tickers to add to watchlist (separated by spaces)")
@@ -168,7 +170,8 @@ class Watchlists(commands.Cog):
         if watchlist_id not in sd.Watchlists().get_watchlists(no_personal=False):
             sd.Watchlists().create_watchlist(watchlist_id=watchlist_id, tickers=[], systemGenerated=False)
     
-        # Update watchlist with new tickers         
+        # Update watchlist with new tickers 
+        logger.info(f"Setting watchlist '{watchlist}' to {tickers}")        
         sd.Watchlists().update_watchlist(watchlist_id=watchlist_id, tickers=tickers)
         if len(tickers) > 0 and len(invalid_tickers) > 0:
             await interaction.followup.send("Set {} watchlist to {} but could not add the following tickers: {}".format(message_flavor, ", ".join(tickers), ", ".join(invalid_tickers)), ephemeral=is_personal)
@@ -176,6 +179,8 @@ class Watchlists(commands.Cog):
             await interaction.followup.send("Set {} watchlist to {}.".format(message_flavor, ", ".join(tickers)), ephemeral=is_personal)
         else:
             await interaction.followup.send("No tickers added to {} watchlist. Invalid tickers: {}".format(message_flavor, ", ".join(invalid_tickers)), ephemeral=is_personal)
+
+        logger.debug(f"Invalid input tickers: {invalid_tickers}")
         
     @app_commands.command(name = "create-watchlist", description= "List the tickers on the selected watchlist",)
     @app_commands.describe(watchlist = "Name of the watchlist to create")
@@ -186,9 +191,12 @@ class Watchlists(commands.Cog):
 
         # Parse list from ticker input and identify invalid tickers
         tickers, invalid_tickers = sd.StockData.get_valid_tickers(tickers)
+        logger.info(f"Request to create watchlist '{watchlist}' with tickers {tickers}")
+        logger.debug(f"Invalid input tickers: {invalid_tickers}")
 
         sd.Watchlists().create_watchlist(watchlist_id=watchlist, tickers=tickers, systemGenerated=False)
         await interaction.followup.send("Created watchlist '{}' with tickers: ".format(watchlist) + ', '.join(tickers), ephemeral=False)
+        logger.info(f"Watchlist '{watchlist}' created with tickers {tickers}")
 
     @app_commands.command(name = "delete-watchlist", description= "Delete a watchlist",)
     @app_commands.describe(watchlist = "Watchlist to delete")
@@ -196,12 +204,15 @@ class Watchlists(commands.Cog):
     async def delete_watchlist(self, interaction: discord.Interaction, watchlist: str):
         await interaction.response.defer(ephemeral=True)
         logger.info("/delete-watchlist function called by user {}".format(self, interaction.user.name))
+        logger.info(f"Request to delete watchlict '{watchlist}'")
 
         if watchlist == "personal":
             await interaction.followup.send("Cannot delete a personal watchlist. Use /set-watchlist to clear its contents if you wish", ephemeral=True)
+            logger.info("Selected watchlist is 'personal' - cannot delete a personal watchlist")
         else:
             sd.Watchlists().delete_watchlist(watchlist_id=watchlist)
             await interaction.followup.send("Deleted watchlist '{}'".format(watchlist), ephemeral=False)
+            logger.info(f"Watchlist '{watchlist}' deleted")
 
 
 #########        
