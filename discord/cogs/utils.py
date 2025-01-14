@@ -18,8 +18,10 @@ class Utils(commands.Cog):
     @app_commands.command(name='sync', description='Sync bot commands to the server')
     @commands.is_owner()
     async def sync(self, interaction:discord.Interaction):
+        logger.info("/help function called by user {}".format(interaction.user.name))
         await self.bot.tree.sync()
         await interaction.response.send_message("Bot commands synced!", ephemeral=True)
+        logger.info("Bot commands synced!")
 
     @app_commands.command(name = "help", description= "Show help on the bot's commands",)
     async def help(self, interaction: discord.Interaction):
