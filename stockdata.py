@@ -784,7 +784,7 @@ class StockData():
         logger.info("Tickers have been updated!")
     
     @staticmethod
-    def insert_new_tickers():
+    async def insert_new_tickers():
         logger.info("Updating tickers database table with up-to-date ticker data")
         column_map = {'symbol':'ticker',
                       'name':'name',
@@ -815,19 +815,19 @@ class StockData():
         logger.info("Tickers have been updated!")
     
     @staticmethod
-    def update_daily_price_history():
+    async def update_daily_price_history():
         logger.info(f"Updating daily price history for all tickers")
         tickers = StockData.get_all_tickers()
         num_tickers = len(tickers)
         curr_ticker = 1
         for ticker in tickers:
             logger.debug(f"Inserting daily price data for ticker {ticker}, {curr_ticker}/{num_tickers}")
-            StockData.update_daily_price_history_by_ticker(ticker)
+            await StockData.update_daily_price_history_by_ticker(ticker)
             curr_ticker += 1
         logger.info("Completed update to daily price history in database")
 
     @staticmethod
-    def update_daily_price_history_by_ticker(ticker):
+    async def update_daily_price_history_by_ticker(ticker):
         """SELECT date FROM daily_price_history
            WHERE ticker = '{ticker}'
            ORDER BY date DESC;
@@ -841,7 +841,7 @@ class StockData():
             start_datetime = datetime.datetime(year=2000, month=1, day=1) # No data found
         else:
             start_datetime = datetime.datetime.combine(result[0], datetime.time(hour=0, minute=0, second=0))
-        price_history = Schwab().get_daily_price_history(ticker, start_datetime=start_datetime)
+        price_history = await Schwab().get_daily_price_history(ticker, start_datetime=start_datetime)
         if price_history.size > 0:
             
             #price_history['date'] = price_history['date'].apply(lambda x: datetime.datetime.strptime(x, "%Y-%m-%d").date())
@@ -853,7 +853,7 @@ class StockData():
     
 
     @staticmethod
-    def update_5m_price_history():
+    async def update_5m_price_history():
         logger.info(f"Updating 5m price history for all tickers")
 
         tickers = StockData.get_all_tickers()
@@ -862,7 +862,7 @@ class StockData():
         start =  time.time()
         for ticker in tickers:
             logger.debug(f"Inserting 5m price data for ticker {ticker}, {curr_ticker}/{num_tickers}")
-            StockData.update_5m_price_history_by_ticker(ticker)
+            await StockData.update_5m_price_history_by_ticker(ticker)
             curr_ticker += 1
 
         end = time.time()
@@ -871,7 +871,7 @@ class StockData():
         logger.info("Completed update to 5m price history in database")
     
     @staticmethod
-    def update_5m_price_history_by_ticker(ticker):
+    async def update_5m_price_history_by_ticker(ticker):
         # Get datetime of most recently inserted data
         """SELECT datetime FROM five_minute_price_history
            WHERE ticker = '{ticker}'
@@ -886,7 +886,7 @@ class StockData():
             start_datetime = result # No data found
         else:
             start_datetime = result[0]
-        price_history = Schwab().get_5m_price_history(ticker, start_datetime=start_datetime)
+        price_history = await Schwab().get_5m_price_history(ticker, start_datetime=start_datetime)
         if price_history.size > 0:
             fields = price_history.columns.to_list()
             values = [tuple(row) for row in price_history.values]
@@ -1308,11 +1308,12 @@ class Schwab():
             api_key=config.secrets.schwab_api_key,
             app_secret=config.secrets.schwab_api_secret,
             callback_url="https://127.0.0.1:8182",
-            token_path="data/schwab-token.json"
+            token_path="data/schwab-token.json",
+            asyncio=True
         )
 
     # Request daily price history from Schwab between start_datetime and end_datetime
-    def get_daily_price_history(self, ticker, start_datetime=None, end_datetime=datetime.datetime.now(datetime.timezone.utc)):
+    async def get_daily_price_history(self, ticker, start_datetime=None, end_datetime=datetime.datetime.now(datetime.timezone.utc)):
         logger.debug(f"Requesting daily price history from Schwab for ticker: '{ticker}' - start: {start_datetime}, end: {end_datetime}")
         if start_datetime is None: # If no start time, get data as far back as 2000
             start_datetime = datetime.datetime(
@@ -1323,7 +1324,7 @@ class Schwab():
                                 minute = 0,
                                 second = 0
                                 ).astimezone(datetime.timezone.utc)
-        resp = self.client.get_price_history_every_day(
+        resp = await self.client.get_price_history_every_day(
             symbol=ticker, 
             start_datetime=start_datetime,
             end_datetime=end_datetime,
@@ -1345,9 +1346,9 @@ class Schwab():
             return pd.DataFrame()
 
     # Request 5m price history from Schwab between start_datetime and end_datetime
-    def get_5m_price_history(self, ticker, start_datetime=None, end_datetime=None):
+    async def get_5m_price_history(self, ticker, start_datetime=None, end_datetime=None):
         logger.debug(f"Requesting 5m price history from Schwab for ticker: '{ticker}' - start: {start_datetime}, end: {end_datetime}")
-        resp = self.client.get_price_history_every_five_minutes(
+        resp =  await self.client.get_price_history_every_five_minutes(
             symbol=ticker, 
             start_datetime=start_datetime,
             end_datetime=end_datetime,
@@ -1364,9 +1365,9 @@ class Schwab():
             return price_history
 
     # Get latest quote for ticker from Schwab
-    def get_quote(self, ticker):
+    async def get_quote(self, ticker):
         logger.debug(f"Retrieving quote for ticker '{ticker}' from Schwab")
-        resp = self.client.get_quote(
+        resp = await self.client.get_quote(
             symbol=ticker
         )
         logger.debug(f"Reponse status code is {resp.status_code}")
@@ -1375,9 +1376,9 @@ class Schwab():
         return data[ticker]
 
     # Get quotes for multiple tickers from Schwab
-    def get_quotes(self, tickers):
+    async def get_quotes(self, tickers):
         logger.debug(f"Retrieving quotes for tickers {tickers} from Schwab")
-        resp = self.client.get_quotes(
+        resp = await self.client.get_quotes(
             symbols=tickers
         )
         logger.debug(f"Reponse status code is {resp.status_code}")
@@ -1386,49 +1387,33 @@ class Schwab():
         return data
     
     # Get latest fundamental data from Schwab
-    def get_fundamentals(self, tickers):
+    async def get_fundamentals(self, tickers):
         logger.debug(f"Retrieving latest fundamental data for tickers {tickers}")
-        resp = self.client.get_instruments(symbols=tickers, 
+        resp = await self.client.get_instruments(symbols=tickers, 
                                            projection=self.client.Instrument.Projection.FUNDAMENTAL)
-        logger.debug(f"Reponse status code is {resp.status_code}")
+        logger.debug(f"Reponse status code is {resp.status_code}") 
         assert resp.status_code == httpx.codes.OK, resp.raise_for_status()
         data = resp.json()
         return data
     
     # Get latest option chain for target ticker
-    def get_options_chain(self, ticker):
+    async def get_options_chain(self, ticker):
         logger.debug(f"Retreiving latest options chain for ticker '{ticker}'")
-        resp = self.client.get_option_chain(ticker)
+        resp = await self.client.get_option_chain(ticker)
         assert resp.status_code == httpx.codes.OK, resp.raise_for_status()
         data = resp.json()
         return data
 
     # Get top 10 price movers for the day
-    def get_movers(self):
+    async def get_movers(self):
         logger.debug("Retrieving top 10 price movers from Schwab")
-        resp = self.client.get_movers(index=self.client.Movers.Index.EQUITY_ALL, 
+        resp = await self.client.get_movers(index=self.client.Movers.Index.EQUITY_ALL, 
                                       sort_order=self.client.Movers.SortOrder.PERCENT_CHANGE_UP,
                                       frequency=self.client.Movers.Frequency.TEN)
         logger.debug(f"Reponse status code is {resp.status_code}")
         assert resp.status_code == httpx.codes.OK, resp.raise_for_status()
         data = resp.json()
         return data
-    
-
-###############################
-# Helpers and data validation #
-###############################
-
-# Validate specified path exists and create it if needed
-def validate_path(path):
-    logger.info("Validating that path {} exists".format(path))
-    if not (os.path.isdir(path)):
-        logger.warning("Path {} does not exist. Creating path...".format(path))
-        os.makedirs(path) 
-        return 
-    else:
-        logger.debug("Path {} exists in the filesystem".format(path))
-        return True
        
 
 #########

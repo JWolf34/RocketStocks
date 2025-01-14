@@ -33,12 +33,23 @@ def get_env(var_name:str):
         logger.error(f"Failed to fetch environment variable '{var_name}'")
         return variable
 
+# Validate specified path exists and create it if needed
+def validate_path(path):
+    logger.info("Validating that path {} exists".format(path))
+    if not (os.path.isdir(path)):
+        logger.info("Path {} does not exist. Creating path...".format(path))
+        os.makedirs(path) 
+        return 
+    else:
+        logger.info("Path {} exists in the filesystem".format(path))
+        return True
+
 def bot_setup():
     # Create database tables that do not exist
     sd.Postgres().create_tables()
 
     # Ensure data paths exist
-    sd.validate_path(datapaths.attachments_path)
+    validate_path(datapaths.attachments_path)
 
 class discord_utils:
 
