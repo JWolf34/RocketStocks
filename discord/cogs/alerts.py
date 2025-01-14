@@ -156,7 +156,7 @@ class Alerts(commands.Cog):
             avg_vol_at_time, time = an.indicators.volume.avg_vol_at_time(data=data, periods=periods)
             pct_change = quotes[ticker]['quote']['netPercentChange']   
             #market_cap = sd.StockData.get_market_cap(ticker=ticker) 
-            if rvol_at_time > 50.0 and abs(pct_change) > 10.0: # and market_cap > 50000000: # see that Relative Volume at Time exceeds 60x and change > 10% and market cap is > 50M
+            if rvol_at_time > 50.0 and abs(pct_change) > 10.0 and rvol_at_time is not np.nan and avg_vol_at_time is not np.nan:
                 logger.debug(f"Identified ticker '{ticker}' with RVOL at time ({time}) {"{:.2f}x".format(rvol_at_time)} and percent change {"{:.2f}%".format(pct_change)}")
                 alert_data = {}
                 alert_data['pct_change'] = pct_change
