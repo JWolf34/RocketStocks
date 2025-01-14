@@ -1364,7 +1364,7 @@ class Schwab():
             return price_history
 
     # Get latest quote for ticker from Schwab
-    def get_quote(self, ticker):
+    async def get_quote(self, ticker):
         logger.debug(f"Retrieving quote for ticker '{ticker}' from Schwab")
         resp = self.client.get_quote(
             symbol=ticker

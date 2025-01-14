@@ -353,22 +353,24 @@ class Report(object):
                         'thin_rounded':PresetStyle.thin_rounded,
                         'thin_thick':PresetStyle.thin_thick,
                         'thin_thick_rounded':PresetStyle.thin_thick_rounded}
-        self.message = self.build_report() + "\n\n"
         self.channel = channel
+
+    async def init(self):
+        pass
 
     ############################
     # Report Builder Functions #
     ############################
 
     # Report Header
-    def build_report_header(self):
+    async def build_report_header(self):
         logger.debug("Building report header...")
         # Append ticker name, today's date, and external links to message
         header = "# " + self.ticker + " Report " + dt.date.today().strftime("%m/%d/%Y") + "\n"
         return header + "\n"
 
     # Ticker Info
-    def build_ticker_info(self):
+    async def build_ticker_info(self):
         logger.debug("Building ticker info...")
         message = "## Ticker Info\n"
         ticker_data = sd.StockData.get_ticker_info(self.ticker)
@@ -383,7 +385,7 @@ class Report(object):
             logger.warning("While generating report summary, ticker_data was 'None'. Ticker likely does not exist in database")
             return message + f"Unable to get info for ticker {self.ticker}\n"
         
-    def build_recent_SEC_filings(self):
+    async def build_recent_SEC_filings(self):
         logger.debug("Building latest SEC filings...")
         message = "## Recent SEC Filings\n\n"
         filings = sd.SEC().get_recent_filings(ticker=self.ticker)
@@ -391,7 +393,7 @@ class Report(object):
             message += f"[Form {filing['form']} - {filing['filingDate']}]({sd.SEC().get_link_to_filing(ticker=self.ticker, filing=filing)})\n"
         return message
 
-    def build_todays_sec_filings(self):
+    async def build_todays_sec_filings(self):
         logger.debug("Building today's SEC filings...")
         message = "## Today's SEC Filings\n\n"
         filings = sd.SEC().get_filings_from_today(ticker=self.ticker)
@@ -399,7 +401,7 @@ class Report(object):
             message += f"[Form {filing['form']} - {filing['filingDate']}]({sd.SEC().get_link_to_filing(ticker=self.ticker, filing=filing)})\n"
         return message
 
-    def build_table(self, df:pd.DataFrame, style='double_thin_compact'):
+    async def build_table(self, df:pd.DataFrame, style='double_thin_compact'):
         logger.debug(f"Building table of shape {df.shape} with headers {df.columns.to_list()} and of style '{style}'")
         table_style = self.table_styles.get(style, PresetStyle.double_thin_compact)
         table = table2ascii(
@@ -409,7 +411,7 @@ class Report(object):
         )
         return "```\n" + table + "\n```"
 
-    def build_earnings_date(self):
+    async def build_earnings_date(self):
         logger.debug(f"Building earnings date...")
         earnings_info = sd.StockData.Earnings.get_next_earnings_info(self.ticker)
         message = f"{self.ticker} reports earnings on "
@@ -424,7 +426,7 @@ class Report(object):
 
         return message + "\n"
 
-    def build_upcoming_earnings_summary(self):
+    async def build_upcoming_earnings_summary(self):
         logger.debug("Building upcoming earnings summary...")
         earnings_info = sd.StockData.Earnings.get_next_earnings_info(self.ticker)
         message = "## Earnings Summary\n\n"
@@ -439,7 +441,7 @@ class Report(object):
         message += f"**Last Year EPS:** {earnings_info['lastyeareps'].iloc[0]}\n"
         return message + "\n\n"
 
-    def build_recent_earnings(self):
+    async def build_recent_earnings(self):
         logger.debug("Building recent earnings...")
         message = "## Earnings\n"
         message += f"**Next earnings date:** {sd.StockData.Earnings.get_next_earnings_date(self.ticker)}\n"
@@ -456,7 +458,7 @@ class Report(object):
         message += self.build_table(df=recent_earnings, style='plain')
         return message + "\n"
 
-    def build_performance(self):
+    async def build_performance(self):
         logger.debug("Building performance...")
         today =  datetime.datetime.today().date()
         message = "## Performance \n\n"
@@ -482,7 +484,7 @@ class Report(object):
                 pass
         return message
 
-    def build_daily_summary(self):
+    async def build_daily_summary(self):
         logger.debug("Building daily summary...")
         message = "## Today's Summary\n\n"
         OHLCV = {'Open': "{:.2f}".format(self.quote['quote']['openPrice']),
@@ -494,7 +496,7 @@ class Report(object):
         message += " | ".join(f"**{column}:** {value}" for column, value in OHLCV.items())
         return message + "\n"  
 
-    def build_stats(self):
+    async def build_stats(self):
         logger.debug("Building ticker stats...")
         message = "## Stats\n"
         message += f"**Market Cap:** {self.format_large_num(sd.StockData.get_market_cap(self.ticker))}\n"
@@ -505,7 +507,7 @@ class Report(object):
         message += f"**P/E Ratio:** {"{:.2f}".format(self.quote['fundamental']['peRatio'])}\n"
         return message
 
-    def build_popularity(self):
+    async def build_popularity(self):
         logger.debug("Building popularity...")
         message = "## Popularity\n"
         
@@ -534,12 +536,14 @@ class Report(object):
                 message +=f"**{i} Day(s) Ago:** {old_rank}, {symbol} {change}\n"
             return message
 
-    def build_report(self):
+    async def build_report(self):
         report = ''
-        report += self.build_report_header()
+        report += await self.build_report_header()
         return report   
 
     async def send_report(self, interaction:discord.Interaction = None, visibility:str = "public", files=None, view=None):
+        await self.init()
+        self.message =  await self.build_report() + "\n\n"
         if visibility == 'private' and interaction is not None:
             message = await interaction.user.send(self.message, files=files, view=view)
             return message
@@ -572,22 +576,24 @@ class StockReport(Report):
     def __init__(self, ticker : str, channel):
         self.ticker = ticker
         self.data =  sd.StockData.fetch_daily_price_history(self.ticker)
-        self.quote = sd.Schwab().get_quote(self.ticker)
         self.buttons = self.Buttons(self.ticker)
         super().__init__(channel)
+
+    async def init(self):
+        self.quote = await sd.Schwab().get_quote(self.ticker)
         
     # Override
-    def build_report(self):
+    async def build_report(self):
         logger.debug("Building Stock Report...")
         report = ''
-        report += self.build_report_header()
-        report += self.build_ticker_info()
-        report += self.build_daily_summary()
-        report += self.build_performance()
-        report += self.build_stats()
-        report += self.build_popularity()
-        report += self.build_recent_earnings()
-        report += self.build_recent_SEC_filings()
+        report += await self.build_report_header()
+        report += await self.build_ticker_info()
+        report += await self.build_daily_summary()
+        report += await self.build_performance()
+        report += await self.build_stats()
+        report += await self.build_popularity()
+        report += await self.build_recent_earnings()
+        report += await self.build_recent_SEC_filings()
         
         return report
 
@@ -620,6 +626,9 @@ class StockReport(Report):
 
 class GainerReport(Report):
     def __init__(self, channel):
+        super().__init__(channel)
+
+    async def init(self):
         self.gainers = None
         self.gainers_formatted = pd.DataFrame()
         self.market_period = market_utils.get_market_period()
@@ -634,8 +643,6 @@ class GainerReport(Report):
             self.gainers_formatted = self.format_df_for_table()
         else:
             self.gainers_formatted.columns = self.gainers.columns.to_list()
-
-        super().__init__(channel)
 
     def get_tickers(self):
         return self.gainers['Ticker'].to_list()
@@ -682,12 +689,15 @@ class GainerReport(Report):
     def build_report(self):
         logger.debug("Building Gainer Report...")
         report = ""
-        report += self.build_report_header()
-        report += self.build_table(self.gainers_formatted[:15])
+        report += await self.build_report_header()
+        report += await self.build_table(self.gainers_formatted[:15])
         return report
 
     # Override
     async def send_report(self):
+        await self.init()
+        self.message =  await self.build_report() + "\n\n"
+
         logger.debug("Sending Gainer Report...")
         today = datetime.datetime.today()
         message_id = config.discord_utils.get_gainer_message_id()
