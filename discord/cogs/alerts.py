@@ -129,7 +129,7 @@ class Alerts(commands.Cog):
             rvol = an.indicators.volume.rvol(data=data, periods=periods, curr_volume=curr_volume)
             pct_change = quotes[ticker]['quote']['netPercentChange']   
             #market_cap = sd.StockData.get_market_cap(ticker=ticker) 
-            if rvol > 25.0 and abs(pct_change) > 10.0 and rvol is not np.nan: # and market_cap > 50000000: # see that Relative Volume exceeds 25x and change > 10% and market cap is > 50M
+            if rvol > 25.0 and abs(pct_change) > 10.0 and rvol is not np.nan: # and market_cap > 50000000: 
                 logger.debug(f"Identified ticker '{ticker}' with RVOL {"{:.2f}x".format(rvol)} and percent change {"{:.2f}%".format(pct_change)}")
                 alert_data = {}
                 alert_data = {}
@@ -181,19 +181,18 @@ class Alerts(commands.Cog):
             if ticker not in blacklist_tickers:
                 todays_rank = row['rank']
                 popularity = sd.StockData.get_historical_popularity(ticker)
-                popularity = popularity[popularity['date'] > (datetime.date.today() - datetime.timedelta(days=5))]
-                low_rank = 0 # Closer to 1
+                popularity = popularity[popularity['date'] > (datetime.date.today() - datetime.timedelta(days=10))]
+                low_rank = 1000 # Farther from 1
                 low_rank_date = None
-                high_rank = 0
+                high_rank = 0 # Closer to 1
                 high_rank_date = None
                 for index, popular_row in popularity.iterrows():
-                    if low_rank < popular_row['rank'] or low_rank == 0:
+                    if low_rank < popular_row['rank'] or low_rank == 1000:
                         low_rank = popular_row['rank']
-                        low_rank_date = datetime.date.today() - datetime.timedelta(days=index)
+                        low_rank_date = popular_row['date']
                     if high_rank > popular_row['rank'] or high_rank == 0:
                         high_rank = popular_row['rank']
-                        high_rank_date = datetime.date.today() - datetime.timedelta(days=index)
-
+                        high_rank_date = popular_row['date']
                 today_is_max = False
                 if low_rank < todays_rank:
                     low_rank = todays_rank
@@ -201,19 +200,19 @@ class Alerts(commands.Cog):
                 if high_rank > todays_rank:
                     today_is_max = True
                     high_rank = todays_rank
-                    high_rank_date = datetime.date.today() - datetime.timedelta(days=index)
+                    high_rank_date = datetime.date.today()
                     
                 popularity_change = ((float(low_rank) - float(high_rank)) / float(low_rank)) * 100.0
                 POPULARITY_CHANGE_THRESHOLD = 75.0
-                if (popularity_change > POPULARITY_CHANGE_THRESHOLD) and low_rank > 10 and sd.StockData.validate_ticker(ticker) and today_is_max:
-                    logger.debug(f"Identified ticker '{ticker}' with popularity change {"{:.2f}%".format(popularity_change)}, low rank {low_rank} ({low_rank_date.date()}) and high rank {high_rank} ({high_rank_date.date()})")
+                if (popularity_change >= POPULARITY_CHANGE_THRESHOLD) and low_rank > 10 and sd.StockData.validate_ticker(ticker) and today_is_max:
+                    logger.debug(f"Identified ticker '{ticker}' with popularity change {"{:.2f}%".format(popularity_change)}, low rank {low_rank} ({low_rank_date}) and high rank {high_rank} ({high_rank_date})")
 
                     alert_data = {}
                     alert_data['todays_rank'] = row['rank']
                     alert_data['high_rank'] = high_rank
-                    alert_data['high_rank_date'] = high_rank_date
+                    alert_data['high_rank_date'] = config.date_utils.format_date_mdy(high_rank_date)
                     alert_data['low_rank'] = low_rank
-                    alert_data['low_rank_date'] = low_rank_date
+                    alert_data['low_rank_date'] = config.date_utils.format_date_mdy(low_rank_date)
                     alert = PopularityAlert(ticker = ticker, 
                                             channel=self.alerts_channel,
                                             alert_data=alert_data) 
@@ -222,7 +221,7 @@ class Alerts(commands.Cog):
                 pass
 
     # Start posting report at next 0 or 5 minute interval
-    @send_popularity_movers.before_loop
+    #@send_popularity_movers.before_loop
     async def sleep_until_5m_interval(self):
         await asyncio.sleep(config.date_utils.seconds_until_5m_interval())
 
@@ -460,7 +459,7 @@ class PopularityAlert(Alert):
 
     def build_todays_change(self):
         logger.debug("Building today's change...")
-        return f"**{self.ticker}** has moved {self.alert_data['low_rank'] - self.alert_data['high_rank']} spots between {date_utils.format_date_mdy(self.alert_data['high_rank_date'])} **({self.alert_data['high_rank']})** and {date_utils.format_date_mdy(self.alert_data['low_rank_date'])} **({self.alert_data['low_rank']})** \n"
+        return f"**{self.ticker}** has moved {self.alert_data['low_rank'] - self.alert_data['high_rank']} spots between {self.alert_data['high_rank_date']} **({self.alert_data['high_rank']})** and {self.alert_data['low_rank_date']} **({self.alert_data['low_rank']})** \n"
 
     def build_alert(self):
         logger.debug("Building Popularity Alert...")

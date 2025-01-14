@@ -885,6 +885,7 @@ class PopularityReport(Report):
 
     async def send_report(self, interaction:discord.Interaction = None, visibility:str ="public"):
         logger.debug("Sending Popularity Report...")
+        self.message = self.build_report()
         if interaction is not None:
             if visibility == "private":
                 message = await interaction.user.send(self.message, files=[self.file], view=self.buttons)
