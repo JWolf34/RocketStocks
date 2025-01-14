@@ -121,12 +121,12 @@ class discord_utils:
         else:
             return result[0]
 
-    def update_alert_message_data(date, ticker, alert_type, message_id, alert_data):
-        sd.Postgres().update(table='reports',
+    def update_alert_message_data(date, ticker, alert_type, alert_data):
+        sd.Postgres().update(table='alerts',
                             set_fields = [
-                                ('alert_data'), json.dumps(alert_data) ],
+                                ('alert_data', json.dumps(alert_data))
+                                ],
                             where_conditions=[
-                                ('messageid', message_id)
                                 ('date', date),
                                 ('ticker', ticker),
                                 ('alert_type', alert_type)

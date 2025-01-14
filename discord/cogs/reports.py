@@ -863,7 +863,7 @@ class PopularityReport(Report):
         self.top_stocks = sd.ApeWisdom().get_top_stocks(filter_name=self.filter_name)
         for i in range(2, 6):
             self.top_stocks = pd.concat([self.top_stocks, sd.ApeWisdom().get_top_stocks(page=i)])
-        sd.validate_path(config.datapaths.attachments_path)
+        config.validate_path(config.datapaths.attachments_path)
         self.filepath = f"{config.datapaths.attachments_path}/top-stocks-{datetime.datetime.today().strftime("%m-%d-%Y")}.csv"
         self.top_stocks.to_csv(self.filepath, index=False)
         self.file = discord.File(self.filepath)

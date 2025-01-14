@@ -265,7 +265,7 @@ class Alert(Report):
                 logger.debug(f"Significant movements on ticker {self.ticker} since alert last posted - updating...")
                 curr_message = await self.channel.fetch_message(message_id)
                 await curr_message.edit(content=self.message)
-                config.date_utils.update_alert_message_data(date=today.date(), ticker=self.ticker, alert_type=self.alert_type, alert_data=self.alert_data)
+                config.discord_utils.update_alert_message_data(date=today.date(), ticker=self.ticker, alert_type=self.alert_type, alert_data=self.alert_data)
             else:
                 logger.debug(f"Movements for ticker {self.ticker} not significant enough to update alert")
                 pass
