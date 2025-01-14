@@ -7,6 +7,7 @@ from reports import StockReport
 import stockdata as sd
 import analysis as an
 import pandas as pd
+import numpy as np
 import config
 from config import market_utils
 from config import date_utils
@@ -128,7 +129,7 @@ class Alerts(commands.Cog):
             rvol = an.indicators.volume.rvol(data=data, periods=periods, curr_volume=curr_volume)
             pct_change = quotes[ticker]['quote']['netPercentChange']   
             #market_cap = sd.StockData.get_market_cap(ticker=ticker) 
-            if rvol > 25.0 and abs(pct_change) > 10.0: # and market_cap > 50000000: # see that Relative Volume exceeds 25x and change > 10% and market cap is > 50M
+            if rvol > 25.0 and abs(pct_change) > 10.0 and rvol is not np.nan: # and market_cap > 50000000: # see that Relative Volume exceeds 25x and change > 10% and market cap is > 50M
                 logger.debug(f"Identified ticker '{ticker}' with RVOL {"{:.2f}x".format(rvol)} and percent change {"{:.2f}%".format(pct_change)}")
                 alert_data = {}
                 alert_data = {}
@@ -181,7 +182,7 @@ class Alerts(commands.Cog):
                 todays_rank = row['rank']
                 popularity = sd.StockData.get_historical_popularity(ticker)
                 popularity = popularity[popularity['date'] > (datetime.date.today() - datetime.timedelta(days=5))]
-                low_rank = 0
+                low_rank = 0 # Closer to 1
                 low_rank_date = None
                 high_rank = 0
                 high_rank_date = None
