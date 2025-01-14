@@ -232,13 +232,28 @@ class Alert(Report):
         alert += self.build_alert_header()
         return alert
 
+    def override_and_edit(self, old_alert_data):
+        pct_diff = ((self.alert_data['pct_change'] / old_alert_data['pct_change']) / abs(old_alert_data['pct_change'])) * 100.0
+        if pct_diff > 50.0:
+            return True 
+        else:
+            return False
+
     async def send_alert(self):
         today = datetime.datetime.today()
         market_period = market_utils.get_market_period()
         message_id = config.discord_utils.get_alert_message_id(date=today.date(), ticker=self.ticker, alert_type=self.alert_type)
         if message_id is not None:
             logger.debug(f"Alert {self.alert_type} already reported for ticker {self.ticker} today")
-            pass
+            old_alert_data = config.discord_utils.get_alert_message_data(date=today.date(), ticker=self.ticker, alert_type=self.alert_type)
+            if self.override_and_edit(old_alert_data = old_alert_data):
+                logger.debug(f"Significant movements on ticker {self.ticker} since alert last posted - updating...")
+                curr_message = await self.channel.fetch_message(message_id)
+                await curr_message.edit(content=self.message)
+                config.date_utils.update_alert_message_data(date=today.date(), ticker=self.ticker, alert_type=self.alert_type, alert_data=self.alert_data)
+            else:
+                logger.debug(f"Movements for ticker {self.ticker} not significant enough to update alert")
+                pass
         else:
             message = await self.channel.send(self.message, view=self.buttons)
             config.discord_utils.insert_alert_message_id(date=today.date(), ticker=self.ticker, alert_type=self.alert_type, message_id=message.id, alert_data = self.alert_data)
@@ -356,6 +371,15 @@ class VolumeMoverAlert(Alert):
         alert += self.build_volume_stats()
         return alert
 
+    # Override
+    def override_and_edit(self, old_alert_data):
+        if super().override_and_edit:
+            return True 
+        elif self.alert_data['rvol'] > (1.5 * old_alert_data['rvol']):
+            return True
+        else:
+            return False
+
 class VolumeSpikeAlert(Alert):
     def __init__(self, ticker, channel, alert_data):
         self.alert_type = "VOLUME_SPIKE"
@@ -384,6 +408,14 @@ class VolumeSpikeAlert(Alert):
         alert += self.build_volume_stats()
         return alert
 
+    # Override
+    def override_and_edit(self, old_alert_data):
+        if self.alert_data['rvol_at_time'] > (1.5 * old_alert_data['rvol_at_time']):
+            return True
+        else:
+            return False
+
+
 class PopularityAlert(Alert):
     def __init__(self, ticker, channel, alert_data):
         self.alert_type = "POPULARITY"
@@ -402,6 +434,14 @@ class PopularityAlert(Alert):
         alert += self.build_todays_change()
         alert += self.build_popularity()
         return alert
+
+    # Override
+    def override_and_edit(self, old_alert_data):
+        if self.alert_data['high_rank'] > old_alert_data['high_rank']:
+            return True
+        else:
+            return False
+
 
 
 #########        

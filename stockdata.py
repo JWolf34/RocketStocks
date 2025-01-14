@@ -1438,6 +1438,7 @@ def validate_path(path):
 def test():
     #Postgres().drop_table('alerts')
     #Postgres().create_tables()
+    pass
 
 if __name__ == "__main__":#
     #test    

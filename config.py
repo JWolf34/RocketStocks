@@ -1,10 +1,10 @@
 import json
 import logging
 import os
-#import discord
 import datetime
 import stockdata as sd
 import pandas_market_calendars as mcal
+import json
 
 # Logging configuration
 logger = logging.getLogger(__name__)
@@ -110,14 +110,17 @@ class discord_utils:
         else:
             return result[0]
 
-    def update_alert_message_id(date, ticker, type, message_id):
+    def update_alert_message_data(date, ticker, alert_type, message_id, alert_data):
         sd.Postgres().update(table='reports',
-                            set_fields = [('messageid', message_id)],
+                            set_fields = [
+                                ('alert_data'), json.dumps(alert_data) ],
                             where_conditions=[
+                                ('messageid', message_id)
                                 ('date', date),
                                 ('ticker', ticker),
-                                ('type', type)
+                                ('alert_type', alert_type)
                             ])
+                
     
     def get_alert_message_id(date, ticker, alert_type):
         select_script = f"""SELECT messageid FROM alerts
@@ -139,8 +142,8 @@ class discord_utils:
         else:
             return result[0]
     
-    '''
-    def get_alert_message_data(date, ticker, type):
+    
+    def get_alert_message_data(date, ticker, alert_type):
         result = sd.Postgres().select(table='alerts',
                                     fields=['alert_data'],
                                     where_conditions=[
@@ -152,13 +155,13 @@ class discord_utils:
         if result is None:
             return result
         else:
-            return json.loads(result[0])
-            '''
+            return result[0]
+            
 
-    def insert_alert_message_id(date, ticker, alert_type, message_id):
+    def insert_alert_message_id(date, ticker, alert_type, message_id, alert_data):
         table = 'alerts'
         fields = sd.Postgres().get_table_columns(table)
-        values = [(date, ticker, alert_type, message_id)]
+        values = [(date, ticker, alert_type, message_id, json.dumps(alert_data))]
         sd.Postgres().insert(table=table, fields=fields, values=values)
 
 class market_utils:
