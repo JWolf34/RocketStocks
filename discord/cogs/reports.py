@@ -400,7 +400,7 @@ class Report(object):
         return message
 
     def build_table(self, df:pd.DataFrame, style='double_thin_compact'):
-        logger.debug(f"Building table of size {df.size} with headers {df.columns.to_list()} and of style '{style}'")
+        logger.debug(f"Building table of shape {df.shape} with headers {df.columns.to_list()} and of style '{style}'")
         table_style = self.table_styles.get(style, PresetStyle.double_thin_compact)
         table = table2ascii(
             header = df.columns.tolist(),
@@ -425,6 +425,7 @@ class Report(object):
         return message + "\n"
 
     def build_upcoming_earnings_summary(self):
+        logger.debug("Building upcoming earnings summary...")
         earnings_info = sd.StockData.Earnings.get_next_earnings_info(self.ticker)
         message = "## Earnings Summary\n\n"
         message += f"**Date:** {earnings_info['date'].iloc[0]}\n"
@@ -439,6 +440,7 @@ class Report(object):
         return message + "\n\n"
 
     def build_recent_earnings(self):
+        logger.debug("Building recent earnings...")
         message = "## Earnings\n"
         message += f"**Next earnings date:** {sd.StockData.Earnings.get_next_earnings_date(self.ticker)}\n"
         column_map = {'date':'Date Reported', 
@@ -455,6 +457,7 @@ class Report(object):
         return message + "\n"
 
     def build_performance(self):
+        logger.debug("Building performance...")
         today =  datetime.datetime.today().date()
         message = "## Performance \n\n"
         performance_frequency = {'1D': 1,
@@ -480,6 +483,7 @@ class Report(object):
         return message
 
     def build_daily_summary(self):
+        logger.debug("Building daily summary...")
         message = "## Today's Summary\n\n"
         OHLCV = {'Open': "{:.2f}".format(self.quote['quote']['openPrice']),
                  'High': "{:.2f}".format(self.quote['quote']['highPrice']),
@@ -491,6 +495,7 @@ class Report(object):
         return message + "\n"  
 
     def build_stats(self):
+        logger.debug("Building ticker stats...")
         message = "## Stats\n"
         message += f"**Market Cap:** {self.format_large_num(sd.StockData.get_market_cap(self.ticker))}\n"
         message += f"**52 Week High:** {self.quote['quote']['52WeekHigh']}\n"
@@ -501,6 +506,7 @@ class Report(object):
         return message
 
     def build_popularity(self):
+        logger.debug("Building popularity...")
         message = "## Popularity\n"
         
         try:
@@ -557,16 +563,6 @@ class Report(object):
         except TypeError as e:
             return "N/A"
     
-    # Tool to determine percentage change
-    def percent_change(self, current, previous):
-        return float('{:.3g}'.format(((current - previous) / previous) * 100.0))
-
-    def percent_change_formatted(self, current, previous):
-        change = float('{:.3g}'.format(((current - previous) / previous) * 100.0))
-        return "{} {}%".format(":arrow_down_small:" if change > 0
-                                else ":arrow_up_small:",
-                                str(abs(change)))
-    
     class Buttons(discord.ui.View):
             def __init__(self):
                 super().__init__(timeout=None)
@@ -582,6 +578,7 @@ class StockReport(Report):
         
     # Override
     def build_report(self):
+        logger.debug("Building Stock Report...")
         report = ''
         report += self.build_report_header()
         report += self.build_ticker_info()
@@ -596,6 +593,7 @@ class StockReport(Report):
 
     # Override
     async def send_report(self, interaction: discord.Interaction, visibility:str):
+        logger.debug("Sending Stock Report...")
         message = await super().send_report(interaction=interaction, visibility=visibility, view=self.buttons)
         return message
 
@@ -643,6 +641,7 @@ class GainerReport(Report):
         return self.gainers['Ticker'].to_list()
 
     def format_df_for_table(self):
+        logger.debug("Formatting gainers dataframe for table viewing")
         gainers = self.gainers.copy()
         change_columns = ['Premarket Change', '% Change', 'After Hours Change']
         volume_columns = ['Premarket Volume', "After Hours Volume"]
@@ -668,6 +667,7 @@ class GainerReport(Report):
 
     # Override
     def build_report_header(self):
+        logger.debug("Building report header...")
         today = datetime.datetime.today()
         header = "### :rotating_light: {} Gainers {} (Market Cap > $100M) (Updated {})\n\n".format(
                     "Pre-market" if self.market_period == 'premarket'
@@ -680,6 +680,7 @@ class GainerReport(Report):
 
     # Override
     def build_report(self):
+        logger.debug("Building Gainer Report...")
         report = ""
         report += self.build_report_header()
         report += self.build_table(self.gainers_formatted[:15])
@@ -687,8 +688,8 @@ class GainerReport(Report):
 
     # Override
     async def send_report(self):
+        logger.debug("Sending Gainer Report...")
         today = datetime.datetime.today()
-        market_period = market_utils.get_market_period()
         message_id = config.discord_utils.get_gainer_message_id()
         try:
             curr_message = await self.channel.fetch_message(message_id)
@@ -697,6 +698,7 @@ class GainerReport(Report):
                 config.discord_utils.update_gainer_message_id( message.id)
                 return message
             else:
+                logger.debug(f"{self.market_period.upper()} Gainer Report already exists today. Updating... ")
                 await curr_message.edit(content=self.message)
 
         except discord.errors.NotFound as e:
@@ -717,6 +719,7 @@ class VolumeReport(Report):
         return self.volume_movers['Ticker'].to_list()
 
     def format_df_for_table(self):
+        logger.debug("Formatting volume movers dataframe for table viewing")
         movers = self.volume_movers.copy()
         movers['Volume'] = movers['Volume'].apply(lambda x: self.format_large_num(x))
         movers['Relative Volume'] = movers['Relative Volume'].apply(lambda x: "{:.2f}x".format(x))
@@ -727,6 +730,7 @@ class VolumeReport(Report):
 
     # Override
     def build_report_header(self):
+        logger.debug("Building report header...")
         today = datetime.datetime.today()
         header = "### :rotating_light: Unusual Volume {} (Volume > 1M)(Updated {})\n\n".format(
                     today.strftime("%m/%d/%Y"),
@@ -735,6 +739,7 @@ class VolumeReport(Report):
 
     # Override
     def build_report(self):
+        logger.debug("Building Volume Mover Report...")
         report = ""
         report += self.build_report_header()
         report += self.build_table(self.volume_movers_formatted[:10])
@@ -743,6 +748,7 @@ class VolumeReport(Report):
     # Override
     async def send_report(self):
         if self.market_period != "EOD":
+            logger.debug("Sending Volume Mover Report...")
             today = datetime.datetime.today()
             market_period = market_utils.get_market_period()
             message_id = config.discord_utils.get_volume_message_id()
@@ -753,6 +759,7 @@ class VolumeReport(Report):
                     config.discord_utils.update_volume_message_id( message.id)
                     return message
                 else:
+                    logger.debug(f"Volume Mover Report already exists today. Updating... ")
                     await curr_message.edit(content=self.message)
 
             except discord.errors.NotFound as e:
@@ -802,11 +809,13 @@ class NewsReport(Report):
 
     # Override
     def build_report_header(self):
+        logger.debug("Building report header...")
         # Append ticker name, today's date, and external links to message
         header = f"## News articles for '{self.query}'\n"
         return header + "\n"
 
     def build_news(self):
+        logger.debug("Building news...")
         report = ''
         if self.breaking:
             news = sd.News().get_breaking_news(query=self.query, **self.news_kwargs)
@@ -821,6 +830,7 @@ class NewsReport(Report):
         return report
 
     def build_report(self):
+        logger.debug("Building News Report...")
         report = ''
         report += self.build_report_header()
         report += self.build_news()
@@ -828,6 +838,7 @@ class NewsReport(Report):
 
     # Override
     async def send_report(self, interaction):
+        logger.debug("Sending News Report...")
         await interaction.response.send_message(self.message)
 
 class PopularityReport(Report):
@@ -847,15 +858,18 @@ class PopularityReport(Report):
 
     # Override
     def build_report_header(self):
+        logger.debug("Building report header...")
         return f"# Most Popular Stocks ({self.filter_name}) {datetime.datetime.today().strftime("%m/%d/%Y")}\n\n"
 
     def build_report(self):
+        logger.debug("Building Popularity Report...")
         report = ''
         report += self.build_report_header()
         report += self.build_table(self.top_stocks.drop(columns='name')[:15])
         return report
 
     async def send_report(self, interaction:discord.Interaction = None, visibility:str ="public"):
+        logger.debug("Sending Popularity Report...")
         if interaction is not None:
             if visibility == "private":
                 message = await interaction.user.send(self.message, files=[self.file], view=self.buttons)
@@ -881,9 +895,11 @@ class EarningsSpotlightReport(Report):
         super().__init__(channel)
 
     def build_report_header(self):
+        logger.debug("Building report header...")
         return f"# :bulb: Earnings Spotight: {self.ticker}\n\n"
 
     def build_report(self):
+        logger.debug("Building Earnings Spotlight Report...")
         report = ""
         report += self.build_report_header()
         report += self.build_earnings_date()
@@ -892,6 +908,7 @@ class EarningsSpotlightReport(Report):
         return report
     
     async def send_report(self):
+        logger.debug("Sending Earnings Spotlight Report...")
         message = await super().send_report(view=self.buttons)
         return message
 
@@ -927,6 +944,7 @@ class WeeklyEarningsReport(Report):
         super().__init__(channel)
     
     def get_upcoming_earnings(self):
+        logger.debug("Retrieving upcoming earnings for this week")
         today = datetime.datetime.today()
         weekly_earnings = pd.DataFrame()
         for i in range(0, 5):
@@ -938,25 +956,31 @@ class WeeklyEarningsReport(Report):
         return weekly_earnings
 
     def build_report_header(self):
+        logger.debug("Building report header...")
         return f"# Earnings Releasing the Week of {market_utils.format_date_mdy(datetime.datetime.today())}\n\n"
 
     def build_watchlist_earnings(self):
+        logger.debug("Identifying upcoming earnings for tickers that exist on user watchlists")
         watchlist_tickers = sd.Watchlists().get_tickers_from_all_watchlists(no_personal=False)
         watchlist_earnings = self.upcoming_earnings[self.upcoming_earnings['ticker'].isin(watchlist_tickers)]
         if watchlist_earnings.size > 0:
             message = f" Tickers on your watchlists that report earnings this week:\n"
             message += self.build_table(watchlist_earnings['ticker', 'date', 'time'])
+            logger.debug(f"Watchlist tickers reporting earnings this week: {watchlist_earnings['ticker'].to_list()}")
         else:
             message = "No tickers on your watchlists report earnings this week"
+            logger.debug("No tickers on watchlists that report earnings this week")
         return message
 
     def build_report(self):
+        logger.debug("Building Upcoming Earnings Report...")
         report = ""
         report += self.build_report_header()
         report += self.build_watchlist_earnings()
         return report
 
     async def send_report(self):
+        logger.debug("Sending Upcoming Earnings Report...")
         message = await super().send_report(files=[self.file])
         return message
 
