@@ -400,7 +400,7 @@ class Report(object):
         return message
 
     def build_table(self, df:pd.DataFrame, style='double_thin_compact'):
-        logger.debug(f"Building table of size {df.size} with headers {df.columns.to_list()} and of style '{style}'")
+        logger.debug(f"Building table of shape {df.shape} with headers {df.columns.to_list()} and of style '{style}'")
         table_style = self.table_styles.get(style, PresetStyle.double_thin_compact)
         table = table2ascii(
             header = df.columns.tolist(),
