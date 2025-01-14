@@ -221,7 +221,7 @@ class Alerts(commands.Cog):
                 pass
 
     # Start posting report at next 0 or 5 minute interval
-    #@send_popularity_movers.before_loop
+    @send_popularity_movers.before_loop
     async def sleep_until_5m_interval(self):
         await asyncio.sleep(config.date_utils.seconds_until_5m_interval())
 
