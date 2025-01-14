@@ -1412,22 +1412,6 @@ class Schwab():
         assert resp.status_code == httpx.codes.OK, resp.raise_for_status()
         data = resp.json()
         return data
-    
-
-###############################
-# Helpers and data validation #
-###############################
-
-# Validate specified path exists and create it if needed
-def validate_path(path):
-    logger.info("Validating that path {} exists".format(path))
-    if not (os.path.isdir(path)):
-        logger.warning("Path {} does not exist. Creating path...".format(path))
-        os.makedirs(path) 
-        return 
-    else:
-        logger.debug("Path {} exists in the filesystem".format(path))
-        return True
        
 
 #########
