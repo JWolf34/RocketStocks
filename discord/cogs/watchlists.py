@@ -38,7 +38,6 @@ class Watchlists(commands.Cog):
         is_personal = False
 
         # Set message flavor based on value of watchlist argument
-        logger.debug("Selected watchlist is '{}'".format(watchlist))
         watchlist_id = watchlist
 
         if watchlist == 'personal':
@@ -49,6 +48,8 @@ class Watchlists(commands.Cog):
         # Confirm watchlists exists, otherwise create it
         if watchlist_id not in sd.Watchlists().get_watchlists(no_personal=False):
             sd.Watchlists().create_watchlist(watchlist_id=watchlist_id, tickers=[])
+
+        logger.info(f"Tickers {tickers} to be added to watchlist {watchlist}")
 
         symbols = sd.Watchlists().get_tickers_from_watchlist(watchlist_id)
         duplicate_tickers = [x for x in tickers if x in symbols]
@@ -84,19 +85,21 @@ class Watchlists(commands.Cog):
         is_personal = False
 
         # Set message flavor based on value of watchlist argument
-        logger.debug("Selected watchlist is '{}'".format(watchlist))
         watchlist_id = watchlist
 
         if watchlist == 'personal':
             watchlist_id = str(interaction.user.id)
             is_personal = True
             message_flavor = "your"
+        
+        logger.info(f"Tickers {tickers} to be removed from watchlist {watchlist}")
 
         symbols = sd.Watchlists().get_tickers_from_watchlist(watchlist_id)
         
         # If watchlist is empty, return
         if symbols is None:
             await interaction.followup.send("There are no tickers in {} watchlist. Use /add-tickers or /create-watchlist to begin building a watchlist.".format(message_flavor), ephemeral=is_personal)
+            logger.info(f"No tickers exist on watchlist {watchlist}. None removed")
         else:
             # Identify input tickers not in the watchlist
             NA_tickers = [ticker for ticker in tickers if ticker not in symbols]
@@ -117,6 +120,8 @@ class Watchlists(commands.Cog):
                 message += " Tickers not in watchlist: {}".format(", ".join(NA_tickers))
         
             await interaction.followup.send(message, ephemeral=is_personal)
+            logger.debug(f"Invalid input tickers: {invalid_tickers}")
+            logger.debug(f"Duplicate input tickers: {duplicate_tickers}")
             
 
     @app_commands.command(name = "watchlist", description= "List the tickers on the selected watchlist",)
@@ -125,7 +130,6 @@ class Watchlists(commands.Cog):
     async def watchlist(self, interaction: discord.Interaction, watchlist: str):
         logger.info("/watchlist function called by user {}".format(self, interaction.user.name))
     
-        logger.debug("Selected watchlist is '{}'".format(watchlist))
         is_personal = False
         watchlist_id = watchlist
         if watchlist == 'personal':
