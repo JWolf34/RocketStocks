@@ -249,7 +249,7 @@ class Alert(Report):
 
     def override_and_edit(self, old_alert_data):
         pct_diff = ((self.alert_data['pct_change'] / old_alert_data['pct_change']) / abs(old_alert_data['pct_change'])) * 100.0
-        if pct_diff > 50.0:
+        if pct_diff > 100.0:
             return True 
         else:
             return False
@@ -403,7 +403,7 @@ class VolumeMoverAlert(Alert):
     def override_and_edit(self, old_alert_data):
         if super().override_and_edit:
             return True 
-        elif self.alert_data['rvol'] > (1.5 * old_alert_data['rvol']):
+        elif self.alert_data['rvol'] > (2.0 * old_alert_data['rvol']):
             return True
         else:
             return False
