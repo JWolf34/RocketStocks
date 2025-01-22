@@ -263,8 +263,8 @@ class Alert(Report):
             old_alert_data = config.discord_utils.get_alert_message_data(date=today.date(), ticker=self.ticker, alert_type=self.alert_type)
             if self.override_and_edit(old_alert_data = old_alert_data):
                 logger.debug(f"Significant movements on ticker {self.ticker} since alert last posted - updating...")
-                prev_message =  await self.channel.fetch_message(old_alert_data['messageid'])
-                self.message += f"\n[Updated from last alert at {prev_message.created_at.strftime("%-I:%M %p")}]({message.jump_url})"
+                prev_message =  await self.channel.fetch_message(message_id)
+                self.message += f"\n[Updated from last alert at {prev_message.created_at.strftime("%-I:%M %p")}]({prev_message.jump_url})"
                 message = await self.channel.send(self.message, view=self.buttons)
                 config.discord_utils.update_alert_message_data(date=today.date(), ticker=self.ticker, alert_type=self.alert_type, messageid=message.id, alert_data=self.alert_data)
             else:
