@@ -1431,6 +1431,21 @@ class CapitolTrades:
                 politician_id = card['href'].split('/')[-1]
                 print(f"{name}, {politician_id}")
 
+    def trades(pid:str):
+        params = {'pageSize':96}
+        politicians_r = requests.get(url=f'https://www.capitoltrades.com/politicians/{pid}', params=params)
+        html = politicians_r.content
+        trades_soup = BeautifulSoup(html, 'html.parser')
+        table = trades_soup.find('tbody')
+        rows = table.find_all('tr')
+        for row in rows:
+            ticker = row.find('span', class_='q-field issuer-ticker').text
+            date_published = ''
+            print(ticker)
+
+
+
+
        
 
 #########
@@ -1440,7 +1455,8 @@ class CapitolTrades:
 def test():
     #Postgres().drop_table('alerts')
     #Postgres().create_tables()
-    CapitolTrades.get_politicians()
+    pid = 'P000197'
+    CapitolTrades.trades(pid=pid)
 
 if __name__ == "__main__":#
     #test    
