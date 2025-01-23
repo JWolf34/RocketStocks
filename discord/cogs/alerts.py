@@ -472,7 +472,7 @@ class PopularityAlert(Alert):
 
     # Override
     def override_and_edit(self, old_alert_data):
-        if self.alert_data['high_rank'] > old_alert_data['high_rank']:
+        if self.alert_data['high_rank'] < old_alert_data['high_rank']:
             return True
         else:
             return False
