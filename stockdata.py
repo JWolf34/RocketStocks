@@ -18,6 +18,7 @@ from tradingview_screener import Scanner, Query, Column
 import schwab
 import time
 import httpx
+from bs4 import BeautifulSoup
 
 # Logging configuration
 logger = logging.getLogger(__name__)
@@ -1414,6 +1415,22 @@ class Schwab():
         assert resp.status_code == httpx.codes.OK, resp.raise_for_status()
         data = resp.json()
         return data
+
+class CapitolTrades:
+
+    def get_politicians():
+        for i in range(1, 15):
+            params = {'page':i, 'pageSize':96}
+            politicians_r = requests.get(url='https://www.capitoltrades.com/politicians', params=params)
+            html = politicians_r.content
+            politicians_soup = BeautifulSoup(html, 'html.parser')
+            cards = politicians_soup.find_all('a', class_="index-card-link")
+            for card in cards:
+                name = card.find('h2').text
+                print(card['href'].split('/')[-1])
+                politician_id = card['href'].split('/')[-1]
+                print(f"{name}, {politician_id}")
+
        
 
 #########
@@ -1423,7 +1440,7 @@ class Schwab():
 def test():
     #Postgres().drop_table('alerts')
     #Postgres().create_tables()
-    pass
+    CapitolTrades.get_politicians()
 
 if __name__ == "__main__":#
     #test    
