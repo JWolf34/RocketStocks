@@ -1440,6 +1440,9 @@ class CapitolTrades:
         rows = table.find_all('tr')
         for row in rows:
             ticker = row.find('span', class_='q-field issuer-ticker').text
+
+            columns = row.find_all('td')
+            
             date_published = ''
             print(ticker)
 
