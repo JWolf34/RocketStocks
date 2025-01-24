@@ -267,6 +267,10 @@ class date_utils:
         diff = (minutes_by_five + 1) * 5 - now.minute
         future = now + datetime.timedelta(minutes=diff)
         return (future-now).total_seconds()
+    
+    def get_timezone():
+        tz_string = get_env('TZ')
+        return datetime.timezone(tz_string)
 
 
 
