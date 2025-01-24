@@ -234,7 +234,7 @@ class Alert(Report):
         self.ticker = ticker
         self.channel = channel
         self.alert_data = alert_data
-        self.message = self.build_alert()
+        self.message = self.build_alert() + "\n\n"
         self.buttons = self.Buttons(self.ticker, channel)
     
     def build_alert_header(self):
