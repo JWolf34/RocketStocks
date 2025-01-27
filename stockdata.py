@@ -1418,18 +1418,27 @@ class Schwab():
 
 class CapitolTrades:
 
-    def get_politicians():
-        for i in range(1, 15):
-            params = {'page':i, 'pageSize':96}
+    def politicians():
+        politicians = []
+        page_num = 1
+        while True: 
+            params = {'page':page_num, 'pageSize':96}
             politicians_r = requests.get(url='https://www.capitoltrades.com/politicians', params=params)
             html = politicians_r.content
             politicians_soup = BeautifulSoup(html, 'html.parser')
             cards = politicians_soup.find_all('a', class_="index-card-link")
-            for card in cards:
-                name = card.find('h2').text
-                print(card['href'].split('/')[-1])
-                politician_id = card['href'].split('/')[-1]
-                print(f"{name}, {politician_id}")
+            if cards:
+                for card in cards:
+                    name = card.find('h2').text
+                    politician_id = card['href'].split('/')[-1]
+                    party = card.find('span', class_=lambda c: "q-field party" in c).text
+                    state = card.find('span', class_=lambda c: "q-field us-state-full" in c).text
+                    politicians.append((name, politician_id, party, state))
+                page_num += 1
+            else:
+                print('Done!')
+                break
+
 
     def trades(pid:str):
         params = {'pageSize':96}
@@ -1459,7 +1468,8 @@ def test():
     #Postgres().drop_table('alerts')
     #Postgres().create_tables()
     pid = 'P000197'
-    CapitolTrades.trades(pid=pid)
+    #CapitolTrades.trades(pid=pid)
+    CapitolTrades.politicians()
 
 if __name__ == "__main__":#
     #test    
