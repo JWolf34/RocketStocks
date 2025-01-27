@@ -1452,19 +1452,43 @@ class CapitolTrades:
 
 
     def trades(pid:str):
-        params = {'pageSize':96}
-        politicians_r = requests.get(url=f'https://www.capitoltrades.com/politicians/{pid}', params=params)
-        html = politicians_r.content
-        trades_soup = BeautifulSoup(html, 'html.parser')
-        table = trades_soup.find('tbody')
-        rows = table.find_all('tr')
-        for row in rows:
-            ticker = row.find('span', class_='q-field issuer-ticker').text
+        trades = []
+        page_num = 1
+        while True: 
+            params = {'page':page_num, 'pageSize':96}
+            politicians_r = requests.get(url=f'https://www.capitoltrades.com/politicians/{pid}', params=params)
+            html = politicians_r.content
+            trades_soup = BeautifulSoup(html, 'html.parser')
+            table = trades_soup.find('tbody')
+            rows = table.find_all('tr')
+            if len(rows) > 1:
+                for row in rows:
 
-            columns = row.find_all('td')
-            
-            date_published = ''
-            print(ticker)
+                    # Ticker
+                    ticker = row.find('span', class_='q-field issuer-ticker').text
+                    if ":" in ticker:
+                        ticker = ticker.split(":")[0]
+
+                    # Published and Filed Dates
+                    # Special case for September since datetime uses "Sep" but CT uses "Sept"
+                    dates = row.find_all('div', class_ = "text-size-3 font-medium")
+                    years = row.find_all('div', class_ = "text-size-2 text-txt-dimmer")
+                    published_date = datetime.datetime.strptime(f"{dates[0].text.replace('Sept','Sep')} {years[0].text}", "%d %b %Y").date()
+                    filed_date = datetime.datetime.strptime(f"{dates[1].text.replace('Sept','Sep')} {years[1].text}", "%d %b %Y").date()
+
+                    # Filed after
+                    filed_after = f"{row.find('span', class_= lambda c: 'reporting-gap-tier' in c).text} days"
+
+                    # Order Type and Size
+                    order_type = row.find('span', class_ = lambda c: "q-field tx-type" in c).text.replace('"','').upper()
+                    order_size = row.find('span', class_ = "mt-1 text-size-2 text-txt-dimmer hover:text-foreground").text
+
+                    # Add to DF and increment page_num
+                    trades.append((ticker, config.date_utils.format_date_mdy(published_date), config.date_utils.format_date_mdy(filed_date), filed_after, order_type, order_size))
+                page_num += 1
+            else:
+                return pd.DataFrame(trades,columns=['Ticker', 'Published Date', 'Filed Dated', 'Filed After', 'Order Type', 'Order Size'])
+                
 
 
 
@@ -1481,9 +1505,9 @@ def test():
     #CapitolTrades.politicians()
     pid = Postgres().select(table='ct_politicians',
                             fields=['politician_id'],
-                            where_conditions=[('name', 'Nancy Pelosi')],
+                            where_conditions=[('name', 'Kevin Hern')],
                             fetchall=False)[0]
-    CapitolTrades.trades(pid=pid)
+    print(CapitolTrades.trades(pid=pid))
     
 
 if __name__ == "__main__":#
