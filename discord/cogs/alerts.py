@@ -84,7 +84,7 @@ class Alerts(commands.Cog):
                     alert_data = {}
                     alert_data['pct_change'] = pct_change
                     alert_data['earnings_date'] = earnings_date
-                    alert = EarningsMoverAlert(ticker=ticker, channel=self.alerts_channel, alert_data=alert_dta)
+                    alert = EarningsMoverAlert(ticker=ticker, channel=self.alerts_channel, alert_data=alert_data)
                     await alert.send_alert()
 
     async def send_sec_filing_movers(self, gainers):
@@ -472,7 +472,7 @@ class PopularityAlert(Alert):
 
     # Override
     def override_and_edit(self, old_alert_data):
-        if self.alert_data['high_rank'] < old_alert_data['high_rank']:
+        if self.alert_data['high_rank'] < (0.5 * float(old_alert_data['high_rank'])):
             return True
         else:
             return False
