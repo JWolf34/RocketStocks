@@ -121,9 +121,10 @@ class discord_utils:
         else:
             return result[0]
 
-    def update_alert_message_data(date, ticker, alert_type, alert_data):
+    def update_alert_message_data(date, ticker, alert_type, messageid, alert_data):
         sd.Postgres().update(table='alerts',
                             set_fields = [
+                                ('messageid', messageid),
                                 ('alert_data', json.dumps(alert_data))
                                 ],
                             where_conditions=[
@@ -266,6 +267,10 @@ class date_utils:
         diff = (minutes_by_five + 1) * 5 - now.minute
         future = now + datetime.timedelta(minutes=diff)
         return (future-now).total_seconds()
+    
+    def get_timezone():
+        tz_diff = datetime.timedelta(hours = 6)
+        return datetime.timezone(offset=tz_diff)
 
 
 

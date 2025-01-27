@@ -84,7 +84,7 @@ class Alerts(commands.Cog):
                     alert_data = {}
                     alert_data['pct_change'] = pct_change
                     alert_data['earnings_date'] = earnings_date
-                    alert = EarningsMoverAlert(ticker=ticker, channel=self.alerts_channel, alert_data=alert_dta)
+                    alert = EarningsMoverAlert(ticker=ticker, channel=self.alerts_channel, alert_data=alert_data)
                     await alert.send_alert()
 
     async def send_sec_filing_movers(self, gainers):
@@ -234,7 +234,7 @@ class Alert(Report):
         self.ticker = ticker
         self.channel = channel
         self.alert_data = alert_data
-        self.message = self.build_alert()
+        self.message = self.build_alert() + "\n\n"
         self.buttons = self.Buttons(self.ticker, channel)
     
     def build_alert_header(self):
@@ -263,9 +263,10 @@ class Alert(Report):
             old_alert_data = config.discord_utils.get_alert_message_data(date=today.date(), ticker=self.ticker, alert_type=self.alert_type)
             if self.override_and_edit(old_alert_data = old_alert_data):
                 logger.debug(f"Significant movements on ticker {self.ticker} since alert last posted - updating...")
-                curr_message = await self.channel.fetch_message(message_id)
-                await curr_message.edit(content=self.message)
-                config.discord_utils.update_alert_message_data(date=today.date(), ticker=self.ticker, alert_type=self.alert_type, alert_data=self.alert_data)
+                prev_message =  await self.channel.fetch_message(message_id)
+                self.message += f"[Updated from last alert at {prev_message.created_at.astimezone(config.date_utils.get_timezone()).strftime("%-I:%M %p")}]({prev_message.jump_url})\n\n"
+                message = await self.channel.send(self.message, view=self.buttons)
+                config.discord_utils.update_alert_message_data(date=today.date(), ticker=self.ticker, alert_type=self.alert_type, messageid=message.id, alert_data=self.alert_data)
             else:
                 logger.debug(f"Movements for ticker {self.ticker} not significant enough to update alert")
                 pass
@@ -471,7 +472,7 @@ class PopularityAlert(Alert):
 
     # Override
     def override_and_edit(self, old_alert_data):
-        if self.alert_data['high_rank'] > old_alert_data['high_rank']:
+        if self.alert_data['high_rank'] < (0.5 * float(old_alert_data['high_rank'])):
             return True
         else:
             return False
