@@ -231,6 +231,13 @@ class Postgres():
                             datetime            timestamp,
                             PRIMARY KEY (ticker, datetime)
                             );
+
+                            CREATE TABLE IF NOT EXISTS ct_politicians(
+                            politician_id       char(7) PRIMARY KEY,
+                            name                varchar(64),
+                            party               varchar(16),
+                            state               varchar(32)
+                            );
                             """
         logger.debug("Running script to create tables in database...")
         self.cur.execute(create_script)
@@ -1429,14 +1436,18 @@ class CapitolTrades:
             cards = politicians_soup.find_all('a', class_="index-card-link")
             if cards:
                 for card in cards:
-                    name = card.find('h2').text
                     politician_id = card['href'].split('/')[-1]
+                    name = card.find('h2').text
                     party = card.find('span', class_=lambda c: "q-field party" in c).text
                     state = card.find('span', class_=lambda c: "q-field us-state-full" in c).text
-                    politicians.append((name, politician_id, party, state))
+                    politicians.append((politician_id, name, party, state))
                 page_num += 1
             else:
-                print('Done!')
+                postgres = Postgres()
+                columns = postgres.get_table_columns(table='ct_politicians')
+                Postgres().insert(table='ct_politicians',
+                                  fields=columns,
+                                  values=politicians)
                 break
 
 
@@ -1465,11 +1476,15 @@ class CapitolTrades:
 #########
 
 def test():
-    #Postgres().drop_table('alerts')
+    #Postgres().drop_table('ct_politicians')
     #Postgres().create_tables()
-    pid = 'P000197'
-    #CapitolTrades.trades(pid=pid)
-    CapitolTrades.politicians()
+    #CapitolTrades.politicians()
+    pid = Postgres().select(table='ct_politicians',
+                            fields=['politician_id'],
+                            where_conditions=[('name', 'Nancy Pelosi')],
+                            fetchall=False)[0]
+    CapitolTrades.trades(pid=pid)
+    
 
 if __name__ == "__main__":#
     #test    
