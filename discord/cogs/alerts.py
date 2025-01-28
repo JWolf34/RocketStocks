@@ -248,7 +248,7 @@ class Alert(Report):
         return alert
 
     def override_and_edit(self, old_alert_data):
-        pct_diff = ((self.alert_data['pct_change'] / old_alert_data['pct_change']) / abs(old_alert_data['pct_change'])) * 100.0
+        pct_diff = ((self.alert_data['pct_change'] - old_alert_data['pct_change']) / abs(old_alert_data['pct_change'])) * 100.0
         if pct_diff > 100.0:
             return True 
         else:
