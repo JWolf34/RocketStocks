@@ -265,7 +265,7 @@ class date_utils:
         minutes_by_five = now.minute // 5
         # get the difference in times
         diff = (minutes_by_five + 1) * 5 - now.minute
-        future = now + datetime.timedelta(minutes=diff)
+        future = (now + datetime.timedelta(minutes=diff)).replace(second=0, microsecond=0)
         return (future-now).total_seconds()
     
     def get_timezone():
