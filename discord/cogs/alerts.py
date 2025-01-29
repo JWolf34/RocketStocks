@@ -265,7 +265,8 @@ class Alert(Report):
             if self.override_and_edit(old_alert_data = old_alert_data):
                 logger.debug(f"Significant movements on ticker {self.ticker} since alert last posted - updating...")
                 prev_message =  await self.channel.fetch_message(message_id)
-                self.message += f"[Updated from last alert at {prev_message.created_at.astimezone(config.date_utils.get_timezone()).strftime("%I:%M %p")}]({prev_message.jump_url})\n\n"
+                prev_message_time = prev_message.created_at.astimezone(config.date_utils.get_timezone())
+                self.message += f"[Updated from last alert at {prev_message_time.strftime("%-I:%M %p")} {prev_message_time.tzname()}]({prev_message.jump_url})\n\n"
                 message = await self.channel.send(self.message, view=self.buttons)
                 config.discord_utils.update_alert_message_data(date=today.date(), ticker=self.ticker, alert_type=self.alert_type, messageid=message.id, alert_data=self.alert_data)
             else:
@@ -403,12 +404,15 @@ class VolumeMoverAlert(Alert):
 
     # Override
     def override_and_edit(self, old_alert_data):
+        return True
+        """
         if super().override_and_edit(old_alert_data=old_alert_data):
             return True 
         elif self.alert_data['rvol'] > (2.0 * old_alert_data['rvol']):
             return True
         else:
             return False
+            """
             
 
 class VolumeSpikeAlert(Alert):
