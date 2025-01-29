@@ -269,7 +269,7 @@ class date_utils:
         return (future-now).total_seconds()
     
     def get_timezone():
-        tz_diff = datetime.timedelta(hours = 6)
+        tz_diff = datetime.timedelta(hours = -6)
         return datetime.timezone(offset=tz_diff)
 
 

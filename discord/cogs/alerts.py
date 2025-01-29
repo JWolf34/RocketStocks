@@ -409,6 +409,7 @@ class VolumeMoverAlert(Alert):
             return True
         else:
             return False
+            
 
 class VolumeSpikeAlert(Alert):
     def __init__(self, ticker, channel, alert_data):
