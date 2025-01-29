@@ -404,15 +404,13 @@ class VolumeMoverAlert(Alert):
 
     # Override
     def override_and_edit(self, old_alert_data):
-        return True
-        """
         if super().override_and_edit(old_alert_data=old_alert_data):
             return True 
         elif self.alert_data['rvol'] > (2.0 * old_alert_data['rvol']):
             return True
         else:
             return False
-            """
+            
             
 
 class VolumeSpikeAlert(Alert):
