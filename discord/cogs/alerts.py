@@ -83,7 +83,7 @@ class Alerts(commands.Cog):
                     logger.debug(f"Identified ticker '{ticker}' reporting earnings today with percent change {"{:.2f}%".format(pct_change)}")
                     alert_data = {}
                     alert_data['pct_change'] = pct_change
-                    alert_data['earnings_date'] = earnings_date
+                    #alert_data['earnings_date'] = config.date_utils.format_date_mdy(earnings_date)
                     alert = EarningsMoverAlert(ticker=ticker, channel=self.alerts_channel, alert_data=alert_data)
                     await alert.send_alert()
 
@@ -231,11 +231,12 @@ class Alerts(commands.Cog):
     
 class Alert(Report):
     def __init__(self, ticker, channel, alert_data):
+        super().__init__(channel=channel)
         self.ticker = ticker
-        self.channel = channel
         self.alert_data = alert_data
         self.message = self.build_alert() + "\n\n"
         self.buttons = self.Buttons(self.ticker, channel)
+        
     
     def build_alert_header(self):
         logger.debug("Building alert header...")
@@ -264,7 +265,7 @@ class Alert(Report):
             if self.override_and_edit(old_alert_data = old_alert_data):
                 logger.debug(f"Significant movements on ticker {self.ticker} since alert last posted - updating...")
                 prev_message =  await self.channel.fetch_message(message_id)
-                self.message += f"[Updated from last alert at {prev_message.created_at.astimezone(config.date_utils.get_timezone()).strftime("%-I:%M %p")}]({prev_message.jump_url})\n\n"
+                self.message += f"[Updated from last alert at {prev_message.created_at.astimezone(config.date_utils.get_timezone()).strftime("%H:%M %p")}]({prev_message.jump_url})\n\n"
                 message = await self.channel.send(self.message, view=self.buttons)
                 config.discord_utils.update_alert_message_data(date=today.date(), ticker=self.ticker, alert_type=self.alert_type, messageid=message.id, alert_data=self.alert_data)
             else:
