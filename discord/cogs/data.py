@@ -306,6 +306,42 @@ class Data(commands.Cog):
             logger.exception("Failed to fetch popularity with following exception:\n{}".format(e))
             await interaction.followup.send("Failed to popularity reports. Please ensure your parameters are valid.")
 
+    async def politician_options(self, interaction: discord.Interaction, current: str):
+        politicians = sd.CapitolTrades.all_politicians()
+        names = [politician['name'] for politician in politicians]
+        return [
+            app_commands.Choice(name = p_name, value=p_name)
+            for p_name in names if current.lower() in p_name.lower()
+        ][:25]
+
+    @app_commands.command(name="politician-trades", description="Return trades for target politician recorded on Capitol Trades")
+    @app_commands.describe(politician_name = "Politician to return trades for")
+    @app_commands.autocomplete(politician_name=politician_options,)
+    async def politician_trades(self, interaction: discord.Interaction, politician_name:str):
+        await interaction.response.defer(ephemeral=True)
+        logger.info("/politician-trades function called by user {}".format(interaction.user.name))
+        logger.info(f"Trades requested for politician {politician_name}")
+        politician_names = [politician['name'] for politician in sd.CapitolTrades.all_politicians()]
+        if politician_name not in politician_names:
+            await interaction.followup.send("Invalid politician name provided. Please select a valid name from the list available.", ephemeral=True)
+        else:
+            politician = sd.CapitolTrades.politician(name=politician_name)
+            trades = sd.CapitolTrades.trades(pid=politician['politician_id'])
+
+            message = ""
+            file = None
+            if not trades.empty:
+                message = f"Trades made by {politician_name} - [Capitol Trades](<https://www.capitoltrades.com/politicians/{politician['politician_id']}>)"
+                filepath = f"{config.datapaths.attachments_path}/trades_{politician['name'].lower().replace(" ",'_')}.csv"
+                trades.to_csv(filepath, index=False)
+                file = discord.File(filepath)
+            else:
+                message = f"No trades found for {politician_name}"
+            
+            message = await interaction.followup.send(content = message, file=file)
+
+
+
 
 #########        
 # Setup #

@@ -1425,7 +1425,32 @@ class Schwab():
 
 class CapitolTrades:
 
-    def politicians():
+    def politician(name:str=None, politician_id:str=None):
+        if not name and not politician_id:
+            pass
+        else:
+            fields = Postgres().get_table_columns('ct_politicians')
+            where_conditions = []
+            if name:
+                where_conditions.append(('name', name))
+            if politician_id:
+                where_conditions.append(('politician_id', politician_id))
+            data = Postgres().select(table='ct_politicians',
+                                    fields=fields,
+                                    where_conditions=where_conditions,
+                                    fetchall=False)
+            return dict(zip(fields, data))
+    
+    def all_politicians():
+        fields = Postgres().get_table_columns('ct_politicians')
+        data = Postgres().select(table='ct_politicians',
+                                    fields=fields,
+                                    fetchall=True)
+        
+        return [dict(zip(fields, data[index])) for index in range(0, len(data))]
+
+
+    def update_politicians():
         politicians = []
         page_num = 1
         while True: 
@@ -1503,11 +1528,9 @@ def test():
     #Postgres().drop_table('ct_politicians')
     #Postgres().create_tables()
     #CapitolTrades.politicians()
-    pid = Postgres().select(table='ct_politicians',
-                            fields=['politician_id'],
-                            where_conditions=[('name', 'Kevin Hern')],
-                            fetchall=False)[0]
-    print(CapitolTrades.trades(pid=pid))
+    politician = CapitolTrades.politician(name='Nancy Pelosi')
+    print(politician)
+    print(CapitolTrades.trades(politician['politician_id']))
     
 
 if __name__ == "__main__":#
