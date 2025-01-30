@@ -221,11 +221,6 @@ class Alerts(commands.Cog):
             else:
                 pass
 
-    # Start posting report at next 0 or 5 minute interval
-    @send_popularity_movers.before_loop
-    async def sleep_until_5m_interval(self):
-        await asyncio.sleep(config.date_utils.seconds_until_5m_interval())
-
     @tasks.loop(hours=1)
     async def send_politician_trade_alerts(self):
         politician = sd.CapitolTrades.politician(name='Nancy Pelosi')
@@ -240,6 +235,14 @@ class Alerts(commands.Cog):
                                          alert_data=alert_data)
             await alert.send_alert()
 
+
+    # Start posting report at next 0 or 5 minute interval
+    @send_popularity_movers.before_loop
+    @send_politician_trade_alerts.before_loop
+    async def sleep_until_5m_interval(self):
+        await asyncio.sleep(config.date_utils.seconds_until_5m_interval())
+
+    
 ##################
 # Alerts Classes #
 ##################
