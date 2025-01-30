@@ -14,7 +14,7 @@ import requests
 from ratelimit import limits, sleep_and_retry
 import config
 import logging
-from tradingview_screener import Scanner, Query, Column
+from tradingview_screener import Query, Column
 import schwab
 import time
 import httpx
