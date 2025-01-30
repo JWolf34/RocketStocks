@@ -226,11 +226,11 @@ class Alerts(commands.Cog):
     async def sleep_until_5m_interval(self):
         await asyncio.sleep(config.date_utils.seconds_until_5m_interval())
 
-    @tasks.loop(minutes=5)
+    @tasks.loop(hours=1)
     async def send_politician_trade_alerts(self):
         politician = sd.CapitolTrades.politician(name='Nancy Pelosi')
         trades = sd.CapitolTrades.trades(pid=politician['politician_id'])
-        today = config.date_utils.format_date_mdy(datetime.date.today() - datetime.timedelta(days = 10))
+        today = config.date_utils.format_date_mdy(datetime.date.today())
         todays_trades = trades[trades['Published Date'].apply(lambda x: x == today)]
         if not todays_trades.empty:
             alert_data = {}
@@ -501,11 +501,11 @@ class PoliticianTradeAlert(Alert):
     def __init__(self, channel, alert_data):
         self.politician = alert_data['politician']
         self.alert_type = f"POLITICIAN_TRADE_{self.politician['name'].upper().replace(" ","_")}"
-        super().__init__(ticker=None, channel=channel, alert_data=alert_data, override_buttons = True)
+        super().__init__(ticker='N/A', channel=channel, alert_data=alert_data, override_buttons = True)
         self.buttons = self.Buttons(politician=self.politician)
 
         # clean up data for saving to database
-        self.alert_data['trades'] = dict(self.alert_data['trades'])
+        self.alert_data['trades'] = self.alert_data['trades'].to_json()
     
     def build_alert_header(self):
         header = f"## :rotating_light: Politician Trade Alert: {self.politician['name']}\n\n\n"
