@@ -5,6 +5,7 @@ import datetime
 import stockdata as sd
 import pandas_market_calendars as mcal
 import json
+from zoneinfo import ZoneInfo
 
 # Logging configuration
 logger = logging.getLogger(__name__)
@@ -265,12 +266,12 @@ class date_utils:
         minutes_by_five = now.minute // 5
         # get the difference in times
         diff = (minutes_by_five + 1) * 5 - now.minute
-        future = now + datetime.timedelta(minutes=diff)
+        future = (now + datetime.timedelta(minutes=diff)).replace(second=0, microsecond=0)
         return (future-now).total_seconds()
     
     def get_timezone():
-        tz_diff = datetime.timedelta(hours = 6)
-        return datetime.timezone(offset=tz_diff)
+        tz = get_env("TZ")
+        return ZoneInfo(tz)
 
 
 

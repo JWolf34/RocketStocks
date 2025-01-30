@@ -66,7 +66,7 @@ class Data(commands.Cog):
 
             if len(invalid_tickers) > 0:
                 logger.info(f"Sent data files for tickers {tickers}. Invalid tickers: {invalid_tickers}")
-                await interaction.followup.send("Fetched data files for [{}]({}). Invalid tickers:".format(", ".join(tickers), message.jump_url, ", ".join(invalid_tickers)), ephemeral=True)
+                await interaction.followup.send("Fetched data files for [{}]({}). Invalid tickers: {}".format(", ".join(tickers), message.jump_url, ", ".join(invalid_tickers)), ephemeral=True)
             else:
                 logger.info(f"Sent data files for tickers {tickers}")
                 await interaction.followup.send("Fetched data files for [{}]({})".format(", ".join(tickers), message.jump_url), ephemeral=True)
@@ -296,7 +296,7 @@ class Data(commands.Cog):
 
             if len(invalid_tickers) > 0:
                 logger.info(f"Provided popualrity for tickers {tickers}. Invalid tickers: {invalid_tickers}")
-                await interaction.followup.send("Fetched popularity for [{}]({}). Invalid tickers:".format(", ".join(tickers), message.jump_url, ", ".join(invalid_tickers)), ephemeral=True)
+                await interaction.followup.send("Fetched popularity for [{}]({}). Invalid tickers: {}".format(", ".join(tickers), message.jump_url, ", ".join(invalid_tickers)), ephemeral=True)
             else:
                 logger.info(f"Provided popualrity for tickers {tickers}")
                 await interaction.followup.send("Fetched popularity for [{}]({})".format(", ".join(tickers), message.jump_url), ephemeral=True)
