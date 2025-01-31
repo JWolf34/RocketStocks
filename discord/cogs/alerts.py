@@ -234,7 +234,7 @@ class Alert(Report):
         super().__init__(channel=channel)
         self.ticker = ticker
         self.alert_data = alert_data
-        self.message = self.build_alert() + "\n\n"
+        self.message = self.build_alert()
         self.buttons = self.Buttons(self.ticker, channel)
         
     
@@ -266,7 +266,7 @@ class Alert(Report):
                 logger.debug(f"Significant movements on ticker {self.ticker} since alert last posted - updating...")
                 prev_message =  await self.channel.fetch_message(message_id)
                 prev_message_time = prev_message.created_at.astimezone(config.date_utils.get_timezone())
-                self.message += f"[Updated from last alert at {prev_message_time.strftime("%-I:%M %p")} {prev_message_time.tzname()}]({prev_message.jump_url})\n\n"
+                self.message += f"\n[Updated from last alert at {prev_message_time.strftime("%-I:%M %p")} {prev_message_time.tzname()}]({prev_message.jump_url})"
                 message = await self.channel.send(self.message, view=self.buttons)
                 config.discord_utils.update_alert_message_data(date=today.date(), ticker=self.ticker, alert_type=self.alert_type, messageid=message.id, alert_data=self.alert_data)
             else:
