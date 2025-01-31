@@ -27,6 +27,7 @@ def scheduler():
         update_historical_earnings_trigger = CronTrigger(day_of_week="tue-sat", hour=7, minute=0, timezone=timezone)
         update_daily_data_daily_trigger = CronTrigger(day_of_week="tue-sat", hour=6, minute=0, timezone=timezone)
         update_5m_data_daily_trigger = CronTrigger(day_of_week="tue-sat", hour=7, minute=0, timezone=timezone)
+        update_politicians_trigger = CronTrigger(day_of_week="sun", hour=7, minute=0, timezone=timezone)
         #test_trigger = IntervalTrigger(seconds=10, timezone=timezone)
 
         # Jobs
@@ -56,16 +57,12 @@ def scheduler():
         aio_sched.add_job(sd.StockData.update_daily_price_history, trigger=update_daily_data_daily_trigger, name = "Update daily price history (daily)", timezone=timezone, replace_existing=True)
 
         # Update fiveminutepricehistorytable with recent market data (daily job)
-        # Estimated runtime unknown
+        # Estimated runtime ~45 minutes
         aio_sched.add_job(sd.StockData.update_5m_price_history, trigger= update_5m_data_daily_trigger, name = "Update 5m price history (daily)", timezone=timezone, replace_existing=True)
 
-        # Update dailypricehistory table with today's market data (daily job)
-        # Estimated runtime ~90 minutes
-        aio_sched.add_job(sd.StockData.update_daily_price_history, trigger=update_daily_data_daily_trigger, name = "Update daily price history (daily)", timezone=timezone, replace_existing=True)
-
-        # Update fiveminutepricehistorytable with recent market data (daily job)
-        # Estimated runtime unknown
-        aio_sched.add_job(sd.StockData.update_5m_price_history, trigger= update_5m_data_daily_trigger, name = "Update 5m price history (daily)", timezone=timezone, replace_existing=True)
+        # Update ct_politicians table with new politicians added to Capitol Trades
+        # Estimated runtime
+        aio_sched.add_job(sd.CapitolTrades.update_politicians, trigger=update_politicians_trigger, name = "Update politicians", timezone=timezone, replace_existing=True)
 
         aio_sched.start()
 
