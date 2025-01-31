@@ -339,6 +339,7 @@ class Data(commands.Cog):
                 message = f"No trades found for {politician_name}"
             
             message = await interaction.followup.send(content = message, file=file)
+            logger.info(f"Provided trades data for politician {politician_name}")
 
 
 
