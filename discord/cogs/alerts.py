@@ -394,7 +394,7 @@ class VolumeMoverAlert(Alert):
 
     def build_alert_header(self):
         logger.debug("Building alert header...")
-        header = f"## :rotating_light: Intraday Volume Mover: {self.ticker}\n\n\n"
+        header = f"## :rotating_light: Volume Mover: {self.ticker}\n\n\n"
         return header
 
     def build_todays_change(self):
