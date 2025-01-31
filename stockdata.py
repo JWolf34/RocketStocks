@@ -1426,8 +1426,10 @@ class Schwab():
 class CapitolTrades:
 
     def politician(name:str=None, politician_id:str=None):
+        logger.debug(f"Fetching politician with id '{politician_id}' and name '{name}'")
         if not name and not politician_id:
-            pass
+            logger.debug("No politician found with provided criteria")
+            return None
         else:
             fields = Postgres().get_table_columns('ct_politicians')
             where_conditions = []
@@ -1439,23 +1441,29 @@ class CapitolTrades:
                                     fields=fields,
                                     where_conditions=where_conditions,
                                     fetchall=False)
-            return dict(zip(fields, data))
+            politician = dict(zip(fields, data))                    
+            logger.debug(f"Returning politician data: {politician}")
+            return politician
     
     def all_politicians():
+        logger.debug("Retrieving all politicians from database")
         fields = Postgres().get_table_columns('ct_politicians')
         data = Postgres().select(table='ct_politicians',
                                     fields=fields,
                                     fetchall=True)
-        
-        return [dict(zip(fields, data[index])) for index in range(0, len(data))]
+        politicians = [dict(zip(fields, data[index])) for index in range(0, len(data))]
+        logger.debug(f"Returning data on {len(politicians)} politicians")
+        return politicians
 
 
     def update_politicians():
+        logger.info("Updating politicians in the database")
         politicians = []
         page_num = 1
         while True: 
             params = {'page':page_num, 'pageSize':96}
             politicians_r = requests.get(url='https://www.capitoltrades.com/politicians', params=params)
+            logger.debug(f"Requesting politicians on page {page_num}, status code is {politicians_r.status_code}")
             html = politicians_r.content
             politicians_soup = BeautifulSoup(html, 'html.parser')
             cards = politicians_soup.find_all('a', class_="index-card-link")
@@ -1465,24 +1473,31 @@ class CapitolTrades:
                     name = card.find('h2').text
                     party = card.find('span', class_=lambda c: "q-field party" in c).text
                     state = card.find('span', class_=lambda c: "q-field us-state-full" in c).text
-                    politicians.append((politician_id, name, party, state))
+                    politician = (politician_id, name, party, state)
+                    logger.debug(f"Identified politician with data {politician}")
+                    politicians.append(politician)
+                    
                 page_num += 1
             else:
                 postgres = Postgres()
                 columns = postgres.get_table_columns(table='ct_politicians')
+                logger.debug("Inserting politicians into database")
                 Postgres().insert(table='ct_politicians',
                                   fields=columns,
                                   values=politicians)
                 break
+        logger.info("Updating politicians complete!")
 
 
     def trades(pid:str):
+        logger.debug(f"Requesting trades information for politician with id '{pid}")
         trades = []
         page_num = 1
         while True: 
             params = {'page':page_num, 'pageSize':96}
-            politicians_r = requests.get(url=f'https://www.capitoltrades.com/politicians/{pid}', params=params)
-            html = politicians_r.content
+            trades_r = requests.get(url=f'https://www.capitoltrades.com/politicians/{pid}', params=params)
+            logger.debug(f"Requesting trades on page {page_num}, status code is {trades_r.status_code}")
+            html = trades_r.content
             trades_soup = BeautifulSoup(html, 'html.parser')
             table = trades_soup.find('tbody')
             rows = table.find_all('tr')
@@ -1509,9 +1524,12 @@ class CapitolTrades:
                     order_size = row.find('span', class_ = "mt-1 text-size-2 text-txt-dimmer hover:text-foreground").text
 
                     # Add to DF and increment page_num
-                    trades.append((ticker, config.date_utils.format_date_mdy(published_date), config.date_utils.format_date_mdy(filed_date), filed_after, order_type, order_size))
+                    trade = (ticker, config.date_utils.format_date_mdy(published_date), config.date_utils.format_date_mdy(filed_date), filed_after, order_type, order_size)
+                    logger.debug(f"Identified trade with data {trade}")
+                    trades.append()
                 page_num += 1
             else:
+                logger.debug(f"Returning data on {len(trades)} trades")
                 return pd.DataFrame(trades,columns=['Ticker', 'Published Date', 'Filed Dated', 'Filed After', 'Order Type', 'Order Size'])
                 
 
