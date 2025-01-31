@@ -1543,12 +1543,7 @@ class CapitolTrades:
 #########
 
 def test():
-    #Postgres().drop_table('ct_politicians')
-    #Postgres().create_tables()
-    #CapitolTrades.politicians()
-    politician = CapitolTrades.politician(name='Nancy Pelosi')
-    print(politician)
-    print(CapitolTrades.trades(politician['politician_id']))
+    pass
     
 
 if __name__ == "__main__":#

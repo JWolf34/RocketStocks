@@ -61,7 +61,7 @@ def scheduler():
         aio_sched.add_job(sd.StockData.update_5m_price_history, trigger= update_5m_data_daily_trigger, name = "Update 5m price history (daily)", timezone=timezone, replace_existing=True)
 
         # Update ct_politicians table with new politicians added to Capitol Trades
-        # Estimated runtime
+        # Estimated runtime seconds
         aio_sched.add_job(sd.CapitolTrades.update_politicians, trigger=update_politicians_trigger, name = "Update politicians", timezone=timezone, replace_existing=True)
 
         aio_sched.start()
