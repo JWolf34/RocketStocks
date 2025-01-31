@@ -26,6 +26,7 @@ class Alerts(commands.Cog):
         self.alert_tickers = {}
         self.post_alerts_date.start()
         self.send_popularity_movers.start()
+        self.send_politician_trade_alerts.start()
         self.send_alerts.start()
         
 
@@ -220,17 +221,34 @@ class Alerts(commands.Cog):
             else:
                 pass
 
+    @tasks.loop(hours=1)
+    async def send_politician_trade_alerts(self):
+        politician = sd.CapitolTrades.politician(name='Nancy Pelosi')
+        trades = sd.CapitolTrades.trades(pid=politician['politician_id'])
+        today = config.date_utils.format_date_mdy(datetime.date.today())
+        todays_trades = trades[trades['Published Date'].apply(lambda x: x == today)]
+        if not todays_trades.empty:
+            alert_data = {}
+            alert_data['trades'] = todays_trades
+            alert_data['politician'] =  politician
+            alert = PoliticianTradeAlert(channel=self.alerts_channel,
+                                         alert_data=alert_data)
+            await alert.send_alert()
+
+
     # Start posting report at next 0 or 5 minute interval
     @send_popularity_movers.before_loop
+    @send_politician_trade_alerts.before_loop
     async def sleep_until_5m_interval(self):
         await asyncio.sleep(config.date_utils.seconds_until_5m_interval())
 
+    
 ##################
 # Alerts Classes #
 ##################
     
 class Alert(Report):
-    def __init__(self, ticker, channel, alert_data):
+    def __init__(self, ticker, channel, alert_data, override_buttons = False):
         super().__init__(channel=channel)
         self.ticker = ticker
         self.alert_data = alert_data
@@ -480,6 +498,46 @@ class PopularityAlert(Alert):
             return True
         else:
             return False
+
+class PoliticianTradeAlert(Alert):
+    def __init__(self, channel, alert_data):
+        self.politician = alert_data['politician']
+        self.alert_type = f"POLITICIAN_TRADE_{self.politician['name'].upper().replace(" ","_")}"
+        super().__init__(ticker='N/A', channel=channel, alert_data=alert_data, override_buttons = True)
+        self.buttons = self.Buttons(politician=self.politician)
+
+        # clean up data for saving to database
+        self.alert_data['trades'] = self.alert_data['trades'].to_json()
+    
+    def build_alert_header(self):
+        header = f"## :rotating_light: Politician Trade Alert: {self.politician['name']}\n\n\n"
+        return header
+
+    def build_todays_change(self):
+        logger.debug("Building today's change...")
+        return f"**{self.politician['name']}** has published **{len(self.alert_data['trades'])}** trades today, {config.date_utils.format_date_mdy(datetime.date.today())} \n"
+
+
+    def build_alert(self):
+        logger.debug("Building Politician Trade Alert...")
+        alert = ""
+        alert += self.build_alert_header()
+        alert += self.build_todays_change()
+        alert += self.build_table(df=self.alert_data['trades'])
+        return alert
+
+    # Override
+    def override_and_edit(self, old_alert_data):
+        if len(self.alert_data['trades']) < len(old_alert_data['trades']):
+            return True
+        else:
+            return False
+
+        # Override
+    class Buttons(discord.ui.View):
+        def __init__(self, politician):
+            super().__init__(timeout=None)
+            self.add_item(discord.ui.Button(label="Capitol Trades", style=discord.ButtonStyle.url, url = f"https://www.capitoltrades.com/politicians/{politician['politician_id']}"))
 
 
 

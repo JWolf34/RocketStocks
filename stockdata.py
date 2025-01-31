@@ -14,10 +14,11 @@ import requests
 from ratelimit import limits, sleep_and_retry
 import config
 import logging
-from tradingview_screener import Scanner, Query, Column
+from tradingview_screener import Query, Column
 import schwab
 import time
 import httpx
+from bs4 import BeautifulSoup
 
 # Logging configuration
 logger = logging.getLogger(__name__)
@@ -229,6 +230,13 @@ class Postgres():
                             volume              bigint,
                             datetime            timestamp,
                             PRIMARY KEY (ticker, datetime)
+                            );
+
+                            CREATE TABLE IF NOT EXISTS ct_politicians(
+                            politician_id       char(7) PRIMARY KEY,
+                            name                varchar(64),
+                            party               varchar(16),
+                            state               varchar(32)
                             );
                             """
         logger.debug("Running script to create tables in database...")
@@ -1414,6 +1422,102 @@ class Schwab():
         assert resp.status_code == httpx.codes.OK, resp.raise_for_status()
         data = resp.json()
         return data
+
+class CapitolTrades:
+
+    def politician(name:str=None, politician_id:str=None):
+        if not name and not politician_id:
+            pass
+        else:
+            fields = Postgres().get_table_columns('ct_politicians')
+            where_conditions = []
+            if name:
+                where_conditions.append(('name', name))
+            if politician_id:
+                where_conditions.append(('politician_id', politician_id))
+            data = Postgres().select(table='ct_politicians',
+                                    fields=fields,
+                                    where_conditions=where_conditions,
+                                    fetchall=False)
+            return dict(zip(fields, data))
+    
+    def all_politicians():
+        fields = Postgres().get_table_columns('ct_politicians')
+        data = Postgres().select(table='ct_politicians',
+                                    fields=fields,
+                                    fetchall=True)
+        
+        return [dict(zip(fields, data[index])) for index in range(0, len(data))]
+
+
+    def update_politicians():
+        politicians = []
+        page_num = 1
+        while True: 
+            params = {'page':page_num, 'pageSize':96}
+            politicians_r = requests.get(url='https://www.capitoltrades.com/politicians', params=params)
+            html = politicians_r.content
+            politicians_soup = BeautifulSoup(html, 'html.parser')
+            cards = politicians_soup.find_all('a', class_="index-card-link")
+            if cards:
+                for card in cards:
+                    politician_id = card['href'].split('/')[-1]
+                    name = card.find('h2').text
+                    party = card.find('span', class_=lambda c: "q-field party" in c).text
+                    state = card.find('span', class_=lambda c: "q-field us-state-full" in c).text
+                    politicians.append((politician_id, name, party, state))
+                page_num += 1
+            else:
+                postgres = Postgres()
+                columns = postgres.get_table_columns(table='ct_politicians')
+                Postgres().insert(table='ct_politicians',
+                                  fields=columns,
+                                  values=politicians)
+                break
+
+
+    def trades(pid:str):
+        trades = []
+        page_num = 1
+        while True: 
+            params = {'page':page_num, 'pageSize':96}
+            politicians_r = requests.get(url=f'https://www.capitoltrades.com/politicians/{pid}', params=params)
+            html = politicians_r.content
+            trades_soup = BeautifulSoup(html, 'html.parser')
+            table = trades_soup.find('tbody')
+            rows = table.find_all('tr')
+            if len(rows) > 1:
+                for row in rows:
+
+                    # Ticker
+                    ticker = row.find('span', class_='q-field issuer-ticker').text
+                    if ":" in ticker:
+                        ticker = ticker.split(":")[0]
+
+                    # Published and Filed Dates
+                    # Special case for September since datetime uses "Sep" but CT uses "Sept"
+                    dates = row.find_all('div', class_ = "text-size-3 font-medium")
+                    years = row.find_all('div', class_ = "text-size-2 text-txt-dimmer")
+                    published_date = datetime.datetime.strptime(f"{dates[0].text.replace('Sept','Sep')} {years[0].text}", "%d %b %Y").date()
+                    filed_date = datetime.datetime.strptime(f"{dates[1].text.replace('Sept','Sep')} {years[1].text}", "%d %b %Y").date()
+
+                    # Filed after
+                    filed_after = f"{row.find('span', class_= lambda c: 'reporting-gap-tier' in c).text} days"
+
+                    # Order Type and Size
+                    order_type = row.find('span', class_ = lambda c: "q-field tx-type" in c).text.replace('"','').upper()
+                    order_size = row.find('span', class_ = "mt-1 text-size-2 text-txt-dimmer hover:text-foreground").text
+
+                    # Add to DF and increment page_num
+                    trades.append((ticker, config.date_utils.format_date_mdy(published_date), config.date_utils.format_date_mdy(filed_date), filed_after, order_type, order_size))
+                page_num += 1
+            else:
+                return pd.DataFrame(trades,columns=['Ticker', 'Published Date', 'Filed Dated', 'Filed After', 'Order Type', 'Order Size'])
+                
+
+
+
+
        
 
 #########
@@ -1421,9 +1525,13 @@ class Schwab():
 #########
 
 def test():
-    #Postgres().drop_table('alerts')
+    #Postgres().drop_table('ct_politicians')
     #Postgres().create_tables()
-    pass
+    #CapitolTrades.politicians()
+    politician = CapitolTrades.politician(name='Nancy Pelosi')
+    print(politician)
+    print(CapitolTrades.trades(politician['politician_id']))
+    
 
 if __name__ == "__main__":#
     #test    
