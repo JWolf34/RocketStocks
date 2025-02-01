@@ -53,7 +53,7 @@ def scheduler():
         aio_sched.add_job(sd.StockData.Earnings.update_historical_earnings, trigger=update_historical_earnings_trigger, name = "Update historical earnings", timezone=timezone, replace_existing=True)
 
         # Update dailypricehistory table with today's market data (daily job)
-        # Estimated runtime ~90 minutes
+        # Estimated runtime ~35 minutes
         aio_sched.add_job(sd.StockData.update_daily_price_history, trigger=update_daily_data_daily_trigger, name = "Update daily price history (daily)", timezone=timezone, replace_existing=True)
 
         # Update fiveminutepricehistorytable with recent market data (daily job)

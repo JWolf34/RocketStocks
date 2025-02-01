@@ -1547,12 +1547,8 @@ def test():
     
 
 if __name__ == "__main__":#
-    #test    
-    # Initilaize database
-    #Postgres().create_tables()
-    #Postgres().init_tables()
     test()
-    pass
+    
 
     
     
