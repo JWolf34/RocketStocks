@@ -1526,7 +1526,7 @@ class CapitolTrades:
                     # Add to DF and increment page_num
                     trade = (ticker, config.date_utils.format_date_mdy(published_date), config.date_utils.format_date_mdy(filed_date), filed_after, order_type, order_size)
                     logger.debug(f"Identified trade with data {trade}")
-                    trades.append()
+                    trades.append(trade)
                 page_num += 1
             else:
                 logger.debug(f"Returning data on {len(trades)} trades")
