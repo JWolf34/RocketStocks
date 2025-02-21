@@ -519,8 +519,8 @@ class Report(object):
             return message + "\n"
         
         # Find today's popularity rank for ticker
-        if self.ticker in self.top_stocks['ticker']:
-            todays_rank = self.top_stocks['rank'].where(df['ticker'] == self.ticker)
+        if self.ticker in self.top_stocks['ticker'].values:
+            todays_rank = self.top_stocks['rank'].where(self.top_stocks['ticker'] == self.ticker)
         else:
             todays_rank = 501  
         #popularity = sd.StockData.get_historical_popularity(self.ticker)
