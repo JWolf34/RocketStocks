@@ -182,7 +182,7 @@ class Alerts(commands.Cog):
             if ticker not in blacklist_tickers:
                 todays_rank = row['rank']
                 popularity = sd.StockData.get_historical_popularity(ticker)
-                popularity = popularity[popularity['date'] > (datetime.date.today() - datetime.timedelta(days=10))]
+                popularity = popularity[popularity['date'] > (datetime.date.today() - datetime.timedelta(days=5))]
                 low_rank = 1000 # Farther from 1
                 low_rank_date = None
                 high_rank = 0 # Closer to 1
