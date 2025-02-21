@@ -978,10 +978,13 @@ class StockData():
            """
         
         fields = Postgres().get_table_columns('tickers')
-        return Postgres().select(table='tickers',
+        data = Postgres().select(table='tickers',
                                  fields=fields,
                                  where_conditions=[('ticker', ticker)],
                                  fetchall=False)
+
+        return {fields[i]:data[i] for i in range(0, len(fields))}
+        
     
     @staticmethod
     def get_all_ticker_info():

@@ -27,6 +27,7 @@ logger = logging.getLogger(__name__)
 
 class Reports(commands.Cog):
     def __init__(self, bot):
+        # Init cog and kick off scheduled reports
         self.bot = bot
         self.send_gainer_reports.start()
         self.send_volume_reports.start()
@@ -149,6 +150,7 @@ class Reports(commands.Cog):
                             event_exists = True
                             break
                 
+                # Event does not exist, create one
                 if not event_exists:
                     release_time = "unspecified"
                     start_time = datetime.datetime.combine(earnings_info['date'][0], datetime.datetime.strptime('1230','%H%M').time()).astimezone()
@@ -375,10 +377,10 @@ class Report(object):
         message = "## Ticker Info\n"
         ticker_data = sd.StockData.get_ticker_info(self.ticker)
         if ticker_data is not None:
-            message += f"**Name:** {ticker_data[1]}\n"
-            message += f"**Sector:** {ticker_data[6] if ticker_data[6] else "N/A"}\n"
-            message += f"**Industry:** {ticker_data[5] if ticker_data[5] else "N/A"}\n" 
-            message += f"**Country:** {ticker_data[3] if ticker_data[3] else "N/A"}\n"
+            message += f"**Name:** {ticker_data['ticker']}\n"
+            message += f"**Sector:** {ticker_data['sector'] if ticker_data['sector'] else "N/A"}\n"
+            message += f"**Industry:** {ticker_data['industry'] if ticker_data['industry'] else "N/A"}\n" 
+            message += f"**Country:** {ticker_data['country'] if ticker_data['country'] else "N/A"}\n"
             message += f"**Exchange:** {self.quote['reference']['exchangeName']}\n"
             return message 
         else:
