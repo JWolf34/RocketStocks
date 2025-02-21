@@ -139,7 +139,7 @@ class Reports(commands.Cog):
         guild = self.bot.get_guild(config.discord_utils.guild_id)
         tickers = sd.Watchlists().get_tickers_from_all_watchlists(no_personal=False) # Get all tickers except from system-generated watchlists
         for ticker in tickers:
-            earnings_info = sd.StockData.Earnings.get_next_earnings_info(ticker).to_dict(orient='list')
+            earnings_info = sd.StockData.Earnings.get_next_earnings_info(ticker)
             if len(earnings_info) > 0:
                 event_exists = False
                 name = f"{ticker} Earnings"
@@ -512,31 +512,33 @@ class Report(object):
     def build_popularity(self):
         logger.debug("Building popularity...")
         message = "## Popularity\n"
-        
-        try:
-            todays_top_stocks = sd.ApeWisdom().get_top_stocks()
-            todays_rank = todays_top_stocks[todays_top_stocks['ticker'] == self.ticker]['rank'].iloc[0]
-        except IndexError as e:
-            message += "No popularity records available"
-            return message + "\n"    
-        popularity = sd.StockData.get_historical_popularity(self.ticker)
-        if popularity is None:
+
+        # If no historical popularity, return
+        if self.popularity.empty:
             message += "No popularity records available"
             return message + "\n"
+        
+        # Find today's popularity rank for ticker
+        if self.ticker in self.top_stocks['ticker']:
+            todays_rank = self.top_stocks['rank'].where(df['ticker'] == self.ticker)
         else:
-            message += f"**Today:** {todays_rank}\n"
-            for i in range(1, 6):
-                date = datetime.date.today() - datetime.timedelta(i)
-                try:
-                    old_rank = popularity[popularity['date'] == date]['rank'].iloc[0]
-                    symbol = ":green_circle:" if (old_rank-todays_rank) > 0 else ":small_red_triangle_down:"
-                    change = f"{old_rank - todays_rank} spots"
-                except IndexError as e:
-                    old_rank = 'N/A'
-                    symbol = ''
-                    change = ''
-                message +=f"**{i} Day(s) Ago:** {old_rank}, {symbol} {change}\n"
-            return message
+            todays_rank = 501  
+        #popularity = sd.StockData.get_historical_popularity(self.ticker)
+        
+        
+        message += f"**Today:** {todays_rank}\n"
+        for i in range(1, 6):
+            date = datetime.date.today() - datetime.timedelta(i)
+            try:
+                old_rank = popularity[popularity['date'] == date]['rank'].iloc[0]
+                symbol = ":green_circle:" if (old_rank-todays_rank) > 0 else ":small_red_triangle_down:"
+                change = f"{old_rank - todays_rank} spots"
+            except IndexError as e:
+                old_rank = 'N/A'
+                symbol = ''
+                change = ''
+            message +=f"**{i} Day(s) Ago:** {old_rank}, {symbol} {change}\n"
+        return message
 
     def build_report(self):
         report = ''
@@ -578,6 +580,8 @@ class StockReport(Report):
     def __init__(self, ticker : str, channel):
         self.ticker = ticker
         self.data =  sd.StockData.fetch_daily_price_history(self.ticker)
+        self.popularity = sd.StockData.get_historical_popularity(ticker=self.ticker)
+        self.top_stocks = pd.concat([sd.ApeWisdom().get_top_stocks(page=i) for i in range(1, 6)])
         self.buttons = self.Buttons(self.ticker)
         super().__init__(channel)
 

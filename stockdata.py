@@ -653,10 +653,8 @@ class StockData():
                                            fields=columns, 
                                            where_conditions=[('ticker', ticker)], 
                                            fetchall=False)
-            if result is None:
-                return pd.DataFrame()
-            else:
-                return pd.DataFrame([result], columns=columns)
+            
+            return {columns[i]:result[i] for i in range(0, len(columns))}
 
         @staticmethod
         def remove_past_earnings():
@@ -1529,7 +1527,7 @@ class CapitolTrades:
                     # Add to DF and increment page_num
                     trade = (ticker, config.date_utils.format_date_mdy(published_date), config.date_utils.format_date_mdy(filed_date), filed_after, order_type, order_size)
                     logger.debug(f"Identified trade with data {trade}")
-                    trades.append()
+                    trades.append(trade)
                 page_num += 1
             else:
                 logger.debug(f"Returning data on {len(trades)} trades")
