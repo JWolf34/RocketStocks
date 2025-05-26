@@ -19,7 +19,7 @@ class StockData():
         self.sec = SEC()
         self.schwab = Schwab()
         self.nasdaq = Nasdaq()
-        self
+        self.earnings = Earnings(nasdaq=self.nasdaq, db)
 
     class Earnings():
         def __init__(self, nasdaq:Nasdaq, db:Postgres):
@@ -27,6 +27,7 @@ class StockData():
             self.db = Postgres()
 
         def update_upcoming_earnings(self):
+            """Identify upcoming earnings dates for all tickers and add to database"""
             logger.info("Updating upcoming earnings in database")
 
             columns = ['symbol',
@@ -54,6 +55,7 @@ class StockData():
 
         @staticmethod
         def get_next_earnings_date(ticker):
+            """Retrieve next earnings date for the input ticker"""
             result = Postgres().select(table='upcoming_earnings',
                                            fields=['date'],
                                            where_conditions=[('ticker', ticker)], 
@@ -64,8 +66,8 @@ class StockData():
                 return result[0]
 
         @staticmethod
-        def get_next_earnings_info(ticker):
-            columns = Postgres().get_table_columns('upcoming_earnings')
+        def get_next_earnings_info(self, ticker):
+            columns = self.db.get_table_columns('upcoming_earnings')
 
             result = Postgres().select(table='upcoming_earnings',
                                            fields=columns, 
@@ -210,7 +212,7 @@ class StockData():
         logger.info("Tickers have been updated!")
     
     @staticmethod
-    async def insert_new_tickers(self,):
+    async def insert_new_tickers(self):
         logger.info("Updating tickers database table with up-to-date ticker data")
         column_map = {'symbol':'ticker',
                       'name':'name',
