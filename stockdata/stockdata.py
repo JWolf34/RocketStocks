@@ -335,6 +335,9 @@ class StockData():
            WHERE ticker = '{ticker}'
            ORDER BY datetime DESC;
             """
+        
+        # Find latest date 5m price history is recorded for ticker
+        # Use default date if no rows found in database
         result = self.db.select(table='five_minute_price_history',
                                    fields=['datetime'],
                                    where_conditions=[('ticker', ticker)],
@@ -342,24 +345,27 @@ class StockData():
                                    fetchall=False)
         if result is None:
             start_datetime = result # No data found
-            logger.debug(f"No 5m price history for ticker {ticker} in database, fetching price history from default date {date_utils.format_date_mdy(start_datetime.date)}")
-
+            logger.debug(f"No 5m price history for ticker {ticker} in database, fetching price history from default date")
         else:
             start_datetime = result[0]
             logger.debug(f"Latest recorded 5m price history for {ticker} is {start_datetime.date}")
 
         price_history = await self.schwab.get_5m_price_history(ticker, start_datetime=start_datetime)
-        if price_history.size > 0:
+
+        # Found price history for ticker, insert into database
+        if price_history:
             fields = price_history.columns.to_list()
             values = [tuple(row) for row in price_history.values]
             self.db.insert(table='five_minute_price_history', fields=fields, values=values)
+        # No 5m proce history found
         else:
             logger.warning(f"No 5m price history found for ticker {ticker}")
     
-    
-    @staticmethod
-    def fetch_daily_price_history(ticker, start_date:datetime.date = None, end_date:datetime.date = None):
-        logger.debug(f"Fetching daily price history for ticker '{ticker}' from database")
+    def fetch_daily_price_history(self, ticker, start_date:datetime.date = None, end_date:datetime.date = None):
+        """Return daily price history for input ticker from database"""
+        logger.info(f"Fetching daily price history for ticker '{ticker}' from database")
+
+        # Query
         """SELECT * FROM daily_price_history
            WHERE ticker = '{ticker}';
            """
@@ -374,17 +380,19 @@ class StockData():
                                     fields=['ticker', 'open', 'high', 'low', 'close', 'volume', 'date'],
                                     where_conditions=where_conditions,
                                     fetchall=True)
-        if results is None:
-            logger.debug(f"No daily price history available for ticker '{ticker}'")
-            return pd.DataFrame()
+        if not results:
+            logger.warning(f"No daily price history available for ticker '{ticker}'")
+            return results
         else:
             logger.debug(f"Returned {len(results)} row(s) for ticker '{ticker}'")
             columns = self.db.get_table_columns("daily_price_history")
             return pd.DataFrame(results, columns=columns)
 
-    @staticmethod
-    def fetch_5m_price_history(ticker, start_datetime:datetime.datetime = None, end_datetime:datetime.datetime = None):
-        logger.debug(f"Fetching 5m price history for ticker '{ticker}' from database")
+    def fetch_5m_price_history(self, ticker, start_datetime:datetime.datetime = None, end_datetime:datetime.datetime = None):
+        """Return 5m price history for input ticker from daytabase"""
+        logger.info(f"Fetching 5m price history for ticker '{ticker}' from database")
+
+        # Query
         """SELECT * FROM five_minute_price_history
            WHERE ticker = '{ticker}';
            """
@@ -400,18 +408,19 @@ class StockData():
                                     fields=['ticker', 'open', 'high', 'low', 'close', 'volume', 'datetime'],
                                     where_conditions=where_conditions,
                                     fetchall=True)
-        if results is None:
-            logger.debug(f"No 5m price history available for ticker '{ticker}'")
-            return pd.DataFrame()
+        if not results:
+            logger.warning(f"No 5m price history available for ticker '{ticker}'")
+            return None
         else:
             logger.debug(f"Returned {len(results)} row(s) for ticker '{ticker}'")
             columns = self.db.get_table_columns('five_minute_price_history')
             return pd.DataFrame(results, columns=columns)
 
-    # Download and write financials for specified ticker to the financials folder
+    
     @staticmethod
     def fetch_financials(ticker):
-        logger.debug(f"Fetching financials for ticker {ticker}")
+        """Return latest available financial statements for input ticker from Yahoo Finance"""
+        logger.info(f"Fetching financials for ticker {ticker}")
         financials = {}
         stock = yf.Ticker(ticker)
         financials['income_statment'] = stock.income_stmt
@@ -423,10 +432,11 @@ class StockData():
 
         return financials
 
+    def get_ticker_info(self, ticker):
+        """Return information (df) on input ticker from database"""
+        logger.info(f"Fetching info for ticker '{ticker}' from database")
 
-    @staticmethod
-    def get_ticker_info(ticker):
-        logger.debug(f"Fetching info for ticker '{ticker}' from database")
+        # Query
         """SELECT * FROM tickers
            WHERE ticker = '{ticker}';
            """
@@ -437,20 +447,23 @@ class StockData():
                                  where_conditions=[('ticker', ticker)],
                                  fetchall=False)
     
-    @staticmethod
-    def get_all_ticker_info():
-        logger.debug(f"Fetching info for all tickers in database")
+    def get_all_ticker_info(self):
+        """Return information (df) on all tickers from database"""
+        logger.info(f"Fetching info for all tickers in database")
         columns = self.db.get_table_columns('tickers')
         data = self.db.select(table='tickers',
                                  fields=columns,
                                  fetchall=True)
         data = pd.DataFrame(data, columns=columns)
         data.index = data['ticker']
+        logger.debug(f"Found data for {len(data)} tickers in database")
         return data
     
-    @staticmethod
-    def get_all_tickers():
-        logger.debug('Fetching all tickers in database')
+    def get_all_tickers(self):
+        '''Return list of all tickers in database'''
+        logger.info('Fetching all tickers in database')
+
+        # Query
         """SELECT ticker FROM tickers;
         """
         results = self.db.select(table='tickers',
