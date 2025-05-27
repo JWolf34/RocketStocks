@@ -12,7 +12,7 @@ import datetime
 from datetime import timedelta
 import requests
 from ratelimit import limits, sleep_and_retry
-import config
+import utils
 import logging
 from tradingview_screener import Query, Column
 import schwab

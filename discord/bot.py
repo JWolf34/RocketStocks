@@ -4,7 +4,7 @@ import os
 import discord
 from discord.ext import commands
 import asyncio
-import config
+import utils
 import logging
 
 
@@ -19,7 +19,7 @@ for handler in logger.handlers:
 # Bot setup
 intents = discord.Intents.default()
 bot = commands.Bot(command_prefix='$', intents=intents)
-token = config.secrets.discord_token
+token = utils.secrets.discord_token
 
 # Load cogs
 async def load():
@@ -34,7 +34,7 @@ def run_bot():
     async def on_ready():
         logger.info("RocketStocks bot ready!")
         await load()
-        config.bot_setup()
+        utils.bot_setup()
     
     
     bot.run(token)

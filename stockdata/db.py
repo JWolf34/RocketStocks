@@ -1,6 +1,6 @@
 import psycopg2
 from psycopg2 import sql
-from config import secrets
+from utils import secrets
 import logging
 
 # Logging configuration

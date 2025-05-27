@@ -4,7 +4,7 @@ from db import Postgres
 import requests
 from bs4 import BeautifulSoup
 import pandas as pd
-from config import date_utils
+from utils import date_utils
 
 # Logging configuration
 logger = logging.getLogger(__name__)

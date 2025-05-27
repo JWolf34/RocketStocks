@@ -2,7 +2,7 @@ import logging
 import schwab
 import httpx
 import datetime
-from config import secrets
+from utils import secrets
 import pandas as pd
 
 # Logging configuration

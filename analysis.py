@@ -4,7 +4,7 @@ import numpy as np
 import stockdata as sd
 import pandas_ta as ta
 import stockdata as sd
-import config
+import utils
 import datetime
 import logging
 
@@ -21,9 +21,9 @@ class indicators:
             logger.debug(f"Calculating avg_vol_at_time {dt} over last {periods} periods")
             # Round down to nearest 5m, looking for last complete 5m candle
             if dt is None:
-                dt = config.date_utils.dt_round_down(datetime.datetime.now() - datetime.timedelta(minutes=5))
+                dt = utils.date_utils.dt_round_down(datetime.datetime.now() - datetime.timedelta(minutes=5))
             else:
-                dt = config.date_utils.dt_round_down(dt)
+                dt = utils.date_utils.dt_round_down(dt)
             time = datetime.time(hour=dt.hour, minute=dt.minute)
 
             # Filter data to include candles in specified interval

@@ -3,7 +3,6 @@ discord
 pandas-datareader
 yfinance
 pandas-ta
-numpy==1.26.4
 mplfinance
 Backtesting
 tradingview_screener
@@ -14,3 +13,4 @@ ratelimit
 pandas_market_calendars
 schwab-py
 beautifulsoup4
+numpy==1.26.4

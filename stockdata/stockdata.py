@@ -3,7 +3,7 @@ from db import Postgres
 from nasdaq import Nasdaq
 import logging
 import pandas as pd
-from config import date_utils, market_utils
+from utils import date_utils, market_utils
 from sec import SEC
 from schwab import Schwab
 import time
@@ -12,167 +12,166 @@ import yfinance as yf
 # Logging configuration
 logger = logging.getLogger(__name__)
 
+
+class Earnings:
+    def __init__(self, nasdaq:Nasdaq, db:Postgres):
+        self.nasdaq = nasdaq
+        self.db = db
+
+    def update_upcoming_earnings(self):
+        """Identify upcoming earnings dates for all tickers and add to database"""
+        logger.info("Updating upcoming earnings in database")
+
+        columns = ['symbol',
+                    'date',
+                    'time',
+                    'fiscalQuarterEnding',
+                    'epsForecast',
+                    'noOfEsts',
+                    'lastYearRptDt', 
+                    'lastYearEPS']
+        
+        for i in range(0, 50): # Look at next 50 days of earnings
+            date = datetime.datetime.today() + datetime.timedelta(days=i)
+            if date.weekday() < 5:
+                date_string = date.strftime("%Y-%m-%d")
+                earnings_data = self.nasdaq.get_earnings_by_date(date_string)
+                if earnings_data.size > 0:
+                    earnings_data['date'] = date_string
+                    earnings_data = earnings_data[columns]
+                    earnings_data = earnings_data.rename(columns={'symbol':'ticker'})
+                    values = [tuple(row) for row in earnings_data.values]
+                    self.db.insert(table='upcoming_earnings', fields=earnings_data.columns.to_list(), values=values)
+                    logger.debug(f'Updated earnings for {date_string}')
+        logger.info("Upcoming earnings have been updated!")
+
+    @staticmethod
+    def get_next_earnings_date(ticker):
+        """Retrieve next earnings date for the input ticker"""
+        result = Postgres().select(table='upcoming_earnings',
+                                        fields=['date'],
+                                        where_conditions=[('ticker', ticker)], 
+                                        fetchall=False)
+        if result is None:
+            return "N/A"
+        else:
+            return result[0]
+
+    @staticmethod
+    def get_next_earnings_info(self, ticker):
+        columns = self.db.get_table_columns('upcoming_earnings')
+
+        result = Postgres().select(table='upcoming_earnings',
+                                        fields=columns, 
+                                        where_conditions=[('ticker', ticker)], 
+                                        fetchall=False)
+        if result is None:
+            return pd.DataFrame()
+        else:
+            return pd.DataFrame([result], columns=columns)
+
+    @staticmethod
+    def remove_past_earnings():
+        logger.info("Removing upcoming earnings that have past")
+
+        Postgres().delete(table='upcoming_earnings',
+                            where_conditions=[('date', '<', datetime.date.today())])
+        logger.info("Previous upcoming earnings removed from database")
+
+    @staticmethod
+    def update_historical_earnings():
+        logger.info("Updating historical earnings in database...")
+        column_map = {'date':'date',
+                        'symbol':'ticker',
+                        'eps':'eps',
+                        'surprise':'surprise',
+                        'epsForecast':'epsForecast',
+                        'fiscalQuarterEnding':'fiscalQuarterEnding'}
+        today = datetime.date.today()
+        
+        # Get most recently inserted date in database
+        select_script = """SELECT date FROM historical_earnings
+                            ORDER BY date DESC;
+                            """
+        result = Postgres().select(table='historical_earnings',
+                                        fields=['date'],
+                                        order_by=('date', 'DESC'),
+                                        fetchall=False)
+
+        if result is None:
+            start_date = datetime.date(year=2008, month=1, day=3) # Earliest day I can find earnings for on Nasdaq 1/3/2008
+        else:
+            start_date = result[0]
+
+        num_days = (today - start_date).days
+        for i in range(1, num_days):
+            date = start_date + datetime.timedelta(days=i)
+            if market_utils.market_open_on_date(date):
+                date_string = date_utils.format_date_ymd(date)
+                earnings = self.nasdaq.get_earnings_by_date(date_string)
+                if earnings.size > 0:
+                    earnings = earnings.rename(columns=column_map)
+                    earnings = earnings.drop(columns=[x for x in earnings.columns.to_list() if x not in column_map.values()])
+                    earnings['date'] = date
+                    earnings = earnings[column_map.values()]
+
+                    # Format EPS and surprise columns
+                    earnings ['eps'] = earnings['eps'].apply(lambda x: float(x.replace('(', '-')
+                                                                            .replace(")", "")
+                                                                            .replace('$', "")
+                                                                            .replace(',',"")) 
+                                                                            if (len(x) > 0 and x != "N/A") else None)
+                    earnings ['epsForecast'] = earnings['epsForecast'].apply(lambda x: float(x.replace('(', '-')
+                                                                            .replace(")", "")
+                                                                            .replace('$', "")
+                                                                            .replace(',',"")) 
+                                                                            if (len(x) > 0 and x != "N/A") else None)
+                    earnings ['surprise'] = earnings['surprise'].apply(lambda x: float(x) if x != 'N/A' else None)
+
+                    values = [tuple(row) for row in earnings.values]
+                    Postgres().insert(table='historical_earnings', fields=earnings.columns.to_list(), values=values)
+                    logger.debug(f"Updated historical earnings for {date_string}")
+                else: # No earnings recorded on target date
+                    logger.debug(f"No earnings reported on date {date_string}")
+            else: # Market is not open on target date
+                logger.debug(f"Market is not open on {date_string} - no earning to pull")
+
+
+    @staticmethod
+    def get_historical_earnings(ticker):
+        logger.debug(f"Fetching historical earnings for ticker '{ticker}' from database")
+        columns = Postgres().get_table_columns('historical_earnings')
+        results = Postgres().select(table='historical_earnings',
+                                    fields=columns,
+                                    where_conditions=[('ticker', ticker)], 
+                                    fetchall=True)
+        if results is None:
+            return pd.DataFrame()
+        else:
+            return pd.DataFrame(results, columns=columns)
+
+    @staticmethod
+    def get_earnings_today(date):
+        logger.debug(f"Fetching all earnings reported on date {date}")
+        columns = Postgres().get_table_columns('upcoming_earnings')
+        results = Postgres().select(table='upcoming_earnings',
+                                    fields=columns, 
+                                    where_conditions=[('date', date)],
+                                    fetchall=True)
+        if results is None:
+            return results
+        else:
+            return pd.DataFrame(results, columns=columns)
+
+
+
     
 class StockData():
     def __init__(self):
         self.db = Postgres
         self.sec = SEC()
         self.schwab = Schwab()
-        self.nasdaq = Nasdaq()
-        self.earnings = Earnings(nasdaq=self.nasdaq, db)
-
-    class Earnings():
-        def __init__(self, nasdaq:Nasdaq, db:Postgres):
-            self.nasdaq = Nasdaq()
-            self.db = Postgres()
-
-        def update_upcoming_earnings(self):
-            """Identify upcoming earnings dates for all tickers and add to database"""
-            logger.info("Updating upcoming earnings in database")
-
-            columns = ['symbol',
-                       'date',
-                       'time',
-                       'fiscalQuarterEnding',
-                       'epsForecast',
-                       'noOfEsts',
-                       'lastYearRptDt', 
-                       'lastYearEPS']
-            
-            for i in range(0, 50): # Look at next 50 days of earnings
-                date = datetime.datetime.today() + datetime.timedelta(days=i)
-                if date.weekday() < 5:
-                    date_string = date.strftime("%Y-%m-%d")
-                    earnings_data = self.nasdaq.get_earnings_by_date(date_string)
-                    if earnings_data.size > 0:
-                        earnings_data['date'] = date_string
-                        earnings_data = earnings_data[columns]
-                        earnings_data = earnings_data.rename(columns={'symbol':'ticker'})
-                        values = [tuple(row) for row in earnings_data.values]
-                        self.db.insert(table='upcoming_earnings', fields=earnings_data.columns.to_list(), values=values)
-                        logger.debug(f'Updated earnings for {date_string}')
-            logger.info("Upcoming earnings have been updated!")
-
-        @staticmethod
-        def get_next_earnings_date(ticker):
-            """Retrieve next earnings date for the input ticker"""
-            result = Postgres().select(table='upcoming_earnings',
-                                           fields=['date'],
-                                           where_conditions=[('ticker', ticker)], 
-                                           fetchall=False)
-            if result is None:
-                return "N/A"
-            else:
-                return result[0]
-
-        @staticmethod
-        def get_next_earnings_info(self, ticker):
-            columns = self.db.get_table_columns('upcoming_earnings')
-
-            result = Postgres().select(table='upcoming_earnings',
-                                           fields=columns, 
-                                           where_conditions=[('ticker', ticker)], 
-                                           fetchall=False)
-            if result is None:
-                return pd.DataFrame()
-            else:
-                return pd.DataFrame([result], columns=columns)
-
-        @staticmethod
-        def remove_past_earnings():
-            logger.info("Removing upcoming earnings that have past")
-
-            Postgres().delete(table='upcoming_earnings',
-                              where_conditions=[('date', '<', datetime.date.today())])
-            logger.info("Previous upcoming earnings removed from database")
-
-        @staticmethod
-        def update_historical_earnings():
-            logger.info("Updating historical earnings in database...")
-            column_map = {'date':'date',
-                          'symbol':'ticker',
-                          'eps':'eps',
-                          'surprise':'surprise',
-                          'epsForecast':'epsForecast',
-                          'fiscalQuarterEnding':'fiscalQuarterEnding'}
-            today = datetime.date.today()
-            
-            # Get most recently inserted date in database
-            select_script = """SELECT date FROM historical_earnings
-                               ORDER BY date DESC;
-                               """
-            result = Postgres().select(table='historical_earnings',
-                                           fields=['date'],
-                                           order_by=('date', 'DESC'),
-                                           fetchall=False)
-
-            if result is None:
-                start_date = datetime.date(year=2008, month=1, day=3) # Earliest day I can find earnings for on Nasdaq 1/3/2008
-            else:
-                start_date = result[0]
-
-            num_days = (today - start_date).days
-            for i in range(1, num_days):
-                date = start_date + datetime.timedelta(days=i)
-                if market_utils.market_open_on_date(date):
-                    date_string = date_utils.format_date_ymd(date)
-                    earnings = self.nasdaq.get_earnings_by_date(date_string)
-                    if earnings.size > 0:
-                        earnings = earnings.rename(columns=column_map)
-                        earnings = earnings.drop(columns=[x for x in earnings.columns.to_list() if x not in column_map.values()])
-                        earnings['date'] = date
-                        earnings = earnings[column_map.values()]
-
-                        # Format EPS and surprise columns
-                        earnings ['eps'] = earnings['eps'].apply(lambda x: float(x.replace('(', '-')
-                                                                                .replace(")", "")
-                                                                                .replace('$', "")
-                                                                                .replace(',',"")) 
-                                                                                if (len(x) > 0 and x != "N/A") else None)
-                        earnings ['epsForecast'] = earnings['epsForecast'].apply(lambda x: float(x.replace('(', '-')
-                                                                                .replace(")", "")
-                                                                                .replace('$', "")
-                                                                                .replace(',',"")) 
-                                                                                if (len(x) > 0 and x != "N/A") else None)
-                        earnings ['surprise'] = earnings['surprise'].apply(lambda x: float(x) if x != 'N/A' else None)
-
-                        values = [tuple(row) for row in earnings.values]
-                        Postgres().insert(table='historical_earnings', fields=earnings.columns.to_list(), values=values)
-                        logger.debug(f"Updated historical earnings for {date_string}")
-                    else: # No earnings recorded on target date
-                        logger.debug(f"No earnings reported on date {date_string}")
-                else: # Market is not open on target date
-                    logger.debug(f"Market is not open on {date_string} - no earning to pull")
-
-
-        @staticmethod
-        def get_historical_earnings(ticker):
-            logger.debug(f"Fetching historical earnings for ticker '{ticker}' from database")
-            columns = Postgres().get_table_columns('historical_earnings')
-            results = Postgres().select(table='historical_earnings',
-                                        fields=columns,
-                                        where_conditions=[('ticker', ticker)], 
-                                        fetchall=True)
-            if results is None:
-                return pd.DataFrame()
-            else:
-                return pd.DataFrame(results, columns=columns)
-
-        @staticmethod
-        def get_earnings_today(date):
-            logger.debug(f"Fetching all earnings reported on date {date}")
-            columns = Postgres().get_table_columns('upcoming_earnings')
-            results = Postgres().select(table='upcoming_earnings',
-                                        fields=columns, 
-                                        where_conditions=[('date', date)],
-                                        fetchall=True)
-            if results is None:
-                return results
-            else:
-                return pd.DataFrame(results, columns=columns)
-
-        
-
+        self.nasdaq = Nasdaq()       
 
     @staticmethod
     def update_tickers():

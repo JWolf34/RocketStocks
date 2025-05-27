@@ -13,8 +13,8 @@ import numpy as np
 import pandas as pd
 import datetime as dt
 import json
-import config
-from config import market_utils, date_utils
+import utils
+from utils import market_utils, date_utils
 import psycopg2
 import asyncio
 from table2ascii import table2ascii, PresetStyle
@@ -34,8 +34,8 @@ class Reports(commands.Cog):
         self.send_popularity_reports.start()
         self.post_earnings_spotlight.start()
         self.post_weekly_earnings.start()
-        self.reports_channel = self.bot.get_channel(config.discord_utils.reports_channel_id)
-        self.screeners_channel = self.bot.get_channel(config.discord_utils.screeners_channel_id)
+        self.reports_channel = self.bot.get_channel(utils.discord_utils.reports_channel_id)
+        self.screeners_channel = self.bot.get_channel(utils.discord_utils.screeners_channel_id)
         
 
     @commands.Cog.listener()
@@ -106,7 +106,7 @@ class Reports(commands.Cog):
     @send_gainer_reports.before_loop
     @send_volume_reports.before_loop
     async def reports_before_loop(self):
-        sleep_time = config.date_utils.seconds_until_5m_interval()
+        sleep_time = utils.date_utils.seconds_until_5m_interval()
         logger.info(f"Reports will begin posting in {sleep_time} seconds")
         await asyncio.sleep(sleep_time)
             
@@ -135,7 +135,7 @@ class Reports(commands.Cog):
     #@tasks.loop(minutes=5)
     async def update_earnings_calendar(self):
         logger.info("Creating events for upcoming earnings dates")
-        guild = self.bot.get_guild(config.discord_utils.guild_id)
+        guild = self.bot.get_guild(utils.discord_utils.guild_id)
         tickers = sd.Watchlists().get_tickers_from_all_watchlists(no_personal=False) # Get all tickers except from system-generated watchlists
         for ticker in tickers:
             earnings_info = sd.StockData.Earnings.get_next_earnings_info(ticker).to_dict(orient='list')
@@ -168,7 +168,7 @@ class Reports(commands.Cog):
     **Last Year's EPS:** {earnings_info['lastyeareps'][0]}
     **Last Year's Report Date:** {earnings_info['lastyearrptdt'][0]}
                         """
-                        channel = self.bot.get_channel(config.discord_utils.alerts_channel_id)
+                        channel = self.bot.get_channel(utils.discord_utils.alerts_channel_id)
                         event = await guild.create_scheduled_event(name=name, 
                                                                 description=description,
                                                                 start_time=start_time,
@@ -702,12 +702,12 @@ class GainerReport(Report):
 
         logger.debug("Sending Gainer Report...")
         today = datetime.datetime.today()
-        message_id = config.discord_utils.get_gainer_message_id()
+        message_id = utils.discord_utils.get_gainer_message_id()
         try:
             curr_message = await self.channel.fetch_message(message_id)
             if curr_message.created_at.date() < today.date():
                 message = await self.channel.send(self.message)
-                config.discord_utils.update_gainer_message_id( message.id)
+                utils.discord_utils.update_gainer_message_id( message.id)
                 return message
             else:
                 logger.debug(f"{self.market_period.upper()} Gainer Report already exists today. Updating... ")
@@ -715,7 +715,7 @@ class GainerReport(Report):
 
         except discord.errors.NotFound as e:
             message = await self.channel.send(self.message)
-            config.discord_utils.update_gainer_message_id(message.id)
+            utils.discord_utils.update_gainer_message_id(message.id)
             return message
 
 class VolumeReport(Report):
@@ -768,12 +768,12 @@ class VolumeReport(Report):
         logger.debug("Sending Volume Mover Report...")
         today = datetime.datetime.today()
         market_period = market_utils.get_market_period()
-        message_id = config.discord_utils.get_volume_message_id()
+        message_id = utils.discord_utils.get_volume_message_id()
         try:
             curr_message = await self.channel.fetch_message(message_id)
             if curr_message.created_at.date() < today.date():
                 message = await self.channel.send(self.message)
-                config.discord_utils.update_volume_message_id( message.id)
+                utils.discord_utils.update_volume_message_id( message.id)
                 return message
             else:
                 logger.debug(f"Volume Mover Report already exists today. Updating... ")
@@ -781,7 +781,7 @@ class VolumeReport(Report):
 
         except discord.errors.NotFound as e:
             message = await self.channel.send(self.message)
-            config.discord_utils.update_volume_message_id(message.id)
+            utils.discord_utils.update_volume_message_id(message.id)
             return message
 
     def get_volume_movers(self):
@@ -863,8 +863,8 @@ class PopularityReport(Report):
         self.top_stocks = sd.ApeWisdom().get_top_stocks(filter_name=self.filter_name)
         for i in range(2, 6):
             self.top_stocks = pd.concat([self.top_stocks, sd.ApeWisdom().get_top_stocks(page=i)])
-        config.validate_path(config.datapaths.attachments_path)
-        self.filepath = f"{config.datapaths.attachments_path}/top-stocks-{datetime.datetime.today().strftime("%m-%d-%Y")}.csv"
+        utils.validate_path(utils.datapaths.attachments_path)
+        self.filepath = f"{utils.datapaths.attachments_path}/top-stocks-{datetime.datetime.today().strftime("%m-%d-%Y")}.csv"
         self.top_stocks.to_csv(self.filepath, index=False)
         self.file = discord.File(self.filepath)
         self.buttons = self.Buttons()
@@ -954,7 +954,7 @@ class EarningsSpotlightReport(Report):
 class WeeklyEarningsReport(Report):
     def __init__(self, channel):
         self.upcoming_earnings = self.get_upcoming_earnings()
-        filepath = f"{config.datapaths.attachments_path}/upcoming_earnings.csv"
+        filepath = f"{utils.datapaths.attachments_path}/upcoming_earnings.csv"
         self.upcoming_earnings.to_csv(filepath, index=False)
         self.file = discord.File(filepath)
         super().__init__(channel)

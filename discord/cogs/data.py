@@ -3,7 +3,7 @@ from discord import app_commands
 from discord.ext import commands
 from discord.ext import tasks
 import stockdata as sd
-import config
+import utils
 import csv
 import logging
 import json
@@ -15,7 +15,7 @@ logger = logging.getLogger(__name__)
 class Data(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
-        self.reports_channel=self.bot.get_channel(config.discord_utils.reports_channel_id)
+        self.reports_channel=self.bot.get_channel(utils.discord_utils.reports_channel_id)
         
 
     @commands.Cog.listener()
@@ -56,7 +56,7 @@ class Data(commands.Cog):
                 file = None
                 if data is not None:
                     message = f"Data file for {ticker}"
-                    filepath = f"{config.datapaths.attachments_path}/{ticker}_{frequency}_data.csv"
+                    filepath = f"{utils.datapaths.attachments_path}/{ticker}_{frequency}_data.csv"
                     data.to_csv(filepath, index=False)
                     file = discord.File(filepath)
                 else:
@@ -91,7 +91,7 @@ class Data(commands.Cog):
             files = []
             financials = sd.StockData.fetch_financials(ticker)
             for statement, data in financials.items():
-                filepath = f"{config.datapaths.attachments_path}/{ticker}_{statement}.csv"
+                filepath = f"{utils.datapaths.attachments_path}/{ticker}_{statement}.csv"
                 data.to_csv(filepath)
                 files.append(discord.File(filepath))
             
@@ -121,7 +121,7 @@ class Data(commands.Cog):
     async def all_tickers_csv(self, interaction: discord.Interaction):
         logger.info("/all-tickers-into function called by user {}".format(interaction.user.name))
         data = sd.StockData.get_all_ticker_info()
-        filepath = f"{config.datapaths.attachments_path}/all-tickers-info.csv"
+        filepath = f"{utils.datapaths.attachments_path}/all-tickers-info.csv"
         data.to_csv(filepath)
         csv_file = discord.File(filepath)       
         await interaction.user.send(content = "All tickers",file=csv_file)
@@ -139,14 +139,14 @@ class Data(commands.Cog):
         await interaction.response.defer(ephemeral=True)
         logger.info("/eps function called by user {}".format(interaction.user.name))
         logger.info(f"EPS requested for tickers {tickers}")
-        sd.validate_path(config.datapaths.attachments_path)
+        sd.validate_path(utils.datapaths.attachments_path)
         message = ""
         file = None
         tickers, invalid_tickers = sd.StockData.get_valid_tickers(tickers)
         for ticker in tickers:
             eps = sd.StockData.Earnings.get_historical_earnings(ticker)
             if eps.size > 0:
-                filepath = f"{config.datapaths.attachments_path}/{ticker}_eps.csv"
+                filepath = f"{utils.datapaths.attachments_path}/{ticker}_eps.csv"
                 eps.to_csv(filepath, index=False)
                 file = discord.File(filepath)
                 eps_table = table2ascii(
@@ -197,7 +197,7 @@ class Data(commands.Cog):
                 message += f"No form {form} found for ticker {ticker}\n"
             else:
                 # Need to make universal date conversion function and make SEC module reference CIK value from database
-                filing_date = config.date_utils.format_date_mdy(target_filing['filingDate'])
+                filing_date = utils.date_utils.format_date_mdy(target_filing['filingDate'])
                 sec_link = sec.get_link_to_filing(ticker, target_filing)
                 message += f"[{ticker} Form {form} - Filed {filing_date}]({sec_link})\n"
         await interaction.followup.send(message)
@@ -216,7 +216,7 @@ class Data(commands.Cog):
             fundamentals = sd.Schwab().get_fundamentals(ticker)
             
             if fundamentals is not None:
-                filepath = f"{config.datapaths.attachments_path}/{ticker}_fundamentals.json"
+                filepath = f"{utils.datapaths.attachments_path}/{ticker}_fundamentals.json"
                 with open(filepath, 'w') as json_file:
                     json.dump(fundamentals, json_file)
                 file = discord.File(filepath)
@@ -250,7 +250,7 @@ class Data(commands.Cog):
             options = sd.Schwab().get_options_chain(ticker)
             
             if options is not None:
-                filepath = f"{config.datapaths.attachments_path}/{ticker}_options_chain.json"
+                filepath = f"{utils.datapaths.attachments_path}/{ticker}_options_chain.json"
                 with open(filepath, 'w') as json_file:
                     json.dump(options, json_file)
                 file = discord.File(filepath)
@@ -286,7 +286,7 @@ class Data(commands.Cog):
                 data = sd.StockData.get_historical_popularity(ticker=ticker)  
                 if data.size:
                     message = f"Popularity for {ticker}"
-                    filepath = f"{config.datapaths.attachments_path}/{ticker}_popularity.csv"
+                    filepath = f"{utils.datapaths.attachments_path}/{ticker}_popularity.csv"
                     data.to_csv(filepath, index=False)
                     file = discord.File(filepath)
                 else:
@@ -332,7 +332,7 @@ class Data(commands.Cog):
             file = None
             if not trades.empty:
                 message = f"Trades made by {politician_name} - [Capitol Trades](<https://www.capitoltrades.com/politicians/{politician['politician_id']}>)"
-                filepath = f"{config.datapaths.attachments_path}/trades_{politician['name'].lower().replace(" ",'_')}.csv"
+                filepath = f"{utils.datapaths.attachments_path}/trades_{politician['name'].lower().replace(" ",'_')}.csv"
                 trades.to_csv(filepath, index=False)
                 file = discord.File(filepath)
             else:

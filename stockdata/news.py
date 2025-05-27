@@ -1,6 +1,6 @@
 import logging
 from newsapi import NewsApiClient
-from config import secrets
+from utils import secrets
 import datetime
 
 # Logging configuration
