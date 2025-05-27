@@ -47,7 +47,7 @@ class Schwab():
                 price_history.insert(loc=0, column='ticker', value=ticker)
                 return price_history
             else:
-                return pd.DataFrame()
+                return None
         except httpx.HTTPStatusError as e:
             logger.error(f"Enountered HTTPStatusError when downloading daily price history for ticker {ticker}\n{e}")
             return pd.DataFrame()
@@ -69,7 +69,7 @@ class Schwab():
             price_history.insert(loc=0, column='ticker', value=ticker)
             return price_history
         else:
-            return price_history
+            return None
 
     # Get latest quote for ticker from Schwab
     async def get_quote(self, ticker):

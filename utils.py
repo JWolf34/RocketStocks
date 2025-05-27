@@ -40,8 +40,6 @@ def get_env(var_name:str):
 
 class config:
 
-    CONFIG_PATH = get_env("CONFIG_PATH")
-
     def __init__(self):
         self.path = get_env("CONFIG_PATH")
 
@@ -183,7 +181,7 @@ class discord_utils():
         table = 'alerts'
         fields = self.db.get_table_columns(table)
         values = [(date, ticker, alert_type, message_id, json.dumps(alert_data))]
-        sd.Postgres().insert(table=table, fields=fields, values=values)
+        self.db.insert(table=table, fields=fields, values=values)
 
 class market_utils():
 
