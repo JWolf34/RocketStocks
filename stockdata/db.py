@@ -1,6 +1,8 @@
+import sys
+sys.path.append('..')
 import psycopg2
 from psycopg2 import sql
-from utils import secrets
+from RocketStocks.utils import secrets
 import logging
 
 # Logging configuration

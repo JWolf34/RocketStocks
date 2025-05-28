@@ -5,7 +5,7 @@ import logging
 import pandas as pd
 from utils import date_utils, market_utils
 from sec import SEC
-from schwab import Schwab
+from schwab_client import Schwab
 import time
 import yfinance as yf
 
@@ -55,7 +55,7 @@ class Earnings:
                                         fields=['date'],
                                         where_conditions=[('ticker', ticker)], 
                                         fetchall=False)
-        if result is None:
+        if not result:
             return None
         else:
             return result[0]
@@ -331,6 +331,7 @@ class StockData():
     async def update_5m_price_history_by_ticker(self, ticker):
         """Update database with latest 5m price data for input ticker"""
 
+        # Query
         """SELECT datetime FROM five_minute_price_history
            WHERE ticker = '{ticker}'
            ORDER BY datetime DESC;
@@ -343,7 +344,7 @@ class StockData():
                                    where_conditions=[('ticker', ticker)],
                                    order_by=('datetime', 'DESC'),
                                    fetchall=False)
-        if result is None:
+        if not result:
             start_datetime = result # No data found
             logger.debug(f"No 5m price history for ticker {ticker} in database, fetching price history from default date")
         else:
@@ -357,7 +358,7 @@ class StockData():
             fields = price_history.columns.to_list()
             values = [tuple(row) for row in price_history.values]
             self.db.insert(table='five_minute_price_history', fields=fields, values=values)
-        # No 5m proce history found
+        # No 5m price history found
         else:
             logger.warning(f"No 5m price history found for ticker {ticker}")
     
@@ -419,6 +420,7 @@ class StockData():
     
     @staticmethod
     def fetch_financials(ticker):
+
         """Return latest available financial statements for input ticker from Yahoo Finance"""
         logger.info(f"Fetching financials for ticker {ticker}")
         financials = {}
@@ -433,7 +435,7 @@ class StockData():
         return financials
 
     def get_ticker_info(self, ticker):
-        """Return information (df) on input ticker from database"""
+        """Return ticker row from database"""
         logger.info(f"Fetching info for ticker '{ticker}' from database")
 
         # Query
@@ -472,37 +474,46 @@ class StockData():
         return [result[0] for result in results]
 
     @staticmethod
-    def get_all_tickers_by_market_cap(market_cap):
-        logger.debug(f"Fetching all tickers with market cap > {market_cap} from database")
+    def get_all_tickers_by_market_cap(self, market_cap):
+        """Return list of tickers with market cap greater than input market cap"""
+        logger.info(f"Fetching all tickers with market cap > {market_cap} from database")
+
+        # Query
         """SELECT ticker, marketcap FROM tickers;
         """
+
         results = self.db.select(table='tickers',
                                     fields=['ticker', 'marketcap'],
                                     fetchall=True)
         tickers = []
         for result in results:
-            if len(result[1]) > 0: # Market cap is not empty string
+            if result[1]: # Market cap is not empty string
                 if float(result[1]) >= market_cap:
                     tickers.append(result[0])
         return tickers
 
     @staticmethod
-    def get_all_tickers_by_sector(sector):
-        logger.debug(f"Fetching all tickers in sector {sector} from database")
-        select_script = f"""SELECT ticker FROM tickers
-                           WHERE sector LIKE '%{sector}%';
-                        """
+    def get_all_tickers_by_sector(self, sector):
+        """Return list of tickers whose sector matches the input sector"""
+        logger.info(f"Fetching all tickers in sector {sector} from database")
+
+        # Query
+        """SELECT ticker FROM tickers
+           WHERE sector LIKE '%{sector}%';
+           
+           """
         results = self.db.select(table='tickers',
                                     fields=['tickers'],
                                     where_conditions=[('sector', 'LIKE', f"%{sector}%")])
-        if results is None:
-            return results
-        else:
-            return [result[0] for result in results]
+        
+        return [result[0] for result in results] if results else None
 
     @staticmethod
-    def get_cik(ticker):
-        logger.debug(f"Retreiving CIK value for ticker '{ticker}' from database")
+    def get_cik(self, ticker):
+        """Return CIK number of input ticker from database"""
+        logger.info(f"Retreiving CIK value for ticker '{ticker}' from database")
+
+        # Query
         """SELECT cik from tickers
            WHERE ticker = '{ticker}';
            """
@@ -510,34 +521,34 @@ class StockData():
                                    fields=['cik'],
                                    where_conditions=[('ticker', ticker)], 
                                    fetchall=False)
-        if result is None:
-            return None
-        else:
-            return result[0]
+        return result[0] if result else None
 
     @staticmethod
-    def get_market_cap(ticker):
-        logger.debug(f"Retreiving market cap for ticker '{ticker}' from database")
+    def get_market_cap(self, ticker):
+        """Return market cap of input ticker in database"""
+
+        logger.info(f"Retrieving market cap for ticker '{ticker}' from database")
+
+        # Query
         """SELECT marketcap from tickers
            WHERE ticker = '{ticker}';
            """
+        
         result = self.db.select(table='tickers',
                                    fields=['marketcap'],
                                    where_conditions=[('ticker', ticker)], 
                                    fetchall=False)
-        if result is None:
-            return None
-        else:
-            return float(result[0])
+        return float(result[0]) if result else None
 
     @staticmethod
-    def get_historical_popularity(ticker=None):
-        logger.debug(f"Retrieving historical popularity {f"for ticker '{ticker}'" if ticker is not None else ''} from database")
+    def get_historical_popularity(self, ticker=None):
+        """Return historical popularity of input ticker from database"""
+        logger.info(f"Retrieving historical popularity {ticker} from database" if ticker else "Retrieving all historical popularity from database")
+
         columns = self.db.get_table_columns('popular_stocks')
         where_conditions = []
         order_by = ('date', 'DESC')
-        select_script = """SELECT * from popular_stocks\n"""
-        if ticker != None:
+        if ticker:
             where_conditions.append(('ticker', ticker))
         
     
@@ -546,17 +557,16 @@ class StockData():
                                     where_conditions=where_conditions,
                                     order_by=order_by,
                                     fetchall=True)
-        if results is None:
-            return results
-        else:
-            return pd.DataFrame(results, columns=columns)
+        return pd.DataFrame(results, columns=columns) if results else None
 
+    def validate_ticker(self, ticker):
+        """Returns true if ticker exists in database, else False"""
+        logger.info(f"Verifying that ticker '{ticker}' is valid")
 
-
-    # Confirm we get valid data back when downloading data for ticker
-    @staticmethod
-    def validate_ticker(ticker):
-        logger.debug("Verifying that ticker {} is valid".format(ticker))
+        # Query
+        '''Logic puling from database'''
+     
+        '''
         """SELECT ticker FROM tickers
            WHERE ticker = '{ticker}';
            """
@@ -564,16 +574,19 @@ class StockData():
                                        fields=['ticker'],
                                        where_conditions=[('ticker', ticker)],
                                        fetchall=False)
-        if ticker is None:
-            return False
-        else:
-            return True
+        return True if ticker else False
+        '''
+
+        '''Logic checking from Schwab'''
+        data = self.schwab.get_daily_price_history(ticker=ticker,start_datetime=datetime.datetime.now() - datetime.timedelta.days(7))
+        return True if data else False
     
     # Get list of valid tickers from string
     @staticmethod
-    def get_valid_tickers(ticker_string:str):
-        logger.debug(f"Parsing valid tickers from string: '{ticker_string}'")
-        tickers = ticker_string.split()
+    def get_valid_tickers(self, ticker_string:str):
+        """Return list of valid tickers from string of comma-separated tickers"""
+        logger.info(f"Parsing valid tickers from string: '{ticker_string}'")
+        tickers = ticker_string.upper().split()
         valid_tickers = []
         invalid_tickers = []
         for ticker in tickers:
@@ -581,10 +594,17 @@ class StockData():
                 valid_tickers.append(ticker)
             else:
                 invalid_tickers.append(ticker)
-        logger.debug(f"Parsed valid tickers: {valid_tickers}, invalid tickers: {invalid_tickers}")
+        logger.info(f"Parsed {len(valid_tickers)} valid tickers: {valid_tickers}, {len(invalid_tickers)} invalid tickers: {invalid_tickers}")
         return valid_tickers, invalid_tickers
 
     @staticmethod
     # Return supported exchanges
     def get_supported_exchanges():
         return ['NASDAQ', 'NYSE', 'AMEX']
+    
+
+
+if __name__ == '__main__':
+    sd = StockData()
+    print(sd.validate_ticker('QQQ'))
+   
