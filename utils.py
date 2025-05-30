@@ -78,46 +78,27 @@ class discord_utils():
 
     # Screener and alert message IDs #
 
-    def update_gainer_message_id(self, message_id):
-            market_time = market_utils.get_market_period()
-            where_conditions = []
-            if market_time == "premarket":
-                where_conditions.append(('type', 'PREMARKET_GAINER_REPORT'))
-            elif market_time == "intraday":
-                where_conditions.append(('type', 'INTRADAY_GAINER_REPORT'))
-            elif market_time == "afterhours":
-                where_conditions.append(('type', 'AFTERHOURS_GAINER_REPORT'))
-            else:
-                return None
+    def update_gainer_message_id(self, message_id:str, market_period:str):
+            where_conditions = [('type', f'{market_period.upper()}_GAINER_REPORT')]
                 
             self.db.update(table = 'reports',
-                                set_fields=[('messageid', message_id)],
-                                where_conditions=where_conditions)
+                           set_fields=[('messageid', message_id)],
+                           where_conditions=where_conditions)
 
     def update_volume_message_id(self, message_id):
         self.db.update(table='reports',
-                            set_fields=[('messageid', message_id)],
-                            where_conditions=[('type', 'UNUSUAL_VOLUME_REPORT')])
+                       set_fields=[('messageid', message_id)],
+                       where_conditions=[('type', 'UNUSUAL_VOLUME_REPORT')])
 
-    def get_gainer_message_id(self):
-        market_time = market_utils.get_market_period()
-        where_conditions = []
-        if market_time == "premarket":
-            where_conditions.append(('type', 'PREMARKET_GAINER_REPORT'))
-        elif market_time == "intraday":
-            where_conditions.append(('type', 'INTRADAY_GAINER_REPORT'))
-        elif market_time == "afterhours":
-            where_conditions.append(('type', 'AFTERHOURS_GAINER_REPORT'))  
-        else:
-            # Outside of market hours
-            return None
+    def get_gainer_message_id(self, market_period:str):
+        where_conditions = [('type', f'{market_period.upper()}_GAINER_REPORT')]
 
         # During market hours
         result = self.db.select(table='reports',
                                     fields=['messageid'],
                                     where_conditions=where_conditions, 
                                     fetchall=False)
-        if result is None:
+        if not result:
             return result
         else:
             return result[0]
@@ -227,7 +208,10 @@ class market_utils():
         return date in self.calendar.valid_days(start_date=date, end_date=date).date
 
     def in_extended_hours(self):
-        return self.in_premarket() or self.in_afterhours()
+        return self.get_market_period() in ['premarket', 'aftermarket']
+    
+    def in_market_hours(self):
+        return self.get_market_period() != 'EOD'
 
     def in_premarket(self):
         now = datetime.datetime.now(datetime.UTC)
@@ -244,18 +228,18 @@ class market_utils():
         #self.schedule = self.get_market_self.schedule(now)
         if self.schedule.size > 0:
             intraday_start = self.schedule['market_open'].iloc[0]
-            afterhours_start = self.schedule['market_close'].iloc[0]
-            return now > intraday_start and now < afterhours_start
+            aftermarket_start = self.schedule['market_close'].iloc[0]
+            return now > intraday_start and now < aftermarket_start
         else: # Market is not open
             return False
     
-    def in_afterhours(self):
+    def in_aftermarket(self):
         now = datetime.datetime.now(datetime.UTC)
         #self.schedule = self.get_market_self.schedule(now)
         if self.schedule.size > 0:
-            afterhours_start = self.schedule['market_close'].iloc[0]
+            aftermarket_start = self.schedule['market_close'].iloc[0]
             market_end = self.schedule['post'].iloc[0]
-            return now > afterhours_start and now < market_end
+            return now > aftermarket_start and now < market_end
         else: # Market is not open
             return False
 
@@ -268,8 +252,8 @@ class market_utils():
             return "premarket"
         elif self.in_intraday():
             return "intraday"
-        if self.in_afterhours():
-            return "aftermaket"
+        if self.in_aftermarket():
+            return "aftermarket"
         else:
             return "EOD"    
 

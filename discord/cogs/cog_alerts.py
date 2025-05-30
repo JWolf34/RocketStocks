@@ -1,7 +1,7 @@
 import discord
 from discord.ext import commands
 from discord.ext import tasks
-from reports import Report, StockReport, NewsReport
+from discord.cogs.cog_reports import Report, StockReport, NewsReport
 import analysis as an
 import numpy as np
 from utils import market_utils, date_utils, discord_utils
@@ -50,9 +50,9 @@ class Alerts(commands.Cog):
 
     @tasks.loop(minutes = 5)
     async def send_alerts(self):
-        '''Process alerts every 5 minutes if the market is open and in'''
+        '''Process alerts every 5 minutes if the market is open and in intraday or after hours'''
         if (self.mutils.market_open_today() and self.mutils.get_market_period() in ['intraday', 'aftermarket']):
-            all_alert_tickers = list(set([ticker for tickers in self.alert_tickers.values() for ticker in tickers]))
+            all_alert_tickers = list(set([ticker for tickers in self.bot.stock_data.alert_tickers.values() for ticker in tickers]))
             #all_alert_tickers = ['PHIO', 'ATPC', 'SLRX', 'KAPA']
 
             # Fetch quotes for tickers from Schwab in chunks of 'chunk_size'
@@ -60,7 +60,7 @@ class Alerts(commands.Cog):
             chunk_size = 10
             for i in range(0, len(all_alert_tickers), chunk_size):
                 tickers = all_alert_tickers[i:i+chunk_size]
-                quotes = quotes | await self.bot.stock_data.db.get_quotes(tickers=tickers)
+                quotes = quotes | await self.bot.stock_data.schwab.get_quotes(tickers=tickers)
             quotes.pop('errors', None)
             all_alert_tickers = [ticker for ticker in quotes]
 
@@ -112,12 +112,12 @@ class Alerts(commands.Cog):
     async def send_watchlist_movers(self, tickers:list, quotes:dict):
         logger.info("Processing watchlist movers")
         for ticker in tickers:
-            watchlists = sd.Watchlists().get_watchlists()
+            watchlists = self.bot.watchlists.get_watchlists()
             for watchlist in watchlists:
                 if watchlist == 'personal':
                     pass
                 else:
-                    watchlist_tickers = sd.Watchlists().get_tickers_from_watchlist(watchlist)
+                    watchlist_tickers = self.bot.watchlists.get_tickers_from_watchlist(watchlist)
                     pct_change = quotes[ticker]['quote']['netPercentChange']   
                     if ticker in watchlist_tickers and abs(pct_change) > 10.0:
                         logger.debug(f"Identified ticker '{ticker}' on watchlist '{watchlist}' with percent change {"{:.2f}%".format(pct_change)}")
@@ -181,9 +181,13 @@ class Alerts(commands.Cog):
     async def send_popularity_movers(self):
         logger.info("Processing popularity movers")
         blacklist_tickers = ['DTE', 'AM', 'PM', 'DM']
-        top_stocks = sd.ApeWisdom().get_top_stocks()[:50]
+        top_stocks = self.bot.stockdata.apewisdom.get_top_stocks()
         top_stocks = top_stocks[~top_stocks['ticker'].isin(blacklist_tickers)]
-        await self.update_alert_tickers(key='popular-stocks', tickers=top_stocks['ticker'].to_list())
+
+        # Update alert tickers with gainers
+        self.bot.stock_date.update_alert_tickers(tickers=top_stocks, source='popularity')
+
+        #await self.update_alert_tickers(key='popular-stocks', tickers=top_stocks['ticker'].to_list()[50])
         
         for index, row in top_stocks.iterrows():
             ticker = row['ticker']

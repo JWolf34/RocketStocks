@@ -17,7 +17,7 @@ class Watchlists(commands.Cog):
         logger.info(f"Cog {__name__} loaded!")
 
     async def watchlist_options(self, interaction: discord.Interaction, current: str):
-        watchlists = sd.Watchlists().get_watchlists(no_systemGenerated=False)
+        watchlists = self.get_watchlists(no_systemGenerated=False)
         return [
             app_commands.Choice(name = watchlist, value= watchlist)
             for watchlist in watchlists if current.lower() in watchlist.lower()
@@ -46,17 +46,17 @@ class Watchlists(commands.Cog):
             message_flavor = "your"
 
         # Confirm watchlists exists, otherwise create it
-        if watchlist_id not in sd.Watchlists().get_watchlists(no_personal=False):
-            sd.Watchlists().create_watchlist(watchlist_id=watchlist_id, tickers=[])
+        if watchlist_id not in self.get_watchlists(no_personal=False):
+            self.create_watchlist(watchlist_id=watchlist_id, tickers=[])
 
         logger.info(f"Tickers {tickers} to be added to watchlist {watchlist}")
 
-        symbols = sd.Watchlists().get_tickers_from_watchlist(watchlist_id)
+        symbols = self.get_tickers_from_watchlist(watchlist_id)
         duplicate_tickers = [x for x in tickers if x in symbols]
         tickers = [x for x in tickers if x not in symbols]
 
         # Update watchlist with new tickers
-        sd.Watchlists().update_watchlist(watchlist_id=watchlist_id, tickers=symbols + tickers)
+        self.update_watchlist(watchlist_id=watchlist_id, tickers=symbols + tickers)
         
         message = ''
         if len(tickers) > 0:
@@ -94,7 +94,7 @@ class Watchlists(commands.Cog):
         
         logger.info(f"Tickers {tickers} to be removed from watchlist {watchlist}")
 
-        symbols = sd.Watchlists().get_tickers_from_watchlist(watchlist_id)
+        symbols = self.get_tickers_from_watchlist(watchlist_id)
         
         # If watchlist is empty, return
         if symbols is None:
@@ -107,7 +107,7 @@ class Watchlists(commands.Cog):
             
             
             # Update watchlist without input tickers                   
-            sd.Watchlists().update_watchlist(watchlist_id=watchlist_id, tickers=[ticker for ticker in symbols if ticker not in tickers])                   
+            self.update_watchlist(watchlist_id=watchlist_id, tickers=[ticker for ticker in symbols if ticker not in tickers])                   
             
             message = ''
             if len(tickers) > 0:
@@ -136,7 +136,7 @@ class Watchlists(commands.Cog):
             watchlist_id = str(interaction.user.id)
             is_personal = True
         
-        tickers = sd.Watchlists().get_tickers_from_watchlist(watchlist_id)
+        tickers = self.get_tickers_from_watchlist(watchlist_id)
         if tickers is not None:
             await interaction.response.send_message(f"Watchlist '{watchlist_id}': {', '.join(tickers)}", ephemeral=is_personal)
             logger.info(f"Watchlist '{watchlist}' has tickers {tickers}")
@@ -167,12 +167,12 @@ class Watchlists(commands.Cog):
                 is_personal = True
             
         # Confirm watchlists exists, otherwise create it
-        if watchlist_id not in sd.Watchlists().get_watchlists(no_personal=False):
-            sd.Watchlists().create_watchlist(watchlist_id=watchlist_id, tickers=[], systemGenerated=False)
+        if watchlist_id not in self.get_watchlists(no_personal=False):
+            self.create_watchlist(watchlist_id=watchlist_id, tickers=[], systemGenerated=False)
     
         # Update watchlist with new tickers 
         logger.info(f"Setting watchlist '{watchlist}' to {tickers}")        
-        sd.Watchlists().update_watchlist(watchlist_id=watchlist_id, tickers=tickers)
+        self.update_watchlist(watchlist_id=watchlist_id, tickers=tickers)
         if len(tickers) > 0 and len(invalid_tickers) > 0:
             await interaction.followup.send("Set {} watchlist to {} but could not add the following tickers: {}".format(message_flavor, ", ".join(tickers), ", ".join(invalid_tickers)), ephemeral=is_personal)
         elif len(tickers) > 0:
@@ -194,7 +194,7 @@ class Watchlists(commands.Cog):
         logger.info(f"Request to create watchlist '{watchlist}' with tickers {tickers}")
         logger.debug(f"Invalid input tickers: {invalid_tickers}")
 
-        sd.Watchlists().create_watchlist(watchlist_id=watchlist, tickers=tickers, systemGenerated=False)
+        self.create_watchlist(watchlist_id=watchlist, tickers=tickers, systemGenerated=False)
         await interaction.followup.send("Created watchlist '{}' with tickers: ".format(watchlist) + ', '.join(tickers), ephemeral=False)
         logger.info(f"Watchlist '{watchlist}' created with tickers {tickers}")
 
@@ -210,7 +210,7 @@ class Watchlists(commands.Cog):
             await interaction.followup.send("Cannot delete a personal watchlist. Use /set-watchlist to clear its contents if you wish", ephemeral=True)
             logger.info("Selected watchlist is 'personal' - cannot delete a personal watchlist")
         else:
-            sd.Watchlists().delete_watchlist(watchlist_id=watchlist)
+            self.delete_watchlist(watchlist_id=watchlist)
             await interaction.followup.send("Deleted watchlist '{}'".format(watchlist), ephemeral=False)
             logger.info(f"Watchlist '{watchlist}' deleted")
 

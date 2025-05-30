@@ -4,7 +4,8 @@ import logging
 logger = logging.getLogger(__name__)
 
 
-class Watchlists():
+class Watchlists(object):
+
     def __init__(self, db):
         self.db = db # Postgres
         self.db_table = 'watchlists'

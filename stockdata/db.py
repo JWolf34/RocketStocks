@@ -146,7 +146,7 @@ class Postgres():
         fields = ['type', 'messageid']
         values = [('PREMARKET_GAINER_REPORT', 0),
                   ('INTRADAY_GAINER_REPORT', 0),
-                  ('AFTERHOURS_GAINER_REPORT', 0),
+                  ('AFTERMARKET_GAINER_REPORT', 0),
                   ('UNUSUAL_VOLUME_REPORT', 0)]
         self.insert(table=table, fields=fields, values=values)
     

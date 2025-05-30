@@ -1,4 +1,5 @@
 import logging
+from tradingview_screener import Query, Column
 
 # Logging configuration
 logger = logging.getLogger(__name__)
@@ -14,7 +15,7 @@ class TradingView():
                     .select('name', 'close', 'volume', 'market_cap_basic', 'premarket_change', 'premarket_volume', 'exchange')
                     .order_by('premarket_change', ascending=False)
                     .where(
-                            Column('exchange').isin(StockData.get_supported_exchanges()))
+                            Column('exchange').isin(['NASDAQ', 'NYSE', 'AMEX']))
                     .limit(100)
                     .get_scanner_data())
         gainers = gainers.drop(columns='exchange')
@@ -32,7 +33,7 @@ class TradingView():
                 .order_by('premarket_change', ascending=False)
                 .where(
                     Column('market_cap_basic') >= market_cap,
-                    Column('exchange').isin(StockData.get_supported_exchanges()))
+                    Column('exchange').isin(['NASDAQ', 'NYSE', 'AMEX']))
                 .limit(100)
                 .get_scanner_data())
         gainers = gainers.drop(columns='exchange')
@@ -49,7 +50,7 @@ class TradingView():
                 .select('name', 'close', 'volume', 'market_cap_basic', 'change', 'exchange' )
                 .order_by('change', ascending=False)
                 .where(
-                            Column('exchange').isin(StockData.get_supported_exchanges()))
+                            Column('exchange').isin(['NASDAQ', 'NYSE', 'AMEX']))
                 .limit(100)
                 .get_scanner_data())
         gainers = gainers.drop(columns='exchange')
@@ -68,7 +69,7 @@ class TradingView():
                 .order_by('change', ascending=False)
                 .where(
                             Column('market_cap_basic') >= market_cap,
-                            Column('exchange').isin(StockData.get_supported_exchanges()))
+                            Column('exchange').isin(['NASDAQ', 'NYSE', 'AMEX']))
                 .limit(100)
                 .get_scanner_data())
         gainers = gainers.drop(columns='exchange')
@@ -85,7 +86,7 @@ class TradingView():
                 .select('name', 'close', 'volume', 'market_cap_basic', 'postmarket_change', 'postmarket_volume', 'exchange')
                 .order_by('postmarket_change', ascending=False)
                 .where(
-                            Column('exchange').isin(StockData.get_supported_exchanges()))
+                            Column('exchange').isin(['NASDAQ', 'NYSE', 'AMEX']))
                 .limit(100)
                 .get_scanner_data())
         gainers = gainers.drop(columns='exchange')
@@ -103,7 +104,7 @@ class TradingView():
                 .order_by('postmarket_change', ascending=False)
                 .where(
                             Column('market_cap_basic') >= market_cap,
-                            Column('exchange').isin(StockData.get_supported_exchanges()))
+                            Column('exchange').isin(['NASDAQ', 'NYSE', 'AMEX']))
                 .limit(100)
                 .get_scanner_data())
         gainers = gainers.drop(columns='exchange')

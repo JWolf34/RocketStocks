@@ -2,6 +2,8 @@ import datetime
 from db import Postgres
 from nasdaq import Nasdaq
 from capitol_trades import CapitolTrades
+from watchlists import Watchlists
+from trading_view import TradingView
 import logging
 import pandas as pd
 from RocketStocks.utils import date_utils, market_utils
@@ -9,7 +11,6 @@ from sec import SEC
 from schwab_client import Schwab
 import time
 import yfinance as yf
-import asyncio
 
 # Logging configuration
 logger = logging.getLogger(__name__)
@@ -180,6 +181,17 @@ class StockData():
         self.nasdaq = Nasdaq() 
         self.earnings = Earnings(nasdaq=self.nasdaq, db=self.db)  
         self.capitol_trades = CapitolTrades(db=self.db)
+        self.watchlists = Watchlists(self.db)
+        self.trading_view = TradingView()
+        self._alert_tickers = {}
+
+    @property
+    def alert_tickers(self):
+        return self._alert_tickers
+    
+    def update_alert_tickers(self, tickers:list, source:str):
+        self._alert_tickers[source] = tickers
+
         
 
     def update_tickers(self):
@@ -610,18 +622,12 @@ class StockData():
 
 if __name__ == '__main__':
 
-    mutils = market_utils()
-    start = time.time()
-    print(mutils.get_market_period())
-    end = time.time()
-    print(f"{end-start} seconds")
-
-    '''
+    import asyncio
     sd = StockData()
     quote = asyncio.run(sd.schwab.get_quotes(['QQQ', 'NVDA', 'GME']))
     import json
     with open('quote.json', 'w+') as file:
         json.dump(quote, file)
-        '''
+        
         
    
