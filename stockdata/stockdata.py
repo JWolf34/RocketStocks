@@ -42,6 +42,8 @@ class Earnings:
                 date_string = date_utils.format_date_ymd(date=date)
                 earnings_data = self.nasdaq.get_earnings_by_date(date_string)
                 logger.debug(f"Identified {len(earnings_data)} earnings on date {date_string}")
+                
+                # Earnings data found - cleanup data and write to db
                 if earnings_data.size > 0:
                     earnings_data['date'] = date_string
                     earnings_data = earnings_data[columns]
