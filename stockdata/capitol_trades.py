@@ -3,7 +3,7 @@ import logging
 import requests
 from bs4 import BeautifulSoup
 import pandas as pd
-from utils import date_utils
+from RocketStocks.utils import date_utils
 
 # Logging configuration
 logger = logging.getLogger(__name__)
@@ -15,9 +15,10 @@ class CapitolTrades():
         self.db = db # Postgres
 
     def politician(self, name:str=None, politician_id:str=None):
-        logger.debug(f"Fetching politician with id '{politician_id}' and name '{name}'")
+        '''Return information on politication with given name and ID'''
+        logger.info(f"Fetching politician with id '{politician_id}' and name '{name}'")
         if not name and not politician_id:
-            logger.debug("No politician found with provided criteria")
+            logger.info("No politician found with provided criteria")
             return None
         else:
             fields = self.db.get_table_columns('ct_politicians')
@@ -31,21 +32,23 @@ class CapitolTrades():
                                     where_conditions=where_conditions,
                                     fetchall=False)
             politician = dict(zip(fields, data))                    
-            logger.debug(f"Returning politician data: {politician}")
+            logger.debug(f"Identified politician: \n{politician}")
             return politician
     
-    def all_politicians(self, ):
-        logger.debug("Retrieving all politicians from database")
+    def all_politicians(self):
+        """Return dict with information on all politicians in database"""
+        logger.info("Retrieving all politicians from database")
         fields = self.db.get_table_columns('ct_politicians')
         data = self.db.select(table='ct_politicians',
                                     fields=fields,
                                     fetchall=True)
         politicians = [dict(zip(fields, data[index])) for index in range(0, len(data))]
-        logger.debug(f"Returning data on {len(politicians)} politicians")
+        logger.info(f"Found data on {len(politicians)} politicians")
         return politicians
 
 
     def update_politicians(self):
+        """Update rows in ct_politicians table with latest information"""
         logger.info("Updating politicians in the database")
         politicians = []
         page_num = 1
@@ -78,6 +81,7 @@ class CapitolTrades():
 
     @staticmethod
     def trades(pid:str):
+        """Return all trades performed by policitia with input ID"""
         logger.debug(f"Requesting trades information for politician with id '{pid}")
         trades = []
         page_num = 1

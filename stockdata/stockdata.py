@@ -172,9 +172,6 @@ class Earnings:
         else:
             return pd.DataFrame(results, columns=columns)
 
-
-
-    
 class StockData():
     def __init__(self):
         self.db = Postgres()
@@ -612,5 +609,9 @@ class StockData():
 
 if __name__ == '__main__':
     sd = StockData()
-    asyncio.run(sd.validate_ticker('QQQ'))
+    quote = asyncio.run(sd.schwab.get_quotes(['QQQ', 'NVDA', 'GME']))
+    import json
+    with open('quote.json', 'w+') as file:
+        json.dump(quote, file)
+        
    

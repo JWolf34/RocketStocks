@@ -1,15 +1,10 @@
 import discord
-from discord import app_commands
 from discord.ext import commands
 from discord.ext import tasks
 from reports import Report, StockReport, NewsReport
-import stockdata as sd
 import analysis as an
-import pandas as pd
 import numpy as np
-import utils
-from utils import market_utils
-from utils import date_utils
+from utils import market_utils, date_utils, discord_utils
 import datetime
 import logging
 import asyncio
@@ -20,8 +15,8 @@ logger = logging.getLogger(__name__)
 class Alerts(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
-        self.alerts_channel=self.bot.get_channel(utils.discord_utils.alerts_channel_id)
-        self.reports_channel= self.bot.get_channel(utils.discord_utils.reports_channel_id)
+        self.alerts_channel=self.bot.get_channel(discord_utils.alerts_channel_id)
+        self.reports_channel= self.bot.get_channel(discord_utils.reports_channel_id)
         self.alert_tickers = {}
         self.post_alerts_date.start()
         self.send_popularity_movers.start()
@@ -52,7 +47,7 @@ class Alerts(commands.Cog):
             chunk_size = 10
             for i in range(0, len(all_alert_tickers), chunk_size):
                 tickers = all_alert_tickers[i:i+chunk_size]
-                quotes = quotes | await sd.Schwab().get_quotes(tickers=tickers)
+                quotes = quotes | await self.bot.stock_data.db.get_quotes(tickers=tickers)
             quotes.pop('errors', None)
             all_alert_tickers = [ticker for ticker in quotes]
 
@@ -275,23 +270,23 @@ class Alert(Report):
     async def send_alert(self):
         today = datetime.datetime.today()
         market_period = market_utils.get_market_period()
-        message_id = utils.discord_utils.get_alert_message_id(date=today.date(), ticker=self.ticker, alert_type=self.alert_type)
+        message_id = discord_utils.get_alert_message_id(date=today.date(), ticker=self.ticker, alert_type=self.alert_type)
         if message_id is not None:
             logger.debug(f"Alert {self.alert_type} already reported for ticker {self.ticker} today")
-            old_alert_data = utils.discord_utils.get_alert_message_data(date=today.date(), ticker=self.ticker, alert_type=self.alert_type)
+            old_alert_data = discord_utils.get_alert_message_data(date=today.date(), ticker=self.ticker, alert_type=self.alert_type)
             if self.override_and_edit(old_alert_data = old_alert_data):
                 logger.debug(f"Significant movements on ticker {self.ticker} since alert last posted - updating...")
                 prev_message =  await self.channel.fetch_message(message_id)
                 prev_message_time = prev_message.created_at.astimezone(utils.date_utils.timezone())
                 self.message += f"\n[Updated from last alert at {prev_message_time.strftime("%-I:%M %p")} {prev_message_time.tzname()}]({prev_message.jump_url})"
                 message = await self.channel.send(self.message, view=self.buttons)
-                utils.discord_utils.update_alert_message_data(date=today.date(), ticker=self.ticker, alert_type=self.alert_type, messageid=message.id, alert_data=self.alert_data)
+                discord_utils.update_alert_message_data(date=today.date(), ticker=self.ticker, alert_type=self.alert_type, messageid=message.id, alert_data=self.alert_data)
             else:
                 logger.debug(f"Movements for ticker {self.ticker} not significant enough to update alert")
                 pass
         else:
             message = await self.channel.send(self.message, view=self.buttons)
-            utils.discord_utils.insert_alert_message_id(date=today.date(), ticker=self.ticker, alert_type=self.alert_type, message_id=message.id, alert_data = self.alert_data)
+            discord_utils.insert_alert_message_id(date=today.date(), ticker=self.ticker, alert_type=self.alert_type, message_id=message.id, alert_data = self.alert_data)
             return message
 
 
