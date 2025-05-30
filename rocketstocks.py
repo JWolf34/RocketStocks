@@ -56,6 +56,7 @@ def rocketStocks():
     # Init StockData object
     stock_data = StockData()
 
+    # Build threads - one for bot and one for scheduler
     bot_thread = threading.Thread(target=lambda: Discord.run_bot(stock_data=stock_data))
     scheduler_thread = threading.Thread(target=lambda:scheduler.scheduler(stock_data=stock_data))
 

@@ -1,10 +1,8 @@
-from apscheduler.schedulers.background import BackgroundScheduler
+#from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
-from apscheduler.triggers.interval import IntervalTrigger
-import analysis as an
+#from apscheduler.triggers.interval import IntervalTrigger
 import logging
-import sys
 import asyncio
 
 # Logging configuration
