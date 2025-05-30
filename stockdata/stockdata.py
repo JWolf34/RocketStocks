@@ -1,6 +1,7 @@
 import datetime
 from db import Postgres
 from nasdaq import Nasdaq
+from capitol_trades import CapitolTrades
 import logging
 import pandas as pd
 from RocketStocks.utils import date_utils, market_utils
@@ -177,7 +178,9 @@ class StockData():
         self.db = Postgres()
         self.sec = SEC(sd=self)
         self.schwab = Schwab()
-        self.nasdaq = Nasdaq()       
+        self.nasdaq = Nasdaq() 
+        self.earnings = Earnings(nasdaq=self.nasdaq, db=self.db)  
+        self.capitol_trades = CapitolTrades(db=self.db)
 
     def update_tickers(self):
         """Update tickers table with the most up-to-date information from the NASDAQ"""

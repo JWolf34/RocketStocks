@@ -29,14 +29,14 @@ async def load():
     logger.info("Loaded extensions")
 
 # Start bot
-def run_bot():
+def run_bot(stock_data):
     @bot.event
     async def on_ready():
         logger.info("RocketStocks bot ready!")
         await load()
         utils.bot_setup()
     
-    
+    bot.stock_data = stock_data # StockData
     bot.run(token)
 
 

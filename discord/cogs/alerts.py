@@ -2,8 +2,7 @@ import discord
 from discord import app_commands
 from discord.ext import commands
 from discord.ext import tasks
-from reports import Report
-from reports import StockReport
+from reports import Report, StockReport, NewsReport
 import stockdata as sd
 import analysis as an
 import pandas as pd

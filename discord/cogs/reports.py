@@ -5,21 +5,14 @@ from discord import app_commands
 from discord.ext import commands
 from discord.ext import tasks
 from watchlists import Watchlists
-from utils import Utils
-import alerts
 import datetime
 import stockdata as sd
-import numpy as np
 import pandas as pd
 import datetime as dt
-import json
-import utils
-from utils import market_utils, date_utils
-import psycopg2
+from utils import market_utils, date_utils, discord_utils
 import asyncio
 from table2ascii import table2ascii, PresetStyle
 import logging
-import rocketstocks
 import random
 
 # Logging configuration
@@ -34,8 +27,8 @@ class Reports(commands.Cog):
         self.send_popularity_reports.start()
         self.post_earnings_spotlight.start()
         self.post_weekly_earnings.start()
-        self.reports_channel = self.bot.get_channel(utils.discord_utils.reports_channel_id)
-        self.screeners_channel = self.bot.get_channel(utils.discord_utils.screeners_channel_id)
+        self.reports_channel = self.bot.get_channel(discord_utils.reports_channel_id)
+        self.screeners_channel = self.bot.get_channel(discord_utils.screeners_channel_id)
         
 
     @commands.Cog.listener()

@@ -1,6 +1,5 @@
 import datetime
 import logging
-from db import Postgres
 import requests
 from bs4 import BeautifulSoup
 import pandas as pd
@@ -12,22 +11,22 @@ logger = logging.getLogger(__name__)
 
 class CapitolTrades():
 
-    def __init__(self):
-        self.db = Postgres()
+    def __init__(self, db):
+        self.db = db # Postgres
 
-    def politician(name:str=None, politician_id:str=None):
+    def politician(self, name:str=None, politician_id:str=None):
         logger.debug(f"Fetching politician with id '{politician_id}' and name '{name}'")
         if not name and not politician_id:
             logger.debug("No politician found with provided criteria")
             return None
         else:
-            fields = Postgres().get_table_columns('ct_politicians')
+            fields = self.db.get_table_columns('ct_politicians')
             where_conditions = []
             if name:
                 where_conditions.append(('name', name))
             if politician_id:
                 where_conditions.append(('politician_id', politician_id))
-            data = Postgres().select(table='ct_politicians',
+            data = self.db.select(table='ct_politicians',
                                     fields=fields,
                                     where_conditions=where_conditions,
                                     fetchall=False)
@@ -35,10 +34,10 @@ class CapitolTrades():
             logger.debug(f"Returning politician data: {politician}")
             return politician
     
-    def all_politicians():
+    def all_politicians(self, ):
         logger.debug("Retrieving all politicians from database")
-        fields = Postgres().get_table_columns('ct_politicians')
-        data = Postgres().select(table='ct_politicians',
+        fields = self.db.get_table_columns('ct_politicians')
+        data = self.db.select(table='ct_politicians',
                                     fields=fields,
                                     fetchall=True)
         politicians = [dict(zip(fields, data[index])) for index in range(0, len(data))]
@@ -46,7 +45,7 @@ class CapitolTrades():
         return politicians
 
 
-    def update_politicians():
+    def update_politicians(self):
         logger.info("Updating politicians in the database")
         politicians = []
         page_num = 1
@@ -69,16 +68,15 @@ class CapitolTrades():
                     
                 page_num += 1
             else:
-                postgres = Postgres()
-                columns = postgres.get_table_columns(table='ct_politicians')
+                columns = self.db.get_table_columns(table='ct_politicians')
                 logger.debug("Inserting politicians into database")
-                Postgres().insert(table='ct_politicians',
+                self.db.insert(table='ct_politicians',
                                   fields=columns,
                                   values=politicians)
                 break
         logger.info("Updating politicians complete!")
 
-
+    @staticmethod
     def trades(pid:str):
         logger.debug(f"Requesting trades information for politician with id '{pid}")
         trades = []
