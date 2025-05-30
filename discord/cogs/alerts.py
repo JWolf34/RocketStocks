@@ -13,6 +13,7 @@ import asyncio
 logger = logging.getLogger(__name__)
 
 class Alerts(commands.Cog):
+    """Push alerts to discord when criteria for stock movements is met"""
     def __init__(self, bot):
         self.bot = bot
 
@@ -34,10 +35,10 @@ class Alerts(commands.Cog):
     async def on_ready(self):
         logger.info(f"Cog {__name__} loaded!")
 
-    
 
     async def update_alert_tickers(self, key:str, tickers:list):
-        logger.debug(f"Updating alert tickers - key: {key}, tickers: {tickers}")
+        """Updates tickers to trigger alerts for"""
+        logger.info(f"Updating alert tickers - key: {key}, tickers: {tickers}")
         self.alert_tickers[key] = tickers
 
     @tasks.loop(time=datetime.time(hour=6, minute=0, second=0)) # time in UTC
@@ -48,9 +49,12 @@ class Alerts(commands.Cog):
 
     @tasks.loop(minutes = 5)
     async def send_alerts(self):
-        if (market_utils.market_open_today() and (market_utils.in_extended_hours() or market_utils.in_intraday())):
+        '''Process alerts every 5 minutes if the market is open and in'''
+        if (market_utils.market_open_today() and market_utils.get_market_period() in ['intraday', 'aftermarket']):
             all_alert_tickers = list(set([ticker for tickers in self.alert_tickers.values() for ticker in tickers]))
             #all_alert_tickers = ['PHIO', 'ATPC', 'SLRX', 'KAPA']
+
+            # Fetch quotes for tickers from Schwab in chunks of 'chunk_size'
             quotes = {}
             chunk_size = 10
             for i in range(0, len(all_alert_tickers), chunk_size):
@@ -72,14 +76,15 @@ class Alerts(commands.Cog):
     # + 30 seconds to allow for reports to generate and add tickers to the alert list
     @send_alerts.before_loop
     async def send_alerts_before_loop(self):
+        """Before loop for 'send_alerts'"""
         DELTA = 30
-        await asyncio.sleep(utils.date_utils.seconds_until_5m_interval() + DELTA)
+        await asyncio.sleep(date_utils.seconds_until_5m_interval() + DELTA)
 
     async def send_earnings_movers(self, tickers:list, quotes:dict):
         logger.info("Processing earnings movers")
         today = datetime.datetime.today()
         for ticker in tickers:
-            earnings_date = sd.StockData.Earnings.get_next_earnings_date(ticker)
+            earnings_date = self.bot.stock_data.earnings.get_next_earnings_date(ticker)
             if earnings_date != "N/A":
                 pct_change = quotes[ticker]['quote']['netPercentChange']   
                 if earnings_date == today.date() and pct_change > 10.0:
@@ -95,7 +100,7 @@ class Alerts(commands.Cog):
         today = datetime.datetime.today()
         for index, row in gainers.iterrows():
             ticker = row['Ticker']
-            filings = sd.SEC().get_filings_from_today(ticker)
+            filings = self.bot.sec.get_filings_from_today(ticker)
             pct_change = quotes[ticker]['quote']['netPercentChange']   
             if filings.size > 0 and abs(pct_change) > 10.0:
                 logger.debug(f"Identified ticker '{ticker}' with SEC filings today and percent change {"{:.2f}%".format(pct_change)}")

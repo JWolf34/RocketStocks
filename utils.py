@@ -269,7 +269,7 @@ class market_utils():
         elif self.in_intraday():
             return "intraday"
         if self.in_afterhours():
-            return "afterhours"
+            return "aftermaket"
         else:
             return "EOD"    
 
