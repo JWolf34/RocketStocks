@@ -14,6 +14,7 @@ class Postgres():
         self.pwd = secrets.db_password
         self.db = secrets.db_name
         self.host = secrets.db_host
+        self.port = secrets.db_port
         self.conn = None
         self.cur = None
         
@@ -24,7 +25,7 @@ class Postgres():
             dbname = self.db,
             user = self.user,
             password = self.pwd,
-            port = 5432)
+            port = self.port if self.port else 5432)
 
         self.cur = self.conn.cursor()
 
