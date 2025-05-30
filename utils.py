@@ -2,9 +2,7 @@ import json
 import logging
 import os
 import datetime
-import stockdata as sd
 import pandas_market_calendars as mcal
-from db import Postgres
 import json
 from zoneinfo import ZoneInfo
 
@@ -23,6 +21,7 @@ def validate_path(path):
         return True
 
 def bot_setup():
+    from db import Postgres
     # Create database tables that do not exist
     Postgres().create_tables()
 
@@ -56,9 +55,10 @@ class config:
             json.dump(data, config_file)
 
 class discord_utils():
+    
 
-    def __init__(self, db:Postgres):
-        self.db = db
+    def __init__(self, db):
+        self.db = db # Postgres
 
     # Guild ID
     guild_id = get_env('DISCORD_GUILD_ID')    
@@ -247,7 +247,6 @@ class market_utils():
     
 class date_utils:
 
-    timezone = ZoneInfo(get_env("TZ"))
 
     @staticmethod
     def format_date_ymd(date):
@@ -278,9 +277,9 @@ class date_utils:
         return (future-now).total_seconds()
     
     @staticmethod
-    def get_timezone():
+    def timezone():
         tz = get_env("TZ")
-        return ZoneInfo(tz)
+        return ZoneInfo(tz if tz else "America/Chicago")
 
 
 

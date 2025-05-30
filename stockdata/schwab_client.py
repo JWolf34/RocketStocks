@@ -2,7 +2,7 @@ import logging
 import schwab
 import httpx
 import datetime
-from utils import secrets
+from RocketStocks.utils import secrets
 import pandas as pd
 
 # Logging configuration

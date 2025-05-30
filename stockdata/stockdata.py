@@ -3,11 +3,12 @@ from db import Postgres
 from nasdaq import Nasdaq
 import logging
 import pandas as pd
-from utils import date_utils, market_utils
+from RocketStocks.utils import date_utils, market_utils
 from sec import SEC
 from schwab_client import Schwab
 import time
 import yfinance as yf
+import asyncio
 
 # Logging configuration
 logger = logging.getLogger(__name__)
@@ -173,8 +174,8 @@ class Earnings:
     
 class StockData():
     def __init__(self):
-        self.db = Postgres
-        self.sec = SEC()
+        self.db = Postgres()
+        self.sec = SEC(sd=self)
         self.schwab = Schwab()
         self.nasdaq = Nasdaq()       
 
@@ -559,7 +560,7 @@ class StockData():
                                     fetchall=True)
         return pd.DataFrame(results, columns=columns) if results else None
 
-    def validate_ticker(self, ticker):
+    async def validate_ticker(self, ticker):
         """Returns true if ticker exists in database, else False"""
         logger.info(f"Verifying that ticker '{ticker}' is valid")
 
@@ -578,8 +579,8 @@ class StockData():
         '''
 
         '''Logic checking from Schwab'''
-        data = self.schwab.get_daily_price_history(ticker=ticker,start_datetime=datetime.datetime.now() - datetime.timedelta.days(7))
-        return True if data else False
+        data = await self.schwab.get_daily_price_history(ticker=ticker,start_datetime=datetime.datetime.now() - datetime.timedelta(days=7))
+        return True if not data.empty else False
     
     # Get list of valid tickers from string
     @staticmethod
@@ -606,5 +607,5 @@ class StockData():
 
 if __name__ == '__main__':
     sd = StockData()
-    print(sd.validate_ticker('QQQ'))
+    asyncio.run(sd.validate_ticker('QQQ'))
    
