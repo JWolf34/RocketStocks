@@ -3,11 +3,17 @@ import logging
 import os
 import datetime
 import pandas_market_calendars as mcal
-import json
+from dotenv import load_dotenv
 from zoneinfo import ZoneInfo
 
 # Logging configuration
 logger = logging.getLogger(__name__)
+
+# Load dotenv
+load_dotenv()
+
+
+'''General utilities'''
 
 # Validate specified path exists and create it if needed
 def validate_path(path):
@@ -38,7 +44,7 @@ def get_env(var_name:str):
 
 
 class config:
-
+    """Utilities for editing the config file"""
     def __init__(self):
         self.path = get_env("CONFIG_PATH")
 
@@ -55,7 +61,8 @@ class config:
             json.dump(data, config_file)
 
 class discord_utils():
-    
+
+    """Utilities for discord functions"""    
 
     def __init__(self, db):
         self.db = db # Postgres
@@ -116,9 +123,10 @@ class discord_utils():
             return result[0]
 
     def get_volume_message_id(self):
-        select_script = f"""SELECT messageid FROM reports
-                            WHERE type = 'UNUSUAL_VOLUME_REPORT';
-                            """
+        # Query
+        """SELECT messageid FROM reports
+        WHERE type = 'UNUSUAL_VOLUME_REPORT';
+        """
         result = self.db.select(table='reports',
                                     fields=['messageid'],  
                                     where_conditions=[('type', 'UNUSUAL_VOLUME_REPORT')],
@@ -142,12 +150,16 @@ class discord_utils():
                 
     
     def get_alert_message_id(self, date, ticker, alert_type):
-        select_script = f"""SELECT messageid FROM alerts
-                            WHERE 
-                            date = '{date}' AND
-                            ticker = '{ticker}' AND
-                            alert_type = '{alert_type}';
-                            """
+        
+        # Query
+        """
+        SELECT messageid FROM alerts
+        WHERE 
+        date = '{date}' AND
+        ticker = '{ticker}' AND
+        alert_type = '{alert_type}';
+        """
+
         result = self.db.select(table='alerts',
                                     fields=['messageid'],
                                     where_conditions=[
