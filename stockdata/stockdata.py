@@ -180,6 +180,7 @@ class StockData():
         self.nasdaq = Nasdaq() 
         self.earnings = Earnings(nasdaq=self.nasdaq, db=self.db)  
         self.capitol_trades = CapitolTrades(db=self.db)
+        
 
     def update_tickers(self):
         """Update tickers table with the most up-to-date information from the NASDAQ"""

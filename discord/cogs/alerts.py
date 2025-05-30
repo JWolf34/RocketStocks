@@ -16,6 +16,7 @@ class Alerts(commands.Cog):
     """Push alerts to discord when criteria for stock movements is met"""
     def __init__(self, bot):
         self.bot = bot
+        self.mutils = market_utils()
 
         # Init channels to post alerts to 
         self.alerts_channel=self.bot.get_channel(discord_utils.alerts_channel_id)
@@ -43,14 +44,14 @@ class Alerts(commands.Cog):
 
     @tasks.loop(time=datetime.time(hour=6, minute=0, second=0)) # time in UTC
     async def post_alerts_date(self):
-        if (market_utils.market_open_today()):
+        if (self.mutils.market_open_today()):
             date_string = date_utils.format_date_mdy(datetime.datetime.today())
             await self.alerts_channel.send(f"# :rotating_light: Alerts for {date_string} :rotating_light:")
 
     @tasks.loop(minutes = 5)
     async def send_alerts(self):
         '''Process alerts every 5 minutes if the market is open and in'''
-        if (market_utils.market_open_today() and market_utils.get_market_period() in ['intraday', 'aftermarket']):
+        if (self.mutils.market_open_today() and self.mutils.get_market_period() in ['intraday', 'aftermarket']):
             all_alert_tickers = list(set([ticker for tickers in self.alert_tickers.values() for ticker in tickers]))
             #all_alert_tickers = ['PHIO', 'ATPC', 'SLRX', 'KAPA']
 
@@ -282,7 +283,7 @@ class Alert(Report):
 
     async def send_alert(self):
         today = datetime.datetime.today()
-        market_period = market_utils.get_market_period()
+        market_period = self.mutils.get_market_period()
         message_id = discord_utils.get_alert_message_id(date=today.date(), ticker=self.ticker, alert_type=self.alert_type)
         if message_id is not None:
             logger.debug(f"Alert {self.alert_type} already reported for ticker {self.ticker} today")
@@ -338,7 +339,7 @@ class EarningsMoverAlert(Alert):
     def build_todays_change(self):
         logger.debug("Building today's change...")
         symbol = ":green_circle:" if self.alert_data['pct_change'] > 0 else ":small_red_triangle_down:"
-        return f"**{self.ticker}** is {symbol} **{"{:.2f}".format(self.alert_data['pct_change'])}%**  {market_utils.get_market_period()} and has earnings today\n "
+        return f"**{self.ticker}** is {symbol} **{"{:.2f}".format(self.alert_data['pct_change'])}%**  {self.mutils.get_market_period()} and has earnings today\n "
 
     def build_alert(self):
         logger.debug("Building Earnings Mover Alert...")
@@ -362,7 +363,7 @@ class SECFilingMoverAlert(Alert):
     def build_todays_change(self):
         logger.debug("Building today's change...")
         symbol = ":green_circle:" if self.alert_data['pct_change']> 0 else ":small_red_triangle_down:"
-        return f"**{self.ticker}** is {symbol} **{"{:.2f}".format(self.alert_data['pct_change'])}%** {market_utils.get_market_period()} and filed with the SEC today\n"
+        return f"**{self.ticker}** is {symbol} **{"{:.2f}".format(self.alert_data['pct_change'])}%** {self.mutils.get_market_period()} and filed with the SEC today\n"
 
     def build_alert(self):
         logger.debug("Building SEC Filing Mover Alert...")
