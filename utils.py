@@ -316,7 +316,7 @@ class secrets:
     db_password = get_env('POSTGRES_PASSWORD')
     db_name = get_env('POSTGRES_DB')
     db_host = get_env('POSTGRES_HOST')
-    db_port = get_env('POSTGRES_PORT')
+    db_port = (get_env('POSTGRES_PORT'))
     
 if __name__  == "__main__":
     pass
