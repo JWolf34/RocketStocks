@@ -611,7 +611,7 @@ if __name__ == '__main__':
 
     mutils = market_utils()
     start = time.time()
-    print(mutils.in_premarket())
+    print(mutils.get_market_period())
     end = time.time()
     print(f"{end-start} seconds")
 

@@ -199,15 +199,28 @@ class market_utils():
 
     def __init__(self):
         self._calendar = mcal.get_calendar('NYSE')
+        now = datetime.datetime.now()
+        self._schedule = self.get_market_schedule(now.date())
 
     @property
     def calendar(self):
         return self._calendar
+    
+    @property
+    def schedule(self):
+        return self._schedule
+    
+    @schedule.setter
+    def schedule(self, new_sched):
+        self._schedule = new_sched
+    
+    def get_market_schedule(self, date):
+        schedule = self.calendar.schedule(start_date=date, end_date=date, start='pre', end='post')
+        return schedule
 
     def market_open_today(self):
         today = datetime.datetime.now(datetime.UTC).date()
-        calendar = mcal.get_calendar('NYSE')
-        valid_days = calendar.valid_days(start_date=today, end_date=today)
+        valid_days = self.calendar.valid_days(start_date=today, end_date=today)
         return today in valid_days.date
 
     def market_open_on_date(self, date):
@@ -218,35 +231,39 @@ class market_utils():
 
     def in_premarket(self):
         now = datetime.datetime.now(datetime.UTC)
-        schedule = self.calendar.schedule()
-        if schedule.size > 0:
-            premarket_start = schedule['pre'].iloc[0]
-            intraday_start = schedule['market_open'].iloc[0]
+        #self.schedule = self.get_market_self.schedule(now)
+        if self.schedule.size > 0:
+            premarket_start = self.schedule['pre'].iloc[0]
+            intraday_start = self.schedule['market_open'].iloc[0]
             return now > premarket_start and now < intraday_start
         else: # Market is not open
             return False
 
     def in_intraday(self):
         now = datetime.datetime.now(datetime.UTC)
-        schedule = self.calendar.schedule(now)
-        if schedule.size > 0:
-            intraday_start = schedule['market_open'].iloc[0]
-            afterhours_start = schedule['market_close'].iloc[0]
+        #self.schedule = self.get_market_self.schedule(now)
+        if self.schedule.size > 0:
+            intraday_start = self.schedule['market_open'].iloc[0]
+            afterhours_start = self.schedule['market_close'].iloc[0]
             return now > intraday_start and now < afterhours_start
         else: # Market is not open
             return False
     
     def in_afterhours(self):
         now = datetime.datetime.now(datetime.UTC)
-        schedule = self.calendar.schedule(now)
-        if schedule.size > 0:
-            afterhours_start = schedule['market_close'].iloc[0]
-            market_end = schedule['post'].iloc[0]
+        #self.schedule = self.get_market_self.schedule(now)
+        if self.schedule.size > 0:
+            afterhours_start = self.schedule['market_close'].iloc[0]
+            market_end = self.schedule['post'].iloc[0]
             return now > afterhours_start and now < market_end
         else: # Market is not open
             return False
 
     def get_market_period(self):
+        # Update schedule
+        now = datetime.datetime.now()
+        self._schedule = self.get_market_schedule(now.date())
+        
         if self.in_premarket():
             return "premarket"
         elif self.in_intraday():
