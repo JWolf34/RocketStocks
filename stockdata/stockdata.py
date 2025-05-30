@@ -608,10 +608,19 @@ class StockData():
 
 
 if __name__ == '__main__':
+
+    mutils = market_utils()
+    start = time.time()
+    print(mutils.in_premarket())
+    end = time.time()
+    print(f"{end-start} seconds")
+
+    '''
     sd = StockData()
     quote = asyncio.run(sd.schwab.get_quotes(['QQQ', 'NVDA', 'GME']))
     import json
     with open('quote.json', 'w+') as file:
         json.dump(quote, file)
+        '''
         
    

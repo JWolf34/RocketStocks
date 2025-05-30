@@ -15,9 +15,15 @@ logger = logging.getLogger(__name__)
 class Alerts(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
+
+        # Init channels to post alerts to 
         self.alerts_channel=self.bot.get_channel(discord_utils.alerts_channel_id)
         self.reports_channel= self.bot.get_channel(discord_utils.reports_channel_id)
+
+        # Dict of tickers to send alerts on
         self.alert_tickers = {}
+
+        # Start alerts
         self.post_alerts_date.start()
         self.send_popularity_movers.start()
         self.send_politician_trade_alerts.start()
@@ -27,6 +33,8 @@ class Alerts(commands.Cog):
     @commands.Cog.listener()
     async def on_ready(self):
         logger.info(f"Cog {__name__} loaded!")
+
+    
 
     async def update_alert_tickers(self, key:str, tickers:list):
         logger.debug(f"Updating alert tickers - key: {key}, tickers: {tickers}")

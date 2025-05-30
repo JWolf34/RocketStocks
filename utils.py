@@ -206,7 +206,8 @@ class market_utils():
 
     def market_open_today(self):
         today = datetime.datetime.now(datetime.UTC).date()
-        valid_days = self.calendar.valid_days(start_date=today, end_date=today)
+        calendar = mcal.get_calendar('NYSE')
+        valid_days = calendar.valid_days(start_date=today, end_date=today)
         return today in valid_days.date
 
     def market_open_on_date(self, date):
@@ -217,7 +218,7 @@ class market_utils():
 
     def in_premarket(self):
         now = datetime.datetime.now(datetime.UTC)
-        schedule = self.calendar.schedule(now)
+        schedule = self.calendar.schedule()
         if schedule.size > 0:
             premarket_start = schedule['pre'].iloc[0]
             intraday_start = schedule['market_open'].iloc[0]
