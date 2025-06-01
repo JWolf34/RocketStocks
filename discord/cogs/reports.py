@@ -52,8 +52,8 @@ class Reports(commands.Cog):
     #@tasks.loop(time=datetime.time(hour=22 , minute=0, second=0)) # time in UTC
     @tasks.loop(minutes=30)
     async def send_popularity_reports(self):
-
-
+        logger.info("Fetching most poular stocks")
+        popular_stocks = self.stock_data.popularity.get_popular_stocks()
 
         logger.info("Sending today's popularity report")
         report = PopularityReport(self.screeners_channel)

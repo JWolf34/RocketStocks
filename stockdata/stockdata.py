@@ -4,6 +4,7 @@ from nasdaq import Nasdaq
 from capitol_trades import CapitolTrades
 from watchlists import Watchlists
 from trading_view import TradingView
+from ape_wisdom import ApeWisdom
 import logging
 import pandas as pd
 from RocketStocks.utils import date_utils, market_utils
@@ -183,6 +184,7 @@ class StockData():
         self.capitol_trades = CapitolTrades(db=self.db)
         self.watchlists = Watchlists(self.db)
         self.trading_view = TradingView()
+        self.popularity = ApeWisdom()
         self._alert_tickers = {}
 
     @property
@@ -624,7 +626,7 @@ if __name__ == '__main__':
 
     import asyncio
     sd = StockData()
-    movers = sd.trading_view.get_gainers()
-    print(movers)
+    pop = sd.popularity.get_popular_stocks()
+    print(pop)
         
    

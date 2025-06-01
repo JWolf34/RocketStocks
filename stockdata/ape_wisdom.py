@@ -35,13 +35,22 @@ class ApeWisdom():
     def get_filter(self, filter_name):
         return self.filters_map[filter_name]
 
-    def get_top_stocks(self, filter_name = 'all stock subreddits', page = 1):
-        logger.debug(f"Fetching top stocks from source: '{filter_name}', page {page}")
+    def get_popular_stocks(self, filter_name = 'all stock subreddits', num_stocks=1000):
+        logger.debug(f"Fetching top {num_stocks} popular stocks from source '{filter_name}'")
         filter = self.get_filter(filter_name=filter_name)
-        if filter is not None:
-            top_stocks_json = requests.get(f"{self.base_url}/{filter}/page/{page}").json()
-            if top_stocks_json is not None:
-                top_stocks = pd.DataFrame(top_stocks_json['results'])
-                return top_stocks
+        if filter:
+            top_stocks = []
+            num_pages = num_stocks//100
+
+            for page in range(1, num_pages+1):
+                response = requests.get(f"{self.base_url}/{filter}/page/{page}")
+                data = response.json()
+                top_stocks += [result for result in data['results']]
+
+                # Check to see if number of pages need to be reduced
+                if data['pages'] < num_pages:
+                    num_pages = data['pages']
+            return pd.DataFrame(top_stocks) if top_stocks else None
         else:
+            logger.debug(f"No popular stocks found with input filter '{filter_name}'")
             return None
