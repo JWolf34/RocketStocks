@@ -63,8 +63,9 @@ class config:
 class discord_utils():
 
     """Utilities for discord functions"""    
-    def __init__(self, db):
-        self.db = db # Postgres
+    def __init__(self):
+        from db import Postgres
+        self.db = Postgres() # Postgres
 
     # Guild ID
     guild_id = get_env('DISCORD_GUILD_ID')    

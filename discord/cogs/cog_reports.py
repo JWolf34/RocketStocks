@@ -6,9 +6,10 @@ from discord.ext import commands
 from discord.ext import tasks
 from cog_watchlists import Watchlists
 import datetime
-import stockdata as sd
+from stockdata import StockData
 import pandas as pd
 import datetime as dt
+import utils
 from utils import market_utils, date_utils, discord_utils
 import asyncio
 from table2ascii import table2ascii, PresetStyle
@@ -19,8 +20,9 @@ import random
 logger = logging.getLogger(__name__)  
 
 class Reports(commands.Cog):
-    def __init__(self, bot):
+    def __init__(self, bot, stock_data:StockData):
         self.bot = bot
+        self.stock_data = stock_data
         self.mutils = market_utils()
 
         # Init channels
@@ -57,6 +59,7 @@ class Reports(commands.Cog):
         # Update popular-stocks watchlist
         watchlist_id = 'popular-stocks'
         tickers, invalid_tickers = sd.StockData.get_valid_tickers(" ".join(report.top_stocks['ticker'].tolist()[:30]))
+        self.bot.stock_data
         if not self.bot.stock_data.watchlists.validate_watchlist(watchlist_id):
             self.bot.stock_data.watchlists.create_watchlist(watchlist_id=watchlist_id, tickers=tickers, systemGenerated=True)
         else:
@@ -77,14 +80,14 @@ class Reports(commands.Cog):
     @tasks.loop(minutes=5)
     async def send_gainer_reports(self):
         market_period = self.mutils.get_market_period()
-        if True: #(self.mutils.market_open_today() and market_period != 'EOD'):
+        if  (self.mutils.market_open_today() and market_period != 'EOD'):
             # Generate report
             report = GainerReport(channel=self.screeners_channel,
                                   stock_data=self.bot.stock_data,
                                   market_period='aftermarket')#market_period)
 
             # Update alert tickers with gainers
-            self.bot.stock_data.update_alert_tickers(tickers=report.get_tickers(), source='gainers')
+            self.stock_data.update_alert_tickers(tickers=report.get_tickers(), source='gainers')
 
             # Send report
             logger.info(f"Sending {report.market_period} gainers report")
@@ -588,21 +591,26 @@ class Screener(Report):
 
     def __init__(self, channel, screener_type:str, stock_data=None):
        super().__init__(channel=channel, stock_data=stock_data)
-       self.dutils = discord_utils(db=stock_data.db)
+       self.dutils = discord_utils()
        self.screener_type = screener_type
+       self.data = None
 
     def get_tickers(self):
         return self.data['Ticker'].to_list()
 
     def update_watchlist(self):
+        from stockdata import Watchlists
+        from db import Postgres
+
+        watchlists = Watchlists(db=Postgres())
         watchlist_id = self.screener_type
         watchlist_tickers = self.get_tickers()
         watchlist_tickers = watchlist_tickers[:15]
 
-        if not self.stock_data.watchlists.validate_watchlist(watchlist_id):
-            self.stock_data.watchlists.create_watchlist(watchlist_id=watchlist_id, tickers=watchlist_tickers, systemGenerated=True)
+        if not watchlists.validate_watchlist(watchlist_id):
+            watchlists.create_watchlist(watchlist_id=watchlist_id, tickers=watchlist_tickers, systemGenerated=True)
         else:
-            self.stock_data.watchlists.update_watchlist(watchlist_id=watchlist_id, tickers=watchlist_tickers)
+            watchlists.update_watchlist(watchlist_id=watchlist_id, tickers=watchlist_tickers)
 
     # Override
     async def send_report(self):
@@ -755,13 +763,6 @@ class VolumeReport(Screener):
         self.volume_movers_formatted = self.format_df_for_table()
         if not self.volume_movers.empty:
             self.update_watchlist()
-       
-
-    async def init(self):
-        pass
-        
-    def get_tickers(self):
-        return self.volume_movers['Ticker'].to_list()
 
     def format_df_for_table(self):
         logger.debug("Formatting volume movers dataframe for table viewing")
@@ -806,18 +807,6 @@ class VolumeReport(Screener):
             
 
         return pd.DataFrame(rows, columns=headers)
-
-    def update_unusual_volume_watchlist(self):
-        watchlist_id = "unusual-volume"
-        watchlist_tickers = self.get_tickers()
-
-        watchlist_tickers, invalid_tickers = sd.StockData.get_valid_tickers(' '.join(watchlist_tickers))
-        watchlist_tickers = watchlist_tickers[:15]
-
-        if not self.bot.stock_data.watchlists.validate_watchlist(watchlist_id):
-            self.bot.stock_data.watchlists.create_watchlist(watchlist_id=watchlist_id, tickers=watchlist_tickers, systemGenerated=True)
-        else:
-            self.bot.stock_data.watchlists.update_watchlist(watchlist_id=watchlist_id, tickers=watchlist_tickers)
 
 class NewsReport(Report):
     def __init__(self, query, breaking=False, **kwargs):
@@ -1012,4 +1001,4 @@ class WeeklyEarningsReport(Report):
 #########
 
 async def setup(bot):
-    await bot.add_cog(Reports(bot))
+    await bot.add_cog(Reports(bot=bot, stock_data=bot.stock_data))
