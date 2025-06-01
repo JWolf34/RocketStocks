@@ -4,7 +4,7 @@ import discord
 from discord import app_commands
 from discord.ext import commands
 from discord.ext import tasks
-from discord.cogs.cog_watchlists import Watchlists
+from cog_watchlists import Watchlists
 import datetime
 import stockdata as sd
 import pandas as pd
@@ -50,7 +50,7 @@ class Reports(commands.Cog):
     @tasks.loop(time=datetime.time(hour=22 , minute=0, second=0)) # time in UTC
     #@tasks.loop(hours=24)
     async def send_popularity_reports(self):
-        logger.info(f"Sending today's popularity report")
+        logger.info("Sending today's popularity report")
         report = PopularityReport(self.screeners_channel)
         await report.send_report()
 
@@ -63,7 +63,7 @@ class Reports(commands.Cog):
             self.bot.stock_data.watchlists.update_watchlist(watchlist_id=watchlist_id, tickers=tickers)
 
         # Update DB table
-        logger.debug(f"Updating popular-stocks table with latest tickers")
+        logger.debug("Updating popular-stocks table with latest tickers")
         fields = ['date', 'ticker', 'rank', 'mentions', 'upvotes']
         popular_stocks = report.top_stocks.drop(columns=['rank_24h_ago',
                                                        'mentions_24h_ago',
@@ -89,8 +89,6 @@ class Reports(commands.Cog):
             # Send report
             logger.info(f"Sending {report.market_period} gainers report")
             await report.send_report()
-            await self.bot.get_cog("Alerts").update_alert_tickers(key='gainers',
-                                                                  tickers = report.get_tickers())
         else:
             # Not a weekday - do not post gainer reports
             pass
@@ -98,20 +96,20 @@ class Reports(commands.Cog):
     # Generate and send premarket gainer reports to the reports channel
     @tasks.loop(minutes=5)
     async def send_volume_reports(self):
-        now = datetime.datetime.now()
-        #if (market_utils.market_open_today() and market_utils.in_intraday()):
-        if (self.mutils.market_open_today() and self.mutils.in_market_hours()):
+        market_period = self.mutils.get_market_period()
+        if True: #(self.mutils.market_open_today() and market_period != "EOD")):
             # Generate report
-            report = VolumeReport(self.screeners_channel)
+            report = VolumeReport(channel = self.screeners_channel,
+                                  stock_data = self.bot.stock_data,
+                                  market_period=market_period)
 
-            # Update alert tickers with gainers
-            self.bot.stock_data.update_alert_tickers(tickers=report.get_tickers(), source='gainers')
+            # Update alert tickers with volume movers
+            self.bot.stock_data.update_alert_tickers(tickers=report.get_tickers(), source='unusual_volume')
 
             # Send Report
             logger.info(f"Sending {report.market_period} unusual volume report")
             await report.send_report()
-            await self.bot.get_cog("Alerts").update_alert_tickers(key='volume_movers',
-                                                                  tickers = report.get_tickers())
+
         else:
             # Not a weekday - do not post gainer reports
             pass
@@ -588,9 +586,35 @@ class Report(object):
 
 class Screener(Report):
 
-    def __init__(self, channel, stock_data=None):
+    def __init__(self, channel, screener_type:str, stock_data=None):
        super().__init__(channel=channel, stock_data=stock_data)
        self.dutils = discord_utils(db=stock_data.db)
+       self.screener_type = screener_type
+
+    # Override
+    async def send_report(self):
+        """Send gainer report to the screeners channel"""
+        self.message = self.build_report() + "\n\n"
+
+        logger.debug(f"Posting '{self.screener_type}' screener...")
+        today = datetime.datetime.today()
+        
+        # Check if a gainer message already exists and update if present
+        message_id = self.dutils.get_screener_message_id(screener_type=self.screener_type)
+        if message_id:
+            curr_message = await self.channel.fetch_message(message_id)
+            if curr_message.created_at.date() < today.date():
+                message = await self.channel.send(self.message)
+                self.dutils.update_screener_message_id(message_id=message_id, screener_type=self.screener_type)
+                return message
+            else:
+                logger.debug(f"{self.market_period.upper()} Gainer Report already exists today. Updating... ")
+                await curr_message.edit(content=self.message)
+        # No existing report, send new one
+        else:
+            message = await self.channel.send(self.message)
+            self.dutils.insert_screener_message_id(message_id=message.id, screener_type=self.screener_type)
+            return message
 
 
 class StockReport(Report):
@@ -648,8 +672,10 @@ class StockReport(Report):
 
 class GainerReport(Screener):
     def __init__(self, channel, stock_data, market_period:str, ):
-        super().__init__(channel, stock_data)
+        super().__init__(channel=channel, screener_type=f"{market_period.upper()}_GAINER", stock_data=stock_data)
         self.market_period = market_period
+
+        # Populate gainers based on market period
         self.gainers = None
         self.gainers_formatted = pd.DataFrame()
         if self.market_period == 'premarket':
@@ -658,12 +684,12 @@ class GainerReport(Screener):
             self.gainers = sd.TradingView.get_intraday_gainers_by_market_cap(1000000)
         elif self.market_period == 'aftermarket':
             self.gainers = sd.TradingView.get_postmarket_gainers_by_market_cap(1000000)
-        if self.gainers.size > 0:
+        if not self.gainers.empty:
             self.update_gainer_watchlist()
             self.gainers_formatted = self.format_df_for_table()
         else:
             self.gainers_formatted.columns = self.gainers.columns.to_list()
-        
+
         
 
     def get_tickers(self):
@@ -697,14 +723,14 @@ class GainerReport(Screener):
     # Override
     def build_report_header(self):
         logger.debug("Building report header...")
-        today = datetime.datetime.today()
+        now = datetime.datetime.now(tz=date_utils.timezone())
         header = "### :rotating_light: {} Gainers {} (Market Cap > $100M) (Updated {})\n\n".format(
                     "Pre-market" if self.market_period == 'premarket'
                     else "Intraday" if self.market_period == 'intraday'
-                    else "After Hours" if self.market_period == 'afterhours'
+                    else "After Hours" if self.market_period == 'aftermarket'
                     else "",
-                    today.strftime("%m/%d/%Y"),
-                    today.strftime("%I:%M %p"))
+                    now.date().strftime("%m/%d/%Y"),
+                    now.strftime("%I:%M %p"))
         return header
 
     # Override
@@ -714,40 +740,19 @@ class GainerReport(Screener):
         report +=  self.build_report_header()
         report +=  self.build_table(self.gainers_formatted[:15])
         return report
-
-    # Override
-    async def send_report(self):
-        """Send gainer report to the screeners channel"""
-        self.message = self.build_report() + "\n\n"
-
-        logger.debug("Sending Gainer Report...")
-        today = datetime.datetime.today()
-        
-        # Check if a gainer message already exists and update if present
-        message_id = self.dutils.get_gainer_message_id(market_period=self.market_period)
-        if message_id:
-            curr_message = await self.channel.fetch_message(message_id)
-            if curr_message.created_at.date() < today.date():
-                message = await self.channel.send(self.message)
-                self.dutils.update_gainer_message_id(message.id)
-                return message
-            else:
-                logger.debug(f"{self.market_period.upper()} Gainer Report already exists today. Updating... ")
-                await curr_message.edit(content=self.message)
-        # No existing report, send new one
-        else:
-            message = await self.channel.send(self.message)
-            self.dutils.update_gainer_message_id(message_id=message.id, market_period=self.market_period)
-            return message
+    
 
 class VolumeReport(Screener):
-    def __init__(self, channel):
+    def __init__(self, channel, stock_data, market_period):
+        super().__init__(channel=channel,
+                         stock_data=stock_data,
+                         screener_type='UNUSUAL_VOLUME')
+        self.market_period = market_period
         self.volume_movers = sd.TradingView.get_unusual_volume_movers()
         self.volume_movers_formatted = self.format_df_for_table()
-        self.market_period = market_utils.get_market_period()
         if self.volume_movers.size > 0:
             self.update_unusual_volume_watchlist()
-        super().__init__(channel)
+       
 
     async def init(self):
         pass
@@ -768,10 +773,10 @@ class VolumeReport(Screener):
     # Override
     def build_report_header(self):
         logger.debug("Building report header...")
-        today = datetime.datetime.today()
+        now = datetime.datetime.now(tz=date_utils.timezone())
         header = "### :rotating_light: Unusual Volume {} (Volume > 1M)(Updated {})\n\n".format(
-                    today.strftime("%m/%d/%Y"),
-                    today.strftime("%-I:%M %p"))
+                    now.date().strftime("%m/%d/%Y"),
+                    now.strftime("%I:%M %p"))
         return header
 
     # Override
@@ -781,30 +786,6 @@ class VolumeReport(Screener):
         report += self.build_report_header()
         report += self.build_table(self.volume_movers_formatted[:10])
         return report
-
-    # Override
-    async def send_report(self):
-        #await self.init()
-        self.message = self.build_report() + "\n\n"
-
-        logger.debug("Sending Volume Mover Report...")
-        today = datetime.datetime.today()
-        market_period = market_utils.get_market_period()
-        message_id = self.dutils.get_volume_message_id()
-        try:
-            curr_message = await self.channel.fetch_message(message_id)
-            if curr_message.created_at.date() < today.date():
-                message = await self.channel.send(self.message)
-                self.dutils.update_volume_message_id( message.id)
-                return message
-            else:
-                logger.debug(f"Volume Mover Report already exists today. Updating... ")
-                await curr_message.edit(content=self.message)
-
-        except discord.errors.NotFound as e:
-            message = await self.channel.send(self.message)
-            self.dutils.update_volume_message_id(message.id)
-            return message
 
     def get_volume_movers(self):
         headers = []

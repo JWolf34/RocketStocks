@@ -63,7 +63,6 @@ class config:
 class discord_utils():
 
     """Utilities for discord functions"""    
-
     def __init__(self, db):
         self.db = db # Postgres
 
@@ -77,21 +76,8 @@ class discord_utils():
     charts_channel_id = int(get_env("CHARTS_CHANNEL_ID"))
 
     # Screener and alert message IDs #
-
-    def update_gainer_message_id(self, message_id:str, market_period:str):
-            where_conditions = [('type', f'{market_period.upper()}_GAINER_REPORT')]
-                
-            self.db.update(table = 'reports',
-                           set_fields=[('messageid', message_id)],
-                           where_conditions=where_conditions)
-
-    def update_volume_message_id(self, message_id):
-        self.db.update(table='reports',
-                       set_fields=[('messageid', message_id)],
-                       where_conditions=[('type', 'UNUSUAL_VOLUME_REPORT')])
-
-    def get_gainer_message_id(self, market_period:str):
-        where_conditions = [('type', f'{market_period.upper()}_GAINER_REPORT')]
+    def get_screener_message_id(self, screener_type:str):
+        where_conditions = [('type', f'{screener_type}_REPORT')]
 
         # During market hours
         result = self.db.select(table='reports',
@@ -102,6 +88,28 @@ class discord_utils():
             return result
         else:
             return result[0]
+
+    def update_screener_message_id(self, message_id:str, screener_type:str):
+            where_conditions = [('type', f'{screener_type}_REPORT')]
+                
+            self.db.update(table = 'reports',
+                           set_fields=[('messageid', message_id)],
+                           where_conditions=where_conditions)
+            
+    def insert_screener_message_id(self, message_id:str, screener_type:str):
+        values = [(f'{screener_type}_REPORT', message_id)]
+        
+        self.db.insert(table='reports',
+                       fields=self.db.get_table_columns(table='reports'),
+                       values=values)
+
+
+    def update_volume_message_id(self, message_id):
+        self.db.update(table='reports',
+                       set_fields=[('messageid', message_id)],
+                       where_conditions=[('type', 'UNUSUAL_VOLUME_REPORT')])
+
+        
 
     def get_volume_message_id(self):
         # Query

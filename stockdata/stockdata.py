@@ -624,10 +624,7 @@ if __name__ == '__main__':
 
     import asyncio
     sd = StockData()
-    quote = asyncio.run(sd.schwab.get_quotes(['QQQ', 'NVDA', 'GME']))
-    import json
-    with open('quote.json', 'w+') as file:
-        json.dump(quote, file)
-        
+    movers = sd.trading_view.get_gainers()
+    print(movers)
         
    

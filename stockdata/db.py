@@ -141,14 +141,7 @@ class Postgres():
     
     def init_tables(self):
         logger.debug("Initlializing database tables")
-        # Init reports
-        table = 'reports'
-        fields = ['type', 'messageid']
-        values = [('PREMARKET_GAINER_REPORT', 0),
-                  ('INTRADAY_GAINER_REPORT', 0),
-                  ('AFTERMARKET_GAINER_REPORT', 0),
-                  ('UNUSUAL_VOLUME_REPORT', 0)]
-        self.insert(table=table, fields=fields, values=values)
+        
     
     # Drop database tables
     def drop_all_tables(self):

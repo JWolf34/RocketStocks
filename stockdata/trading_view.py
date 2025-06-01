@@ -120,13 +120,13 @@ class TradingView():
         logger.debug("Fetching stocks with ununsual volume from TradingView")
         columns = ['Ticker', 'Close', '% Change', 'Volume', 'Relative Volume', 'Average Volume (10 Day)', 'Market Cap']
         num_rows, unusual_volume = (Query()
-                            .select('name','Price', 'Change %', 'Volume', 'Relative Volume', 'Average Volume (10 day)','Market Capitalization')
+                            .select('name','close', 'change', 'volume', 'relative_volume', 'average_volume_10d_calc','market_cap_basic')
                             .set_markets('america')
                             .where(
-                                Column('Volume') > 1000000
+                                Column('volume') > 1000000
                             )
                             .limit(100)
-                            .order_by('Relative Volume', ascending=False)
+                            .order_by('relative_volume', ascending=False)
                             .get_scanner_data())
         unusual_volume = unusual_volume.drop(columns = "ticker")
         unusual_volume.columns = columns
@@ -150,3 +150,49 @@ class TradingView():
         unusual_volume_at_time.columns = columns
         logger.debug(f"Returned volume moovers dataframe with shape {gainers.shape}")
         return unusual_volume_at_time
+    
+    @staticmethod
+    def get_gainers():
+        (Query()
+            .select(
+                'name',
+                'description',
+                'logoid',
+                'update_mode',
+                'type',
+                'typespecs',
+                'market_cap_basic',
+                'fundamental_currency_code',
+                'close',
+                'pricescale',
+                'minmov',
+                'fractional',
+                'minmove2',
+                'currency',
+                'change',
+                'volume',
+                'price_earnings_ttm',
+                'earnings_per_share_diluted_ttm',
+                'earnings_per_share_diluted_yoy_growth_ttm',
+                'dividends_yield_current',
+                'sector.tr',
+                'sector',
+                'market',
+                'recommendation_mark',
+                'relative_volume_10d_calc',
+            )
+            .where(
+                Column('exchange').isin(['AMEX', 'CBOE', 'NASDAQ', 'NYSE']),
+                Column('is_primary') == True,
+                Column('typespecs').has('common'),
+                Column('typespecs').has_none_of('preferred'),
+                Column('type') == 'stock',
+                Column('close').between(2, 10000),
+                Column('change') > 0,
+                Column('active_symbol') == True,
+            )
+            .order_by('change', ascending=False, nulls_first=False)
+            .limit(100)
+            .set_markets('america')
+            .set_property('preset', 'gainers')
+            .set_property('symbols', {'query': {'types': ['stock', 'fund', 'dr', 'structured']}}))
