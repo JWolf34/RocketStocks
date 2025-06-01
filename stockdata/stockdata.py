@@ -563,19 +563,32 @@ class StockData():
         """Return historical popularity of input ticker from database"""
         logger.info(f"Retrieving historical popularity {ticker} from database" if ticker else "Retrieving all historical popularity from database")
 
-        columns = self.db.get_table_columns('popular_stocks')
+        columns = self.db.get_table_columns('popularity')
         where_conditions = []
         order_by = ('date', 'DESC')
         if ticker:
             where_conditions.append(('ticker', ticker))
         
     
-        results = self.db.select(table='popular_stocks',
+        results = self.db.select(table='popularity',
                                     fields=columns,
                                     where_conditions=where_conditions,
                                     order_by=order_by,
                                     fetchall=True)
         return pd.DataFrame(results, columns=columns) if results else None
+    
+    
+    def update_popularity(self, popular_stocks:pd.DataFrame):
+        """Import new rows into popularity table"""
+        logger.debug(f"Inserting new popularity data into database - {popular_stocks.shape[0]} rows")
+
+        values = [tuple(row) for row in popular_stocks.values]
+        self.db.insert(table='popularity', fields=popular_stocks.columns.to_list(), values=values)
+
+        
+
+
+
 
     async def validate_ticker(self, ticker):
         """Returns true if ticker exists in database, else False"""
@@ -626,7 +639,14 @@ if __name__ == '__main__':
 
     import asyncio
     sd = StockData()
-    pop = sd.popularity.get_popular_stocks()
-    print(pop)
+    sd.db.drop_all_tables()
+    sd.db.create_tables()
+    popular_stocks = sd.popularity.get_popular_stocks()
+
+    # Update db with popular stocks at this interval
+    popular_stocks.insert(loc=0,
+                          column='datetime',
+                          value=pd.Series([date_utils.round_down_nearest_minute(30)] * popular_stocks.shape[0]).values)
+    sd.update_popularity(popular_stocks=popular_stocks)
         
    

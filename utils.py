@@ -299,6 +299,12 @@ class date_utils:
         future = (now + datetime.timedelta(minutes=diff)).replace(second=0, microsecond=0)
         return (future-now).total_seconds()
     
+    @staticmethod 
+    def round_down_nearest_minute(minute:int):
+        now = datetime.datetime.now()
+        rounded = now - (now - datetime.datetime.min) % datetime.timedelta(minutes=minute)
+        return rounded
+        
     @staticmethod
     def timezone():
         tz = get_env("TZ")

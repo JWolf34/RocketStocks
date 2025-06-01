@@ -55,6 +55,12 @@ class Reports(commands.Cog):
         logger.info("Fetching most poular stocks")
         popular_stocks = self.stock_data.popularity.get_popular_stocks()
 
+        # Update db with popular stocks at this interval
+        popular_stocks = popular_stocks.insert(loc=0,
+                                               column='datetime',
+                                               value=pd.Series([date_utils.round_down_nearest_minute(30)] * popular_stocks.shape[0]).values)
+
+
         logger.info("Sending today's popularity report")
         report = PopularityReport(self.screeners_channel)
         await report.send_report()
@@ -76,7 +82,7 @@ class Reports(commands.Cog):
                                                        'name'])
         popular_stocks['date'] = datetime.datetime.today().strftime("%Y-%m-%d")
         popular_stocks = popular_stocks[fields]
-        sd.Postgres().insert(table='popular_stocks', fields=fields, values=[tuple(row) for row in popular_stocks.values])
+        sd.Postgres().insert(table='popularity', fields=fields, values=[tuple(row) for row in popular_stocks.values])
 
 
     # Generate and send premarket gainer reports to the reports channel

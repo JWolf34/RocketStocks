@@ -70,13 +70,16 @@ class Postgres():
                             systemgenerated     boolean
                             );
                             
-                            CREATE TABLE IF NOT EXISTS popular_stocks (
-                            date                date,
-                            ticker              varchar(8),
+                            CREATE TABLE IF NOT EXISTS popularity (
+                            datetime            timestamp,
                             rank                int,
+                            ticker              varchar(8),
+                            name                varchar(255),
                             mentions            int,
                             upvotes             int,
-                            PRIMARY KEY (date, ticker)
+                            rank_24h_ago        int,
+                            mentions_24h_ago    int,
+                            PRIMARY KEY (datetime, rank)
                             );
 
                             CREATE TABLE IF NOT EXISTS historical_earnings (
@@ -150,7 +153,7 @@ class Postgres():
                          DROP TABLE daily_price_history;
                          DROP TABLE five_minute_price_history;
                          DROP TABLE historical_earnings;
-                         DROP TABLE popular_stocks;
+                         DROP TABLE popularity;
                          DROP TABLE reports;
                          DROP TABLE tickers;
                          DROP TABLE upcoming_earnings;
