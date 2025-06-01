@@ -77,11 +77,11 @@ class Reports(commands.Cog):
     @tasks.loop(minutes=5)
     async def send_gainer_reports(self):
         market_period = self.mutils.get_market_period()
-        if (self.mutils.market_open_today() and market_period != 'EOD'):
+        if True: #(self.mutils.market_open_today() and market_period != 'EOD'):
             # Generate report
             report = GainerReport(channel=self.screeners_channel,
                                   stock_data=self.bot.stock_data,
-                                  market_period=market_period)
+                                  market_period='aftermarket')#market_period)
 
             # Update alert tickers with gainers
             self.bot.stock_data.update_alert_tickers(tickers=report.get_tickers(), source='gainers')
@@ -591,6 +591,19 @@ class Screener(Report):
        self.dutils = discord_utils(db=stock_data.db)
        self.screener_type = screener_type
 
+    def get_tickers(self):
+        return self.data['Ticker'].to_list()
+
+    def update_watchlist(self):
+        watchlist_id = self.screener_type
+        watchlist_tickers = self.get_tickers()
+        watchlist_tickers = watchlist_tickers[:15]
+
+        if not self.stock_data.watchlists.validate_watchlist(watchlist_id):
+            self.stock_data.watchlists.create_watchlist(watchlist_id=watchlist_id, tickers=watchlist_tickers, systemGenerated=True)
+        else:
+            self.stock_data.watchlists.update_watchlist(watchlist_id=watchlist_id, tickers=watchlist_tickers)
+
     # Override
     async def send_report(self):
         """Send gainer report to the screeners channel"""
@@ -598,6 +611,9 @@ class Screener(Report):
 
         logger.debug(f"Posting '{self.screener_type}' screener...")
         today = datetime.datetime.today()
+
+        # Format screener type for db insertion
+        self.screener_type = self.screener_type.upper().replace("-","_")
         
         # Check if a gainer message already exists and update if present
         message_id = self.dutils.get_screener_message_id(screener_type=self.screener_type)
@@ -671,33 +687,28 @@ class StockReport(Report):
                 await interaction.response.send_message(f"Fetched news for {self.ticker}!", ephemeral=True)
 
 class GainerReport(Screener):
-    def __init__(self, channel, stock_data, market_period:str, ):
-        super().__init__(channel=channel, screener_type=f"{market_period.upper()}_GAINER", stock_data=stock_data)
+    def __init__(self, channel, stock_data, market_period:str):
+        super().__init__(channel=channel, screener_type=f"{market_period}-gainers", stock_data=stock_data)
         self.market_period = market_period
 
         # Populate gainers based on market period
-        self.gainers = None
-        self.gainers_formatted = pd.DataFrame()
+        self.data = None
+        self.data = pd.DataFrame()
         if self.market_period == 'premarket':
-            self.gainers = sd.TradingView.get_premarket_gainers_by_market_cap(1000000)
+            self.data = sd.TradingView.get_premarket_gainers_by_market_cap(1000000)
         elif self.market_period == 'intraday':
-            self.gainers = sd.TradingView.get_intraday_gainers_by_market_cap(1000000)
+            self.data = sd.TradingView.get_intraday_gainers_by_market_cap(1000000)
         elif self.market_period == 'aftermarket':
-            self.gainers = sd.TradingView.get_postmarket_gainers_by_market_cap(1000000)
-        if not self.gainers.empty:
-            self.update_gainer_watchlist()
-            self.gainers_formatted = self.format_df_for_table()
+            self.data = sd.TradingView.get_postmarket_gainers_by_market_cap(1000000)
+        if not self.data.empty:
+            self.update_watchlist()
+            self.data = self.format_df_for_table()
         else:
-            self.gainers_formatted.columns = self.gainers.columns.to_list()
-
-        
-
-    def get_tickers(self):
-        return self.gainers['Ticker'].to_list()
+            self.data.columns = self.data.columns.to_list()
 
     def format_df_for_table(self):
         logger.debug("Formatting gainers dataframe for table viewing")
-        gainers = self.gainers.copy()
+        gainers = self.data.copy()
         change_columns = ['Premarket Change', '% Change', 'After Hours Change']
         volume_columns = ['Premarket Volume', "After Hours Volume"]
         gainers['Volume'] = gainers['Volume'].apply(lambda x: self.format_large_num(x))
@@ -710,15 +721,7 @@ class GainerReport(Screener):
                 gainers[column] = gainers[column].apply(lambda x: self.format_large_num(x))
         return gainers
 
-    def update_gainer_watchlist(self):
-        watchlist_id = f"{self.market_period}-gainers"
-        watchlist_tickers = self.get_tickers()
-        watchlist_tickers = watchlist_tickers[:15]
-
-        if not self.stock_data.watchlists.validate_watchlist(watchlist_id):
-            self.stock_data.watchlists.create_watchlist(watchlist_id=watchlist_id, tickers=watchlist_tickers, systemGenerated=True)
-        else:
-            self.stock_data.watchlists.update_watchlist(watchlist_id=watchlist_id, tickers=watchlist_tickers)
+    
 
     # Override
     def build_report_header(self):
@@ -738,7 +741,7 @@ class GainerReport(Screener):
         logger.debug("Building Gainer Report...")
         report = ""
         report +=  self.build_report_header()
-        report +=  self.build_table(self.gainers_formatted[:15])
+        report +=  self.build_table(self.data[:15])
         return report
     
 
@@ -746,12 +749,12 @@ class VolumeReport(Screener):
     def __init__(self, channel, stock_data, market_period):
         super().__init__(channel=channel,
                          stock_data=stock_data,
-                         screener_type='UNUSUAL_VOLUME')
+                         screener_type='unusual-volume')
         self.market_period = market_period
         self.volume_movers = sd.TradingView.get_unusual_volume_movers()
         self.volume_movers_formatted = self.format_df_for_table()
-        if self.volume_movers.size > 0:
-            self.update_unusual_volume_watchlist()
+        if not self.volume_movers.empty:
+            self.update_watchlist()
        
 
     async def init(self):

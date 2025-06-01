@@ -150,4 +150,3 @@ class TradingView():
         unusual_volume_at_time.columns = columns
         logger.debug(f"Returned volume moovers dataframe with shape {gainers.shape}")
         return unusual_volume_at_time
-    
