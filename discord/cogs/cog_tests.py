@@ -2,9 +2,9 @@ import discord
 from discord import app_commands
 from discord.ext import commands
 from discord.ext import tasks
-from reports import GainerReport
-import config
-from config import market_utils
+from discord.cogs.cog_reports import GainerReport
+import utils
+from utils import market_utils
 import logging
 
 # Logging configuration
@@ -13,7 +13,7 @@ logger = logging.getLogger(__name__)
 class Tests(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
-        self.gainers_channel = self.bot.get_channel(config.discord_utils.screeners_channel_id)
+        self.gainers_channel = self.bot.get_channel(utils.discord_utils.screeners_channel_id)
         
 
     @commands.Cog.listener()

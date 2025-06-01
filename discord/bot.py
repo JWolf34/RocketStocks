@@ -3,8 +3,9 @@ sys.path.append('../RocketStocks')
 import os
 import discord
 from discord.ext import commands
+from stockdata import StockData
 import asyncio
-import config
+import utils
 import logging
 
 
@@ -19,7 +20,7 @@ for handler in logger.handlers:
 # Bot setup
 intents = discord.Intents.default()
 bot = commands.Bot(command_prefix='$', intents=intents)
-token = config.secrets.discord_token
+token = utils.secrets.discord_token
 
 # Load cogs
 async def load():
@@ -29,14 +30,14 @@ async def load():
     logger.info("Loaded extensions")
 
 # Start bot
-def run_bot():
+def run_bot(stock_data:StockData):
     @bot.event
     async def on_ready():
         logger.info("RocketStocks bot ready!")
         await load()
-        config.bot_setup()
+        utils.bot_setup()
     
-    
+    bot.stock_data = stock_data # StockData
     bot.run(token)
 
 

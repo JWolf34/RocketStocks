@@ -1,7 +1,9 @@
 import sys
 sys.path.append('discord')
+sys.path.append('discord/cogs')
+sys.path.append('stockdata')
 import bot as Discord
-import stockdata as sd
+from stockdata import StockData
 import logging
 import logging.config
 import logging.handlers
@@ -51,9 +53,12 @@ def setup_logging():
 def rocketStocks():
     logger.info('**********[START LOG]**********')
 
+    # Init StockData object
+    stock_data = StockData()
 
-    bot_thread = threading.Thread(target=Discord.run_bot)
-    scheduler_thread = threading.Thread(target=scheduler.scheduler)
+    # Build threads - one for bot and one for scheduler
+    bot_thread = threading.Thread(target=lambda: Discord.run_bot(stock_data=stock_data))
+    scheduler_thread = threading.Thread(target=lambda:scheduler.scheduler(stock_data=stock_data))
 
     bot_thread.start()
     logger.debug("Bot thread initialized")
@@ -69,7 +74,6 @@ if (__name__ == '__main__'):
     setup_logging()
     rocketStocks()
     
-
     
 
     

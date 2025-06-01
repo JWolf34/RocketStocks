@@ -1,21 +1,20 @@
-from apscheduler.schedulers.background import BackgroundScheduler
+#from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
-from apscheduler.triggers.interval import IntervalTrigger
-import stockdata as sd
-import analysis as an
+#from apscheduler.triggers.interval import IntervalTrigger
 import logging
-import sys
 import asyncio
 
 # Logging configuration
 logger = logging.getLogger(__name__)
 
 
-def scheduler():
+def scheduler(stock_data):
     timezone = 'UTC'
 
-    async def async_scheduler():
+    async def async_scheduler(stock_data):
+        
+
         # Scheduler
         aio_sched = AsyncIOScheduler()
         
@@ -34,35 +33,35 @@ def scheduler():
 
         # Update tickers table in database with lastest NASDAQ data
         # Estimated runtime seconds
-        aio_sched.add_job(sd.StockData.update_tickers, trigger=update_tickers_trigger, name = "Update tickers data in DB", timezone=timezone, replace_existing=True)
+        aio_sched.add_job(stock_data.update_tickers, trigger=update_tickers_trigger, name = "Update tickers data in DB", timezone=timezone, replace_existing=True)
 
         # Insert new tickers from NASDAQ into table in database 
         # Estimated runtime seconds
-        aio_sched.add_job(sd.StockData.insert_new_tickers, trigger=insert_new_tickers_trigger, name = "Insert new tickers into DB", timezone=timezone, replace_existing=True)
+        aio_sched.add_job(stock_data.insert_new_tickers, trigger=insert_new_tickers_trigger, name = "Insert new tickers into DB", timezone=timezone, replace_existing=True)
 
         # Update upcomingearnings table with newly reported earnings dates
         # Estimated runtime ~10 minutes
-        aio_sched.add_job(sd.StockData.Earnings.update_upcoming_earnings, trigger=update_upcoming_earnings_trigger, name = "Update upcoming earnings", timezone=timezone, replace_existing=True)
+        aio_sched.add_job(stock_data.earnings.update_upcoming_earnings, trigger=update_upcoming_earnings_trigger, name = "Update upcoming earnings", timezone=timezone, replace_existing=True)
 
         # Delete rows in upcomingearnings with a date earlier than today
         # Estimated runtime seconds
-        aio_sched.add_job(sd.StockData.Earnings.remove_past_earnings, trigger=remove_past_earnings_trigger, name = "Remove past earnings", timezone=timezone, replace_existing=True)
+        aio_sched.add_job(stock_data.earnings.remove_past_earnings, trigger=remove_past_earnings_trigger, name = "Remove past earnings", timezone=timezone, replace_existing=True)
 
         # Update historicalearnings table with newly release earnings
         # Estimated runtime seconds (once up-to-date)
-        aio_sched.add_job(sd.StockData.Earnings.update_historical_earnings, trigger=update_historical_earnings_trigger, name = "Update historical earnings", timezone=timezone, replace_existing=True)
+        aio_sched.add_job(stock_data.earnings.update_historical_earnings, trigger=update_historical_earnings_trigger, name = "Update historical earnings", timezone=timezone, replace_existing=True)
 
         # Update dailypricehistory table with today's market data (daily job)
         # Estimated runtime ~35 minutes
-        aio_sched.add_job(sd.StockData.update_daily_price_history, trigger=update_daily_data_daily_trigger, name = "Update daily price history (daily)", timezone=timezone, replace_existing=True)
+        aio_sched.add_job(stock_data.update_daily_price_history, trigger=update_daily_data_daily_trigger, name = "Update daily price history (daily)", timezone=timezone, replace_existing=True)
 
         # Update fiveminutepricehistorytable with recent market data (daily job)
         # Estimated runtime ~45 minutes
-        aio_sched.add_job(sd.StockData.update_5m_price_history, trigger= update_5m_data_daily_trigger, name = "Update 5m price history (daily)", timezone=timezone, replace_existing=True)
+        aio_sched.add_job(stock_data.update_5m_price_history, trigger= update_5m_data_daily_trigger, name = "Update 5m price history (daily)", timezone=timezone, replace_existing=True)
 
         # Update ct_politicians table with new politicians added to Capitol Trades
         # Estimated runtime seconds
-        aio_sched.add_job(sd.CapitolTrades.update_politicians, trigger=update_politicians_trigger, name = "Update politicians", timezone=timezone, replace_existing=True)
+        aio_sched.add_job(stock_data.capitol_trades.update_politicians, trigger=update_politicians_trigger, name = "Update politicians", timezone=timezone, replace_existing=True)
 
         aio_sched.start()
 
@@ -70,7 +69,7 @@ def scheduler():
             await asyncio.sleep(1000)
 
     # Async scheduler
-    asyncio.run(async_scheduler())
+    asyncio.run(async_scheduler(stock_data))
  
 if __name__ == '__main__':
     scheduler()

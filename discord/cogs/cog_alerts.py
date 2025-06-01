@@ -1,16 +1,10 @@
 import discord
-from discord import app_commands
 from discord.ext import commands
 from discord.ext import tasks
-from reports import Report
-from reports import StockReport
-import stockdata as sd
+from discord.cogs.cog_reports import Report, StockReport, NewsReport
 import analysis as an
-import pandas as pd
 import numpy as np
-import config
-from config import market_utils
-from config import date_utils
+from utils import market_utils, date_utils, discord_utils
 import datetime
 import logging
 import asyncio
@@ -19,11 +13,19 @@ import asyncio
 logger = logging.getLogger(__name__)
 
 class Alerts(commands.Cog):
+    """Push alerts to discord when criteria for stock movements is met"""
     def __init__(self, bot):
         self.bot = bot
-        self.alerts_channel=self.bot.get_channel(config.discord_utils.alerts_channel_id)
-        self.reports_channel= self.bot.get_channel(config.discord_utils.reports_channel_id)
+        self.mutils = market_utils()
+
+        # Init channels to post alerts to 
+        self.alerts_channel=self.bot.get_channel(discord_utils.alerts_channel_id)
+        self.reports_channel= self.bot.get_channel(discord_utils.reports_channel_id)
+
+        # Dict of tickers to send alerts on
         self.alert_tickers = {}
+
+        # Start alerts
         self.post_alerts_date.start()
         self.send_popularity_movers.start()
         self.send_politician_trade_alerts.start()
@@ -34,26 +36,31 @@ class Alerts(commands.Cog):
     async def on_ready(self):
         logger.info(f"Cog {__name__} loaded!")
 
+
     async def update_alert_tickers(self, key:str, tickers:list):
-        logger.debug(f"Updating alert tickers - key: {key}, tickers: {tickers}")
+        """Updates tickers to trigger alerts for"""
+        logger.info(f"Updating alert tickers - key: {key}, tickers: {tickers}")
         self.alert_tickers[key] = tickers
 
     @tasks.loop(time=datetime.time(hour=6, minute=0, second=0)) # time in UTC
     async def post_alerts_date(self):
-        if (market_utils.market_open_today()):
+        if (self.mutils.market_open_today()):
             date_string = date_utils.format_date_mdy(datetime.datetime.today())
             await self.alerts_channel.send(f"# :rotating_light: Alerts for {date_string} :rotating_light:")
 
     @tasks.loop(minutes = 5)
     async def send_alerts(self):
-        if (market_utils.market_open_today() and (market_utils.in_extended_hours() or market_utils.in_intraday())):
-            all_alert_tickers = list(set([ticker for tickers in self.alert_tickers.values() for ticker in tickers]))
+        '''Process alerts every 5 minutes if the market is open and in intraday or after hours'''
+        if (self.mutils.market_open_today() and self.mutils.get_market_period() in ['intraday', 'aftermarket']):
+            all_alert_tickers = list(set([ticker for tickers in self.bot.stock_data.alert_tickers.values() for ticker in tickers]))
             #all_alert_tickers = ['PHIO', 'ATPC', 'SLRX', 'KAPA']
+
+            # Fetch quotes for tickers from Schwab in chunks of 'chunk_size'
             quotes = {}
             chunk_size = 10
             for i in range(0, len(all_alert_tickers), chunk_size):
                 tickers = all_alert_tickers[i:i+chunk_size]
-                quotes = quotes | await sd.Schwab().get_quotes(tickers=tickers)
+                quotes = quotes | await self.bot.stock_data.schwab.get_quotes(tickers=tickers)
             quotes.pop('errors', None)
             all_alert_tickers = [ticker for ticker in quotes]
 
@@ -70,14 +77,15 @@ class Alerts(commands.Cog):
     # + 30 seconds to allow for reports to generate and add tickers to the alert list
     @send_alerts.before_loop
     async def send_alerts_before_loop(self):
+        """Before loop for 'send_alerts'"""
         DELTA = 30
-        await asyncio.sleep(config.date_utils.seconds_until_5m_interval() + DELTA)
+        await asyncio.sleep(date_utils.seconds_until_5m_interval() + DELTA)
 
     async def send_earnings_movers(self, tickers:list, quotes:dict):
         logger.info("Processing earnings movers")
         today = datetime.datetime.today()
         for ticker in tickers:
-            earnings_date = sd.StockData.Earnings.get_next_earnings_date(ticker)
+            earnings_date = self.bot.stock_data.earnings.get_next_earnings_date(ticker)
             if earnings_date != "N/A":
                 pct_change = quotes[ticker]['quote']['netPercentChange']   
                 if earnings_date == today.date() and pct_change > 10.0:
@@ -93,7 +101,7 @@ class Alerts(commands.Cog):
         today = datetime.datetime.today()
         for index, row in gainers.iterrows():
             ticker = row['Ticker']
-            filings = sd.SEC().get_filings_from_today(ticker)
+            filings = self.bot.sec.get_filings_from_today(ticker)
             pct_change = quotes[ticker]['quote']['netPercentChange']   
             if filings.size > 0 and abs(pct_change) > 10.0:
                 logger.debug(f"Identified ticker '{ticker}' with SEC filings today and percent change {"{:.2f}%".format(pct_change)}")
@@ -104,12 +112,12 @@ class Alerts(commands.Cog):
     async def send_watchlist_movers(self, tickers:list, quotes:dict):
         logger.info("Processing watchlist movers")
         for ticker in tickers:
-            watchlists = sd.Watchlists().get_watchlists()
+            watchlists = self.bot.watchlists.get_watchlists()
             for watchlist in watchlists:
                 if watchlist == 'personal':
                     pass
                 else:
-                    watchlist_tickers = sd.Watchlists().get_tickers_from_watchlist(watchlist)
+                    watchlist_tickers = self.bot.watchlists.get_tickers_from_watchlist(watchlist)
                     pct_change = quotes[ticker]['quote']['netPercentChange']   
                     if ticker in watchlist_tickers and abs(pct_change) > 10.0:
                         logger.debug(f"Identified ticker '{ticker}' on watchlist '{watchlist}' with percent change {"{:.2f}%".format(pct_change)}")
@@ -173,9 +181,13 @@ class Alerts(commands.Cog):
     async def send_popularity_movers(self):
         logger.info("Processing popularity movers")
         blacklist_tickers = ['DTE', 'AM', 'PM', 'DM']
-        top_stocks = sd.ApeWisdom().get_top_stocks()[:50]
+        top_stocks = self.bot.stockdata.apewisdom.get_top_stocks()
         top_stocks = top_stocks[~top_stocks['ticker'].isin(blacklist_tickers)]
-        await self.update_alert_tickers(key='popular-stocks', tickers=top_stocks['ticker'].to_list())
+
+        # Update alert tickers with gainers
+        self.bot.stock_date.update_alert_tickers(tickers=top_stocks, source='popularity')
+
+        #await self.update_alert_tickers(key='popular-stocks', tickers=top_stocks['ticker'].to_list()[50])
         
         for index, row in top_stocks.iterrows():
             ticker = row['ticker']
@@ -211,9 +223,9 @@ class Alerts(commands.Cog):
                     alert_data = {}
                     alert_data['todays_rank'] = row['rank']
                     alert_data['high_rank'] = high_rank
-                    alert_data['high_rank_date'] = config.date_utils.format_date_mdy(high_rank_date)
+                    alert_data['high_rank_date'] = utils.date_utils.format_date_mdy(high_rank_date)
                     alert_data['low_rank'] = low_rank
-                    alert_data['low_rank_date'] = config.date_utils.format_date_mdy(low_rank_date)
+                    alert_data['low_rank_date'] = utils.date_utils.format_date_mdy(low_rank_date)
                     alert = PopularityAlert(ticker = ticker, 
                                             channel=self.alerts_channel,
                                             alert_data=alert_data) 
@@ -225,7 +237,7 @@ class Alerts(commands.Cog):
     async def send_politician_trade_alerts(self):
         politician = sd.CapitolTrades.politician(name='Nancy Pelosi')
         trades = sd.CapitolTrades.trades(pid=politician['politician_id'])
-        today = config.date_utils.format_date_mdy(datetime.date.today())
+        today = utils.date_utils.format_date_mdy(datetime.date.today())
         todays_trades = trades[trades['Published Date'].apply(lambda x: x == today)]
         if not todays_trades.empty:
             alert_data = {}
@@ -240,7 +252,7 @@ class Alerts(commands.Cog):
     @send_popularity_movers.before_loop
     @send_politician_trade_alerts.before_loop
     async def sleep_until_5m_interval(self):
-        await asyncio.sleep(config.date_utils.seconds_until_5m_interval())
+        await asyncio.sleep(utils.date_utils.seconds_until_5m_interval())
 
     
 ##################
@@ -275,24 +287,24 @@ class Alert(Report):
 
     async def send_alert(self):
         today = datetime.datetime.today()
-        market_period = market_utils.get_market_period()
-        message_id = config.discord_utils.get_alert_message_id(date=today.date(), ticker=self.ticker, alert_type=self.alert_type)
+        market_period = self.mutils.get_market_period()
+        message_id = discord_utils.get_alert_message_id(date=today.date(), ticker=self.ticker, alert_type=self.alert_type)
         if message_id is not None:
             logger.debug(f"Alert {self.alert_type} already reported for ticker {self.ticker} today")
-            old_alert_data = config.discord_utils.get_alert_message_data(date=today.date(), ticker=self.ticker, alert_type=self.alert_type)
+            old_alert_data = discord_utils.get_alert_message_data(date=today.date(), ticker=self.ticker, alert_type=self.alert_type)
             if self.override_and_edit(old_alert_data = old_alert_data):
                 logger.debug(f"Significant movements on ticker {self.ticker} since alert last posted - updating...")
                 prev_message =  await self.channel.fetch_message(message_id)
-                prev_message_time = prev_message.created_at.astimezone(config.date_utils.get_timezone())
+                prev_message_time = prev_message.created_at.astimezone(utils.date_utils.timezone())
                 self.message += f"\n[Updated from last alert at {prev_message_time.strftime("%-I:%M %p")} {prev_message_time.tzname()}]({prev_message.jump_url})"
                 message = await self.channel.send(self.message, view=self.buttons)
-                config.discord_utils.update_alert_message_data(date=today.date(), ticker=self.ticker, alert_type=self.alert_type, messageid=message.id, alert_data=self.alert_data)
+                discord_utils.update_alert_message_data(date=today.date(), ticker=self.ticker, alert_type=self.alert_type, messageid=message.id, alert_data=self.alert_data)
             else:
                 logger.debug(f"Movements for ticker {self.ticker} not significant enough to update alert")
                 pass
         else:
             message = await self.channel.send(self.message, view=self.buttons)
-            config.discord_utils.insert_alert_message_id(date=today.date(), ticker=self.ticker, alert_type=self.alert_type, message_id=message.id, alert_data = self.alert_data)
+            discord_utils.insert_alert_message_id(date=today.date(), ticker=self.ticker, alert_type=self.alert_type, message_id=message.id, alert_data = self.alert_data)
             return message
 
 
@@ -331,7 +343,7 @@ class EarningsMoverAlert(Alert):
     def build_todays_change(self):
         logger.debug("Building today's change...")
         symbol = ":green_circle:" if self.alert_data['pct_change'] > 0 else ":small_red_triangle_down:"
-        return f"**{self.ticker}** is {symbol} **{"{:.2f}".format(self.alert_data['pct_change'])}%**  {market_utils.get_market_period()} and has earnings today\n "
+        return f"**{self.ticker}** is {symbol} **{"{:.2f}".format(self.alert_data['pct_change'])}%**  {self.mutils.get_market_period()} and has earnings today\n "
 
     def build_alert(self):
         logger.debug("Building Earnings Mover Alert...")
@@ -355,7 +367,7 @@ class SECFilingMoverAlert(Alert):
     def build_todays_change(self):
         logger.debug("Building today's change...")
         symbol = ":green_circle:" if self.alert_data['pct_change']> 0 else ":small_red_triangle_down:"
-        return f"**{self.ticker}** is {symbol} **{"{:.2f}".format(self.alert_data['pct_change'])}%** {market_utils.get_market_period()} and filed with the SEC today\n"
+        return f"**{self.ticker}** is {symbol} **{"{:.2f}".format(self.alert_data['pct_change'])}%** {self.mutils.get_market_period()} and filed with the SEC today\n"
 
     def build_alert(self):
         logger.debug("Building SEC Filing Mover Alert...")
@@ -515,7 +527,7 @@ class PoliticianTradeAlert(Alert):
 
     def build_todays_change(self):
         logger.debug("Building today's change...")
-        return f"**{self.politician['name']}** has published **{len(self.alert_data['trades'])}** trades today, {config.date_utils.format_date_mdy(datetime.date.today())} \n"
+        return f"**{self.politician['name']}** has published **{len(self.alert_data['trades'])}** trades today, {utils.date_utils.format_date_mdy(datetime.date.today())} \n"
 
 
     def build_alert(self):
