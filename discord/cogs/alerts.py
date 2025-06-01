@@ -1,7 +1,7 @@
 import discord
 from discord.ext import commands
 from discord.ext import tasks
-from discord.cogs.cog_reports import Report, StockReport, NewsReport
+from discord.cogs.reports import Report, StockReport, NewsReport
 import analysis as an
 import numpy as np
 from utils import market_utils, date_utils, discord_utils
@@ -79,7 +79,7 @@ class Alerts(commands.Cog):
     async def send_alerts_before_loop(self):
         """Before loop for 'send_alerts'"""
         DELTA = 30
-        await asyncio.sleep(date_utils.seconds_until_5m_interval() + DELTA)
+        await asyncio.sleep(date_utils.seconds_until_minute_interval() + DELTA)
 
     async def send_earnings_movers(self, tickers:list, quotes:dict):
         logger.info("Processing earnings movers")

@@ -289,13 +289,13 @@ class date_utils:
         return dt.replace(minute = dt.minute - delta)
 
     @staticmethod
-    def seconds_until_5m_interval():
+    def seconds_until_minute_interval(minute:int):
         now = datetime.datetime.now().astimezone()
-        if now.minute % 5 == 0:
+        if now.minute % minute == 0:
             return 0
-        minutes_by_five = now.minute // 5
+        minutes_by_increment = now.minute // minute
         # get the difference in times
-        diff = (minutes_by_five + 1) * 5 - now.minute
+        diff = (minutes_by_increment + 1) * minute - now.minute
         future = (now + datetime.timedelta(minutes=diff)).replace(second=0, microsecond=0)
         return (future-now).total_seconds()
     

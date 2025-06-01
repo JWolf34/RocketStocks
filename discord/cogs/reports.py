@@ -4,7 +4,7 @@ import discord
 from discord import app_commands
 from discord.ext import commands
 from discord.ext import tasks
-from cog_watchlists import Watchlists
+from discord.cogs.watchlists import Watchlists
 import datetime
 from stockdata import StockData
 import pandas as pd
@@ -20,12 +20,7 @@ import random
 logger = logging.getLogger(__name__)  
 
 class Reports(commands.Cog):
-<<<<<<< HEAD:discord/cogs/reports.py
-    def __init__(self, bot):
-        # Init cog and kick off scheduled reports
-=======
     def __init__(self, bot, stock_data:StockData):
->>>>>>> alerts:discord/cogs/cog_reports.py
         self.bot = bot
         self.stock_data = stock_data
         self.mutils = market_utils()
@@ -53,10 +48,13 @@ class Reports(commands.Cog):
     # Tasks #
     #########
 
-    # Report on most popular stocks across reddit daily
-    @tasks.loop(time=datetime.time(hour=22 , minute=0, second=0)) # time in UTC
-    #@tasks.loop(hours=24)
+    # Screener on most popular stocks across reddit daily
+    #@tasks.loop(time=datetime.time(hour=22 , minute=0, second=0)) # time in UTC
+    @tasks.loop(minutes=30)
     async def send_popularity_reports(self):
+
+
+
         logger.info("Sending today's popularity report")
         report = PopularityReport(self.screeners_channel)
         await report.send_report()
@@ -123,13 +121,20 @@ class Reports(commands.Cog):
             pass
 
     # Start posting report at next 0 or 5 minute interval
-    #@send_gainer_reports.before_loop
-    #@send_volume_reports.before_loop
-    async def reports_before_loop(self):
-        sleep_time = date_utils.seconds_until_5m_interval()
-        logger.info(f"Reports will begin posting in {sleep_time} seconds")
+    @send_gainer_reports.before_loop
+    @send_volume_reports.before_loop
+    async def sleep_until_5m(self):
+        sleep_time = date_utils.seconds_until_minute_interval(minute=5)
+        logger.info(f"5m reports will begin posting in {sleep_time} seconds")
         await asyncio.sleep(sleep_time)
-            
+
+    # Start posting reports at next 0 or 30 minute interval
+    @send_popularity_reports.before_loop
+    async def sleep_until_30m(self):
+        sleep_time = date_utils.seconds_until_minute_interval(minute=30)
+        logger.info(f"30m reports will begin posting in {sleep_time} seconds")
+        await asyncio.sleep(sleep_time)
+
 
     @tasks.loop(time=datetime.time(hour=12, minute=30, second=0)) # time in UTC
     #@tasks.loop(minutes=5)
