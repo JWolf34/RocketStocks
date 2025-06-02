@@ -162,6 +162,7 @@ class TradingView():
                                         'type',
                                         'typespecs',
                                         'relative_volume_10d_calc',
+                                        'average_volume_10d_calc',
                                         'close',
                                         'pricescale',
                                         'minmov',

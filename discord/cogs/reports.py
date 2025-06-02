@@ -125,8 +125,8 @@ class Reports(commands.Cog):
             pass
 
     # Start posting report at next 0 or 5 minute interval
-    #@post_gainer_screener.before_loop
-    @post_volume_screener.before_loop
+    @post_gainer_screener.before_loop
+    #@post_volume_screener.before_loop
     async def sleep_until_5m(self):
         sleep_time = date_utils.seconds_until_minute_interval(minute=5)
         logger.info(f"5m reports will begin posting in {sleep_time} seconds")
@@ -641,16 +641,7 @@ class Screener(Report):
         self.data = self.data.filter(list(self.column_map.keys()))
         self.data = self.data.rename(columns=self.column_map)
 
-        # Format all volume columns in df
-        volume_cols = self.data.filter(like='Volume').columns.to_list()
-        for volume_col in volume_cols:
-            self.data[volume_col] = self.data[volume_col].apply(lambda x: self.format_large_num(x))
-
-        # Format Market Cap
-        self.data['Market Cap'] = self.data['Market Cap'].apply(lambda x: self.format_large_num(x))
-
-        # Format % change columns
-        self.data['Change (%)'] = self.data['Change (%)'].apply(lambda x: "{:.2f}%".format(float(x)) if x is not None else 0.00)
+        
 
     # Override
     async def send_report(self):
@@ -741,24 +732,24 @@ class GainerScreener(Screener):
         # Set column map
         if market_period == 'premarket':
             column_map = {'name':'Ticker',
-                               'premarket_change':'Change (%)',
-                               'premarket_close':'Price',
-                               'close':'Prev Close',
-                               'premarket_volume':'Pre Market Volume',
-                               'market_cap_basic':'Market Cap'}
+                          'premarket_change':'Change (%)',
+                          'premarket_close':'Price',
+                          'close':'Prev Close',
+                          'premarket_volume':'Pre Market Volume',
+                          'market_cap_basic':'Market Cap'}
         elif market_period == 'intraday':
             column_map = {'name':'Ticker',
-                               'change':'Change (%)',
-                               'close':'Price',
-                               'volume':'Volume',
-                               'market_cap_basic':'Market Cap'}
+                          'change':'Change (%)',
+                          'close':'Price',
+                          'volume':'Volume',
+                          'market_cap_basic':'Market Cap'}
         elif market_period == 'aftermarket':
             column_map = {'name':'Ticker',
-                               'postmarket_change':'Change (%)',
-                               'postmarket_close':'Price',
-                               'close':'Price at Close',
-                               'postmarket_volume':'After Hours Volume',
-                               'market_cap_basic':'Market Cap'}
+                          'postmarket_change':'Change (%)',
+                          'postmarket_close':'Price',
+                          'close':'Price at Close',
+                          'postmarket_volume':'After Hours Volume',
+                          'market_cap_basic':'Market Cap'}
             
         super().__init__(channel=channel, 
                          screener_type=f"{market_period}-gainers", 
@@ -767,8 +758,21 @@ class GainerScreener(Screener):
                          column_map=column_map)
         
 
-   
-        
+    # Extends
+    def format_columns(self):
+        super().format_columns()
+
+        # Format all volume columns in df
+        volume_cols = self.data.filter(like='Volume').columns.to_list()
+        for volume_col in volume_cols:
+            self.data[volume_col] = self.data[volume_col].apply(lambda x: self.format_large_num(x))
+
+        # Format Market Cap
+        self.data['Market Cap'] = self.data['Market Cap'].apply(lambda x: self.format_large_num(x))
+
+        # Format % change columns
+        self.data['Change (%)'] = self.data['Change (%)'].apply(lambda x: "{:.2f}%".format(float(x)) if x is not None else 0.00)
+
     
 
     # Override
@@ -798,28 +802,37 @@ class VolumeScreener(Screener):
 
         # Set column map
         column_map = {'name':'Ticker',
-                      'relative_volume_10d_calc':'Relative Volume',
-                      'volume':'Volume',
                       'close':'Price',
-                      'close':'Prev Close',
-                      'premarket_volume':'Pre Market Volume',
+                      'change':'Change (%)',
+                      'relative_volume_10d_calc':'Relative Volume (10 Day)',
+                      'volume':'Volume',
+                      'average_volume_10d_calc':'Avg Volume (10 Day)',
                       'market_cap_basic':'Market Cap'}
 
 
         super().__init__(channel=channel, 
                          screener_type=f"unusual-volume", 
                          market_period=market_period,
-                         data = unusual_volume)
-
+                         data = unusual_volume,
+                         column_map=column_map)
+    
     def format_columns(self):
-        logger.debug("Formatting volume movers dataframe for table viewing")
-        movers = self.volume_movers.copy()
-        movers['Volume'] = movers['Volume'].apply(lambda x: self.format_large_num(x))
-        movers['Relative Volume'] = movers['Relative Volume'].apply(lambda x: "{:.2f}x".format(x))
-        movers['Average Volume (10 Day)'] = movers['Average Volume (10 Day)'].apply(lambda x: self.format_large_num(x))
-        movers['Market Cap'] = movers['Market Cap'].apply(lambda x: self.format_large_num(x))
-        movers['% Change'] = movers['% Change'].apply(lambda x: "{:.2f}%".format(x))
-        return movers
+        super().format_columns()
+
+        # Format all volume columns in df
+        volume_cols = self.data.filter(like='Volume').columns.to_list()
+        for volume_col in volume_cols:
+            self.data[volume_col] = self.data[volume_col].apply(lambda x: self.format_large_num(x))
+
+        # Format Market Cap
+        self.data['Market Cap'] = self.data['Market Cap'].apply(lambda x: self.format_large_num(x))
+
+        # Format % change columns
+        self.data['Change (%)'] = self.data['Change (%)'].apply(lambda x: "{:.2f}%".format(float(x)) if x is not None else 0.00)
+
+        # Append 'x' to all values in 'Relative Volume (10 Day)' column
+        self.data['Relative Volume (10 Day)'] = self.data['Relative Volume (10 Day)'].apply(lambda x: f"{x}x".format(x))
+        
 
     # Override
     def build_report_header(self):
@@ -835,7 +848,7 @@ class VolumeScreener(Screener):
         logger.debug("Building Volume Mover Report...")
         report = ""
         report += self.build_report_header()
-        report += self.build_table(self.volume_movers_formatted[:10])
+        report += self.build_table(self.data[:12])
         return report
 
 class PopularityScreener(Screener):
@@ -846,7 +859,7 @@ class PopularityScreener(Screener):
                          data=popular_stocks)
         
 
-    def format_df_for_table(self):
+    def format_columns(self):
         logger.debug("Formatting gainers dataframe for table viewing")
         gainers = self.data.copy()
         change_columns = ['Premarket Change', '% Change', 'After Hours Change']
