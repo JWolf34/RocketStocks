@@ -643,12 +643,11 @@ if __name__ == '__main__':
     #sd.db.create_tables()
 
     start = time.time()
-    popular_stocks = sd.popularity.get_popular_stocks()
+    
+    gainers = sd.trading_view.get_premarket_gainers()
+    print(gainers)
 
-    # Update db with popular stocks at this interval
-    popular_stocks.insert(loc=0,
-                          column='datetime',
-                          value=pd.Series([date_utils.round_down_nearest_minute(30)] * popular_stocks.shape[0]).values)
+
     #sd.update_popularity(popular_stocks=popular_stocks)
     end = time.time()
 

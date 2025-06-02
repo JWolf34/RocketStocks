@@ -1,5 +1,5 @@
 import logging
-from tradingview_screener import Query, Column
+from tradingview_screener import Query, Column as col
 
 # Logging configuration
 logger = logging.getLogger(__name__)
@@ -10,127 +10,191 @@ class TradingView():
 
     @staticmethod
     def get_premarket_gainers():
-        logger.debug("Fetching premarket gainers from TradingView")
         num_rows, gainers = (Query()
-                    .select('name', 'close', 'volume', 'market_cap_basic', 'premarket_change', 'premarket_volume', 'exchange')
-                    .order_by('premarket_change', ascending=False)
-                    .where(
-                            Column('exchange').isin(['NASDAQ', 'NYSE', 'AMEX']))
-                    .limit(100)
-                    .get_scanner_data())
-        gainers = gainers.drop(columns='exchange')
-        gainers = gainers.drop(columns='ticker')
-        headers = ['Ticker', 'Close', 'Volume', 'Market Cap', 'Premarket Change', "Premarket Volume"]
-        gainers.columns = headers
-        logger.debug(f"Returned gainers dataframe with shape {gainers.shape}")
+                            .select(
+                                'logoid',
+                                'name',
+                                'premarket_close',
+                                'premarket_change_abs',
+                                'premarket_change',
+                                'premarket_volume',
+                                'premarket_gap',
+                                'close',
+                                'change',
+                                'volume',
+                                'market_cap_basic',
+                                'Perf.1Y.MarketCap',
+                                'description',
+                                'type',
+                                'typespecs',
+                                'update_mode',
+                                'pricescale',
+                                'minmov',
+                                'fractional',
+                                'minmove2',
+                                'fundamental_currency_code',
+                                'currency',
+                            )
+                            .where(
+                                col('exchange').isin(['AMEX', 'CBOE', 'NASDAQ', 'NYSE']),
+                                col('is_primary') == True,
+                                col('typespecs').has('common'),
+                                col('typespecs').has_none_of('preferred'),
+                                col('type') == 'stock',
+                                col('premarket_change') > 0,
+                                col('premarket_change').not_empty(),
+                                col('active_symbol') == True,
+                            )
+                            .order_by('premarket_change', ascending=False, nulls_first=False)
+                            .limit(100)
+                            .set_markets('america')
+                            .set_property('symbols', {'query': {'types': ['stock', 'fund', 'dr', 'structured']}})
+                            .set_property('preset', 'pre-market-gainers')
+                            .get_scanner_data())
+        
         return gainers
 
-    @staticmethod
-    def get_premarket_gainers_by_market_cap(market_cap):
-        logger.debug(f"Fetching premarket gainers from TradingView with market cap  > {market_cap}")
-        num_rows, gainers = (Query()
-                .select('name', 'close', 'volume', 'market_cap_basic', 'premarket_change', 'premarket_volume', 'exchange')
-                .order_by('premarket_change', ascending=False)
-                .where(
-                    Column('market_cap_basic') >= market_cap,
-                    Column('exchange').isin(['NASDAQ', 'NYSE', 'AMEX']))
-                .limit(100)
-                .get_scanner_data())
-        gainers = gainers.drop(columns='exchange')
-        gainers = gainers.drop(columns='ticker')
-        headers = ['Ticker', 'Close', 'Volume', 'Market Cap', 'Premarket Change', 'Premarket Volume']
-        gainers.columns = headers
-        logger.debug(f"Returned gainers dataframe with shape {gainers.shape}")
-        return gainers
 
     @staticmethod
     def get_intraday_gainers():
         logger.debug(f"Fetching intraday gainers from TradingView")
-        gainers = (Query()
-                .select('name', 'close', 'volume', 'market_cap_basic', 'change', 'exchange' )
-                .order_by('change', ascending=False)
-                .where(
-                            Column('exchange').isin(['NASDAQ', 'NYSE', 'AMEX']))
-                .limit(100)
-                .get_scanner_data())
-        gainers = gainers.drop(columns='exchange')
-        gainers = gainers.drop(columns='ticker')
-        headers = ['Ticker', 'Close', 'Volume', 'Market Cap', '% Change']
-        gainers.columns = headers
-        logger.debug(f"Returned gainers dataframe with shape {gainers.shape}")
-        return gainers
-
-    @staticmethod
-    def get_intraday_gainers_by_market_cap(market_cap):
-        logger.debug(f"Fetching intrday gainers with market cap > {market_cap} from TradingView")
         num_rows, gainers = (Query()
-                .select('name', 'close', 'volume', 'market_cap_basic', 'change', 'exchange')
-                .set_markets('america')
-                .order_by('change', ascending=False)
-                .where(
-                            Column('market_cap_basic') >= market_cap,
-                            Column('exchange').isin(['NASDAQ', 'NYSE', 'AMEX']))
-                .limit(100)
-                .get_scanner_data())
-        gainers = gainers.drop(columns='exchange')
-        gainers = gainers.drop(columns='ticker')
-        headers = ['Ticker', 'Close', 'Volume', 'Market Cap', '% Change']
-        gainers.columns = headers
-        logger.debug(f"Returned gainers dataframe with shape {gainers.shape}")
+                            .select(
+                                'name',
+                                'description',
+                                'logoid',
+                                'update_mode',
+                                'type',
+                                'typespecs',
+                                'market_cap_basic',
+                                'fundamental_currency_code',
+                                'close',
+                                'pricescale',
+                                'minmov',
+                                'fractional',
+                                'minmove2',
+                                'currency',
+                                'change',
+                                'volume',
+                                'price_earnings_ttm',
+                                'earnings_per_share_diluted_ttm',
+                                'earnings_per_share_diluted_yoy_growth_ttm',
+                                'dividends_yield_current',
+                                'sector.tr',
+                                'sector',
+                                'market',
+                                'recommendation_mark',
+                                'relative_volume_10d_calc',
+                            )
+                            .where(
+                                col('exchange').isin(['AMEX', 'CBOE', 'NASDAQ', 'NYSE']),
+                                col('is_primary') == True,
+                                col('typespecs').has('common'),
+                                col('typespecs').has_none_of('preferred'),
+                                col('type') == 'stock',
+                                col('close').between(2, 10000),
+                                col('change') > 0,
+                                col('active_symbol') == True,
+                            )
+                            .order_by('change', ascending=False, nulls_first=False)
+                            .limit(100)
+                            .set_markets('america')
+                            .set_property('symbols', {'query': {'types': ['stock', 'fund', 'dr', 'structured']}})
+                            .set_property('preset', 'gainers')
+                            .get_scanner_data())
         return gainers
                 
     @staticmethod
     def get_postmarket_gainers():
         logger.debug(f"Fetching after hours gainers from TradingView")
         num_rows, gainers = (Query()
-                .select('name', 'close', 'volume', 'market_cap_basic', 'postmarket_change', 'postmarket_volume', 'exchange')
-                .order_by('postmarket_change', ascending=False)
-                .where(
-                            Column('exchange').isin(['NASDAQ', 'NYSE', 'AMEX']))
-                .limit(100)
-                .get_scanner_data())
-        gainers = gainers.drop(columns='exchange')
-        gainers = gainers.drop(columns='ticker')
-        headers = ['Ticker', 'Close', 'Volume', 'Market Cap', 'After Hours Change', 'After Hours Volume']
-        gainers.columns = headers
-        logger.debug(f"Returned gainers dataframe with shape {gainers.shape}")
-        return gainers
-
-    @staticmethod
-    def get_postmarket_gainers_by_market_cap(market_cap):
-        logger.debug(f"Fetching after hours gainers with market cap > {market_cap} from TradingView")
-        num_rows, gainers = (Query()
-                .select('name', 'close', 'volume', 'market_cap_basic', 'postmarket_change', 'postmarket_volume', 'exchange')
-                .order_by('postmarket_change', ascending=False)
-                .where(
-                            Column('market_cap_basic') >= market_cap,
-                            Column('exchange').isin(['NASDAQ', 'NYSE', 'AMEX']))
-                .limit(100)
-                .get_scanner_data())
-        gainers = gainers.drop(columns='exchange')
-        gainers = gainers.drop(columns='ticker')
-        headers = ['Ticker', 'Close', 'Volume', 'Market Cap', 'After Hours Change', 'After Hours Volume']
-        gainers.columns = headers
-        logger.debug(f"Returned gainers dataframe with shape {gainers.shape}")
+                            .select(
+                                'logoid',
+                                'name',
+                                'postmarket_close',
+                                'postmarket_change_abs',
+                                'postmarket_change',
+                                'postmarket_volume',
+                                'close',
+                                'change',
+                                'volume',
+                                'market_cap_basic',
+                                'Perf.1Y.MarketCap',
+                                'description',
+                                'type',
+                                'typespecs',
+                                'update_mode',
+                                'pricescale',
+                                'minmov',
+                                'fractional',
+                                'minmove2',
+                                'fundamental_currency_code',
+                                'currency',
+                            )
+                            .where(
+                                col('exchange').isin(['AMEX', 'CBOE', 'NASDAQ', 'NYSE']),
+                                col('is_primary') == True,
+                                col('typespecs').has('common'),
+                                col('typespecs').has_none_of('preferred'),
+                                col('type') == 'stock',
+                                col('postmarket_change') > 0,
+                                col('postmarket_change').not_empty(),
+                                col('active_symbol') == True,
+                            )
+                            .order_by('postmarket_change', ascending=False, nulls_first=False)
+                            .limit(100)
+                            .set_markets('america')
+                            .set_property('symbols', {'query': {'types': ['stock', 'fund', 'dr', 'structured']}})
+                            .set_property('preset', 'after_hours_gainers')
+                            .get_scanner_data())
         return gainers
 
     
     @staticmethod
     def get_unusual_volume_movers():
         logger.debug("Fetching stocks with ununsual volume from TradingView")
-        columns = ['Ticker', 'Close', '% Change', 'Volume', 'Relative Volume', 'Average Volume (10 Day)', 'Market Cap']
         num_rows, unusual_volume = (Query()
-                            .select('name','close', 'change', 'volume', 'relative_volume', 'average_volume_10d_calc','market_cap_basic')
-                            .set_markets('america')
-                            .where(
-                                Column('volume') > 1000000
-                            )
-                            .limit(100)
-                            .order_by('relative_volume', ascending=False)
-                            .get_scanner_data())
-        unusual_volume = unusual_volume.drop(columns = "ticker")
-        unusual_volume.columns = columns
-        logger.debug(f"Returned gainers dataframe with shape {unusual_volume.shape}")
+                                    .select(
+                                        'name',
+                                        'description',
+                                        'logoid',
+                                        'update_mode',
+                                        'type',
+                                        'typespecs',
+                                        'relative_volume_10d_calc',
+                                        'close',
+                                        'pricescale',
+                                        'minmov',
+                                        'fractional',
+                                        'minmove2',
+                                        'currency',
+                                        'change',
+                                        'volume',
+                                        'market_cap_basic',
+                                        'fundamental_currency_code',
+                                        'price_earnings_ttm',
+                                        'earnings_per_share_diluted_ttm',
+                                        'earnings_per_share_diluted_yoy_growth_ttm',
+                                        'dividends_yield_current',
+                                        'sector.tr',
+                                        'sector',
+                                        'market',
+                                        'recommendation_mark',
+                                    )
+                                    .where(
+                                        col('exchange').isin(['AMEX', 'CBOE', 'NASDAQ', 'NYSE']),
+                                        col('is_primary') == True,
+                                        col('typespecs').has('common'),
+                                        col('typespecs').has_none_of('preferred'),
+                                        col('type') == 'stock',
+                                        col('active_symbol') == True,
+                                    )
+                                    .order_by('relative_volume_10d_calc', ascending=False, nulls_first=False)
+                                    .limit(100)
+                                    .set_markets('america')
+                                    .set_property('symbols', {'query': {'types': ['stock', 'fund', 'dr', 'structured']}})
+                                    .set_property('preset', 'unusual_volume')
+                                    .get_scanner_data())
         return unusual_volume
 
     @staticmethod

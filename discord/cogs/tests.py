@@ -2,7 +2,7 @@ import discord
 from discord import app_commands
 from discord.ext import commands
 from discord.ext import tasks
-from discord.cogs.reports import GainerReport
+from discord.cogs.reports import GainerScreener
 import utils
 from utils import market_utils
 import logging

@@ -4,7 +4,8 @@ import discord
 from discord import app_commands
 from discord.ext import commands
 from discord.ext import tasks
-from discord.cogs.watchlists import Watchlists
+from discord.cogs.watchlists import Watchlists as cog_Watchlists                # cog
+from RocketStocks.stockdata.watchlists import Watchlists as data_Watchlists     # stockdata module      
 import datetime
 from stockdata import StockData
 import pandas as pd
@@ -78,11 +79,11 @@ class Reports(commands.Cog):
 
             # Get gainers based on market period
             if market_period == 'premarket':
-                gainers = self.stock_data.trading_view.get_premarket_gainers_by_market_cap(1000000)
+                gainers = self.stock_data.trading_view.get_premarket_gainers()
             elif market_period == 'intraday':
-                gainers = self.stock_data.trading_view.get_intraday_gainers_by_market_cap(1000000)
+                gainers = self.stock_data.trading_view.get_intraday_gainers()
             elif market_period == 'aftermarket':
-                gainers = self.stock_data.trading_view.get_postmarket_gainers_by_market_cap(1000000)
+                gainers = self.stock_data.trading_view.get_postmarket_gainers()
 
             # Generate screener
             report = GainerScreener(channel=self.screeners_channel,
@@ -124,7 +125,7 @@ class Reports(commands.Cog):
             pass
 
     # Start posting report at next 0 or 5 minute interval
-    @post_gainer_screener.before_loop
+    #@post_gainer_screener.before_loop
     @post_volume_screener.before_loop
     async def sleep_until_5m(self):
         sleep_time = date_utils.seconds_until_minute_interval(minute=5)
@@ -218,7 +219,7 @@ class Reports(commands.Cog):
 
     @app_commands.command(name = "report-watchlist", description= "Post analysis of a given watchlist (use /fetch-reports for individual or non-watchlist stocks)",)
     @app_commands.describe(watchlist = "Which watchlist to fetch reports for")
-    @app_commands.autocomplete(watchlist=Watchlists.watchlist_options,)
+    @app_commands.autocomplete(watchlist=cog_Watchlists.watchlist_options,)
     @app_commands.describe(visibility = "'private' to send to DMs, 'public' to send to the channel")
     @app_commands.choices(visibility =[
         app_commands.Choice(name = "private", value = 'private'),
@@ -604,25 +605,26 @@ class Report(object):
 
 class Screener(Report):
 
-    def __init__(self, channel, screener_type:str, market_period:str, data:pd.DataFrame):
+    def __init__(self, channel, screener_type:str, market_period:str, data:pd.DataFrame, column_map:dict):
         super().__init__(channel=channel)
         self.dutils = discord_utils()
         self.screener_type = screener_type
         self.market_period = market_period
+        self.column_map = column_map
 
         # Init data, update watchlist, and format for posting
         self.data = data
+        self.format_columns()
         self.update_watchlist()
-        self.data = self.format_df_for_table()
+        
 
     def get_tickers(self):
         return self.data['Ticker'].to_list()
 
     def update_watchlist(self):
-        from stockdata import Watchlists
         from db import Postgres
 
-        watchlists = Watchlists(db=Postgres())
+        watchlists = data_Watchlists(db=Postgres())
         watchlist_id = self.screener_type
         watchlist_tickers = self.get_tickers()
         watchlist_tickers = watchlist_tickers[:15]
@@ -631,6 +633,24 @@ class Screener(Report):
             watchlists.create_watchlist(watchlist_id=watchlist_id, tickers=watchlist_tickers, systemGenerated=True)
         else:
             watchlists.update_watchlist(watchlist_id=watchlist_id, tickers=watchlist_tickers)
+
+    def format_columns(self):
+        logger.debug("Formatting gainers dataframe for table viewing")
+
+        # Drop all unwanted columns and map column names
+        self.data = self.data.filter(list(self.column_map.keys()))
+        self.data = self.data.rename(columns=self.column_map)
+
+        # Format all volume columns in df
+        volume_cols = self.data.filter(like='Volume').columns.to_list()
+        for volume_col in volume_cols:
+            self.data[volume_col] = self.data[volume_col].apply(lambda x: self.format_large_num(x))
+
+        # Format Market Cap
+        self.data['Market Cap'] = self.data['Market Cap'].apply(lambda x: self.format_large_num(x))
+
+        # Format % change columns
+        self.data['Change (%)'] = self.data['Change (%)'].apply(lambda x: "{:.2f}%".format(float(x)) if x is not None else 0.00)
 
     # Override
     async def send_report(self):
@@ -717,33 +737,45 @@ class StockReport(Report):
 
 class GainerScreener(Screener):
     def __init__(self, channel:discord.channel, market_period:str, gainers:pd.DataFrame):
+        
+        # Set column map
+        if market_period == 'premarket':
+            column_map = {'name':'Ticker',
+                               'premarket_change':'Change (%)',
+                               'premarket_close':'Price',
+                               'close':'Prev Close',
+                               'premarket_volume':'Pre Market Volume',
+                               'market_cap_basic':'Market Cap'}
+        elif market_period == 'intraday':
+            column_map = {'name':'Ticker',
+                               'change':'Change (%)',
+                               'close':'Price',
+                               'volume':'Volume',
+                               'market_cap_basic':'Market Cap'}
+        elif market_period == 'aftermarket':
+            column_map = {'name':'Ticker',
+                               'postmarket_change':'Change (%)',
+                               'postmarket_close':'Price',
+                               'close':'Price at Close',
+                               'postmarket_volume':'After Hours Volume',
+                               'market_cap_basic':'Market Cap'}
+            
         super().__init__(channel=channel, 
                          screener_type=f"{market_period}-gainers", 
                          market_period=market_period,
-                         data = gainers)
+                         data = gainers,
+                         column_map=column_map)
+        
 
-    def format_df_for_table(self):
-        logger.debug("Formatting gainers dataframe for table viewing")
-        gainers = self.data.copy()
-        change_columns = ['Premarket Change', '% Change', 'After Hours Change']
-        volume_columns = ['Premarket Volume', "After Hours Volume"]
-        gainers['Volume'] = gainers['Volume'].apply(lambda x: self.format_large_num(x))
-        gainers['Market Cap'] = gainers['Market Cap'].apply(lambda x: self.format_large_num(x))
-        for column in change_columns:
-            if column in gainers.columns:
-                gainers[column] = gainers[column].apply(lambda x: "{:.2f}%".format(float(x)) if x is not None else 0.00)
-        for column in volume_columns:
-            if column in gainers.columns:
-                gainers[column] = gainers[column].apply(lambda x: self.format_large_num(x))
-        return gainers
-
+   
+        
     
 
     # Override
     def build_report_header(self):
         logger.debug("Building report header...")
         now = datetime.datetime.now(tz=date_utils.timezone())
-        header = "### :rotating_light: {} Gainers {} (Market Cap > $100M) (Updated {})\n\n".format(
+        header = "### :rotating_light: {} Gainers {} (Updated {})\n\n".format(
                     "Pre-market" if self.market_period == 'premarket'
                     else "Intraday" if self.market_period == 'intraday'
                     else "After Hours" if self.market_period == 'aftermarket'
@@ -763,12 +795,23 @@ class GainerScreener(Screener):
 
 class VolumeScreener(Screener):
     def __init__(self, channel:discord.channel, market_period:str, unusual_volume:pd.DataFrame):
+
+        # Set column map
+        column_map = {'name':'Ticker',
+                      'relative_volume_10d_calc':'Relative Volume',
+                      'volume':'Volume',
+                      'close':'Price',
+                      'close':'Prev Close',
+                      'premarket_volume':'Pre Market Volume',
+                      'market_cap_basic':'Market Cap'}
+
+
         super().__init__(channel=channel, 
                          screener_type=f"unusual-volume", 
                          market_period=market_period,
                          data = unusual_volume)
 
-    def format_df_for_table(self):
+    def format_columns(self):
         logger.debug("Formatting volume movers dataframe for table viewing")
         movers = self.volume_movers.copy()
         movers['Volume'] = movers['Volume'].apply(lambda x: self.format_large_num(x))
@@ -782,7 +825,7 @@ class VolumeScreener(Screener):
     def build_report_header(self):
         logger.debug("Building report header...")
         now = datetime.datetime.now(tz=date_utils.timezone())
-        header = "### :rotating_light: Unusual Volume {} (Volume > 1M)(Updated {})\n\n".format(
+        header = "### :rotating_light: Unusual Volume {} (Updated {})\n\n".format(
                     now.date().strftime("%m/%d/%Y"),
                     now.strftime("%I:%M %p"))
         return header
@@ -794,23 +837,6 @@ class VolumeScreener(Screener):
         report += self.build_report_header()
         report += self.build_table(self.volume_movers_formatted[:10])
         return report
-
-    def get_volume_movers(self):
-        headers = []
-        rows = []
-        unusual_volume = sd.TradingView.get_unusual_volume_movers()
-        headers = ["Ticker", "Close", "% Change", "Volume", "Relative Volume", "Market Cap"]
-        for index, row in unusual_volume.iterrows():
-            ticker = row.iloc[1]
-            rows.append([ticker, 
-                        "{}".format(float('{:.2f}'.format(row.close))), 
-                        "{:.2f}%".format(row.change),
-                        self.format_large_num(row.volume), 
-                        "{:.2f}%".format(row.relative_volume_10d_calc),
-                        self.format_large_num(row.market_cap_basic)]) 
-            
-
-        return pd.DataFrame(rows, columns=headers)
 
 class PopularityScreener(Screener):
     def __init__(self, channel:discord.channel, market_period:str, popular_stocks:pd.DataFrame):
