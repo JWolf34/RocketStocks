@@ -31,10 +31,12 @@ class Reports(commands.Cog):
         self.screeners_channel = self.bot.get_channel(discord_utils.screeners_channel_id)
 
         # Start reports
-        self.post_gainer_screener.start()
-        self.post_volume_screener.start()
-        self.update_earnings_calendar.start()
         self.post_popularity_screener.start()
+        self.post_volume_screener.start()
+        self.post_gainer_screener.start()
+        
+        self.update_earnings_calendar.start()
+        
         self.post_earnings_spotlight.start()
         self.post_weekly_earnings.start()
         
@@ -57,9 +59,9 @@ class Reports(commands.Cog):
         popular_stocks = self.stock_data.popularity.get_popular_stocks()
 
         # Append datetime column to df, rounded to pervious 30m interval
-        popular_stocks = popular_stocks.insert(loc=0,
-                                               column='datetime',
-                                               value=pd.Series([date_utils.round_down_nearest_minute(30)] * popular_stocks.shape[0]).values)
+        popular_stocks.insert(loc=0,
+                              column='datetime',
+                              value=pd.Series([date_utils.round_down_nearest_minute(30)] * popular_stocks.shape[0]).values)
 
         # Generate screener
         report = PopularityScreener(channel=self.screeners_channel,
@@ -69,6 +71,30 @@ class Reports(commands.Cog):
         # Post screener
         logger.info("Posting populairty screener")
         await report.send_report()
+
+    # Generate and send premarket gainer reports to the reports channel
+    @tasks.loop(minutes=5)
+    async def post_volume_screener(self):
+        market_period = self.mutils.get_market_period()
+        if  (self.mutils.market_open_today() and market_period != 'EOD'):
+
+            # Get unusual volume data
+            unusual_volume = self.stock_data.trading_view.get_unusual_volume_movers()
+
+            # Generate screener
+            report = VolumeScreener(channel=self.screeners_channel,
+                                    market_period=market_period,
+                                    unusual_volume=unusual_volume)
+
+            # Update alert tickers with unusual volume movers
+            self.stock_data.update_alert_tickers(tickers=report.get_tickers(), source='unusual-volume')
+
+            # Send report
+            logger.info(f"Posting {report.market_period} volume screener")
+            await report.send_report()
+        else:
+            # Not a weekday - do not post volume screener
+            pass
        
 
     # Generate and send premarket gainer reports to the reports channel
@@ -100,33 +126,11 @@ class Reports(commands.Cog):
             # Not a weekday - do not post gainer reports
             pass
 
-    # Generate and send premarket gainer reports to the reports channel
-    @tasks.loop(minutes=5)
-    async def post_volume_screener(self):
-        market_period = self.mutils.get_market_period()
-        if  (self.mutils.market_open_today() and market_period != 'EOD'):
-
-            # Get unusual volume data
-            unusual_volume = self.stock_data.trading_view.get_unusual_volume_movers()
-
-            # Generate screener
-            report = VolumeScreener(channel=self.screeners_channel,
-                                    market_period=market_period,
-                                    unusual_volume=unusual_volume)
-
-            # Update alert tickers with unusual volume movers
-            self.stock_data.update_alert_tickers(tickers=report.get_tickers(), source='unusual-volume')
-
-            # Send report
-            logger.info(f"Posting {report.market_period} volume screener")
-            await report.send_report()
-        else:
-            # Not a weekday - do not post volume screener
-            pass
+    
 
     # Start posting report at next 0 or 5 minute interval
     @post_gainer_screener.before_loop
-    #@post_volume_screener.before_loop
+    @post_volume_screener.before_loop
     async def sleep_until_5m(self):
         sleep_time = date_utils.seconds_until_minute_interval(minute=5)
         logger.info(f"5m reports will begin posting in {sleep_time} seconds")
@@ -431,7 +435,7 @@ class Report(object):
             message += f"[Form {filing['form']} - {filing['filingDate']}]({sd.SEC().get_link_to_filing(ticker=self.ticker, filing=filing)})\n"
         return message
 
-    def build_table(self, df:pd.DataFrame, style='double_thin_compact'):
+    def build_table(self, df:pd.DataFrame, style='thick_compact'):
         logger.debug(f"Building table of shape {df.shape} with headers {df.columns.to_list()} and of style '{style}'")
         table_style = self.table_styles.get(style, PresetStyle.double_thin_compact)
         table = table2ascii(
@@ -853,26 +857,22 @@ class VolumeScreener(Screener):
 
 class PopularityScreener(Screener):
     def __init__(self, channel:discord.channel, market_period:str, popular_stocks:pd.DataFrame):
+        column_map = {'rank':'Rank',
+                      'ticker':'Ticker',
+                      'mentions': 'Mentions',
+                      'rank_24h_ago':"Rank 24H Ago",
+                      'mentions_24h_ago':'Mentions 24H Ago'}
+
+
         super().__init__(channel=channel, 
                          screener_type="popular-stocks", 
                          market_period=market_period,
-                         data=popular_stocks)
+                         data=popular_stocks,
+                         column_map=column_map)
         
 
     def format_columns(self):
-        logger.debug("Formatting gainers dataframe for table viewing")
-        gainers = self.data.copy()
-        change_columns = ['Premarket Change', '% Change', 'After Hours Change']
-        volume_columns = ['Premarket Volume', "After Hours Volume"]
-        gainers['Volume'] = gainers['Volume'].apply(lambda x: self.format_large_num(x))
-        gainers['Market Cap'] = gainers['Market Cap'].apply(lambda x: self.format_large_num(x))
-        for column in change_columns:
-            if column in gainers.columns:
-                gainers[column] = gainers[column].apply(lambda x: "{:.2f}%".format(float(x)) if x is not None else 0.00)
-        for column in volume_columns:
-            if column in gainers.columns:
-                gainers[column] = gainers[column].apply(lambda x: self.format_large_num(x))
-        return gainers
+        super().format_columns()
 
     
 
@@ -880,13 +880,9 @@ class PopularityScreener(Screener):
     def build_report_header(self):
         logger.debug("Building report header...")
         now = datetime.datetime.now(tz=date_utils.timezone())
-        header = "### :rotating_light: {} Gainers {} (Market Cap > $100M) (Updated {})\n\n".format(
-                    "Pre-market" if self.market_period == 'premarket'
-                    else "Intraday" if self.market_period == 'intraday'
-                    else "After Hours" if self.market_period == 'aftermarket'
-                    else "",
+        header = "### :rotating_light: Popular Stocks {} (Updated {})\n\n".format(
                     now.date().strftime("%m/%d/%Y"),
-                    now.strftime("%I:%M %p"))
+                    date_utils.round_down_nearest_minute(30).strftime("%I:%M %p"))
         return header
 
     # Override
@@ -894,7 +890,7 @@ class PopularityScreener(Screener):
         logger.debug("Building Gainer Report...")
         report = ""
         report +=  self.build_report_header()
-        report +=  self.build_table(self.data[:15])
+        report +=  self.build_table(df=self.data[:25])
         return report
 
 class NewsReport(Report):
