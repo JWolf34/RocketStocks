@@ -30,10 +30,10 @@ class Reports(commands.Cog):
         self.screeners_channel = self.bot.get_channel(discord_utils.screeners_channel_id)
 
         # Start reports
-        self.send_gainer_reports.start()
-        self.send_volume_reports.start()
+        self.post_gainer_screener.start()
+        self.post_volume_screener.start()
         self.update_earnings_calendar.start()
-        self.send_popularity_reports.start()
+        self.post_popularity_screener.start()
         self.post_earnings_spotlight.start()
         self.post_weekly_earnings.start()
         
@@ -51,53 +51,43 @@ class Reports(commands.Cog):
     # Screener on most popular stocks across reddit daily
     #@tasks.loop(time=datetime.time(hour=22 , minute=0, second=0)) # time in UTC
     @tasks.loop(minutes=30)
-    async def send_popularity_reports(self):
-        logger.info("Fetching most poular stocks")
+    async def post_popularity_screener(self):
+        # Fetch most popular stocks
         popular_stocks = self.stock_data.popularity.get_popular_stocks()
 
         # Append datetime column to df, rounded to pervious 30m interval
         popular_stocks = popular_stocks.insert(loc=0,
                                                column='datetime',
                                                value=pd.Series([date_utils.round_down_nearest_minute(30)] * popular_stocks.shape[0]).values)
-    
-        # Update db with new popularity rows
-        self.stock_data.update_popularity(popular_stocks=popular_stocks)
 
+        # Generate screener
+        report = PopularityScreener(channel=self.screeners_channel,
+                                    market_period='None',
+                                    popular_stocks=popular_stocks)
 
-        # Process Popularity Report
-        logger.info("Sending today's popularity report")
-        report = PopularityReport(self.screeners_channel)
+        # Post screener
+        logger.info("Posting populairty screener")
         await report.send_report()
-
-        # Update popular-stocks watchlist
-        watchlist_id = 'popular-stocks'
-        tickers, invalid_tickers = sd.StockData.get_valid_tickers(" ".join(report.top_stocks['ticker'].tolist()[:30]))
-        self.bot.stock_data
-        if not self.bot.stock_data.watchlists.validate_watchlist(watchlist_id):
-            self.bot.stock_data.watchlists.create_watchlist(watchlist_id=watchlist_id, tickers=tickers, systemGenerated=True)
-        else:
-            self.bot.stock_data.watchlists.update_watchlist(watchlist_id=watchlist_id, tickers=tickers)
-
-        # Update DB table
-        logger.debug("Updating popular-stocks table with latest tickers")
-        fields = ['date', 'ticker', 'rank', 'mentions', 'upvotes']
-        popular_stocks = report.top_stocks.drop(columns=['rank_24h_ago',
-                                                       'mentions_24h_ago',
-                                                       'name'])
-        popular_stocks['date'] = datetime.datetime.today().strftime("%Y-%m-%d")
-        popular_stocks = popular_stocks[fields]
-        sd.Postgres().insert(table='popularity', fields=fields, values=[tuple(row) for row in popular_stocks.values])
-
+       
 
     # Generate and send premarket gainer reports to the reports channel
     @tasks.loop(minutes=5)
-    async def send_gainer_reports(self):
+    async def post_gainer_screener(self):
         market_period = self.mutils.get_market_period()
         if  (self.mutils.market_open_today() and market_period != 'EOD'):
-            # Generate report
-            report = GainerReport(channel=self.screeners_channel,
-                                  stock_data=self.bot.stock_data,
-                                  market_period='aftermarket')#market_period)
+
+            # Get gainers based on market period
+            if market_period == 'premarket':
+                gainers = self.stock_data.trading_view.get_premarket_gainers_by_market_cap(1000000)
+            elif market_period == 'intraday':
+                gainers = self.stock_data.trading_view.get_intraday_gainers_by_market_cap(1000000)
+            elif market_period == 'aftermarket':
+                gainers = self.stock_data.trading_view.get_postmarket_gainers_by_market_cap(1000000)
+
+            # Generate screener
+            report = GainerScreener(channel=self.screeners_channel,
+                                    market_period=market_period,
+                                    gainers=gainers)
 
             # Update alert tickers with gainers
             self.stock_data.update_alert_tickers(tickers=report.get_tickers(), source='gainers')
@@ -111,35 +101,38 @@ class Reports(commands.Cog):
 
     # Generate and send premarket gainer reports to the reports channel
     @tasks.loop(minutes=5)
-    async def send_volume_reports(self):
+    async def post_volume_screener(self):
         market_period = self.mutils.get_market_period()
-        if True: #(self.mutils.market_open_today() and market_period != "EOD")):
-            # Generate report
-            report = VolumeReport(channel = self.screeners_channel,
-                                  stock_data = self.bot.stock_data,
-                                  market_period=market_period)
+        if  (self.mutils.market_open_today() and market_period != 'EOD'):
 
-            # Update alert tickers with volume movers
-            self.bot.stock_data.update_alert_tickers(tickers=report.get_tickers(), source='unusual_volume')
+            # Get unusual volume data
+            unusual_volume = self.stock_data.trading_view.get_unusual_volume_movers()
 
-            # Send Report
-            logger.info(f"Sending {report.market_period} unusual volume report")
+            # Generate screener
+            report = VolumeScreener(channel=self.screeners_channel,
+                                    market_period=market_period,
+                                    unusual_volume=unusual_volume)
+
+            # Update alert tickers with unusual volume movers
+            self.stock_data.update_alert_tickers(tickers=report.get_tickers(), source='unusual-volume')
+
+            # Send report
+            logger.info(f"Posting {report.market_period} volume screener")
             await report.send_report()
-
         else:
-            # Not a weekday - do not post gainer reports
+            # Not a weekday - do not post volume screener
             pass
 
     # Start posting report at next 0 or 5 minute interval
-    @send_gainer_reports.before_loop
-    @send_volume_reports.before_loop
+    @post_gainer_screener.before_loop
+    @post_volume_screener.before_loop
     async def sleep_until_5m(self):
         sleep_time = date_utils.seconds_until_minute_interval(minute=5)
         logger.info(f"5m reports will begin posting in {sleep_time} seconds")
         await asyncio.sleep(sleep_time)
 
     # Start posting reports at next 0 or 30 minute interval
-    @send_popularity_reports.before_loop
+    @post_popularity_screener.before_loop
     async def sleep_until_30m(self):
         sleep_time = date_utils.seconds_until_minute_interval(minute=30)
         logger.info(f"30m reports will begin posting in {sleep_time} seconds")
@@ -357,7 +350,7 @@ class Reports(commands.Cog):
 ##################
 
 class Report(object):
-    def __init__(self, channel, stock_data=None):
+    def __init__(self, channel):
         self.table_styles = {'ascii':PresetStyle.ascii,
                         'asci_borderless':PresetStyle.ascii_borderless,
                         'ascii_box':PresetStyle.ascii_box,
@@ -390,7 +383,6 @@ class Report(object):
                         'thin_thick':PresetStyle.thin_thick,
                         'thin_thick_rounded':PresetStyle.thin_thick_rounded}
         self.channel = channel
-        self.stock_data = stock_data
 
     async def init(self):
         pass
@@ -612,11 +604,16 @@ class Report(object):
 
 class Screener(Report):
 
-    def __init__(self, channel, screener_type:str, stock_data=None):
-       super().__init__(channel=channel, stock_data=stock_data)
-       self.dutils = discord_utils()
-       self.screener_type = screener_type
-       self.data = None
+    def __init__(self, channel, screener_type:str, market_period:str, data:pd.DataFrame):
+        super().__init__(channel=channel)
+        self.dutils = discord_utils()
+        self.screener_type = screener_type
+        self.market_period = market_period
+
+        # Init data, update watchlist, and format for posting
+        self.data = data
+        self.update_watchlist()
+        self.data = self.format_df_for_table()
 
     def get_tickers(self):
         return self.data['Ticker'].to_list()
@@ -662,7 +659,6 @@ class Screener(Report):
             message = await self.channel.send(self.message)
             self.dutils.insert_screener_message_id(message_id=message.id, screener_type=self.screener_type)
             return message
-
 
 class StockReport(Report):
     
@@ -719,25 +715,12 @@ class StockReport(Report):
                 await news_report.send_report(interaction)
                 await interaction.response.send_message(f"Fetched news for {self.ticker}!", ephemeral=True)
 
-class GainerReport(Screener):
-    def __init__(self, channel, stock_data, market_period:str):
-        super().__init__(channel=channel, screener_type=f"{market_period}-gainers", stock_data=stock_data)
-        self.market_period = market_period
-
-        # Populate gainers based on market period
-        self.data = None
-        self.data = pd.DataFrame()
-        if self.market_period == 'premarket':
-            self.data = sd.TradingView.get_premarket_gainers_by_market_cap(1000000)
-        elif self.market_period == 'intraday':
-            self.data = sd.TradingView.get_intraday_gainers_by_market_cap(1000000)
-        elif self.market_period == 'aftermarket':
-            self.data = sd.TradingView.get_postmarket_gainers_by_market_cap(1000000)
-        if not self.data.empty:
-            self.update_watchlist()
-            self.data = self.format_df_for_table()
-        else:
-            self.data.columns = self.data.columns.to_list()
+class GainerScreener(Screener):
+    def __init__(self, channel:discord.channel, market_period:str, gainers:pd.DataFrame):
+        super().__init__(channel=channel, 
+                         screener_type=f"{market_period}-gainers", 
+                         market_period=market_period,
+                         data = gainers)
 
     def format_df_for_table(self):
         logger.debug("Formatting gainers dataframe for table viewing")
@@ -778,16 +761,12 @@ class GainerReport(Screener):
         return report
     
 
-class VolumeReport(Screener):
-    def __init__(self, channel, stock_data, market_period):
-        super().__init__(channel=channel,
-                         stock_data=stock_data,
-                         screener_type='unusual-volume')
-        self.market_period = market_period
-        self.volume_movers = sd.TradingView.get_unusual_volume_movers()
-        self.volume_movers_formatted = self.format_df_for_table()
-        if not self.volume_movers.empty:
-            self.update_watchlist()
+class VolumeScreener(Screener):
+    def __init__(self, channel:discord.channel, market_period:str, unusual_volume:pd.DataFrame):
+        super().__init__(channel=channel, 
+                         screener_type=f"unusual-volume", 
+                         market_period=market_period,
+                         data = unusual_volume)
 
     def format_df_for_table(self):
         logger.debug("Formatting volume movers dataframe for table viewing")
@@ -832,6 +811,52 @@ class VolumeReport(Screener):
             
 
         return pd.DataFrame(rows, columns=headers)
+
+class PopularityScreener(Screener):
+    def __init__(self, channel:discord.channel, market_period:str, popular_stocks:pd.DataFrame):
+        super().__init__(channel=channel, 
+                         screener_type="popular-stocks", 
+                         market_period=market_period,
+                         data=popular_stocks)
+        
+
+    def format_df_for_table(self):
+        logger.debug("Formatting gainers dataframe for table viewing")
+        gainers = self.data.copy()
+        change_columns = ['Premarket Change', '% Change', 'After Hours Change']
+        volume_columns = ['Premarket Volume', "After Hours Volume"]
+        gainers['Volume'] = gainers['Volume'].apply(lambda x: self.format_large_num(x))
+        gainers['Market Cap'] = gainers['Market Cap'].apply(lambda x: self.format_large_num(x))
+        for column in change_columns:
+            if column in gainers.columns:
+                gainers[column] = gainers[column].apply(lambda x: "{:.2f}%".format(float(x)) if x is not None else 0.00)
+        for column in volume_columns:
+            if column in gainers.columns:
+                gainers[column] = gainers[column].apply(lambda x: self.format_large_num(x))
+        return gainers
+
+    
+
+    # Override
+    def build_report_header(self):
+        logger.debug("Building report header...")
+        now = datetime.datetime.now(tz=date_utils.timezone())
+        header = "### :rotating_light: {} Gainers {} (Market Cap > $100M) (Updated {})\n\n".format(
+                    "Pre-market" if self.market_period == 'premarket'
+                    else "Intraday" if self.market_period == 'intraday'
+                    else "After Hours" if self.market_period == 'aftermarket'
+                    else "",
+                    now.date().strftime("%m/%d/%Y"),
+                    now.strftime("%I:%M %p"))
+        return header
+
+    # Override
+    def build_report(self):
+        logger.debug("Building Gainer Report...")
+        report = ""
+        report +=  self.build_report_header()
+        report +=  self.build_table(self.data[:15])
+        return report
 
 class NewsReport(Report):
     def __init__(self, query, breaking=False, **kwargs):
