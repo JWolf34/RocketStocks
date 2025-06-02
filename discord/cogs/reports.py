@@ -147,8 +147,10 @@ class Reports(commands.Cog):
     #@tasks.loop(time=datetime.time(hour=12, minute=30, second=0)) # time in UTC
     @tasks.loop(minutes=5)
     async def post_earnings_spotlight(self):
-        if market_utils.market_open_today():
-            report = EarningsSpotlightReport(self.reports_channel)
+        if self.mutils.market_open_today():
+            earnings = self.stock_data.earnings.get_earnings_on_date(date=datetime.date.today())
+            report = EarningsSpotlightReport(channel = self.reports_channel,
+                                             earnings_today=earnings)
             logger.info(f"Posting today's earnings spotlight: '{report.ticker}'")
             await report.send_report()
 
@@ -984,11 +986,12 @@ class PopularityReport(Report):
             self.add_item(discord.ui.Button(label="ApeWisdom", style=discord.ButtonStyle.url, url = "https://apewisdom.io/"))
 
 class EarningsSpotlightReport(Report):
-    def __init__(self, channel):
-        earnings_today = sd.StockData.Earnings.get_earnings_today(datetime.datetime.today())
+    def __init__(self, channel:discord.channel, earnings_today:pd.DataFrame):
+        super().__init__(channel)
+        earnings_today = earnings_today
         self.ticker = earnings_today['ticker'].iloc[random.randint(0, earnings_today['ticker'].size)]
         self.buttons = StockReport.Buttons(self.ticker)
-        super().__init__(channel)
+        
 
     def build_report_header(self):
         logger.debug("Building report header...")

@@ -165,7 +165,7 @@ class Earnings:
         else:
             return pd.DataFrame(results, columns=columns)
 
-    def get_earnings_today(self, date):
+    def get_earnings_on_date(self, date:datetime.date):
         """Return contents of all earnings that are due to release today"""
         logger.info(f"Fetching all earnings reported on date {date}")
         columns = self.db.get_table_columns('upcoming_earnings')
