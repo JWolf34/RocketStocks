@@ -28,14 +28,14 @@ class Earnings:
         logger.info("Updating upcoming earnings in database")
 
         # Columns map
-        columns = ['symbol',
-                    'date',
-                    'time',
-                    'fiscalQuarterEnding',
-                    'epsForecast',
-                    'noOfEsts',
-                    'lastYearRptDt', 
-                    'lastYearEPS']
+        column_map = {'symbol':'ticker',
+                      'date':'date',
+                      'time':'time',
+                      'fiscalQuarterEnding':'fiscal_quarter_ending',
+                      'epsForecast':'eps_forecast',
+                      'noOfEsts':'no_of_ests',
+                      'lastYearEPS':'last_year_eps',
+                      'lastYearRptDt':'last_year_rpt_dt'}
         
         for i in range(0, 50): # Look at next 50 days of earnings
             date = datetime.datetime.today() + datetime.timedelta(days=i)
@@ -46,10 +46,14 @@ class Earnings:
                 logger.debug(f"Identified {len(earnings_data)} earnings on date {date_string}")
                 
                 # Earnings data found - cleanup data and write to db
-                if earnings_data.size > 0:
+                if not earnings_data.empty:
+                    # Create date column
                     earnings_data['date'] = date_string
-                    earnings_data = earnings_data[columns]
-                    earnings_data = earnings_data.rename(columns={'symbol':'ticker'})
+
+                    # Filter out unwanted columns and rename remaining columns
+                    earnings_data = earnings_data.filter(list(column_map.keys()))
+                    earnings_data = earnings_data.rename(columns=column_map)
+
                     values = [tuple(row) for row in earnings_data.values]
                     self.db.insert(table='upcoming_earnings', fields=earnings_data.columns.to_list(), values=values)
                     logger.info(f'Updated earnings for {date_string}')
@@ -640,12 +644,11 @@ if __name__ == '__main__':
     import asyncio
     sd = StockData()
     #sd.db.drop_all_tables()
-    #sd.db.create_tables()
+    sd.db.create_tables()
 
     start = time.time()
     
-    gainers = sd.trading_view.get_premarket_gainers()
-    print(gainers)
+    sd.earnings.update_upcoming_earnings()
 
 
     #sd.update_popularity(popular_stocks=popular_stocks)

@@ -54,14 +54,14 @@ class Postgres():
                             );
 
                             CREATE TABLE IF NOT EXISTS upcoming_earnings (
-                            ticker              varchar(8) PRIMARY KEY,
-                            date                date NOT NULL,
-                            time                varchar(32),
-                            fiscalQuarterEnding varchar(10),
-                            epsForecast         varchar(8),
-                            noOfEsts            varchar(8),
-                            lastYearRptDt       varchar(10),
-                            lastYearEPS         varchar(8)
+                            date                    date NOT NULL,
+                            ticker                  varchar(8) PRIMARY KEY, 
+                            time                    varchar(32),
+                            fiscal_quarter_ending   varchar(10),
+                            eps_forecast            varchar(8),
+                            no_of_ests              varchar(8),
+                            last_year_eps           varchar(8),
+                            last_year_rpt_dt        varchar(10)
                             );
 
                             CREATE TABLE IF NOT EXISTS watchlists (

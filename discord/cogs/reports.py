@@ -144,8 +144,8 @@ class Reports(commands.Cog):
         await asyncio.sleep(sleep_time)
 
 
-    @tasks.loop(time=datetime.time(hour=12, minute=30, second=0)) # time in UTC
-    #@tasks.loop(minutes=5)
+    #@tasks.loop(time=datetime.time(hour=12, minute=30, second=0)) # time in UTC
+    @tasks.loop(minutes=5)
     async def post_earnings_spotlight(self):
         if market_utils.market_open_today():
             report = EarningsSpotlightReport(self.reports_channel)
