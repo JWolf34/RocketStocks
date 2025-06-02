@@ -639,14 +639,19 @@ if __name__ == '__main__':
 
     import asyncio
     sd = StockData()
-    sd.db.drop_all_tables()
-    sd.db.create_tables()
+    #sd.db.drop_all_tables()
+    #sd.db.create_tables()
+
+    start = time.time()
     popular_stocks = sd.popularity.get_popular_stocks()
 
     # Update db with popular stocks at this interval
     popular_stocks.insert(loc=0,
                           column='datetime',
                           value=pd.Series([date_utils.round_down_nearest_minute(30)] * popular_stocks.shape[0]).values)
-    sd.update_popularity(popular_stocks=popular_stocks)
+    #sd.update_popularity(popular_stocks=popular_stocks)
+    end = time.time()
+
+    print(f"Function competed in {end-start} seconds")
         
    

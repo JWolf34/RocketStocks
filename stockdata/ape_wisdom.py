@@ -2,6 +2,7 @@
 import logging
 import requests
 import pandas as pd
+import numpy as np
 
 # Logging configuration
 logger = logging.getLogger(__name__)
@@ -51,12 +52,12 @@ class ApeWisdom():
                 if data['pages'] < num_pages:
                     num_pages = data['pages']
 
-            if top_stocks:
-                top_stocks = pd.DataFrame(top_stocks)
-                top_stocks.drop('name', axis=1)
-                return top_stocks
-            else:
-                return None
+            top_stocks = pd.DataFrame(top_stocks)
+
+            # Clear out any NaN values
+            top_stocks = top_stocks.replace(np.nan, None)
+
+            return top_stocks if not top_stocks.empty else None
         else:
             logger.debug(f"No popular stocks found with input filter '{filter_name}'")
             return None

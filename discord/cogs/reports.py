@@ -55,12 +55,16 @@ class Reports(commands.Cog):
         logger.info("Fetching most poular stocks")
         popular_stocks = self.stock_data.popularity.get_popular_stocks()
 
-        # Update db with popular stocks at this interval
+        # Append datetime column to df, rounded to pervious 30m interval
         popular_stocks = popular_stocks.insert(loc=0,
                                                column='datetime',
                                                value=pd.Series([date_utils.round_down_nearest_minute(30)] * popular_stocks.shape[0]).values)
+    
+        # Update db with new popularity rows
+        self.stock_data.update_popularity(popular_stocks=popular_stocks)
 
 
+        # Process Popularity Report
         logger.info("Sending today's popularity report")
         report = PopularityReport(self.screeners_channel)
         await report.send_report()
