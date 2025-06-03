@@ -240,7 +240,7 @@ class StockData():
         logger.info("Tickers have been updated!")
         logger.debug(f"Updating tickers completed in {time.strftime("H:M:S", end_time-start_time)}")
     
-    def insert_tickers(self):
+    async def insert_tickers(self):
         """Identify data on all tickers from the SEC to update the database with"""
         logger.info("Updating tickers database table with new tickers from SEC")
 
@@ -252,8 +252,7 @@ class StockData():
                           'cik_str':'cik'}
         sec_tickers = sec_tickers.filter(list(sec_column_map.keys()))
         sec_tickers = sec_tickers.rename(columns=sec_column_map)
-        print(sec_tickers[sec_tickers['ticker'] == 'QQQ'])
-                          
+                               
         # Get tickers from NASDAQ and format
         nasdaq_tickers = self.nasdaq.get_all_tickers()
         nasdaq_column_map = {'symbol':'ticker',
@@ -270,10 +269,7 @@ class StockData():
         # Merge
         all_tickers = pd.merge(sec_tickers, nasdaq_tickers, on='ticker', how='left')
         all_tickers.set_index('ticker')
-        print(all_tickers[all_tickers['ticker'] == 'QQQ'])
-   
         
-
         # Identify values and append to database
         values = [tuple(row) for row in all_tickers.values]
         self.db.insert(table='tickers', fields=all_tickers.columns.to_list(), values=values)
