@@ -670,7 +670,6 @@ class Report(object):
                     symbol = "🟢"
 
             message +=f"{f'{label}:':<10}{max_rank:<5} {f'{symbol} {max_rank-current_rank} spots' if symbol and current_rank != 'N/A' else ''}\n"
-            print(message)
         return message + '```\n'
 
     def build_report(self):
