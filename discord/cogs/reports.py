@@ -59,22 +59,27 @@ class Reports(commands.Cog):
         # Fetch most popular stocks
         popular_stocks = self.stock_data.popularity.get_popular_stocks()
 
-        # Append datetime column to df, rounded to pervious 30m interval
-        popular_stocks.insert(loc=0,
-                              column='datetime',
-                              value=pd.Series([date_utils.round_down_nearest_minute(30)] * popular_stocks.shape[0]).values)
+        # Validate returned DataFrame is not empty
+        if not popular_stocks.empty:
+            # Append datetime column to df, rounded to pervious 30m interval
+            popular_stocks.insert(loc=0,
+                                column='datetime',
+                                value=pd.Series([date_utils.round_down_nearest_minute(30)] * popular_stocks.shape[0]).values)
 
-        # Insert popularity into db
-        self.stock_data.insert_popularity(popular_stocks=popular_stocks)
+            # Insert popularity into db
+            self.stock_data.insert_popularity(popular_stocks=popular_stocks)
 
-        # Generate screener
-        report = PopularityScreener(channel=self.screeners_channel,
-                                    market_period='None',
-                                    popular_stocks=popular_stocks)
+            # Generate screener
+            report = PopularityScreener(channel=self.screeners_channel,
+                                        market_period='None',
+                                        popular_stocks=popular_stocks)
 
-        # Post screener
-        logger.info("Posting populairty screener")
-        await report.send_report()
+            # Post screener
+            logger.info("Posting popularity screener")
+            await report.send_report()
+        else:
+            # Monitor call?
+            logger.error("No popular stocks found when attempting to update screener")
 
     # Generate and send premarket gainer reports to the reports channel
     @tasks.loop(minutes=5)
@@ -133,7 +138,7 @@ class Reports(commands.Cog):
     
 
     # Start posting report at next 0 or 5 minute interval
-    @post_gainer_screener.before_loop
+    #@post_gainer_screener.before_loop
     @post_volume_screener.before_loop
     async def sleep_until_5m(self):
         sleep_time = date_utils.seconds_until_minute_interval(minute=5)
@@ -779,7 +784,7 @@ class Screener(Report):
             curr_message = await self.channel.fetch_message(message_id)
             if curr_message.created_at.date() < today.date():
                 message = await self.channel.send(self.message)
-                self.dutils.update_screener_message_id(message_id=message_id, screener_type=self.screener_type)
+                self.dutils.update_screener_message_id(message_id=message.id, screener_type=self.screener_type)
                 return message
             else:
                 logger.debug(f"{self.market_period.upper()} Gainer Report already exists today. Updating... ")
