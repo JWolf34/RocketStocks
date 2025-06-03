@@ -156,11 +156,13 @@ class Reports(commands.Cog):
             # Get ticker info, earnings info, quote for spotlight report
             ticker_info = self.stock_data.get_ticker_info(ticker=spotlight_ticker)
             next_earnings_info = self.stock_data.earnings.get_next_earnings_info(ticker=spotlight_ticker)
+            historical_earnings = self.stock_data.earnings.get_historical_earnings(ticker=spotlight_ticker)
             quote = await self.stock_data.schwab.get_quote(ticker=spotlight_ticker)
 
             report = EarningsSpotlightReport(channel = self.reports_channel,
                                              ticker_info=ticker_info,
                                              next_earnings_info=next_earnings_info,
+                                             historical_earnings=historical_earnings,
                                              quote=quote)
             logger.info(f"Posting today's earnings spotlight: '{report.ticker}'")
             await report.send_report()
@@ -376,7 +378,9 @@ class Report(object):
         self.ticker_info = kwargs.pop('ticker_info', None)
         self.ticker = self.ticker_info['ticker'] if self.ticker_info else None
         self.quote = kwargs.pop('quote', None)
+        self.daily_price_history = kwargs.pop('daily_price_history', None)
         self.next_earnings_info = kwargs.pop('next_earnings_info', None)
+        self.historical_earnings = kwargs.pop('historical_earnings', None)
 
         # ASCII table styles
         self.table_styles = {'ascii':PresetStyle.ascii,
@@ -483,7 +487,7 @@ class Report(object):
     def build_upcoming_earnings_summary(self):
         logger.debug("Building upcoming earnings summary...")
 
-        message = "## Earnings Summary\n\n"
+        message = "## Next Earnings Summary\n\n"
         message += f"**Date:** {self.next_earnings_info['date']}\n"
         message += "**Time:** {}\n".format("Premarket" if "pre-market" in self.next_earnings_info['time']
                                 else "After hours" if "after-hours" in self.next_earnings_info['time']
@@ -497,15 +501,16 @@ class Report(object):
 
     def build_recent_earnings(self):
         logger.debug("Building recent earnings...")
-        message = "## Earnings\n"
-        message += f"**Next earnings date:** {sd.StockData.Earnings.get_next_earnings_date(self.ticker)}\n"
+        message = "## Recent Earnings Overview\n"
+        #message += f"**Next earnings date:** {self.next_earnings_info['date']}\n"
         column_map = {'date':'Date Reported', 
                       'eps':'EPS',
                       'surprise':'Surprise',
                       'epsforecast':'Estimate',
                       'fiscalquarterending':'Quarter'}
-        recent_earnings = sd.StockData.Earnings.get_historical_earnings(self.ticker).tail(4)
-        recent_earnings = recent_earnings.drop(columns='ticker')
+        
+        recent_earnings = self.historical_earnings.tail(4)
+        recent_earnings = recent_earnings.filter(list(column_map.keys()))
         recent_earnings = recent_earnings.rename(columns=column_map)
         recent_earnings['Date Reported'] = recent_earnings['Date Reported'].apply(lambda x: date_utils.format_date_mdy(x))
         recent_earnings['Surprise'] =  recent_earnings['Surprise'].apply(lambda x: f"{x}%")
@@ -553,7 +558,7 @@ class Report(object):
     def build_stats(self):
         logger.debug("Building ticker stats...")
         message = "## Stats\n"
-        message += f"**Market Cap:** {self.format_large_num(sd.StockData.get_market_cap(self.ticker))}\n"
+        message += f"**Market Cap:** {self.format_large_num(self.ticker_info['marketcap'])}\n"
         message += f"**52 Week High:** {self.quote['quote']['52WeekHigh']}\n"
         message += f"**52 Week Low:** {self.quote['quote']['52WeekLow']}\n"
         message += f"**Average Volume 10D:** {self.format_large_num(self.quote['fundamental']['avg10DaysVolume'])}\n"
@@ -901,7 +906,7 @@ class PopularityScreener(Screener):
         now = datetime.datetime.now(tz=date_utils.timezone())
         header = "### :rotating_light: Popular Stocks {} (Updated {})\n\n".format(
                     now.date().strftime("%m/%d/%Y"),
-                    date_utils.round_down_nearest_minute(30).strftime("%I:%M %p"))
+                    date_utils.round_down_nearest_minute(30).astimezone(date_utils.timezone()).strftime("%I:%M %p"))
         return header
 
     # Override
@@ -1004,10 +1009,12 @@ class PopularityReport(Report):
             self.add_item(discord.ui.Button(label="ApeWisdom", style=discord.ButtonStyle.url, url = "https://apewisdom.io/"))
 
 class EarningsSpotlightReport(Report):
-    def __init__(self, channel:discord.channel, next_earnings_info:pd.DataFrame, ticker_info:pd.DataFrame, quote:dict):
+    def __init__(self, channel:discord.channel, ticker_info:pd.DataFrame, next_earnings_info:pd.DataFrame,
+                 historical_earnings:pd.DataFrame, quote:dict):
         super().__init__(channel=channel,
                          ticker_info=ticker_info,
                          next_earnings_info=next_earnings_info,
+                         historical_earnings=historical_earnings,
                          quote=quote)
         self.buttons = StockReport.Buttons(self.ticker)
         
@@ -1022,7 +1029,10 @@ class EarningsSpotlightReport(Report):
         report += self.build_report_header()
         report += self.build_earnings_date()
         report += self.build_ticker_info()
+        report += self.build_stats()
+        #report += self.build_performance()
         report += self.build_upcoming_earnings_summary()
+        report += self.build_recent_earnings()
         return report
     
     async def send_report(self):
