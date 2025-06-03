@@ -10,7 +10,7 @@ logger = logging.getLogger(__name__)
 class ApeWisdom():
     def __init__(self):
         self.base_url = "https://apewisdom.io/api/v1.0/filter"
-        self.filters_map = {
+        self._filters_map = {
                     "all subreddits":"all",  # All subreddits combined
                     'all stock subreddits':'all-stocks',  #  Only subreddits focusing on stocks such as r/wallstreetbets or r/stocks
                     'all crypto subreddits':'all-crypto',  #  Only subreddits focusing on cryptocurrencies such as r/CryptoCurrency or r/SatoshiStreetBets
@@ -32,6 +32,10 @@ class ApeWisdom():
                     'r/Shortsqueeze':'Shortsqueeze',
                     'r/SqueezePlays':"SqueezePlays"
         }
+    
+    @property
+    def filters_map(self):
+        return self._filters_map
     
     def get_filter(self, filter_name):
         return self.filters_map[filter_name]
@@ -57,7 +61,7 @@ class ApeWisdom():
             # Clear out any NaN values
             top_stocks = top_stocks.replace(np.nan, None)
 
-            return top_stocks if not top_stocks.empty else None
+            return top_stocks
         else:
             logger.debug(f"No popular stocks found with input filter '{filter_name}'")
-            return None
+            return pd.DataFrame()

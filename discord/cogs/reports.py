@@ -380,7 +380,7 @@ class Reports(commands.Cog):
     async def autocomplete_filter(self, interaction:discord.Interaction, current:str):
         return [
             app_commands.Choice(name = filter_name, value= filter_name)
-            for filter_name in sd.ApeWisdom().filters_map.keys() if current.lower() in filter_name.lower()
+            for filter_name in self.stock_data.popularity.filters_map.keys() if current.lower() in filter_name.lower()
         ]
 
     @app_commands.command(name="popular-stocks", description="Fetch a report on the most popular stocks from the source provided")
@@ -395,13 +395,23 @@ class Reports(commands.Cog):
         await interaction.response.defer(ephemeral=True)
         logger.info("/popular-stocks function called by user {}".format(interaction.user.name))
         logger.info(f"Latest popularity request from source '{source}'")
-        report = PopularityReport(self.reports_channel, filter_name=source)
-        message = await report.send_report(interaction=interaction, visibility=visibility.value)
+        popular_stocks = self.stock_data.popularity.get_popular_stocks(filter_name=source)
+        filter = self.stock_data.popularity.get_filter(source)
 
-        # Follow-up message
-        follow_up = f"[Posted popularity reports!]({message.jump_url})"
-        await interaction.followup.send(follow_up, ephemeral=True)
-        logger.info(f"Popularity posted from source {source}")
+        # Validate popular_stocks
+        if not popular_stocks.empty:
+            report = PopularityReport(channel=self.reports_channel, 
+                                      popular_stocks=popular_stocks,
+                                      filter=filter)
+            message = await report.send_report(interaction=interaction, visibility=visibility.value)
+
+            # Follow-up message
+            follow_up = f"[Posted popularity reports!]({message.jump_url})"
+            await interaction.followup.send(follow_up, ephemeral=True)
+            logger.info(f"Popularity posted from source {source}")
+        else:
+            logger.info(f"No popular stocks found with filter '{source}'")
+            await interaction.followup.send(f"No popular stocks found with filter '{source}'", ephemeral=True)
 
 ##################
 # Report Classes #
@@ -454,6 +464,12 @@ class Report(object):
                         'thin_rounded':PresetStyle.thin_rounded,
                         'thin_thick':PresetStyle.thin_thick,
                         'thin_thick_rounded':PresetStyle.thin_thick_rounded}
+        
+    def write_df_to_file(self, df:pd.DataFrame, filepath:str):
+
+        # Ensure attachments path exists
+        utils.validate_path(utils.datapaths.attachments_path)
+        df.to_csv(filepath, index=False)
 
 
     ############################
@@ -993,7 +1009,7 @@ class PopularityScreener(Screener):
         logger.debug("Building Gainer Report...")
         report = ""
         report +=  self.build_report_header()
-        report +=  self.build_table(df=self.data[:25])
+        report +=  self.build_table(df=self.data[:20])
         return report
 
 class NewsReport(Report):
@@ -1036,30 +1052,39 @@ class NewsReport(Report):
 
 # TODO
 class PopularityReport(Report):
-    def __init__(self, channel, filter_name='all stock subreddits'):
-        self.filter_name = filter_name
-        self.filter = sd.ApeWisdom().get_filter(filter_name=self.filter_name)
-        self.top_stocks = sd.ApeWisdom().get_top_stocks(filter_name=self.filter_name)
-        for i in range(2, 6):
-            self.top_stocks = pd.concat([self.top_stocks, sd.ApeWisdom().get_top_stocks(page=i)])
-        utils.validate_path(utils.datapaths.attachments_path)
-        self.filepath = f"{utils.datapaths.attachments_path}/top-stocks-{datetime.datetime.today().strftime("%m-%d-%Y")}.csv"
-        self.top_stocks.to_csv(self.filepath, index=False)
-        self.file = discord.File(self.filepath)
+    def __init__(self, channel:discord.channel, popular_stocks:pd.DataFrame, filter:str):
+
+        
+        self.popular_stocks = popular_stocks
+        self.filter = filter
+        self.column_map = {'rank':'Rank',
+                           'ticker':'Ticker',
+                           'mentions': 'Mentions',
+                           'rank_24h_ago':"Rank 24H Ago",
+                           'mentions_24h_ago':'Mentions 24H Ago'}
+        
+        # Init files
+        self.filepath = f"{utils.datapaths.attachments_path}/popular-stocks_{filter}_{datetime.datetime.today().strftime("%m-%d-%Y")}.csv"
+        self.write_df_to_file(df=self.popular_stocks, filepath=self.filepath)
+        self.files = [discord.File(self.filepath)]
         self.buttons = self.Buttons()
         
-        super().__init__(channel)
+        
+    def format_columns(self):
+        # Drop all unwanted columns and map column names
+        self.popular_stocks = self.popular_stocks.filter(list(self.column_map.keys()))
+        self.popular_stocks = self.popular_stocks.rename(columns=self.column_map)
 
     # Override
     def build_report_header(self):
         logger.debug("Building report header...")
-        return f"# Most Popular Stocks ({self.filter_name}) {datetime.datetime.today().strftime("%m/%d/%Y")}\n\n"
+        return f"# Most Popular Stocks ({self.filter}) {datetime.datetime.today().strftime("%m/%d/%Y")}\n\n"
 
     def build_report(self):
         logger.debug("Building Popularity Report...")
         report = ''
         report += self.build_report_header()
-        report += self.build_table(self.top_stocks.drop(columns='name')[:15])
+        report += self.build_table(self.popular_stocks.drop(columns=['name'])[:20])
         return report
 
     async def send_report(self, interaction:discord.Interaction = None, visibility:str ="public"):
@@ -1067,13 +1092,13 @@ class PopularityReport(Report):
         self.message = self.build_report()
         if interaction is not None:
             if visibility == "private":
-                message = await interaction.user.send(self.message, files=[self.file], view=self.buttons)
+                message = await interaction.user.send(self.message, files=self.files, view=self.buttons)
                 return message
             else:
-                message = await self.channel.send(self.message, files=[self.file], view=self.buttons)
+                message = await self.channel.send(self.message, files=self.files, view=self.buttons)
                 return message
         else:
-            message = await self.channel.send(self.message, files=[self.file], view=self.buttons)
+            message = await self.channel.send(self.message, files=self.files, view=self.buttons)
             return message
 
     # Override
