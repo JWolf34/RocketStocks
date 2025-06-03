@@ -144,8 +144,8 @@ class Reports(commands.Cog):
         await asyncio.sleep(sleep_time)
 
 
-    #@tasks.loop(time=datetime.time(hour=12, minute=30, second=0)) # time in UTC
-    @tasks.loop(minutes=5)
+    @tasks.loop(time=datetime.time(hour=12, minute=30, second=0)) # time in UTC
+    #@tasks.loop(minutes=5)
     async def post_earnings_spotlight(self):
         if self.mutils.market_open_today():
 
@@ -457,6 +457,7 @@ class Report(object):
         return message
 
     def build_table(self, df:pd.DataFrame, style='thick_compact'):
+        """Return input dataframe in ascii table format for cleanly displaying content in Discord messgaes"""
         logger.debug(f"Building table of shape {df.shape} with headers {df.columns.to_list()} and of style '{style}'")
         table_style = self.table_styles.get(style, PresetStyle.double_thin_compact)
         table = table2ascii(
@@ -467,6 +468,12 @@ class Report(object):
         return "```\n" + table + "\n```"
 
     def build_earnings_date(self):
+        """Return message content with the date and release time of the stock's next earnings repot
+        
+        Requires:
+            - ticker_info
+            - next_earnings_info
+        """
         logger.debug("Building earnings date...")
 
         # Earnings date
@@ -485,6 +492,12 @@ class Report(object):
         return message + "\n"
 
     def build_upcoming_earnings_summary(self):
+        """Return message content that summarizes the next earnings report for the stock
+        
+        Requires:
+            - next_earnings_info
+        """
+        
         logger.debug("Building upcoming earnings summary...")
 
         message = "## Next Earnings Summary\n\n"
@@ -500,6 +513,11 @@ class Report(object):
         return message + "\n\n"
 
     def build_recent_earnings(self):
+        """Return message content that summarizes 4 most recent earnings reports for the stock
+        
+        Requires:
+            - historical_earnings
+        """
         logger.debug("Building recent earnings...")
         message = "## Recent Earnings Overview\n"
         #message += f"**Next earnings date:** {self.next_earnings_info['date']}\n"
@@ -518,6 +536,11 @@ class Report(object):
         return message + "\n"
 
     def build_performance(self):
+        """Return message content with stock over recent weeks and months
+        
+        Requires:
+            - daily_price_history
+        """
         logger.debug("Building performance...")
         today =  datetime.datetime.today().date()
         message = "## Performance \n\n"
