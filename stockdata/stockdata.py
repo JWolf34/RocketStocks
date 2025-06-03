@@ -240,46 +240,47 @@ class StockData():
         logger.info("Tickers have been updated!")
         logger.debug(f"Updating tickers completed in {time.strftime("H:M:S", end_time-start_time)}")
     
-    async def insert_new_tickers(self):
-        """Identify new tickers on the NASDAQ to insert into the database"""
-        logger.info("Updating tickers database table with new tickers on the NASDAQ")
+    def insert_tickers(self):
+        """Identify data on all tickers from the SEC to update the database with"""
+        logger.info("Updating tickers database table with new tickers from SEC")
 
         start_time = time.time()
 
-        # Map columns names and mark columns to drop from df
-        column_map = {'symbol':'ticker',
+        # Get tickers from SEC and format
+        sec_tickers = self.sec.get_company_tickers()
+        sec_column_map = {'ticker':'ticker',
+                          'cik_str':'cik'}
+        sec_tickers = sec_tickers.filter(list(sec_column_map.keys()))
+        sec_tickers = sec_tickers.rename(columns=sec_column_map)
+        print(sec_tickers[sec_tickers['ticker'] == 'QQQ'])
+                          
+        # Get tickers from NASDAQ and format
+        nasdaq_tickers = self.nasdaq.get_all_tickers()
+        nasdaq_column_map = {'symbol':'ticker',
                       'name':'name',
                       'marketCap':'marketcap',
                       'country':'country',
                       'ipoyear':'ipoyear',
                       'industry':'industry',
                       'sector':'sector',
-                      'url':'nasdaqendpoint',
-                      'cik':'cik'}
-        drop_columns = ['lastsale',
-                        'netchange',
-                        'pctchange',
-                        'volume']
-        tickers_data = self.nasdaq.get_all_tickers()
-        logger.debug(f"Fetched {len(tickers_data)} tickers from NASDAQ")
-        tickers_data = tickers_data[~tickers_data['symbol'].isin(StockData.get_all_tickers())]
-        tickers_data = tickers_data.drop(columns=drop_columns)
-        tickers_data = tickers_data.rename(columns=column_map)
+                      'url':'url'}
+        nasdaq_tickers = nasdaq_tickers.filter(list(nasdaq_column_map.keys()))
+        nasdaq_tickers = nasdaq_tickers.rename(columns=nasdaq_column_map)
 
-        # Create new series to append to df with CIK number of ticker
-        cik_series = pd.Series(name='cik', index=tickers_data.index)
-        for i in range(0, tickers_data['ticker'].size):
-            ticker = tickers_data['ticker'].iloc[i]
-            cik_series[i] = self.sec.get_cik_from_ticker(ticker)
-        tickers_data = tickers_data.join(cik_series)
+        # Merge
+        all_tickers = pd.merge(sec_tickers, nasdaq_tickers, on='ticker', how='left')
+        all_tickers.set_index('ticker')
+        print(all_tickers[all_tickers['ticker'] == 'QQQ'])
+   
+        
 
         # Identify values and append to database
-        values = [tuple(row) for row in tickers_data.values]
-        self.db.insert(table='tickers', fields=tickers_data.columns.to_list(), values=values)
+        values = [tuple(row) for row in all_tickers.values]
+        self.db.insert(table='tickers', fields=all_tickers.columns.to_list(), values=values)
 
         end_time = time.time()
         logger.info("Tickers have been updated!")
-        logger.debug(f"Insert new tickers completed in {time.strftime("H:M:S", end_time-start_time)}")
+        logger.debug(f"Insert new tickers completed in {start_time-end_time} seconds")
     
     
     async def update_daily_price_history(self):
@@ -639,7 +640,8 @@ if __name__ == '__main__':
 
     start = time.time()
     
-    asyncio.run(sd.update_daily_price_history())
+    sd.insert_tickers()
+    print('hi')
 
     #sd.update_popularity(popular_stocks=popular_stocks)
     end = time.time()

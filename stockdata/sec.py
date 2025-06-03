@@ -57,4 +57,11 @@ class SEC():
     def get_company_facts(self, ticker):
         logger.debug(f"Fetching company facts from SEC for ticker {ticker}")
         json = requests.get(f"https://data.sec.gov/api/xbrl/companyfacts/CIK{self.sd.get_cik(ticker)}.json", headers=self.headers).json()
-        return pd.DataFrame.from_dict(json)
+        return json #pd.DataFrame.from_dict(json)
+
+    @sleep_and_retry
+    @limits(calls = 5, period = 1) # 5 calls per second
+    def get_company_tickers(self):
+        response = requests.get("https://www.sec.gov/files/company_tickers.json", headers=self.headers)
+        tickers = [ticker for ticker in response.json().values()]
+        return pd.DataFrame(tickers)

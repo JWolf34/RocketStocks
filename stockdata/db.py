@@ -43,14 +43,14 @@ class Postgres():
         self.open_connection()
         create_script = """ CREATE TABLE IF NOT EXISTS tickers (
                             ticker          varchar(8) PRIMARY KEY,
+                            cik             char(10),
                             name            varchar(255) NOT NULL,
                             marketcap       varchar(20) NOT NULL, 
                             country         varchar(40), 
                             ipoyear         char(4),
                             industry        varchar(64),
                             sector          varchar(64),
-                            nasdaqendpoint  varchar(64),
-                            cik             char(10)
+                            url             varchar(64)
                             );
 
                             CREATE TABLE IF NOT EXISTS upcoming_earnings (
