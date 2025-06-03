@@ -138,15 +138,15 @@ class Reports(commands.Cog):
     
 
     # Start posting report at next 0 or 5 minute interval
-    #@post_gainer_screener.before_loop
-    #@post_volume_screener.before_loop
+    @post_gainer_screener.before_loop
+    @post_volume_screener.before_loop
     async def sleep_until_5m(self):
         sleep_time = date_utils.seconds_until_minute_interval(minute=5)
         logger.info(f"5m reports will begin posting in {sleep_time} seconds")
         await asyncio.sleep(sleep_time)
 
     # Start posting reports at next 0 or 30 minute interval
-    #@post_popularity_screener.before_loop
+    @post_popularity_screener.before_loop
     async def sleep_until_30m(self):
         sleep_time = date_utils.seconds_until_minute_interval(minute=30)
         logger.info(f"30m reports will begin posting in {sleep_time} seconds")
@@ -491,15 +491,21 @@ class Report(object):
     # Ticker Info
     def build_ticker_info(self):
         logger.debug("Building ticker info...")
-        message = "## Ticker Info\n"
-        
-        message += f"**Name:** {self.ticker_info['name']}\n"
-        message += f"**Sector:** {self.ticker_info['sector'] if self.ticker_info['sector'] else "N/A"}\n"
-        message += f"**Industry:** {self.ticker_info['industry'] if self.ticker_info['industry'] else "N/A"}\n" 
-        message += f"**Country:** {self.ticker_info['country'] if self.ticker_info['country'] else "N/A"}\n"
-        message += f"**Exchange:** {self.quote['reference']['exchangeName']}\n"
+
+        message = ''
+        # Validate ticker info
+        if not self.ticker_info.empty:
+            message = "## Ticker Info\n"
+            
+            message += f"**Name:** {self.ticker_info['name']}\n"
+            message += f"**Sector:** {self.ticker_info['sector'] if self.ticker_info['sector'] else "N/A"}\n"
+            message += f"**Industry:** {self.ticker_info['industry'] if self.ticker_info['industry'] else "N/A"}\n" 
+            message += f"**Country:** {self.ticker_info['country'] if self.ticker_info['country'] else "N/A"}\n"
+            message += f"**Exchange:** {self.quote['reference']['exchangeName']}\n"
+
         return message 
-        
+    
+            
         
     def build_recent_SEC_filings(self):
         """Return message content containing the 5 most recently release SEC filings for the stock
@@ -509,9 +515,15 @@ class Report(object):
             - ticker / ticker_info
         """
         logger.debug("Building latest SEC filings...")
-        message = "## Recent SEC Filings\n\n"
-        for filing in self.recent_sec_filings.head(5).to_dict(orient='records'):
-            message += f"[Form {filing['form']} - {filing['filingDate']}]({filing['link']})\n"
+
+        message = ''
+
+        # Validate SEC filings
+        if not self.recent_sec_filings.empty:
+            message = "## Recent SEC Filings\n\n"
+            for filing in self.recent_sec_filings.head(5).to_dict(orient='records'):
+                message += f"[Form {filing['form']} - {filing['filingDate']}]({filing['link']})\n"
+                
         return message
 
     def build_todays_sec_filings(self):
