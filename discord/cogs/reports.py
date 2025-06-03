@@ -494,7 +494,7 @@ class Report(object):
 
         message = ''
         # Validate ticker info
-        if not self.ticker_info.empty:
+        if not self.ticker_info:
             message = "## Ticker Info\n"
             
             message += f"**Name:** {self.ticker_info['name']}\n"
@@ -696,7 +696,7 @@ class Report(object):
 
             # Assign symbol based on rank difference
             symbol = None
-            if max_rank != "N/A":
+            if max_rank != "N/A" and current_rank != 'N/A':
                 if max_rank < current_rank:
                     symbol = "🔻"
                 elif max_rank > current_rank:
@@ -808,7 +808,7 @@ class Screener(Report):
 
 class StockReport(Report):
     
-    def __init__(self, channel:discord.channel, ticker_info:pd.DataFrame, daily_price_history:pd.DataFrame, popularity:pd.DataFrame, 
+    def __init__(self, channel:discord.channel, ticker_info:dict, daily_price_history:pd.DataFrame, popularity:pd.DataFrame, 
                  recent_sec_filings:pd.DataFrame, 
                  historical_earnings:pd.DataFrame, next_earnings_info:dict, quote:dict):
         super().__init__(channel=channel,

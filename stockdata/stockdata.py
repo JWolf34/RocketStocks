@@ -161,7 +161,7 @@ class Earnings:
                                     where_conditions=[('ticker', ticker)], 
                                     fetchall=True)
         if not results:
-            return results
+            return pd.DataFrame()
         else:
             return pd.DataFrame(results, columns=columns)
 
@@ -252,12 +252,12 @@ class StockData():
                           'cik_str':'cik'}
         sec_tickers = sec_tickers.filter(list(sec_column_map.keys()))
         sec_tickers = sec_tickers.rename(columns=sec_column_map)
+        sec_tickers['cik'] = sec_tickers['cik'].apply(lambda cik: str(cik).zfill(10))
                                
         # Get tickers from NASDAQ and format
         nasdaq_tickers = self.nasdaq.get_all_tickers()
         nasdaq_column_map = {'symbol':'ticker',
                       'name':'name',
-                      'marketCap':'marketcap',
                       'country':'country',
                       'ipoyear':'ipoyear',
                       'industry':'industry',
@@ -636,7 +636,7 @@ if __name__ == '__main__':
 
     start = time.time()
     
-    sd.insert_tickers()
+    asyncio.run(sd.insert_tickers())
     print('hi')
 
     #sd.update_popularity(popular_stocks=popular_stocks)

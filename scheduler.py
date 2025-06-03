@@ -37,7 +37,7 @@ def scheduler(stock_data):
 
         # Insert new tickers from NASDAQ into table in database 
         # Estimated runtime seconds
-        aio_sched.add_job(stock_data.insert_new_tickers, trigger=insert_new_tickers_trigger, name = "Insert new tickers into DB", timezone=timezone, replace_existing=True)
+        aio_sched.add_job(stock_data.insert_tickers, trigger=insert_new_tickers_trigger, name = "Insert new tickers into DB", timezone=timezone, replace_existing=True)
 
         # Update upcomingearnings table with newly reported earnings dates
         # Estimated runtime ~10 minutes
