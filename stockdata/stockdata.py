@@ -497,7 +497,6 @@ class StockData():
                                     fetchall=True)
         return [result[0] for result in results]
 
-    @staticmethod
     def get_all_tickers_by_market_cap(self, market_cap):
         """Return list of tickers with market cap greater than input market cap"""
         logger.info(f"Fetching all tickers with market cap > {market_cap} from database")
@@ -516,7 +515,6 @@ class StockData():
                     tickers.append(result[0])
         return tickers
 
-    @staticmethod
     def get_all_tickers_by_sector(self, sector):
         """Return list of tickers whose sector matches the input sector"""
         logger.info(f"Fetching all tickers in sector {sector} from database")
@@ -532,7 +530,6 @@ class StockData():
         
         return [result[0] for result in results] if results else None
 
-    @staticmethod
     def get_cik(self, ticker):
         """Return CIK number of input ticker from database"""
         logger.info(f"Retreiving CIK value for ticker '{ticker}' from database")
@@ -547,7 +544,6 @@ class StockData():
                                    fetchall=False)
         return result[0] if result else None
 
-    @staticmethod
     def get_market_cap(self, ticker):
         """Return market cap of input ticker in database"""
 
@@ -564,14 +560,13 @@ class StockData():
                                    fetchall=False)
         return float(result[0]) if result else None
 
-    @staticmethod
     def fetch_popularity(self, ticker=None):
         """Return historical popularity of input ticker from database"""
         logger.info(f"Retrieving historical popularity {ticker} from database" if ticker else "Retrieving all historical popularity from database")
 
         columns = self.db.get_table_columns('popularity')
         where_conditions = []
-        order_by = ('date', 'DESC')
+        order_by = ('datetime', 'DESC')
         if ticker:
             where_conditions.append(('ticker', ticker))
         
@@ -619,7 +614,6 @@ class StockData():
         return True if not data.empty else False
     
     # Get list of valid tickers from string
-    @staticmethod
     async def parse_valid_tickers(self, ticker_string:str):
         """Return list of valid tickers from string of comma-separated tickers"""
         logger.info(f"Parsing valid tickers from string: '{ticker_string}'")
@@ -633,11 +627,6 @@ class StockData():
                 invalid_tickers.append(ticker)
         logger.info(f"Parsed {len(valid_tickers)} valid tickers: {valid_tickers}, {len(invalid_tickers)} invalid tickers: {invalid_tickers}")
         return valid_tickers, invalid_tickers
-
-    @staticmethod
-    # Return supported exchanges
-    def get_supported_exchanges():
-        return ['NASDAQ', 'NYSE', 'AMEX']
     
 
 

@@ -64,6 +64,9 @@ class Reports(commands.Cog):
                               column='datetime',
                               value=pd.Series([date_utils.round_down_nearest_minute(30)] * popular_stocks.shape[0]).values)
 
+        # Insert popularity into db
+        self.stock_data.insert_popularity(popular_stocks=popular_stocks)
+
         # Generate screener
         report = PopularityScreener(channel=self.screeners_channel,
                                     market_period='None',
@@ -145,8 +148,8 @@ class Reports(commands.Cog):
         await asyncio.sleep(sleep_time)
 
 
-    #@tasks.loop(time=datetime.time(hour=12, minute=30, second=0)) # time in UTC
-    @tasks.loop(minutes=5)
+    @tasks.loop(time=datetime.time(hour=12, minute=30, second=0)) # time in UTC
+    #@tasks.loop(minutes=5)
     async def post_earnings_spotlight(self):
         if self.mutils.market_open_today():
 
@@ -282,7 +285,7 @@ class Reports(commands.Cog):
                 recent_sec_filings = self.stock_data.sec.get_recent_filings(ticker=ticker)
                 historical_earnings = self.stock_data.earnings.get_historical_earnings(ticker=ticker)
                 next_earnings_info = self.stock_data.earnings.get_next_earnings_info(ticker=ticker)
-                quote = self.stock_data.schwab.get_quote(ticker=ticker)
+                quote = await self.stock_data.schwab.get_quote(ticker=ticker)
 
                 # Generate report and send
                 report = StockReport(channel=self.reports_channel,
@@ -314,17 +317,26 @@ class Reports(commands.Cog):
         logger.info(f"Reports requested for tickers '{tickers}'")
     
         # Validate each ticker in the list is valid
-        tickers, invalid_tickers = self.stock_data.parse_valid_tickers(tickers.upper())
+        tickers, invalid_tickers = await self.stock_data.parse_valid_tickers(tickers.upper())
         message = None
         for ticker in tickers:
+            import time
             # Collect data to create Stock Report
+            print(time.time())
             ticker_info = self.stock_data.get_ticker_info(ticker=ticker)
-            daily_price_history = self.stock_data.fetch_daily_price_history(ticker=ticker),
+            print(time.time())
+            daily_price_history = self.stock_data.fetch_daily_price_history(ticker=ticker)
+            print(time.time())
             popularity = self.stock_data.fetch_popularity(ticker=ticker)
+            print(time.time())
             recent_sec_filings = self.stock_data.sec.get_recent_filings(ticker=ticker)
+            print(time.time())
             historical_earnings = self.stock_data.earnings.get_historical_earnings(ticker=ticker)
+            print(time.time())
             next_earnings_info = self.stock_data.earnings.get_next_earnings_info(ticker=ticker)
-            quote = self.stock_data.schwab.get_quote(ticker=ticker)
+            print(time.time())
+            quote = await self.stock_data.schwab.get_quote(ticker=ticker)
+            print(time.time())
 
             # Generate report and send
             report = StockReport(channel=self.reports_channel,
@@ -417,6 +429,7 @@ class Report(object):
         self.next_earnings_info = kwargs.pop('next_earnings_info', None)
         self.historical_earnings = kwargs.pop('historical_earnings', None)
         self.recent_sec_filings = kwargs.pop('recent_sec_filings', None)
+        self.popularity = kwargs.pop('popularity', None)
 
         # ASCII table styles
         self.table_styles = {'ascii':PresetStyle.ascii,
@@ -633,32 +646,41 @@ class Report(object):
     def build_popularity(self):
         logger.debug("Building popularity...")
         message = "## Popularity\n"
+        
+        # Get current rank
+        now = date_utils.round_down_nearest_minute(30)
+        popularity_today = self.popularity[(self.popularity['datetime'] == now)]
+        current_rank = popularity_today['rank'].iloc[0] if not popularity_today.empty else 'N/A'
+        message += f"**Current:** {current_rank}\n"
 
-        # If no historical popularity, return
-        if self.popularity.empty:
-            message += "No popularity records available"
-            return message + "\n"
-        
-        # Find today's popularity rank for ticker
-        if self.ticker in self.top_stocks['ticker'].values:
-            todays_rank = self.top_stocks['rank'].where(self.top_stocks['ticker'] == self.ticker)
-        else:
-            todays_rank = 501  
-        #popularity = sd.StockData.get_historical_popularity(self.ticker)
-        
-        
-        message += f"**Today:** {todays_rank}\n"
-        for i in range(1, 6):
-            date = datetime.date.today() - datetime.timedelta(i)
-            try:
-                old_rank = popularity[popularity['date'] == date]['rank'].iloc[0]
-                symbol = ":green_circle:" if (old_rank-todays_rank) > 0 else ":small_red_triangle_down:"
-                change = f"{old_rank - todays_rank} spots"
-            except IndexError as e:
-                old_rank = 'N/A'
-                symbol = ''
-                change = ''
-            message +=f"**{i} Day(s) Ago:** {old_rank}, {symbol} {change}\n"
+        # Get highest popularity rank across select intervals
+        interval_map = {"High 1D":1,
+                        "High 7D":7,
+                        "High 1M":30,
+                        "High 3M":90,
+                        "High 6M":180}
+
+
+        for label, interval in interval_map.items():
+            # Find max rank within defined interval
+            interval_date = now - datetime.timedelta(days=interval)
+            interval_popularity = self.popularity[self.popularity['datetime'].between(interval_date, now)]
+            if not interval_popularity.empty:
+                max_rank = interval_popularity['rank'].max()
+            else:
+                max_rank = 'N/A'
+
+            # Assign symbol based on rank difference
+            symbol = None
+            if max_rank != "N/A":
+                if max_rank < current_rank:
+                    symbol = "🔻"
+                elif max_rank > current_rank:
+                    symbol = "🟢"
+                else:
+                    symbol = "־"
+
+            message +=f"**{label:<10}** {max_rank:<4} {f'{symbol} {max_rank-current_rank}spots' if symbol and current_rank != 'N/A' else ''}\n"
         return message
 
     def build_report(self):
@@ -766,7 +788,8 @@ class Screener(Report):
 class StockReport(Report):
     
     def __init__(self, channel:discord.channel, ticker_info:pd.DataFrame, daily_price_history:pd.DataFrame, popularity:pd.DataFrame, 
-                 recent_sec_filings:pd.DataFrame, historical_earnings:pd.DataFrame, next_earnings_info:dict, quote:dict):
+                 recent_sec_filings:pd.DataFrame, 
+                 historical_earnings:pd.DataFrame, next_earnings_info:dict, quote:dict):
         super().__init__(channel=channel,
                          ticker_info=ticker_info,
                          daily_price_history=daily_price_history,
@@ -784,7 +807,7 @@ class StockReport(Report):
         report += self.build_report_header()
         report += self.build_ticker_info()
         report += self.build_daily_summary()
-        report += self.build_performance()
+        #report += self.build_performance()
         report += self.build_stats()
         report += self.build_popularity()
         report += self.build_recent_earnings()
