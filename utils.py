@@ -282,6 +282,10 @@ class date_utils:
         if isinstance(date, str):
             date = datetime.datetime.strptime(date, "%Y-%m-%d")
         return date.strftime("%m/%d/%Y")
+    
+    @staticmethod
+    def format_date_from_iso(date):
+        return datetime.datetime.fromisoformat(date)
 
     @staticmethod
     def dt_round_down(dt:datetime.datetime):

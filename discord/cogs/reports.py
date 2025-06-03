@@ -8,6 +8,7 @@ from discord.cogs.watchlists import Watchlists as cog_Watchlists                
 from RocketStocks.stockdata.watchlists import Watchlists as data_Watchlists     # stockdata module      
 import datetime
 from stockdata import StockData
+from news import News
 import pandas as pd
 import datetime as dt
 import utils
@@ -137,15 +138,15 @@ class Reports(commands.Cog):
         await asyncio.sleep(sleep_time)
 
     # Start posting reports at next 0 or 30 minute interval
-    @post_popularity_screener.before_loop
+    #@post_popularity_screener.before_loop
     async def sleep_until_30m(self):
         sleep_time = date_utils.seconds_until_minute_interval(minute=30)
         logger.info(f"30m reports will begin posting in {sleep_time} seconds")
         await asyncio.sleep(sleep_time)
 
 
-    @tasks.loop(time=datetime.time(hour=12, minute=30, second=0)) # time in UTC
-    #@tasks.loop(minutes=5)
+    #@tasks.loop(time=datetime.time(hour=12, minute=30, second=0)) # time in UTC
+    @tasks.loop(minutes=5)
     async def post_earnings_spotlight(self):
         if self.mutils.market_open_today():
 
@@ -319,13 +320,13 @@ class Reports(commands.Cog):
     async def autocomplete_searchin(self, interaction:discord.Interaction, current:str):
         return [
             app_commands.Choice(name = search_in_name, value= search_in_value)
-            for search_in_name, search_in_value in sd.News().search_in.items() if current.lower() in search_in_name.lower()
+            for search_in_name, search_in_value in News().search_in.items() if current.lower() in search_in_name.lower()
         ]
 
     async def autocomplete_sortby(self, interaction:discord.Interaction, current:str):
         return [
             app_commands.Choice(name = sort_by_name, value= sort_by_value)
-            for sort_by_name, sort_by_value in sd.News().sort_by.items() if current.lower() in sort_by_name.lower()
+            for sort_by_name, sort_by_value in News().sort_by.items() if current.lower() in sort_by_name.lower()
         ]
 
     @app_commands.command(name="news", description="Fetch news on the query provided")
@@ -334,8 +335,8 @@ class Reports(commands.Cog):
     @app_commands.autocomplete(sort_by=autocomplete_sortby,)
     async def news(self, interaction:discord.Interaction, query:str, sort_by:str = 'publishedAt'):
         logger.info("/news function called by user {}".format(interaction.user.name))
-        kwargs = {'sort_by': sort_by}
-        report = NewsReport(query=query, **kwargs)
+        news = News().get_news(query=query, sort_by=sort_by)
+        report = NewsReport(news=news, query=query)
         message = await report.send_report(interaction=interaction)
         logger.info(f"Posted news for query '{query}'")
 
@@ -376,7 +377,7 @@ class Report(object):
 
         # Parse data from keywords args
         self.ticker_info = kwargs.pop('ticker_info', None)
-        self.ticker = self.ticker_info['ticker'] if self.ticker_info else None
+        self.ticker = self.ticker_info['ticker'] if self.ticker_info else kwargs.pop('ticker', None)
         self.quote = kwargs.pop('quote', None)
         self.daily_price_history = kwargs.pop('daily_price_history', None)
         self.next_earnings_info = kwargs.pop('next_earnings_info', None)
@@ -773,7 +774,9 @@ class StockReport(Report):
 
             @discord.ui.button(label="Get news", style=discord.ButtonStyle.primary)
             async def get_news(self, interaction:discord.Interaction, button:discord.ui.Button):
-                news_report = NewsReport(self.ticker)
+                news = News().get_news(query=self.ticker)
+
+                news_report = NewsReport(news=news, query=self.ticker)
                 await news_report.send_report(interaction)
                 await interaction.response.send_message(f"Fetched news for {self.ticker}!", ephemeral=True)
 
@@ -939,14 +942,12 @@ class PopularityScreener(Screener):
         report +=  self.build_report_header()
         report +=  self.build_table(df=self.data[:25])
         return report
-# TODO
+
 class NewsReport(Report):
-    def __init__(self, query, breaking=False, **kwargs):
-        logger.debug(f"News report created with query '{query}'")
+    def __init__(self, news, query):
+        # No channel for this report so no need to init super
+        self.news = news
         self.query = query
-        self.breaking=breaking
-        self.news_kwargs=kwargs
-        super().__init__(None) # no channel for this report
 
     # Override
     def build_report_header(self):
@@ -958,12 +959,9 @@ class NewsReport(Report):
     def build_news(self):
         logger.debug("Building news...")
         report = ''
-        if self.breaking:
-            news = sd.News().get_breaking_news(query=self.query, **self.news_kwargs)
-        else:
-            news = sd.News().get_news(query=self.query, **self.news_kwargs)
-        for article in news['articles'][:10]:
-            article = f"[{article['title']} - {article['source']['name']} ({sd.News().format_article_date(article['publishedAt'])})](<{article['url']}>)\n"
+        for article in self.news['articles'][:10]:
+            article_date = date_utils.format_date_from_iso(date=article['publishedAt']).strftime("%m/%d/%y %H:%M:%S EST")
+            article = f"[{article['title']} - {article['source']['name']} ({article_date})](<{article['url']}>)\n"
             if len(report + article) <= 1900:
                 report += article
             else:
@@ -1081,7 +1079,8 @@ class EarningsSpotlightReport(Report):
 
             @discord.ui.button(label="Get news", style=discord.ButtonStyle.primary)
             async def get_news(self, interaction:discord.Interaction, button:discord.ui.Button):
-                news_report = NewsReport(self.ticker)
+                news = News().get_news(query=self.ticker)
+                news_report = NewsReport(news=news, query=self.ticker)
                 await news_report.send_report(interaction)
                 await interaction.response.send_message(f"Fetched news for {self.ticker}!", ephemeral=True)
 

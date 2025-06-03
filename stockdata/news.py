@@ -32,6 +32,4 @@ class News():
         logger.debug(f"Fetching breaking news with query '{query}'")
         return self.news.get_top_headlines(q=query, **kwargs)
 
-    def format_article_date(self, date):
-        new_date = datetime.datetime.fromisoformat(date)
-        return new_date.strftime("%m/%d/%y %H:%M:%S EST")
+    
