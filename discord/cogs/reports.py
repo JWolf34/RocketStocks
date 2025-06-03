@@ -141,7 +141,7 @@ class Reports(commands.Cog):
         await asyncio.sleep(sleep_time)
 
     # Start posting reports at next 0 or 30 minute interval
-    #@post_popularity_screener.before_loop
+    @post_popularity_screener.before_loop
     async def sleep_until_30m(self):
         sleep_time = date_utils.seconds_until_minute_interval(minute=30)
         logger.info(f"30m reports will begin posting in {sleep_time} seconds")
@@ -320,23 +320,14 @@ class Reports(commands.Cog):
         tickers, invalid_tickers = await self.stock_data.parse_valid_tickers(tickers.upper())
         message = None
         for ticker in tickers:
-            import time
             # Collect data to create Stock Report
-            print(time.time())
             ticker_info = self.stock_data.get_ticker_info(ticker=ticker)
-            print(time.time())
             daily_price_history = self.stock_data.fetch_daily_price_history(ticker=ticker)
-            print(time.time())
             popularity = self.stock_data.fetch_popularity(ticker=ticker)
-            print(time.time())
             recent_sec_filings = self.stock_data.sec.get_recent_filings(ticker=ticker)
-            print(time.time())
             historical_earnings = self.stock_data.earnings.get_historical_earnings(ticker=ticker)
-            print(time.time())
             next_earnings_info = self.stock_data.earnings.get_next_earnings_info(ticker=ticker)
-            print(time.time())
             quote = await self.stock_data.schwab.get_quote(ticker=ticker)
-            print(time.time())
 
             # Generate report and send
             report = StockReport(channel=self.reports_channel,
@@ -498,7 +489,7 @@ class Report(object):
         """
         logger.debug("Building latest SEC filings...")
         message = "## Recent SEC Filings\n\n"
-        for index, filing in self.recent_sec_filings[:5].iterrows():
+        for filing in self.recent_sec_filings.head(5).to_dict(orient='records'):
             message += f"[Form {filing['form']} - {filing['filingDate']}]({filing['link']})\n"
         return message
 
@@ -651,10 +642,10 @@ class Report(object):
         now = date_utils.round_down_nearest_minute(30)
         popularity_today = self.popularity[(self.popularity['datetime'] == now)]
         current_rank = popularity_today['rank'].iloc[0] if not popularity_today.empty else 'N/A'
-        message += f"**Current:** {current_rank}\n"
+        message += f"```{f'Current:':<10}{current_rank}\n\n"
 
         # Get highest popularity rank across select intervals
-        interval_map = {"High 1D":1,
+        interval_map = {"High 24H":1,
                         "High 7D":7,
                         "High 1M":30,
                         "High 3M":90,
@@ -666,7 +657,7 @@ class Report(object):
             interval_date = now - datetime.timedelta(days=interval)
             interval_popularity = self.popularity[self.popularity['datetime'].between(interval_date, now)]
             if not interval_popularity.empty:
-                max_rank = interval_popularity['rank'].max()
+                max_rank = interval_popularity['rank'].min()
             else:
                 max_rank = 'N/A'
 
@@ -680,8 +671,9 @@ class Report(object):
                 else:
                     symbol = "־"
 
-            message +=f"**{label:<10}** {max_rank:<4} {f'{symbol} {max_rank-current_rank}spots' if symbol and current_rank != 'N/A' else ''}\n"
-        return message
+            message +=f"{f'{label}:':<10}{max_rank:<5} {f'{symbol} {max_rank-current_rank} spots' if symbol and current_rank != 'N/A' else ''}\n"
+            print(message)
+        return message + '```\n'
 
     def build_report(self):
         report = ''

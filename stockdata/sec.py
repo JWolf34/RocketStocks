@@ -34,7 +34,8 @@ class SEC():
     
     def get_recent_filings(self, ticker, latest=10):
         filings = pd.DataFrame.from_dict(self.get_submissions_data(ticker)['filings']['recent'])[:latest]
-        filings.assign(link=[self.get_link_to_filing(ticker=ticker, filing=filing) for filing in filings.to_dict(orient='records')])
+        filings['link'] = pd.Series([self.get_link_to_filing(ticker=ticker, filing=filing) for filing in filings.to_dict(orient='records')])
+        return filings
 
     def get_filings_from_today(self, ticker):
         recent_filings = self.get_recent_filings(ticker)
