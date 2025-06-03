@@ -139,14 +139,14 @@ class Reports(commands.Cog):
 
     # Start posting report at next 0 or 5 minute interval
     #@post_gainer_screener.before_loop
-    @post_volume_screener.before_loop
+    #@post_volume_screener.before_loop
     async def sleep_until_5m(self):
         sleep_time = date_utils.seconds_until_minute_interval(minute=5)
         logger.info(f"5m reports will begin posting in {sleep_time} seconds")
         await asyncio.sleep(sleep_time)
 
     # Start posting reports at next 0 or 30 minute interval
-    @post_popularity_screener.before_loop
+    #@post_popularity_screener.before_loop
     async def sleep_until_30m(self):
         sleep_time = date_utils.seconds_until_minute_interval(minute=30)
         logger.info(f"30m reports will begin posting in {sleep_time} seconds")
@@ -740,7 +740,6 @@ class Screener(Report):
         self.data = data
         self.format_columns()
         self.update_watchlist()
-        
 
     def get_tickers(self):
         return self.data['Ticker'].to_list()
@@ -768,7 +767,7 @@ class Screener(Report):
         
 
     # Override
-    async def send_report(self):
+    async def send_report(self, view=None):
         """Send gainer report to the screeners channel"""
         self.message = self.build_report() + "\n\n"
 
@@ -783,7 +782,7 @@ class Screener(Report):
         if message_id:
             curr_message = await self.channel.fetch_message(message_id)
             if curr_message.created_at.date() < today.date():
-                message = await self.channel.send(self.message)
+                message = await self.channel.send(self.message, view=view)
                 self.dutils.update_screener_message_id(message_id=message.id, screener_type=self.screener_type)
                 return message
             else:
@@ -791,7 +790,7 @@ class Screener(Report):
                 await curr_message.edit(content=self.message)
         # No existing report, send new one
         else:
-            message = await self.channel.send(self.message)
+            message = await self.channel.send(self.message, view=view)
             self.dutils.insert_screener_message_id(message_id=message.id, screener_type=self.screener_type)
             return message
 
@@ -885,6 +884,9 @@ class GainerScreener(Screener):
                          data = gainers,
                          column_map=column_map)
         
+        # Init buttons
+        self.buttons = self.Buttons(market_period=market_period)
+        
 
     # Extends
     def format_columns(self):
@@ -924,6 +926,23 @@ class GainerScreener(Screener):
         report +=  self.build_table(self.data[:15])
         return report
     
+    # Override
+    async def send_report(self):
+        logger.debug("Sending Stock Report...")
+        message = await super().send_report(view=self.buttons)
+        return message
+    
+    # Override
+    class Buttons(discord.ui.View):
+        def __init__(self, market_period):
+            super().__init__(timeout=None)
+            if market_period == 'premarket':
+                url = "https://www.tradingview.com/markets/stocks-usa/market-movers-pre-market-gainers/"
+            elif market_period == 'intraday':
+                url = "https://www.tradingview.com/markets/stocks-usa/market-movers-gainers/"
+            elif market_period == 'aftermarket':
+                url = "https://www.tradingview.com/markets/stocks-usa/market-movers-after-hours-gainers/"
+            self.add_item(discord.ui.Button(label="TradingView", style=discord.ButtonStyle.url, url = url))
 
 class VolumeScreener(Screener):
     def __init__(self, channel:discord.channel, market_period:str, unusual_volume:pd.DataFrame):
@@ -943,6 +962,11 @@ class VolumeScreener(Screener):
                          market_period=market_period,
                          data = unusual_volume,
                          column_map=column_map)
+        
+        # Init buttons
+        self.buttons = self.Buttons()
+        
+        
     
     def format_columns(self):
         super().format_columns()
@@ -978,6 +1002,18 @@ class VolumeScreener(Screener):
         report += self.build_report_header()
         report += self.build_table(self.data[:12])
         return report
+    
+    # Override
+    async def send_report(self):
+        logger.debug("Sending Stock Report...")
+        message = await super().send_report(view=self.buttons)
+        return message
+    
+    # Override
+    class Buttons(discord.ui.View):
+        def __init__(self):
+            super().__init__(timeout=None)
+            self.add_item(discord.ui.Button(label="TradingView", style=discord.ButtonStyle.url, url = "https://www.tradingview.com/markets/stocks-usa/market-movers-unusual-volume/"))
 
 class PopularityScreener(Screener):
     def __init__(self, channel:discord.channel, market_period:str, popular_stocks:pd.DataFrame):
@@ -994,6 +1030,8 @@ class PopularityScreener(Screener):
                          data=popular_stocks,
                          column_map=column_map)
         
+        # Init buttons
+        self.buttons = self.Buttons()
 
     def format_columns(self):
         super().format_columns()
@@ -1016,6 +1054,20 @@ class PopularityScreener(Screener):
         report +=  self.build_report_header()
         report +=  self.build_table(df=self.data[:20])
         return report
+    
+    # Override
+    async def send_report(self):
+        logger.debug("Sending Stock Report...")
+        message = await super().send_report(view=self.buttons)
+        return message
+
+    # Override
+    class Buttons(discord.ui.View):
+        def __init__(self):
+            super().__init__(timeout=None)
+            self.add_item(discord.ui.Button(label="ApeWisdom", style=discord.ButtonStyle.url, url = "https://apewisdom.io/"))
+
+        
 
 class NewsReport(Report):
     def __init__(self, news, query):
