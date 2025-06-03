@@ -565,7 +565,7 @@ class StockData():
         return float(result[0]) if result else None
 
     @staticmethod
-    def get_historical_popularity(self, ticker=None):
+    def fetch_popularity(self, ticker=None):
         """Return historical popularity of input ticker from database"""
         logger.info(f"Retrieving historical popularity {ticker} from database" if ticker else "Retrieving all historical popularity from database")
 
@@ -584,7 +584,7 @@ class StockData():
         return pd.DataFrame(results, columns=columns) if results else None
     
     
-    def update_popularity(self, popular_stocks:pd.DataFrame):
+    def insert_popularity(self, popular_stocks:pd.DataFrame):
         """Import new rows into popularity table"""
         logger.debug(f"Inserting new popularity data into database - {popular_stocks.shape[0]} rows")
 
@@ -620,14 +620,14 @@ class StockData():
     
     # Get list of valid tickers from string
     @staticmethod
-    def get_valid_tickers(self, ticker_string:str):
+    async def parse_valid_tickers(self, ticker_string:str):
         """Return list of valid tickers from string of comma-separated tickers"""
         logger.info(f"Parsing valid tickers from string: '{ticker_string}'")
         tickers = ticker_string.upper().split()
         valid_tickers = []
         invalid_tickers = []
         for ticker in tickers:
-            if self.validate_ticker(ticker):
+            if await self.validate_ticker(ticker):
                 valid_tickers.append(ticker)
             else:
                 invalid_tickers.append(ticker)

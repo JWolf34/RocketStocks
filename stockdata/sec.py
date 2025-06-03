@@ -33,7 +33,8 @@ class SEC():
         return submissions_json
     
     def get_recent_filings(self, ticker):
-        return pd.DataFrame.from_dict(self.get_submissions_data(ticker)['filings']['recent'])
+        filings = pd.DataFrame.from_dict(self.get_submissions_data(ticker)['filings']['recent'])
+        filings.assign(link=[self.get_link_to_filing(ticker=ticker, filing=filing) for filing in filings.iterrows()])
 
     def get_filings_from_today(self, ticker):
         recent_filings = self.get_recent_filings(ticker)

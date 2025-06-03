@@ -37,7 +37,7 @@ class Data(commands.Cog):
         frequency = frequency.value
         
         files = []
-        tickers, invalid_tickers = sd.StockData.get_valid_tickers(tickers)
+        tickers, invalid_tickers = sd.StockData.parse_valid_tickers(tickers)
         try:
             for ticker in tickers:
                 if frequency == 'daily':
@@ -84,7 +84,7 @@ class Data(commands.Cog):
         logger.info("Financials requested for {}".format(tickers))
 
 
-        tickers, invalid_tickers = sd.StockData.get_valid_tickers(tickers)
+        tickers, invalid_tickers = sd.StockData.parse_valid_tickers(tickers)
 
         message = None
         for ticker in tickers:
@@ -142,7 +142,7 @@ class Data(commands.Cog):
         sd.validate_path(utils.datapaths.attachments_path)
         message = ""
         file = None
-        tickers, invalid_tickers = sd.StockData.get_valid_tickers(tickers)
+        tickers, invalid_tickers = sd.StockData.parse_valid_tickers(tickers)
         for ticker in tickers:
             eps = sd.StockData.Earnings.get_historical_earnings(ticker)
             if eps.size > 0:
@@ -183,7 +183,7 @@ class Data(commands.Cog):
         logger.info("/form function called by user {}".format(interaction.user.name))
         logger.info(f"Form {form} requested for tickers {tickers}")
         
-        tickers, invalid_tickers = sd.StockData.get_valid_tickers(tickers)
+        tickers, invalid_tickers = sd.StockData.parse_valid_tickers(tickers)
         sec = sd.SEC()
         message = ""
         for ticker in tickers:
@@ -211,7 +211,7 @@ class Data(commands.Cog):
         logger.info(f"Fundamentals requested for tickers {tickers}")
         message = None
         file = None
-        tickers, invalid_tickers = sd.StockData.get_valid_tickers(tickers)
+        tickers, invalid_tickers = sd.StockData.parse_valid_tickers(tickers)
         for ticker in tickers:
             fundamentals = sd.Schwab().get_fundamentals(ticker)
             
@@ -245,7 +245,7 @@ class Data(commands.Cog):
         logger.info(f"Options chain(s) requested for tickers {tickers}")
         message = None
         file = None
-        tickers, invalid_tickers = sd.StockData.get_valid_tickers(tickers)
+        tickers, invalid_tickers = sd.StockData.parse_valid_tickers(tickers)
         for ticker in tickers:
             options = sd.Schwab().get_options_chain(ticker)
             
@@ -278,12 +278,12 @@ class Data(commands.Cog):
         logger.info("/popularity function called by user {}".format(interaction.user.name))
         logger.info(f"Historical popularity requested for tickers {tickers}")
         files = []
-        tickers, invalid_tickers = sd.StockData.get_valid_tickers(tickers)
+        tickers, invalid_tickers = sd.StockData.parse_valid_tickers(tickers)
         try:
             for ticker in tickers:
                 message = ""
                 file = None
-                data = sd.StockData.get_historical_popularity(ticker=ticker)  
+                data = sd.StockData.fetch_popularity(ticker=ticker)  
                 if data.size:
                     message = f"Popularity for {ticker}"
                     filepath = f"{utils.datapaths.attachments_path}/{ticker}_popularity.csv"

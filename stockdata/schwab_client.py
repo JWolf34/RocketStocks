@@ -47,7 +47,7 @@ class Schwab():
                 price_history.insert(loc=0, column='ticker', value=ticker)
                 return price_history
             else:
-                return None
+                return pd.DataFrame()
         except httpx.HTTPStatusError as e:
             logger.error(f"Enountered HTTPStatusError when downloading daily price history for ticker {ticker}\n{e}")
             return pd.DataFrame()

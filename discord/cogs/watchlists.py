@@ -32,7 +32,7 @@ class Watchlists(commands.Cog):
         logger.info("/add-tickers function called by user {}".format(self, interaction.user.name))
         
         # Parse list from ticker input and identify invalid tickers
-        tickers, invalid_tickers = sd.StockData.get_valid_tickers(tickers)
+        tickers, invalid_tickers = sd.StockData.parse_valid_tickers(tickers)
 
         message_flavor = watchlist
         is_personal = False
@@ -79,7 +79,7 @@ class Watchlists(commands.Cog):
         logger.info("/remove-tickers function called by user {}".format(self, interaction.user.name))
         
     # Parse list from ticker input and identify invalid tickers
-        tickers, invalid_tickers = sd.StockData.get_valid_tickers(tickers)
+        tickers, invalid_tickers = sd.StockData.parse_valid_tickers(tickers)
 
         message_flavor = watchlist
         is_personal = False
@@ -153,7 +153,7 @@ class Watchlists(commands.Cog):
         logger.info("/set-watchlist function called by user {}".format(self, interaction.user.name))
 
         # Parse list from ticker input and identify invalid tickers
-        tickers, invalid_tickers = sd.StockData.get_valid_tickers(tickers)
+        tickers, invalid_tickers = sd.StockData.parse_valid_tickers(tickers)
 
         symbols = []
         message_flavor = watchlist
@@ -190,7 +190,7 @@ class Watchlists(commands.Cog):
         logger.info("/create-watchlist function called by user {}".format(self, interaction.user.name))
 
         # Parse list from ticker input and identify invalid tickers
-        tickers, invalid_tickers = sd.StockData.get_valid_tickers(tickers)
+        tickers, invalid_tickers = sd.StockData.parse_valid_tickers(tickers)
         logger.info(f"Request to create watchlist '{watchlist}' with tickers {tickers}")
         logger.debug(f"Invalid input tickers: {invalid_tickers}")
 

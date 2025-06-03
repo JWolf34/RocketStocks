@@ -68,11 +68,17 @@ def rocketStocks():
     
     bot_thread.join()
     logger.debug("Threads joined")
+
+def test():
+    import asyncio
+    sd = StockData()
+    asyncio.run(sd.update_daily_price_history())
     
 
 if (__name__ == '__main__'):
     setup_logging()
-    rocketStocks()
+    #rocketStocks()
+    test()
     
     
 

@@ -275,7 +275,24 @@ class Reports(commands.Cog):
             logger.info(f"Generating reports for tickers {tickers}")
             message = None
             for ticker in tickers:
-                report = StockReport(ticker, self.reports_channel)
+                # Collect data to create Stock Report
+                ticker_info = self.stock_data.get_ticker_info(ticker=ticker)
+                daily_price_history = self.stock_data.fetch_daily_price_history(ticker=ticker),
+                popularity = self.stock_data.fetch_popularity(ticker=ticker)
+                recent_sec_filings = self.stock_data.sec.get_recent_filings(ticker=ticker)
+                historical_earnings = self.stock_data.earnings.get_historical_earnings(ticker=ticker)
+                next_earnings_info = self.stock_data.earnings.get_next_earnings_info(ticker=ticker)
+                quote = self.stock_data.schwab.get_quote(ticker=ticker)
+
+                # Generate report and send
+                report = StockReport(channel=self.reports_channel,
+                                     ticker_info=ticker_info,
+                                     daily_price_history=daily_price_history,
+                                     popularity=popularity,
+                                     recent_sec_filings=recent_sec_filings,
+                                     historical_earnings=historical_earnings,
+                                     next_earnings_info=next_earnings_info,
+                                     quote=quote)
                 message = await report.send_report(interaction, visibility.value)
             logger.info("Reports have been posted")
 
@@ -297,10 +314,27 @@ class Reports(commands.Cog):
         logger.info(f"Reports requested for tickers '{tickers}'")
     
         # Validate each ticker in the list is valid
-        tickers, invalid_tickers = sd.StockData.get_valid_tickers(tickers)
+        tickers, invalid_tickers = self.stock_data.parse_valid_tickers(tickers.upper())
         message = None
         for ticker in tickers:
-            report = StockReport(ticker, self.reports_channel)
+            # Collect data to create Stock Report
+            ticker_info = self.stock_data.get_ticker_info(ticker=ticker)
+            daily_price_history = self.stock_data.fetch_daily_price_history(ticker=ticker),
+            popularity = self.stock_data.fetch_popularity(ticker=ticker)
+            recent_sec_filings = self.stock_data.sec.get_recent_filings(ticker=ticker)
+            historical_earnings = self.stock_data.earnings.get_historical_earnings(ticker=ticker)
+            next_earnings_info = self.stock_data.earnings.get_next_earnings_info(ticker=ticker)
+            quote = self.stock_data.schwab.get_quote(ticker=ticker)
+
+            # Generate report and send
+            report = StockReport(channel=self.reports_channel,
+                                    ticker_info=ticker_info,
+                                    daily_price_history=daily_price_history,
+                                    popularity=popularity,
+                                    recent_sec_filings=recent_sec_filings,
+                                    historical_earnings=historical_earnings,
+                                    next_earnings_info=next_earnings_info,
+                                    quote=quote)
             message = await report.send_report(interaction, visibility.value)
 
         # Follow-up message
@@ -382,6 +416,7 @@ class Report(object):
         self.daily_price_history = kwargs.pop('daily_price_history', None)
         self.next_earnings_info = kwargs.pop('next_earnings_info', None)
         self.historical_earnings = kwargs.pop('historical_earnings', None)
+        self.recent_sec_filings = kwargs.pop('recent_sec_filings', None)
 
         # ASCII table styles
         self.table_styles = {'ascii':PresetStyle.ascii,
@@ -442,11 +477,16 @@ class Report(object):
         
         
     def build_recent_SEC_filings(self):
+        """Return message content containing the 5 most recently release SEC filings for the stock
+        
+        Requires:
+            - recent_sec_filings
+            - ticker / ticker_info
+        """
         logger.debug("Building latest SEC filings...")
         message = "## Recent SEC Filings\n\n"
-        filings = sd.SEC().get_recent_filings(ticker=self.ticker)
-        for index, filing in filings[:5].iterrows():
-            message += f"[Form {filing['form']} - {filing['filingDate']}]({sd.SEC().get_link_to_filing(ticker=self.ticker, filing=filing)})\n"
+        for index, filing in self.recent_sec_filings[:5].iterrows():
+            message += f"[Form {filing['form']} - {filing['filingDate']}]({filing['link']})\n"
         return message
 
     def build_todays_sec_filings(self):
@@ -469,7 +509,7 @@ class Report(object):
         return "```\n" + table + "\n```"
 
     def build_earnings_date(self):
-        """Return message content with the date and release time of the stock's next earnings repot
+        """Return message content with the date and release time of the stock's next earnings report
         
         Requires:
             - ticker_info
@@ -725,16 +765,17 @@ class Screener(Report):
 
 class StockReport(Report):
     
-    def __init__(self, ticker : str, channel):
-        self.ticker = ticker
-        self.data =  sd.StockData.fetch_daily_price_history(self.ticker)
-        self.popularity = sd.StockData.get_historical_popularity(ticker=self.ticker)
-        self.top_stocks = pd.concat([sd.ApeWisdom().get_top_stocks(page=i) for i in range(1, 6)])
+    def __init__(self, channel:discord.channel, ticker_info:pd.DataFrame, daily_price_history:pd.DataFrame, popularity:pd.DataFrame, 
+                 recent_sec_filings:pd.DataFrame, historical_earnings:pd.DataFrame, next_earnings_info:dict, quote:dict):
+        super().__init__(channel=channel,
+                         ticker_info=ticker_info,
+                         daily_price_history=daily_price_history,
+                         popularity=popularity,
+                         recent_sec_filings=recent_sec_filings,
+                         historical_earnings=historical_earnings,
+                         next_earnings_info=next_earnings_info,
+                         quote=quote)
         self.buttons = self.Buttons(self.ticker)
-        super().__init__(channel)
-
-    async def init(self):
-        self.quote = await sd.Schwab().get_quote(self.ticker)
         
     # Override
     def build_report(self):
