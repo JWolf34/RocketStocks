@@ -315,14 +315,14 @@ class StockData():
                                    fetchall=False)
         if not result:
             start_datetime = datetime.datetime(year=2000, month=1, day=1) # No data found
-            logger.debug(f"No daily price history for ticker {ticker} in database, fetching price history from default date {date_utils.format_date_mdy(start_datetime.date)}")
+            logger.debug(f"No daily price history for ticker {ticker} in database, fetching price history from default date {date_utils.format_date_mdy(start_datetime.date())}")
         else:
             start_datetime = datetime.datetime.combine(result[0], datetime.time(hour=0, minute=0, second=0))
-            logger.debug(f"Latest recorded daily price history for {ticker} is {start_datetime.date}")
+            logger.debug(f"Latest recorded daily price history for {ticker} is {start_datetime.date()}")
         price_history = await self.schwab.get_daily_price_history(ticker, start_datetime=start_datetime)
 
         # Found price history for ticker, insert into database
-        if price_history:
+        if not price_history.empty:
             fields = price_history.columns.to_list()
             values = [tuple(row) for row in price_history.values]
             self.db.insert(table='daily_price_history', fields=fields, values=values)
@@ -650,8 +650,7 @@ if __name__ == '__main__':
 
     start = time.time()
     
-    sd.get_ticker_info('NVDA')
-
+    asyncio.run(sd.update_daily_price_history())
 
     #sd.update_popularity(popular_stocks=popular_stocks)
     end = time.time()
