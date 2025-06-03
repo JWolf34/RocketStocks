@@ -148,9 +148,20 @@ class Reports(commands.Cog):
     @tasks.loop(minutes=5)
     async def post_earnings_spotlight(self):
         if self.mutils.market_open_today():
-            earnings = self.stock_data.earnings.get_earnings_on_date(date=datetime.date.today())
+
+            # Select random ticker from earnings today
+            earnings_today = self.stock_data.earnings.get_earnings_on_date(date=datetime.date.today())
+            spotlight_ticker = earnings_today['ticker'].iloc[random.randint(0, earnings_today['ticker'].size)]
+
+            # Get ticker info, earnings info, quote for spotlight report
+            ticker_info = self.stock_data.get_ticker_info(ticker=spotlight_ticker)
+            next_earnings_info = self.stock_data.earnings.get_next_earnings_info(ticker=spotlight_ticker)
+            quote = await self.stock_data.schwab.get_quote(ticker=spotlight_ticker)
+
             report = EarningsSpotlightReport(channel = self.reports_channel,
-                                             earnings_today=earnings)
+                                             ticker_info=ticker_info,
+                                             next_earnings_info=next_earnings_info,
+                                             quote=quote)
             logger.info(f"Posting today's earnings spotlight: '{report.ticker}'")
             await report.send_report()
 
@@ -357,7 +368,17 @@ class Reports(commands.Cog):
 ##################
 
 class Report(object):
-    def __init__(self, channel):
+    def __init__(self, channel:discord.channel, **kwargs):
+       
+        self.channel = channel
+
+        # Parse data from keywords args
+        self.ticker_info = kwargs.pop('ticker_info', None)
+        self.ticker = self.ticker_info['ticker'] if self.ticker_info else None
+        self.quote = kwargs.pop('quote', None)
+        self.next_earnings_info = kwargs.pop('next_earnings_info', None)
+
+        # ASCII table styles
         self.table_styles = {'ascii':PresetStyle.ascii,
                         'asci_borderless':PresetStyle.ascii_borderless,
                         'ascii_box':PresetStyle.ascii_box,
@@ -389,10 +410,7 @@ class Report(object):
                         'thin_rounded':PresetStyle.thin_rounded,
                         'thin_thick':PresetStyle.thin_thick,
                         'thin_thick_rounded':PresetStyle.thin_thick_rounded}
-        self.channel = channel
 
-    async def init(self):
-        pass
 
     ############################
     # Report Builder Functions #
@@ -409,17 +427,14 @@ class Report(object):
     def build_ticker_info(self):
         logger.debug("Building ticker info...")
         message = "## Ticker Info\n"
-        ticker_data = sd.StockData.get_ticker_info(self.ticker)
-        if ticker_data is not None:
-            message += f"**Name:** {ticker_data['ticker']}\n"
-            message += f"**Sector:** {ticker_data['sector'] if ticker_data['sector'] else "N/A"}\n"
-            message += f"**Industry:** {ticker_data['industry'] if ticker_data['industry'] else "N/A"}\n" 
-            message += f"**Country:** {ticker_data['country'] if ticker_data['country'] else "N/A"}\n"
-            message += f"**Exchange:** {self.quote['reference']['exchangeName']}\n"
-            return message 
-        else:
-            logger.warning("While generating report summary, ticker_data was 'None'. Ticker likely does not exist in database")
-            return message + f"Unable to get info for ticker {self.ticker}\n"
+        
+        message += f"**Name:** {self.ticker_info['name']}\n"
+        message += f"**Sector:** {self.ticker_info['sector'] if self.ticker_info['sector'] else "N/A"}\n"
+        message += f"**Industry:** {self.ticker_info['industry'] if self.ticker_info['industry'] else "N/A"}\n" 
+        message += f"**Country:** {self.ticker_info['country'] if self.ticker_info['country'] else "N/A"}\n"
+        message += f"**Exchange:** {self.quote['reference']['exchangeName']}\n"
+        return message 
+        
         
     def build_recent_SEC_filings(self):
         logger.debug("Building latest SEC filings...")
@@ -448,11 +463,14 @@ class Report(object):
         return "```\n" + table + "\n```"
 
     def build_earnings_date(self):
-        logger.debug(f"Building earnings date...")
-        earnings_info = sd.StockData.Earnings.get_next_earnings_info(self.ticker)
+        logger.debug("Building earnings date...")
+
+        # Earnings date
         message = f"{self.ticker} reports earnings on "
-        message += f"{earnings_info['date'].iloc[0].strftime("%m/%d/%Y")}, "
-        earnings_time = earnings_info['time'].iloc[0]
+        message += f"{date_utils.format_date_mdy(self.next_earnings_info['date'])}, "
+
+        # Earnings time
+        earnings_time = self.next_earnings_info['time']
         if "pre-market" in earnings_time:
             message += "before market open"
         elif "after-hours" in earnings_time:
@@ -464,17 +482,17 @@ class Report(object):
 
     def build_upcoming_earnings_summary(self):
         logger.debug("Building upcoming earnings summary...")
-        earnings_info = sd.StockData.Earnings.get_next_earnings_info(self.ticker)
+
         message = "## Earnings Summary\n\n"
-        message += f"**Date:** {earnings_info['date'].iloc[0]}\n"
-        message += "**Time:** {}\n".format("Premarket" if "pre-market" in earnings_info['time'].iloc[0]
-                                else "After hours" if "after-hours" in earnings_info['time'].iloc[0]
+        message += f"**Date:** {self.next_earnings_info['date']}\n"
+        message += "**Time:** {}\n".format("Premarket" if "pre-market" in self.next_earnings_info['time']
+                                else "After hours" if "after-hours" in self.next_earnings_info['time']
                                 else "Not supplied")
-        message += f"**Fiscal Quarter:** {earnings_info['fiscalquarterending'].iloc[0]}\n"
-        message += f"**EPS Forecast: ** {earnings_info['epsforecast'].iloc[0] if len(earnings_info['epsforecast'].iloc[0]) > 0 else "N/A"}\n"
-        message += f"**No. of Estimates:** {earnings_info['noofests'].iloc[0]}\n"
-        message += f"**Last Year Report Date:** {earnings_info['lastyearrptdt'].iloc[0]}\n"
-        message += f"**Last Year EPS:** {earnings_info['lastyeareps'].iloc[0]}\n"
+        message += f"**Fiscal Quarter:** {self.next_earnings_info['fiscal_quarter_ending']}\n"
+        message += f"**EPS Forecast: ** {self.next_earnings_info['eps_forecast'] if len(self.next_earnings_info['eps_forecast']) > 0 else "N/A"}\n"
+        message += f"**No. of Estimates:** {self.next_earnings_info['no_of_ests']}\n"
+        message += f"**Last Year Report Date:** {self.next_earnings_info['last_year_rpt_dt']}\n"
+        message += f"**Last Year EPS:** {self.next_earnings_info['last_year_eps']}\n"
         return message + "\n\n"
 
     def build_recent_earnings(self):
@@ -580,7 +598,6 @@ class Report(object):
         return report   
 
     async def send_report(self, interaction:discord.Interaction = None, visibility:str = "public", files=None, view=None):
-        await self.init()
         self.message = self.build_report() + "\n\n"
         if visibility == 'private' and interaction is not None:
             message = await interaction.user.send(self.message, files=files, view=view)
@@ -894,7 +911,7 @@ class PopularityScreener(Screener):
         report +=  self.build_report_header()
         report +=  self.build_table(df=self.data[:25])
         return report
-
+# TODO
 class NewsReport(Report):
     def __init__(self, query, breaking=False, **kwargs):
         logger.debug(f"News report created with query '{query}'")
@@ -938,6 +955,7 @@ class NewsReport(Report):
         logger.debug("Sending News Report...")
         await interaction.response.send_message(self.message)
 
+# TODO
 class PopularityReport(Report):
     def __init__(self, channel, filter_name='all stock subreddits'):
         self.filter_name = filter_name
@@ -986,10 +1004,11 @@ class PopularityReport(Report):
             self.add_item(discord.ui.Button(label="ApeWisdom", style=discord.ButtonStyle.url, url = "https://apewisdom.io/"))
 
 class EarningsSpotlightReport(Report):
-    def __init__(self, channel:discord.channel, earnings_today:pd.DataFrame):
-        super().__init__(channel)
-        earnings_today = earnings_today
-        self.ticker = earnings_today['ticker'].iloc[random.randint(0, earnings_today['ticker'].size)]
+    def __init__(self, channel:discord.channel, next_earnings_info:pd.DataFrame, ticker_info:pd.DataFrame, quote:dict):
+        super().__init__(channel=channel,
+                         ticker_info=ticker_info,
+                         next_earnings_info=next_earnings_info,
+                         quote=quote)
         self.buttons = StockReport.Buttons(self.ticker)
         
 

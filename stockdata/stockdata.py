@@ -81,7 +81,7 @@ class Earnings:
         if result is None:
             return None
         else:
-            return pd.DataFrame([result], columns=columns)
+            return {field:value for field, value in zip(columns, result)}
 
     def remove_past_earnings(self):
         """Remove previous earnigs from database"""
@@ -466,10 +466,12 @@ class StockData():
            """
         
         fields = self.db.get_table_columns('tickers')
-        return self.db.select(table='tickers',
+        result = self.db.select(table='tickers',
                                  fields=fields,
                                  where_conditions=[('ticker', ticker)],
                                  fetchall=False)
+        
+        return {field:value for field, value in zip(fields, result)}
     
     def get_all_ticker_info(self):
         """Return information (df) on all tickers from database"""
@@ -648,7 +650,7 @@ if __name__ == '__main__':
 
     start = time.time()
     
-    sd.earnings.update_upcoming_earnings()
+    sd.get_ticker_info('NVDA')
 
 
     #sd.update_popularity(popular_stocks=popular_stocks)
