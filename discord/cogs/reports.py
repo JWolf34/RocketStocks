@@ -283,7 +283,7 @@ class Reports(commands.Cog):
             logger.info(f"Generating reports for tickers {tickers}")
             message = None
             for ticker in tickers:
-                report = self.build_stock_report(ticker=ticker)
+                report = await self.build_stock_report(ticker=ticker)
                 message = await report.send_report(interaction, visibility.value)
             logger.info("Reports have been posted")
 
@@ -308,7 +308,7 @@ class Reports(commands.Cog):
         tickers, invalid_tickers = await self.stock_data.parse_valid_tickers(tickers.upper())
         message = None
         for ticker in tickers:
-            report = self.build_stock_report(ticker=ticker)
+            report = await self.build_stock_report(ticker=ticker)
             message = await report.send_report(interaction, visibility.value)
 
         # Follow-up message
@@ -328,7 +328,7 @@ class Reports(commands.Cog):
         """Builder for StockReport class, easy to call for functions like 'report' and 'report_watchlist'"""
         # Collect data to create Stock Report
         ticker_info = self.stock_data.get_ticker_info(ticker=ticker)
-        daily_price_history = self.stock_data.fetch_daily_price_history(ticker=ticker),
+        daily_price_history = self.stock_data.fetch_daily_price_history(ticker=ticker)
         popularity = self.stock_data.fetch_popularity(ticker=ticker)
         recent_sec_filings = self.stock_data.sec.get_recent_filings(ticker=ticker)
         historical_earnings = self.stock_data.earnings.get_historical_earnings(ticker=ticker)
@@ -734,15 +734,16 @@ class Report(object):
             - quote
         """
         logger.debug("Building daily summary...")
-        message = "## Today's Summary\n\n"
-        OHLCV = {'Open': "{:.2f}".format(self.quote['quote']['openPrice']),
-                 'High': "{:.2f}".format(self.quote['quote']['highPrice']),
-                 'Low': "{:.2f}".format(self.quote['quote']['lowPrice']),
-                 'Close': "{:.2f}".format(self.quote['regular']['regularMarketLastPrice']),
-                 'Volume': self.format_large_num(self.quote['quote']['totalVolume'])
+        message = "## Today's Summary\n"
+        OHLCV = {'Open': ["{:.2f}".format(self.quote['quote']['openPrice'])],
+                 'High': ["{:.2f}".format(self.quote['quote']['highPrice'])],
+                 'Low': ["{:.2f}".format(self.quote['quote']['lowPrice'])],
+                 'Close': ["{:.2f}".format(self.quote['regular']['regularMarketLastPrice'])],
+                 'Volume': [self.format_large_num(self.quote['quote']['totalVolume'])]
                 }
-        message += " | ".join(f"**{column}:** {value}" for column, value in OHLCV.items())
-        return message + "\n"  
+        message += self.build_build_df_table(df=pd.DataFrame(OHLCV), style='borderless')
+        message += '\n'
+        return message 
 
     # TODO
     def build_fundamentals(self):
@@ -758,18 +759,26 @@ class Report(object):
         table_body = {}
         # Calculate market cap
         if self.company_facts:
-            outstanding_shares = self.company_facts['facts']['dei']["EntityCommonStockSharesOutstanding"]['shares'][-1]['val']
-            close = self.quote['regular']['regularMarketLastPrice']
-            table_body['Market Cap'] = self.format_large_num(number=close*outstanding_shares)
+            # Outstanding shares
+            try:
+                outstanding_shares = self.company_facts['facts']['dei']["EntityCommonStockSharesOutstanding"]['units']['shares'][-1]['val']
+                close = self.quote['regular']['regularMarketLastPrice']
+                table_body['Market Cap'] = self.format_large_num(number=close*outstanding_shares)
+                table_body['Shares'] = self.format_large_num(outstanding_shares)
+            except KeyError as e:
+                logger.debug(f"Ticker '{self.ticker}' has no outstanding shares reported to SEC")
+
 
         # Include float? Short interest? Shortable and hard to borrow. Dividends?
+        table_body['EPS'] = f"{'{:.2f}'.format(self.quote['fundamental']['eps'])}"
+        table_body['P/E Ratio'] = f"{'{:.2f}'.format(self.quote['fundamental']['peRatio'])}"
+        table_body['Shortable'] = self.quote['reference']['isShortable']
+        table_body['HTB'] = self.quote['reference']['isHardToBorrow']
 
-        message += f"**Market Cap:** {self.format_large_num(self.ticker_info['marketcap'])}\n"
-        message += f"**52 Week High:** {self.quote['quote']['52WeekHigh']}\n"
-        message += f"**52 Week Low:** {self.quote['quote']['52WeekLow']}\n"
-        message += f"**Average Volume 10D:** {self.format_large_num(self.quote['fundamental']['avg10DaysVolume'])}\n"
-        message += f"**Average Volume 1Y:** {self.format_large_num(self.quote['fundamental']['avg1YearVolume'])}\n"
-        message += f"**P/E Ratio:** {"{:.2f}".format(self.quote['fundamental']['peRatio'])}\n"
+        message += self.build_stats_table(header={},
+                                          body=table_body,
+                                          adjust='right')
+
         return message
 
     def build_popularity(self):
