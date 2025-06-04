@@ -45,7 +45,6 @@ class Postgres():
                             ticker          varchar(8) PRIMARY KEY,
                             cik             char(10) NOT NULL,
                             name            varchar(255) NOT NULL,
-                            marketcap       BIGINT, 
                             country         varchar(40), 
                             ipoyear         char(4),
                             industry        varchar(64),
