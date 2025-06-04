@@ -694,7 +694,7 @@ class Report(object):
                 message +=f"{f'{label}:':<4}{'{:.2f}'.format(interval_close) if interval_close !='N/A' else 'N/A':<5} {f'{symbol} {'{:.2f}%'.format(change)}'}\n"
             message += '```\n'
         else:
-            message += "No price data found for this stock"
+            message += "No price data found for this stock\n"
         return message
 
 
