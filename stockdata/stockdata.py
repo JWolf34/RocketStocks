@@ -605,10 +605,11 @@ class StockData():
         """Returns true if ticker exists in database, else False"""
         logger.info(f"Verifying that ticker '{ticker}' is valid")
 
-        # Query
+    
         '''Logic puling from database'''
      
-        '''
+        # Query
+        
         """SELECT ticker FROM tickers
            WHERE ticker = '{ticker}';
            """
@@ -617,11 +618,13 @@ class StockData():
                                        where_conditions=[('ticker', ticker)],
                                        fetchall=False)
         return True if ticker else False
-        '''
+        
 
         '''Logic checking from Schwab'''
+        '''
         data = await self.schwab.get_daily_price_history(ticker=ticker,start_datetime=datetime.datetime.now() - datetime.timedelta(days=7))
         return True if not data.empty else False
+        '''
     
     # Get list of valid tickers from string
     async def parse_valid_tickers(self, ticker_string:str):

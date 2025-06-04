@@ -183,7 +183,7 @@ class Reports(commands.Cog):
         today = datetime.datetime.today()
         if True: #datetime.datetime.today().weekday() == 0:
             upcoming_earnings = self.stock_data.earnings.fetch_upcoming_earnings()
-            report = WeeklyEarningsScreener(channel=self.reports_channel,
+            report = WeeklyEarningsScreener(channel=self.screeners_channel,
                                             upcoming_earnings=upcoming_earnings)
             logger.info(f"Posting weekly earnings report. Earnings reporting this week: {report.upcoming_earnings}")
             await report.send_report()
