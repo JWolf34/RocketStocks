@@ -283,24 +283,7 @@ class Reports(commands.Cog):
             logger.info(f"Generating reports for tickers {tickers}")
             message = None
             for ticker in tickers:
-                # Collect data to create Stock Report
-                ticker_info = self.stock_data.get_ticker_info(ticker=ticker)
-                daily_price_history = self.stock_data.fetch_daily_price_history(ticker=ticker),
-                popularity = self.stock_data.fetch_popularity(ticker=ticker)
-                recent_sec_filings = self.stock_data.sec.get_recent_filings(ticker=ticker)
-                historical_earnings = self.stock_data.earnings.get_historical_earnings(ticker=ticker)
-                next_earnings_info = self.stock_data.earnings.get_next_earnings_info(ticker=ticker)
-                quote = await self.stock_data.schwab.get_quote(ticker=ticker)
-
-                # Generate report and send
-                report = StockReport(channel=self.reports_channel,
-                                     ticker_info=ticker_info,
-                                     daily_price_history=daily_price_history,
-                                     popularity=popularity,
-                                     recent_sec_filings=recent_sec_filings,
-                                     historical_earnings=historical_earnings,
-                                     next_earnings_info=next_earnings_info,
-                                     quote=quote)
+                report = self.build_stock_report(ticker=ticker)
                 message = await report.send_report(interaction, visibility.value)
             logger.info("Reports have been posted")
 
@@ -325,24 +308,7 @@ class Reports(commands.Cog):
         tickers, invalid_tickers = await self.stock_data.parse_valid_tickers(tickers.upper())
         message = None
         for ticker in tickers:
-            # Collect data to create Stock Report
-            ticker_info = self.stock_data.get_ticker_info(ticker=ticker)
-            daily_price_history = self.stock_data.fetch_daily_price_history(ticker=ticker)
-            popularity = self.stock_data.fetch_popularity(ticker=ticker)
-            recent_sec_filings = self.stock_data.sec.get_recent_filings(ticker=ticker)
-            historical_earnings = self.stock_data.earnings.get_historical_earnings(ticker=ticker)
-            next_earnings_info = self.stock_data.earnings.get_next_earnings_info(ticker=ticker)
-            quote = await self.stock_data.schwab.get_quote(ticker=ticker)
-
-            # Generate report and send
-            report = StockReport(channel=self.reports_channel,
-                                    ticker_info=ticker_info,
-                                    daily_price_history=daily_price_history,
-                                    popularity=popularity,
-                                    recent_sec_filings=recent_sec_filings,
-                                    historical_earnings=historical_earnings,
-                                    next_earnings_info=next_earnings_info,
-                                    quote=quote)
+            report = self.build_stock_report(ticker=ticker)
             message = await report.send_report(interaction, visibility.value)
 
         # Follow-up message
@@ -356,6 +322,31 @@ class Reports(commands.Cog):
             logger.info(f"No valid tickers input. No reports generated")
             follow_up = f" No valid tickers input: {", ".join(invalid_tickers)}"
         await interaction.followup.send(follow_up, ephemeral=True)
+
+
+    async def build_stock_report(self, ticker:str):
+        """Builder for StockReport class, easy to call for functions like 'report' and 'report_watchlist'"""
+        # Collect data to create Stock Report
+        ticker_info = self.stock_data.get_ticker_info(ticker=ticker)
+        daily_price_history = self.stock_data.fetch_daily_price_history(ticker=ticker),
+        popularity = self.stock_data.fetch_popularity(ticker=ticker)
+        recent_sec_filings = self.stock_data.sec.get_recent_filings(ticker=ticker)
+        historical_earnings = self.stock_data.earnings.get_historical_earnings(ticker=ticker)
+        next_earnings_info = self.stock_data.earnings.get_next_earnings_info(ticker=ticker)
+        quote = await self.stock_data.schwab.get_quote(ticker=ticker)
+        company_facts = self.stock_data.sec.get_company_facts(ticker=ticker)
+
+        # Generate report 
+        report = StockReport(channel=self.reports_channel,
+                                ticker_info=ticker_info,
+                                daily_price_history=daily_price_history,
+                                popularity=popularity,
+                                recent_sec_filings=recent_sec_filings,
+                                historical_earnings=historical_earnings,
+                                next_earnings_info=next_earnings_info,
+                                quote=quote,
+                                company_facts=company_facts)
+        return report
 
     # Autocomplete functions
 
@@ -436,6 +427,7 @@ class Report(object):
         self.historical_earnings = kwargs.pop('historical_earnings', None)
         self.recent_sec_filings = kwargs.pop('recent_sec_filings', None)
         self.popularity = kwargs.pop('popularity', None)
+        self.company_facts = kwargs.pop('company_facts', None)
 
         # ASCII table styles
         self.table_styles = {'ascii':PresetStyle.ascii,
@@ -753,17 +745,23 @@ class Report(object):
         return message + "\n"  
 
     # TODO
-    def build_stats(self):
+    def build_fundamentals(self):
         """Return message content with stock over recent weeks and months
         
         Requires:
-            - ticker_info
+            - company facts
             - quote
         """
         logger.debug("Building ticker stats...")
-        message = "## Stats\n"
+        message = "## Fundamentals\n"
 
+        table_body = {}
         # Calculate market cap
+        if self.company_facts:
+            outstanding_shares = self.company_facts['facts']['dei']["EntityCommonStockSharesOutstanding"]['shares'][-1]['val']
+            close = self.quote['regular']['regularMarketLastPrice']
+            table_body['Market Cap'] = self.format_large_num(number=close*outstanding_shares)
+
         # Include float? Short interest? Shortable and hard to borrow. Dividends?
 
         message += f"**Market Cap:** {self.format_large_num(self.ticker_info['marketcap'])}\n"
@@ -936,8 +934,8 @@ class Screener(Report):
 class StockReport(Report):
     
     def __init__(self, channel:discord.channel, ticker_info:dict, daily_price_history:pd.DataFrame, popularity:pd.DataFrame, 
-                 recent_sec_filings:pd.DataFrame, 
-                 historical_earnings:pd.DataFrame, next_earnings_info:dict, quote:dict):
+                 recent_sec_filings:pd.DataFrame, historical_earnings:pd.DataFrame, next_earnings_info:dict, quote:dict,
+                 company_facts:dict):
         super().__init__(channel=channel,
                          ticker_info=ticker_info,
                          daily_price_history=daily_price_history,
@@ -945,7 +943,8 @@ class StockReport(Report):
                          recent_sec_filings=recent_sec_filings,
                          historical_earnings=historical_earnings,
                          next_earnings_info=next_earnings_info,
-                         quote=quote)
+                         quote=quote,
+                         company_facts=company_facts)
         self.buttons = self.Buttons(self.ticker)
         
     # Override
@@ -956,7 +955,7 @@ class StockReport(Report):
         report += self.build_ticker_info()
         report += self.build_daily_summary()
         report += self.build_performance()
-        report += self.build_stats()
+        report += self.build_fundamentals()
         report += self.build_popularity()
         report += self.build_recent_earnings()
         report += self.build_recent_SEC_filings()
@@ -1324,7 +1323,7 @@ class EarningsSpotlightReport(Report):
         report += self.build_report_header()
         report += self.build_earnings_date()
         report += self.build_ticker_info()
-        report += self.build_stats()
+        report += self.build_fundamentals()
         report += self.build_performance()
         report += self.build_upcoming_earnings_summary()
         report += self.build_recent_earnings()
