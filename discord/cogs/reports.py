@@ -481,6 +481,48 @@ class Report(object):
     # Report Builder Functions #
     ############################
 
+    def build_build_df_table(self, df:pd.DataFrame, style='thick_compact'):
+        """Return input dataframe in ascii table format for cleanly displaying content in Discord messgaes"""
+        logger.debug(f"Building table of shape {df.shape} with headers {df.columns.to_list()} and of style '{style}'")
+        table_style = self.table_styles.get(style, PresetStyle.double_thin_compact)
+        table = table2ascii(
+            header = df.columns.tolist(),
+            body = df.values.tolist(),
+            style=table_style 
+        )
+        return "```\n" + table + "\n```"
+    
+    def build_stats_table(self, header:dict, body:dict, adjust:str):
+        """Return a two-column ascii table for cleanly displaying content in Discord messages"""
+        #logger.debug(f"Building table of shape {df.shape} with headers {df.columns.to_list()} and of style '{style}'")
+
+        # Validate adjust
+        adjust = 'left' if adjust !='right' else adjust
+
+        # Calculate spacing
+        length = [len(key) for key in set().union(header, body)]
+        spacing = max([len(key) for key in set().union(header, body)]) + 1
+
+        # Build table
+        table = ''
+        
+        # Header
+        for key, value in header.items():
+            if value:
+                table += f"{f'{key}:':>{spacing}} {value}\n" if adjust =='right' else f"{f'{key}:':<{spacing}} {value}\n"
+            else:
+                table += f"{key}\n"
+
+        # Separator
+        table += "━"*16 + '\n' if header else ''
+
+        # Body
+        for key, value in body.items():
+            table += f"{f'{key}:':>{spacing}} {value}\n" if adjust =='right' else f"{f'{key}:':<{spacing}} {value}\n"       
+
+        return '```' + table + '```\n'
+
+
     # Report Header
     def build_report_header(self):
         logger.debug("Building report header...")
@@ -508,13 +550,6 @@ class Report(object):
         fmt_ticker_info['Asset'] = self.quote['assetSubType']
         fmt_ticker_info['Exchange'] = self.quote['reference']['exchangeName']
         
-        '''
-        message += '```'
-        # Iterate over keys and append to message
-        for key, value in fmt_ticker_info.items():
-            message += f"{f'{key}:':<10} {value}\n" if value else ''
-        message += '```\n'
-        '''
         message += self.build_stats_table(header={},
                                           body=fmt_ticker_info,
                                           adjust='left')
@@ -554,46 +589,6 @@ class Report(object):
         return message
 
 
-    def build_build_df_table(self, df:pd.DataFrame, style='thick_compact'):
-        """Return input dataframe in ascii table format for cleanly displaying content in Discord messgaes"""
-        logger.debug(f"Building table of shape {df.shape} with headers {df.columns.to_list()} and of style '{style}'")
-        table_style = self.table_styles.get(style, PresetStyle.double_thin_compact)
-        table = table2ascii(
-            header = df.columns.tolist(),
-            body = df.values.tolist(),
-            style=table_style 
-        )
-        return "```\n" + table + "\n```"
-    
-    def build_stats_table(self, header:dict, body:dict, adjust:str):
-        """Return a two-column ascii table for cleanly displaying content in Discord messages"""
-        #logger.debug(f"Building table of shape {df.shape} with headers {df.columns.to_list()} and of style '{style}'")
-
-        # Validate adjust
-        adjust = 'left' if adjust !='right' else adjust
-
-        # Calculate spacing
-        length = [len(key) for key in set().union(header, body)]
-        spacing = max([len(key) for key in set().union(header, body)]) + 1
-
-        # Build table
-        table = ''
-        
-        # Header
-        for key, value in header.items():
-            if value:
-                table += f"{f'{key}:':>{spacing}} {value}\n" if adjust =='left' else f"{f'{key}:':<{spacing}} {value}\n"
-            else:
-                table += f"{key}\n"
-
-        # Separator
-        table += "━"*16 + '\n' if header else ''
-
-        # Body
-        for key, value in body.items():
-            table += f"{f'{key}:':>{spacing}} {value}\n" if adjust =='left' else f"{f'{key}:':<{spacing}} {value}\n"       
-
-        return '```' + table + '```'
 
 
         
@@ -696,12 +691,12 @@ class Report(object):
         # Validate daily price history
         if not self.daily_price_history.empty:
             # Get current close
+            table_header = {}
             close = self.quote['regular']['regularMarketLastPrice']
-            message += f"```{'Close:':<6} {close}\n"
-            message += f"{'━'*16}\n"
+            table_header['Close'] = close
             
-
             # Get highest popularity rank across select intervals
+            table_body = {}
             interval_map = {"1D":1,
                             "5D":7,
                             "1M":30,
@@ -731,8 +726,10 @@ class Report(object):
                     else:
                         symbol = "🟢"
 
-                message +=f"{f'{label}:':>6} {'{:.2f}'.format(interval_close) if interval_close !='N/A' else 'N/A':<5} {f'{symbol} {'{:.2f}%'.format(change)}' if change else ''}\n"
-            message += '```\n'
+                table_body[label] = f"{'{:.2f}'.format(interval_close) if interval_close !='N/A' else 'N/A':<5} {f'{symbol} {'{:.2f}%'.format(change)}' if change else ''}"
+            message += self.build_stats_table(header=table_header,
+                                              body=table_body,
+                                              adjust='right')
         else:
             message += "No price data found for this stock\n"
         return message
@@ -788,14 +785,18 @@ class Report(object):
         
         # Validate popularity
         if not self.popularity.empty:
+
+            
+
             # Get current rank
+            table_header = {}
             now = date_utils.round_down_nearest_minute(30)
             popularity_today = self.popularity[(self.popularity['datetime'] == now)]
             current_rank = popularity_today['rank'].iloc[0] if not popularity_today.empty else 'N/A'
-            message += f"```{'Current:':<10}{current_rank}\n"
-            message += f"{'━'*16}\n"
+            table_header['Current'] = current_rank
 
             # Get highest popularity rank across select intervals
+            table_body = {}
             interval_map = {"High 1D":1,
                             "High 7D":7,
                             "High 1M":30,
@@ -822,8 +823,11 @@ class Report(object):
                     else:
                         symbol = '━'
 
-                message +=f"{f'{label}:':<10}{max_rank:<3} {f'{symbol} {max_rank-current_rank} spots' if symbol and current_rank != 'N/A' else 'No change'}\n"
-            message += '```\n'
+                table_body[label] = f"{max_rank:<3} {f'{symbol} {max_rank-current_rank} spots' if symbol and current_rank != 'N/A' else 'No change'}"
+            
+            message += self.build_stats_table(header=table_header,
+                                              body=table_body,
+                                              adjust='right')
         else:
             message += "No popularity data found for this stock\n"
         return message
