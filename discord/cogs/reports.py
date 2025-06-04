@@ -485,7 +485,7 @@ class Report(object):
     def build_report_header(self):
         logger.debug("Building report header...")
         # Append ticker name, today's date, and external links to message
-        header = "# " + self.ticker + " Report " + dt.date.today().strftime("%m/%d/%Y") + "\n"
+        header = "# " + self.ticker + " Report " + date_utils.format_date_mdy(datetime.datetime.now(tz=date_utils.timezone()).date()) + "\n"
         return header + "\n"
 
     # Ticker Info
@@ -508,11 +508,17 @@ class Report(object):
         fmt_ticker_info['Asset'] = self.quote['assetSubType']
         fmt_ticker_info['Exchange'] = self.quote['reference']['exchangeName']
         
+        '''
         message += '```'
         # Iterate over keys and append to message
         for key, value in fmt_ticker_info.items():
             message += f"{f'{key}:':<10} {value}\n" if value else ''
         message += '```\n'
+        '''
+        message += self.build_stats_table(header={},
+                                          body=fmt_ticker_info,
+                                          adjust='left')
+        
         
         return message 
     
@@ -548,7 +554,7 @@ class Report(object):
         return message
 
 
-    def build_table(self, df:pd.DataFrame, style='thick_compact'):
+    def build_build_df_table(self, df:pd.DataFrame, style='thick_compact'):
         """Return input dataframe in ascii table format for cleanly displaying content in Discord messgaes"""
         logger.debug(f"Building table of shape {df.shape} with headers {df.columns.to_list()} and of style '{style}'")
         table_style = self.table_styles.get(style, PresetStyle.double_thin_compact)
@@ -558,6 +564,40 @@ class Report(object):
             style=table_style 
         )
         return "```\n" + table + "\n```"
+    
+    def build_stats_table(self, header:dict, body:dict, adjust:str):
+        """Return a two-column ascii table for cleanly displaying content in Discord messages"""
+        #logger.debug(f"Building table of shape {df.shape} with headers {df.columns.to_list()} and of style '{style}'")
+
+        # Validate adjust
+        adjust = 'left' if adjust !='right' else adjust
+
+        # Calculate spacing
+        length = [len(key) for key in set().union(header, body)]
+        spacing = max([len(key) for key in set().union(header, body)]) + 1
+
+        # Build table
+        table = ''
+        
+        # Header
+        for key, value in header.items():
+            if value:
+                table += f"{f'{key}:':>{spacing}} {value}\n" if adjust =='left' else f"{f'{key}:':<{spacing}} {value}\n"
+            else:
+                table += f"{key}\n"
+
+        # Separator
+        table += "━"*16 + '\n' if header else ''
+
+        # Body
+        for key, value in body.items():
+            table += f"{f'{key}:':>{spacing}} {value}\n" if adjust =='left' else f"{f'{key}:':<{spacing}} {value}\n"       
+
+        return '```' + table + '```'
+
+
+        
+
 
     def build_earnings_date(self):
         """Return message content with the date and release time of the stock's next earnings report
@@ -637,7 +677,7 @@ class Report(object):
             recent_earnings = recent_earnings.rename(columns=column_map)
             recent_earnings['Date Reported'] = recent_earnings['Date Reported'].apply(lambda x: date_utils.format_date_mdy(x))
             recent_earnings['Surprise'] =  recent_earnings['Surprise'].apply(lambda x: f"{x}%")
-            message += self.build_table(df=recent_earnings, style='plain')
+            message += self.build_build_df_table(df=recent_earnings, style='borderless')
         
         else:
             message += "No historical earnings found for this ticker"
@@ -657,8 +697,8 @@ class Report(object):
         if not self.daily_price_history.empty:
             # Get current close
             close = self.quote['regular']['regularMarketLastPrice']
-            message += f"```{'Close:':<6}{close}\n"
-            message += f"{'-'*12}\n"
+            message += f"```{'Close:':<6} {close}\n"
+            message += f"{'━'*16}\n"
             
 
             # Get highest popularity rank across select intervals
@@ -682,7 +722,7 @@ class Report(object):
                     change = ((close - interval_close) / interval_close)*100.0
                 else:
                     interval_close = 'N/A'
-
+                    change = None
                 # Assign symbol based on rank difference
                 symbol = None
                 if interval_close != "N/A":
@@ -691,7 +731,7 @@ class Report(object):
                     else:
                         symbol = "🟢"
 
-                message +=f"{f'{label}:':<4}{'{:.2f}'.format(interval_close) if interval_close !='N/A' else 'N/A':<5} {f'{symbol} {'{:.2f}%'.format(change)}'}\n"
+                message +=f"{f'{label}:':>6} {'{:.2f}'.format(interval_close) if interval_close !='N/A' else 'N/A':<5} {f'{symbol} {'{:.2f}%'.format(change)}' if change else ''}\n"
             message += '```\n'
         else:
             message += "No price data found for this stock\n"
@@ -753,10 +793,10 @@ class Report(object):
             popularity_today = self.popularity[(self.popularity['datetime'] == now)]
             current_rank = popularity_today['rank'].iloc[0] if not popularity_today.empty else 'N/A'
             message += f"```{'Current:':<10}{current_rank}\n"
-            message += f"{'-'*15}\n"
+            message += f"{'━'*16}\n"
 
             # Get highest popularity rank across select intervals
-            interval_map = {"High 24H":1,
+            interval_map = {"High 1D":1,
                             "High 7D":7,
                             "High 1M":30,
                             "High 3M":90,
@@ -779,11 +819,13 @@ class Report(object):
                         symbol = "🔻"
                     elif max_rank > current_rank:
                         symbol = "🟢"
+                    else:
+                        symbol = '━'
 
-                message +=f"{f'{label}:':<10}{max_rank:<3} {f'{symbol} {max_rank-current_rank} spots' if symbol and current_rank != 'N/A' else ' '}\n"
+                message +=f"{f'{label}:':<10}{max_rank:<3} {f'{symbol} {max_rank-current_rank} spots' if symbol and current_rank != 'N/A' else 'No change'}\n"
             message += '```\n'
         else:
-            message += "No popularity data found for this stock"
+            message += "No popularity data found for this stock\n"
         return message
 
     def build_report(self):
@@ -1016,7 +1058,7 @@ class GainerScreener(Screener):
         logger.debug("Building Gainer Report...")
         report = ""
         report +=  self.build_report_header()
-        report +=  self.build_table(self.data[:15])
+        report +=  self.build_build_df_table(self.data[:15])
         return report
     
     # Override
@@ -1093,7 +1135,7 @@ class VolumeScreener(Screener):
         logger.debug("Building Volume Mover Report...")
         report = ""
         report += self.build_report_header()
-        report += self.build_table(self.data[:12])
+        report += self.build_build_df_table(self.data[:12])
         return report
     
     # Override
@@ -1145,7 +1187,7 @@ class PopularityScreener(Screener):
         logger.debug("Building Gainer Report...")
         report = ""
         report +=  self.build_report_header()
-        report +=  self.build_table(df=self.data[:20])
+        report +=  self.build_build_df_table(df=self.data[:20])
         return report
     
     # Override
@@ -1234,7 +1276,7 @@ class PopularityReport(Report):
         logger.debug("Building Popularity Report...")
         report = ''
         report += self.build_report_header()
-        report += self.build_table(self.popular_stocks.drop(columns=['name'])[:20])
+        report += self.build_build_df_table(self.popular_stocks.drop(columns=['name'])[:20])
         return report
 
     async def send_report(self, interaction:discord.Interaction = None, visibility:str ="public"):
@@ -1279,7 +1321,7 @@ class EarningsSpotlightReport(Report):
         report += self.build_earnings_date()
         report += self.build_ticker_info()
         report += self.build_stats()
-        #report += self.build_performance()
+        report += self.build_performance()
         report += self.build_upcoming_earnings_summary()
         report += self.build_recent_earnings()
         return report
@@ -1342,7 +1384,7 @@ class WeeklyEarningsReport(Report):
         watchlist_earnings = self.upcoming_earnings[self.upcoming_earnings['ticker'].isin(watchlist_tickers)]
         if watchlist_earnings.size > 0:
             message = f" Tickers on your watchlists that report earnings this week:\n"
-            message += self.build_table(watchlist_earnings['ticker', 'date', 'time'])
+            message += self.build_build_df_table(watchlist_earnings['ticker', 'date', 'time'])
             logger.debug(f"Watchlist tickers reporting earnings this week: {watchlist_earnings['ticker'].to_list()}")
         else:
             message = "No tickers on your watchlists report earnings this week"

@@ -573,7 +573,7 @@ class StockData():
                                     where_conditions=where_conditions,
                                     order_by=order_by,
                                     fetchall=True)
-        return pd.DataFrame(results, columns=columns) if results else None
+        return pd.DataFrame(results, columns=columns) if results else pd.DataFrame()
     
     
     def insert_popularity(self, popular_stocks:pd.DataFrame):
