@@ -182,7 +182,9 @@ class Reports(commands.Cog):
     async def post_weekly_earnings(self):
         today = datetime.datetime.today()
         if True: #datetime.datetime.today().weekday() == 0:
-            report = WeeklyEarningsReport(self.reports_channel)
+            upcoming_earnings = self.stock_data.earnings.fetch_upcoming_earnings()
+            report = WeeklyEarningsScreener(channel=self.reports_channel,
+                                            upcoming_earnings=upcoming_earnings)
             logger.info(f"Posting weekly earnings report. Earnings reporting this week: {report.upcoming_earnings}")
             await report.send_report()
 
@@ -913,7 +915,7 @@ class Screener(Report):
         
 
     # Override
-    async def send_report(self, view=None):
+    async def send_report(self, view=None, files=None):
         """Send gainer report to the screeners channel"""
         self.message = self.build_report() + "\n\n"
 
@@ -929,11 +931,11 @@ class Screener(Report):
             curr_message = await self.channel.fetch_message(message_id)
             message_create_date = curr_message.created_at.astimezone(date_utils.timezone()).date()
             if message_create_date < today.date():
-                message = await self.channel.send(self.message, view=view)
+                message = await self.channel.send(self.message, view=view, files=files)
                 self.dutils.update_screener_message_id(message_id=message.id, screener_type=self.screener_type)
                 return message
             else:
-                logger.debug(f"{self.market_period.upper()} Gainer Report already exists today. Updating... ")
+                logger.debug(f"{self.screener_type} report already exists today. Updating... ")
                 await curr_message.edit(content=self.message)
         # No existing report, send new one
         else:
@@ -1367,53 +1369,59 @@ class EarningsSpotlightReport(Report):
                 await news_report.send_report(interaction)
                 await interaction.response.send_message(f"Fetched news for {self.ticker}!", ephemeral=True)
 
-class WeeklyEarningsReport(Report):
-    def __init__(self, channel):
-        self.upcoming_earnings = self.get_upcoming_earnings()
-        filepath = f"{utils.datapaths.attachments_path}/upcoming_earnings.csv"
-        self.upcoming_earnings.to_csv(filepath, index=False)
-        self.file = discord.File(filepath)
-        super().__init__(channel)
-    
-    def get_upcoming_earnings(self):
-        logger.debug("Retrieving upcoming earnings for this week")
-        today = datetime.datetime.today()
-        weekly_earnings = pd.DataFrame()
-        for i in range(0, 5):
-            earnings_today = sd.StockData.Earnings.get_earnings_today(today + datetime.timedelta(days=i))
-            if earnings_today.size > 0:
-                weekly_earnings = pd.concat([weekly_earnings, earnings_today], ignore_index=True)
-            else: 
-                pass
-        return weekly_earnings
+class WeeklyEarningsScreener(Screener):
+    def __init__(self, channel:discord.channel, upcoming_earnings:pd.DataFrame):
+
+        self.today = datetime.datetime.now(tz=date_utils.timezone()).date()
+
+        self.upcoming_earnings = upcoming_earnings[upcoming_earnings['date'].between(self.today, self.today + datetime.timedelta(days=7))]
+        column_map = {'date': 'Date',
+                      'ticker': 'Ticker',
+                      'time': 'Time',
+                      'fiscal_quarter_ending': 'Fiscal Quarter Ending',
+                      'eps_forecast':'EPS Forecast',
+                      'no_of_ests':'# of Ests',
+                      'last_year_eps':'Last Year EPS',
+                      'last_year_rpt_dt':'Last Year Report Date'}
+        super().__init__(channel=channel,
+                         screener_type='weekly-earnings',
+                         market_period=None,
+                         data=self.upcoming_earnings,
+                         column_map=column_map)
+
+        # Init files
+        self.filepath = f"{utils.datapaths.attachments_path}/upcoming_earnings.csv"
+        self.write_df_to_file(df=self.upcoming_earnings, filepath=self.filepath)
+        self.files = [discord.File(self.filepath)]
 
     def build_report_header(self):
         logger.debug("Building report header...")
-        return f"# Earnings Releasing the Week of {market_utils.format_date_mdy(datetime.datetime.today())}\n\n"
+        return f"# Earnings Releasing the Week of {date_utils.format_date_mdy(self.today)}\n\n"
 
-    def build_watchlist_earnings(self):
+    def build_upcoming_earnings(self):
         logger.debug("Identifying upcoming earnings for tickers that exist on user watchlists")
-        watchlist_tickers = self.bot.stock_data.watchlists.get_tickers_from_all_watchlists(no_personal=False)
-        watchlist_earnings = self.upcoming_earnings[self.upcoming_earnings['ticker'].isin(watchlist_tickers)]
-        if watchlist_earnings.size > 0:
-            message = f" Tickers on your watchlists that report earnings this week:\n"
-            message += self.build_build_df_table(watchlist_earnings['ticker', 'date', 'time'])
-            logger.debug(f"Watchlist tickers reporting earnings this week: {watchlist_earnings['ticker'].to_list()}")
-        else:
-            message = "No tickers on your watchlists report earnings this week"
-            logger.debug("No tickers on watchlists that report earnings this week")
+        watchlist_earnings = {}
+
+        for i in range(1, 6):
+            date = self.today + datetime.timedelta(days=i)
+            tickers = self.data[self.data['Date'] == date]['Ticker'].values
+            if tickers.any(): # np array
+                watchlist_earnings[date.strftime('%A')] = tickers
+
+        watchlist_earnings_df = pd.DataFrame(dict([(date, pd.Series(tickers)) for date, tickers in watchlist_earnings.items()])).fillna(' ')
+        message = self.build_build_df_table(df=watchlist_earnings_df, style='borderless')
         return message
 
     def build_report(self):
         logger.debug("Building Upcoming Earnings Report...")
         report = ""
         report += self.build_report_header()
-        report += self.build_watchlist_earnings()
+        report += self.build_upcoming_earnings()
         return report
 
     async def send_report(self):
         logger.debug("Sending Upcoming Earnings Report...")
-        message = await super().send_report(files=[self.file])
+        message = await super().send_report(files=[self.files])
         return message
 
 

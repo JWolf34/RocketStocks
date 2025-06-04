@@ -59,6 +59,19 @@ class Earnings:
                     logger.info(f'Updated earnings for {date_string}')
         logger.info("Upcoming earnings have been updated!")
 
+    def fetch_upcoming_earnings(self):
+
+        # Query
+        '''SELECT * FROM upcoming_earnings;'''
+        columns = self.db.get_table_columns(table='upcoming_earnings')
+        results = self.db.select(table='upcoming_earnings',
+                                 fields=columns)
+        
+        if not results:
+            return pd.DataFrame()
+        else:
+            return pd.DataFrame(results, columns=columns)
+
     def get_next_earnings_date(self,ticker):
         """Retrieve next earnings date for the input ticker"""
         result = self.db.select(table='upcoming_earnings',
