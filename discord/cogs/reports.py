@@ -651,28 +651,50 @@ class Report(object):
             - daily_price_history
         """
         logger.debug("Building performance...")
-        today =  datetime.datetime.today().date()
-        message = "## Performance \n\n"
-        performance_frequency = {'1D': 1,
-                                 '5D': 5,
-                                 '1M': 30,
-                                 '3M': 90,
-                                 '6M': 180}
-        curr_close = self.quote['regular']['regularMarketLastPrice']
-        for frequency, days in performance_frequency.items():
-            try:
-                #close_df = self.data.loc[self.data['date'] == (today - datetime.timedelta(days=days)), 'close'].iloc[0]
-                # Get old_close based on date offset from today's date
-                old_date = today - datetime.timedelta(days=days)
-                while old_date.weekday() > 4:
-                    old_date = old_date - datetime.timedelta(days=1)
-                old_close = float(self.data.loc[self.data['date'] == (old_date), 'close'].iloc[0])
-                pct_change = ((curr_close - old_close) / old_close) * 100.0
-                symbol = ":green_circle:" if pct_change > 0.0 else ":small_red_triangle_down:"
-                message += f"**{frequency}:** {symbol} {"{:.2f}%".format(pct_change)}\n"
-            except IndexError as e:
-                # Stock has not been on the market long enough to generate full performance summary
-                pass
+        message = "## Performance\n\n"
+
+        # Validate daily price history
+        if not self.daily_price_history.empty:
+            # Get current close
+            close = self.quote['regular']['regularMarketLastPrice']
+            message += f"```{'Close:':<6}{close}\n"
+            message += f"{'-'*12}\n"
+            
+
+            # Get highest popularity rank across select intervals
+            interval_map = {"1D":1,
+                            "5D":7,
+                            "1M":30,
+                            "3M":90,
+                            "6M":180}
+
+            today =  datetime.datetime.now(tz=date_utils.timezone()).date()
+            for label, interval in interval_map.items():
+                # Find max rank within defined interval
+                interval_date = today - datetime.timedelta(days=interval)
+                while interval_date.weekday() > 5:
+                    interval_date = interval_date - datetime.timedelta(days=1)
+                
+                interval_close = self.daily_price_history[self.daily_price_history['date'] == interval_date]['close']
+
+                if not interval_close.empty:
+                    interval_close = interval_close.iloc[0]
+                    change = ((close - interval_close) / interval_close)*100.0
+                else:
+                    interval_close = 'N/A'
+
+                # Assign symbol based on rank difference
+                symbol = None
+                if interval_close != "N/A":
+                    if change < 0:
+                        symbol = "🔻"
+                    else:
+                        symbol = "🟢"
+
+                message +=f"{f'{label}:':<4}{'{:.2f}'.format(interval_close) if interval_close !='N/A' else 'N/A':<5} {f'{symbol} {'{:.2f}%'.format(change)}'}\n"
+            message += '```\n'
+        else:
+            message += "No price data found for this stock"
         return message
 
 
@@ -887,7 +909,7 @@ class StockReport(Report):
         report += self.build_report_header()
         report += self.build_ticker_info()
         report += self.build_daily_summary()
-        #report += self.build_performance()
+        report += self.build_performance()
         report += self.build_stats()
         report += self.build_popularity()
         report += self.build_recent_earnings()
