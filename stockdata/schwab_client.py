@@ -69,7 +69,7 @@ class Schwab():
             price_history.insert(loc=0, column='ticker', value=ticker)
             return price_history
         else:
-            return None
+            return pd.DataFrame()
 
     # Get latest quote for ticker from Schwab
     async def get_quote(self, ticker):

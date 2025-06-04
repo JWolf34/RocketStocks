@@ -402,7 +402,7 @@ class StockData():
                                     fetchall=True)
         if not results:
             logger.warning(f"No daily price history available for ticker '{ticker}'")
-            return results
+            return pd.DataFrame()
         else:
             logger.debug(f"Returned {len(results)} row(s) for ticker '{ticker}'")
             columns = self.db.get_table_columns("daily_price_history")
@@ -430,7 +430,7 @@ class StockData():
                                     fetchall=True)
         if not results:
             logger.warning(f"No 5m price history available for ticker '{ticker}'")
-            return None
+            return pd.DataFrame()
         else:
             logger.debug(f"Returned {len(results)} row(s) for ticker '{ticker}'")
             columns = self.db.get_table_columns('five_minute_price_history')
@@ -478,7 +478,7 @@ class StockData():
                                  fields=columns,
                                  fetchall=True)
         data = pd.DataFrame(data, columns=columns)
-        data.index = data['ticker']
+        data.set_index('ticker')
         logger.debug(f"Found data for {len(data)} tickers in database")
         return data
     

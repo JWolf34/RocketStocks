@@ -493,15 +493,13 @@ class Report(object):
         logger.debug("Building ticker info...")
 
         message = ''
-        # Validate ticker info
-        if not self.ticker_info:
-            message = "## Ticker Info\n"
+        message = "## Ticker Info\n"
             
-            message += f"**Name:** {self.ticker_info['name']}\n"
-            message += f"**Sector:** {self.ticker_info['sector'] if self.ticker_info['sector'] else "N/A"}\n"
-            message += f"**Industry:** {self.ticker_info['industry'] if self.ticker_info['industry'] else "N/A"}\n" 
-            message += f"**Country:** {self.ticker_info['country'] if self.ticker_info['country'] else "N/A"}\n"
-            message += f"**Exchange:** {self.quote['reference']['exchangeName']}\n"
+        message += f"**Name:** {self.ticker_info['name']}\n"
+        message += f"**Sector:** {self.ticker_info['sector'] if self.ticker_info['sector'] else "N/A"}\n"
+        message += f"**Industry:** {self.ticker_info['industry'] if self.ticker_info['industry'] else "N/A"}\n" 
+        message += f"**Country:** {self.ticker_info['country'] if self.ticker_info['country'] else "N/A"}\n"
+        message += f"**Exchange:** {self.quote['reference']['exchangeName']}\n"
 
         return message 
     
@@ -516,16 +514,18 @@ class Report(object):
         """
         logger.debug("Building latest SEC filings...")
 
-        message = ''
+        message = "## Recent SEC Filings\n\n"
 
         # Validate SEC filings
         if not self.recent_sec_filings.empty:
-            message = "## Recent SEC Filings\n\n"
             for filing in self.recent_sec_filings.head(5).to_dict(orient='records'):
                 message += f"[Form {filing['form']} - {filing['filingDate']}]({filing['link']})\n"
+        else:
+            message += "This stock has no recent SEC filings\n"
                 
         return message
 
+    #TODO
     def build_todays_sec_filings(self):
         logger.debug("Building today's SEC filings...")
         message = "## Today's SEC Filings\n\n"
@@ -533,6 +533,7 @@ class Report(object):
         for index, filing in filings.iterrows():
             message += f"[Form {filing['form']} - {filing['filingDate']}]({sd.SEC().get_link_to_filing(ticker=self.ticker, filing=filing)})\n"
         return message
+
 
     def build_table(self, df:pd.DataFrame, style='thick_compact'):
         """Return input dataframe in ascii table format for cleanly displaying content in Discord messgaes"""
@@ -554,20 +555,24 @@ class Report(object):
         """
         logger.debug("Building earnings date...")
 
-        # Earnings date
-        message = f"{self.ticker} reports earnings on "
-        message += f"{date_utils.format_date_mdy(self.next_earnings_info['date'])}, "
+        message = ''
+        # Validate next earnings info
+        if self.next_earnings_info:
+            # Earnings date
+            message = f"{self.ticker} reports earnings on "
+            message += f"{date_utils.format_date_mdy(self.next_earnings_info['date'])}, "
 
-        # Earnings time
-        earnings_time = self.next_earnings_info['time']
-        if "pre-market" in earnings_time:
-            message += "before market open"
-        elif "after-hours" in earnings_time:
-            message += "after market close"
-        else:
-            message += "time not specified"
+            # Earnings time
+            earnings_time = self.next_earnings_info['time']
+            if "pre-market" in earnings_time:
+                message += "before market open"
+            elif "after-hours" in earnings_time:
+                message += "after market close"
+            else:
+                message += "time not specified"
 
-        return message + "\n"
+            message += "\n"
+        return message
 
     def build_upcoming_earnings_summary(self):
         """Return message content that summarizes the next earnings report for the stock
@@ -575,20 +580,25 @@ class Report(object):
         Requires:
             - next_earnings_info
         """
-        
         logger.debug("Building upcoming earnings summary...")
 
         message = "## Next Earnings Summary\n\n"
-        message += f"**Date:** {self.next_earnings_info['date']}\n"
-        message += "**Time:** {}\n".format("Premarket" if "pre-market" in self.next_earnings_info['time']
-                                else "After hours" if "after-hours" in self.next_earnings_info['time']
-                                else "Not supplied")
-        message += f"**Fiscal Quarter:** {self.next_earnings_info['fiscal_quarter_ending']}\n"
-        message += f"**EPS Forecast: ** {self.next_earnings_info['eps_forecast'] if len(self.next_earnings_info['eps_forecast']) > 0 else "N/A"}\n"
-        message += f"**No. of Estimates:** {self.next_earnings_info['no_of_ests']}\n"
-        message += f"**Last Year Report Date:** {self.next_earnings_info['last_year_rpt_dt']}\n"
-        message += f"**Last Year EPS:** {self.next_earnings_info['last_year_eps']}\n"
-        return message + "\n\n"
+        # Validate next earnings info
+        if self.next_earnings_info:
+        
+            message += f"**Date:** {self.next_earnings_info['date']}\n"
+            message += "**Time:** {}\n".format("Premarket" if "pre-market" in self.next_earnings_info['time']
+                                    else "After hours" if "after-hours" in self.next_earnings_info['time']
+                                    else "Not supplied")
+            message += f"**Fiscal Quarter:** {self.next_earnings_info['fiscal_quarter_ending']}\n"
+            message += f"**EPS Forecast: ** {self.next_earnings_info['eps_forecast'] if len(self.next_earnings_info['eps_forecast']) > 0 else "N/A"}\n"
+            message += f"**No. of Estimates:** {self.next_earnings_info['no_of_ests']}\n"
+            message += f"**Last Year Report Date:** {self.next_earnings_info['last_year_rpt_dt']}\n"
+            message += f"**Last Year EPS:** {self.next_earnings_info['last_year_eps']}\n"
+        else:
+            message += "Stock has no upcoming earnings reports\n"
+
+        return message 
 
     def build_recent_earnings(self):
         """Return message content that summarizes 4 most recent earnings reports for the stock
@@ -597,22 +607,30 @@ class Report(object):
             - historical_earnings
         """
         logger.debug("Building recent earnings...")
+
         message = "## Recent Earnings Overview\n"
-        #message += f"**Next earnings date:** {self.next_earnings_info['date']}\n"
-        column_map = {'date':'Date Reported', 
-                      'eps':'EPS',
-                      'surprise':'Surprise',
-                      'epsforecast':'Estimate',
-                      'fiscalquarterending':'Quarter'}
+
+        # Validate historical earnings
+        if not self.historical_earnings.empty:
+            #message += f"**Next earnings date:** {self.next_earnings_info['date']}\n"
+            column_map = {'date':'Date Reported', 
+                        'eps':'EPS',
+                        'surprise':'Surprise',
+                        'epsforecast':'Estimate',
+                        'fiscalquarterending':'Quarter'}
+            
+            recent_earnings = self.historical_earnings.tail(4)
+            recent_earnings = recent_earnings.filter(list(column_map.keys()))
+            recent_earnings = recent_earnings.rename(columns=column_map)
+            recent_earnings['Date Reported'] = recent_earnings['Date Reported'].apply(lambda x: date_utils.format_date_mdy(x))
+            recent_earnings['Surprise'] =  recent_earnings['Surprise'].apply(lambda x: f"{x}%")
+            message += self.build_table(df=recent_earnings, style='plain')
         
-        recent_earnings = self.historical_earnings.tail(4)
-        recent_earnings = recent_earnings.filter(list(column_map.keys()))
-        recent_earnings = recent_earnings.rename(columns=column_map)
-        recent_earnings['Date Reported'] = recent_earnings['Date Reported'].apply(lambda x: date_utils.format_date_mdy(x))
-        recent_earnings['Surprise'] =  recent_earnings['Surprise'].apply(lambda x: f"{x}%")
-        message += self.build_table(df=recent_earnings, style='plain')
+        else:
+            message += "No historical earnings found for this ticker"
         return message + "\n"
 
+    # TODO
     def build_performance(self):
         """Return message content with stock over recent weeks and months
         
@@ -644,7 +662,13 @@ class Report(object):
                 pass
         return message
 
+
     def build_daily_summary(self):
+        """Return message content with OHLVC data for the stock
+        
+        Requires:
+            - quote
+        """
         logger.debug("Building daily summary...")
         message = "## Today's Summary\n\n"
         OHLCV = {'Open': "{:.2f}".format(self.quote['quote']['openPrice']),
@@ -656,9 +680,20 @@ class Report(object):
         message += " | ".join(f"**{column}:** {value}" for column, value in OHLCV.items())
         return message + "\n"  
 
+    # TODO
     def build_stats(self):
+        """Return message content with stock over recent weeks and months
+        
+        Requires:
+            - ticker_info
+            - quote
+        """
         logger.debug("Building ticker stats...")
         message = "## Stats\n"
+
+        # Calculate market cap
+        # Include float? Short interest? Shortable and hard to borrow. Dividends?
+
         message += f"**Market Cap:** {self.format_large_num(self.ticker_info['marketcap'])}\n"
         message += f"**52 Week High:** {self.quote['quote']['52WeekHigh']}\n"
         message += f"**52 Week Low:** {self.quote['quote']['52WeekLow']}\n"
@@ -668,42 +703,52 @@ class Report(object):
         return message
 
     def build_popularity(self):
+        """Return message content popularity overview of stock over select intervals
+        
+        Requires:
+            - popularity
+        """
         logger.debug("Building popularity...")
         message = "## Popularity\n"
         
-        # Get current rank
-        now = date_utils.round_down_nearest_minute(30)
-        popularity_today = self.popularity[(self.popularity['datetime'] == now)]
-        current_rank = popularity_today['rank'].iloc[0] if not popularity_today.empty else 'N/A'
-        message += f"```{f'Current:':<10}{current_rank}\n\n"
+        # Validate popularity
+        if not self.popularity.empty:
+            # Get current rank
+            now = date_utils.round_down_nearest_minute(30)
+            popularity_today = self.popularity[(self.popularity['datetime'] == now)]
+            current_rank = popularity_today['rank'].iloc[0] if not popularity_today.empty else 'N/A'
+            message += f"```{'Current:':<10}{current_rank}\n\n"
 
-        # Get highest popularity rank across select intervals
-        interval_map = {"High 24H":1,
-                        "High 7D":7,
-                        "High 1M":30,
-                        "High 3M":90,
-                        "High 6M":180}
+            # Get highest popularity rank across select intervals
+            interval_map = {"High 24H":1,
+                            "High 7D":7,
+                            "High 1M":30,
+                            "High 3M":90,
+                            "High 6M":180}
 
 
-        for label, interval in interval_map.items():
-            # Find max rank within defined interval
-            interval_date = now - datetime.timedelta(days=interval)
-            interval_popularity = self.popularity[self.popularity['datetime'].between(interval_date, now)]
-            if not interval_popularity.empty:
-                max_rank = interval_popularity['rank'].min()
-            else:
-                max_rank = 'N/A'
+            for label, interval in interval_map.items():
+                # Find max rank within defined interval
+                interval_date = now - datetime.timedelta(days=interval)
+                interval_popularity = self.popularity[self.popularity['datetime'].between(interval_date, now)]
+                if not interval_popularity.empty:
+                    max_rank = interval_popularity['rank'].min()
+                else:
+                    max_rank = 'N/A'
 
-            # Assign symbol based on rank difference
-            symbol = None
-            if max_rank != "N/A" and current_rank != 'N/A':
-                if max_rank < current_rank:
-                    symbol = "🔻"
-                elif max_rank > current_rank:
-                    symbol = "🟢"
+                # Assign symbol based on rank difference
+                symbol = None
+                if max_rank != "N/A" and current_rank != 'N/A':
+                    if max_rank < current_rank:
+                        symbol = "🔻"
+                    elif max_rank > current_rank:
+                        symbol = "🟢"
 
-            message +=f"{f'{label}:':<10}{max_rank:<5} {f'{symbol} {max_rank-current_rank} spots' if symbol and current_rank != 'N/A' else ''}\n"
-        return message + '```\n'
+                message +=f"{f'{label}:':<10}{max_rank:<3} {f'{symbol} {max_rank-current_rank} spots' if symbol and current_rank != 'N/A' else ' '}\n"
+            message += '```'
+        else:
+            message += "No popularity data found for this stock"
+        return message
 
     def build_report(self):
         report = ''
