@@ -146,7 +146,7 @@ class Reports(commands.Cog):
         await asyncio.sleep(sleep_time)
 
     # Start posting reports at next 0 or 30 minute interval
-    @post_popularity_screener.before_loop
+    #@post_popularity_screener.before_loop
     async def sleep_until_30m(self):
         sleep_time = date_utils.seconds_until_minute_interval(minute=30)
         logger.info(f"30m reports will begin posting in {sleep_time} seconds")
@@ -177,11 +177,11 @@ class Reports(commands.Cog):
             await report.send_report()
 
 
-    @tasks.loop(time=datetime.time(hour=12, minute=0, second=0)) # time in UTC
-    #@tasks.loop(minutes=5)
+    #@tasks.loop(time=datetime.time(hour=12, minute=0, second=0)) # time in UTC
+    @tasks.loop(minutes=5)
     async def post_weekly_earnings(self):
         today = datetime.datetime.today()
-        if datetime.datetime.today().weekday() == 0:
+        if True: #datetime.datetime.today().weekday() == 0:
             report = WeeklyEarningsReport(self.reports_channel)
             logger.info(f"Posting weekly earnings report. Earnings reporting this week: {report.upcoming_earnings}")
             await report.send_report()
@@ -927,7 +927,8 @@ class Screener(Report):
         message_id = self.dutils.get_screener_message_id(screener_type=self.screener_type)
         if message_id:
             curr_message = await self.channel.fetch_message(message_id)
-            if curr_message.created_at.date() < today.date():
+            message_create_date = curr_message.created_at.astimezone(date_utils.timezone()).date()
+            if message_create_date < today.date():
                 message = await self.channel.send(self.message, view=view)
                 self.dutils.update_screener_message_id(message_id=message.id, screener_type=self.screener_type)
                 return message
