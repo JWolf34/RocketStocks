@@ -494,13 +494,26 @@ class Report(object):
 
         message = ''
         message = "## Ticker Info\n"
-            
-        message += f"**Name:** {self.ticker_info['name']}\n"
-        message += f"**Sector:** {self.ticker_info['sector'] if self.ticker_info['sector'] else "N/A"}\n"
-        message += f"**Industry:** {self.ticker_info['industry'] if self.ticker_info['industry'] else "N/A"}\n" 
-        message += f"**Country:** {self.ticker_info['country'] if self.ticker_info['country'] else "N/A"}\n"
-        message += f"**Exchange:** {self.quote['reference']['exchangeName']}\n"
 
+        
+        # Format desired column names in new dict
+        columns = ['name', 'sector', 'industry', 'country']
+        fmt_ticker_info = {}
+        for key in columns:
+            value = self.ticker_info[key]
+            if value != 'NaN':
+                fmt_ticker_info[key.capitalize()] = value
+
+        # Map additional values
+        fmt_ticker_info['Asset'] = self.quote['assetSubType']
+        fmt_ticker_info['Exchange'] = self.quote['reference']['exchangeName']
+        
+        message += '```'
+        # Iterate over keys and append to message
+        for key, value in fmt_ticker_info.items():
+            message += f"{f'{key}:':<10} {value}\n" if value else ''
+        message += '```\n'
+        
         return message 
     
             
@@ -717,7 +730,8 @@ class Report(object):
             now = date_utils.round_down_nearest_minute(30)
             popularity_today = self.popularity[(self.popularity['datetime'] == now)]
             current_rank = popularity_today['rank'].iloc[0] if not popularity_today.empty else 'N/A'
-            message += f"```{'Current:':<10}{current_rank}\n\n"
+            message += f"```{'Current:':<10}{current_rank}\n"
+            message += f"{'-'*15}\n"
 
             # Get highest popularity rank across select intervals
             interval_map = {"High 24H":1,
@@ -745,7 +759,7 @@ class Report(object):
                         symbol = "🟢"
 
                 message +=f"{f'{label}:':<10}{max_rank:<3} {f'{symbol} {max_rank-current_rank} spots' if symbol and current_rank != 'N/A' else ' '}\n"
-            message += '```'
+            message += '```\n'
         else:
             message += "No popularity data found for this stock"
         return message
