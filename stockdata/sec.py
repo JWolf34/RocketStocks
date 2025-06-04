@@ -49,19 +49,29 @@ class SEC():
     @limits(calls = 5, period = 1) # 5 calls per second
     def get_accounts_payable(self, ticker):
         logger.debug(f"Fetching accounts payable from SEC for ticker {ticker}")
-        json = requests.get(f"https://data.sec.gov/api/xbrl/companyconcept/CIK{self.sd.get_cik(ticker)}/us-gaap/AccountsPayableCurrent.json", headers=self.headers).json()
-        return pd.DataFrame.from_dict(json)
-
+        try:
+            json = requests.get(f"https://data.sec.gov/api/xbrl/companyconcept/CIK{self.sd.get_cik(ticker)}/us-gaap/AccountsPayableCurrent.json", headers=self.headers).json()
+            return pd.DataFrame.from_dict(json)
+        except requests.exceptions.JSONDecodeError as e:
+            logger.error(f"Encountered error when fetching accounts payable for ticker '{ticker}':\n{e}")
+            return pd.DataFrame()
+        
     @sleep_and_retry
     @limits(calls = 5, period = 1) # 5 calls per second
     def get_company_facts(self, ticker):
         logger.debug(f"Fetching company facts from SEC for ticker {ticker}")
-        json = requests.get(f"https://data.sec.gov/api/xbrl/companyfacts/CIK{self.sd.get_cik(ticker)}.json", headers=self.headers).json()
-        return json #pd.DataFrame.from_dict(json)
+        try:
+            json = requests.get(f"https://data.sec.gov/api/xbrl/companyfacts/CIK{self.sd.get_cik(ticker)}.json", headers=self.headers).json()
+            return json 
+        except requests.exceptions.JSONDecodeError as e:
+            logger.error(f"Encountered error when fetching company facts for ticker '{ticker}':\n{e}")
+            return {}
 
     @sleep_and_retry
     @limits(calls = 5, period = 1) # 5 calls per second
     def get_company_tickers(self):
+        logger.debug(f"Fetching all company tickers from SEC")
         response = requests.get("https://www.sec.gov/files/company_tickers.json", headers=self.headers)
         tickers = [ticker for ticker in response.json().values()]
         return pd.DataFrame(tickers)
+

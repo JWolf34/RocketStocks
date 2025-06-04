@@ -535,7 +535,7 @@ class Report(object):
         fmt_ticker_info = {}
         for key in columns:
             value = self.ticker_info[key]
-            if value != 'NaN':
+            if value != 'NaN' and value:
                 fmt_ticker_info[key.capitalize()] = value
 
         # Map additional values
