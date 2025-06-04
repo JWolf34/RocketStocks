@@ -177,8 +177,8 @@ class Reports(commands.Cog):
             await report.send_report()
 
 
-    #@tasks.loop(time=datetime.time(hour=12, minute=0, second=0)) # time in UTC
-    @tasks.loop(minutes=5)
+    @tasks.loop(time=datetime.time(hour=12, minute=0, second=0)) # time in UTC
+    #@tasks.loop(minutes=5)
     async def post_weekly_earnings(self):
         today = datetime.datetime.today()
         if True: #datetime.datetime.today().weekday() == 0:
