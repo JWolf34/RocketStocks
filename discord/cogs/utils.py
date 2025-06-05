@@ -1,7 +1,7 @@
 import discord
 from discord import app_commands
 from discord.ext import commands
-import stockdata as sd
+import stock_data as sd
 import logging
 
 # Logging configuration

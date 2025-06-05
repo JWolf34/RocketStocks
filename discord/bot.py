@@ -3,7 +3,7 @@ sys.path.append('../RocketStocks')
 import os
 import discord
 from discord.ext import commands
-from stockdata import StockData
+from stock_data import StockData
 import asyncio
 import utils
 import logging

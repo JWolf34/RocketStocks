@@ -1,9 +1,9 @@
 import os
 import pandas as pd
 import numpy as np
-import stockdata as sd
+import stock_data as sd
 import pandas_ta as ta
-import stockdata as sd
+import stock_data as sd
 import utils
 import datetime
 import logging

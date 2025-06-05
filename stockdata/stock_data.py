@@ -2,7 +2,7 @@ import datetime
 from db import Postgres
 from nasdaq import Nasdaq
 from capitol_trades import CapitolTrades
-from watchlists import Watchlists
+from stockdata.watchlists import Watchlists
 from trading_view import TradingView
 from ape_wisdom import ApeWisdom
 import logging

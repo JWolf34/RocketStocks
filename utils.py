@@ -68,7 +68,7 @@ class discord_utils():
         self.db = Postgres() # Postgres
 
     # Guild ID
-    guild_id = get_env('DISCORD_GUILD_ID')    
+    guild_id = int(get_env('DISCORD_GUILD_ID'))    
 
     # Channel IDs 
     reports_channel_id = int(get_env("REPORTS_CHANNEL_ID"))

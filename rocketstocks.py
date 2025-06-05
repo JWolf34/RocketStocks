@@ -3,7 +3,7 @@ sys.path.append('discord')
 sys.path.append('discord/cogs')
 sys.path.append('stockdata')
 import bot as Discord
-from stockdata import StockData
+from stock_data import StockData
 import logging
 import logging.config
 import logging.handlers

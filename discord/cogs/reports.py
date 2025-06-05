@@ -5,9 +5,9 @@ from discord import app_commands
 from discord.ext import commands
 from discord.ext import tasks
 from discord.cogs.watchlists import Watchlists as cog_Watchlists                # cog
-from RocketStocks.stockdata.watchlists import Watchlists as data_Watchlists     # stockdata module      
+from stockdata.watchlists import Watchlists as data_Watchlists     # stockdata module      
 import datetime
-from stockdata import StockData
+from stock_data import StockData
 from news import News
 import pandas as pd
 import datetime as dt
@@ -22,7 +22,7 @@ import random
 logger = logging.getLogger(__name__)  
 
 class Reports(commands.Cog):
-    def __init__(self, bot, stock_data:StockData):
+    def __init__(self, bot:commands.Bot, stock_data:StockData):
         self.bot = bot
         self.stock_data = stock_data
         self.mutils = market_utils()
@@ -99,7 +99,7 @@ class Reports(commands.Cog):
             self.stock_data.update_alert_tickers(tickers=report.get_tickers(), source='unusual-volume')
 
             # Send report
-            logger.info(f"Posting {report.market_period} volume screener")
+            logger.info("Posting unusual volume screener")
             await report.send_report()
         else:
             # Not a weekday - do not post volume screener
@@ -129,7 +129,7 @@ class Reports(commands.Cog):
             self.stock_data.update_alert_tickers(tickers=report.get_tickers(), source='gainers')
 
             # Send report
-            logger.info(f"Sending {report.market_period} gainers report")
+            logger.info(f"Sending {report.market_period} gainers screener")
             await report.send_report()
         else:
             # Not a weekday - do not post gainer reports
@@ -180,28 +180,37 @@ class Reports(commands.Cog):
     @tasks.loop(time=datetime.time(hour=12, minute=0, second=0)) # time in UTC
     #@tasks.loop(minutes=5)
     async def post_weekly_earnings(self):
-        today = datetime.datetime.today()
-        if True: #datetime.datetime.today().weekday() == 0:
+        today = datetime.datetime.now(tz=date_utils.timezone()).date()
+        if today.weekday() == 0:
             upcoming_earnings = self.stock_data.earnings.fetch_upcoming_earnings()
             report = WeeklyEarningsScreener(channel=self.screeners_channel,
                                             upcoming_earnings=upcoming_earnings)
-            logger.info(f"Posting weekly earnings report. Earnings reporting this week: {report.upcoming_earnings}")
+            logger.info(f"Posting weekly earnings report")
             await report.send_report()
 
 
     # Create earnings events on calendar for all stocks on watchlists
-    @tasks.loop(time=datetime.time(hour=6, minute=0, second=0)) # time in UTC
-    #@tasks.loop(minutes=5)
+    #@tasks.loop(time=datetime.time(hour=6, minute=0, second=0)) # time in UTC
+    @tasks.loop(minutes=5)
     async def update_earnings_calendar(self):
-        logger.info("Creating events for upcoming earnings dates")
-        guild = self.bot.get_guild(utils.discord_utils.guild_id)
-        tickers = self.bot.stock_data.watchlists.get_tickers_from_all_watchlists(no_personal=False) # Get all tickers except from system-generated watchlists
+        logger.info("Creating calendar events for upcoming earnings dates")
+        guild = self.bot.get_guild(utils.discord_utils.guild_id) # Update calendar in target guild
+        tickers = self.stock_data.watchlists.get_tickers_from_all_watchlists(no_personal=False, no_systemGenerated=False) # Get all tickers except from system-generated watchlists
+        logger.debug(f"Identified {len(tickers)} watchlist tickers to create earnings events for")
+
+        curr_events = await guild.fetch_scheduled_events()
+        logger.debug(f"{len(curr_events)} events already in the calendar")
+
+        # Iterate through tickers, get next earnings report info, and add event to calendar
         for ticker in tickers:
-            earnings_info = sd.StockData.Earnings.get_next_earnings_info(ticker)
-            if len(earnings_info) > 0:
+            earnings_info = self.stock_data.earnings.get_next_earnings_info(ticker)
+
+            # Found next earnings info in database
+            if earnings_info:
                 event_exists = False
                 name = f"{ticker} Earnings"
-                curr_events = await guild.fetch_scheduled_events()
+
+                # Do not create an event if one already exists with the same name
                 if curr_events:
                     for event in curr_events:
                         if event.name == name:
@@ -210,9 +219,9 @@ class Reports(commands.Cog):
                 
                 # Event does not exist, create one
                 if not event_exists:
+                    # Calculate start time of earnings based on time set to release
                     release_time = "unspecified"
-                    start_time = datetime.datetime.combine(earnings_info['date'][0], datetime.datetime.strptime('1230','%H%M').time()).astimezone()
-                    #start_time= start_time.replace(hour=12, minute=0, second=0)
+                    start_time = datetime.datetime.combine(earnings_info['date'], datetime.datetime.strptime('1230','%H%M').time()).astimezone()
                     if "pre-market" in earnings_info['time'][0]:
                         start_time = start_time.replace(hour = 8, minute=30)
                         release_time = "pre-market"
@@ -221,13 +230,14 @@ class Reports(commands.Cog):
                         start_time = start_time.replace(hour = 15, minute=0)
 
                     now = datetime.datetime.now().astimezone()
-                    if start_time > now:
-                        description = f"""**Quarter:** {earnings_info['fiscalquarterending'][0]}
-    **Release Time:** {release_time}
-    **EPS Forecast:** {earnings_info['epsforecast'][0]}
-    **Last Year's EPS:** {earnings_info['lastyeareps'][0]}
-    **Last Year's Report Date:** {earnings_info['lastyearrptdt'][0]}
-                        """
+                    if start_time > now: # Make sure eranings are not in the past
+                        description = f"**Quarter:** {earnings_info['fiscal_quarter_ending']}\n"
+                        description += f"**Release Time:** {release_time}\n"
+                        description += f"**EPS Forecast:** {earnings_info['eps_forecast']}\n"
+                        description += f"**Last Year's EPS:** {earnings_info['last_year_eps']}\n"
+                        description += f"**Last Year's Report Date:** {earnings_info['last_year_rpt_dt']}\n"
+                        
+                        # Create event
                         channel = self.bot.get_channel(utils.discord_utils.alerts_channel_id)
                         event = await guild.create_scheduled_event(name=name, 
                                                                 description=description,
@@ -236,14 +246,14 @@ class Reports(commands.Cog):
                                                                 entity_type = discord.EntityType.external,
                                                                 privacy_level=discord.PrivacyLevel.guild_only,
                                                                 location="Wall Street")
-                        logger.debug(f"Event '{event.name} created at {event.start_time}")
+                        logger.info(f"Earnings report '{name}' created at {start_time}")
                     else:
                         # Event start time is in the past
-                        logger.debug(f"Event start time {start_time} is in the past. Skipping...")
+                        logger.info(f"Start time {start_time} for event '{name}' is in the past - skipping...")
                         pass
                 else:
                     # Event already exists
-                    logger.debug(f"Event '{event.name}' already exists. Skipping...")
+                    logger.info(f"Event '{name}' already exists in the calendar. Skipping...")
                     pass
         logger.info("Completed updating earnings calendar")
 
