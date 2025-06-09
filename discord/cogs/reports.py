@@ -610,7 +610,7 @@ class Report(object):
         today_string = datetime.datetime.today().strftime("%Y-%m-%d")
         todays_filings = self.recent_sec_filings[self.recent_sec_filings['filingDate'] == today_string]
         for index, filing in todays_filings.iterrows():
-            message += f"[Form {filing['form']} - {filing['filingDate']}]({sd.SEC().get_link_to_filing(ticker=self.ticker, filing=filing)})\n"
+            message += f"[Form {filing['form']} - {filing['filingDate']}]({filing['link']})\n"
         return message
 
     def build_earnings_date(self):
@@ -874,6 +874,8 @@ class Report(object):
     async def send_report(self, interaction:discord.Interaction = None, visibility:str = "public", files=None, view=None):
         """Send report to report's channel, adding files and vuttons as needed"""
         self.message = self.build_report() + "\n\n"
+        logger.info("Sending report...")
+        logger.debug(f"Report has content of length {len(self.message)}")
         if visibility == 'private' and interaction:
             message = await interaction.user.send(self.message, files=files, view=view)
             return message
