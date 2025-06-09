@@ -1,23 +1,26 @@
 import discord
 from discord import app_commands
 from discord.ext import commands
-from discord.ext import tasks
-import stock_data as sd
+from stock_data import StockData
 import logging
 
 # Logging configuration
 logger = logging.getLogger(__name__)
 
 class Watchlists(commands.Cog):
-    def __init__(self, bot):
+    """Cog for managing watchlists in the database"""
+    def __init__(self, bot:commands.Bot, stock_data:StockData):
         self.bot = bot
+        self.stock_data = stock_data
+        self.watchlists = self.stock_data.watchlists
 
     @commands.Cog.listener()
     async def on_ready(self):
         logger.info(f"Cog {__name__} loaded!")
 
     async def watchlist_options(self, interaction: discord.Interaction, current: str):
-        watchlists = self.get_watchlists(no_systemGenerated=False)
+        """Autocomplete helper - return all watchlist names that match input 'current' """
+        watchlists = self.watchlists.get_watchlists(no_systemGenerated=False)
         return [
             app_commands.Choice(name = watchlist, value= watchlist)
             for watchlist in watchlists if current.lower() in watchlist.lower()
@@ -28,11 +31,12 @@ class Watchlists(commands.Cog):
     @app_commands.describe(watchlist = "Which watchlist you want to make changes to")
     @app_commands.autocomplete(watchlist=watchlist_options,)
     async def addtickers(self, interaction: discord.Interaction, tickers: str, watchlist: str):
+        """Add valid input tickers to input watchlist"""
         await interaction.response.defer(ephemeral=True)
-        logger.info("/add-tickers function called by user {}".format(self, interaction.user.name))
+        logger.info(f"/add-tickers function called by user {interaction.user.name}")
         
         # Parse list from ticker input and identify invalid tickers
-        tickers, invalid_tickers = sd.StockData.parse_valid_tickers(tickers)
+        tickers, invalid_tickers = self.stock_data.parse_valid_tickers(tickers)
 
         message_flavor = watchlist
         is_personal = False
@@ -220,4 +224,4 @@ class Watchlists(commands.Cog):
 #########
 
 async def setup(bot):
-    await bot.add_cog(Watchlists(bot))
+    await bot.add_cog(Watchlists(bot, bot.stock_data))
