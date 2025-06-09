@@ -177,11 +177,11 @@ class Reports(commands.Cog):
             await report.send_report()
 
 
-    #@tasks.loop(time=datetime.time(hour=12, minute=0, second=0)) # time in UTC
-    @tasks.loop(minutes=5)
+    @tasks.loop(time=datetime.time(hour=12, minute=0, second=0)) # time in UTC
+    #@tasks.loop(minutes=5)
     async def post_weekly_earnings(self):
         today = datetime.datetime.now(tz=date_utils.timezone()).date()
-        if True: #today.weekday() == 0:
+        if today.weekday() == 0:
             upcoming_earnings = self.stock_data.earnings.fetch_upcoming_earnings()
             watchlist_tickers = self.stock_data.watchlists.get_tickers_from_all_watchlists(no_personal=True,
                                                                                            no_systemGenerated=True)
@@ -1419,7 +1419,7 @@ class WeeklyEarningsScreener(Screener):
         logger.debug("Identifying upcoming earnings for tickers that exist on user watchlists")
         watchlist_earnings = {}
 
-        for i in range(1, 6):
+        for i in range(0, 5):
             date = self.today + datetime.timedelta(days=i)
             tickers = self.data[self.data['Date'] == date]['Ticker'].values
             if tickers.any(): # np array
