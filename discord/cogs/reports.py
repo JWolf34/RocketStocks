@@ -52,8 +52,7 @@ class Reports(commands.Cog):
     # Tasks #
     #########
 
-    # Screener on most popular stocks across reddit daily
-    #@tasks.loop(time=datetime.time(hour=22 , minute=0, second=0)) # time in UTC
+    # Screener on most popular stocks across reddit every 30 minutes
     @tasks.loop(minutes=30)
     async def post_popularity_screener(self):
         # Fetch most popular stocks
@@ -878,6 +877,7 @@ class Report(object):
 
     # Tool to format large numbers
     def format_large_num(self, number):
+        """Format large numbers to be human readable. i.e. 300M, 1.2B"""
         try:
             number = float('{:.3g}'.format(float(number)))
             magnitude = 0
@@ -886,6 +886,7 @@ class Report(object):
                 number /= 1000.0
             return '{}{}'.format('{:f}'.format(number).rstrip('0').rstrip('.'), ['', 'K', 'M', 'B', 'T'][magnitude])
         except TypeError as e:
+            # Could not convert 'number' to float
             return "N/A"
     
     class Buttons(discord.ui.View):
@@ -893,6 +894,7 @@ class Report(object):
                 super().__init__(timeout=None)
 
 class Screener(Report):
+    """Report that is routinely updated with content from a source"""
 
     def __init__(self, channel, screener_type:str, market_period:str, data:pd.DataFrame, column_map:dict):
         super().__init__(channel=channel)
@@ -907,23 +909,29 @@ class Screener(Report):
         self.update_watchlist()
 
     def get_tickers(self):
+        """Return all tickers from self.data"""
         return self.data['Ticker'].to_list()
 
     def update_watchlist(self):
+        """Update system-generated watchlist for the given screener. Only uses the top 20 tickers and updates the existing watchlist if it exists."""
         from db import Postgres
 
         watchlists = data_Watchlists(db=Postgres())
         watchlist_id = self.screener_type
         watchlist_tickers = self.get_tickers()
-        watchlist_tickers = watchlist_tickers[:15]
+        watchlist_tickers = watchlist_tickers[:20]
 
         if not watchlists.validate_watchlist(watchlist_id):
             watchlists.create_watchlist(watchlist_id=watchlist_id, tickers=watchlist_tickers, systemGenerated=True)
+            logger.info(f"Created new watchlist from '{self.screener_type}' screener")
+            logger.debug(f"Watchlist created with {len(watchlist_tickers)} tickers: {watchlist_tickers}")
         else:
             watchlists.update_watchlist(watchlist_id=watchlist_id, tickers=watchlist_tickers)
+            logger.info(f"Updated watchlist '{self.screener_type}'")
+            logger.debug(f"Watchlist updated with {len(watchlist_tickers)} tickers: {watchlist_tickers}")
 
     def format_columns(self):
-        logger.debug("Formatting gainers dataframe for table viewing")
+        """Format all columns in self.data per column map - rename and drop columns accordingly"""
 
         # Drop all unwanted columns and map column names
         self.data = self.data.filter(list(self.column_map.keys()))
@@ -933,10 +941,12 @@ class Screener(Report):
 
     # Override
     async def send_report(self, view=None, files=None):
-        """Send gainer report to the screeners channel"""
+        """Post screener to the screeners channel"""
+
+        # Generate messafge
         self.message = self.build_report() + "\n\n"
 
-        logger.debug(f"Posting '{self.screener_type}' screener...")
+        logger.info(f"Sending '{self.screener_type}' screener...")
         today = datetime.datetime.today()
 
         # Format screener type for db insertion
@@ -944,19 +954,26 @@ class Screener(Report):
         
         # Check if a gainer message already exists and update if present
         message_id = self.dutils.get_screener_message_id(screener_type=self.screener_type)
+
+        # Screener has existing message in Discord
         if message_id:
+            logger.debug(f"Existing screener '{self.screener_type}' found with ID {message_id}")
             curr_message = await self.channel.fetch_message(message_id)
             message_create_date = curr_message.created_at.astimezone(date_utils.timezone()).date()
             if message_create_date < today.date():
                 message = await self.channel.send(self.message, view=view, files=files)
+                logger.info(f"Posted new '{self.screener_type}' screener for today")
                 self.dutils.update_screener_message_id(message_id=message.id, screener_type=self.screener_type)
                 return message
             else:
-                logger.debug(f"{self.screener_type} report already exists today. Updating... ")
                 await curr_message.edit(content=self.message)
+                logger.info(f"Updated '{self.screener_type}' screener")
+
         # No existing report, send new one
         else:
+            logger.debug(f"No existing message for '{self.screener_type}' screener")
             message = await self.channel.send(self.message, view=view)
+            logger.info(f"Posted new '{self.screener_type}' screener for today")
             self.dutils.insert_screener_message_id(message_id=message.id, screener_type=self.screener_type)
             return message
 
@@ -1021,6 +1038,7 @@ class StockReport(Report):
                 await interaction.response.send_message(f"Fetched news for {self.ticker}!", ephemeral=True)
 
 class GainerScreener(Screener):
+    """Screener subclass for posting premarket/intraday/postmarket gainers"""
     def __init__(self, channel:discord.channel, market_period:str, gainers:pd.DataFrame):
         
         # Set column map
@@ -1057,6 +1075,7 @@ class GainerScreener(Screener):
 
     # Extends
     def format_columns(self):
+        """Extends the parent function to format *Volume, Market Cap, and % Change columns for screener"""
         super().format_columns()
 
         # Format all volume columns in df
@@ -1074,6 +1093,7 @@ class GainerScreener(Screener):
 
     # Override
     def build_report_header(self):
+        """Overrides the parent function to generate custom header"""
         logger.debug("Building report header...")
         now = datetime.datetime.now(tz=date_utils.timezone())
         header = "### :rotating_light: {} Gainers {} (Updated {})\n\n".format(
@@ -1087,7 +1107,8 @@ class GainerScreener(Screener):
 
     # Override
     def build_report(self):
-        logger.debug("Building Gainer Report...")
+        """Overrides the parent function to generate report"""
+        logger.debug(f"Building '{self.screener_type}' screener...")
         report = ""
         report +=  self.build_report_header()
         report +=  self.build_build_df_table(self.data[:15])
@@ -1095,7 +1116,7 @@ class GainerScreener(Screener):
     
     # Override
     async def send_report(self):
-        logger.debug("Sending Stock Report...")
+        """Overrides the parent function to add buttons to screener message"""
         message = await super().send_report(view=self.buttons)
         return message
     
@@ -1112,6 +1133,7 @@ class GainerScreener(Screener):
             self.add_item(discord.ui.Button(label="TradingView", style=discord.ButtonStyle.url, url = url))
 
 class VolumeScreener(Screener):
+    """Screener subclass to post ununusal volume movers in the market"""
     def __init__(self, channel:discord.channel, market_period:str, unusual_volume:pd.DataFrame):
 
         # Set column map
@@ -1136,6 +1158,7 @@ class VolumeScreener(Screener):
         
     
     def format_columns(self):
+        """Extends the parent function to format *Volume, Market Cap, and % Change, and Relative Volume columns for screener"""
         super().format_columns()
 
         # Format all volume columns in df
@@ -1155,6 +1178,7 @@ class VolumeScreener(Screener):
 
     # Override
     def build_report_header(self):
+        """Overrides the parent function to generate custom header"""
         logger.debug("Building report header...")
         now = datetime.datetime.now(tz=date_utils.timezone())
         header = "### :rotating_light: Unusual Volume {} (Updated {})\n\n".format(
@@ -1164,6 +1188,7 @@ class VolumeScreener(Screener):
 
     # Override
     def build_report(self):
+        """Overrides the parent function to generate custom screener"""
         logger.debug("Building Volume Mover Report...")
         report = ""
         report += self.build_report_header()
@@ -1172,7 +1197,7 @@ class VolumeScreener(Screener):
     
     # Override
     async def send_report(self):
-        logger.debug("Sending Stock Report...")
+        """Overrides the parent function to add buttons to screener message"""
         message = await super().send_report(view=self.buttons)
         return message
     
@@ -1183,6 +1208,7 @@ class VolumeScreener(Screener):
             self.add_item(discord.ui.Button(label="TradingView", style=discord.ButtonStyle.url, url = "https://www.tradingview.com/markets/stocks-usa/market-movers-unusual-volume/"))
 
 class PopularityScreener(Screener):
+    """Screener subclass to post popularity rankings for stocks"""
     def __init__(self, channel:discord.channel, market_period:str, popular_stocks:pd.DataFrame):
         column_map = {'rank':'Rank',
                       'ticker':'Ticker',
@@ -1200,13 +1226,10 @@ class PopularityScreener(Screener):
         # Init buttons
         self.buttons = self.Buttons()
 
-    def format_columns(self):
-        super().format_columns()
-
-    
 
     # Override
     def build_report_header(self):
+        """Overrides the parent function to generate custom header"""
         logger.debug("Building report header...")
         now = datetime.datetime.now(tz=date_utils.timezone())
         header = "### :rotating_light: Popular Stocks {} (Updated {})\n\n".format(
@@ -1216,7 +1239,8 @@ class PopularityScreener(Screener):
 
     # Override
     def build_report(self):
-        logger.debug("Building Gainer Report...")
+        """Overrides the parent function to generate custom screener"""
+        logger.debug(f"Building '{self.screener_type}' screener...")
         report = ""
         report +=  self.build_report_header()
         report +=  self.build_build_df_table(df=self.data[:20])
@@ -1224,7 +1248,7 @@ class PopularityScreener(Screener):
     
     # Override
     async def send_report(self):
-        logger.debug("Sending Stock Report...")
+        """Overrides the parent function to add buttons to screener message"""
         message = await super().send_report(view=self.buttons)
         return message
 
