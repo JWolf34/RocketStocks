@@ -10,7 +10,6 @@ import datetime
 from stock_data import StockData
 from news import News
 import pandas as pd
-import datetime as dt
 import utils
 from utils import market_utils, date_utils, discord_utils
 import asyncio
@@ -22,6 +21,7 @@ import random
 logger = logging.getLogger(__name__)  
 
 class Reports(commands.Cog):
+    """Cog for managing Reports and Screeners to be posted to Discord"""
     def __init__(self, bot:commands.Bot, stock_data:StockData):
         self.bot = bot
         self.stock_data = stock_data
@@ -55,6 +55,7 @@ class Reports(commands.Cog):
     # Screener on most popular stocks across reddit every 30 minutes
     @tasks.loop(minutes=30)
     async def post_popularity_screener(self):
+        """Retrieve latest populrity, insert into database, and post screener"""
         # Fetch most popular stocks
         popular_stocks = self.stock_data.popularity.get_popular_stocks()
 
@@ -83,6 +84,7 @@ class Reports(commands.Cog):
     # Generate and send premarket gainer reports to the reports channel
     @tasks.loop(minutes=5)
     async def post_volume_screener(self):
+        """Retrieve latest ununusal volume dats and post screener"""
         market_period = self.mutils.get_market_period()
         if  (self.mutils.market_open_today() and market_period != 'EOD'):
 
@@ -108,6 +110,7 @@ class Reports(commands.Cog):
     # Generate and send premarket gainer reports to the reports channel
     @tasks.loop(minutes=5)
     async def post_gainer_screener(self):
+        """Retrieve latest gainers data based on market period and post screener"""
         market_period = self.mutils.get_market_period()
         if  (self.mutils.market_open_today() and market_period != 'EOD'):
 
@@ -155,6 +158,7 @@ class Reports(commands.Cog):
     @tasks.loop(time=datetime.time(hour=12, minute=30, second=0)) # time in UTC
     #@tasks.loop(minutes=5)
     async def post_earnings_spotlight(self):
+        """Find random ticker reporting earnings today and post spotlight report for said ticker"""
         if self.mutils.market_open_today():
 
             # Select random ticker from earnings today
@@ -179,6 +183,7 @@ class Reports(commands.Cog):
     @tasks.loop(time=datetime.time(hour=12, minute=0, second=0)) # time in UTC
     #@tasks.loop(minutes=5)
     async def post_weekly_earnings(self):
+        """Retrieve upcoming earnings data and post screener for earnings reporting this week"""
         today = datetime.datetime.now(tz=date_utils.timezone()).date()
         if today.weekday() == 0:
             upcoming_earnings = self.stock_data.earnings.fetch_upcoming_earnings()
@@ -187,7 +192,6 @@ class Reports(commands.Cog):
             report = WeeklyEarningsScreener(channel=self.screeners_channel,
                                             upcoming_earnings=upcoming_earnings,
                                             watchlist_tickers=watchlist_tickers)
-            logger.info(f"Posting weekly earnings report")
             await report.send_report()
 
 
@@ -195,6 +199,7 @@ class Reports(commands.Cog):
     @tasks.loop(time=datetime.time(hour=6, minute=0, second=0)) # time in UTC
     #@tasks.loop(minutes=5)
     async def update_earnings_calendar(self):
+        """Update guild Discord calendar with upcoming earnings report dates for tickers on watchlists"""
         logger.info("Creating calendar events for upcoming earnings dates")
         guild = self.bot.get_guild(utils.discord_utils.guild_id) # Update calendar in target guild
         tickers = self.stock_data.watchlists.get_tickers_from_all_watchlists(no_personal=False, no_systemGenerated=True) # Get all tickers except from system-generated watchlists
@@ -240,7 +245,6 @@ class Reports(commands.Cog):
                         description += f"**Last Year's Report Date:** {earnings_info['last_year_rpt_dt']}\n"
                         
                         # Create event
-                        channel = self.bot.get_channel(utils.discord_utils.alerts_channel_id)
                         event = await guild.create_scheduled_event(name=name, 
                                                                 description=description,
                                                                 start_time=start_time,
@@ -268,6 +272,7 @@ class Reports(commands.Cog):
         app_commands.Choice(name = "public", value = 'public')
     ])
     async def report_watchlist(self, interaction: discord.Interaction, watchlist: str, visibility: app_commands.Choice[str]):
+        """Generate and send Stock Reports for all tickers on the input watchlist"""
         await interaction.response.defer(ephemeral=True)
         logger.info(f"/report-watchlist function called by user '{interaction.user.name}'")
         
@@ -315,6 +320,7 @@ class Reports(commands.Cog):
         app_commands.Choice(name = "public", value = 'public')
     ])        
     async def report(self, interaction:discord.interactions, tickers: str, visibility: app_commands.Choice[str]):
+        """Generate and send Stock Reports for all valid tickers input by the user"""
         await interaction.response.defer(ephemeral=True)
         logger.info(f"/report function called by user {interaction.user.name}")
         
@@ -335,7 +341,7 @@ class Reports(commands.Cog):
             if len(invalid_tickers) > 0: # More than one invalid ticker input
                 follow_up += f" Invalid tickers: {", ".join(invalid_tickers)}"
         if len(tickers) == 0: # No valid tickers input
-            logger.info(f"No valid tickers input. No reports generated")
+            logger.info("No valid tickers input. No reports generated")
             follow_up = f" No valid tickers input: {", ".join(invalid_tickers)}"
         await interaction.followup.send(follow_up, ephemeral=True)
 
@@ -382,6 +388,7 @@ class Reports(commands.Cog):
     @app_commands.describe(sort_by = "Field by which to sort returned articles")
     @app_commands.autocomplete(sort_by=autocomplete_sortby,)
     async def news(self, interaction:discord.Interaction, query:str, sort_by:str = 'publishedAt'):
+        """Generate and send News Report for the input query"""
         logger.info("/news function called by user {}".format(interaction.user.name))
         news = News().get_news(query=query, sort_by=sort_by)
         report = NewsReport(news=news, query=query)
@@ -403,6 +410,7 @@ class Reports(commands.Cog):
         app_commands.Choice(name = "public", value = 'public')
     ])   
     async def popular_stocks(self, interaction:discord.Interaction, source:str,  visibility: app_commands.Choice[str]):
+        """Generate and send Popularity Report for tickers from the input source"""
         await interaction.response.defer(ephemeral=True)
         logger.info("/popular-stocks function called by user {}".format(interaction.user.name))
         logger.info(f"Latest popularity request from source '{source}'")
