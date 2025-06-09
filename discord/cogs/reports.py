@@ -187,7 +187,7 @@ class Reports(commands.Cog):
         today = datetime.datetime.now(tz=date_utils.timezone()).date()
         if today.weekday() == 0:
             upcoming_earnings = self.stock_data.earnings.fetch_upcoming_earnings()
-            watchlist_tickers = self.stock_data.watchlists.get_tickers_from_all_watchlists(no_personal=True,
+            watchlist_tickers = self.stock_data.watchlists.get_all_watchlist_tickers(no_personal=True,
                                                                                            no_systemGenerated=True)
             report = WeeklyEarningsScreener(channel=self.screeners_channel,
                                             upcoming_earnings=upcoming_earnings,
@@ -202,7 +202,7 @@ class Reports(commands.Cog):
         """Update guild Discord calendar with upcoming earnings report dates for tickers on watchlists"""
         logger.info("Creating calendar events for upcoming earnings dates")
         guild = self.bot.get_guild(utils.discord_utils.guild_id) # Update calendar in target guild
-        tickers = self.stock_data.watchlists.get_tickers_from_all_watchlists(no_personal=False, no_systemGenerated=True) # Get all tickers except from system-generated watchlists
+        tickers = self.stock_data.watchlists.get_all_watchlist_tickers(no_personal=False, no_systemGenerated=True) # Get all tickers except from system-generated watchlists
         logger.debug(f"Identified {len(tickers)} watchlist tickers to create earnings events for")
 
         curr_events = await guild.fetch_scheduled_events()
@@ -289,7 +289,7 @@ class Reports(commands.Cog):
             return
         
         # Identify tickers in watchlist and generate reports
-        tickers = self.stock_data.watchlists.get_tickers_from_watchlist(watchlist_id)
+        tickers = self.stock_data.watchlists.get_watchlist_tickers(watchlist_id)
         logger.info(f"Reports requested for watchlist '{watchlist}' with tickers {tickers}")
 
         if not tickers:

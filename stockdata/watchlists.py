@@ -12,7 +12,7 @@ class Watchlists(object):
         self.db_fields = ['id', 'tickers', 'systemgenerated']
         
     # Return tickers from watchlist - global by default, personal if chosen by user
-    def get_tickers_from_watchlist(self, watchlist_id):
+    def get_watchlist_tickers(self, watchlist_id):
         logger.debug("Fetching tickers from watchlist with ID '{}'".format(watchlist_id))
         
         tickers = self.db.select(table='watchlists',
@@ -26,7 +26,7 @@ class Watchlists(object):
        
 
     # Return tickers from all available watchlists
-    def get_tickers_from_all_watchlists(self, no_personal=True, no_systemGenerated=True):
+    def get_all_watchlist_tickers(self, no_personal=True, no_systemGenerated=True):
         logger.debug("Fetching tickers from all available watchlists (besides personal)")
         
         watchlists = self.db.select(table='watchlists',
