@@ -432,6 +432,7 @@ class Reports(commands.Cog):
 ##################
 
 class Report(object):
+    """Post information about a stock or stocks to the input Discord channel"""
     def __init__(self, channel:discord.channel, **kwargs):
        
         self.channel = channel
@@ -481,7 +482,7 @@ class Report(object):
                         'thin_thick_rounded':PresetStyle.thin_thick_rounded}
         
     def write_df_to_file(self, df:pd.DataFrame, filepath:str):
-
+        """Write input DataFrame to CSV at filepath"""
         # Ensure attachments path exists
         utils.validate_path(utils.datapaths.attachments_path)
         df.to_csv(filepath, index=False)
@@ -510,7 +511,6 @@ class Report(object):
         adjust = 'left' if adjust !='right' else adjust
 
         # Calculate spacing
-        length = [len(key) for key in set().union(header, body)]
         spacing = max([len(key) for key in set().union(header, body)]) + 1
 
         # Build table
@@ -535,6 +535,7 @@ class Report(object):
 
     # Report Header
     def build_report_header(self):
+        """Return message content for report header"""
         logger.debug("Building report header...")
         # Append ticker name, today's date, and external links to message
         header = "# " + self.ticker + " Report " + date_utils.format_date_mdy(datetime.datetime.now(tz=date_utils.timezone()).date()) + "\n"
@@ -542,6 +543,12 @@ class Report(object):
 
     # Ticker Info
     def build_ticker_info(self):
+        """Return message content with information about the report's ticker
+        
+        Requires:
+            - ticker info
+            - quote 
+        """
         logger.debug("Building ticker info...")
 
         message = ''
@@ -589,20 +596,22 @@ class Report(object):
                 
         return message
 
-    #TODO
     def build_todays_sec_filings(self):
+        """Return message content containing SEC filings for the stock released today
+        
+        Requires:
+            - recent_sec_filings
+            - ticker / ticker_info
+        """
         logger.debug("Building today's SEC filings...")
         message = "## Today's SEC Filings\n\n"
-        filings = sd.SEC().get_filings_from_today(ticker=self.ticker)
-        for index, filing in filings.iterrows():
+
+        # Filter recent filings to only get filings from today
+        today_string = datetime.datetime.today().strftime("%Y-%m-%d")
+        todays_filings = self.recent_sec_filings[self.recent_sec_filings['filingDate'] == today_string]
+        for index, filing in todays_filings.iterrows():
             message += f"[Form {filing['form']} - {filing['filingDate']}]({sd.SEC().get_link_to_filing(ticker=self.ticker, filing=filing)})\n"
         return message
-
-
-
-
-        
-
 
     def build_earnings_date(self):
         """Return message content with the date and release time of the stock's next earnings report
@@ -688,12 +697,12 @@ class Report(object):
             message += "No historical earnings found for this ticker"
         return message + "\n"
 
-    # TODO
     def build_performance(self):
-        """Return message content with stock over recent weeks and months
+        """Return message content with stock performance over recent weeks and months
         
         Requires:
             - daily_price_history
+            - quote
         """
         logger.debug("Building performance...")
         message = "## Performance\n\n"
@@ -763,9 +772,8 @@ class Report(object):
         message += '\n'
         return message 
 
-    # TODO
     def build_fundamentals(self):
-        """Return message content with stock over recent weeks and months
+        """Return message content with stock fundamental data 
         
         Requires:
             - company facts
@@ -790,8 +798,8 @@ class Report(object):
         # Include float? Short interest? Shortable and hard to borrow. Dividends?
         table_body['EPS'] = f"{'{:.2f}'.format(self.quote['fundamental']['eps'])}"
         table_body['P/E Ratio'] = f"{'{:.2f}'.format(self.quote['fundamental']['peRatio'])}"
-        table_body['Shortable'] = self.quote['reference']['isShortable']
-        table_body['HTB'] = self.quote['reference']['isHardToBorrow']
+        table_body['Shortable'] = "Yes" if self.quote['reference']['isShortable'] else "No"
+        table_body['HTB'] = "Yes" if self.quote['reference']['isHardToBorrow'] else "No"
 
         message += self.build_stats_table(header={},
                                           body=table_body,
@@ -858,13 +866,15 @@ class Report(object):
         return message
 
     def build_report(self):
+        """Return string populated with content from report functions"""
         report = ''
         report += self.build_report_header()
         return report   
 
     async def send_report(self, interaction:discord.Interaction = None, visibility:str = "public", files=None, view=None):
+        """Send report to report's channel, adding files and vuttons as needed"""
         self.message = self.build_report() + "\n\n"
-        if visibility == 'private' and interaction is not None:
+        if visibility == 'private' and interaction:
             message = await interaction.user.send(self.message, files=files, view=view)
             return message
         else:
@@ -960,11 +970,14 @@ class Screener(Report):
             logger.debug(f"Existing screener '{self.screener_type}' found with ID {message_id}")
             curr_message = await self.channel.fetch_message(message_id)
             message_create_date = curr_message.created_at.astimezone(date_utils.timezone()).date()
+
+            # Existing message is old - create new message
             if message_create_date < today.date():
                 message = await self.channel.send(self.message, view=view, files=files)
                 logger.info(f"Posted new '{self.screener_type}' screener for today")
                 self.dutils.update_screener_message_id(message_id=message.id, screener_type=self.screener_type)
                 return message
+            # Update existing message
             else:
                 await curr_message.edit(content=self.message)
                 logger.info(f"Updated '{self.screener_type}' screener")
@@ -978,6 +991,7 @@ class Screener(Report):
             return message
 
 class StockReport(Report):
+    """Report subclass containing information on the report's ticker"""
     
     def __init__(self, channel:discord.channel, ticker_info:dict, daily_price_history:pd.DataFrame, popularity:pd.DataFrame, 
                  recent_sec_filings:pd.DataFrame, historical_earnings:pd.DataFrame, next_earnings_info:dict, quote:dict,
@@ -995,6 +1009,7 @@ class StockReport(Report):
         
     # Override
     def build_report(self):
+        """Overrides parent class to generate custom report"""
         logger.debug("Building Stock Report...")
         report = ''
         report += self.build_report_header()
@@ -1010,7 +1025,7 @@ class StockReport(Report):
 
     # Override
     async def send_report(self, interaction: discord.Interaction, visibility:str):
-        logger.debug("Sending Stock Report...")
+        """Overrides parent class with interaction, vsibility, and, view parameters depending on how the report was generated"""
         message = await super().send_report(interaction=interaction, visibility=visibility, view=self.buttons)
         return message
 
@@ -1094,7 +1109,7 @@ class GainerScreener(Screener):
     # Override
     def build_report_header(self):
         """Overrides the parent function to generate custom header"""
-        logger.debug("Building report header...")
+        logger.debug(f"Building '{self.screener_type}' screener header...")
         now = datetime.datetime.now(tz=date_utils.timezone())
         header = "### :rotating_light: {} Gainers {} (Updated {})\n\n".format(
                     "Pre-market" if self.market_period == 'premarket'
@@ -1107,7 +1122,7 @@ class GainerScreener(Screener):
 
     # Override
     def build_report(self):
-        """Overrides the parent function to generate report"""
+        """Overrides the parent function to generate custom screener"""
         logger.debug(f"Building '{self.screener_type}' screener...")
         report = ""
         report +=  self.build_report_header()
@@ -1179,7 +1194,7 @@ class VolumeScreener(Screener):
     # Override
     def build_report_header(self):
         """Overrides the parent function to generate custom header"""
-        logger.debug("Building report header...")
+        logger.debug(f"Building '{self.screener_type}' screener header...")
         now = datetime.datetime.now(tz=date_utils.timezone())
         header = "### :rotating_light: Unusual Volume {} (Updated {})\n\n".format(
                     now.date().strftime("%m/%d/%Y"),
@@ -1189,7 +1204,7 @@ class VolumeScreener(Screener):
     # Override
     def build_report(self):
         """Overrides the parent function to generate custom screener"""
-        logger.debug("Building Volume Mover Report...")
+        logger.debug(f"Building '{self.screener_type}' screener...")
         report = ""
         report += self.build_report_header()
         report += self.build_build_df_table(self.data[:12])
@@ -1230,7 +1245,7 @@ class PopularityScreener(Screener):
     # Override
     def build_report_header(self):
         """Overrides the parent function to generate custom header"""
-        logger.debug("Building report header...")
+        logger.debug(f"Building '{self.screener_type}' screener header...")
         now = datetime.datetime.now(tz=date_utils.timezone())
         header = "### :rotating_light: Popular Stocks {} (Updated {})\n\n".format(
                     now.date().strftime("%m/%d/%Y"),
@@ -1261,6 +1276,7 @@ class PopularityScreener(Screener):
         
 
 class NewsReport(Report):
+    """Report subclass to post news articles about the input query"""
     def __init__(self, news, query):
         # No channel for this report so no need to init super
         self.news = news
@@ -1268,12 +1284,14 @@ class NewsReport(Report):
 
     # Override
     def build_report_header(self):
-        logger.debug("Building report header...")
+        """Overrides the parent function to generate custom header"""
+        logger.debug("Building News Report header...")
         # Append ticker name, today's date, and external links to message
         header = f"## News articles for '{self.query}'\n"
         return header + "\n"
 
     def build_news(self):
+        """Return message content with up to the top 10 news articles hyperlinked"""
         logger.debug("Building news...")
         report = ''
         for article in self.news['articles'][:10]:
@@ -1286,6 +1304,7 @@ class NewsReport(Report):
         return report
 
     def build_report(self):
+        """Overrides the parent function to generate custom report"""
         logger.debug("Building News Report...")
         report = ''
         report += self.build_report_header()
@@ -1293,16 +1312,16 @@ class NewsReport(Report):
         return report + '\n'  
 
     # Override
-    async def send_report(self, interaction):
-        self.message = self.build_report() + "\n\n"
+    async def send_report(self, interaction:discord.Interaction):
+        """Override parent function to always post report as response to interation"""
         logger.debug("Sending News Report...")
         await interaction.response.send_message(self.message)
 
 # TODO
 class PopularityReport(Report):
+    """Report subclass for posting the most recent popularity ranking for stocks in the input filter"""
     def __init__(self, channel:discord.channel, popular_stocks:pd.DataFrame, filter:str):
-
-        
+        super().__init__(channel=channel)
         self.popular_stocks = popular_stocks
         self.filter = filter
         self.column_map = {'rank':'Rank',
@@ -1319,16 +1338,19 @@ class PopularityReport(Report):
         
         
     def format_columns(self):
+        """Format all columns in self.data per column map - rename and drop columns accordingly"""
         # Drop all unwanted columns and map column names
         self.popular_stocks = self.popular_stocks.filter(list(self.column_map.keys()))
         self.popular_stocks = self.popular_stocks.rename(columns=self.column_map)
 
     # Override
     def build_report_header(self):
-        logger.debug("Building report header...")
+        """Overrides the parent function to generate custom header"""
+        logger.debug("Building Popularity Report header...")
         return f"# Most Popular Stocks ({self.filter}) {datetime.datetime.today().strftime("%m/%d/%Y")}\n\n"
 
     def build_report(self):
+        """Overrides the parent function to generate custom report"""
         logger.debug("Building Popularity Report...")
         report = ''
         report += self.build_report_header()
@@ -1336,18 +1358,9 @@ class PopularityReport(Report):
         return report
 
     async def send_report(self, interaction:discord.Interaction = None, visibility:str ="public"):
-        logger.debug("Sending Popularity Report...")
-        self.message = self.build_report()
-        if interaction is not None:
-            if visibility == "private":
-                message = await interaction.user.send(self.message, files=self.files, view=self.buttons)
-                return message
-            else:
-                message = await self.channel.send(self.message, files=self.files, view=self.buttons)
-                return message
-        else:
-            message = await self.channel.send(self.message, files=self.files, view=self.buttons)
-            return message
+        """Override the parent function with interaction and visibility parameters"""
+        message = await super().send_report(interaction=interaction, visibility=visibility)
+        return message
 
     # Override
     class Buttons(discord.ui.View):
