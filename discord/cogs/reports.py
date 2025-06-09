@@ -1031,6 +1031,14 @@ class StockReport(Report):
 
     # Override
     class Buttons(discord.ui.View):
+            """Custom buttons for Stock Report:
+            - Google shortcut
+            - StockInvest shortcut
+            - Finviz shortcut
+            - Yahoo Finance shortcut
+            - "Generate chart" button
+            - "Get News" button
+            """
             def __init__(self, ticker : str):
                 super().__init__(timeout=None)
                 self.ticker = ticker
@@ -1137,6 +1145,9 @@ class GainerScreener(Screener):
     
     # Override
     class Buttons(discord.ui.View):
+        """Custom buttons for Gainer Screener:
+            - TradingView shortcut based on market period
+            """
         def __init__(self, market_period):
             super().__init__(timeout=None)
             if market_period == 'premarket':
@@ -1218,6 +1229,9 @@ class VolumeScreener(Screener):
     
     # Override
     class Buttons(discord.ui.View):
+        """Custom buttons for Gainer Screener:
+            - TradingView shortcut
+            """
         def __init__(self):
             super().__init__(timeout=None)
             self.add_item(discord.ui.Button(label="TradingView", style=discord.ButtonStyle.url, url = "https://www.tradingview.com/markets/stocks-usa/market-movers-unusual-volume/"))
@@ -1269,6 +1283,9 @@ class PopularityScreener(Screener):
 
     # Override
     class Buttons(discord.ui.View):
+        """Custom buttons for Popularity Screener:
+            - ApeWisdom
+            """
         def __init__(self):
             super().__init__(timeout=None)
             self.add_item(discord.ui.Button(label="ApeWisdom", style=discord.ButtonStyle.url, url = "https://apewisdom.io/"))
@@ -1364,11 +1381,15 @@ class PopularityReport(Report):
 
     # Override
     class Buttons(discord.ui.View):
+        """Custom buttons for Popuarlity Report:
+        - ApeWisdom shortcut
+        """
         def __init__(self):
             super().__init__(timeout=None)
             self.add_item(discord.ui.Button(label="ApeWisdom", style=discord.ButtonStyle.url, url = "https://apewisdom.io/"))
 
 class EarningsSpotlightReport(Report):
+    """Report subclass to post spotlight on random stock reporting earnings today"""
     def __init__(self, channel:discord.channel, ticker_info:pd.DataFrame, next_earnings_info:pd.DataFrame,
                  historical_earnings:pd.DataFrame, quote:dict):
         super().__init__(channel=channel,
@@ -1380,10 +1401,12 @@ class EarningsSpotlightReport(Report):
         
 
     def build_report_header(self):
-        logger.debug("Building report header...")
+        """Overrides the parent function to generate custom header"""
+        logger.debug("Building Earnings Spotlight Report header...")
         return f"# :bulb: Earnings Spotight: {self.ticker}\n\n"
 
     def build_report(self):
+        """Overrides the parent function to generate custom report"""
         logger.debug("Building Earnings Spotlight Report...")
         report = ""
         report += self.build_report_header()
@@ -1396,34 +1419,12 @@ class EarningsSpotlightReport(Report):
         return report
     
     async def send_report(self):
-        logger.debug("Sending Earnings Spotlight Report...")
+        """Overrides parent class to add buttons"""
         message = await super().send_report(view=self.buttons)
         return message
 
-
-    # Override
-    class Buttons(discord.ui.View):
-            def __init__(self, ticker : str):
-                super().__init__(timeout=None)
-                self.ticker = ticker
-                self.add_item(discord.ui.Button(label="Google it", style=discord.ButtonStyle.url, url = "https://www.google.com/search?q={}".format(self.ticker)))
-                self.add_item(discord.ui.Button(label="StockInvest", style=discord.ButtonStyle.url, url = "https://stockinvest.us/stock/{}".format(self.ticker)))
-                self.add_item(discord.ui.Button(label="FinViz", style=discord.ButtonStyle.url, url = "https://finviz.com/quote.ashx?t={}".format(self.ticker)))
-                self.add_item(discord.ui.Button(label="Yahoo! Finance", style=discord.ButtonStyle.url, url = "https://finance.yahoo.com/quote/{}".format(self.ticker)))
-
-                
-            @discord.ui.button(label="Generate chart", style=discord.ButtonStyle.primary)
-            async def generate_chart(self, interaction:discord.Interaction, button:discord.ui.Button,):
-                await interaction.response.send_message("Generate chart!")
-
-            @discord.ui.button(label="Get news", style=discord.ButtonStyle.primary)
-            async def get_news(self, interaction:discord.Interaction, button:discord.ui.Button):
-                news = News().get_news(query=self.ticker)
-                news_report = NewsReport(news=news, query=self.ticker)
-                await news_report.send_report(interaction)
-                await interaction.response.send_message(f"Fetched news for {self.ticker}!", ephemeral=True)
-
 class WeeklyEarningsScreener(Screener):
+    """Screener subclass for posting upcoming week's earnings reports"""
     def __init__(self, channel:discord.channel, upcoming_earnings:pd.DataFrame, watchlist_tickers:list):
 
         self.today = datetime.datetime.now(tz=date_utils.timezone()).date()
@@ -1449,32 +1450,38 @@ class WeeklyEarningsScreener(Screener):
         self.files = [discord.File(self.filepath)]
 
     def build_report_header(self):
-        logger.debug("Building report header...")
+        """Overrides the parent function to generate custom header"""
+        logger.debug(f"Building '{self.screener_type}' screener header...")
         return f"# Earnings Releasing the Week of {date_utils.format_date_mdy(self.today)}\n\n"
 
     def build_upcoming_earnings(self):
+        """Return message content with table of upcoming earnings reports divided by day of the week"""
         logger.debug("Identifying upcoming earnings for tickers that exist on user watchlists")
         watchlist_earnings = {}
 
+        # Screener created on Monday - iterate Monday through Friday and find
+        # upcoming earnings for tickers on watchlists
         for i in range(0, 5):
             date = self.today + datetime.timedelta(days=i)
             tickers = self.data[self.data['Date'] == date]['Ticker'].values
             if tickers.any(): # np array
                 watchlist_earnings[date.strftime('%A')] = [ticker for ticker in tickers if ticker in self.watchlist_tickers]
 
+        # Format DataFrame and build table
         watchlist_earnings_df = pd.DataFrame(dict([(date, pd.Series(tickers)) for date, tickers in watchlist_earnings.items()])).fillna(' ')
         message = self.build_build_df_table(df=watchlist_earnings_df, style='borderless')
         return message
 
     def build_report(self):
-        logger.debug("Building Upcoming Earnings Report...")
+        """Overrides the parent function to generate custom screener"""
+        logger.debug(f"Building '{self.screener_type}' screener...")
         report = ""
         report += self.build_report_header()
         report += self.build_upcoming_earnings()
         return report
 
     async def send_report(self):
-        logger.debug("Sending Upcoming Earnings Report...")
+        """Overrides parent function with files parameter"""
         message = await super().send_report(files=[self.files])
         return message
 
