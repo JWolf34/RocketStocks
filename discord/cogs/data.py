@@ -76,7 +76,7 @@ class Data(commands.Cog):
             logger.exception("Failed to fetch data file with following exception:\n{}".format(e))
             await interaction.followup.send("Failed to fetch data files. Please ensure your parameters are valid.")
     
-    @app_commands.command(name = "financials", description= "Fetch financial reports of the specified tickers ",)
+    @app_commands.command(name = "financials", description= "Fetch financial reports of the specified tickers",)
     @app_commands.describe(tickers = "Tickers to return financials for (separated by spaces)")       
     async def financials(self, interaction: discord.interactions, tickers: str):
         await interaction.response.defer(ephemeral=True)
@@ -175,7 +175,7 @@ class Data(commands.Cog):
             follow_up = f"No valid tickers input: {", ".join(invalid_tickers)}"
         await interaction.followup.send(follow_up, ephemeral=True)
     
-    @app_commands.command(name = "form", description= "Returns links to latest form of requested type",)
+    @app_commands.command(name = "form", description= "Returns links to latest SEC form of requested type",)
     @app_commands.describe(tickers = "Tickers to return SEC forms for (separated by spaces)")
     @app_commands.describe(form = "The form type to get a link to (10-K, 10-Q, 8-K, etc)")
     async def form(self, interaction: discord.Interaction, tickers: str, form:str):

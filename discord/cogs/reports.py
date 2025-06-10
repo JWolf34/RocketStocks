@@ -268,7 +268,7 @@ class Reports(commands.Cog):
                     pass
         logger.info("Completed updating earnings calendar")
 
-    @app_commands.command(name = "report-watchlist", description= "Post analysis of a given watchlist (use /fetch-reports for individual or non-watchlist stocks)",)
+    @app_commands.command(name = "report-watchlist", description= "Post stock reports on all tickers on a watchlist (use /reports for individual or non-watchlist stocks)",)
     @app_commands.describe(watchlist = "Which watchlist to fetch reports for")
     @app_commands.autocomplete(watchlist=get_watchlist_options)
     @app_commands.describe(visibility = "'private' to send to DMs, 'public' to send to the channel")
@@ -317,7 +317,7 @@ class Reports(commands.Cog):
             await interaction.followup.send(follow_up, ephemeral=True)
 
 
-    @app_commands.command(name = "report", description= "Fetch analysis reports of the specified tickers (use /run-reports to analyze a watchlist)",)
+    @app_commands.command(name = "report", description= "Fetch stock reports of the specified tickers (use /report-watchlist to create reports on a watchlist)",)
     @app_commands.describe(tickers = "Tickers to post reports for (separated by spaces)")
     @app_commands.describe(visibility = "'private' to send to DMs, 'public' to send to the channel")
     @app_commands.choices(visibility =[
