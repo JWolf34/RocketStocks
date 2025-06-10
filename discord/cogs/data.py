@@ -175,7 +175,7 @@ class Data(commands.Cog):
             follow_up = f"No valid tickers input: {", ".join(invalid_tickers)}"
         await interaction.followup.send(follow_up, ephemeral=True)
     
-    @app_commands.command(name = "form", description= "Returns links to latest SEC form of requested type",)
+    @app_commands.command(name = "form", description= "Returns link to latest SEC form of requested type",)
     @app_commands.describe(tickers = "Tickers to return SEC forms for (separated by spaces)")
     @app_commands.describe(form = "The form type to get a link to (10-K, 10-Q, 8-K, etc)")
     async def form(self, interaction: discord.Interaction, tickers: str, form:str):
@@ -203,7 +203,7 @@ class Data(commands.Cog):
         await interaction.followup.send(message)
         logger.info(f"Form {form} provided for tickers {tickers}")
     
-    @app_commands.command(name="fundamentals", description="Return JSON files of fundamental data for desired tickers")
+    @app_commands.command(name="fundamentals", description="Return fundamental data for desired tickers in JSON format")
     @app_commands.describe(tickers = "Tickers to return SEC forms for (separated by spaces)")
     async def fundamentals(self, interaction: discord.Interaction, tickers: str):
         await interaction.response.defer(ephemeral=True)
@@ -237,7 +237,7 @@ class Data(commands.Cog):
             follow_up = f"No valid tickers input: {", ".join(invalid_tickers)}"
         await interaction.followup.send(follow_up, ephemeral=True)
 
-    @app_commands.command(name="options", description="Return JSON files of fundamental data for desired tickers")
+    @app_commands.command(name="options", description="Return options chains for desired tickers in JSON format")
     @app_commands.describe(tickers = "Tickers to return SEC forms for (separated by spaces)")
     async def options(self, interaction: discord.Interaction, tickers: str):
         await interaction.response.defer(ephemeral=True)
