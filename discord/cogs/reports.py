@@ -350,31 +350,6 @@ class Reports(commands.Cog):
             follow_up = f" No valid tickers input: {", ".join(invalid_tickers)}"
         await interaction.followup.send(follow_up, ephemeral=True)
 
-
-    async def build_stock_report(self, ticker:str):
-        """Builder for StockReport class, easy to call for functions like 'report' and 'report_watchlist'"""
-        # Collect data to create Stock Report
-        ticker_info = self.stock_data.get_ticker_info(ticker=ticker)
-        daily_price_history = self.stock_data.fetch_daily_price_history(ticker=ticker)
-        popularity = self.stock_data.fetch_popularity(ticker=ticker)
-        recent_sec_filings = self.stock_data.sec.get_recent_filings(ticker=ticker)
-        historical_earnings = self.stock_data.earnings.get_historical_earnings(ticker=ticker)
-        next_earnings_info = self.stock_data.earnings.get_next_earnings_info(ticker=ticker)
-        quote = await self.stock_data.schwab.get_quote(ticker=ticker)
-        company_facts = self.stock_data.sec.get_company_facts(ticker=ticker)
-
-        # Generate report 
-        report = StockReport(channel=self.reports_channel,
-                                ticker_info=ticker_info,
-                                daily_price_history=daily_price_history,
-                                popularity=popularity,
-                                recent_sec_filings=recent_sec_filings,
-                                historical_earnings=historical_earnings,
-                                next_earnings_info=next_earnings_info,
-                                quote=quote,
-                                company_facts=company_facts)
-        return report
-
     # Autocomplete functions
     async def autocomplete_searchin(self, interaction:discord.Interaction, current:str):
         return [
@@ -439,6 +414,58 @@ class Reports(commands.Cog):
             # No popular stocks found
             logger.info(f"No popular stocks found with filter '{source}'")
             await interaction.followup.send(f"No popular stocks found with filter '{source}'", ephemeral=True)
+
+    ####################
+    # Report Factories #
+    ####################
+
+    async def build_stock_report(self, ticker:str):
+        """Builder for StockReport class, easy to call for functions like 'report' and 'report_watchlist'"""
+        # Collect data to create Stock Report
+        ticker_info = self.stock_data.get_ticker_info(ticker=ticker)
+        daily_price_history = self.stock_data.fetch_daily_price_history(ticker=ticker)
+        popularity = self.stock_data.fetch_popularity(ticker=ticker)
+        recent_sec_filings = self.stock_data.sec.get_recent_filings(ticker=ticker)
+        historical_earnings = self.stock_data.earnings.get_historical_earnings(ticker=ticker)
+        next_earnings_info = self.stock_data.earnings.get_next_earnings_info(ticker=ticker)
+        quote = await self.stock_data.schwab.get_quote(ticker=ticker)
+        company_facts = self.stock_data.sec.get_company_facts(ticker=ticker)
+
+        # Generate report 
+        report = StockReport(channel=self.reports_channel,
+                                ticker_info=ticker_info,
+                                daily_price_history=daily_price_history,
+                                popularity=popularity,
+                                recent_sec_filings=recent_sec_filings,
+                                historical_earnings=historical_earnings,
+                                next_earnings_info=next_earnings_info,
+                                quote=quote,
+                                company_facts=company_facts)
+        return report
+    
+    async def build_stock_report(self, ticker:str):
+        """Builder for StockReport class, easy to call for functions like 'report' and 'report_watchlist'"""
+        # Collect data to create Stock Report
+        ticker_info = self.stock_data.get_ticker_info(ticker=ticker)
+        daily_price_history = self.stock_data.fetch_daily_price_history(ticker=ticker)
+        popularity = self.stock_data.fetch_popularity(ticker=ticker)
+        recent_sec_filings = self.stock_data.sec.get_recent_filings(ticker=ticker)
+        historical_earnings = self.stock_data.earnings.get_historical_earnings(ticker=ticker)
+        next_earnings_info = self.stock_data.earnings.get_next_earnings_info(ticker=ticker)
+        quote = await self.stock_data.schwab.get_quote(ticker=ticker)
+        company_facts = self.stock_data.sec.get_company_facts(ticker=ticker)
+
+        # Generate report 
+        report = StockReport(channel=self.reports_channel,
+                                ticker_info=ticker_info,
+                                daily_price_history=daily_price_history,
+                                popularity=popularity,
+                                recent_sec_filings=recent_sec_filings,
+                                historical_earnings=historical_earnings,
+                                next_earnings_info=next_earnings_info,
+                                quote=quote,
+                                company_facts=company_facts)
+        return report
 
 ##################
 # Report Classes #

@@ -8,7 +8,7 @@ import logging
 logger = logging.getLogger(__name__)
 
 class Utils(commands.Cog):
-    def __init__(self, bot):
+    def __init__(self, bot:commands.Bot):
         self.bot = bot
 
     @commands.Cog.listener()
@@ -16,9 +16,9 @@ class Utils(commands.Cog):
         logger.info(f"Cog {__name__} loaded!")
 
     @app_commands.command(name='sync', description='Sync bot commands to the server')
-    @commands.is_owner()
+    @app_commands.checks.has_permissions(administrator=True)
     async def sync(self, interaction:discord.Interaction):
-        logger.info("/help function called by user {}".format(interaction.user.name))
+        logger.info("/sync command called by user {}".format(interaction.user.name))
         await self.bot.tree.sync()
         await interaction.response.send_message("Bot commands synced!", ephemeral=True)
         logger.info("Bot commands synced!")
@@ -26,28 +26,21 @@ class Utils(commands.Cog):
     @app_commands.command(name = "help", description= "Show help on the bot's commands",)
     async def help(self, interaction: discord.Interaction):
         logger.info("/help function called by user {}".format(interaction.user.name))
-        embed = discord.Embed()
-        embed.title = 'RocketStocks Help'
-        for command in client.tree.get_commands():
-            embed.add_field(name=command.name, value=command.description)
-        await interaction.response.send_message(embed=embed)
+        embeds = []
+        for cog_name, cog in self.bot.cogs.items():
+            commands = cog.get_app_commands()
+            if commands:
+                embed = discord.Embed()
+                embed.title = cog_name
+                for command in commands:
+                    if not command.checks:
+                        embed.add_field(name=f"/{command.name}", value=command.description)
+                
+                if embed.fields:
+                    embeds.append(embed)
+        await interaction.response.send_message(embeds=embeds)
 
-    @app_commands.command(name='force-update-5m-data', description="Forcefully update the 5m price history db table")
-    @commands.is_owner()
-    async def force_update_5m_data(self, interaction:discord.Interaction):
-        await interaction.response.defer(ephemeral=True)
-        logger.info("/force-update-5m-data function called by user {}".format(interaction.user.name))
-        sd.StockData.update_5m_price_history(override_schedule=True)
-        await interaction.followup.send("5m price history table updated")
-
-    @app_commands.command(name='force-update-daily-data', description="Forcefully update the 5m price history db table")
-    @commands.is_owner()
-    async def force_update_daily_data(self, interaction:discord.Interaction):
-        await interaction.response.defer(ephemeral=True)
-        logger.info("/force-update-daily-data function called by user {}".format(interaction.user.name))
-        sd.StockData.update_daily_price_history()
-        await interaction.followup.send("Daily price history table updated")
-        
+    
 
 
 
