@@ -170,12 +170,14 @@ class Reports(commands.Cog):
 
             # Get ticker info, earnings info, quote for spotlight report
             ticker_info = self.stock_data.get_ticker_info(ticker=spotlight_ticker)
+            daily_price_history = self.stock_data.fetch_daily_price_history(ticker=spotlight_ticker)
             next_earnings_info = self.stock_data.earnings.get_next_earnings_info(ticker=spotlight_ticker)
             historical_earnings = self.stock_data.earnings.get_historical_earnings(ticker=spotlight_ticker)
             quote = await self.stock_data.schwab.get_quote(ticker=spotlight_ticker)
 
             report = EarningsSpotlightReport(channel = self.reports_channel,
                                              ticker_info=ticker_info,
+                                             daily_price_history=daily_price_history,
                                              next_earnings_info=next_earnings_info,
                                              historical_earnings=historical_earnings,
                                              quote=quote)
