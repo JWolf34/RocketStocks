@@ -41,6 +41,10 @@ def get_env(var_name:str):
     else:
         logger.error(f"Failed to fetch environment variable '{var_name}'")
         return variable
+    
+def ticker_string(tickers:list):
+    """Return string of comma-separated tickers encased in a code snippet"""
+    return f"`{", ".join(tickers)}`"
 
 
 class config:

@@ -28,7 +28,7 @@
             "level": "DEBUG",
             "formatter": "basic",
             "filename": "logs/rocketstocks.log",
-            "maxBytes": 20000000,
+            "maxBytes": 10000000,
             "backupCount": 10,
             "filters": ["moduleFilter"]
         }

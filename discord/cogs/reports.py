@@ -532,7 +532,7 @@ class Report(object):
     # Report Builder Functions #
     ############################
 
-    def build_build_df_table(self, df:pd.DataFrame, style='thick_compact'):
+    def build_df_table(self, df:pd.DataFrame, style='thick_compact'):
         """Return input dataframe in ascii table format for cleanly displaying content in Discord messgaes"""
         logger.debug(f"Building table of shape {df.shape} with headers {df.columns.to_list()} and of style '{style}'")
         table_style = self.table_styles.get(style, PresetStyle.double_thin_compact)
@@ -731,7 +731,7 @@ class Report(object):
             recent_earnings = recent_earnings.rename(columns=column_map)
             recent_earnings['Date Reported'] = recent_earnings['Date Reported'].apply(lambda x: date_utils.format_date_mdy(x))
             recent_earnings['Surprise'] =  recent_earnings['Surprise'].apply(lambda x: f"{x}%")
-            message += self.build_build_df_table(df=recent_earnings, style='borderless')
+            message += self.build_df_table(df=recent_earnings, style='borderless')
         
         else:
             message += "No historical earnings found for this ticker"
@@ -757,7 +757,7 @@ class Report(object):
             # Get highest popularity rank across select intervals
             table_body = {}
             interval_map = {"1D":1,
-                            "5D":7,
+                            "5D":5,
                             "1M":30,
                             "3M":90,
                             "6M":180}
@@ -766,7 +766,7 @@ class Report(object):
             for label, interval in interval_map.items():
                 # Find max rank within defined interval
                 interval_date = today - datetime.timedelta(days=interval)
-                while interval_date.weekday() > 5:
+                while interval_date.weekday() > 4:
                     interval_date = interval_date - datetime.timedelta(days=1)
                 
                 interval_close = self.daily_price_history[self.daily_price_history['date'] == interval_date]['close']
@@ -808,7 +808,7 @@ class Report(object):
                  'Close': ["{:.2f}".format(self.quote['regular']['regularMarketLastPrice'])],
                  'Volume': [self.format_large_num(self.quote['quote']['totalVolume'])]
                 }
-        message += self.build_build_df_table(df=pd.DataFrame(OHLCV), style='borderless')
+        message += self.build_df_table(df=pd.DataFrame(OHLCV), style='borderless')
         message += '\n'
         return message 
 
@@ -1176,7 +1176,7 @@ class GainerScreener(Screener):
         logger.debug(f"Building '{self.screener_type}' screener...")
         report = ""
         report +=  self.build_report_header()
-        report +=  self.build_build_df_table(self.data[:15])
+        report +=  self.build_df_table(self.data[:15])
         return report
     
     # Override
@@ -1260,7 +1260,7 @@ class VolumeScreener(Screener):
         logger.debug(f"Building '{self.screener_type}' screener...")
         report = ""
         report += self.build_report_header()
-        report += self.build_build_df_table(self.data[:12])
+        report += self.build_df_table(self.data[:12])
         return report
     
     # Override
@@ -1314,7 +1314,7 @@ class PopularityScreener(Screener):
         logger.debug(f"Building '{self.screener_type}' screener...")
         report = ""
         report +=  self.build_report_header()
-        report +=  self.build_build_df_table(df=self.data[:20])
+        report +=  self.build_df_table(df=self.data[:20])
         return report
     
     # Override
@@ -1413,7 +1413,7 @@ class PopularityReport(Report):
         logger.debug("Building Popularity Report...")
         report = ''
         report += self.build_report_header()
-        report += self.build_build_df_table(self.popular_stocks.drop(columns=['name'])[:20])
+        report += self.build_df_table(self.popular_stocks.drop(columns=['name'])[:20])
         return report
 
     async def send_report(self, interaction:discord.Interaction = None, visibility:str ="public"):
@@ -1511,7 +1511,7 @@ class WeeklyEarningsScreener(Screener):
 
         # Format DataFrame and build table
         watchlist_earnings_df = pd.DataFrame(dict([(date, pd.Series(tickers)) for date, tickers in watchlist_earnings.items()])).fillna(' ')
-        message = self.build_build_df_table(df=watchlist_earnings_df, style='borderless')
+        message = self.build_df_table(df=watchlist_earnings_df, style='borderless')
         return message
 
     def build_report(self):

@@ -14,9 +14,9 @@ class Utils(commands.Cog):
     @commands.Cog.listener()
     async def on_ready(self):
         logger.info(f"Cog {__name__} loaded!")
-
+    
     @app_commands.command(name='sync', description='Sync bot commands to the server')
-    @app_commands.checks.has_permissions(owner=True)
+    @app_commands.checks.has_permissions(administrator=True)
     async def sync(self, interaction:discord.Interaction):
         """Sync bot commands to Discord's servers. Use this after adding or removing an app command"""
         logger.info("/sync command called by user {}".format(interaction.user.name))

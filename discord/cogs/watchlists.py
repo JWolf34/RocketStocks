@@ -18,8 +18,7 @@ class Watchlists(commands.Cog):
     async def on_ready(self):
         logger.info(f"Cog {__name__} loaded!")
 
-    def ticker_string(self, tickers:list):
-        return f"`{", ".join(tickers)}`"
+    
 
     async def watchlist_options(self, interaction: discord.Interaction, current: str):
         """Autocomplete helper - return all watchlist names that match input 'current' """
