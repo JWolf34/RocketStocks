@@ -47,6 +47,9 @@ class Reports(commands.Cog):
     async def on_ready(self):
         logger.info(f"{__name__} loaded")
 
+    async def get_watchlist_options(self, interaction:discord.Interaction, current:str):
+        return await self.bot.get_cog('Watchlists').watchlist_options(interaction=interaction, current=current)
+
     
     #########
     # Tasks #
@@ -265,7 +268,7 @@ class Reports(commands.Cog):
 
     @app_commands.command(name = "report-watchlist", description= "Post analysis of a given watchlist (use /fetch-reports for individual or non-watchlist stocks)",)
     @app_commands.describe(watchlist = "Which watchlist to fetch reports for")
-    @app_commands.autocomplete(watchlist=cog_Watchlists.watchlist_options)
+    @app_commands.autocomplete(watchlist=get_watchlist_options)
     @app_commands.describe(visibility = "'private' to send to DMs, 'public' to send to the channel")
     @app_commands.choices(visibility =[
         app_commands.Choice(name = "private", value = 'private'),

@@ -18,6 +18,9 @@ class Watchlists(commands.Cog):
     async def on_ready(self):
         logger.info(f"Cog {__name__} loaded!")
 
+    def ticker_string(self, tickers:list):
+        return f"`{", ".join(tickers)}`"
+
     async def watchlist_options(self, interaction: discord.Interaction, current: str):
         """Autocomplete helper - return all watchlist names that match input 'current' """
         watchlists = self.watchlists.get_watchlists(no_systemGenerated=False)
@@ -56,13 +59,13 @@ class Watchlists(commands.Cog):
         # Generate message
         message = ''
         if tickers:
-            message = f"Added {", ".join(tickers)} to {watchlist} watchlist!"
+            message = f"Added {self.ticker_string(tickers)} to *{watchlist}* watchlist!"
         else:
-            message = f"No tickers added to {watchlist} watchlist."
+            message = f"No tickers added to *{watchlist}* watchlist."
         if invalid_tickers:
-                message += f" Invalid tickers: {", ".join(invalid_tickers)}."
+                message += f" Invalid tickers: {self.ticker_string(invalid_tickers)}."
         if duplicate_tickers:
-            message += f" Duplicate tickers: {", ".join(duplicate_tickers)}"
+            message += f" Duplicate tickers: {self.ticker_string(duplicate_tickers)}"
         
         await interaction.followup.send(message, ephemeral=True if watchlist_id.isdigit() else False)
         
@@ -83,7 +86,7 @@ class Watchlists(commands.Cog):
 
         # Confirm watchlist exists, otherwise create it
         if not self.watchlists.validate_watchlist(watchlist_id=watchlist_id):
-            message = f"Watchlist {watchlist} does not. Use `/add-tickers`, `/remove-tickers` or `/set-watchlist` to update this watchlist."
+            message = f"Watchlist *{watchlist}* does not exist. Use `/add-tickers`, `/remove-tickers` or `/set-watchlist` to update this watchlist."
             await interaction.followup.send(message, ephemeral=True)
             return
 
@@ -91,19 +94,22 @@ class Watchlists(commands.Cog):
         # Update watchlist with new tickers
         symbols = self.watchlists.get_watchlist_tickers(watchlist_id)
         removed_tickers = [x for x in tickers if x in symbols]
+        excess_tickers = [x for x in tickers if x not in symbols]
         tickers = [x for x in symbols if x not in tickers]
         self.watchlists.update_watchlist(watchlist_id=watchlist_id, tickers=tickers)
-        logger.info(f"Removed tickers {removed_tickers} to watchlist '{watchlist}'")
+        logger.info(f"Removed tickers {removed_tickers} from watchlist '{watchlist}'")
         logger.info(f"Watchlist '{watchlist}' has tickers {tickers}")
         
         # Generate message
         message = ''
-        if tickers:
-            message = f"Removed {", ".join(removed_tickers)} from {watchlist} watchlist."
+        if removed_tickers:
+            message = f"Removed {self.ticker_string(removed_tickers)} from *{watchlist}* watchlist."
         else:
-            message = f"No tickers added to {watchlist} watchlist."
+            message = f"No tickers removed from *{watchlist}* watchlist."
+        if excess_tickers:
+            message += f"Tickers not on watchlist: {self.ticker_string(excess_tickers)}."
         if invalid_tickers:
-                message += f" Invalid tickers: {", ".join(invalid_tickers)}."
+                message += f" Invalid tickers: {self.ticker_string(invalid_tickers)}."
         
         await interaction.followup.send(message, ephemeral=True if watchlist_id.isdigit() else False)
             
@@ -113,7 +119,7 @@ class Watchlists(commands.Cog):
     @app_commands.autocomplete(watchlist=watchlist_options,)
     async def watchlist(self, interaction: discord.Interaction, watchlist: str):
         """Post contents of input watchlist to Discord"""
-        logger.info("/watchlist function called by user {}".format(self, interaction.user.name))
+        logger.info(f"/watchlist function called by user {interaction.user.name}")
 
         # If personal watchlist, watchlist ID is user ID
         watchlist_id = watchlist if watchlist != 'personal' else str(interaction.user.id)
@@ -122,13 +128,13 @@ class Watchlists(commands.Cog):
         if self.watchlists.validate_watchlist(watchlist_id=watchlist_id):
             tickers = self.watchlists.get_watchlist_tickers(watchlist_id)
             if tickers:
-                await interaction.response.send_message(f"Watchlist '{watchlist_id}': {', '.join(tickers)}", ephemeral=True if watchlist_id.isdigit() else False)
+                await interaction.response.send_message(f"*{watchlist}*: {self.ticker_string(tickers)}", ephemeral=True if watchlist_id.isdigit() else False)
                 logger.info(f"Watchlist '{watchlist}' has tickers {tickers}")
             else:
-                await interaction.response.send_message(f"No tickers on watchlist '{watchlist}'", ephemeral=True if watchlist_id.isdigit() else False)
+                await interaction.response.send_message(f"No tickers on watchlist *{watchlist}*", ephemeral=True if watchlist_id.isdigit() else False)
                 logger.info(f"Watchlist '{watchlist}' has no tickers")
         else:
-            await interaction.response.send_message(f"Watchlist {watchlist} does not exist. Use `/create-watchlist` to make a new watchlist.", ephemeral=True)
+            await interaction.response.send_message(f"Watchlist *{watchlist}* does not exist. Use `/create-watchlist` to make a new watchlist.", ephemeral=True)
             logger.info(f"Invalid watchlist input: '{watchlist}'")
 
     @app_commands.command(name = "set-watchlist", description= "Overwrite a watchlist with the specified tickers",)
@@ -157,11 +163,11 @@ class Watchlists(commands.Cog):
         # Generate message
         message = ''
         if tickers:
-            message = f"Set watchlist {watchlist} to {", ".join(tickers)}."
+            message = f"Set watchlist *{watchlist}* to {self.ticker_string(tickers)}."
         else:
-            message = f"No changes made to watchlist."
+            message = "No changes made to watchlist."
         if invalid_tickers:
-                message += f" Invalid tickers: {", ".join(invalid_tickers)}."
+                message += f" Invalid tickers: {self.ticker_string(invalid_tickers)}."
         
         await interaction.followup.send(message, ephemeral=True if watchlist_id.isdigit() else False)
         
@@ -171,7 +177,7 @@ class Watchlists(commands.Cog):
     async def create_watchlist(self, interaction: discord.Interaction, watchlist: str, tickers: str):
         """Create watchlist with valid input tickets"""
         await interaction.response.defer(ephemeral=True)
-        logger.info("/create-watchlist function called by user {}".format(self, interaction.user.name))
+        logger.info(f"/create-watchlist function called by user {interaction.user.name}")
         
         # If personal watchlist, watchlist ID is user ID
         watchlist_id = watchlist if watchlist != 'personal' else str(interaction.user.id)
@@ -186,16 +192,16 @@ class Watchlists(commands.Cog):
             # Generate message
             message = ''
             if tickers:
-                message = f"Created watchlist {watchlist} with tickers {", ".join(tickers)}."
+                message = f"Created watchlist *{watchlist}* with tickers {self.ticker_string(tickers)}."
             else:
-                message = f"No watchlist created."
+                message = "No watchlist created."
             if invalid_tickers:
-                    message += f" Invalid tickers: {", ".join(invalid_tickers)}."
+                    message += f" Invalid tickers: {self.ticker_string(invalid_tickers)}."
             
             await interaction.followup.send(message, ephemeral=True if watchlist_id.isdigit() else False)
         # Watchlist already exists
         else:
-            message = f"Watchlist {watchlist} already exists. Use `/add-tickers`, `/remove-tickers` or `/set-watchlist` to update this watchlist."
+            message = f"Watchlist *{watchlist}* already exists. Use `/add-tickers`, `/remove-tickers` or `/set-watchlist` to update this watchlist."
             await interaction.followup.send(message, ephemeral=True)
 
     @app_commands.command(name = "delete-watchlist", description= "Delete a watchlist",)
@@ -204,14 +210,14 @@ class Watchlists(commands.Cog):
     async def delete_watchlist(self, interaction: discord.Interaction, watchlist: str):
         """Delete input watchlist from dataase"""
         await interaction.response.defer(ephemeral=True)
-        logger.info("/delete-watchlist function called by user {}".format(self, interaction.user.name))
+        logger.info(f"/delete-watchlist function called by user {interaction.user.name}")
 
         if watchlist == "personal":
             await interaction.followup.send("Cannot delete a personal watchlist. Use /set-watchlist to clear its contents if you wish", ephemeral=True)
             logger.info("Selected watchlist is 'personal' - cannot delete a personal watchlist")
         else:
             self.watchlists.delete_watchlist(watchlist_id=watchlist)
-            await interaction.followup.send(f"Deleted watchlist '{watchlist}'", ephemeral=False)
+            await interaction.followup.send(f"Deleted watchlist *{watchlist}*", ephemeral=False)
             logger.info(f"Watchlist '{watchlist}' deleted")
 
 
