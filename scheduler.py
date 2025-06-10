@@ -7,6 +7,7 @@ import asyncio
 
 # Logging configuration
 logger = logging.getLogger(__name__)
+logger.setLevel(logging.INFO)
 
 
 def scheduler(stock_data):
@@ -14,7 +15,6 @@ def scheduler(stock_data):
 
     async def async_scheduler(stock_data):
         
-
         # Scheduler
         aio_sched = AsyncIOScheduler()
         
@@ -24,7 +24,7 @@ def scheduler(stock_data):
         update_upcoming_earnings_trigger = CronTrigger(day_of_week="fri", hour=6, minute=0, timezone=timezone)
         remove_past_earnings_trigger =  CronTrigger(day_of_week="tue-sat", hour=6, minute=0, timezone=timezone)
         update_historical_earnings_trigger = CronTrigger(day_of_week="tue-sat", hour=7, minute=0, timezone=timezone)
-        update_daily_data_daily_trigger = CronTrigger(day_of_week="tue-sat", hour=6, minute=0, timezone=timezone)
+        update_daily_data_daily_trigger = CronTrigger(day_of_week="tue-sat", hour=3, minute=0, timezone=timezone)
         update_5m_data_daily_trigger = CronTrigger(day_of_week="tue-sat", hour=7, minute=0, timezone=timezone)
         update_politicians_trigger = CronTrigger(day_of_week="sun", hour=7, minute=0, timezone=timezone)
         #test_trigger = IntervalTrigger(seconds=10, timezone=timezone)

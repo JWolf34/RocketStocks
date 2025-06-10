@@ -28,7 +28,9 @@ class moduleFilter(logging.Filter):
         for filename in os.listdir("./discord/cogs"): # append all files in discord/cogs folder
             if filename.endswith(".py"):
                 modules.append(filename[:-3])
-        #modules = ['bot', 'analysis', 'stockdata', 'scheduler', 'rocketstocks']
+        for filename in os.listdir("./stockdata"): # append all files in stockdata folder
+            if filename.endswith(".py"):
+                modules.append(filename[:-3])
         return module in modules
     
 class MyLogFormatter(logging.Formatter):
