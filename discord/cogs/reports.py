@@ -151,7 +151,7 @@ class Reports(commands.Cog):
         await asyncio.sleep(sleep_time)
 
     # Start posting reports at next 0 or 30 minute interval
-    @post_popularity_screener.before_loop
+    #@post_popularity_screener.before_loop
     async def sleep_until_30m(self):
         sleep_time = date_utils.seconds_until_minute_interval(minute=30)
         logger.info(f"30m reports will begin posting in {sleep_time} seconds")
@@ -970,7 +970,7 @@ class Screener(Report):
         self.message = self.build_report() + "\n\n"
 
         logger.info(f"Sending '{self.screener_type}' screener...")
-        today = datetime.datetime.today()
+        today = datetime.datetime.now(tz=date_utils.timezone()).date()
 
         # Format screener type for db insertion
         self.screener_type = self.screener_type.upper().replace("-","_")
@@ -985,7 +985,7 @@ class Screener(Report):
             message_create_date = curr_message.created_at.astimezone(date_utils.timezone()).date()
 
             # Existing message is old - create new message
-            if message_create_date < today.date():
+            if message_create_date < today:
                 message = await self.channel.send(self.message, view=view, files=files)
                 logger.info(f"Posted new '{self.screener_type}' screener for today")
                 self.dutils.update_screener_message_id(message_id=message.id, screener_type=self.screener_type)
