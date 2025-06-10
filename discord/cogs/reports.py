@@ -151,7 +151,7 @@ class Reports(commands.Cog):
         await asyncio.sleep(sleep_time)
 
     # Start posting reports at next 0 or 30 minute interval
-    #@post_popularity_screener.before_loop
+    @post_popularity_screener.before_loop
     async def sleep_until_30m(self):
         sleep_time = date_utils.seconds_until_minute_interval(minute=30)
         logger.info(f"30m reports will begin posting in {sleep_time} seconds")
