@@ -54,7 +54,7 @@ class Data(commands.Cog):
                 file = discord.File(filepath)
 
             else:
-                message = f"Could not fetch price data for ticker {ticker}"
+                message = f"Could not fetch price data for ticker `{ticker}`"
             
             message = await interaction.user.send(content = message, file=file)
 
@@ -121,43 +121,48 @@ class Data(commands.Cog):
         await interaction.response.send_message("CSV file has been sent", ephemeral=True)
         logger.info(f"Provided data file for all {len(data)} tickers")
         
-    @app_commands.command(name = "eps", description= "Returns recent EPS data for the input tickers",)
+    @app_commands.command(name = "earnings", description= "Returns recent earnings data for the input tickers",)
     @app_commands.describe(tickers = "Tickers to return EPS data for (separated by spaces)")
     @app_commands.describe(visibility = "'private' to send to DMs, 'public' to send to the channel")
     @app_commands.choices(visibility =[
         app_commands.Choice(name = "private", value = 'private'),
         app_commands.Choice(name = "public", value = 'public')
     ])
-    async def eps(self, interaction: discord.Interaction, tickers: str, visibility: app_commands.Choice[str]):
+    async def earnings(self, interaction: discord.Interaction, tickers: str, visibility: app_commands.Choice[str]):
+        """Return hisorical earnings data in CSV formats for input tickers and post recent earnings data in message"""
         await interaction.response.defer(ephemeral=True)
-        logger.info(f"/eps function called by user {interaction.user.name}")
+        logger.info(f"/earnings function called by user {interaction.user.name}")
 
         tickers, invalid_tickers = await self.stock_data.parse_valid_tickers(tickers)
-        logger.info(f"EPS requested for {tickers}")
+        logger.info(f"Earnings requested for {tickers}")
 
         column_map = {'date':'Date Reported', 
-                        'eps':'EPS',
-                        'surprise':'Surprise',
-                        'epsforecast':'Estimate',
-                        'fiscalquarterending':'Quarter'}
+                      'eps':'EPS',
+                      'surprise':'Surprise',
+                      'epsforecast':'Estimate',
+                      'fiscalquarterending':'Quarter'}
 
         # Send message with CSV file for each ticker requested
         for ticker in tickers:
             eps = self.stock_data.earnings.get_historical_earnings(ticker)
             if not eps.empty:
+                # Write EPS to file
                 filepath = f"{utils.datapaths.attachments_path}/{ticker}_eps.csv"
                 eps.to_csv(filepath, index=False)
                 file = discord.File(filepath)
-                eps = eps.iloc[::-1].head(4)
+                
+                # Filter to last 12 reports (3Y) to display in message
+                eps = eps.iloc[::-1].head(12)
+                eps = eps.filter(list(column_map.keys()))
                 eps = eps.rename(columns=column_map)
                 eps_table = table2ascii(
                     header = eps.columns.tolist(),
                     body = eps.values.tolist(),
                     style=PresetStyle.thick
                 )
-                message = f"**Earnings Reports for {ticker}**\n ```{eps_table}```"
+                message = f"**Earnings for {ticker}**\n ```{eps_table}```"
             else:
-                message = f"Could not retrieve EPS data for ticker {ticker}"
+                message = f"Could not retrieve EPS data for ticker `{ticker}`"
             if visibility.value == "private":
                 message = await interaction.user.send(message, files=[file])
             else:
@@ -177,132 +182,142 @@ class Data(commands.Cog):
     @app_commands.describe(tickers = "Tickers to return SEC forms for (separated by spaces)")
     @app_commands.describe(form = "The form type to get a link to (10-K, 10-Q, 8-K, etc)")
     async def form(self, interaction: discord.Interaction, tickers: str, form:str):
+        """Return links to latest SEC forms of given type for input tickers"""
         await interaction.response.defer()
         logger.info(f"/form function called by user {interaction.user.name}")
-        logger.info(f"Form {form} requested for tickers {tickers}")
         
-        tickers, invalid_tickers = sd.StockData.parse_valid_tickers(tickers)
-        sec = sd.SEC()
+        tickers, invalid_tickers = await self.stock_data.parse_valid_tickers(tickers)
+
+        # Populate message with links to SEC forms
         message = ""
         for ticker in tickers:
-            recent_filings = sec.get_recent_filings(ticker)
+            recent_filings = self.stock_data.sec.get_recent_filings(ticker=ticker, latest=250)
             target_filing = None
             for index, filing in recent_filings.iterrows():
                 if filing['form'] == form:
                     target_filing = filing
                     break
             if target_filing is None:
-                message += f"No form {form} found for ticker {ticker}\n"
+                message += f"No form {form} found for ticker `{ticker}`\n"
             else:
                 # Need to make universal date conversion function and make SEC module reference CIK value from database
                 filing_date = utils.date_utils.format_date_mdy(target_filing['filingDate'])
-                sec_link = sec.get_link_to_filing(ticker, target_filing)
+                sec_link = target_filing['link']
                 message += f"[{ticker} Form {form} - Filed {filing_date}]({sec_link})\n"
+
+        # Message was never populated - no forms found
+        if not message:
+            message = f"No form {form} found for given tickers {utils.ticker_string(tickers)}"
+        # Forms found
+        else:
+            message = f"Form {form} for tickers {utils.ticker_string(tickers)}:\n\n"+ message
+            if invalid_tickers:
+                message += f"\n\nInvalid tickers: {utils.ticker_string(invalid_tickers)}"
         await interaction.followup.send(message)
         logger.info(f"Form {form} provided for tickers {tickers}")
     
     @app_commands.command(name="fundamentals", description="Return fundamental data for desired tickers in JSON format")
-    @app_commands.describe(tickers = "Tickers to return SEC forms for (separated by spaces)")
+    @app_commands.describe(tickers = "Tickers to return fundamentals for (separated by spaces)")
     async def fundamentals(self, interaction: discord.Interaction, tickers: str):
+        """Return fundamentals in JSON format for input tickers"""
         await interaction.response.defer(ephemeral=True)
         logger.info(f"/fundamentals function called by user {interaction.user.name}")
+        
+        tickers, invalid_tickers = await self.stock_data.parse_valid_tickers(tickers)
         logger.info(f"Fundamentals requested for tickers {tickers}")
-        message = None
-        file = None
-        tickers, invalid_tickers = sd.StockData.parse_valid_tickers(tickers)
+
+        # Send message with CSV file for each ticker requested
         for ticker in tickers:
-            fundamentals = sd.Schwab().get_fundamentals(ticker)
+            fundamentals = await self.stock_data.schwab.get_fundamentals(tickers=tickers)
             
-            if fundamentals is not None:
+            if fundamentals:
                 filepath = f"{utils.datapaths.attachments_path}/{ticker}_fundamentals.json"
                 with open(filepath, 'w') as json_file:
                     json.dump(fundamentals, json_file)
                 file = discord.File(filepath)
-                message = f"Fundamentals for ticker {ticker}"
+                message = f"Fundamentals for ticker `{ticker}`"
             else:
-                message = f"Could not retrieve fundamentals for ticker {ticker}"
+                message = f"Could not retrieve fundamentals for ticker `{ticker}`"
             message = await interaction.user.send(content=message, file=file)
         
-        # Follow-up
-        follow_up = ""
-        if message is not None: # Message was generated
-            logger.info(f"Fundamentals provided for tickers {tickers}")
-            follow_up = f"Posted fundamentals for tickers [{", ".join(tickers)}]({message.jump_url})!"
-            if len(invalid_tickers) > 0: # More than one invalid ticke input
-                follow_up += f" Invalid tickers: {", ".join(invalid_tickers)}"
-        if len(tickers) == 0: # No valid tickers input
-            logger.info("No valid tickers input. No fincancials provided")
-            follow_up = f"No valid tickers input: {", ".join(invalid_tickers)}"
-        await interaction.followup.send(follow_up, ephemeral=True)
+        # Follow-up message
+        if tickers:
+            message = f"Fetched fundamentals for tickers [{utils.ticker_string(tickers)}]({message.jump_url})."
+        else:
+            message = f"Could not fetch fundamentals."
+        if invalid_tickers:
+            message += f" Invalid tickers: {utils.ticker_string(invalid_tickers)}"
+ 
+        await interaction.followup.send(message, ephemeral=True)
 
     @app_commands.command(name="options", description="Return options chains for desired tickers in JSON format")
-    @app_commands.describe(tickers = "Tickers to return SEC forms for (separated by spaces)")
+    @app_commands.describe(tickers = "Tickers to return options chains for (separated by spaces)")
     async def options(self, interaction: discord.Interaction, tickers: str):
+        """Return options chains in JSON format for input tickers"""
         await interaction.response.defer(ephemeral=True)
         logger.info(f"/options function called by user {interaction.user.name}")
+
+        tickers, invalid_tickers = await self.stock_data.parse_valid_tickers(tickers)
         logger.info(f"Options chain(s) requested for tickers {tickers}")
-        message = None
-        file = None
-        tickers, invalid_tickers = sd.StockData.parse_valid_tickers(tickers)
+
+        # Send message with JSON file for each ticker requested
         for ticker in tickers:
-            options = sd.Schwab().get_options_chain(ticker)
+            options = await self.stock_data.schwab.get_options_chain(ticker)
             
-            if options is not None:
+            if options:
                 filepath = f"{utils.datapaths.attachments_path}/{ticker}_options_chain.json"
                 with open(filepath, 'w') as json_file:
                     json.dump(options, json_file)
                 file = discord.File(filepath)
-                message = f"Options chain for ticker {ticker}"
+                message = f"Options chain for ticker `{ticker}`"
             else:
-                message = f"Could not retrieve options chain for ticker {ticker}"
+                message = f"Could not retrieve options chain for ticker `{ticker}`"
             message = await interaction.user.send(content=message, file=file)
         
-        # Follow-up
-        follow_up = ""
-        if message is not None: # Message was generated
-            logger.info(f"Options chain(s) provided for tickers {tickers}")
-            follow_up = f"Posted options chains for tickers [{", ".join(tickers)}]({message.jump_url})!"
-            if len(invalid_tickers) > 0: # More than one invalid ticke input
-                follow_up += f" Invalid tickers: {", ".join(invalid_tickers)}"
-        if len(tickers) == 0: # No valid tickers input
-            logger.info("No valid tickers input. No options chains provided")
-            follow_up = f"No valid tickers input: {", ".join(invalid_tickers)}"
-        await interaction.followup.send(follow_up, ephemeral=True)
+        # Follow-up message
+        if tickers:
+            message = f"Fetched options chains for tickers [{utils.ticker_string(tickers)}]({message.jump_url})."
+        else:
+            message = f"Could not fetch options chains."
+        if invalid_tickers:
+            message += f" Invalid tickers: {utils.ticker_string(invalid_tickers)}"
+
+        await interaction.followup.send(message, ephemeral=True)
 
     @app_commands.command(name="popularity", description="Return historical popularity of desired tickers in CSV format")
     @app_commands.describe(tickers = "Tickers to return popularity for (separated by spaces)")
     async def popularity(self, interaction: discord.Interaction, tickers: str):
         await interaction.response.defer(ephemeral=True)
         logger.info(f"/popularity function called by user {interaction.user.name}")
+        
+        tickers, invalid_tickers = await self.stock_data.parse_valid_tickers(tickers)
         logger.info(f"Historical popularity requested for tickers {tickers}")
-        files = []
-        tickers, invalid_tickers = sd.StockData.parse_valid_tickers(tickers)
-        try:
-            for ticker in tickers:
-                message = ""
-                file = None
-                data = sd.StockData.fetch_popularity(ticker=ticker)  
-                if data.size:
-                    message = f"Popularity for {ticker}"
-                    filepath = f"{utils.datapaths.attachments_path}/{ticker}_popularity.csv"
-                    data.to_csv(filepath, index=False)
-                    file = discord.File(filepath)
-                else:
-                    message = f"No popularity data available for ticker {ticker}"
-                
-                message = await interaction.user.send(content = message, file=file)
-
-            if len(invalid_tickers) > 0:
-                logger.info(f"Provided popualrity for tickers {tickers}. Invalid tickers: {invalid_tickers}")
-                await interaction.followup.send("Fetched popularity for [{}]({}). Invalid tickers: {}".format(", ".join(tickers), message.jump_url, ", ".join(invalid_tickers)), ephemeral=True)
+        
+        # Send message with CSV file for each ticker requested
+        for ticker in tickers:
+            data = self.stock_data.fetch_popularity(ticker=ticker)  
+            if not data.empty:
+                message = f"Popularity for `{ticker}`"
+                filepath = f"{utils.datapaths.attachments_path}/{ticker}_popularity.csv"
+                data.to_csv(filepath, index=False)
+                file = discord.File(filepath)
             else:
-                logger.info(f"Provided popualrity for tickers {tickers}")
-                await interaction.followup.send("Fetched popularity for [{}]({})".format(", ".join(tickers), message.jump_url), ephemeral=True)
+                message = f"No popularity data available for ticker `{ticker}`"
+            
+            message = await interaction.user.send(content = message, file=file)
+
+        # Follow-up message
+        if tickers:
+            message = f"Fetched popularity data for tickers [{utils.ticker_string(tickers)}]({message.jump_url})."
+        else:
+            message = f"Could not fetch popularity data."
+        if invalid_tickers:
+            message += f" Invalid tickers: {utils.ticker_string(invalid_tickers)}"
+
+        await interaction.followup.send(message, ephemeral=True) 
 
 
-        except Exception as e:
-            logger.exception("Failed to fetch popularity with following exception:\n{}".format(e))
-            await interaction.followup.send("Failed to popularity reports. Please ensure your parameters are valid.")
+       
 
     async def politician_options(self, interaction: discord.Interaction, current: str):
         politicians = self.stock_data.capitol_trades.all_politicians()

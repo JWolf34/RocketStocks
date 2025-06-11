@@ -542,8 +542,7 @@ class StockData():
 
     def get_cik(self, ticker):
         """Return CIK number of input ticker from database"""
-        logger.info(f"Retreiving CIK value for ticker '{ticker}' from database")
-
+        
         # Query
         """SELECT cik from tickers
            WHERE ticker = '{ticker}';

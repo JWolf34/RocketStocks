@@ -268,7 +268,7 @@ class Reports(commands.Cog):
                     pass
         logger.info("Completed updating earnings calendar")
 
-    @app_commands.command(name = "report-watchlist", description= "Post stock reports on all tickers on a watchlist (use /reports for individual or non-watchlist stocks)",)
+    @app_commands.command(name = "report-watchlist", description= "Post stock reports on all tickers on a watchlist",)
     @app_commands.describe(watchlist = "Which watchlist to fetch reports for")
     @app_commands.autocomplete(watchlist=get_watchlist_options)
     @app_commands.describe(visibility = "'private' to send to DMs, 'public' to send to the channel")
@@ -317,7 +317,7 @@ class Reports(commands.Cog):
             await interaction.followup.send(follow_up, ephemeral=True)
 
 
-    @app_commands.command(name = "report", description= "Fetch stock reports of the specified tickers (use /report-watchlist to create reports on a watchlist)",)
+    @app_commands.command(name = "report", description= "Fetch stock reports of the specified tickers",)
     @app_commands.describe(tickers = "Tickers to post reports for (separated by spaces)")
     @app_commands.describe(visibility = "'private' to send to DMs, 'public' to send to the channel")
     @app_commands.choices(visibility =[
@@ -1376,7 +1376,6 @@ class NewsReport(Report):
         logger.debug("Sending News Report...")
         await interaction.response.send_message(self.message)
 
-# TODO
 class PopularityReport(Report):
     """Report subclass for posting the most recent popularity ranking for stocks in the input filter"""
     def __init__(self, channel:discord.channel, popular_stocks:pd.DataFrame, filter:str):
@@ -1466,6 +1465,68 @@ class EarningsSpotlightReport(Report):
         return message
 
 class WeeklyEarningsScreener(Screener):
+    """Screener subclass for posting upcoming week's earnings reports"""
+    def __init__(self, channel:discord.channel, upcoming_earnings:pd.DataFrame, watchlist_tickers:list):
+
+        self.today = datetime.datetime.now(tz=date_utils.timezone()).date()
+        self.watchlist_tickers = watchlist_tickers
+        self.upcoming_earnings = upcoming_earnings[upcoming_earnings['date'].between(self.today, self.today + datetime.timedelta(days=7))]
+        column_map = {'date': 'Date',
+                      'ticker': 'Ticker',
+                      'time': 'Time',
+                      'fiscal_quarter_ending': 'Fiscal Quarter Ending',
+                      'eps_forecast':'EPS Forecast',
+                      'no_of_ests':'# of Ests',
+                      'last_year_eps':'Last Year EPS',
+                      'last_year_rpt_dt':'Last Year Report Date'}
+        super().__init__(channel=channel,
+                         screener_type='weekly-earnings',
+                         market_period=None,
+                         data=self.upcoming_earnings,
+                         column_map=column_map)
+
+        # Init files
+        self.filepath = f"{utils.datapaths.attachments_path}/upcoming_earnings.csv"
+        self.write_df_to_file(df=self.upcoming_earnings, filepath=self.filepath)
+        self.files = [discord.File(self.filepath)]
+
+    def build_report_header(self):
+        """Overrides the parent function to generate custom header"""
+        logger.debug(f"Building '{self.screener_type}' screener header...")
+        return f"# Earnings Releasing the Week of {date_utils.format_date_mdy(self.today)}\n\n"
+
+    def build_upcoming_earnings(self):
+        """Return message content with table of upcoming earnings reports divided by day of the week"""
+        logger.debug("Identifying upcoming earnings for tickers that exist on user watchlists")
+        watchlist_earnings = {}
+
+        # Screener created on Monday - iterate Monday through Friday and find
+        # upcoming earnings for tickers on watchlists
+        for i in range(0, 5):
+            date = self.today + datetime.timedelta(days=i)
+            tickers = self.data[self.data['Date'] == date]['Ticker'].values
+            if tickers.any(): # np array
+                watchlist_earnings[date.strftime('%A')] = [ticker for ticker in tickers if ticker in self.watchlist_tickers]
+
+        # Format DataFrame and build table
+        watchlist_earnings_df = pd.DataFrame(dict([(date, pd.Series(tickers)) for date, tickers in watchlist_earnings.items()])).fillna(' ')
+        message = self.build_df_table(df=watchlist_earnings_df, style='borderless')
+        return message
+
+    def build_report(self):
+        """Overrides the parent function to generate custom screener"""
+        logger.debug(f"Building '{self.screener_type}' screener...")
+        report = ""
+        report += self.build_report_header()
+        report += self.build_upcoming_earnings()
+        return report
+
+    async def send_report(self):
+        """Overrides parent function with files parameter"""
+        message = await super().send_report(files=[self.files])
+        return message
+    
+class PoliticianReport(Report):
     """Screener subclass for posting upcoming week's earnings reports"""
     def __init__(self, channel:discord.channel, upcoming_earnings:pd.DataFrame, watchlist_tickers:list):
 
