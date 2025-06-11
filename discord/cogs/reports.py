@@ -415,32 +415,59 @@ class Reports(commands.Cog):
             logger.info(f"No popular stocks found with filter '{source}'")
             await interaction.followup.send(f"No popular stocks found with filter '{source}'", ephemeral=True)
 
+    async def politician_options(self, interaction: discord.Interaction, current: str):
+        politicians = self.stock_data.capitol_trades.all_politicians()
+        names = [politician['name'] for politician in politicians]
+        return [
+            app_commands.Choice(name = p_name, value=p_name)
+            for p_name in names if current.lower() in p_name.lower()
+        ][:25]
+
+
+    @app_commands.command(name="politician", description="Fetch a report on the latest stocks traded by a politician")
+    @app_commands.describe(politician_name = "Politician to return trades for")
+    @app_commands.autocomplete(politician_name=politician_options,)
+    @app_commands.describe(visibility = "'private' to send to DMs, 'public' to send to the channel")
+    @app_commands.choices(visibility =[
+        app_commands.Choice(name = "private", value = 'private'),
+        app_commands.Choice(name = "public", value = 'public')
+    ])   
+    async def politician(self, interaction:discord.Interaction, politician_name:str,  visibility: app_commands.Choice[str]):
+        """Generate and send Politician Report for input politician"""
+        await interaction.response.defer(ephemeral=True)
+        logger.info(f"/politician function called by user {interaction.user.name}")
+
+        # Validate politician
+        politician = self.stock_data.capitol_trades.politician(name=politician_name)
+
+        if politician:
+            report = await self.build_politician_report(channel=self.reports_channel, 
+                                                        politician=politician)
+            message = await report.send_report(interaction=interaction, visibility=visibility.value)
+
+            # Follow-up message
+            follow_up = f"Posted report on [{politician['name']}]({message.jump_url})"
+            await interaction.followup.send(follow_up, ephemeral=True)
+            logger.info(f"Posted report on {politician['name']}")
+        # Invalid politician
+        else:
+            logger.info(f"No politician found with name {politician_name}")
+            await interaction.followup.send(f"No politician found with name {politician_name}", ephemeral=True)
+
     ####################
     # Report Factories #
     ####################
 
-    async def build_stock_report(self, ticker:str):
-        """Builder for StockReport class, easy to call for functions like 'report' and 'report_watchlist'"""
+    async def build_politician_report(self, politician_name:str=None, **kwargs):
+        """Builder for PoliticianReport class"""
         # Collect data to create Stock Report
-        ticker_info = self.stock_data.get_ticker_info(ticker=ticker)
-        daily_price_history = self.stock_data.fetch_daily_price_history(ticker=ticker)
-        popularity = self.stock_data.fetch_popularity(ticker=ticker)
-        recent_sec_filings = self.stock_data.sec.get_recent_filings(ticker=ticker)
-        historical_earnings = self.stock_data.earnings.get_historical_earnings(ticker=ticker)
-        next_earnings_info = self.stock_data.earnings.get_next_earnings_info(ticker=ticker)
-        quote = await self.stock_data.schwab.get_quote(ticker=ticker)
-        company_facts = self.stock_data.sec.get_company_facts(ticker=ticker)
+        politician = kwargs.pop('politician', self.stock_data.capitol_trades.politician(name=politician_name))
+        trades = kwargs.pop('trades', self.stock_data.capitol_trades.trades(pid=politician['politician_id'])) 
 
         # Generate report 
-        report = StockReport(channel=self.reports_channel,
-                                ticker_info=ticker_info,
-                                daily_price_history=daily_price_history,
-                                popularity=popularity,
-                                recent_sec_filings=recent_sec_filings,
-                                historical_earnings=historical_earnings,
-                                next_earnings_info=next_earnings_info,
-                                quote=quote,
-                                company_facts=company_facts)
+        report = PoliticianReport(channel=self.reports_channel,
+                                  politician=politician,
+                                  trades=trades)
         return report
     
     async def build_stock_report(self, ticker:str):
@@ -481,12 +508,15 @@ class Report(object):
         self.ticker_info = kwargs.pop('ticker_info', None)
         self.ticker = self.ticker_info['ticker'] if self.ticker_info else kwargs.pop('ticker', None)
         self.quote = kwargs.pop('quote', None)
+        self.fundamentals = kwargs.pop('fundamentals', None)
         self.daily_price_history = kwargs.pop('daily_price_history', None)
         self.next_earnings_info = kwargs.pop('next_earnings_info', None)
         self.historical_earnings = kwargs.pop('historical_earnings', None)
         self.recent_sec_filings = kwargs.pop('recent_sec_filings', None)
         self.popularity = kwargs.pop('popularity', None)
         self.company_facts = kwargs.pop('company_facts', None)
+        self.politician = kwargs.pop('politician', None)
+        self.trades = kwargs.pop('trades', None)
 
         # ASCII table styles
         self.table_styles = {'ascii':PresetStyle.ascii,
@@ -904,6 +934,37 @@ class Report(object):
         else:
             message += "No popularity data found for this stock\n"
         return message
+    
+    def build_politician_info(self):
+        """Return message content with information on the report's politician
+        
+        Requires:
+            - politician
+        """
+
+          # Format desired column names in new dict
+        column_map = {'Party':'party',
+                      'State':'state'}
+        fmt_politician_info = {}
+        for key, value in column_map.items():
+            fmt_politician_info[key] = self.politician[value]
+
+        message = "## About\n"
+        message += self.build_stats_table(header={},
+                                          body=fmt_politician_info,
+                                          adjust='left')
+        return message
+
+
+    def build_politician_trades(self):
+        """Return message content with information on the report's politician's latest trades
+        
+        Requires:
+            - trades
+        """
+        message = "## Latest Trades\n"
+
+        column_map = {}
 
     def build_report(self):
         """Return string populated with content from report functions"""
@@ -1530,63 +1591,44 @@ class PoliticianReport(Report):
     """Screener subclass for posting upcoming week's earnings reports"""
     def __init__(self, channel:discord.channel, politician:dict, trades:pd.DataFrame):
 
-        self.today = datetime.datetime.now(tz=date_utils.timezone()).date()
-        self.watchlist_tickers = watchlist_tickers
-        self.upcoming_earnings = upcoming_earnings[upcoming_earnings['date'].between(self.today, self.today + datetime.timedelta(days=7))]
-        column_map = {'date': 'Date',
-                      'ticker': 'Ticker',
-                      'time': 'Time',
-                      'fiscal_quarter_ending': 'Fiscal Quarter Ending',
-                      'eps_forecast':'EPS Forecast',
-                      'no_of_ests':'# of Ests',
-                      'last_year_eps':'Last Year EPS',
-                      'last_year_rpt_dt':'Last Year Report Date'}
         super().__init__(channel=channel,
-                         screener_type='weekly-earnings',
-                         market_period=None,
-                         data=self.upcoming_earnings,
-                         column_map=column_map)
+                         politician=politician,
+                         trades=trades)
 
         # Init files
-        self.filepath = f"{utils.datapaths.attachments_path}/upcoming_earnings.csv"
-        self.write_df_to_file(df=self.upcoming_earnings, filepath=self.filepath)
+        self.filepath = f"{utils.datapaths.attachments_path}/{politician['politician_id']}_trades.csv"
+        self.write_df_to_file(df=self.trades, filepath=self.filepath)
         self.files = [discord.File(self.filepath)]
+
+        self.buttons = self.Buttons(pid=self.politician['politician_id'])
 
     def build_report_header(self):
         """Overrides the parent function to generate custom header"""
-        logger.debug(f"Building '{self.screener_type}' screener header...")
-        return f"# Earnings Releasing the Week of {date_utils.format_date_mdy(self.today)}\n\n"
-
-    def build_upcoming_earnings(self):
-        """Return message content with table of upcoming earnings reports divided by day of the week"""
-        logger.debug("Identifying upcoming earnings for tickers that exist on user watchlists")
-        watchlist_earnings = {}
-
-        # Screener created on Monday - iterate Monday through Friday and find
-        # upcoming earnings for tickers on watchlists
-        for i in range(0, 5):
-            date = self.today + datetime.timedelta(days=i)
-            tickers = self.data[self.data['Date'] == date]['Ticker'].values
-            if tickers.any(): # np array
-                watchlist_earnings[date.strftime('%A')] = [ticker for ticker in tickers if ticker in self.watchlist_tickers]
-
-        # Format DataFrame and build table
-        watchlist_earnings_df = pd.DataFrame(dict([(date, pd.Series(tickers)) for date, tickers in watchlist_earnings.items()])).fillna(' ')
-        message = self.build_df_table(df=watchlist_earnings_df, style='borderless')
-        return message
+        logger.debug(f"Building Politician Report header...")
+        return f"# Politician Report: {self.politician['name']}\n"
 
     def build_report(self):
-        """Overrides the parent function to generate custom screener"""
-        logger.debug(f"Building '{self.screener_type}' screener...")
+        """Overrides the parent function to generate custom report"""
+        logger.debug(f"Building Politician Report...")
         report = ""
         report += self.build_report_header()
-        report += self.build_upcoming_earnings()
+        report += self.build_politician_info()
         return report
 
-    async def send_report(self):
-        """Overrides parent function with files parameter"""
-        message = await super().send_report(files=[self.files])
+    async def send_report(self, interaction:discord.Interaction, visibility:str):
+        """Overrides parent function to add buttons"""
+        message = await super().send_report(interaction=interaction, visibility=visibility, view=self.buttons)
         return message
+    
+    # Override
+    class Buttons(discord.ui.View):
+        """Custom buttons for Popularity Screener:
+            - ApeWisdom
+            """
+        def __init__(self, pid:str):
+            super().__init__(timeout=None)
+            self.add_item(discord.ui.Button(label="Capitol Trades", style=discord.ButtonStyle.url, url = f"https://www.capitoltrades.com/politicians/{pid}"))
+
 
 
         
