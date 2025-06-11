@@ -1528,7 +1528,7 @@ class WeeklyEarningsScreener(Screener):
     
 class PoliticianReport(Report):
     """Screener subclass for posting upcoming week's earnings reports"""
-    def __init__(self, channel:discord.channel, upcoming_earnings:pd.DataFrame, watchlist_tickers:list):
+    def __init__(self, channel:discord.channel, politician:dict, trades:pd.DataFrame):
 
         self.today = datetime.datetime.now(tz=date_utils.timezone()).date()
         self.watchlist_tickers = watchlist_tickers
