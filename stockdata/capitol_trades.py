@@ -45,8 +45,7 @@ class CapitolTrades():
         politicians = [dict(zip(fields, data[index])) for index in range(0, len(data))]
         logger.info(f"Found data on {len(politicians)} politicians")
         return politicians
-
-
+             
     def update_politicians(self):
         """Update rows in ct_politicians table with latest information"""
         logger.info("Updating politicians in the database")
@@ -78,6 +77,27 @@ class CapitolTrades():
                                   values=politicians)
                 break
         logger.info("Updating politicians complete!")
+
+      
+    @staticmethod
+    def politician_facts(pid:str):
+        """Return dict of facts about politician with input pid from Capitol Trades"""
+
+        # Get webpage content
+        politician_r = requests.get(url=f'https://www.capitoltrades.com/politicians/{pid}')
+        logger.debug(f"Request for politician (PID:{pid}) page returned status code {politician_r.status_code}")
+        html = politician_r.content
+        politician_soup = BeautifulSoup(html, 'html.parser')
+
+        # Parse from soup
+        facts = {}
+        bio_rows = politician_soup.find_all("div", class_="flex w-full flex-col justify-between border-muted-foreground/10 group-[.flavour--full]:flex-row group-[.flavour--full]:border-b group-[.flavour--full]:py-1")
+        for row in bio_rows:
+             stats = row.find_all('span')
+             facts[stats[1].text] = stats[0].text
+
+        return facts
+     
 
     @staticmethod
     def trades(pid:str):

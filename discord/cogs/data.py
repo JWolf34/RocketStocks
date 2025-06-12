@@ -6,6 +6,8 @@ import utils
 import logging
 import json
 from table2ascii import table2ascii, Alignment, PresetStyle
+import zipfile
+import os
 
 # Logging configuration
 logger = logging.getLogger(__name__)
@@ -102,10 +104,23 @@ class Data(commands.Cog):
         
     @app_commands.command(name = "logs", description= "Return the log file for the bot",)
     async def logs(self, interaction: discord.Interaction):
-        """Return latest log file of the bot"""
+        """Return latest log file and ZIP file of all log files for the bot"""
         logger.info(f"/logs function called by user {interaction.user.name}")
+
+        files = []
+        
+        # Latest log file
         log_file = discord.File("logs/rocketstocks.log")
-        await interaction.user.send(content = "Log file for RocketStocks :rocket:",file=log_file)
+        files.append(log_file)
+
+        logs_zip = zipfile.ZipFile(f"{utils.datapaths.attachments_path}/logs.zip", 'w', zipfile.ZIP_DEFLATED)
+        for log in os.listdir("logs"):
+            logs_zip.write(f"logs/{log}")
+        logs_zip.close()
+        files.append(discord.File(f"{utils.datapaths.attachments_path}/logs.zip"))
+
+
+        await interaction.user.send(content = "Log file for RocketStocks :rocket:",files=files)
         await interaction.response.send_message("Log file has been sent", ephemeral=True)
         logger.info("Log file sent successfully")
 
@@ -315,47 +330,6 @@ class Data(commands.Cog):
             message += f" Invalid tickers: {utils.ticker_string(invalid_tickers)}"
 
         await interaction.followup.send(message, ephemeral=True) 
-
-
-       
-
-    async def politician_options(self, interaction: discord.Interaction, current: str):
-        politicians = self.stock_data.capitol_trades.all_politicians()
-        names = [politician['name'] for politician in politicians]
-        return [
-            app_commands.Choice(name = p_name, value=p_name)
-            for p_name in names if current.lower() in p_name.lower()
-        ][:25]
-
-    @app_commands.command(name="politician-trades", description="Return trades for target politician recorded on Capitol Trades")
-    @app_commands.describe(politician_name = "Politician to return trades for")
-    @app_commands.autocomplete(politician_name=politician_options,)
-    async def politician_trades(self, interaction: discord.Interaction, politician_name:str):
-        await interaction.response.defer(ephemeral=True)
-        logger.info(f"/politician-trades function called by user {interaction.user.name}")
-        logger.info(f"Trades requested for politician {politician_name}")
-        politician_names = [politician['name'] for politician in self.stock_data.capitol_trades.all_politicians()]
-        if politician_name not in politician_names:
-            await interaction.followup.send("Invalid politician name provided. Please select a valid name from the list available.", ephemeral=True)
-        else:
-            politician = self.stock_data.capitol_trades.politician(name=politician_name)
-            trades = self.stock_data.capitol_trades.trades(pid=politician['politician_id'])
-
-            message = ""
-            file = None
-            if not trades.empty:
-                message = f"Trades made by {politician_name} - [Capitol Trades](<https://www.capitoltrades.com/politicians/{politician['politician_id']}>)"
-                filepath = f"{utils.datapaths.attachments_path}/trades_{politician['name'].lower().replace(" ",'_')}.csv"
-                trades.to_csv(filepath, index=False)
-                file = discord.File(filepath)
-            else:
-                message = f"No trades found for {politician_name}"
-            
-            message = await interaction.followup.send(content = message, file=file)
-            logger.info(f"Provided trades data for politician {politician_name}")
-
-
-
 
 #########        
 # Setup #

@@ -1,8 +1,8 @@
 import discord
 from discord import app_commands
 from discord.ext import commands
-import stock_data as sd
 import logging
+
 
 # Logging configuration
 logger = logging.getLogger(__name__)
@@ -43,7 +43,7 @@ class Utils(commands.Cog):
                 # Only add embed if at least command is available to that user in a cog
                 if embed.fields:
                     embeds.append(embed)
-        await interaction.response.send_message(embeds=embeds)
+        await interaction.response.send_message(embeds=embeds, ephemeral=True)
 
     
 

@@ -463,11 +463,13 @@ class Reports(commands.Cog):
         # Collect data to create Stock Report
         politician = kwargs.pop('politician', self.stock_data.capitol_trades.politician(name=politician_name))
         trades = kwargs.pop('trades', self.stock_data.capitol_trades.trades(pid=politician['politician_id'])) 
+        politician_facts = kwargs.pop('politician_facts', self.stock_data.capitol_trades.politician_facts(pid=politician['politician_id']))
 
         # Generate report 
         report = PoliticianReport(channel=self.reports_channel,
                                   politician=politician,
-                                  trades=trades)
+                                  trades=trades, 
+                                  politician_facts=politician_facts)
         return report
     
     async def build_stock_report(self, ticker:str):
@@ -517,6 +519,7 @@ class Report(object):
         self.company_facts = kwargs.pop('company_facts', None)
         self.politician = kwargs.pop('politician', None)
         self.trades = kwargs.pop('trades', None)
+        self.politician_facts = kwargs.pop('politician_facts', None)
 
         # ASCII table styles
         self.table_styles = {'ascii':PresetStyle.ascii,
@@ -940,6 +943,7 @@ class Report(object):
         
         Requires:
             - politician
+            - politician_facts
         """
 
           # Format desired column names in new dict
@@ -949,9 +953,11 @@ class Report(object):
         for key, value in column_map.items():
             fmt_politician_info[key] = self.politician[value]
 
+        politician_facts = fmt_politician_info | self.politician_facts
+
         message = "## About\n"
         message += self.build_stats_table(header={},
-                                          body=fmt_politician_info,
+                                          body=politician_facts,
                                           adjust='left')
         return message
 
@@ -963,8 +969,8 @@ class Report(object):
             - trades
         """
         message = "## Latest Trades\n"
-
-        column_map = {}
+        message += self.build_df_table(df=self.trades.head(10))
+        return message
 
     def build_report(self):
         """Return string populated with content from report functions"""
@@ -1589,11 +1595,12 @@ class WeeklyEarningsScreener(Screener):
     
 class PoliticianReport(Report):
     """Screener subclass for posting upcoming week's earnings reports"""
-    def __init__(self, channel:discord.channel, politician:dict, trades:pd.DataFrame):
+    def __init__(self, channel:discord.channel, politician:dict, trades:pd.DataFrame, politician_facts:dict):
 
         super().__init__(channel=channel,
                          politician=politician,
-                         trades=trades)
+                         trades=trades,
+                         politician_facts=politician_facts)
 
         # Init files
         self.filepath = f"{utils.datapaths.attachments_path}/{politician['politician_id']}_trades.csv"
@@ -1613,17 +1620,18 @@ class PoliticianReport(Report):
         report = ""
         report += self.build_report_header()
         report += self.build_politician_info()
+        report += self.build_politician_trades()
         return report
 
     async def send_report(self, interaction:discord.Interaction, visibility:str):
         """Overrides parent function to add buttons"""
-        message = await super().send_report(interaction=interaction, visibility=visibility, view=self.buttons)
+        message = await super().send_report(interaction=interaction, visibility=visibility, view=self.buttons, files=self.files)
         return message
     
     # Override
     class Buttons(discord.ui.View):
-        """Custom buttons for Popularity Screener:
-            - ApeWisdom
+        """Custom buttons for Politician Report:
+            - Capitol Trades
             """
         def __init__(self, pid:str):
             super().__init__(timeout=None)
