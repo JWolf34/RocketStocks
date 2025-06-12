@@ -113,13 +113,14 @@ class Data(commands.Cog):
         log_file = discord.File("logs/rocketstocks.log")
         files.append(log_file)
 
+        # Zip of all log files
         logs_zip = zipfile.ZipFile(f"{utils.datapaths.attachments_path}/logs.zip", 'w', zipfile.ZIP_DEFLATED)
         for log in os.listdir("logs"):
             logs_zip.write(f"logs/{log}")
         logs_zip.close()
         files.append(discord.File(f"{utils.datapaths.attachments_path}/logs.zip"))
 
-
+        # Send message
         await interaction.user.send(content = "Log file for RocketStocks :rocket:",files=files)
         await interaction.response.send_message("Log file has been sent", ephemeral=True)
         logger.info("Log file sent successfully")
