@@ -73,9 +73,7 @@ class Reports(commands.Cog):
             self.stock_data.insert_popularity(popular_stocks=popular_stocks)
 
             # Generate screener
-            report = PopularityScreener(channel=self.screeners_channel,
-                                        market_period='None',
-                                        popular_stocks=popular_stocks)
+            report = await self.build_popularity_screener(popular_stocks=popular_stocks)
 
             # Post screener
             logger.info("Posting popularity screener")
@@ -95,9 +93,7 @@ class Reports(commands.Cog):
             unusual_volume = self.stock_data.trading_view.get_unusual_volume_movers()
 
             # Generate screener
-            report = VolumeScreener(channel=self.screeners_channel,
-                                    market_period=market_period,
-                                    unusual_volume=unusual_volume)
+            report = await self.build_volume_screener()
 
             # Update alert tickers with unusual volume movers
             self.stock_data.update_alert_tickers(tickers=report.get_tickers(), source='unusual-volume')
@@ -117,18 +113,8 @@ class Reports(commands.Cog):
         market_period = self.mutils.get_market_period()
         if  (self.mutils.market_open_today() and market_period != 'EOD'):
 
-            # Get gainers based on market period
-            if market_period == 'premarket':
-                gainers = self.stock_data.trading_view.get_premarket_gainers()
-            elif market_period == 'intraday':
-                gainers = self.stock_data.trading_view.get_intraday_gainers()
-            elif market_period == 'aftermarket':
-                gainers = self.stock_data.trading_view.get_postmarket_gainers()
-
             # Generate screener
-            report = GainerScreener(channel=self.screeners_channel,
-                                    market_period=market_period,
-                                    gainers=gainers)
+            report = await self.build_gainer_screener(market_period=market_period)
 
             # Update alert tickers with gainers
             self.stock_data.update_alert_tickers(tickers=report.get_tickers(), source='gainers')
@@ -158,8 +144,8 @@ class Reports(commands.Cog):
         await asyncio.sleep(sleep_time)
 
 
-    #@tasks.loop(time=datetime.time(hour=12, minute=30, second=0)) # time in UTC
-    @tasks.loop(minutes=5)
+    @tasks.loop(time=datetime.time(hour=12, minute=30, second=0)) # time in UTC
+    # @tasks.loop(minutes=5)
     async def post_earnings_spotlight(self):
         """Find random ticker reporting earnings today and post spotlight report for said ticker"""
         if self.mutils.market_open_today():
@@ -462,6 +448,76 @@ class Reports(commands.Cog):
     # Report Factories #
     ####################
 
+    async def build_popularity_screener(self, **kwargs):
+
+        # Collect data to create screener
+        popular_stocks = kwargs.pop('popular_stocks', self.stock_data.popularity.get_popular_stocks())
+
+        # Generate screener
+        report = PopularityScreener(channel=self.screeners_channel,
+                                    popular_stocks=popular_stocks)
+        
+        return report
+
+
+    async def build_volume_screener(self, **kwargs):
+        """Builder for VolumeScreener class"""
+
+        # Collect data to create screener
+        unusual_volume = kwargs.pop('unusual_volume_movers', self.stock_data.trading_view.get_unusual_volume_movers())
+
+        # Generate screener
+        report = VolumeScreener(channel=self.screeners_channel,
+                                unusual_volume=unusual_volume)
+        
+
+        return report
+
+    async def build_gainer_screener(self, market_period:str):
+        """Builder for GainerScreener class"""
+
+        # Collect data to create screener
+        market_period = market_period
+
+        # Get gainers based on market period
+        if market_period == 'premarket':
+            gainers = self.stock_data.trading_view.get_premarket_gainers()
+        elif market_period == 'intraday':
+            gainers = self.stock_data.trading_view.get_intraday_gainers()
+        elif market_period == 'aftermarket':
+            gainers = self.stock_data.trading_view.get_postmarket_gainers()
+
+        # Generate screener
+        report = GainerScreener(channel=self.screeners_channel,
+                                market_period=market_period,
+                                gainers=gainers)
+        
+        return report
+    
+    async def build_stock_report(self, ticker:str, **kwargs):
+        """Builder for StockReport class, easy to call for functions like 'report' and 'report_watchlist'"""
+        # Collect data to create Stock Report
+        ticker_info = kwargs.pop('ticker_info', self.stock_data.get_ticker_info(ticker=ticker))
+        daily_price_history = kwargs.pop('daily_price_history', self.stock_data.fetch_daily_price_history(ticker=ticker))
+        popularity = kwargs.pop('popularity', self.stock_data.fetch_popularity(ticker=ticker))
+        recent_sec_filings = kwargs.pop('recent_sec_filings', self.stock_data.sec.get_recent_filings(ticker=ticker))
+        historical_earnings = kwargs.pop('historical_earnings', self.stock_data.earnings.get_historical_earnings(ticker=ticker))
+        next_earnings_info = kwargs.pop('next_earnings_info', self.stock_data.earnings.get_next_earnings_info(ticker=ticker))
+        quote = kwargs.pop('quote', await self.stock_data.schwab.get_quote(ticker=ticker))
+        fundamentals = kwargs.pop('fundamentals', await self.stock_data.schwab.get_fundamentals(tickers=[ticker]))
+
+        # Generate report 
+        report = StockReport(channel=self.reports_channel,
+                                ticker_info=ticker_info,
+                                daily_price_history=daily_price_history,
+                                popularity=popularity,
+                                recent_sec_filings=recent_sec_filings,
+                                historical_earnings=historical_earnings,
+                                next_earnings_info=next_earnings_info,
+                                quote=quote,
+                                fundamentals=fundamentals)
+        return report
+    
     async def build_politician_report(self, politician_name:str=None, **kwargs):
         """Builder for PoliticianReport class"""
         # Collect data to create Stock Report
@@ -474,30 +530,6 @@ class Reports(commands.Cog):
                                   politician=politician,
                                   trades=trades, 
                                   politician_facts=politician_facts)
-        return report
-    
-    async def build_stock_report(self, ticker:str):
-        """Builder for StockReport class, easy to call for functions like 'report' and 'report_watchlist'"""
-        # Collect data to create Stock Report
-        ticker_info = self.stock_data.get_ticker_info(ticker=ticker)
-        daily_price_history = self.stock_data.fetch_daily_price_history(ticker=ticker)
-        popularity = self.stock_data.fetch_popularity(ticker=ticker)
-        recent_sec_filings = self.stock_data.sec.get_recent_filings(ticker=ticker)
-        historical_earnings = self.stock_data.earnings.get_historical_earnings(ticker=ticker)
-        next_earnings_info = self.stock_data.earnings.get_next_earnings_info(ticker=ticker)
-        quote = await self.stock_data.schwab.get_quote(ticker=ticker)
-        fundamentals = await self.stock_data.schwab.get_fundamentals(tickers=[ticker])
-
-        # Generate report 
-        report = StockReport(channel=self.reports_channel,
-                                ticker_info=ticker_info,
-                                daily_price_history=daily_price_history,
-                                popularity=popularity,
-                                recent_sec_filings=recent_sec_filings,
-                                historical_earnings=historical_earnings,
-                                next_earnings_info=next_earnings_info,
-                                quote=quote,
-                                fundamentals=fundamentals)
         return report
 
 ##################
@@ -1020,11 +1052,10 @@ class Report(object):
 class Screener(Report):
     """Report that is routinely updated with content from a source"""
 
-    def __init__(self, channel, screener_type:str, market_period:str, data:pd.DataFrame, column_map:dict):
+    def __init__(self, channel, screener_type:str, data:pd.DataFrame, column_map:dict):
         super().__init__(channel=channel)
         self.dutils = discord_utils()
         self.screener_type = screener_type
-        self.market_period = market_period
         self.column_map = column_map
 
         # Init data, update watchlist, and format for posting
@@ -1178,21 +1209,22 @@ class GainerScreener(Screener):
     """Screener subclass for posting premarket/intraday/postmarket gainers"""
     def __init__(self, channel:discord.channel, market_period:str, gainers:pd.DataFrame):
         
+        self.market_period = market_period
         # Set column map
-        if market_period == 'premarket':
+        if self.market_period == 'premarket':
             column_map = {'name':'Ticker',
                           'premarket_change':'Change (%)',
                           'premarket_close':'Price',
                           'close':'Prev Close',
                           'premarket_volume':'Pre Market Volume',
                           'market_cap_basic':'Market Cap'}
-        elif market_period == 'intraday':
+        elif self.market_period == 'intraday':
             column_map = {'name':'Ticker',
                           'change':'Change (%)',
                           'close':'Price',
                           'volume':'Volume',
                           'market_cap_basic':'Market Cap'}
-        elif market_period == 'aftermarket':
+        elif self.market_period == 'aftermarket':
             column_map = {'name':'Ticker',
                           'postmarket_change':'Change (%)',
                           'postmarket_close':'Price',
@@ -1201,13 +1233,12 @@ class GainerScreener(Screener):
                           'market_cap_basic':'Market Cap'}
             
         super().__init__(channel=channel, 
-                         screener_type=f"{market_period}-gainers", 
-                         market_period=market_period,
+                         screener_type=f"{self.market_period}-gainers", 
                          data = gainers,
                          column_map=column_map)
         
         # Init buttons
-        self.buttons = self.Buttons(market_period=market_period)
+        self.buttons = self.Buttons(market_period=self.market_period)
         
 
     # Extends
@@ -1274,7 +1305,7 @@ class GainerScreener(Screener):
 
 class VolumeScreener(Screener):
     """Screener subclass to post ununusal volume movers in the market"""
-    def __init__(self, channel:discord.channel, market_period:str, unusual_volume:pd.DataFrame):
+    def __init__(self, channel:discord.channel, unusual_volume:pd.DataFrame):
 
         # Set column map
         column_map = {'name':'Ticker',
@@ -1288,7 +1319,6 @@ class VolumeScreener(Screener):
 
         super().__init__(channel=channel, 
                          screener_type=f"unusual-volume", 
-                         market_period=market_period,
                          data = unusual_volume,
                          column_map=column_map)
         
@@ -1352,7 +1382,7 @@ class VolumeScreener(Screener):
 
 class PopularityScreener(Screener):
     """Screener subclass to post popularity rankings for stocks"""
-    def __init__(self, channel:discord.channel, market_period:str, popular_stocks:pd.DataFrame):
+    def __init__(self, channel:discord.channel, popular_stocks:pd.DataFrame):
         column_map = {'rank':'Rank',
                       'ticker':'Ticker',
                       'mentions': 'Mentions',
@@ -1362,7 +1392,6 @@ class PopularityScreener(Screener):
 
         super().__init__(channel=channel, 
                          screener_type="popular-stocks", 
-                         market_period=market_period,
                          data=popular_stocks,
                          column_map=column_map)
         
