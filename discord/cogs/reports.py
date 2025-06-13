@@ -166,7 +166,9 @@ class Reports(commands.Cog):
 
             # Select random ticker from earnings today
             earnings_today = self.stock_data.earnings.get_earnings_on_date(date=datetime.date.today())
-            spotlight_ticker = earnings_today['ticker'].iloc[random.randint(0, earnings_today['ticker'].size)]
+            spotlight_ticker = earnings_today['ticker'].iloc[random.randint(0, earnings_today['ticker'].size - 1)]
+            while not await self.stock_data.validate_ticker(ticker=spotlight_ticker):
+                spotlight_ticker = earnings_today['ticker'].iloc[random.randint(0, earnings_today['ticker'].size - 1)]
 
             # Get ticker info, earnings info, quote for spotlight report
             ticker_info = self.stock_data.get_ticker_info(ticker=spotlight_ticker)
@@ -1498,10 +1500,11 @@ class PopularityReport(Report):
 
 class EarningsSpotlightReport(Report):
     """Report subclass to post spotlight on random stock reporting earnings today"""
-    def __init__(self, channel:discord.channel, ticker_info:pd.DataFrame, next_earnings_info:pd.DataFrame,
-                 historical_earnings:pd.DataFrame, quote:dict):
+    def __init__(self, channel:discord.channel, ticker_info:pd.DataFrame, daily_price_history:pd.DataFrame,
+                 next_earnings_info:pd.DataFrame, historical_earnings:pd.DataFrame, quote:dict):
         super().__init__(channel=channel,
                          ticker_info=ticker_info,
+                         daily_price_history=daily_price_history,
                          next_earnings_info=next_earnings_info,
                          historical_earnings=historical_earnings,
                          quote=quote)
