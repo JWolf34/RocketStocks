@@ -158,8 +158,8 @@ class Reports(commands.Cog):
         await asyncio.sleep(sleep_time)
 
 
-    @tasks.loop(time=datetime.time(hour=12, minute=30, second=0)) # time in UTC
-    #@tasks.loop(minutes=5)
+    #@tasks.loop(time=datetime.time(hour=12, minute=30, second=0)) # time in UTC
+    @tasks.loop(minutes=5)
     async def post_earnings_spotlight(self):
         """Find random ticker reporting earnings today and post spotlight report for said ticker"""
         if self.mutils.market_open_today():
@@ -176,13 +176,15 @@ class Reports(commands.Cog):
             next_earnings_info = self.stock_data.earnings.get_next_earnings_info(ticker=spotlight_ticker)
             historical_earnings = self.stock_data.earnings.get_historical_earnings(ticker=spotlight_ticker)
             quote = await self.stock_data.schwab.get_quote(ticker=spotlight_ticker)
+            fundamentals = await self.stock_data.schwab.get_fundamentals(tickers=[spotlight_ticker])
 
             report = EarningsSpotlightReport(channel = self.reports_channel,
                                              ticker_info=ticker_info,
                                              daily_price_history=daily_price_history,
                                              next_earnings_info=next_earnings_info,
                                              historical_earnings=historical_earnings,
-                                             quote=quote)
+                                             quote=quote,
+                                             fundamentals=fundamentals)
             logger.info(f"Posting today's earnings spotlight: '{report.ticker}'")
             await report.send_report()
 
@@ -484,7 +486,7 @@ class Reports(commands.Cog):
         historical_earnings = self.stock_data.earnings.get_historical_earnings(ticker=ticker)
         next_earnings_info = self.stock_data.earnings.get_next_earnings_info(ticker=ticker)
         quote = await self.stock_data.schwab.get_quote(ticker=ticker)
-        company_facts = self.stock_data.sec.get_company_facts(ticker=ticker)
+        fundamentals = await self.stock_data.schwab.get_fundamentals(tickers=[ticker])
 
         # Generate report 
         report = StockReport(channel=self.reports_channel,
@@ -495,7 +497,7 @@ class Reports(commands.Cog):
                                 historical_earnings=historical_earnings,
                                 next_earnings_info=next_earnings_info,
                                 quote=quote,
-                                company_facts=company_facts)
+                                fundamentals=fundamentals)
         return report
 
 ##################
@@ -644,7 +646,7 @@ class Report(object):
         
         message += self.build_stats_table(header={},
                                           body=fmt_ticker_info,
-                                          adjust='left')
+                                          adjust='right')
         
         
         return message 
@@ -724,19 +726,23 @@ class Report(object):
         """
         logger.debug("Building upcoming earnings summary...")
 
-        message = "## Next Earnings Summary\n\n"
+        message = "## Next Earnings Summary\n"
         # Validate next earnings info
         if self.next_earnings_info:
-        
-            message += f"**Date:** {self.next_earnings_info['date']}\n"
-            message += "**Time:** {}\n".format("Premarket" if "pre-market" in self.next_earnings_info['time']
-                                    else "After hours" if "after-hours" in self.next_earnings_info['time']
-                                    else "Not supplied")
-            message += f"**Fiscal Quarter:** {self.next_earnings_info['fiscal_quarter_ending']}\n"
-            message += f"**EPS Forecast: ** {self.next_earnings_info['eps_forecast'] if len(self.next_earnings_info['eps_forecast']) > 0 else "N/A"}\n"
-            message += f"**No. of Estimates:** {self.next_earnings_info['no_of_ests']}\n"
-            message += f"**Last Year Report Date:** {self.next_earnings_info['last_year_rpt_dt']}\n"
-            message += f"**Last Year EPS:** {self.next_earnings_info['last_year_eps']}\n"
+            fmt_earnings_info = {}
+            fmt_earnings_info['Date'] = self.next_earnings_info['date']
+            
+            fmt_earnings_info['Time'] = "{}".format("Premarket" if "pre-market" in self.next_earnings_info['time']
+                                                    else "After hours" if "after-hours" in self.next_earnings_info['time']
+                                                    else "Not supplied")
+            fmt_earnings_info['Quarter'] = self.next_earnings_info['fiscal_quarter_ending']
+            fmt_earnings_info['EPS Forecast'] = self.next_earnings_info['eps_forecast'] if len(self.next_earnings_info['eps_forecast']) > 0 else "N/A"
+            fmt_earnings_info['Estimates'] = self.next_earnings_info['no_of_ests']
+            fmt_earnings_info['Prev Rpt Date'] = self.next_earnings_info['last_year_rpt_dt']
+            fmt_earnings_info['Prev Year EPS'] = self.next_earnings_info['last_year_eps']
+            message += self.build_stats_table(header={},
+                                              body=fmt_earnings_info, 
+                                              adjust='right')
         else:
             message += "Stock has no upcoming earnings reports\n"
 
@@ -851,34 +857,31 @@ class Report(object):
         """Return message content with stock fundamental data 
         
         Requires:
-            - company facts
+            - fundamentals
             - quote
         """
         logger.debug("Building ticker stats...")
         message = "## Fundamentals\n"
 
         table_body = {}
-        # Calculate market cap
-        if self.company_facts:
-            # Outstanding shares
-            try:
-                outstanding_shares = self.company_facts['facts']['dei']["EntityCommonStockSharesOutstanding"]['units']['shares'][-1]['val']
-                close = self.quote['regular']['regularMarketLastPrice']
-                table_body['Market Cap'] = self.format_large_num(number=close*outstanding_shares)
-                table_body['Shares'] = self.format_large_num(outstanding_shares)
-            except KeyError as e:
-                logger.debug(f"Ticker '{self.ticker}' has no outstanding shares reported to SEC")
 
+        # Validate fundamentals
+        if self.fundamentals:
+            # Include float? Short interest? Shortable and hard to borrow. Dividends?
+            table_body['Market Cap'] = self.format_large_num(self.fundamentals['instruments'][0]['fundamental']['marketCap'])
+            table_body['EPS'] = f"{'{:.2f}'.format(self.fundamentals['instruments'][0]['fundamental']['eps'])}"
+            table_body['EPS TTM'] = f"{'{:.2f}'.format(self.fundamentals['instruments'][0]['fundamental']['epsTTM'])}"
+            table_body['P/E Ratio'] = f"{'{:.2f}'.format(self.fundamentals['instruments'][0]['fundamental']['peRatio'])}"
+            table_body['Beta'] = self.fundamentals['instruments'][0]['fundamental']['beta']
+            table_body['Dividend'] = "Yes" if self.fundamentals['instruments'][0]['fundamental']['dividendAmount'] else "No"
+            table_body['Shortable'] = "Yes" if self.quote['reference']['isShortable'] else "No"
+            table_body['HTB'] = "Yes" if self.quote['reference']['isHardToBorrow'] else "No"
 
-        # Include float? Short interest? Shortable and hard to borrow. Dividends?
-        table_body['EPS'] = f"{'{:.2f}'.format(self.quote['fundamental']['eps'])}"
-        table_body['P/E Ratio'] = f"{'{:.2f}'.format(self.quote['fundamental']['peRatio'])}"
-        table_body['Shortable'] = "Yes" if self.quote['reference']['isShortable'] else "No"
-        table_body['HTB'] = "Yes" if self.quote['reference']['isHardToBorrow'] else "No"
-
-        message += self.build_stats_table(header={},
-                                          body=table_body,
-                                          adjust='right')
+            message += self.build_stats_table(header={},
+                                            body=table_body,
+                                            adjust='right')
+        else:
+            message += "No fundamentals found"
 
         return message
 
@@ -960,7 +963,7 @@ class Report(object):
         message = "## About\n"
         message += self.build_stats_table(header={},
                                           body=politician_facts,
-                                          adjust='left')
+                                          adjust='right')
         return message
 
 
@@ -1501,13 +1504,14 @@ class PopularityReport(Report):
 class EarningsSpotlightReport(Report):
     """Report subclass to post spotlight on random stock reporting earnings today"""
     def __init__(self, channel:discord.channel, ticker_info:pd.DataFrame, daily_price_history:pd.DataFrame,
-                 next_earnings_info:pd.DataFrame, historical_earnings:pd.DataFrame, quote:dict):
+                 next_earnings_info:pd.DataFrame, historical_earnings:pd.DataFrame, quote:dict, fundamentals:dict):
         super().__init__(channel=channel,
                          ticker_info=ticker_info,
                          daily_price_history=daily_price_history,
                          next_earnings_info=next_earnings_info,
                          historical_earnings=historical_earnings,
-                         quote=quote)
+                         quote=quote,
+                         fundamentals=fundamentals)
         self.buttons = StockReport.Buttons(self.ticker)
         
 
