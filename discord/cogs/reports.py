@@ -156,21 +156,7 @@ class Reports(commands.Cog):
             while not await self.stock_data.validate_ticker(ticker=spotlight_ticker):
                 spotlight_ticker = earnings_today['ticker'].iloc[random.randint(0, earnings_today['ticker'].size - 1)]
 
-            # Get ticker info, earnings info, quote for spotlight report
-            ticker_info = self.stock_data.get_ticker_info(ticker=spotlight_ticker)
-            daily_price_history = self.stock_data.fetch_daily_price_history(ticker=spotlight_ticker)
-            next_earnings_info = self.stock_data.earnings.get_next_earnings_info(ticker=spotlight_ticker)
-            historical_earnings = self.stock_data.earnings.get_historical_earnings(ticker=spotlight_ticker)
-            quote = await self.stock_data.schwab.get_quote(ticker=spotlight_ticker)
-            fundamentals = await self.stock_data.schwab.get_fundamentals(tickers=[spotlight_ticker])
-
-            report = EarningsSpotlightReport(channel = self.reports_channel,
-                                             ticker_info=ticker_info,
-                                             daily_price_history=daily_price_history,
-                                             next_earnings_info=next_earnings_info,
-                                             historical_earnings=historical_earnings,
-                                             quote=quote,
-                                             fundamentals=fundamentals)
+            report = await self.build_earnings_spotlight_report(ticker=spotlight_ticker)
             logger.info(f"Posting today's earnings spotlight: '{report.ticker}'")
             await report.send_report()
 
@@ -181,12 +167,8 @@ class Reports(commands.Cog):
         """Retrieve upcoming earnings data and post screener for earnings reporting this week"""
         today = datetime.datetime.now(tz=date_utils.timezone()).date()
         if today.weekday() == 0:
-            upcoming_earnings = self.stock_data.earnings.fetch_upcoming_earnings()
-            watchlist_tickers = self.stock_data.watchlists.get_all_watchlist_tickers(no_personal=True,
-                                                                                           no_systemGenerated=True)
-            report = WeeklyEarningsScreener(channel=self.screeners_channel,
-                                            upcoming_earnings=upcoming_earnings,
-                                            watchlist_tickers=watchlist_tickers)
+            report = await self.build_weekly_earnings_screener()
+            logger.info("Posting weekly earnings screener...")
             await report.send_report()
 
 
@@ -361,7 +343,7 @@ class Reports(commands.Cog):
         """Generate and send News Report for the input query"""
         logger.info("/news function called by user {}".format(interaction.user.name))
         news = News().get_news(query=query, sort_by=sort_by)
-        report = NewsReport(news=news, query=query)
+        report = await self.build_news_report(query=query, news=news)
         message = await report.send_report(interaction=interaction)
         logger.info(f"Posted news for query '{query}'")
 
@@ -391,9 +373,7 @@ class Reports(commands.Cog):
 
         # Validate popular_stocks and send report
         if not popular_stocks.empty:
-            report = PopularityReport(channel=self.reports_channel, 
-                                      popular_stocks=popular_stocks,
-                                      filter=filter)
+            report = await self.build_popularity_report(filter=filter, popular_stocks=popular_stocks)
             message = await report.send_report(interaction=interaction, visibility=visibility.value)
 
             # Follow-up message
@@ -516,6 +496,65 @@ class Reports(commands.Cog):
                                 next_earnings_info=next_earnings_info,
                                 quote=quote,
                                 fundamentals=fundamentals)
+        return report
+    
+    async def build_news_report(self, query:str, **kwargs):
+        """Builder for NewsReport class"""
+
+        # Collect data to create News Report
+        news = kwargs.pop('news', self.stock_data.news.get_news(query=query))
+
+        # Generate report 
+        report = NewsReport(query=query,
+                            news=news)
+        return report
+    
+    async def build_popularity_report(self, filter:str, **kwargs):
+        """Builder for PopularityReport class"""
+
+        # Collect data to create Popularity Report
+        popular_stocks = kwargs.pop('popular_stocks', self.stock_data.popularity.get_popular_stocks(filter_name=filter))
+
+        # Generate report 
+        report = PopularityReport(channel=self.reports_channel, 
+                                  popular_stocks=popular_stocks,
+                                  filter=filter)
+        return report
+
+    async def build_earnings_spotlight_report(self, ticker:str, **kwargs):
+        """Builder for EarningsSpotlightReport class"""
+
+        # Collect data to create Earnings Spotlight Report
+        ticker_info = self.stock_data.get_ticker_info(ticker=ticker)
+        daily_price_history = self.stock_data.fetch_daily_price_history(ticker=ticker)
+        next_earnings_info = self.stock_data.earnings.get_next_earnings_info(ticker=ticker)
+        historical_earnings = self.stock_data.earnings.get_historical_earnings(ticker=ticker)
+        quote = await self.stock_data.schwab.get_quote(ticker=ticker)
+        fundamentals = await self.stock_data.schwab.get_fundamentals(tickers=[ticker])
+
+        # Generate report
+        report = EarningsSpotlightReport(channel = self.reports_channel,
+                                         ticker_info=ticker_info,
+                                         daily_price_history=daily_price_history,
+                                         next_earnings_info=next_earnings_info,
+                                         historical_earnings=historical_earnings,
+                                         quote=quote,
+                                         fundamentals=fundamentals)
+        return report
+
+    # Weekly Earnings Screener
+    async def build_weekly_earnings_screener(self, query:str, **kwargs):
+        """Builder for WeeklyEarningsScreener class"""
+
+        # Collect data to create News Report
+        upcoming_earnings = kwargs.pop('upcoming_earnings', self.stock_data.earnings.fetch_upcoming_earnings())
+        watchlist_tickers = kwargs.pop('watchlist_tickers', self.stock_data.watchlists.get_all_watchlist_tickers(no_personal=True,
+                                                                                                                 no_systemGenerated=True))
+
+        # Generate report 
+        report = WeeklyEarningsScreener(channel=self.screeners_channel,
+                                        upcoming_earnings=upcoming_earnings,
+                                        watchlist_tickers=watchlist_tickers)
         return report
     
     async def build_politician_report(self, politician_name:str=None, **kwargs):
@@ -1431,9 +1470,7 @@ class PopularityScreener(Screener):
             """
         def __init__(self):
             super().__init__(timeout=None)
-            self.add_item(discord.ui.Button(label="ApeWisdom", style=discord.ButtonStyle.url, url = "https://apewisdom.io/"))
-
-        
+            self.add_item(discord.ui.Button(label="ApeWisdom", style=discord.ButtonStyle.url, url = "https://apewisdom.io/"))    
 
 class NewsReport(Report):
     """Report subclass to post news articles about the input query"""

@@ -1,6 +1,7 @@
 import datetime
 from db import Postgres
 from nasdaq import Nasdaq
+from news import News
 from capitol_trades import CapitolTrades
 from stockdata.watchlists import Watchlists
 from trading_view import TradingView
@@ -197,6 +198,7 @@ class StockData():
         self.sec = SEC(sd=self)
         self.schwab = Schwab()
         self.nasdaq = Nasdaq() 
+        self.news = News()
         self.earnings = Earnings(nasdaq=self.nasdaq, db=self.db)  
         self.capitol_trades = CapitolTrades(db=self.db)
         self.watchlists = Watchlists(self.db)
