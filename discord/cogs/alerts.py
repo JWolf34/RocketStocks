@@ -5,6 +5,7 @@ from reports import Report, StockReport, NewsReport
 from stock_data import StockData
 import analysis as an
 import numpy as np
+import pandas as pd
 from utils import market_utils, date_utils, discord_utils
 import datetime
 import logging
@@ -273,13 +274,18 @@ class Alerts(commands.Cog):
 ##################
     
 class Alert(Report):
-    def __init__(self, channel, override_buttons = False, **kwargs):
+    def __init__(self, channel:discord.channel, alert_type:str, override_buttons = False, **kwargs):
         super().__init__(channel=channel,
                          **kwargs)
+        
+        # Set alert type
+        self.alert_type = alert_type
 
         # Parse data from keyword args for building alerts
         self.market_period = kwargs.pop('market_period', None)
+        self.pct_change = self.quote['quote']['netPercentChange'] if self.quote else None
         self.rvol = kwargs.pop('rvol', None)
+        self.rvol_at_time = kwargs.pop('rvol_at_time', None)
 
         if not override_buttons:
             self.buttons = self.Buttons(self.ticker, channel)
@@ -294,6 +300,51 @@ class Alert(Report):
         alert = ''
         alert += self.build_alert_header()
         return alert
+    
+    def build_todays_change(self):
+        logger.debug("Building today's change...")
+        symbol = ":green_circle:" if self.pct_change > 0 else ":small_red_triangle_down:"
+        return f"**{self.ticker}** is {symbol} **{"{:.2f}".format(self.pct_change)}%**"
+    
+    def build_volume_stats(self):
+        """Return message content with statistics on volume of the alert's ticker
+        
+        Requires:
+            - daily_price_history
+            
+        Optional:
+            - rvol
+            - rvol_at_time
+        """
+
+        logger.debug("Building volume stats...")
+
+        message = '## Volume Stats\n'
+        volume_stats = {}
+
+        # Today's volume from quote
+        if self.quote:
+            volume_stats['Volume Today'] = self.format_large_num(self.quote['quote']['totalVolume'])
+
+        # RVOL
+        if self.rvol:
+            volume_stats['Relative Volume (10 Day)'] = "{:.2f}x".format(self.rvol)
+
+        # RVOL at time
+
+        # Average volume from daily price history
+        if self.daily_price_history:
+            volume_stats['Average Volume (10 Day)'] = self.format_large_num(self.daily_price_history['volume'].tail(10).mean())
+            volume_stats['Average Volume (30 Day)'] = self.format_large_num(self.daily_price_history['volume'].tail(30).mean())
+            volume_stats['Average Volume (90 Day)'] = self.format_large_num(self.daily_price_history['volume'].tail(90).mean())
+
+        # Check that volume stats has been populated with content
+        if volume_stats:
+            message += self.build_stats_table(header={}, body=volume_stats, adjust='right')
+        else:
+            message += f"No volume stats available"
+
+        return message
 
     def override_and_edit(self, old_alert_data):
         pct_diff = ((self.alert_data['pct_change'] - old_alert_data['pct_change']) / abs(old_alert_data['pct_change'])) * 100.0
@@ -418,9 +469,12 @@ class WatchlistMoverAlert(Alert):
         return alert
 
 class VolumeMoverAlert(Alert):
-    def __init__(self, ticker, channel, alert_data):
-        self.alert_type = "VOLUME_MOVER"
-        super().__init__(ticker, channel, alert_data)
+    def __init__(self, channel:discord.channel, ticker:str, quote:dict, daily_price_history:pd.DataFrame):
+        super().__init__(channel=channel,
+                         alert_type="VOLUME_MOVER",
+                         ticker=ticker,
+                         quote=quote,
+                         daily_price_history=daily_price_history)
 
     def build_alert_header(self):
         logger.debug("Building alert header...")
@@ -428,20 +482,12 @@ class VolumeMoverAlert(Alert):
         return header
 
     def build_todays_change(self):
+        """Extends the parent function to include RVOL data"""
         logger.debug("Building today's change...")
-        symbol = ":green_circle:" if self.alert_data['pct_change'] > 0 else ":small_red_triangle_down:"
-        return f"**{self.ticker}** is {symbol} **{"{:.2f}".format(self.alert_data['pct_change'])}%** with volume up **{"{:.2f} times".format(self.alert_data['rvol'])}** the 10-day average\n"
-
-    def build_volume_stats(self):
-        logger.debug("Building volume stats...")
-        return f"""## Volume Stats
-        - **Today's Volume:** {self.format_large_num(self.alert_data['volume'])}
-        - **Relative Volume (10 Day):** {"{:.2f}x".format(self.alert_data['rvol'])}
-        - **Average Volume  (10 Day):** {self.format_large_num(self.alert_data['avg_vol_10'])}
-        - **Average Volume  (30 Day):** {self.format_large_num(self.alert_data['avg_vol_30'])}
-        - **Average Volume  (90 Day):** {self.format_large_num(self.alert_data['avg_vol_90'])}
-        \n\n"""
-
+        message = super().build_todays_change()
+        message += f"with volume up **{"{:.2f} times".format(self.rvol)}** the 10-day average\n"
+        return message
+    
     def build_alert(self):
         logger.debug("Building Volume Mover Alert...")
         alert = ""
