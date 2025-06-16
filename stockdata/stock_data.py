@@ -210,7 +210,8 @@ class StockData():
     def alert_tickers(self):
         return self._alert_tickers
     
-    def update_alert_tickers(self, tickers:list, source:str):
+    async def update_alert_tickers(self, tickers:list, source:str):
+        """Update list of tickers to monitor for alerts"""
         self._alert_tickers[source] = tickers
 
         

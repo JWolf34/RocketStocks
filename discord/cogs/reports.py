@@ -75,6 +75,9 @@ class Reports(commands.Cog):
             # Generate screener
             report = await self.build_popularity_screener(popular_stocks=popular_stocks)
 
+            # Update alert tickers with popular stocks
+            await self.stock_data.update_alert_tickers(tickers=report.get_tickers()[:250], source='popularity')
+
             # Post screener
             logger.info("Posting popularity screener")
             await report.send_report()
@@ -96,7 +99,7 @@ class Reports(commands.Cog):
             report = await self.build_volume_screener()
 
             # Update alert tickers with unusual volume movers
-            self.stock_data.update_alert_tickers(tickers=report.get_tickers(), source='unusual-volume')
+            await self.stock_data.update_alert_tickers(tickers=report.get_tickers(), source='unusual-volume')
 
             # Send report
             logger.info("Posting unusual volume screener")
@@ -117,7 +120,7 @@ class Reports(commands.Cog):
             report = await self.build_gainer_screener(market_period=market_period)
 
             # Update alert tickers with gainers
-            self.stock_data.update_alert_tickers(tickers=report.get_tickers(), source='gainers')
+            await self.stock_data.update_alert_tickers(tickers=report.get_tickers(), source='gainers')
 
             # Send report
             logger.info(f"Sending {report.market_period} gainers screener")

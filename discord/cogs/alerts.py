@@ -2,6 +2,7 @@ import discord
 from discord.ext import commands
 from discord.ext import tasks
 from discord.cogs.reports import Report, StockReport, NewsReport
+from stock_data import StockData
 import analysis as an
 import numpy as np
 from utils import market_utils, date_utils, discord_utils
@@ -14,8 +15,9 @@ logger = logging.getLogger(__name__)
 
 class Alerts(commands.Cog):
     """Push alerts to discord when criteria for stock movements is met"""
-    def __init__(self, bot):
+    def __init__(self, bot:commands.Bot, stock_data:StockData):
         self.bot = bot
+        self.stock_data = stock_data
         self.mutils = market_utils()
 
         # Init channels to post alerts to 
@@ -44,6 +46,7 @@ class Alerts(commands.Cog):
 
     @tasks.loop(time=datetime.time(hour=6, minute=0, second=0)) # time in UTC
     async def post_alerts_date(self):
+        """Post message separating alerts by date in the alerts channel"""
         if (self.mutils.market_open_today()):
             date_string = date_utils.format_date_mdy(datetime.datetime.today())
             await self.alerts_channel.send(f"# :rotating_light: Alerts for {date_string} :rotating_light:")
@@ -51,17 +54,18 @@ class Alerts(commands.Cog):
     @tasks.loop(minutes = 5)
     async def send_alerts(self):
         '''Process alerts every 5 minutes if the market is open and in intraday or after hours'''
-        if (self.mutils.market_open_today() and self.mutils.get_market_period() in ['intraday', 'aftermarket']):
-            all_alert_tickers = list(set([ticker for tickers in self.bot.stock_data.alert_tickers.values() for ticker in tickers]))
-            #all_alert_tickers = ['PHIO', 'ATPC', 'SLRX', 'KAPA']
+        market_period = self.mutils.get_market_period()
+        if (self.mutils.market_open_today() and market_period != 'EOD'):
+            # Fetch alert tickers and get quotes to analyze movement
+            all_alert_tickers = list(set([ticker for tickers in self.stock_data.alert_tickers.values() for ticker in tickers]))
 
             # Fetch quotes for tickers from Schwab in chunks of 'chunk_size'
             quotes = {}
-            chunk_size = 10
+            chunk_size = 25
             for i in range(0, len(all_alert_tickers), chunk_size):
                 tickers = all_alert_tickers[i:i+chunk_size]
-                quotes = quotes | await self.bot.stock_data.schwab.get_quotes(tickers=tickers)
-            quotes.pop('errors', None)
+                quotes = quotes | await self.stock_data.schwab.get_quotes(tickers=tickers)
+            logger.info(f"Encountered {len(quotes.pop('errors', []))} errors fetching quotes for alert tickers")
             all_alert_tickers = [ticker for ticker in quotes]
 
             # Send alerts
@@ -558,4 +562,4 @@ class PoliticianTradeAlert(Alert):
 #########
 
 async def setup(bot):
-    await bot.add_cog(Alerts(bot))
+    await bot.add_cog(Alerts(bot,))
