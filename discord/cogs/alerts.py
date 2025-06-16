@@ -1,7 +1,7 @@
 import discord
 from discord.ext import commands
 from discord.ext import tasks
-from discord.cogs.reports import Report, StockReport, NewsReport
+from reports import Report, StockReport, NewsReport
 from stock_data import StockData
 import analysis as an
 import numpy as np
@@ -56,6 +56,8 @@ class Alerts(commands.Cog):
         '''Process alerts every 5 minutes if the market is open and in intraday or after hours'''
         market_period = self.mutils.get_market_period()
         if (self.mutils.market_open_today() and market_period != 'EOD'):
+            logger.info("Processing alerts")
+
             # Fetch alert tickers and get quotes to analyze movement
             all_alert_tickers = list(set([ticker for tickers in self.stock_data.alert_tickers.values() for ticker in tickers]))
 
@@ -66,15 +68,13 @@ class Alerts(commands.Cog):
                 tickers = all_alert_tickers[i:i+chunk_size]
                 quotes = quotes | await self.stock_data.schwab.get_quotes(tickers=tickers)
             logger.info(f"Encountered {len(quotes.pop('errors', []))} errors fetching quotes for alert tickers")
-            all_alert_tickers = [ticker for ticker in quotes]
 
             # Send alerts
-            logger.info("Processing alerts")
-            await self.send_unusual_volume_movers(tickers=all_alert_tickers, quotes=quotes)
-            await self.send_volume_spike_movers(tickers=all_alert_tickers, quotes=quotes)
-            await self.send_earnings_movers(tickers=all_alert_tickers, quotes=quotes)
+            await self.send_unusual_volume_movers(quotes=quotes)
+            await self.send_volume_spike_movers(quotes=quotes)
+            await self.send_earnings_movers(quotes=quotes)
             #await self.send_sec_filing_movers(tickers= all_alert_tickers, quotes=quotes)
-            await self.send_watchlist_movers(tickers=all_alert_tickers, quotes=quotes)
+            await self.send_watchlist_movers(quotes=quotes)
             logger.info("Alerts posted")
 
     # Start posting report at next 0 or 5 minute interval
@@ -83,7 +83,7 @@ class Alerts(commands.Cog):
     async def send_alerts_before_loop(self):
         """Before loop for 'send_alerts'"""
         DELTA = 30
-        await asyncio.sleep(date_utils.seconds_until_minute_interval() + DELTA)
+        await asyncio.sleep(date_utils.seconds_until_minute_interval(5) + DELTA)
 
     async def send_earnings_movers(self, tickers:list, quotes:dict):
         logger.info("Processing earnings movers")
@@ -131,30 +131,37 @@ class Alerts(commands.Cog):
                         alert = WatchlistMoverAlert(ticker=ticker, channel=self.alerts_channel, alert_data=alert_data)
                         await alert.send_alert()
         
-    async def send_unusual_volume_movers(self, tickers:list, quotes:dict):
+    async def send_unusual_volume_movers(self, quotes:dict):
+        """Send unusual volume alerts to Discord if criteria is met
+        
+        Criteria:
+            - RVOL > 25 (volume is 25x the average volume over the last x periods)
+            - % change > 10%
+        """
         logger.info("Processing unusual volume movers")
-        for ticker in tickers:
+                
+        # Calculate RVOL for each ticker over x periods
+        for ticker, quote in quotes.items():
             periods = 10
             num_days_back = (periods / 5) * 7
             start_date = datetime.date.today() - datetime.timedelta(days = num_days_back)
-            data = sd.StockData.fetch_daily_price_history(ticker=ticker, start_date=start_date)
-            curr_volume = quotes[ticker]['quote']['totalVolume']
-            rvol = an.indicators.volume.rvol(data=data, periods=periods, curr_volume=curr_volume)
-            pct_change = quotes[ticker]['quote']['netPercentChange']   
-            #market_cap = sd.StockData.get_market_cap(ticker=ticker) 
+            daily_price_history = self.stock_data.fetch_daily_price_history(ticker=ticker, start_date=start_date)
+            curr_volume = quote['quote']['totalVolume']
+            rvol = an.indicators.volume.rvol(data=daily_price_history, periods=periods, curr_volume=curr_volume)
+            pct_change = quote['quote']['netPercentChange'] 
+
+            # If criteria met, create Volume Mover Alert
             if rvol > 25.0 and abs(pct_change) > 10.0 and rvol is not np.nan: # and market_cap > 50000000: 
                 logger.debug(f"Identified ticker '{ticker}' with RVOL {"{:.2f}x".format(rvol)} and percent change {"{:.2f}%".format(pct_change)}")
-                alert_data = {}
                 alert_data = {}
                 alert_data['pct_change'] = pct_change
                 alert_data['rvol'] = rvol
                 alert_data['volume'] = curr_volume
-                alert_data['avg_vol_10'] = data['volume'].tail(10).mean()
-                alert_data['avg_vol_30'] = data['volume'].tail(30).mean()
-                alert_data['avg_vol_90'] = data['volume'].tail(90).mean()
+                alert_data['avg_vol_10'] = daily_price_history['volume'].tail(10).mean()
+                alert_data['avg_vol_30'] = daily_price_history['volume'].tail(30).mean()
+                alert_data['avg_vol_90'] = daily_price_history['volume'].tail(90).mean()
                 alert = VolumeMoverAlert(ticker=ticker, channel=self.alerts_channel, alert_data=alert_data)
                 await alert.send_alert()
-                await asyncio.sleep(1)
 
     async def send_volume_spike_movers(self, tickers:list, quotes:dict):
         logger.info("Processing volume spike movers")
@@ -259,17 +266,23 @@ class Alerts(commands.Cog):
         await asyncio.sleep(utils.date_utils.seconds_until_5m_interval())
 
     
+
+    
 ##################
 # Alerts Classes #
 ##################
     
 class Alert(Report):
-    def __init__(self, ticker, channel, alert_data, override_buttons = False):
-        super().__init__(channel=channel)
-        self.ticker = ticker
-        self.alert_data = alert_data
-        self.message = self.build_alert()
-        self.buttons = self.Buttons(self.ticker, channel)
+    def __init__(self, channel, override_buttons = False, **kwargs):
+        super().__init__(channel=channel,
+                         **kwargs)
+
+        # Parse data from keyword args for building alerts
+        self.market_period = kwargs.pop('market_period', None)
+        self.rvol = kwargs.pop('rvol', None)
+
+        if not override_buttons:
+            self.buttons = self.Buttons(self.ticker, channel)
         
     
     def build_alert_header(self):
@@ -290,8 +303,9 @@ class Alert(Report):
             return False
 
     async def send_alert(self):
-        today = datetime.datetime.today()
-        market_period = self.mutils.get_market_period()
+
+        message = self.build_alert()
+        today = datetime.datetime.now(tz=date_utils.timezone()).date()
         message_id = discord_utils.get_alert_message_id(date=today.date(), ticker=self.ticker, alert_type=self.alert_type)
         if message_id is not None:
             logger.debug(f"Alert {self.alert_type} already reported for ticker {self.ticker} today")
@@ -410,7 +424,7 @@ class VolumeMoverAlert(Alert):
 
     def build_alert_header(self):
         logger.debug("Building alert header...")
-        header = f"## :rotating_light: Volume Mover: {self.ticker}\n\n\n"
+        header = f"## :rotating_light: {self.market_period.capitalize()} Volume Mover: {self.ticker}\n\n\n"
         return header
 
     def build_todays_change(self):
@@ -561,5 +575,5 @@ class PoliticianTradeAlert(Alert):
 # Setup #
 #########
 
-async def setup(bot):
-    await bot.add_cog(Alerts(bot,))
+async def setup(bot:commands.Bot):
+    await bot.add_cog(Alerts(bot, bot.stock_data))

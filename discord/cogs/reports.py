@@ -584,7 +584,7 @@ class Report(object):
        
         self.channel = channel
 
-        # Parse data from keyword args
+        # Parse data from keyword args for building reports
         self.ticker_info = kwargs.pop('ticker_info', None)
         self.ticker = self.ticker_info['ticker'] if self.ticker_info else kwargs.pop('ticker', None)
         self.quote = kwargs.pop('quote', None)
