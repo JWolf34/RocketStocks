@@ -56,11 +56,12 @@ class Alerts(commands.Cog):
     async def send_alerts(self):
         '''Process alerts every 5 minutes if the market is open and in intraday or after hours'''
         market_period = self.mutils.get_market_period()
-        if (self.mutils.market_open_today() and market_period != 'EOD'):
+        if True: #(self.mutils.market_open_today() and market_period != 'EOD'):
             logger.info("Processing alerts")
 
             # Fetch alert tickers and get quotes to analyze movement
-            all_alert_tickers = list(set([ticker for tickers in self.stock_data.alert_tickers.values() for ticker in tickers]))
+            #all_alert_tickers = list(set([ticker for tickers in self.stock_data.alert_tickers.values() for ticker in tickers]))
+            all_alert_tickers = ['SKYQ', 'LSE', 'CREG']
 
             # Fetch quotes for tickers from Schwab in chunks of 'chunk_size'
             quotes = {}
@@ -80,7 +81,7 @@ class Alerts(commands.Cog):
 
     # Start posting report at next 0 or 5 minute interval
     # + 30 seconds to allow for reports to generate and add tickers to the alert list
-    @send_alerts.before_loop
+    #@send_alerts.before_loop
     async def send_alerts_before_loop(self):
         """Before loop for 'send_alerts'"""
         DELTA = 30
@@ -146,7 +147,7 @@ class Alerts(commands.Cog):
             periods = 10
             num_days_back = (periods / 5) * 7
             start_date = datetime.date.today() - datetime.timedelta(days = num_days_back)
-            daily_price_history = self.stock_data.fetch_daily_price_history(ticker=ticker, start_date=start_date)
+            daily_price_history = self.stock_data.fetch_daily_price_history(ticker=ticker)
             curr_volume = quote['quote']['totalVolume']
             rvol = an.indicators.volume.rvol(data=daily_price_history, periods=periods, curr_volume=curr_volume)
             pct_change = quote['quote']['netPercentChange'] 
@@ -154,14 +155,10 @@ class Alerts(commands.Cog):
             # If criteria met, create Volume Mover Alert
             if rvol > 25.0 and abs(pct_change) > 10.0 and rvol is not np.nan: # and market_cap > 50000000: 
                 logger.debug(f"Identified ticker '{ticker}' with RVOL {"{:.2f}x".format(rvol)} and percent change {"{:.2f}%".format(pct_change)}")
-                alert_data = {}
-                alert_data['pct_change'] = pct_change
-                alert_data['rvol'] = rvol
-                alert_data['volume'] = curr_volume
-                alert_data['avg_vol_10'] = daily_price_history['volume'].tail(10).mean()
-                alert_data['avg_vol_30'] = daily_price_history['volume'].tail(30).mean()
-                alert_data['avg_vol_90'] = daily_price_history['volume'].tail(90).mean()
-                alert = VolumeMoverAlert(ticker=ticker, channel=self.alerts_channel, alert_data=alert_data)
+                alert = await self.build_volume_mover(ticker=ticker,
+                                                      rvol=rvol,
+                                                      quote=quote,
+                                                      daily_price_history=daily_price_history)
                 await alert.send_alert()
 
     async def send_volume_spike_movers(self, tickers:list, quotes:dict):
@@ -267,6 +264,25 @@ class Alerts(commands.Cog):
         await asyncio.sleep(utils.date_utils.seconds_until_5m_interval())
 
     
+    async def build_volume_mover(self, ticker:str, **kwargs):
+        """Builder for VolumeMoverAlert"""
+
+        # Collect data to build alert
+        quote = kwargs.pop('quote', self.stock_data.schwab.get_quote(ticker=ticker))
+        daily_price_history = kwargs.pop('daily_price_history', self.stock_data.fetch_daily_price_history(ticker=ticker))
+        rvol = kwargs.pop('rvol', an.indicators.volume.rvol(data=daily_price_history,
+                                                            curr_volume=quote['quote']['totalVolume']))
+
+        # Generate alert
+        alert = VolumeMoverAlert(channel=self.alerts_channel,
+                                 ticker=ticker,
+                                 rvol=rvol,
+                                 quote=quote,
+                                 daily_price_history=daily_price_history)
+        
+        return alert
+
+    
 
     
 ##################
@@ -281,6 +297,9 @@ class Alert(Report):
         # Set alert type
         self.alert_type = alert_type
 
+        # Discord Utils
+        self.dutils = discord_utils()
+
         # Parse data from keyword args for building alerts
         self.market_period = kwargs.pop('market_period', None)
         self.pct_change = self.quote['quote']['netPercentChange'] if self.quote else None
@@ -289,7 +308,14 @@ class Alert(Report):
 
         if not override_buttons:
             self.buttons = self.Buttons(self.ticker, channel)
+
+        # Init alert data
+        self.alert_data = {}
+        self.build_alert_data()
         
+    def build_alert_data(self):
+        """Populate alert data with necessary information to compare against futures alerts to overriding and posting new alerts"""
+        self.alert_data['pct_change'] = self.pct_change
     
     def build_alert_header(self):
         logger.debug("Building alert header...")
@@ -303,8 +329,8 @@ class Alert(Report):
     
     def build_todays_change(self):
         logger.debug("Building today's change...")
-        symbol = ":green_circle:" if self.pct_change > 0 else ":small_red_triangle_down:"
-        return f"**{self.ticker}** is {symbol} **{"{:.2f}".format(self.pct_change)}%**"
+        symbol = "🟢" if self.pct_change > 0 else "🔻"
+        return f"**{self.ticker}** is {symbol} **{'{:.2f}'.format(self.pct_change)}%**"
     
     def build_volume_stats(self):
         """Return message content with statistics on volume of the alert's ticker
@@ -333,7 +359,7 @@ class Alert(Report):
         # RVOL at time
 
         # Average volume from daily price history
-        if self.daily_price_history:
+        if not self.daily_price_history.empty:
             volume_stats['Average Volume (10 Day)'] = self.format_large_num(self.daily_price_history['volume'].tail(10).mean())
             volume_stats['Average Volume (30 Day)'] = self.format_large_num(self.daily_price_history['volume'].tail(30).mean())
             volume_stats['Average Volume (90 Day)'] = self.format_large_num(self.daily_price_history['volume'].tail(90).mean())
@@ -346,34 +372,50 @@ class Alert(Report):
 
         return message
 
-    def override_and_edit(self, old_alert_data):
-        pct_diff = ((self.alert_data['pct_change'] - old_alert_data['pct_change']) / abs(old_alert_data['pct_change'])) * 100.0
+    def override_and_edit(self, prev_alert_data):
+        pct_diff = ((self.alert_data['pct_change'] - prev_alert_data['pct_change']) / abs(prev_alert_data['pct_change'])) * 100.0
         if pct_diff > 100.0:
             return True 
         else:
             return False
 
     async def send_alert(self):
+        """Send alert to alert's channel, adding files and buttons as needed"""
 
         message = self.build_alert()
+
+        # Check if alert has already been posted
         today = datetime.datetime.now(tz=date_utils.timezone()).date()
-        message_id = discord_utils.get_alert_message_id(date=today.date(), ticker=self.ticker, alert_type=self.alert_type)
-        if message_id is not None:
-            logger.debug(f"Alert {self.alert_type} already reported for ticker {self.ticker} today")
-            old_alert_data = discord_utils.get_alert_message_data(date=today.date(), ticker=self.ticker, alert_type=self.alert_type)
-            if self.override_and_edit(old_alert_data = old_alert_data):
+        message_id = self.dutils.get_alert_message_id(date=today, ticker=self.ticker, alert_type=self.alert_type)
+
+        # Alert has been posted
+        if message_id:
+            logger.debug(f"Alert {self.alert_type} already reported for ticker '{self.ticker}' today")
+            prev_alert_data = self.dutils.get_alert_message_data(date=today, ticker=self.ticker, alert_type=self.alert_type)
+
+            # Alert has been posted, but threshold met to post an update
+            if self.override_and_edit(prev_alert_data = prev_alert_data):
                 logger.debug(f"Significant movements on ticker {self.ticker} since alert last posted - updating...")
+
+                # Fetch previous message to be linked to in new alert
                 prev_message =  await self.channel.fetch_message(message_id)
-                prev_message_time = prev_message.created_at.astimezone(utils.date_utils.timezone())
+                prev_message_time = prev_message.created_at.astimezone(date_utils.timezone())
                 self.message += f"\n[Updated from last alert at {prev_message_time.strftime("%-I:%M %p")} {prev_message_time.tzname()}]({prev_message.jump_url})"
-                message = await self.channel.send(self.message, view=self.buttons)
-                discord_utils.update_alert_message_data(date=today.date(), ticker=self.ticker, alert_type=self.alert_type, messageid=message.id, alert_data=self.alert_data)
+
+                # Send new alert
+                message = await self.channel.send(message, view=self.buttons)
+
+                # Update alert data
+                self.dutils.update_alert_message_data(date=today.date(), ticker=self.ticker, alert_type=self.alert_type, messageid=message.id, alert_data=self.alert_data)
+            
+            # Alert has been posted and does not meet criteria for an update
             else:
                 logger.debug(f"Movements for ticker {self.ticker} not significant enough to update alert")
                 pass
+        # No alert has been posted, post a new one
         else:
-            message = await self.channel.send(self.message, view=self.buttons)
-            discord_utils.insert_alert_message_id(date=today.date(), ticker=self.ticker, alert_type=self.alert_type, message_id=message.id, alert_data = self.alert_data)
+            message = await self.channel.send(message, view=self.buttons)
+            self.dutils.insert_alert_message_id(date=today, ticker=self.ticker, alert_type=self.alert_type, message_id=message.id, alert_data = self.alert_data)
             return message
 
 
@@ -469,38 +511,47 @@ class WatchlistMoverAlert(Alert):
         return alert
 
 class VolumeMoverAlert(Alert):
-    def __init__(self, channel:discord.channel, ticker:str, quote:dict, daily_price_history:pd.DataFrame):
+    def __init__(self, channel:discord.channel, ticker:str, rvol:float, quote:dict, daily_price_history:pd.DataFrame):
         super().__init__(channel=channel,
                          alert_type="VOLUME_MOVER",
                          ticker=ticker,
+                         rvol=rvol,
                          quote=quote,
                          daily_price_history=daily_price_history)
+        
+    def build_alert_data(self):
+        """Extends parent class to add RVOL to alert data"""
+        super().build_alert_data()
+        self.alert_data['rvol'] = self.rvol
 
     def build_alert_header(self):
+        """Overrides parent class to build custom header"""
         logger.debug("Building alert header...")
-        header = f"## :rotating_light: {self.market_period.capitalize()} Volume Mover: {self.ticker}\n\n\n"
+        header = f"## :rotating_light: Volume Mover: {self.ticker}\n\n\n"
         return header
-
-    def build_todays_change(self):
-        """Extends the parent function to include RVOL data"""
-        logger.debug("Building today's change...")
-        message = super().build_todays_change()
-        message += f"with volume up **{"{:.2f} times".format(self.rvol)}** the 10-day average\n"
-        return message
     
     def build_alert(self):
+        """Override parent class to build custom alert"""
         logger.debug("Building Volume Mover Alert...")
         alert = ""
         alert += self.build_alert_header()
         alert += self.build_todays_change()
         alert += self.build_volume_stats()
         return alert
+    
+    def build_todays_change(self):
+        """Extends the parent function to include RVOL data"""
+        logger.debug("Building today's change...")
+        message = super().build_todays_change()
+        message += f" with volume up **{'{:.2f} times'.format(self.rvol)}** the 10-day average\n"
+        return message
 
     # Override
-    def override_and_edit(self, old_alert_data):
-        if super().override_and_edit(old_alert_data=old_alert_data):
+    def override_and_edit(self, prev_alert_data):
+        """Extends parent function to check RVOL change"""
+        if super().override_and_edit(prev_alert_data=prev_alert_data):
             return True 
-        elif self.alert_data['rvol'] > (2.0 * old_alert_data['rvol']):
+        elif self.alert_data['rvol'] > (2.0 * prev_alert_data['rvol']):
             return True
         else:
             return False

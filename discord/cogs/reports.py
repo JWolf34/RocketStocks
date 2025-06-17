@@ -1058,7 +1058,7 @@ class Report(object):
         return report   
 
     async def send_report(self, interaction:discord.Interaction = None, visibility:str = "public", files=None, view=None):
-        """Send report to report's channel, adding files and vuttons as needed"""
+        """Send report to report's channel, adding files and buttons as needed"""
         self.message = self.build_report() + "\n\n"
         logger.info("Sending report...")
         logger.debug(f"Report has content of length {len(self.message)}")
