@@ -138,7 +138,7 @@ class Alerts(commands.Cog):
         
         Criteria:
             - RVOL > 25 (volume is 25x the average volume over the last x periods)
-            - % change > 10%
+            - % change > +-10%
         """
         logger.info("Processing unusual volume movers")
                 
@@ -161,28 +161,34 @@ class Alerts(commands.Cog):
                                                       daily_price_history=daily_price_history)
                 await alert.send_alert()
 
-    async def send_volume_spike_movers(self, tickers:list, quotes:dict):
+    async def send_volume_spike_movers(self, quotes:dict):
+        """Send volume spike alerts to Discord if criteria is met
+        
+        Criteria:
+            - RVOL_AT_TIME > 50 (volume at this time is 50x the average volume over the last x periods)
+            - % change > +-10%
+        """
         logger.info("Processing volume spike movers")
-        for ticker in tickers:
+
+        # Calculate RVOL_AT_TIME for each ticker over x periods
+        for ticker, quote in quotes.items():
             periods = 10
-            num_days_back = (periods / 5) * 7
             now = datetime.datetime.now()
-            start_datetime = now - datetime.timedelta(days = num_days_back)
-            data = sd.StockData.fetch_5m_price_history(ticker=ticker, start_datetime=start_datetime)
-            today_data = await sd.Schwab().get_5m_price_history(ticker=ticker, start_datetime=now)
-            rvol_at_time = an.indicators.volume.rvol_at_time(data=data, today_data=today_data, periods=periods, dt=now)
-            avg_vol_at_time, time = an.indicators.volume.avg_vol_at_time(data=data, periods=periods)
-            pct_change = quotes[ticker]['quote']['netPercentChange']   
-            #market_cap = sd.StockData.get_market_cap(ticker=ticker) 
+            fivem_price_history = self.stock_data.fetch_5m_price_history(ticker=ticker)
+            today_data = await self.stock_data.schwab.get_5m_price_history(ticker=ticker, start_datetime=now)
+            rvol_at_time = an.indicators.volume.rvol_at_time(data=fivem_price_history, today_data=today_data, periods=periods, dt=now)
+            avg_vol_at_time, time = an.indicators.volume.avg_vol_at_time(data=fivem_price_history, periods=periods)
+            pct_change = quote['quote']['netPercentChange']   
+
+            # If criteria met, create Volume Spike Alert
             if rvol_at_time > 50.0 and abs(pct_change) > 10.0 and rvol_at_time is not np.nan and avg_vol_at_time is not np.nan:
                 logger.debug(f"Identified ticker '{ticker}' with RVOL at time ({time}) {"{:.2f}x".format(rvol_at_time)} and percent change {"{:.2f}%".format(pct_change)}")
-                alert_data = {}
-                alert_data['pct_change'] = pct_change
-                alert_data['rvol_at_time'] = rvol_at_time
-                alert_data['avg_vol_at_time'] = avg_vol_at_time
-                alert_data['volume'] = quotes[ticker]['quote']['totalVolume']
-                alert_data['time'] = datetime.time.strftime(time, "%-I:%M %p %z")
-                alert = VolumeSpikeAlert(ticker=ticker, channel=self.alerts_channel, alert_data=alert_data)
+
+                alert = await self.build_volume_spike_alert(ticker=ticker,
+                                                      quote=quote,
+                                                      rvol_at_time=rvol_at_time,
+                                                      avg_vol_at_time=avg_vol_at_time,
+                                                      time=time)
                 await alert.send_alert()
                 await asyncio.sleep(1)
     
@@ -281,6 +287,20 @@ class Alerts(commands.Cog):
                                  daily_price_history=daily_price_history)
         
         return alert
+    
+    async def build_volume_spike_alert(self, ticker, **kwargs):
+        """Builder for VolumeSpikeAlert"""
+
+        # Collect data to build alert
+        quote = kwargs.pop('quote', self.stock_data.schwab.get_quote(ticker=ticker))
+        rvol_at_time = an.indicators.volume.rvol_at_time(data = self.stock_data.fetch_5m_price_history(ticker=ticker), 
+                                                         today_data = await self.stock_data.schwab.get_5m_price_history(ticker=ticker,
+                                                                                                                       start_datetime=datetime.datetime.now()),
+                                                         dt = datetime.datetime.now())
+        avg_vol_at_time, time = (kwargs.pop('time', None), kwargs.pop('avgan.indicators.volume.avg_vol_at_time(data=fivem_price_history, periods=periods)
+        
+        # Generate alert
+        alert = VolumeSpikeAlert()
 
     
 
@@ -305,6 +325,8 @@ class Alert(Report):
         self.pct_change = self.quote['quote']['netPercentChange'] if self.quote else None
         self.rvol = kwargs.pop('rvol', None)
         self.rvol_at_time = kwargs.pop('rvol_at_time', None)
+        self.avg_vol_at_time = kwargs.pop('avg_vol_at_time', None)
+        self.time = kwargs.pop('time', None)
 
         if not override_buttons:
             self.buttons = self.Buttons(self.ticker, channel)
@@ -357,6 +379,10 @@ class Alert(Report):
             volume_stats['Relative Volume (10 Day)'] = "{:.2f}x".format(self.rvol)
 
         # RVOL at time
+        if self.rvol_at_time and self.avg_vol_at_time:
+            volume_stats[f'Relative Volume at Time ({self.time})'] = "{:.2f}x".format(self.alert_data['rvol_at_time'])
+            volume_stats[f'Current Volume at Time ({self.time})']  = self.format_large_num(self.rvol_at_time * self.avg_vol_at_time)
+            volume_stats[f'Average Volume at Time ({self.time})']  = self.format_large_num(self.alert_data['avg_vol_at_time'])
 
         # Average volume from daily price history
         if not self.daily_price_history.empty:
@@ -511,6 +537,7 @@ class WatchlistMoverAlert(Alert):
         return alert
 
 class VolumeMoverAlert(Alert):
+    """Alert subclass that posts an alert for stocks with high relative volume"""
     def __init__(self, channel:discord.channel, ticker:str, rvol:float, quote:dict, daily_price_history:pd.DataFrame):
         super().__init__(channel=channel,
                          alert_type="VOLUME_MOVER",
@@ -546,7 +573,6 @@ class VolumeMoverAlert(Alert):
         message += f" with volume up **{'{:.2f} times'.format(self.rvol)}** the 10-day average\n"
         return message
 
-    # Override
     def override_and_edit(self, prev_alert_data):
         """Extends parent function to check RVOL change"""
         if super().override_and_edit(prev_alert_data=prev_alert_data):
@@ -559,9 +585,16 @@ class VolumeMoverAlert(Alert):
             
 
 class VolumeSpikeAlert(Alert):
-    def __init__(self, ticker, channel, alert_data):
-        self.alert_type = "VOLUME_SPIKE"
-        super().__init__(ticker, channel, alert_data)
+    """Alert subclass that posts an alert for stocks with high relative volume at a time of day"""
+    def __init__(self, channel:discord.channel, ticker:str, rvol_at_time:float, avg_vol_at_time:float,
+                 quote:dict, time:str):
+        super().__init__(channel=channel,
+                         alert_type="VOLUME_SPIKE",
+                         ticker=ticker,
+                         rvol_at_time=rvol_at_time,
+                         avg_vol_at_time=avg_vol_at_time,
+                         quote=quote,
+                         time=time)
 
     def build_alert_header(self):
         logger.debug("Building alert header...")
@@ -570,17 +603,9 @@ class VolumeSpikeAlert(Alert):
 
     def build_todays_change(self):
         logger.debug("Building today's change...")
-        symbol = ":green_circle:" if self.alert_data['pct_change'] > 0 else ":small_red_triangle_down:"
-        return f"**{self.ticker}** is {symbol} **{"{:.2f}".format(self.alert_data['pct_change'])}%** with volume up **{"{:.2f} times".format(self.alert_data['rvol_at_time'])}** the normal at this time\n"
-
-    def build_volume_stats(self):
-        logger.debug("Building volume stats...")
-        return f"""## Volume Stats
-        - **Today's Volume:** {self.format_large_num(self.alert_data['volume'])}
-        - **Relative Volume at Time ( {self.alert_data['time']}):** {"{:.2f}x".format(self.alert_data['rvol_at_time'])}
-        - **Current Volume at Time  ( {self.alert_data['time']}):** {self.format_large_num(self.alert_data['rvol_at_time'] * self.alert_data['avg_vol_at_time'])}
-        - **Average Volume at Time  ( {self.alert_data['time']}):** {self.format_large_num(self.alert_data['avg_vol_at_time'])}
-        \n\n"""
+        message = super().build_todays_change()
+        message += f" with volume up **{'{:.2f} times'.format(self.rvol_at_time)}** the normal at this time\n"
+        return message
 
     def build_alert(self):
         logger.debug("Building Volume Spike Alert...")
