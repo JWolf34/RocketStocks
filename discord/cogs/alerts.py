@@ -73,7 +73,7 @@ class Alerts(commands.Cog):
 
             # Send alerts
             await self.send_unusual_volume_movers(quotes=quotes)
-            await self.send_volume_spike_movers(quotes=quotes)
+            #await self.send_volume_spike_movers(quotes=quotes)
             await self.send_earnings_movers(quotes=quotes)
             #await self.send_sec_filing_movers(tickers= all_alert_tickers, quotes=quotes)
             await self.send_watchlist_movers(quotes=quotes)
@@ -119,23 +119,34 @@ class Alerts(commands.Cog):
                 await alert.send_alert()
             await asyncio.sleep(1)
 
-    async def send_watchlist_movers(self, tickers:list, quotes:dict):
+    async def send_watchlist_movers(self, quotes:dict):
         logger.info("Processing watchlist movers")
-        for ticker in tickers:
-            watchlists = self.bot.watchlists.get_watchlists()
-            for watchlist in watchlists:
-                if watchlist == 'personal':
-                    pass
-                else:
-                    watchlist_tickers = self.bot.watchlists.get_tickers_from_watchlist(watchlist)
-                    pct_change = quotes[ticker]['quote']['netPercentChange']   
-                    if ticker in watchlist_tickers and abs(pct_change) > 10.0:
-                        logger.debug(f"Identified ticker '{ticker}' on watchlist '{watchlist}' with percent change {"{:.2f}%".format(pct_change)}")
-                        alert_data = {}
-                        alert_data['pct_change'] = pct_change
-                        alert_data['watchlist'] = watchlist
-                        alert = WatchlistMoverAlert(ticker=ticker, channel=self.alerts_channel, alert_data=alert_data)
-                        await alert.send_alert()
+
+        # Filter quotes for tickers on watchlists
+        all_watchlist_tickers = self.stock_data.watchlists.get_all_watchlist_tickers()
+        quotes = {ticker:quote for ticker, quote in quotes.items() if ticker in all_watchlist_tickers}
+
+        # Check to see if each ticker has % change greater than threshold
+        for ticker, quote in quotes.items():
+            pct_change = quote['quote']['netPercentChange']  
+
+
+            if abs(pct_change) > 10.0:
+
+                # Find ticker's watchlist
+                watchlists = self.stock_data.watchlists.get_watchlists()
+                watchlist = None
+
+                for watchlist_id in watchlists:
+                    watchlist_tickers = self.stock_data.watchlists.get_watchlist_tickers(watchlist_id=watchlist_id)
+                    if ticker in watchlist_tickers:
+                        watchlist = watchlist_id
+                        break
+  
+                logger.debug(f"Identified ticker '{ticker}' on watchlist '{watchlist}' with percent change {"{:.2f}%".format(pct_change)}")
+                
+                alert = WatchlistMoverAlert(ticker=ticker, channel=self.alerts_channel, alert_data=alert_data)
+                await alert.send_alert()
         
     async def send_unusual_volume_movers(self, quotes:dict):
         """Send unusual volume alerts to Discord if criteria is met
@@ -278,7 +289,6 @@ class Alerts(commands.Cog):
         """Builder for EarningsMoverAlert"""
 
         # Collect data to build alert
-        # ticker
         quote = kwargs.pop('quote', self.stock_data.schwab.get_quote(ticker=ticker))
         next_earnings_info = kwargs.pop('next_earnings_info', self.stock_data.earnings.get_next_earnings_info(ticker=ticker))
         historical_earnings = kwargs.pop('historical_earnings', self.stock_data.earnings.get_historical_earnings(ticker=ticker))
@@ -292,6 +302,17 @@ class Alerts(commands.Cog):
         
         return alert
 
+    async def build_watchlist_mover(self, ticker:str, **kwargs):
+        """Builder for WatchlistMoverAlert"""
+
+        def get_ticker_watchlist(ticker:str):
+            """Fetch watchlist that input ticker appears on"""
+
+        # Collect data to build alert
+
+        # Generate alert
+        alert = WatchlistMoverAlert(channel=self.alerts_channel,
+                                    ticker=ticker)
 
 
     
@@ -369,6 +390,7 @@ class Alert(Report):
         self.rvol_at_time = kwargs.pop('rvol_at_time', None)
         self.avg_vol_at_time = kwargs.pop('avg_vol_at_time', None)
         self.time = kwargs.pop('time', None)
+        self.watchlist = kwargs.pop('watchlist', None)
 
         if not override_buttons:
             self.buttons = self.Buttons(self.ticker, channel)
@@ -394,7 +416,7 @@ class Alert(Report):
     def build_todays_change(self):
         logger.debug("Building today's change...")
         symbol = "🟢" if self.pct_change > 0 else "🔻"
-        return f"**{self.ticker}** is {symbol} **{'{:.2f}'.format(self.pct_change)}%**"
+        return f"`{self.ticker}` is {symbol} **{'{:.2f}'.format(self.pct_change)}%**"
     
     def build_volume_stats(self):
         """Return message content with statistics on volume of the alert's ticker
@@ -580,19 +602,23 @@ class SECFilingMoverAlert(Alert):
         return alert
 
 class WatchlistMoverAlert(Alert):
-    def __init__(self, ticker, channel, alert_data):
-        self.alert_type = "WATCHLIST_MOVER"
-        super().__init__(ticker, channel, alert_data)
+    def __init__(self, channel:discord.channel, ticker:str, quote:dict, watchlist:str):
+        super().__init__(channel=channel,
+                         alert_type="WATCHLIST_MOVER",
+                         ticker=ticker,
+                         quote=quote,
+                         watchlist=watchlist)
 
     def build_alert_header(self):
         logger.debug("Building alert header...")
-        header = f"## :rotating_light: Watchlist Mover: {self.ticker}\n\n\n"
+        header = f"## :rotating_light: Watchlist Mover: {self.ticker}\n"
         return header
 
     def build_todays_change(self):
-        logger.debug("Building today's change...")
-        symbol = ":green_circle:" if self.alert_data['pct_change'] > 0 else ":small_red_triangle_down:"
-        return f"**{self.ticker}** is {symbol} **{"{:.2f}".format(self.alert_data['pct_change'])}%**  and is on your **{self.alert_data['watchlist']}** watchlist\n"
+        logger.debug("Building today's change...") 
+        message = super().build_todays_change()
+        message += f" and is on your *{self.watchlist}* watchlist\n"
+        return message
 
     def build_alert(self):
         logger.debug("Building Watchlist Mover Alert...")
