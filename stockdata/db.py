@@ -2,6 +2,7 @@ import sys
 sys.path.append('..')
 import psycopg2
 from psycopg2 import sql
+from psycopg2.extras import execute_values
 from RocketStocks.utils import secrets
 import logging
 
@@ -186,15 +187,16 @@ class Postgres():
                                     ]))
 
         # Values
-        values_string = ','.join(["%s" for i in range(0, len(fields))])
-        insert_script += sql.SQL(f"VALUES ({values_string})")
+        insert_script += sql.SQL(f"VALUES %s")
 
         # On conflict, do nothing
         insert_script += sql.SQL("ON CONFLICT DO NOTHING;")
-        
-        for index, row in enumerate(values):
-            print(f"{index}.{len(values)}, row: {row}")
-            self.cur.execute(insert_script, row)
+        #mog = []
+        #values_str = ','.join(self.cur.mogrify(f"({",".join(["%s"]*len(fields))})", value) for value in values)
+
+        execute_values(cur=self.cur,
+                       sql=insert_script,
+                       argslist=values)
 
         self.conn.commit()
         self.close_connection()
