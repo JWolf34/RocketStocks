@@ -148,22 +148,21 @@ class Alerts(commands.Cog):
                 
         # Calculate RVOL for each ticker over x periods
         for ticker, quote in quotes.items():
-            periods = 10
-            num_days_back = (periods / 5) * 7
-            start_date = datetime.date.today() - datetime.timedelta(days = num_days_back)
+            # Validate daliy price history
             daily_price_history = self.stock_data.fetch_daily_price_history(ticker=ticker)
-            curr_volume = quote['quote']['totalVolume']
-            rvol = an.indicators.volume.rvol(data=daily_price_history, periods=periods, curr_volume=curr_volume)
-            pct_change = quote['quote']['netPercentChange'] 
+            if not daily_price_history.empty:
+                curr_volume = quote['quote']['totalVolume']
+                rvol = an.indicators.volume.rvol(data=daily_price_history, periods=periods, curr_volume=curr_volume)
+                pct_change = quote['quote']['netPercentChange'] 
 
-            # If criteria met, create Volume Mover Alert
-            if rvol > 25.0 and abs(pct_change) > 10.0 and rvol is not np.nan: # and market_cap > 50000000: 
-                logger.debug(f"Identified ticker '{ticker}' with RVOL {"{:.2f}x".format(rvol)} and percent change {"{:.2f}%".format(pct_change)}")
-                alert = await self.build_volume_mover(ticker=ticker,
-                                                      rvol=rvol,
-                                                      quote=quote,
-                                                      daily_price_history=daily_price_history)
-                await alert.send_alert()
+                # If criteria met, create Volume Mover Alert
+                if rvol > 25.0 and abs(pct_change) > 10.0 and rvol is not np.nan: # and market_cap > 50000000: 
+                    logger.debug(f"Identified ticker '{ticker}' with RVOL {"{:.2f}x".format(rvol)} and percent change {"{:.2f}%".format(pct_change)}")
+                    alert = await self.build_volume_mover(ticker=ticker,
+                                                        rvol=rvol,
+                                                        quote=quote,
+                                                        daily_price_history=daily_price_history)
+                    await alert.send_alert()
 
     async def send_volume_spike_movers(self, quotes:dict):
         """Send volume spike alerts to Discord if criteria is met

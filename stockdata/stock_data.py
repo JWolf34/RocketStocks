@@ -212,7 +212,7 @@ class StockData():
     
     async def update_alert_tickers(self, tickers:list, source:str):
         """Update list of tickers to monitor for alerts"""
-        self._alert_tickers[source] = tickers
+        self._alert_tickers[source] = [ticker for ticker in tickers if await self.validate_ticker(ticker=ticker)]
 
         
 
