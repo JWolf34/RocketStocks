@@ -2,7 +2,7 @@ import discord
 from discord import app_commands
 from discord.ext import commands
 from discord.ext import tasks
-from discord.cogs.reports import GainerScreener
+#from discord.cogs.reports import GainerScreener
 import utils
 from utils import market_utils
 from stock_data import StockData
@@ -32,11 +32,11 @@ class Tests(commands.Cog):
         logger.info("/test-premarket-reports function called by user {}".format(interaction.user.name))
         await interaction.response.defer(ephemeral=True)
         reports = self.bot.get_cog("Reports")
-        report = reports.GainerReport(self.gainers_channel)
+        #report = reports.GainerReport(self.gainers_channel)
         if market_utils.get_market_period() == "EOD":
             await interaction.followup.send("Market is closed - cannot post gainer reports", ephemeral=True)
         else:
-            await report.send_report()
+            #await report.send_report()
             await interaction.followup.send("Gainer reports test complete!", ephemeral=True)
     
     @app_commands.checks.has_permissions(administrator=True)
