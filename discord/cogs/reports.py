@@ -450,7 +450,10 @@ class Reports(commands.Cog):
         else:
             logger.info(f"No politician found with name {politician_name}")
             await interaction.followup.send(f"No politician found with name {politician_name}", ephemeral=True)
-        
+            
+    ####################
+    # Report Factories #
+    ####################    
 
     async def build_popularity_screener(self, **kwargs):
 
