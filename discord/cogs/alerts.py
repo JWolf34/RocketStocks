@@ -73,7 +73,7 @@ class Alerts(commands.Cog):
 
             # Send alerts
             await self.send_unusual_volume_movers(quotes=quotes)
-            #await self.send_volume_spike_movers(quotes=quotes)
+            await self.send_volume_spike_movers(quotes=quotes)
             await self.send_earnings_movers(quotes=quotes)
             #await self.send_sec_filing_movers(tickers= all_alert_tickers, quotes=quotes)
             await self.send_watchlist_movers(quotes=quotes)
