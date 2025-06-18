@@ -6,6 +6,7 @@ from capitol_trades import CapitolTrades
 from stockdata.watchlists import Watchlists
 from trading_view import TradingView
 from ape_wisdom import ApeWisdom
+from utils import date_utils
 import logging
 import pandas as pd
 from RocketStocks.utils import date_utils, market_utils
@@ -212,7 +213,7 @@ class StockData():
     
     async def update_alert_tickers(self, tickers:list, source:str):
         """Update list of tickers to monitor for alerts"""
-        self._alert_tickers[source] = [ticker for ticker in tickers if await self.validate_ticker(ticker=ticker)]
+        self._alert_tickers[source] = tickers
 
         
 
