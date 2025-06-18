@@ -60,8 +60,8 @@ class Alerts(commands.Cog):
             logger.info("Processing alerts")
 
             # Fetch alert tickers and get quotes to analyze movement
-            #all_alert_tickers = list(set([ticker for tickers in self.stock_data.alert_tickers.values() for ticker in tickers]))
-            all_alert_tickers = ['RYDE', 'APVO', 'GURE', 'ZEO']
+            all_alert_tickers = list(set([ticker for tickers in self.stock_data.alert_tickers.values() for ticker in tickers]))
+            #all_alert_tickers = ['RYDE', 'APVO', 'GURE', 'ZEO']
 
             # Fetch quotes for tickers from Schwab in chunks of 'chunk_size'
             quotes = {}
@@ -73,7 +73,7 @@ class Alerts(commands.Cog):
 
             # Send alerts
             await self.send_unusual_volume_movers(quotes=quotes)
-            #await self.send_volume_spike_movers(quotes=quotes)
+            await self.send_volume_spike_movers(quotes=quotes)
             await self.send_earnings_movers(quotes=quotes)
             #await self.send_sec_filing_movers(tickers= all_alert_tickers, quotes=quotes)
             await self.send_watchlist_movers(quotes=quotes)
@@ -81,7 +81,7 @@ class Alerts(commands.Cog):
 
     # Start posting report at next 0 or 5 minute interval
     # + 30 seconds to allow for reports to generate and add tickers to the alert list
-    #@send_alerts.before_loop
+    @send_alerts.before_loop
     async def send_alerts_before_loop(self):
         """Before loop for 'send_alerts'"""
         DELTA = 30
@@ -438,6 +438,23 @@ class Alert(Report):
         else:
             message += f"No volume stats available"
 
+        return message
+
+    def build_todays_sec_filings(self):
+        """Return message content containing SEC filings for the stock released today
+        
+        Requires:
+            - recent_sec_filings
+            - ticker
+        """
+        logger.debug("Building today's SEC filings...")
+        message = "## Today's SEC Filings\n\n"
+
+        # Filter recent filings to only get filings from today
+        today_string = datetime.datetime.today().strftime("%Y-%m-%d")
+        todays_filings = self.recent_sec_filings[self.recent_sec_filings['filingDate'] == today_string]
+        for index, filing in todays_filings.iterrows():
+            message += f"[Form {filing['form']} - {filing['filingDate']}]({filing['link']})\n"
         return message
 
     def override_and_edit(self, prev_alert_data):

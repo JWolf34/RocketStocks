@@ -34,6 +34,7 @@ class Reports(commands.Cog):
         # Start reports
         self.post_popularity_screener.start()
         self.post_volume_screener.start()
+        self.post_volume_at_time_screener.start()
         self.post_gainer_screener.start()
         
         self.update_earnings_calendar.start()
@@ -85,7 +86,6 @@ class Reports(commands.Cog):
             # Monitor call?
             logger.error("No popular stocks found when attempting to update screener")
 
-    # Generate and send premarket gainer reports to the reports channel
     @tasks.loop(minutes=5)
     async def post_volume_screener(self):
         """Retrieve latest ununusal volume dats and post screener"""
@@ -104,6 +104,31 @@ class Reports(commands.Cog):
             # Send report
             logger.info("Posting unusual volume screener")
             await report.send_report()
+        else:
+            # Not a weekday - do not post volume screener
+            pass
+
+    @tasks.loop(minutes=5)
+    async def post_volume_at_time_screener(self):
+        """Retrieve latest volume spike data and post screener
+        
+        Currently DOES NOT post screener, only used to add to alert_tickers"""
+        market_period = self.mutils.get_market_period()
+        if  (self.mutils.market_open_today() and market_period != 'EOD'):
+
+            # Get volume spike data
+            volume_spike = self.stock_data.trading_view.get_unusual_volume_at_time_movers()
+
+            # Generate screener
+            #report = await self.build_volume_screener()
+
+            # Update alert tickers with unusual volume movers
+            #await self.stock_data.update_alert_tickers(tickers=report.get_tickers(), source='unusual-volume')
+            await self.stock_data.update_alert_tickers(tickers=volume_spike['ticker'].to_list(), source='volume-spike')
+
+            # Send report
+            #logger.info("Posting unusual volume screener")
+            #await report.send_report()
         else:
             # Not a weekday - do not post volume screener
             pass
@@ -134,6 +159,7 @@ class Reports(commands.Cog):
     # Start posting report at next 0 or 5 minute interval
     @post_gainer_screener.before_loop
     @post_volume_screener.before_loop
+    @post_volume_at_time_screener.before_loop
     async def sleep_until_5m(self):
         sleep_time = date_utils.seconds_until_minute_interval(minute=5)
         logger.info(f"5m reports will begin posting in {sleep_time} seconds")
@@ -745,23 +771,6 @@ class Report(object):
         else:
             message += "This stock has no recent SEC filings\n"
                 
-        return message
-
-    def build_todays_sec_filings(self):
-        """Return message content containing SEC filings for the stock released today
-        
-        Requires:
-            - recent_sec_filings
-            - ticker / ticker_info
-        """
-        logger.debug("Building today's SEC filings...")
-        message = "## Today's SEC Filings\n\n"
-
-        # Filter recent filings to only get filings from today
-        today_string = datetime.datetime.today().strftime("%Y-%m-%d")
-        todays_filings = self.recent_sec_filings[self.recent_sec_filings['filingDate'] == today_string]
-        for index, filing in todays_filings.iterrows():
-            message += f"[Form {filing['form']} - {filing['filingDate']}]({filing['link']})\n"
         return message
 
     def build_earnings_date(self):
