@@ -450,7 +450,7 @@ class Reports(commands.Cog):
         else:
             logger.info(f"No politician found with name {politician_name}")
             await interaction.followup.send(f"No politician found with name {politician_name}", ephemeral=True)
-            
+
     ####################
     # Report Factories #
     ####################    
@@ -1206,7 +1206,7 @@ class Reports(commands.Cog):
         
         def __init__(self, channel:discord.channel, ticker_info:dict, daily_price_history:pd.DataFrame, popularity:pd.DataFrame, 
                     recent_sec_filings:pd.DataFrame, historical_earnings:pd.DataFrame, next_earnings_info:dict, quote:dict,
-                    company_facts:dict):
+                    fundamentals:dict):
             super().__init__(channel=channel,
                             ticker_info=ticker_info,
                             daily_price_history=daily_price_history,
@@ -1215,7 +1215,7 @@ class Reports(commands.Cog):
                             historical_earnings=historical_earnings,
                             next_earnings_info=next_earnings_info,
                             quote=quote,
-                            company_facts=company_facts)
+                            fundamentals=fundamentals)
             self.buttons = self.Buttons(self.ticker)
             
         # Override
@@ -1267,7 +1267,7 @@ class Reports(commands.Cog):
                 async def get_news(self, interaction:discord.Interaction, button:discord.ui.Button):
                     news = News().get_news(query=self.ticker)
 
-                    news_report = NewsReport(news=news, query=self.ticker)
+                    news_report = Reports.build_news_report(news=news, query=self.ticker)
                     await news_report.send_report(interaction)
                     await interaction.response.send_message(f"Fetched news for {self.ticker}!", ephemeral=True)
 
