@@ -23,9 +23,11 @@ logger = logging.getLogger(__name__)
 class Reports(commands.Cog):
     """Cog for managing Reports and Screeners to be posted to Discord"""
     def __init__(self, bot:commands.Bot, stock_data:StockData):
+        # Init vars
         self.bot = bot
         self.stock_data = stock_data
         self.mutils = market_utils()
+        self.report_builder = ReportBuilder(stock_data=self.stock_data)
 
         # Init channels
         self.reports_channel = self.bot.get_channel(discord_utils.reports_channel_id)
@@ -73,7 +75,7 @@ class Reports(commands.Cog):
             self.stock_data.insert_popularity(popular_stocks=popular_stocks)
 
             # Generate screener
-            report = await self.build_popularity_screener(popular_stocks=popular_stocks)
+            report = await self.report_builder.build_popularity_screener(popular_stocks=popular_stocks)
 
             # Post screener
             logger.info("Posting popularity screener")
@@ -93,7 +95,7 @@ class Reports(commands.Cog):
             unusual_volume = self.stock_data.trading_view.get_unusual_volume_movers()
 
             # Generate screener
-            report = await self.build_volume_screener()
+            report = await self.report_builder.build_volume_screener()
 
             # Update alert tickers with unusual volume movers
             self.stock_data.update_alert_tickers(tickers=report.get_tickers(), source='unusual-volume')
@@ -114,7 +116,7 @@ class Reports(commands.Cog):
         if  (self.mutils.market_open_today() and market_period != 'EOD'):
 
             # Generate screener
-            report = await self.build_gainer_screener(market_period=market_period)
+            report = await self.report_builder.build_gainer_screener(market_period=market_period)
 
             # Update alert tickers with gainers
             self.stock_data.update_alert_tickers(tickers=report.get_tickers(), source='gainers')
@@ -156,7 +158,7 @@ class Reports(commands.Cog):
             while not await self.stock_data.validate_ticker(ticker=spotlight_ticker):
                 spotlight_ticker = earnings_today['ticker'].iloc[random.randint(0, earnings_today['ticker'].size - 1)]
 
-            report = await self.build_earnings_spotlight_report(ticker=spotlight_ticker)
+            report = await self.report_builder.build_earnings_spotlight_report(ticker=spotlight_ticker)
             logger.info(f"Posting today's earnings spotlight: '{report.ticker}'")
             await report.send_report()
 
@@ -167,7 +169,7 @@ class Reports(commands.Cog):
         """Retrieve upcoming earnings data and post screener for earnings reporting this week"""
         today = datetime.datetime.now(tz=date_utils.timezone()).date()
         if today.weekday() == 0:
-            report = await self.build_weekly_earnings_screener()
+            report = await self.report_builder.build_weekly_earnings_screener()
             logger.info("Posting weekly earnings screener...")
             await report.send_report()
 
@@ -279,7 +281,7 @@ class Reports(commands.Cog):
             logger.info(f"Generating reports for tickers {tickers}")
             message = None
             for ticker in tickers:
-                report = await self.build_stock_report(ticker=ticker)
+                report = await self.report_builder.build_stock_report(ticker=ticker)
                 message = await report.send_report(interaction, visibility.value)
              
             logger.info("Reports have been posted")
@@ -307,7 +309,7 @@ class Reports(commands.Cog):
         logger.info(f"Reports requested for tickers {tickers}. Invalid tickers: {invalid_tickers}")
         message = None
         for ticker in tickers:
-            report = await self.build_stock_report(ticker=ticker)
+            report = await self.report_builder.build_stock_report(ticker=ticker)
             message = await report.send_report(interaction, visibility.value)
 
         # Follow-up message
@@ -343,7 +345,7 @@ class Reports(commands.Cog):
         """Generate and send News Report for the input query"""
         logger.info("/news function called by user {}".format(interaction.user.name))
         news = News().get_news(query=query, sort_by=sort_by)
-        report = await self.build_news_report(query=query, news=news)
+        report = await self.report_builder.build_news_report(query=query, news=news)
         message = await report.send_report(interaction=interaction)
         logger.info(f"Posted news for query '{query}'")
 
@@ -373,7 +375,7 @@ class Reports(commands.Cog):
 
         # Validate popular_stocks and send report
         if not popular_stocks.empty:
-            report = await self.build_popularity_report(filter=filter, popular_stocks=popular_stocks)
+            report = await self.report_builder.build_popularity_report(filter=filter, popular_stocks=popular_stocks)
             message = await report.send_report(interaction=interaction, visibility=visibility.value)
 
             # Follow-up message
@@ -411,7 +413,7 @@ class Reports(commands.Cog):
         politician = self.stock_data.capitol_trades.politician(name=politician_name)
 
         if politician:
-            report = await self.build_politician_report(channel=self.reports_channel, 
+            report = await self.report_builder.build_politician_report(channel=self.reports_channel, 
                                                         politician=politician)
             message = await report.send_report(interaction=interaction, visibility=visibility.value)
 
@@ -427,6 +429,12 @@ class Reports(commands.Cog):
     ####################
     # Report Factories #
     ####################
+
+class ReportBuilder():
+
+    def __init__(self, stock_data:StockData=None):
+        self.stock_data = stock_data if stock_data else StockData()
+        
 
     async def build_popularity_screener(self, **kwargs):
 
