@@ -79,8 +79,8 @@ def test():
 
 if (__name__ == '__main__'):
     setup_logging()
-    #rocketStocks()
-    test()
+    rocketStocks()
+    #test()
     
     
 

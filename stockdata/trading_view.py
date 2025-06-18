@@ -200,18 +200,47 @@ class TradingView():
 
     @staticmethod
     def get_unusual_volume_at_time_movers():
-        logger.debug("Fetching stocks with ununsual volume at time form TradingView")
-        columns = ['Ticker', 'Close', '% Change', 'Volume', 'Relative Volume At Time', 'Average Volume (10 Day)', 'Market Cap']
-        num_rows, unusual_volume_at_time = (Query()
-                            .select('name','Price', 'Change %', 'Volume', 'relative_volume_intraday|5', 'Average Volume (10 day)','Market Capitalization')
-                            .set_markets('america')
-                            .where(
-                                Column('Volume') > 1000000
-                            )
-                            .limit(100)
-                            .order_by('relative_volume_intraday|5', ascending=False)
-                            .get_scanner_data())
-        unusual_volume_at_time = unusual_volume_at_time.drop(columns = "ticker")
-        unusual_volume_at_time.columns = columns
-        logger.debug(f"Returned volume moovers dataframe with shape {unusual_volume_at_time.shape}")
-        return unusual_volume_at_time
+        logger.debug("Fetching stocks with ununsual volume from TradingView")
+        num_rows, unusual_volume = (Query()
+                                    .select(
+                                        'name',
+                                        'description',
+                                        'logoid',
+                                        'update_mode',
+                                        'type',
+                                        'typespecs',
+                                        'relative_volume_intraday|5',
+                                        'close',
+                                        'pricescale',
+                                        'minmov',
+                                        'fractional',
+                                        'minmove2',
+                                        'currency',
+                                        'change',
+                                        'volume',
+                                        'market_cap_basic',
+                                        'fundamental_currency_code',
+                                        'price_earnings_ttm',
+                                        'earnings_per_share_diluted_ttm',
+                                        'earnings_per_share_diluted_yoy_growth_ttm',
+                                        'dividends_yield_current',
+                                        'sector.tr',
+                                        'sector',
+                                        'market',
+                                        'recommendation_mark',
+                                    )
+                                    .where(
+                                        col('exchange').isin(['AMEX', 'CBOE', 'NASDAQ', 'NYSE']),
+                                        col('is_primary') == True,
+                                        col('typespecs').has('common'),
+                                        col('typespecs').has_none_of('preferred'),
+                                        col('type') == 'stock',
+                                        col('active_symbol') == True,
+                                    )
+                                    .order_by('relative_volume_intraday|5', ascending=False, nulls_first=False)
+                                    .limit(100)
+                                    .set_markets('america')
+                                    .set_property('symbols', {'query': {'types': ['stock', 'fund', 'dr', 'structured']}})
+                                    .set_property('preset', 'unusual_volume')
+                                    .get_scanner_data())
+        return unusual_volume

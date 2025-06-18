@@ -61,7 +61,7 @@ class Alerts(commands.Cog):
 
             # Fetch alert tickers and get quotes to analyze movement
             #all_alert_tickers = list(set([ticker for tickers in self.stock_data.alert_tickers.values() for ticker in tickers]))
-            all_alert_tickers = ['SKYQ', 'LSE', 'CREG']
+            all_alert_tickers = ['RYDE', 'APVO', 'GURE', 'ZEO']
 
             # Fetch quotes for tickers from Schwab in chunks of 'chunk_size'
             quotes = {}
@@ -73,7 +73,7 @@ class Alerts(commands.Cog):
 
             # Send alerts
             await self.send_unusual_volume_movers(quotes=quotes)
-            await self.send_volume_spike_movers(quotes=quotes)
+            #await self.send_volume_spike_movers(quotes=quotes)
             await self.send_earnings_movers(quotes=quotes)
             #await self.send_sec_filing_movers(tickers= all_alert_tickers, quotes=quotes)
             await self.send_watchlist_movers(quotes=quotes)
@@ -81,7 +81,7 @@ class Alerts(commands.Cog):
 
     # Start posting report at next 0 or 5 minute interval
     # + 30 seconds to allow for reports to generate and add tickers to the alert list
-    @send_alerts.before_loop
+    #@send_alerts.before_loop
     async def send_alerts_before_loop(self):
         """Before loop for 'send_alerts'"""
         DELTA = 30
@@ -89,18 +89,22 @@ class Alerts(commands.Cog):
 
     async def send_earnings_movers(self, quotes:dict):
         logger.info("Processing earnings movers")
-        today = datetime.datetime.today()
+        today = datetime.date.today()
+        earnings_today = self.stock_data.earnings.get_earnings_on_date(date=today)
+
+        # Filters quotes for tickers who report earnings today
+        quotes = {ticker:quote for ticker, quote in quotes.items() if ticker in earnings_today['ticker'].to_list()}
+
+        # Check to see if tickers reporting earninsg today have a % change greater than threshold
         for ticker, quote in quotes.items():
-            next_earnings_info = self.stock_data.earnings.get_next_earnings_info(ticker=ticker)
-            earnings_date = next_earnings_info['date']
-            if earnings_date != "N/A":
-                pct_change = quote['quote']['netPercentChange']   
-                if earnings_date == today.date() and pct_change > 10.0:
-                    logger.debug(f"Identified ticker '{ticker}' reporting earnings today with percent change {"{:.2f}%".format(pct_change)}")
-                    alert = await self.build_earnings_mover(ticker=ticker,
-                                                            quote=quote,
-                                                            next_earnings_info=next_earnings_info)
-                    await alert.send_alert()
+            pct_change = quote['quote']['netPercentChange']   
+            if abs(pct_change) > 2.0:
+                logger.debug(f"Identified ticker '{ticker}' reporting earnings today with percent change {"{:.2f}%".format(pct_change)}")
+                next_earnings_info = earnings_today[earnings_today['ticker'] == ticker].to_dict(orient='records')[0]
+                alert = await self.build_earnings_mover(ticker=ticker,
+                                                        quote=quote,
+                                                        next_earnings_info=next_earnings_info)
+                await alert.send_alert()
 
     async def send_sec_filing_movers(self, gainers):
         logger.info("Processing SEC filing movers")
@@ -523,7 +527,7 @@ class EarningsMoverAlert(Alert):
     def build_todays_change(self):
         logger.debug("Building today's change...")
         message = super().build_todays_change()
-        message += f" {self.mutils.get_market_period()} and reports earnings today\n"
+        message += f" and reports earnings today\n"
         return message
 
     def build_alert(self):

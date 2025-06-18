@@ -191,9 +191,8 @@ class Postgres():
 
         # On conflict, do nothing
         insert_script += sql.SQL("ON CONFLICT DO NOTHING;")
-        #mog = []
-        #values_str = ','.join(self.cur.mogrify(f"({",".join(["%s"]*len(fields))})", value) for value in values)
 
+        # Insert many rows using execute_values
         execute_values(cur=self.cur,
                        sql=insert_script,
                        argslist=values)
