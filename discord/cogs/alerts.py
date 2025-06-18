@@ -133,19 +133,8 @@ class Alerts(commands.Cog):
 
             if abs(pct_change) > 10.0:
 
-                # Find ticker's watchlist
-                watchlists = self.stock_data.watchlists.get_watchlists()
-                watchlist = None
-
-                for watchlist_id in watchlists:
-                    watchlist_tickers = self.stock_data.watchlists.get_watchlist_tickers(watchlist_id=watchlist_id)
-                    if ticker in watchlist_tickers:
-                        watchlist = watchlist_id
-                        break
-  
-                logger.debug(f"Identified ticker '{ticker}' on watchlist '{watchlist}' with percent change {"{:.2f}%".format(pct_change)}")
-                
-                alert = WatchlistMoverAlert(ticker=ticker, channel=self.alerts_channel, alert_data=alert_data)
+                logger.debug(f"Identified ticker '{ticker}' on watchlist with percent change {"{:.2f}%".format(pct_change)}")
+                alert = self.build_watchlist_mover(ticker=ticker)
                 await alert.send_alert()
         
     async def send_unusual_volume_movers(self, quotes:dict):
@@ -307,12 +296,24 @@ class Alerts(commands.Cog):
 
         def get_ticker_watchlist(ticker:str):
             """Fetch watchlist that input ticker appears on"""
+            watchlists = self.stock_data.watchlists.get_watchlists()
+            watchlist = None
+
+            for watchlist_id in watchlists:
+                watchlist_tickers = self.stock_data.watchlists.get_watchlist_tickers(watchlist_id=watchlist_id)
+                if ticker in watchlist_tickers:
+                    return watchlist_id
+  
 
         # Collect data to build alert
+        quote = kwargs.pop('quote', self.stock_data.schwab.get_quote(ticker=ticker))
+        watchlist = kwargs.pop('watchlist', get_ticker_watchlist(ticker=ticker))
 
         # Generate alert
         alert = WatchlistMoverAlert(channel=self.alerts_channel,
-                                    ticker=ticker)
+                                    ticker=ticker,
+                                    quote=quote,
+                                    watchlist=watchlist)
 
 
     
