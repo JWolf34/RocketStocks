@@ -87,19 +87,19 @@ class Alerts(commands.Cog):
         DELTA = 30
         await asyncio.sleep(date_utils.seconds_until_minute_interval(5) + DELTA)
 
-    async def send_earnings_movers(self, tickers:list, quotes:dict):
+    async def send_earnings_movers(self, quotes:dict):
         logger.info("Processing earnings movers")
         today = datetime.datetime.today()
-        for ticker in tickers:
-            earnings_date = self.bot.stock_data.earnings.get_next_earnings_date(ticker)
+        for ticker, quote in quotes.items():
+            next_earnings_info = self.stock_data.earnings.get_next_earnings_info(ticker=ticker)
+            earnings_date = next_earnings_info['date']
             if earnings_date != "N/A":
-                pct_change = quotes[ticker]['quote']['netPercentChange']   
+                pct_change = quote['quote']['netPercentChange']   
                 if earnings_date == today.date() and pct_change > 10.0:
                     logger.debug(f"Identified ticker '{ticker}' reporting earnings today with percent change {"{:.2f}%".format(pct_change)}")
-                    alert_data = {}
-                    alert_data['pct_change'] = pct_change
-                    #alert_data['earnings_date'] = config.date_utils.format_date_mdy(earnings_date)
-                    alert = EarningsMoverAlert(ticker=ticker, channel=self.alerts_channel, alert_data=alert_data)
+                    alert = await self.build_earnings_mover(ticker=ticker,
+                                                            quote=quote,
+                                                            next_earnings_info=next_earnings_info)
                     await alert.send_alert()
 
     async def send_sec_filing_movers(self, gainers):
@@ -267,7 +267,28 @@ class Alerts(commands.Cog):
     @send_popularity_movers.before_loop
     @send_politician_trade_alerts.before_loop
     async def sleep_until_5m_interval(self):
-        await asyncio.sleep(utils.date_utils.seconds_until_5m_interval())
+        await asyncio.sleep(date_utils.seconds_until_minute_interval(5))
+
+    
+    async def build_earnings_mover(self, ticker:str, **kwargs):
+        """Builder for EarningsMoverAlert"""
+
+        # Collect data to build alert
+        # ticker
+        quote = kwargs.pop('quote', self.stock_data.schwab.get_quote(ticker=ticker))
+        next_earnings_info = kwargs.pop('next_earnings_info', self.stock_data.earnings.get_next_earnings_info(ticker=ticker))
+        historical_earnings = kwargs.pop('historical_earnings', self.stock_data.earnings.get_historical_earnings(ticker=ticker))
+
+        # Generate alert
+        alert = EarningsMoverAlert(channel=self.alerts_channel,
+                                   ticker=ticker,
+                                   quote=quote,
+                                   next_earnings_info=next_earnings_info,
+                                   historical_earnings=historical_earnings)
+        
+        return alert
+
+
 
     
     async def build_volume_mover(self, ticker:str, **kwargs):
@@ -297,10 +318,27 @@ class Alerts(commands.Cog):
                                                          today_data = await self.stock_data.schwab.get_5m_price_history(ticker=ticker,
                                                                                                                        start_datetime=datetime.datetime.now()),
                                                          dt = datetime.datetime.now())
-        avg_vol_at_time, time = (kwargs.pop('time', None), kwargs.pop('avgan.indicators.volume.avg_vol_at_time(data=fivem_price_history, periods=periods)
+        avg_vol_at_time, time = (kwargs.pop('avg_vol_at_time', None), kwargs.pop('time', None))
+
+        # Validate certain variables
+        if not avg_vol_at_time and not time:
+            now = datetime.datetime.now()
+            fivem_price_history = self.stock_data.schwab.get_5m_price_history(ticker=ticker, start_datetime=now)
+            avg_vol_at_time, time = an.indicators.volume.avg_vol_at_time(data=fivem_price_history)
+
+        if not isinstance(time, str):
+            time = time.astimezone(tz=date_utils.timezone())
+            time = time.strftime("%I:%M %p")
         
         # Generate alert
-        alert = VolumeSpikeAlert()
+        alert = VolumeSpikeAlert(channel=self.alerts_channel,
+                                 ticker=ticker, 
+                                 rvol_at_time=rvol_at_time,
+                                 avg_vol_at_time=avg_vol_at_time,
+                                 quote=quote,
+                                 time=time)
+        
+        return alert
 
     
 
@@ -426,7 +464,7 @@ class Alert(Report):
                 # Fetch previous message to be linked to in new alert
                 prev_message =  await self.channel.fetch_message(message_id)
                 prev_message_time = prev_message.created_at.astimezone(date_utils.timezone())
-                self.message += f"\n[Updated from last alert at {prev_message_time.strftime("%-I:%M %p")} {prev_message_time.tzname()}]({prev_message.jump_url})"
+                self.message += f"\n[Updated from last alert at {prev_message_time.strftime("%I:%M %p")} {prev_message_time.tzname()}]({prev_message.jump_url})"
 
                 # Send new alert
                 message = await self.channel.send(message, view=self.buttons)
@@ -468,9 +506,14 @@ class Alert(Report):
                 await interaction.response.send_message(f"Fetched news for {self.ticker}!", ephemeral=True)
 
 class EarningsMoverAlert(Alert):
-    def __init__(self, ticker, channel, alert_data):
-        self.alert_type = "EARNINGS_MOVER"
-        super().__init__(ticker, channel, alert_data)
+    def __init__(self, channel:discord.channel, ticker:str, quote:dict, next_earnings_info:dict,
+                 historical_earnings:pd.DataFrame):
+        super().__init__(channel=channel,
+                         alert_type="EARNINGS_MOVER",
+                         ticker=ticker,
+                         quote=quote,
+                         next_earnings_info=next_earnings_info,
+                         historical_earnings=historical_earnings)
 
     def build_alert_header(self):
         logger.debug("Building alert header...")
@@ -479,8 +522,9 @@ class EarningsMoverAlert(Alert):
 
     def build_todays_change(self):
         logger.debug("Building today's change...")
-        symbol = ":green_circle:" if self.alert_data['pct_change'] > 0 else ":small_red_triangle_down:"
-        return f"**{self.ticker}** is {symbol} **{"{:.2f}".format(self.alert_data['pct_change'])}%**  {self.mutils.get_market_period()} and has earnings today\n "
+        message = super().build_todays_change()
+        message += f" {self.mutils.get_market_period()} and reports earnings today\n"
+        return message
 
     def build_alert(self):
         logger.debug("Building Earnings Mover Alert...")
@@ -582,8 +626,6 @@ class VolumeMoverAlert(Alert):
         else:
             return False
             
-            
-
 class VolumeSpikeAlert(Alert):
     """Alert subclass that posts an alert for stocks with high relative volume at a time of day"""
     def __init__(self, channel:discord.channel, ticker:str, rvol_at_time:float, avg_vol_at_time:float,
@@ -595,13 +637,20 @@ class VolumeSpikeAlert(Alert):
                          avg_vol_at_time=avg_vol_at_time,
                          quote=quote,
                          time=time)
+        
+    def build_alert_data(self):
+        """Extends parent class to add RVOL to alert data"""
+        super().build_alert_data()
+        self.alert_data['rvol_at_time'] = self.rvol_at_time
 
     def build_alert_header(self):
+        """Overrides parent class to build custom header"""
         logger.debug("Building alert header...")
         header = f"## :rotating_light: Volume Spike: {self.ticker}\n\n\n"
         return header
 
     def build_todays_change(self):
+        """Extends the parent function to include RVOL_AT_TIME data"""
         logger.debug("Building today's change...")
         message = super().build_todays_change()
         message += f" with volume up **{'{:.2f} times'.format(self.rvol_at_time)}** the normal at this time\n"
@@ -617,7 +666,10 @@ class VolumeSpikeAlert(Alert):
 
     # Override
     def override_and_edit(self, old_alert_data):
-        if self.alert_data['rvol_at_time'] > (1.5 * old_alert_data['rvol_at_time']):
+        """Extends parent function to check RVOL_AT_TIME change"""
+        if super().override_and_edit(old_alert_data=old_alert_data):
+            return True
+        if self.rvol_at_time > (1.5 * old_alert_data['rvol_at_time']):
             return True
         else:
             return False

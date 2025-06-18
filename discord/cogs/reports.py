@@ -768,7 +768,7 @@ class Report(object):
         """Return message content with the date and release time of the stock's next earnings report
         
         Requires:
-            - ticker_info
+            - ticker
             - next_earnings_info
         """
         logger.debug("Building earnings date...")
