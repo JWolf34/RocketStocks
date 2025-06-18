@@ -30,8 +30,8 @@ class Alerts(commands.Cog):
 
         # Start alerts
         self.post_alerts_date.start()
-        self.send_popularity_movers.start()
-        self.send_politician_trade_alerts.start()
+        #self.send_popularity_movers.start() TODO
+        #self.send_politician_trade_alerts.start() TODO
         self.send_alerts.start()
         
 
@@ -176,25 +176,28 @@ class Alerts(commands.Cog):
 
         # Calculate RVOL_AT_TIME for each ticker over x periods
         for ticker, quote in quotes.items():
-            periods = 10
+            
             now = datetime.datetime.now()
             fivem_price_history = self.stock_data.fetch_5m_price_history(ticker=ticker)
-            today_data = await self.stock_data.schwab.get_5m_price_history(ticker=ticker, start_datetime=now)
-            rvol_at_time = an.indicators.volume.rvol_at_time(data=fivem_price_history, today_data=today_data, periods=periods, dt=now)
-            avg_vol_at_time, time = an.indicators.volume.avg_vol_at_time(data=fivem_price_history, periods=periods)
-            pct_change = quote['quote']['netPercentChange']   
+            # Validate stock has 5m data
+            if not fivem_price_history.empty:
+                periods = 10
+                today_data = await self.stock_data.schwab.get_5m_price_history(ticker=ticker, start_datetime=now)
+                rvol_at_time = an.indicators.volume.rvol_at_time(data=fivem_price_history, today_data=today_data, periods=periods, dt=now)
+                avg_vol_at_time, time = an.indicators.volume.avg_vol_at_time(data=fivem_price_history, periods=periods)
+                pct_change = quote['quote']['netPercentChange']   
 
-            # If criteria met, create Volume Spike Alert
-            if rvol_at_time > 50.0 and abs(pct_change) > 10.0 and rvol_at_time is not np.nan and avg_vol_at_time is not np.nan:
-                logger.debug(f"Identified ticker '{ticker}' with RVOL at time ({time}) {"{:.2f}x".format(rvol_at_time)} and percent change {"{:.2f}%".format(pct_change)}")
+                # If criteria met, create Volume Spike Alert
+                if rvol_at_time > 50.0 and abs(pct_change) > 10.0 and rvol_at_time is not np.nan and avg_vol_at_time is not np.nan:
+                    logger.debug(f"Identified ticker '{ticker}' with RVOL at time ({time}) {"{:.2f}x".format(rvol_at_time)} and percent change {"{:.2f}%".format(pct_change)}")
 
-                alert = await self.build_volume_spike_alert(ticker=ticker,
-                                                      quote=quote,
-                                                      rvol_at_time=rvol_at_time,
-                                                      avg_vol_at_time=avg_vol_at_time,
-                                                      time=time)
-                await alert.send_alert()
-                await asyncio.sleep(1)
+                    alert = await self.build_volume_spike_alert(ticker=ticker,
+                                                        quote=quote,
+                                                        rvol_at_time=rvol_at_time,
+                                                        avg_vol_at_time=avg_vol_at_time,
+                                                        time=time)
+                    await alert.send_alert()
+                    await asyncio.sleep(1)
     
     @tasks.loop(minutes=30)
     async def send_popularity_movers(self):
