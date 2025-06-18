@@ -27,7 +27,7 @@ class Reports(commands.Cog):
         self.bot = bot
         self.stock_data = stock_data
         self.mutils = market_utils()
-        self.report_builder = ReportBuilder(stock_data=self.stock_data)
+        self.report_builder = ReportBuilder(bot=self.bot, stock_data=self.stock_data)
 
         # Init channels
         self.reports_channel = self.bot.get_channel(discord_utils.reports_channel_id)
@@ -75,7 +75,7 @@ class Reports(commands.Cog):
             self.stock_data.insert_popularity(popular_stocks=popular_stocks)
 
             # Generate screener
-            report = await self.report_builder.build_popularity_screener(popular_stocks=popular_stocks)
+            report = await self.build_popularity_screener(popular_stocks=popular_stocks)
 
             # Post screener
             logger.info("Posting popularity screener")
@@ -95,7 +95,7 @@ class Reports(commands.Cog):
             unusual_volume = self.stock_data.trading_view.get_unusual_volume_movers()
 
             # Generate screener
-            report = await self.report_builder.build_volume_screener()
+            report = await self.build_volume_screener()
 
             # Update alert tickers with unusual volume movers
             self.stock_data.update_alert_tickers(tickers=report.get_tickers(), source='unusual-volume')
@@ -116,7 +116,7 @@ class Reports(commands.Cog):
         if  (self.mutils.market_open_today() and market_period != 'EOD'):
 
             # Generate screener
-            report = await self.report_builder.build_gainer_screener(market_period=market_period)
+            report = await self.build_gainer_screener(market_period=market_period)
 
             # Update alert tickers with gainers
             self.stock_data.update_alert_tickers(tickers=report.get_tickers(), source='gainers')
@@ -158,7 +158,7 @@ class Reports(commands.Cog):
             while not await self.stock_data.validate_ticker(ticker=spotlight_ticker):
                 spotlight_ticker = earnings_today['ticker'].iloc[random.randint(0, earnings_today['ticker'].size - 1)]
 
-            report = await self.report_builder.build_earnings_spotlight_report(ticker=spotlight_ticker)
+            report = await self.build_earnings_spotlight_report(ticker=spotlight_ticker)
             logger.info(f"Posting today's earnings spotlight: '{report.ticker}'")
             await report.send_report()
 
@@ -169,7 +169,7 @@ class Reports(commands.Cog):
         """Retrieve upcoming earnings data and post screener for earnings reporting this week"""
         today = datetime.datetime.now(tz=date_utils.timezone()).date()
         if today.weekday() == 0:
-            report = await self.report_builder.build_weekly_earnings_screener()
+            report = await self.build_weekly_earnings_screener()
             logger.info("Posting weekly earnings screener...")
             await report.send_report()
 
@@ -281,7 +281,7 @@ class Reports(commands.Cog):
             logger.info(f"Generating reports for tickers {tickers}")
             message = None
             for ticker in tickers:
-                report = await self.report_builder.build_stock_report(ticker=ticker)
+                report = await self.build_stock_report(ticker=ticker)
                 message = await report.send_report(interaction, visibility.value)
              
             logger.info("Reports have been posted")
@@ -309,7 +309,7 @@ class Reports(commands.Cog):
         logger.info(f"Reports requested for tickers {tickers}. Invalid tickers: {invalid_tickers}")
         message = None
         for ticker in tickers:
-            report = await self.report_builder.build_stock_report(ticker=ticker)
+            report = await self.build_stock_report(ticker=ticker)
             message = await report.send_report(interaction, visibility.value)
 
         # Follow-up message
@@ -345,7 +345,7 @@ class Reports(commands.Cog):
         """Generate and send News Report for the input query"""
         logger.info("/news function called by user {}".format(interaction.user.name))
         news = News().get_news(query=query, sort_by=sort_by)
-        report = await self.report_builder.build_news_report(query=query, news=news)
+        report = await self.build_news_report(query=query, news=news)
         message = await report.send_report(interaction=interaction)
         logger.info(f"Posted news for query '{query}'")
 
@@ -375,7 +375,7 @@ class Reports(commands.Cog):
 
         # Validate popular_stocks and send report
         if not popular_stocks.empty:
-            report = await self.report_builder.build_popularity_report(filter=filter, popular_stocks=popular_stocks)
+            report = await self.build_popularity_report(filter=filter, popular_stocks=popular_stocks)
             message = await report.send_report(interaction=interaction, visibility=visibility.value)
 
             # Follow-up message
@@ -413,7 +413,7 @@ class Reports(commands.Cog):
         politician = self.stock_data.capitol_trades.politician(name=politician_name)
 
         if politician:
-            report = await self.report_builder.build_politician_report(channel=self.reports_channel, 
+            report = await self.build_politician_report(channel=self.reports_channel, 
                                                         politician=politician)
             message = await report.send_report(interaction=interaction, visibility=visibility.value)
 
@@ -425,15 +425,6 @@ class Reports(commands.Cog):
         else:
             logger.info(f"No politician found with name {politician_name}")
             await interaction.followup.send(f"No politician found with name {politician_name}", ephemeral=True)
-
-    ####################
-    # Report Factories #
-    ####################
-
-class ReportBuilder():
-
-    def __init__(self, stock_data:StockData=None):
-        self.stock_data = stock_data if stock_data else StockData()
         
 
     async def build_popularity_screener(self, **kwargs):
@@ -442,7 +433,7 @@ class ReportBuilder():
         popular_stocks = kwargs.pop('popular_stocks', self.stock_data.popularity.get_popular_stocks())
 
         # Generate screener
-        report = PopularityScreener(channel=self.screeners_channel,
+        report = self.PopularityScreener(channel=self.screeners_channel,
                                     popular_stocks=popular_stocks)
         
         return report
@@ -455,7 +446,7 @@ class ReportBuilder():
         unusual_volume = kwargs.pop('unusual_volume_movers', self.stock_data.trading_view.get_unusual_volume_movers())
 
         # Generate screener
-        report = VolumeScreener(channel=self.screeners_channel,
+        report = self.VolumeScreener(channel=self.screeners_channel,
                                 unusual_volume=unusual_volume)
         
 
@@ -476,7 +467,7 @@ class ReportBuilder():
             gainers = self.stock_data.trading_view.get_postmarket_gainers()
 
         # Generate screener
-        report = GainerScreener(channel=self.screeners_channel,
+        report = self.GainerScreener(channel=self.screeners_channel,
                                 market_period=market_period,
                                 gainers=gainers)
         
@@ -495,7 +486,7 @@ class ReportBuilder():
         fundamentals = kwargs.pop('fundamentals', await self.stock_data.schwab.get_fundamentals(tickers=[ticker]))
 
         # Generate report 
-        report = StockReport(channel=self.reports_channel,
+        report = self.StockReport(channel=self.reports_channel,
                                 ticker_info=ticker_info,
                                 daily_price_history=daily_price_history,
                                 popularity=popularity,
@@ -513,7 +504,7 @@ class ReportBuilder():
         news = kwargs.pop('news', self.stock_data.news.get_news(query=query))
 
         # Generate report 
-        report = NewsReport(query=query,
+        report = self.NewsReport(query=query,
                             news=news)
         return report
     
@@ -524,7 +515,7 @@ class ReportBuilder():
         popular_stocks = kwargs.pop('popular_stocks', self.stock_data.popularity.get_popular_stocks(filter_name=filter))
 
         # Generate report 
-        report = PopularityReport(channel=self.reports_channel, 
+        report = self.PopularityReport(channel=self.reports_channel, 
                                   popular_stocks=popular_stocks,
                                   filter=filter)
         return report
@@ -541,7 +532,7 @@ class ReportBuilder():
         fundamentals = await self.stock_data.schwab.get_fundamentals(tickers=[ticker])
 
         # Generate report
-        report = EarningsSpotlightReport(channel = self.reports_channel,
+        report = self.EarningsSpotlightReport(channel = self.reports_channel,
                                          ticker_info=ticker_info,
                                          daily_price_history=daily_price_history,
                                          next_earnings_info=next_earnings_info,
@@ -560,7 +551,7 @@ class ReportBuilder():
                                                                                                                  no_systemGenerated=True))
 
         # Generate report 
-        report = WeeklyEarningsScreener(channel=self.screeners_channel,
+        report = self.WeeklyEarningsScreener(channel=self.screeners_channel,
                                         upcoming_earnings=upcoming_earnings,
                                         watchlist_tickers=watchlist_tickers)
         return report
@@ -573,7 +564,7 @@ class ReportBuilder():
         politician_facts = kwargs.pop('politician_facts', self.stock_data.capitol_trades.politician_facts(pid=politician['politician_id']))
 
         # Generate report 
-        report = PoliticianReport(channel=self.reports_channel,
+        report = self.PoliticianReport(channel=self.reports_channel,
                                   politician=politician,
                                   trades=trades, 
                                   politician_facts=politician_facts)
@@ -583,1147 +574,1147 @@ class ReportBuilder():
 # Report Classes #
 ##################
 
-class Report(object):
-    """Post information about a stock or stocks to the input Discord channel"""
-    def __init__(self, channel:discord.channel, **kwargs):
-       
-        self.channel = channel
-
-        # Parse data from keyword args
-        self.ticker_info = kwargs.pop('ticker_info', None)
-        self.ticker = self.ticker_info['ticker'] if self.ticker_info else kwargs.pop('ticker', None)
-        self.quote = kwargs.pop('quote', None)
-        self.fundamentals = kwargs.pop('fundamentals', None)
-        self.daily_price_history = kwargs.pop('daily_price_history', None)
-        self.next_earnings_info = kwargs.pop('next_earnings_info', None)
-        self.historical_earnings = kwargs.pop('historical_earnings', None)
-        self.recent_sec_filings = kwargs.pop('recent_sec_filings', None)
-        self.popularity = kwargs.pop('popularity', None)
-        self.company_facts = kwargs.pop('company_facts', None)
-        self.politician = kwargs.pop('politician', None)
-        self.trades = kwargs.pop('trades', None)
-        self.politician_facts = kwargs.pop('politician_facts', None)
-
-        # ASCII table styles
-        self.table_styles = {'ascii':PresetStyle.ascii,
-                        'asci_borderless':PresetStyle.ascii_borderless,
-                        'ascii_box':PresetStyle.ascii_box,
-                        'ascii_compact':PresetStyle.ascii_compact,
-                        'ascii_double':PresetStyle.ascii_double,
-                        'ascii_minimalist':PresetStyle.ascii_minimalist,
-                        'ascii_rounded':PresetStyle.ascii_rounded,
-                        'ascii_rounded_box':PresetStyle.ascii_rounded_box,
-                        'ascii_simple':PresetStyle.ascii_simple,
-                        'borderless':PresetStyle.borderless,
-                        'double':PresetStyle.double_box,
-                        'double_box':PresetStyle.double_box,
-                        'double_compact':PresetStyle.double_compact,
-                        'double_thin_box':PresetStyle.double_thin_box,
-                        'double_thin_compact':PresetStyle.double_thin_compact,
-                        'markdown':PresetStyle.markdown,
-                        'minimalist':PresetStyle.minimalist,
-                        'plain':PresetStyle.plain,
-                        'simple':PresetStyle.simple,
-                        'thick':PresetStyle.thick,
-                        'thick_box':PresetStyle.thick_box,
-                        'thick_compact':PresetStyle.thick_compact,
-                        'thin':PresetStyle.thin,
-                        'thin_box':PresetStyle.thin_box,
-                        'thin_compact':PresetStyle.thin_compact,
-                        'thin_compact_rounded':PresetStyle.thin_compact_rounded,
-                        'thin_double':PresetStyle.thin_double,
-                        'thin_double_rounded':PresetStyle.thin_double_rounded,
-                        'thin_rounded':PresetStyle.thin_rounded,
-                        'thin_thick':PresetStyle.thin_thick,
-                        'thin_thick_rounded':PresetStyle.thin_thick_rounded}
+    class Report(object):
+        """Post information about a stock or stocks to the input Discord channel"""
+        def __init__(self, channel:discord.channel, **kwargs):
         
-    def write_df_to_file(self, df:pd.DataFrame, filepath:str):
-        """Write input DataFrame to CSV at filepath"""
-        # Ensure attachments path exists
-        utils.validate_path(utils.datapaths.attachments_path)
-        df.to_csv(filepath, index=False)
+            self.channel = channel
 
+            # Parse data from keyword args
+            self.ticker_info = kwargs.pop('ticker_info', None)
+            self.ticker = self.ticker_info['ticker'] if self.ticker_info else kwargs.pop('ticker', None)
+            self.quote = kwargs.pop('quote', None)
+            self.fundamentals = kwargs.pop('fundamentals', None)
+            self.daily_price_history = kwargs.pop('daily_price_history', None)
+            self.next_earnings_info = kwargs.pop('next_earnings_info', None)
+            self.historical_earnings = kwargs.pop('historical_earnings', None)
+            self.recent_sec_filings = kwargs.pop('recent_sec_filings', None)
+            self.popularity = kwargs.pop('popularity', None)
+            self.company_facts = kwargs.pop('company_facts', None)
+            self.politician = kwargs.pop('politician', None)
+            self.trades = kwargs.pop('trades', None)
+            self.politician_facts = kwargs.pop('politician_facts', None)
 
-    ############################
-    # Report Builder Functions #
-    ############################
-
-    def build_df_table(self, df:pd.DataFrame, style='thick_compact'):
-        """Return input dataframe in ascii table format for cleanly displaying content in Discord messgaes"""
-        logger.debug(f"Building table of shape {df.shape} with headers {df.columns.to_list()} and of style '{style}'")
-        table_style = self.table_styles.get(style, PresetStyle.double_thin_compact)
-        table = table2ascii(
-            header = df.columns.tolist(),
-            body = df.values.tolist(),
-            style=table_style 
-        )
-        return "```\n" + table + "\n```"
-    
-    def build_stats_table(self, header:dict, body:dict, adjust:str):
-        """Return a two-column ascii table for cleanly displaying content in Discord messages"""
-        #logger.debug(f"Building table of shape {df.shape} with headers {df.columns.to_list()} and of style '{style}'")
-
-        # Validate adjust
-        adjust = 'left' if adjust !='right' else adjust
-
-        # Calculate spacing
-        spacing = max([len(key) for key in set().union(header, body)]) + 1
-
-        # Build table
-        table = ''
-        
-        # Header
-        for key, value in header.items():
-            if value:
-                table += f"{f'{key}:':>{spacing}} {value}\n" if adjust =='right' else f"{f'{key}:':<{spacing}} {value}\n"
-            else:
-                table += f"{key}\n"
-
-        # Separator
-        table += "━"*16 + '\n' if header else ''
-
-        # Body
-        for key, value in body.items():
-            table += f"{f'{key}:':>{spacing}} {value}\n" if adjust =='right' else f"{f'{key}:':<{spacing}} {value}\n"       
-
-        return '```' + table + '```\n'
-
-
-    # Report Header
-    def build_report_header(self):
-        """Return message content for report header"""
-        logger.debug("Building report header...")
-        # Append ticker name, today's date, and external links to message
-        header = "# " + self.ticker + " Report " + date_utils.format_date_mdy(datetime.datetime.now(tz=date_utils.timezone()).date()) + "\n"
-        return header + "\n"
-
-    # Ticker Info
-    def build_ticker_info(self):
-        """Return message content with information about the report's ticker
-        
-        Requires:
-            - ticker info
-            - quote 
-        """
-        logger.debug("Building ticker info...")
-
-        message = ''
-        message = "## Ticker Info\n"
-
-        
-        # Format desired column names in new dict
-        columns = ['name', 'sector', 'industry', 'country']
-        fmt_ticker_info = {}
-        for key in columns:
-            value = self.ticker_info[key]
-            if value != 'NaN' and value:
-                fmt_ticker_info[key.capitalize()] = value
-
-        # Map additional values
-        fmt_ticker_info['Asset'] = self.quote['assetSubType']
-        fmt_ticker_info['Exchange'] = self.quote['reference']['exchangeName']
-        
-        message += self.build_stats_table(header={},
-                                          body=fmt_ticker_info,
-                                          adjust='right')
-        
-        
-        return message 
-    
+            # ASCII table styles
+            self.table_styles = {'ascii':PresetStyle.ascii,
+                            'asci_borderless':PresetStyle.ascii_borderless,
+                            'ascii_box':PresetStyle.ascii_box,
+                            'ascii_compact':PresetStyle.ascii_compact,
+                            'ascii_double':PresetStyle.ascii_double,
+                            'ascii_minimalist':PresetStyle.ascii_minimalist,
+                            'ascii_rounded':PresetStyle.ascii_rounded,
+                            'ascii_rounded_box':PresetStyle.ascii_rounded_box,
+                            'ascii_simple':PresetStyle.ascii_simple,
+                            'borderless':PresetStyle.borderless,
+                            'double':PresetStyle.double_box,
+                            'double_box':PresetStyle.double_box,
+                            'double_compact':PresetStyle.double_compact,
+                            'double_thin_box':PresetStyle.double_thin_box,
+                            'double_thin_compact':PresetStyle.double_thin_compact,
+                            'markdown':PresetStyle.markdown,
+                            'minimalist':PresetStyle.minimalist,
+                            'plain':PresetStyle.plain,
+                            'simple':PresetStyle.simple,
+                            'thick':PresetStyle.thick,
+                            'thick_box':PresetStyle.thick_box,
+                            'thick_compact':PresetStyle.thick_compact,
+                            'thin':PresetStyle.thin,
+                            'thin_box':PresetStyle.thin_box,
+                            'thin_compact':PresetStyle.thin_compact,
+                            'thin_compact_rounded':PresetStyle.thin_compact_rounded,
+                            'thin_double':PresetStyle.thin_double,
+                            'thin_double_rounded':PresetStyle.thin_double_rounded,
+                            'thin_rounded':PresetStyle.thin_rounded,
+                            'thin_thick':PresetStyle.thin_thick,
+                            'thin_thick_rounded':PresetStyle.thin_thick_rounded}
             
+        def write_df_to_file(self, df:pd.DataFrame, filepath:str):
+            """Write input DataFrame to CSV at filepath"""
+            # Ensure attachments path exists
+            utils.validate_path(utils.datapaths.attachments_path)
+            df.to_csv(filepath, index=False)
+
+
+        ############################
+        # Report Builder Functions #
+        ############################
+
+        def build_df_table(self, df:pd.DataFrame, style='thick_compact'):
+            """Return input dataframe in ascii table format for cleanly displaying content in Discord messgaes"""
+            logger.debug(f"Building table of shape {df.shape} with headers {df.columns.to_list()} and of style '{style}'")
+            table_style = self.table_styles.get(style, PresetStyle.double_thin_compact)
+            table = table2ascii(
+                header = df.columns.tolist(),
+                body = df.values.tolist(),
+                style=table_style 
+            )
+            return "```\n" + table + "\n```"
         
-    def build_recent_SEC_filings(self):
-        """Return message content containing the 5 most recently release SEC filings for the stock
-        
-        Requires:
-            - recent_sec_filings
-            - ticker / ticker_info
-        """
-        logger.debug("Building latest SEC filings...")
+        def build_stats_table(self, header:dict, body:dict, adjust:str):
+            """Return a two-column ascii table for cleanly displaying content in Discord messages"""
+            #logger.debug(f"Building table of shape {df.shape} with headers {df.columns.to_list()} and of style '{style}'")
 
-        message = "## Recent SEC Filings\n\n"
+            # Validate adjust
+            adjust = 'left' if adjust !='right' else adjust
 
-        # Validate SEC filings
-        if not self.recent_sec_filings.empty:
-            for filing in self.recent_sec_filings.head(5).to_dict(orient='records'):
-                message += f"[Form {filing['form']} - {filing['filingDate']}]({filing['link']})\n"
-        else:
-            message += "This stock has no recent SEC filings\n"
-                
-        return message
+            # Calculate spacing
+            spacing = max([len(key) for key in set().union(header, body)]) + 1
 
-    def build_todays_sec_filings(self):
-        """Return message content containing SEC filings for the stock released today
-        
-        Requires:
-            - recent_sec_filings
-            - ticker / ticker_info
-        """
-        logger.debug("Building today's SEC filings...")
-        message = "## Today's SEC Filings\n\n"
-
-        # Filter recent filings to only get filings from today
-        today_string = datetime.datetime.today().strftime("%Y-%m-%d")
-        todays_filings = self.recent_sec_filings[self.recent_sec_filings['filingDate'] == today_string]
-        for index, filing in todays_filings.iterrows():
-            message += f"[Form {filing['form']} - {filing['filingDate']}]({filing['link']})\n"
-        return message
-
-    def build_earnings_date(self):
-        """Return message content with the date and release time of the stock's next earnings report
-        
-        Requires:
-            - ticker_info
-            - next_earnings_info
-        """
-        logger.debug("Building earnings date...")
-
-        message = ''
-        # Validate next earnings info
-        if self.next_earnings_info:
-            # Earnings date
-            message = f"{self.ticker} reports earnings on "
-            message += f"{date_utils.format_date_mdy(self.next_earnings_info['date'])}, "
-
-            # Earnings time
-            earnings_time = self.next_earnings_info['time']
-            if "pre-market" in earnings_time:
-                message += "before market open"
-            elif "after-hours" in earnings_time:
-                message += "after market close"
-            else:
-                message += "time not specified"
-
-            message += "\n"
-        return message
-
-    def build_upcoming_earnings_summary(self):
-        """Return message content that summarizes the next earnings report for the stock
-        
-        Requires:
-            - next_earnings_info
-        """
-        logger.debug("Building upcoming earnings summary...")
-
-        message = "## Next Earnings Summary\n"
-        # Validate next earnings info
-        if self.next_earnings_info:
-            fmt_earnings_info = {}
-            fmt_earnings_info['Date'] = self.next_earnings_info['date']
+            # Build table
+            table = ''
             
-            fmt_earnings_info['Time'] = "{}".format("Premarket" if "pre-market" in self.next_earnings_info['time']
-                                                    else "After hours" if "after-hours" in self.next_earnings_info['time']
-                                                    else "Not supplied")
-            fmt_earnings_info['Quarter'] = self.next_earnings_info['fiscal_quarter_ending']
-            fmt_earnings_info['EPS Forecast'] = self.next_earnings_info['eps_forecast'] if len(self.next_earnings_info['eps_forecast']) > 0 else "N/A"
-            fmt_earnings_info['Estimates'] = self.next_earnings_info['no_of_ests']
-            fmt_earnings_info['Prev Rpt Date'] = self.next_earnings_info['last_year_rpt_dt']
-            fmt_earnings_info['Prev Year EPS'] = self.next_earnings_info['last_year_eps']
-            message += self.build_stats_table(header={},
-                                              body=fmt_earnings_info, 
-                                              adjust='right')
-        else:
-            message += "Stock has no upcoming earnings reports\n"
-
-        return message 
-
-    def build_recent_earnings(self):
-        """Return message content that summarizes 4 most recent earnings reports for the stock
-        
-        Requires:
-            - historical_earnings
-        """
-        logger.debug("Building recent earnings...")
-
-        message = "## Recent Earnings Overview\n"
-
-        # Validate historical earnings
-        if not self.historical_earnings.empty:
-            #message += f"**Next earnings date:** {self.next_earnings_info['date']}\n"
-            column_map = {'date':'Date Reported', 
-                        'eps':'EPS',
-                        'surprise':'Surprise',
-                        'epsforecast':'Estimate',
-                        'fiscalquarterending':'Quarter'}
-            
-            recent_earnings = self.historical_earnings.tail(4)
-            recent_earnings = recent_earnings.filter(list(column_map.keys()))
-            recent_earnings = recent_earnings.rename(columns=column_map)
-            recent_earnings['Date Reported'] = recent_earnings['Date Reported'].apply(lambda x: date_utils.format_date_mdy(x))
-            recent_earnings['Surprise'] =  recent_earnings['Surprise'].apply(lambda x: f"{x}%")
-            message += self.build_df_table(df=recent_earnings, style='borderless')
-        
-        else:
-            message += "No historical earnings found for this ticker"
-        return message + "\n"
-
-    def build_performance(self):
-        """Return message content with stock performance over recent weeks and months
-        
-        Requires:
-            - daily_price_history
-            - quote
-        """
-        logger.debug("Building performance...")
-        message = "## Performance\n\n"
-
-        # Validate daily price history
-        if not self.daily_price_history.empty:
-            # Get current close
-            table_header = {}
-            close = self.quote['regular']['regularMarketLastPrice']
-            table_header['Close'] = close
-            
-            # Get highest popularity rank across select intervals
-            table_body = {}
-            interval_map = {"1D":1,
-                            "5D":5,
-                            "1M":30,
-                            "3M":90,
-                            "6M":180}
-
-            today =  datetime.datetime.now(tz=date_utils.timezone()).date()
-            for label, interval in interval_map.items():
-                # Find max rank within defined interval
-                interval_date = today - datetime.timedelta(days=interval)
-                while interval_date.weekday() > 4:
-                    interval_date = interval_date - datetime.timedelta(days=1)
-                
-                interval_close = self.daily_price_history[self.daily_price_history['date'] == interval_date]['close']
-
-                if not interval_close.empty:
-                    interval_close = interval_close.iloc[0]
-                    change = ((close - interval_close) / interval_close)*100.0
+            # Header
+            for key, value in header.items():
+                if value:
+                    table += f"{f'{key}:':>{spacing}} {value}\n" if adjust =='right' else f"{f'{key}:':<{spacing}} {value}\n"
                 else:
-                    interval_close = 'N/A'
-                    change = None
-                # Assign symbol based on rank difference
-                symbol = None
-                if interval_close != "N/A":
-                    if change < 0:
-                        symbol = "🔻"
-                    else:
-                        symbol = "🟢"
+                    table += f"{key}\n"
 
-                table_body[label] = f"{'{:.2f}'.format(interval_close) if interval_close !='N/A' else 'N/A':<5} {f'{symbol} {'{:.2f}%'.format(change)}' if change else ''}"
-            message += self.build_stats_table(header=table_header,
-                                              body=table_body,
-                                              adjust='right')
-        else:
-            message += "No price data found for this stock\n"
-        return message
+            # Separator
+            table += "━"*16 + '\n' if header else ''
+
+            # Body
+            for key, value in body.items():
+                table += f"{f'{key}:':>{spacing}} {value}\n" if adjust =='right' else f"{f'{key}:':<{spacing}} {value}\n"       
+
+            return '```' + table + '```\n'
 
 
-    def build_daily_summary(self):
-        """Return message content with OHLVC data for the stock
-        
-        Requires:
-            - quote
-        """
-        logger.debug("Building daily summary...")
-        message = "## Today's Summary\n"
-        OHLCV = {'Open': ["{:.2f}".format(self.quote['quote']['openPrice'])],
-                 'High': ["{:.2f}".format(self.quote['quote']['highPrice'])],
-                 'Low': ["{:.2f}".format(self.quote['quote']['lowPrice'])],
-                 'Close': ["{:.2f}".format(self.quote['regular']['regularMarketLastPrice'])],
-                 'Volume': [self.format_large_num(self.quote['quote']['totalVolume'])]
-                }
-        message += self.build_df_table(df=pd.DataFrame(OHLCV), style='borderless')
-        message += '\n'
-        return message 
+        # Report Header
+        def build_report_header(self):
+            """Return message content for report header"""
+            logger.debug("Building report header...")
+            # Append ticker name, today's date, and external links to message
+            header = "# " + self.ticker + " Report " + date_utils.format_date_mdy(datetime.datetime.now(tz=date_utils.timezone()).date()) + "\n"
+            return header + "\n"
 
-    def build_fundamentals(self):
-        """Return message content with stock fundamental data 
-        
-        Requires:
-            - fundamentals
-            - quote
-        """
-        logger.debug("Building ticker stats...")
-        message = "## Fundamentals\n"
+        # Ticker Info
+        def build_ticker_info(self):
+            """Return message content with information about the report's ticker
+            
+            Requires:
+                - ticker info
+                - quote 
+            """
+            logger.debug("Building ticker info...")
 
-        table_body = {}
+            message = ''
+            message = "## Ticker Info\n"
 
-        # Validate fundamentals
-        if self.fundamentals:
-            # Include float? Short interest? Shortable and hard to borrow. Dividends?
-            table_body['Market Cap'] = self.format_large_num(self.fundamentals['instruments'][0]['fundamental']['marketCap'])
-            table_body['EPS'] = f"{'{:.2f}'.format(self.fundamentals['instruments'][0]['fundamental']['eps'])}"
-            table_body['EPS TTM'] = f"{'{:.2f}'.format(self.fundamentals['instruments'][0]['fundamental']['epsTTM'])}"
-            table_body['P/E Ratio'] = f"{'{:.2f}'.format(self.fundamentals['instruments'][0]['fundamental']['peRatio'])}"
-            table_body['Beta'] = self.fundamentals['instruments'][0]['fundamental']['beta']
-            table_body['Dividend'] = "Yes" if self.fundamentals['instruments'][0]['fundamental']['dividendAmount'] else "No"
-            table_body['Shortable'] = "Yes" if self.quote['reference']['isShortable'] else "No"
-            table_body['HTB'] = "Yes" if self.quote['reference']['isHardToBorrow'] else "No"
+            
+            # Format desired column names in new dict
+            columns = ['name', 'sector', 'industry', 'country']
+            fmt_ticker_info = {}
+            for key in columns:
+                value = self.ticker_info[key]
+                if value != 'NaN' and value:
+                    fmt_ticker_info[key.capitalize()] = value
 
+            # Map additional values
+            fmt_ticker_info['Asset'] = self.quote['assetSubType']
+            fmt_ticker_info['Exchange'] = self.quote['reference']['exchangeName']
+            
             message += self.build_stats_table(header={},
-                                            body=table_body,
+                                            body=fmt_ticker_info,
                                             adjust='right')
-        else:
-            message += "No fundamentals found"
-
-        return message
-
-    def build_popularity(self):
-        """Return message content popularity overview of stock over select intervals
-        
-        Requires:
-            - popularity
-        """
-        logger.debug("Building popularity...")
-        message = "## Popularity\n"
-        
-        # Validate popularity
-        if not self.popularity.empty:
-
             
+            
+            return message 
+        
+                
+            
+        def build_recent_SEC_filings(self):
+            """Return message content containing the 5 most recently release SEC filings for the stock
+            
+            Requires:
+                - recent_sec_filings
+                - ticker / ticker_info
+            """
+            logger.debug("Building latest SEC filings...")
 
-            # Get current rank
-            table_header = {}
-            now = date_utils.round_down_nearest_minute(30)
-            popularity_today = self.popularity[(self.popularity['datetime'] == now)]
-            current_rank = popularity_today['rank'].iloc[0] if not popularity_today.empty else 'N/A'
-            table_header['Current'] = current_rank
+            message = "## Recent SEC Filings\n\n"
 
-            # Get highest popularity rank across select intervals
-            table_body = {}
-            interval_map = {"High 1D":1,
-                            "High 7D":7,
-                            "High 1M":30,
-                            "High 3M":90,
-                            "High 6M":180}
+            # Validate SEC filings
+            if not self.recent_sec_filings.empty:
+                for filing in self.recent_sec_filings.head(5).to_dict(orient='records'):
+                    message += f"[Form {filing['form']} - {filing['filingDate']}]({filing['link']})\n"
+            else:
+                message += "This stock has no recent SEC filings\n"
+                    
+            return message
 
+        def build_todays_sec_filings(self):
+            """Return message content containing SEC filings for the stock released today
+            
+            Requires:
+                - recent_sec_filings
+                - ticker / ticker_info
+            """
+            logger.debug("Building today's SEC filings...")
+            message = "## Today's SEC Filings\n\n"
 
-            for label, interval in interval_map.items():
-                # Find max rank within defined interval
-                interval_date = now - datetime.timedelta(days=interval)
-                interval_popularity = self.popularity[self.popularity['datetime'].between(interval_date, now)]
-                if not interval_popularity.empty:
-                    max_rank = interval_popularity['rank'].min()
+            # Filter recent filings to only get filings from today
+            today_string = datetime.datetime.today().strftime("%Y-%m-%d")
+            todays_filings = self.recent_sec_filings[self.recent_sec_filings['filingDate'] == today_string]
+            for index, filing in todays_filings.iterrows():
+                message += f"[Form {filing['form']} - {filing['filingDate']}]({filing['link']})\n"
+            return message
+
+        def build_earnings_date(self):
+            """Return message content with the date and release time of the stock's next earnings report
+            
+            Requires:
+                - ticker_info
+                - next_earnings_info
+            """
+            logger.debug("Building earnings date...")
+
+            message = ''
+            # Validate next earnings info
+            if self.next_earnings_info:
+                # Earnings date
+                message = f"{self.ticker} reports earnings on "
+                message += f"{date_utils.format_date_mdy(self.next_earnings_info['date'])}, "
+
+                # Earnings time
+                earnings_time = self.next_earnings_info['time']
+                if "pre-market" in earnings_time:
+                    message += "before market open"
+                elif "after-hours" in earnings_time:
+                    message += "after market close"
                 else:
-                    max_rank = 'N/A'
+                    message += "time not specified"
 
-                # Assign symbol based on rank difference
-                symbol = None
-                if max_rank != "N/A" and current_rank != 'N/A':
-                    if max_rank < current_rank:
-                        symbol = "🔻"
-                    elif max_rank > current_rank:
-                        symbol = "🟢"
-                    else:
-                        symbol = '━'
+                message += "\n"
+            return message
 
-                table_body[label] = f"{max_rank:<3} {f'{symbol} {max_rank-current_rank} spots' if symbol and current_rank != 'N/A' else 'No change'}"
+        def build_upcoming_earnings_summary(self):
+            """Return message content that summarizes the next earnings report for the stock
             
-            message += self.build_stats_table(header=table_header,
-                                              body=table_body,
-                                              adjust='right')
-        else:
-            message += "No popularity data found for this stock\n"
-        return message
-    
-    def build_politician_info(self):
-        """Return message content with information on the report's politician
-        
-        Requires:
-            - politician
-            - politician_facts
-        """
+            Requires:
+                - next_earnings_info
+            """
+            logger.debug("Building upcoming earnings summary...")
 
-          # Format desired column names in new dict
-        column_map = {'Party':'party',
-                      'State':'state'}
-        fmt_politician_info = {}
-        for key, value in column_map.items():
-            fmt_politician_info[key] = self.politician[value]
+            message = "## Next Earnings Summary\n"
+            # Validate next earnings info
+            if self.next_earnings_info:
+                fmt_earnings_info = {}
+                fmt_earnings_info['Date'] = self.next_earnings_info['date']
+                
+                fmt_earnings_info['Time'] = "{}".format("Premarket" if "pre-market" in self.next_earnings_info['time']
+                                                        else "After hours" if "after-hours" in self.next_earnings_info['time']
+                                                        else "Not supplied")
+                fmt_earnings_info['Quarter'] = self.next_earnings_info['fiscal_quarter_ending']
+                fmt_earnings_info['EPS Forecast'] = self.next_earnings_info['eps_forecast'] if len(self.next_earnings_info['eps_forecast']) > 0 else "N/A"
+                fmt_earnings_info['Estimates'] = self.next_earnings_info['no_of_ests']
+                fmt_earnings_info['Prev Rpt Date'] = self.next_earnings_info['last_year_rpt_dt']
+                fmt_earnings_info['Prev Year EPS'] = self.next_earnings_info['last_year_eps']
+                message += self.build_stats_table(header={},
+                                                body=fmt_earnings_info, 
+                                                adjust='right')
+            else:
+                message += "Stock has no upcoming earnings reports\n"
 
-        politician_facts = fmt_politician_info | self.politician_facts
+            return message 
 
-        message = "## About\n"
-        message += self.build_stats_table(header={},
-                                          body=politician_facts,
-                                          adjust='right')
-        return message
+        def build_recent_earnings(self):
+            """Return message content that summarizes 4 most recent earnings reports for the stock
+            
+            Requires:
+                - historical_earnings
+            """
+            logger.debug("Building recent earnings...")
 
+            message = "## Recent Earnings Overview\n"
 
-    def build_politician_trades(self):
-        """Return message content with information on the report's politician's latest trades
-        
-        Requires:
-            - trades
-        """
-        message = "## Latest Trades\n"
-        message += self.build_df_table(df=self.trades.head(10))
-        return message
+            # Validate historical earnings
+            if not self.historical_earnings.empty:
+                #message += f"**Next earnings date:** {self.next_earnings_info['date']}\n"
+                column_map = {'date':'Date Reported', 
+                            'eps':'EPS',
+                            'surprise':'Surprise',
+                            'epsforecast':'Estimate',
+                            'fiscalquarterending':'Quarter'}
+                
+                recent_earnings = self.historical_earnings.tail(4)
+                recent_earnings = recent_earnings.filter(list(column_map.keys()))
+                recent_earnings = recent_earnings.rename(columns=column_map)
+                recent_earnings['Date Reported'] = recent_earnings['Date Reported'].apply(lambda x: date_utils.format_date_mdy(x))
+                recent_earnings['Surprise'] =  recent_earnings['Surprise'].apply(lambda x: f"{x}%")
+                message += self.build_df_table(df=recent_earnings, style='borderless')
+            
+            else:
+                message += "No historical earnings found for this ticker"
+            return message + "\n"
 
-    def build_report(self):
-        """Return string populated with content from report functions"""
-        report = ''
-        report += self.build_report_header()
-        return report   
+        def build_performance(self):
+            """Return message content with stock performance over recent weeks and months
+            
+            Requires:
+                - daily_price_history
+                - quote
+            """
+            logger.debug("Building performance...")
+            message = "## Performance\n\n"
 
-    async def send_report(self, interaction:discord.Interaction = None, visibility:str = "public", files=None, view=None):
-        """Send report to report's channel, adding files and vuttons as needed"""
-        self.message = self.build_report() + "\n\n"
-        logger.info("Sending report...")
-        logger.debug(f"Report has content of length {len(self.message)}")
-        if visibility == 'private' and interaction:
-            message = await interaction.user.send(self.message, files=files, view=view)
+            # Validate daily price history
+            if not self.daily_price_history.empty:
+                # Get current close
+                table_header = {}
+                close = self.quote['regular']['regularMarketLastPrice']
+                table_header['Close'] = close
+                
+                # Get highest popularity rank across select intervals
+                table_body = {}
+                interval_map = {"1D":1,
+                                "5D":5,
+                                "1M":30,
+                                "3M":90,
+                                "6M":180}
+
+                today =  datetime.datetime.now(tz=date_utils.timezone()).date()
+                for label, interval in interval_map.items():
+                    # Find max rank within defined interval
+                    interval_date = today - datetime.timedelta(days=interval)
+                    while interval_date.weekday() > 4:
+                        interval_date = interval_date - datetime.timedelta(days=1)
+                    
+                    interval_close = self.daily_price_history[self.daily_price_history['date'] == interval_date]['close']
+
+                    if not interval_close.empty:
+                        interval_close = interval_close.iloc[0]
+                        change = ((close - interval_close) / interval_close)*100.0
+                    else:
+                        interval_close = 'N/A'
+                        change = None
+                    # Assign symbol based on rank difference
+                    symbol = None
+                    if interval_close != "N/A":
+                        if change < 0:
+                            symbol = "🔻"
+                        else:
+                            symbol = "🟢"
+
+                    table_body[label] = f"{'{:.2f}'.format(interval_close) if interval_close !='N/A' else 'N/A':<5} {f'{symbol} {'{:.2f}%'.format(change)}' if change else ''}"
+                message += self.build_stats_table(header=table_header,
+                                                body=table_body,
+                                                adjust='right')
+            else:
+                message += "No price data found for this stock\n"
             return message
-        else:
-            message = await self.channel.send(self.message, files=files, view=view)
+
+
+        def build_daily_summary(self):
+            """Return message content with OHLVC data for the stock
+            
+            Requires:
+                - quote
+            """
+            logger.debug("Building daily summary...")
+            message = "## Today's Summary\n"
+            OHLCV = {'Open': ["{:.2f}".format(self.quote['quote']['openPrice'])],
+                    'High': ["{:.2f}".format(self.quote['quote']['highPrice'])],
+                    'Low': ["{:.2f}".format(self.quote['quote']['lowPrice'])],
+                    'Close': ["{:.2f}".format(self.quote['regular']['regularMarketLastPrice'])],
+                    'Volume': [self.format_large_num(self.quote['quote']['totalVolume'])]
+                    }
+            message += self.build_df_table(df=pd.DataFrame(OHLCV), style='borderless')
+            message += '\n'
+            return message 
+
+        def build_fundamentals(self):
+            """Return message content with stock fundamental data 
+            
+            Requires:
+                - fundamentals
+                - quote
+            """
+            logger.debug("Building ticker stats...")
+            message = "## Fundamentals\n"
+
+            table_body = {}
+
+            # Validate fundamentals
+            if self.fundamentals:
+                # Include float? Short interest? Shortable and hard to borrow. Dividends?
+                table_body['Market Cap'] = self.format_large_num(self.fundamentals['instruments'][0]['fundamental']['marketCap'])
+                table_body['EPS'] = f"{'{:.2f}'.format(self.fundamentals['instruments'][0]['fundamental']['eps'])}"
+                table_body['EPS TTM'] = f"{'{:.2f}'.format(self.fundamentals['instruments'][0]['fundamental']['epsTTM'])}"
+                table_body['P/E Ratio'] = f"{'{:.2f}'.format(self.fundamentals['instruments'][0]['fundamental']['peRatio'])}"
+                table_body['Beta'] = self.fundamentals['instruments'][0]['fundamental']['beta']
+                table_body['Dividend'] = "Yes" if self.fundamentals['instruments'][0]['fundamental']['dividendAmount'] else "No"
+                table_body['Shortable'] = "Yes" if self.quote['reference']['isShortable'] else "No"
+                table_body['HTB'] = "Yes" if self.quote['reference']['isHardToBorrow'] else "No"
+
+                message += self.build_stats_table(header={},
+                                                body=table_body,
+                                                adjust='right')
+            else:
+                message += "No fundamentals found"
+
             return message
 
-    #####################
-    # Utility functions #
-    #####################
+        def build_popularity(self):
+            """Return message content popularity overview of stock over select intervals
+            
+            Requires:
+                - popularity
+            """
+            logger.debug("Building popularity...")
+            message = "## Popularity\n"
+            
+            # Validate popularity
+            if not self.popularity.empty:
 
-    # Tool to format large numbers
-    def format_large_num(self, number):
-        """Format large numbers to be human readable. i.e. 300M, 1.2B"""
-        try:
-            number = float('{:.3g}'.format(float(number)))
-            magnitude = 0
-            while abs(number) >= 1000:
-                magnitude += 1
-                number /= 1000.0
-            return '{}{}'.format('{:f}'.format(number).rstrip('0').rstrip('.'), ['', 'K', 'M', 'B', 'T'][magnitude])
-        except TypeError as e:
-            # Could not convert 'number' to float
-            return "N/A"
-    
-    class Buttons(discord.ui.View):
+                
+
+                # Get current rank
+                table_header = {}
+                now = date_utils.round_down_nearest_minute(30)
+                popularity_today = self.popularity[(self.popularity['datetime'] == now)]
+                current_rank = popularity_today['rank'].iloc[0] if not popularity_today.empty else 'N/A'
+                table_header['Current'] = current_rank
+
+                # Get highest popularity rank across select intervals
+                table_body = {}
+                interval_map = {"High 1D":1,
+                                "High 7D":7,
+                                "High 1M":30,
+                                "High 3M":90,
+                                "High 6M":180}
+
+
+                for label, interval in interval_map.items():
+                    # Find max rank within defined interval
+                    interval_date = now - datetime.timedelta(days=interval)
+                    interval_popularity = self.popularity[self.popularity['datetime'].between(interval_date, now)]
+                    if not interval_popularity.empty:
+                        max_rank = interval_popularity['rank'].min()
+                    else:
+                        max_rank = 'N/A'
+
+                    # Assign symbol based on rank difference
+                    symbol = None
+                    if max_rank != "N/A" and current_rank != 'N/A':
+                        if max_rank < current_rank:
+                            symbol = "🔻"
+                        elif max_rank > current_rank:
+                            symbol = "🟢"
+                        else:
+                            symbol = '━'
+
+                    table_body[label] = f"{max_rank:<3} {f'{symbol} {max_rank-current_rank} spots' if symbol and current_rank != 'N/A' else 'No change'}"
+                
+                message += self.build_stats_table(header=table_header,
+                                                body=table_body,
+                                                adjust='right')
+            else:
+                message += "No popularity data found for this stock\n"
+            return message
+        
+        def build_politician_info(self):
+            """Return message content with information on the report's politician
+            
+            Requires:
+                - politician
+                - politician_facts
+            """
+
+            # Format desired column names in new dict
+            column_map = {'Party':'party',
+                        'State':'state'}
+            fmt_politician_info = {}
+            for key, value in column_map.items():
+                fmt_politician_info[key] = self.politician[value]
+
+            politician_facts = fmt_politician_info | self.politician_facts
+
+            message = "## About\n"
+            message += self.build_stats_table(header={},
+                                            body=politician_facts,
+                                            adjust='right')
+            return message
+
+
+        def build_politician_trades(self):
+            """Return message content with information on the report's politician's latest trades
+            
+            Requires:
+                - trades
+            """
+            message = "## Latest Trades\n"
+            message += self.build_df_table(df=self.trades.head(10))
+            return message
+
+        def build_report(self):
+            """Return string populated with content from report functions"""
+            report = ''
+            report += self.build_report_header()
+            return report   
+
+        async def send_report(self, interaction:discord.Interaction = None, visibility:str = "public", files=None, view=None):
+            """Send report to report's channel, adding files and vuttons as needed"""
+            self.message = self.build_report() + "\n\n"
+            logger.info("Sending report...")
+            logger.debug(f"Report has content of length {len(self.message)}")
+            if visibility == 'private' and interaction:
+                message = await interaction.user.send(self.message, files=files, view=view)
+                return message
+            else:
+                message = await self.channel.send(self.message, files=files, view=view)
+                return message
+
+        #####################
+        # Utility functions #
+        #####################
+
+        # Tool to format large numbers
+        def format_large_num(self, number):
+            """Format large numbers to be human readable. i.e. 300M, 1.2B"""
+            try:
+                number = float('{:.3g}'.format(float(number)))
+                magnitude = 0
+                while abs(number) >= 1000:
+                    magnitude += 1
+                    number /= 1000.0
+                return '{}{}'.format('{:f}'.format(number).rstrip('0').rstrip('.'), ['', 'K', 'M', 'B', 'T'][magnitude])
+            except TypeError as e:
+                # Could not convert 'number' to float
+                return "N/A"
+        
+        class Buttons(discord.ui.View):
+                def __init__(self):
+                    super().__init__(timeout=None)
+
+    class Screener(Report):
+        """Report that is routinely updated with content from a source"""
+
+        def __init__(self, channel, screener_type:str, data:pd.DataFrame, column_map:dict):
+            super().__init__(channel=channel)
+            self.dutils = discord_utils()
+            self.screener_type = screener_type
+            self.column_map = column_map
+
+            # Init data, update watchlist, and format for posting
+            self.data = data
+            self.format_columns()
+            self.update_watchlist()
+
+        def get_tickers(self):
+            """Return all tickers from self.data"""
+            return self.data['Ticker'].to_list()
+
+        def update_watchlist(self):
+            """Update system-generated watchlist for the given screener. Only uses the top 20 tickers and updates the existing watchlist if it exists."""
+            from db import Postgres
+
+            watchlists = data_Watchlists(db=Postgres())
+            watchlist_id = self.screener_type
+            watchlist_tickers = self.get_tickers()
+            watchlist_tickers = watchlist_tickers[:20]
+
+            if not watchlists.validate_watchlist(watchlist_id):
+                watchlists.create_watchlist(watchlist_id=watchlist_id, tickers=watchlist_tickers, systemGenerated=True)
+                logger.info(f"Created new watchlist from '{self.screener_type}' screener")
+                logger.debug(f"Watchlist created with {len(watchlist_tickers)} tickers: {watchlist_tickers}")
+            else:
+                watchlists.update_watchlist(watchlist_id=watchlist_id, tickers=watchlist_tickers)
+                logger.info(f"Updated watchlist '{self.screener_type}'")
+                logger.debug(f"Watchlist updated with {len(watchlist_tickers)} tickers: {watchlist_tickers}")
+
+        def format_columns(self):
+            """Format all columns in self.data per column map - rename and drop columns accordingly"""
+
+            # Drop all unwanted columns and map column names
+            self.data = self.data.filter(list(self.column_map.keys()))
+            self.data = self.data.rename(columns=self.column_map)
+
+            
+
+        # Override
+        async def send_report(self, view=None, files=None):
+            """Post screener to the screeners channel"""
+
+            # Generate messafge
+            self.message = self.build_report() + "\n\n"
+
+            logger.info(f"Sending '{self.screener_type}' screener...")
+            today = datetime.datetime.now(tz=date_utils.timezone()).date()
+
+            # Format screener type for db insertion
+            self.screener_type = self.screener_type.upper().replace("-","_")
+            
+            # Check if a gainer message already exists and update if present
+            message_id = self.dutils.get_screener_message_id(screener_type=self.screener_type)
+
+            # Screener has existing message in Discord
+            if message_id:
+                logger.debug(f"Existing screener '{self.screener_type}' found with ID {message_id}")
+                curr_message = await self.channel.fetch_message(message_id)
+                message_create_date = curr_message.created_at.astimezone(date_utils.timezone()).date()
+
+                # Existing message is old - create new message
+                if message_create_date < today:
+                    message = await self.channel.send(self.message, view=view, files=files)
+                    logger.info(f"Posted new '{self.screener_type}' screener for today")
+                    self.dutils.update_screener_message_id(message_id=message.id, screener_type=self.screener_type)
+                    return message
+                # Update existing message
+                else:
+                    await curr_message.edit(content=self.message)
+                    logger.info(f"Updated '{self.screener_type}' screener")
+
+            # No existing report, send new one
+            else:
+                logger.debug(f"No existing message for '{self.screener_type}' screener")
+                message = await self.channel.send(self.message, view=view)
+                logger.info(f"Posted new '{self.screener_type}' screener for today")
+                self.dutils.insert_screener_message_id(message_id=message.id, screener_type=self.screener_type)
+                return message
+
+    class StockReport(Report):
+        """Report subclass containing information on the report's ticker"""
+        
+        def __init__(self, channel:discord.channel, ticker_info:dict, daily_price_history:pd.DataFrame, popularity:pd.DataFrame, 
+                    recent_sec_filings:pd.DataFrame, historical_earnings:pd.DataFrame, next_earnings_info:dict, quote:dict,
+                    company_facts:dict):
+            super().__init__(channel=channel,
+                            ticker_info=ticker_info,
+                            daily_price_history=daily_price_history,
+                            popularity=popularity,
+                            recent_sec_filings=recent_sec_filings,
+                            historical_earnings=historical_earnings,
+                            next_earnings_info=next_earnings_info,
+                            quote=quote,
+                            company_facts=company_facts)
+            self.buttons = self.Buttons(self.ticker)
+            
+        # Override
+        def build_report(self):
+            """Overrides parent class to generate custom report"""
+            logger.debug("Building Stock Report...")
+            report = ''
+            report += self.build_report_header()
+            report += self.build_ticker_info()
+            report += self.build_daily_summary()
+            report += self.build_performance()
+            report += self.build_fundamentals()
+            report += self.build_popularity()
+            report += self.build_recent_earnings()
+            report += self.build_recent_SEC_filings()
+            
+            return report
+
+        # Override
+        async def send_report(self, interaction: discord.Interaction, visibility:str):
+            """Overrides parent class with interaction, vsibility, and, view parameters depending on how the report was generated"""
+            message = await super().send_report(interaction=interaction, visibility=visibility, view=self.buttons)
+            return message
+
+        # Override
+        class Buttons(discord.ui.View):
+                """Custom buttons for Stock Report:
+                - Google shortcut
+                - StockInvest shortcut
+                - Finviz shortcut
+                - Yahoo Finance shortcut
+                - "Generate chart" button
+                - "Get News" button
+                """
+                def __init__(self, ticker : str):
+                    super().__init__(timeout=None)
+                    self.ticker = ticker
+                    self.add_item(discord.ui.Button(label="Google it", style=discord.ButtonStyle.url, url = "https://www.google.com/search?q={}".format(self.ticker)))
+                    self.add_item(discord.ui.Button(label="StockInvest", style=discord.ButtonStyle.url, url = "https://stockinvest.us/stock/{}".format(self.ticker)))
+                    self.add_item(discord.ui.Button(label="FinViz", style=discord.ButtonStyle.url, url = "https://finviz.com/quote.ashx?t={}".format(self.ticker)))
+                    self.add_item(discord.ui.Button(label="Yahoo! Finance", style=discord.ButtonStyle.url, url = "https://finance.yahoo.com/quote/{}".format(self.ticker)))
+
+                    
+                @discord.ui.button(label="Generate chart", style=discord.ButtonStyle.primary)
+                async def generate_chart(self, interaction:discord.Interaction, button:discord.ui.Button,):
+                    await interaction.response.send_message("Generate chart!")
+
+                @discord.ui.button(label="Get news", style=discord.ButtonStyle.primary)
+                async def get_news(self, interaction:discord.Interaction, button:discord.ui.Button):
+                    news = News().get_news(query=self.ticker)
+
+                    news_report = NewsReport(news=news, query=self.ticker)
+                    await news_report.send_report(interaction)
+                    await interaction.response.send_message(f"Fetched news for {self.ticker}!", ephemeral=True)
+
+    class GainerScreener(Screener):
+        """Screener subclass for posting premarket/intraday/postmarket gainers"""
+        def __init__(self, channel:discord.channel, market_period:str, gainers:pd.DataFrame):
+            
+            self.market_period = market_period
+            # Set column map
+            if self.market_period == 'premarket':
+                column_map = {'name':'Ticker',
+                            'premarket_change':'Change (%)',
+                            'premarket_close':'Price',
+                            'close':'Prev Close',
+                            'premarket_volume':'Pre Market Volume',
+                            'market_cap_basic':'Market Cap'}
+            elif self.market_period == 'intraday':
+                column_map = {'name':'Ticker',
+                            'change':'Change (%)',
+                            'close':'Price',
+                            'volume':'Volume',
+                            'market_cap_basic':'Market Cap'}
+            elif self.market_period == 'aftermarket':
+                column_map = {'name':'Ticker',
+                            'postmarket_change':'Change (%)',
+                            'postmarket_close':'Price',
+                            'close':'Price at Close',
+                            'postmarket_volume':'After Hours Volume',
+                            'market_cap_basic':'Market Cap'}
+                
+            super().__init__(channel=channel, 
+                            screener_type=f"{self.market_period}-gainers", 
+                            data = gainers,
+                            column_map=column_map)
+            
+            # Init buttons
+            self.buttons = self.Buttons(market_period=self.market_period)
+            
+
+        # Extends
+        def format_columns(self):
+            """Extends the parent function to format *Volume, Market Cap, and % Change columns for screener"""
+            super().format_columns()
+
+            # Format all volume columns in df
+            volume_cols = self.data.filter(like='Volume').columns.to_list()
+            for volume_col in volume_cols:
+                self.data[volume_col] = self.data[volume_col].apply(lambda x: self.format_large_num(x))
+
+            # Format Market Cap
+            self.data['Market Cap'] = self.data['Market Cap'].apply(lambda x: self.format_large_num(x))
+
+            # Format % change columns
+            self.data['Change (%)'] = self.data['Change (%)'].apply(lambda x: "{:.2f}%".format(float(x)) if x is not None else 0.00)
+
+        
+
+        # Override
+        def build_report_header(self):
+            """Overrides the parent function to generate custom header"""
+            logger.debug(f"Building '{self.screener_type}' screener header...")
+            now = datetime.datetime.now(tz=date_utils.timezone())
+            header = "### :rotating_light: {} Gainers {} (Updated {})\n\n".format(
+                        "Pre-market" if self.market_period == 'premarket'
+                        else "Intraday" if self.market_period == 'intraday'
+                        else "After Hours" if self.market_period == 'aftermarket'
+                        else "",
+                        now.date().strftime("%m/%d/%Y"),
+                        now.strftime("%I:%M %p"))
+            return header
+
+        # Override
+        def build_report(self):
+            """Overrides the parent function to generate custom screener"""
+            logger.debug(f"Building '{self.screener_type}' screener...")
+            report = ""
+            report +=  self.build_report_header()
+            report +=  self.build_df_table(self.data[:15])
+            return report
+        
+        # Override
+        async def send_report(self):
+            """Overrides the parent function to add buttons to screener message"""
+            message = await super().send_report(view=self.buttons)
+            return message
+        
+        # Override
+        class Buttons(discord.ui.View):
+            """Custom buttons for Gainer Screener:
+                - TradingView shortcut based on market period
+                """
+            def __init__(self, market_period):
+                super().__init__(timeout=None)
+                if market_period == 'premarket':
+                    url = "https://www.tradingview.com/markets/stocks-usa/market-movers-pre-market-gainers/"
+                elif market_period == 'intraday':
+                    url = "https://www.tradingview.com/markets/stocks-usa/market-movers-gainers/"
+                elif market_period == 'aftermarket':
+                    url = "https://www.tradingview.com/markets/stocks-usa/market-movers-after-hours-gainers/"
+                self.add_item(discord.ui.Button(label="TradingView", style=discord.ButtonStyle.url, url = url))
+
+    class VolumeScreener(Screener):
+        """Screener subclass to post ununusal volume movers in the market"""
+        def __init__(self, channel:discord.channel, unusual_volume:pd.DataFrame):
+
+            # Set column map
+            column_map = {'name':'Ticker',
+                        'close':'Price',
+                        'change':'Change (%)',
+                        'relative_volume_10d_calc':'Relative Volume (10 Day)',
+                        'volume':'Volume',
+                        'average_volume_10d_calc':'Avg Volume (10 Day)',
+                        'market_cap_basic':'Market Cap'}
+
+
+            super().__init__(channel=channel, 
+                            screener_type=f"unusual-volume", 
+                            data = unusual_volume,
+                            column_map=column_map)
+            
+            # Init buttons
+            self.buttons = self.Buttons()
+            
+            
+        
+        def format_columns(self):
+            """Extends the parent function to format *Volume, Market Cap, and % Change, and Relative Volume columns for screener"""
+            super().format_columns()
+
+            # Format all volume columns in df
+            volume_cols = self.data.filter(like='Volume').columns.to_list()
+            for volume_col in volume_cols:
+                self.data[volume_col] = self.data[volume_col].apply(lambda x: self.format_large_num(x))
+
+            # Format Market Cap
+            self.data['Market Cap'] = self.data['Market Cap'].apply(lambda x: self.format_large_num(x))
+
+            # Format % change columns
+            self.data['Change (%)'] = self.data['Change (%)'].apply(lambda x: "{:.2f}%".format(float(x)) if x is not None else 0.00)
+
+            # Append 'x' to all values in 'Relative Volume (10 Day)' column
+            self.data['Relative Volume (10 Day)'] = self.data['Relative Volume (10 Day)'].apply(lambda x: f"{x}x".format(x))
+            
+
+        # Override
+        def build_report_header(self):
+            """Overrides the parent function to generate custom header"""
+            logger.debug(f"Building '{self.screener_type}' screener header...")
+            now = datetime.datetime.now(tz=date_utils.timezone())
+            header = "### :rotating_light: Unusual Volume {} (Updated {})\n\n".format(
+                        now.date().strftime("%m/%d/%Y"),
+                        now.strftime("%I:%M %p"))
+            return header
+
+        # Override
+        def build_report(self):
+            """Overrides the parent function to generate custom screener"""
+            logger.debug(f"Building '{self.screener_type}' screener...")
+            report = ""
+            report += self.build_report_header()
+            report += self.build_df_table(self.data[:12])
+            return report
+        
+        # Override
+        async def send_report(self):
+            """Overrides the parent function to add buttons to screener message"""
+            message = await super().send_report(view=self.buttons)
+            return message
+        
+        # Override
+        class Buttons(discord.ui.View):
+            """Custom buttons for Gainer Screener:
+                - TradingView shortcut
+                """
             def __init__(self):
                 super().__init__(timeout=None)
+                self.add_item(discord.ui.Button(label="TradingView", style=discord.ButtonStyle.url, url = "https://www.tradingview.com/markets/stocks-usa/market-movers-unusual-volume/"))
 
-class Screener(Report):
-    """Report that is routinely updated with content from a source"""
+    class PopularityScreener(Screener):
+        """Screener subclass to post popularity rankings for stocks"""
+        def __init__(self, channel:discord.channel, popular_stocks:pd.DataFrame):
+            column_map = {'rank':'Rank',
+                        'ticker':'Ticker',
+                        'mentions': 'Mentions',
+                        'rank_24h_ago':"Rank 24H Ago",
+                        'mentions_24h_ago':'Mentions 24H Ago'}
 
-    def __init__(self, channel, screener_type:str, data:pd.DataFrame, column_map:dict):
-        super().__init__(channel=channel)
-        self.dutils = discord_utils()
-        self.screener_type = screener_type
-        self.column_map = column_map
 
-        # Init data, update watchlist, and format for posting
-        self.data = data
-        self.format_columns()
-        self.update_watchlist()
+            super().__init__(channel=channel, 
+                            screener_type="popular-stocks", 
+                            data=popular_stocks,
+                            column_map=column_map)
+            
+            # Init buttons
+            self.buttons = self.Buttons()
 
-    def get_tickers(self):
-        """Return all tickers from self.data"""
-        return self.data['Ticker'].to_list()
 
-    def update_watchlist(self):
-        """Update system-generated watchlist for the given screener. Only uses the top 20 tickers and updates the existing watchlist if it exists."""
-        from db import Postgres
+        # Override
+        def build_report_header(self):
+            """Overrides the parent function to generate custom header"""
+            logger.debug(f"Building '{self.screener_type}' screener header...")
+            now = datetime.datetime.now(tz=date_utils.timezone())
+            header = "### :rotating_light: Popular Stocks {} (Updated {})\n\n".format(
+                        now.date().strftime("%m/%d/%Y"),
+                        date_utils.round_down_nearest_minute(30).astimezone(date_utils.timezone()).strftime("%I:%M %p"))
+            return header
 
-        watchlists = data_Watchlists(db=Postgres())
-        watchlist_id = self.screener_type
-        watchlist_tickers = self.get_tickers()
-        watchlist_tickers = watchlist_tickers[:20]
-
-        if not watchlists.validate_watchlist(watchlist_id):
-            watchlists.create_watchlist(watchlist_id=watchlist_id, tickers=watchlist_tickers, systemGenerated=True)
-            logger.info(f"Created new watchlist from '{self.screener_type}' screener")
-            logger.debug(f"Watchlist created with {len(watchlist_tickers)} tickers: {watchlist_tickers}")
-        else:
-            watchlists.update_watchlist(watchlist_id=watchlist_id, tickers=watchlist_tickers)
-            logger.info(f"Updated watchlist '{self.screener_type}'")
-            logger.debug(f"Watchlist updated with {len(watchlist_tickers)} tickers: {watchlist_tickers}")
-
-    def format_columns(self):
-        """Format all columns in self.data per column map - rename and drop columns accordingly"""
-
-        # Drop all unwanted columns and map column names
-        self.data = self.data.filter(list(self.column_map.keys()))
-        self.data = self.data.rename(columns=self.column_map)
-
+        # Override
+        def build_report(self):
+            """Overrides the parent function to generate custom screener"""
+            logger.debug(f"Building '{self.screener_type}' screener...")
+            report = ""
+            report +=  self.build_report_header()
+            report +=  self.build_df_table(df=self.data[:20])
+            return report
         
-
-    # Override
-    async def send_report(self, view=None, files=None):
-        """Post screener to the screeners channel"""
-
-        # Generate messafge
-        self.message = self.build_report() + "\n\n"
-
-        logger.info(f"Sending '{self.screener_type}' screener...")
-        today = datetime.datetime.now(tz=date_utils.timezone()).date()
-
-        # Format screener type for db insertion
-        self.screener_type = self.screener_type.upper().replace("-","_")
-        
-        # Check if a gainer message already exists and update if present
-        message_id = self.dutils.get_screener_message_id(screener_type=self.screener_type)
-
-        # Screener has existing message in Discord
-        if message_id:
-            logger.debug(f"Existing screener '{self.screener_type}' found with ID {message_id}")
-            curr_message = await self.channel.fetch_message(message_id)
-            message_create_date = curr_message.created_at.astimezone(date_utils.timezone()).date()
-
-            # Existing message is old - create new message
-            if message_create_date < today:
-                message = await self.channel.send(self.message, view=view, files=files)
-                logger.info(f"Posted new '{self.screener_type}' screener for today")
-                self.dutils.update_screener_message_id(message_id=message.id, screener_type=self.screener_type)
-                return message
-            # Update existing message
-            else:
-                await curr_message.edit(content=self.message)
-                logger.info(f"Updated '{self.screener_type}' screener")
-
-        # No existing report, send new one
-        else:
-            logger.debug(f"No existing message for '{self.screener_type}' screener")
-            message = await self.channel.send(self.message, view=view)
-            logger.info(f"Posted new '{self.screener_type}' screener for today")
-            self.dutils.insert_screener_message_id(message_id=message.id, screener_type=self.screener_type)
+        # Override
+        async def send_report(self):
+            """Overrides the parent function to add buttons to screener message"""
+            message = await super().send_report(view=self.buttons)
             return message
 
-class StockReport(Report):
-    """Report subclass containing information on the report's ticker"""
-    
-    def __init__(self, channel:discord.channel, ticker_info:dict, daily_price_history:pd.DataFrame, popularity:pd.DataFrame, 
-                 recent_sec_filings:pd.DataFrame, historical_earnings:pd.DataFrame, next_earnings_info:dict, quote:dict,
-                 company_facts:dict):
-        super().__init__(channel=channel,
-                         ticker_info=ticker_info,
-                         daily_price_history=daily_price_history,
-                         popularity=popularity,
-                         recent_sec_filings=recent_sec_filings,
-                         historical_earnings=historical_earnings,
-                         next_earnings_info=next_earnings_info,
-                         quote=quote,
-                         company_facts=company_facts)
-        self.buttons = self.Buttons(self.ticker)
-        
-    # Override
-    def build_report(self):
-        """Overrides parent class to generate custom report"""
-        logger.debug("Building Stock Report...")
-        report = ''
-        report += self.build_report_header()
-        report += self.build_ticker_info()
-        report += self.build_daily_summary()
-        report += self.build_performance()
-        report += self.build_fundamentals()
-        report += self.build_popularity()
-        report += self.build_recent_earnings()
-        report += self.build_recent_SEC_filings()
-        
-        return report
-
-    # Override
-    async def send_report(self, interaction: discord.Interaction, visibility:str):
-        """Overrides parent class with interaction, vsibility, and, view parameters depending on how the report was generated"""
-        message = await super().send_report(interaction=interaction, visibility=visibility, view=self.buttons)
-        return message
-
-    # Override
-    class Buttons(discord.ui.View):
-            """Custom buttons for Stock Report:
-            - Google shortcut
-            - StockInvest shortcut
-            - Finviz shortcut
-            - Yahoo Finance shortcut
-            - "Generate chart" button
-            - "Get News" button
-            """
-            def __init__(self, ticker : str):
+        # Override
+        class Buttons(discord.ui.View):
+            """Custom buttons for Popularity Screener:
+                - ApeWisdom
+                """
+            def __init__(self):
                 super().__init__(timeout=None)
-                self.ticker = ticker
-                self.add_item(discord.ui.Button(label="Google it", style=discord.ButtonStyle.url, url = "https://www.google.com/search?q={}".format(self.ticker)))
-                self.add_item(discord.ui.Button(label="StockInvest", style=discord.ButtonStyle.url, url = "https://stockinvest.us/stock/{}".format(self.ticker)))
-                self.add_item(discord.ui.Button(label="FinViz", style=discord.ButtonStyle.url, url = "https://finviz.com/quote.ashx?t={}".format(self.ticker)))
-                self.add_item(discord.ui.Button(label="Yahoo! Finance", style=discord.ButtonStyle.url, url = "https://finance.yahoo.com/quote/{}".format(self.ticker)))
+                self.add_item(discord.ui.Button(label="ApeWisdom", style=discord.ButtonStyle.url, url = "https://apewisdom.io/"))    
 
-                
-            @discord.ui.button(label="Generate chart", style=discord.ButtonStyle.primary)
-            async def generate_chart(self, interaction:discord.Interaction, button:discord.ui.Button,):
-                await interaction.response.send_message("Generate chart!")
+    class NewsReport(Report):
+        """Report subclass to post news articles about the input query"""
+        def __init__(self, news, query):
+            # No channel for this report so no need to init super
+            self.news = news
+            self.query = query
 
-            @discord.ui.button(label="Get news", style=discord.ButtonStyle.primary)
-            async def get_news(self, interaction:discord.Interaction, button:discord.ui.Button):
-                news = News().get_news(query=self.ticker)
+        # Override
+        def build_report_header(self):
+            """Overrides the parent function to generate custom header"""
+            logger.debug("Building News Report header...")
+            # Append ticker name, today's date, and external links to message
+            header = f"## News articles for '{self.query}'\n"
+            return header + "\n"
 
-                news_report = NewsReport(news=news, query=self.ticker)
-                await news_report.send_report(interaction)
-                await interaction.response.send_message(f"Fetched news for {self.ticker}!", ephemeral=True)
+        def build_news(self):
+            """Return message content with up to the top 10 news articles hyperlinked"""
+            logger.debug("Building news...")
+            report = ''
+            for article in self.news['articles'][:10]:
+                article_date = date_utils.format_date_from_iso(date=article['publishedAt']).strftime("%m/%d/%y %H:%M:%S EST")
+                article = f"[{article['title']} - {article['source']['name']} ({article_date})](<{article['url']}>)\n"
+                if len(report + article) <= 1900:
+                    report += article
+                else:
+                    break
+            return report
 
-class GainerScreener(Screener):
-    """Screener subclass for posting premarket/intraday/postmarket gainers"""
-    def __init__(self, channel:discord.channel, market_period:str, gainers:pd.DataFrame):
-        
-        self.market_period = market_period
-        # Set column map
-        if self.market_period == 'premarket':
-            column_map = {'name':'Ticker',
-                          'premarket_change':'Change (%)',
-                          'premarket_close':'Price',
-                          'close':'Prev Close',
-                          'premarket_volume':'Pre Market Volume',
-                          'market_cap_basic':'Market Cap'}
-        elif self.market_period == 'intraday':
-            column_map = {'name':'Ticker',
-                          'change':'Change (%)',
-                          'close':'Price',
-                          'volume':'Volume',
-                          'market_cap_basic':'Market Cap'}
-        elif self.market_period == 'aftermarket':
-            column_map = {'name':'Ticker',
-                          'postmarket_change':'Change (%)',
-                          'postmarket_close':'Price',
-                          'close':'Price at Close',
-                          'postmarket_volume':'After Hours Volume',
-                          'market_cap_basic':'Market Cap'}
+        def build_report(self):
+            """Overrides the parent function to generate custom report"""
+            logger.debug("Building News Report...")
+            report = ''
+            report += self.build_report_header()
+            report += self.build_news()
+            return report + '\n'  
+
+        # Override
+        async def send_report(self, interaction:discord.Interaction):
+            """Override parent function to always post report as response to interation"""
+            logger.debug("Sending News Report...")
+            await interaction.response.send_message(self.message)
+
+    class PopularityReport(Report):
+        """Report subclass for posting the most recent popularity ranking for stocks in the input filter"""
+        def __init__(self, channel:discord.channel, popular_stocks:pd.DataFrame, filter:str):
+            super().__init__(channel=channel)
+            self.popular_stocks = popular_stocks
+            self.filter = filter
+            self.column_map = {'rank':'Rank',
+                            'ticker':'Ticker',
+                            'mentions': 'Mentions',
+                            'rank_24h_ago':"Rank 24H Ago",
+                            'mentions_24h_ago':'Mentions 24H Ago'}
             
-        super().__init__(channel=channel, 
-                         screener_type=f"{self.market_period}-gainers", 
-                         data = gainers,
-                         column_map=column_map)
-        
-        # Init buttons
-        self.buttons = self.Buttons(market_period=self.market_period)
-        
+            # Init files
+            self.filepath = f"{utils.datapaths.attachments_path}/popular-stocks_{filter}_{datetime.datetime.today().strftime("%m-%d-%Y")}.csv"
+            self.write_df_to_file(df=self.popular_stocks, filepath=self.filepath)
+            self.files = [discord.File(self.filepath)]
+            self.buttons = self.Buttons()
+            
+            
+        def format_columns(self):
+            """Format all columns in self.data per column map - rename and drop columns accordingly"""
+            # Drop all unwanted columns and map column names
+            self.popular_stocks = self.popular_stocks.filter(list(self.column_map.keys()))
+            self.popular_stocks = self.popular_stocks.rename(columns=self.column_map)
 
-    # Extends
-    def format_columns(self):
-        """Extends the parent function to format *Volume, Market Cap, and % Change columns for screener"""
-        super().format_columns()
+        # Override
+        def build_report_header(self):
+            """Overrides the parent function to generate custom header"""
+            logger.debug("Building Popularity Report header...")
+            return f"# Most Popular Stocks ({self.filter}) {datetime.datetime.today().strftime("%m/%d/%Y")}\n\n"
 
-        # Format all volume columns in df
-        volume_cols = self.data.filter(like='Volume').columns.to_list()
-        for volume_col in volume_cols:
-            self.data[volume_col] = self.data[volume_col].apply(lambda x: self.format_large_num(x))
+        def build_report(self):
+            """Overrides the parent function to generate custom report"""
+            logger.debug("Building Popularity Report...")
+            report = ''
+            report += self.build_report_header()
+            report += self.build_df_table(self.popular_stocks.drop(columns=['name'])[:20])
+            return report
 
-        # Format Market Cap
-        self.data['Market Cap'] = self.data['Market Cap'].apply(lambda x: self.format_large_num(x))
+        async def send_report(self, interaction:discord.Interaction = None, visibility:str ="public"):
+            """Override the parent function with interaction and visibility parameters"""
+            message = await super().send_report(interaction=interaction, visibility=visibility)
+            return message
 
-        # Format % change columns
-        self.data['Change (%)'] = self.data['Change (%)'].apply(lambda x: "{:.2f}%".format(float(x)) if x is not None else 0.00)
-
-    
-
-    # Override
-    def build_report_header(self):
-        """Overrides the parent function to generate custom header"""
-        logger.debug(f"Building '{self.screener_type}' screener header...")
-        now = datetime.datetime.now(tz=date_utils.timezone())
-        header = "### :rotating_light: {} Gainers {} (Updated {})\n\n".format(
-                    "Pre-market" if self.market_period == 'premarket'
-                    else "Intraday" if self.market_period == 'intraday'
-                    else "After Hours" if self.market_period == 'aftermarket'
-                    else "",
-                    now.date().strftime("%m/%d/%Y"),
-                    now.strftime("%I:%M %p"))
-        return header
-
-    # Override
-    def build_report(self):
-        """Overrides the parent function to generate custom screener"""
-        logger.debug(f"Building '{self.screener_type}' screener...")
-        report = ""
-        report +=  self.build_report_header()
-        report +=  self.build_df_table(self.data[:15])
-        return report
-    
-    # Override
-    async def send_report(self):
-        """Overrides the parent function to add buttons to screener message"""
-        message = await super().send_report(view=self.buttons)
-        return message
-    
-    # Override
-    class Buttons(discord.ui.View):
-        """Custom buttons for Gainer Screener:
-            - TradingView shortcut based on market period
+        # Override
+        class Buttons(discord.ui.View):
+            """Custom buttons for Popuarlity Report:
+            - ApeWisdom shortcut
             """
-        def __init__(self, market_period):
-            super().__init__(timeout=None)
-            if market_period == 'premarket':
-                url = "https://www.tradingview.com/markets/stocks-usa/market-movers-pre-market-gainers/"
-            elif market_period == 'intraday':
-                url = "https://www.tradingview.com/markets/stocks-usa/market-movers-gainers/"
-            elif market_period == 'aftermarket':
-                url = "https://www.tradingview.com/markets/stocks-usa/market-movers-after-hours-gainers/"
-            self.add_item(discord.ui.Button(label="TradingView", style=discord.ButtonStyle.url, url = url))
+            def __init__(self):
+                super().__init__(timeout=None)
+                self.add_item(discord.ui.Button(label="ApeWisdom", style=discord.ButtonStyle.url, url = "https://apewisdom.io/"))
 
-class VolumeScreener(Screener):
-    """Screener subclass to post ununusal volume movers in the market"""
-    def __init__(self, channel:discord.channel, unusual_volume:pd.DataFrame):
+    class EarningsSpotlightReport(Report):
+        """Report subclass to post spotlight on random stock reporting earnings today"""
+        def __init__(self, channel:discord.channel, ticker_info:pd.DataFrame, daily_price_history:pd.DataFrame,
+                    next_earnings_info:pd.DataFrame, historical_earnings:pd.DataFrame, quote:dict, fundamentals:dict):
+            super().__init__(channel=channel,
+                            ticker_info=ticker_info,
+                            daily_price_history=daily_price_history,
+                            next_earnings_info=next_earnings_info,
+                            historical_earnings=historical_earnings,
+                            quote=quote,
+                            fundamentals=fundamentals)
+            self.buttons = StockReport.Buttons(self.ticker)
+            
 
-        # Set column map
-        column_map = {'name':'Ticker',
-                      'close':'Price',
-                      'change':'Change (%)',
-                      'relative_volume_10d_calc':'Relative Volume (10 Day)',
-                      'volume':'Volume',
-                      'average_volume_10d_calc':'Avg Volume (10 Day)',
-                      'market_cap_basic':'Market Cap'}
+        def build_report_header(self):
+            """Overrides the parent function to generate custom header"""
+            logger.debug("Building Earnings Spotlight Report header...")
+            return f"# :bulb: Earnings Spotight: {self.ticker}\n\n"
 
-
-        super().__init__(channel=channel, 
-                         screener_type=f"unusual-volume", 
-                         data = unusual_volume,
-                         column_map=column_map)
+        def build_report(self):
+            """Overrides the parent function to generate custom report"""
+            logger.debug("Building Earnings Spotlight Report...")
+            report = ""
+            report += self.build_report_header()
+            report += self.build_earnings_date()
+            report += self.build_ticker_info()
+            report += self.build_fundamentals()
+            report += self.build_performance()
+            report += self.build_upcoming_earnings_summary()
+            report += self.build_recent_earnings()
+            return report
         
-        # Init buttons
-        self.buttons = self.Buttons()
+        async def send_report(self):
+            """Overrides parent class to add buttons"""
+            message = await super().send_report(view=self.buttons)
+            return message
+
+    class WeeklyEarningsScreener(Screener):
+        """Screener subclass for posting upcoming week's earnings reports"""
+        def __init__(self, channel:discord.channel, upcoming_earnings:pd.DataFrame, watchlist_tickers:list):
+
+            self.today = datetime.datetime.now(tz=date_utils.timezone()).date()
+            self.watchlist_tickers = watchlist_tickers
+            self.upcoming_earnings = upcoming_earnings[upcoming_earnings['date'].between(self.today, self.today + datetime.timedelta(days=7))]
+            column_map = {'date': 'Date',
+                        'ticker': 'Ticker',
+                        'time': 'Time',
+                        'fiscal_quarter_ending': 'Fiscal Quarter Ending',
+                        'eps_forecast':'EPS Forecast',
+                        'no_of_ests':'# of Ests',
+                        'last_year_eps':'Last Year EPS',
+                        'last_year_rpt_dt':'Last Year Report Date'}
+            super().__init__(channel=channel,
+                            screener_type='weekly-earnings',
+                            market_period=None,
+                            data=self.upcoming_earnings,
+                            column_map=column_map)
+
+            # Init files
+            self.filepath = f"{utils.datapaths.attachments_path}/upcoming_earnings.csv"
+            self.write_df_to_file(df=self.upcoming_earnings, filepath=self.filepath)
+            self.files = [discord.File(self.filepath)]
+
+        def build_report_header(self):
+            """Overrides the parent function to generate custom header"""
+            logger.debug(f"Building '{self.screener_type}' screener header...")
+            return f"# Earnings Releasing the Week of {date_utils.format_date_mdy(self.today)}\n\n"
+
+        def build_upcoming_earnings(self):
+            """Return message content with table of upcoming earnings reports divided by day of the week"""
+            logger.debug("Identifying upcoming earnings for tickers that exist on user watchlists")
+            watchlist_earnings = {}
+
+            # Screener created on Monday - iterate Monday through Friday and find
+            # upcoming earnings for tickers on watchlists
+            for i in range(0, 5):
+                date = self.today + datetime.timedelta(days=i)
+                tickers = self.data[self.data['Date'] == date]['Ticker'].values
+                if tickers.any(): # np array
+                    watchlist_earnings[date.strftime('%A')] = [ticker for ticker in tickers if ticker in self.watchlist_tickers]
+
+            # Format DataFrame and build table
+            watchlist_earnings_df = pd.DataFrame(dict([(date, pd.Series(tickers)) for date, tickers in watchlist_earnings.items()])).fillna(' ')
+            message = self.build_df_table(df=watchlist_earnings_df, style='borderless')
+            return message
+
+        def build_report(self):
+            """Overrides the parent function to generate custom screener"""
+            logger.debug(f"Building '{self.screener_type}' screener...")
+            report = ""
+            report += self.build_report_header()
+            report += self.build_upcoming_earnings()
+            return report
+
+        async def send_report(self):
+            """Overrides parent function with files parameter"""
+            message = await super().send_report(files=[self.files])
+            return message
         
+    class PoliticianReport(Report):
+        """Screener subclass for posting upcoming week's earnings reports"""
+        def __init__(self, channel:discord.channel, politician:dict, trades:pd.DataFrame, politician_facts:dict):
+
+            super().__init__(channel=channel,
+                            politician=politician,
+                            trades=trades,
+                            politician_facts=politician_facts)
+
+            # Init files
+            self.filepath = f"{utils.datapaths.attachments_path}/{politician['politician_id']}_trades.csv"
+            self.write_df_to_file(df=self.trades, filepath=self.filepath)
+            self.files = [discord.File(self.filepath)]
+
+            self.buttons = self.Buttons(pid=self.politician['politician_id'])
+
+        def build_report_header(self):
+            """Overrides the parent function to generate custom header"""
+            logger.debug(f"Building Politician Report header...")
+            return f"# Politician Report: {self.politician['name']}\n"
+
+        def build_report(self):
+            """Overrides the parent function to generate custom report"""
+            logger.debug(f"Building Politician Report...")
+            report = ""
+            report += self.build_report_header()
+            report += self.build_politician_info()
+            report += self.build_politician_trades()
+            return report
+
+        async def send_report(self, interaction:discord.Interaction, visibility:str):
+            """Overrides parent function to add buttons"""
+            message = await super().send_report(interaction=interaction, visibility=visibility, view=self.buttons, files=self.files)
+            return message
         
-    
-    def format_columns(self):
-        """Extends the parent function to format *Volume, Market Cap, and % Change, and Relative Volume columns for screener"""
-        super().format_columns()
-
-        # Format all volume columns in df
-        volume_cols = self.data.filter(like='Volume').columns.to_list()
-        for volume_col in volume_cols:
-            self.data[volume_col] = self.data[volume_col].apply(lambda x: self.format_large_num(x))
-
-        # Format Market Cap
-        self.data['Market Cap'] = self.data['Market Cap'].apply(lambda x: self.format_large_num(x))
-
-        # Format % change columns
-        self.data['Change (%)'] = self.data['Change (%)'].apply(lambda x: "{:.2f}%".format(float(x)) if x is not None else 0.00)
-
-        # Append 'x' to all values in 'Relative Volume (10 Day)' column
-        self.data['Relative Volume (10 Day)'] = self.data['Relative Volume (10 Day)'].apply(lambda x: f"{x}x".format(x))
-        
-
-    # Override
-    def build_report_header(self):
-        """Overrides the parent function to generate custom header"""
-        logger.debug(f"Building '{self.screener_type}' screener header...")
-        now = datetime.datetime.now(tz=date_utils.timezone())
-        header = "### :rotating_light: Unusual Volume {} (Updated {})\n\n".format(
-                    now.date().strftime("%m/%d/%Y"),
-                    now.strftime("%I:%M %p"))
-        return header
-
-    # Override
-    def build_report(self):
-        """Overrides the parent function to generate custom screener"""
-        logger.debug(f"Building '{self.screener_type}' screener...")
-        report = ""
-        report += self.build_report_header()
-        report += self.build_df_table(self.data[:12])
-        return report
-    
-    # Override
-    async def send_report(self):
-        """Overrides the parent function to add buttons to screener message"""
-        message = await super().send_report(view=self.buttons)
-        return message
-    
-    # Override
-    class Buttons(discord.ui.View):
-        """Custom buttons for Gainer Screener:
-            - TradingView shortcut
-            """
-        def __init__(self):
-            super().__init__(timeout=None)
-            self.add_item(discord.ui.Button(label="TradingView", style=discord.ButtonStyle.url, url = "https://www.tradingview.com/markets/stocks-usa/market-movers-unusual-volume/"))
-
-class PopularityScreener(Screener):
-    """Screener subclass to post popularity rankings for stocks"""
-    def __init__(self, channel:discord.channel, popular_stocks:pd.DataFrame):
-        column_map = {'rank':'Rank',
-                      'ticker':'Ticker',
-                      'mentions': 'Mentions',
-                      'rank_24h_ago':"Rank 24H Ago",
-                      'mentions_24h_ago':'Mentions 24H Ago'}
-
-
-        super().__init__(channel=channel, 
-                         screener_type="popular-stocks", 
-                         data=popular_stocks,
-                         column_map=column_map)
-        
-        # Init buttons
-        self.buttons = self.Buttons()
-
-
-    # Override
-    def build_report_header(self):
-        """Overrides the parent function to generate custom header"""
-        logger.debug(f"Building '{self.screener_type}' screener header...")
-        now = datetime.datetime.now(tz=date_utils.timezone())
-        header = "### :rotating_light: Popular Stocks {} (Updated {})\n\n".format(
-                    now.date().strftime("%m/%d/%Y"),
-                    date_utils.round_down_nearest_minute(30).astimezone(date_utils.timezone()).strftime("%I:%M %p"))
-        return header
-
-    # Override
-    def build_report(self):
-        """Overrides the parent function to generate custom screener"""
-        logger.debug(f"Building '{self.screener_type}' screener...")
-        report = ""
-        report +=  self.build_report_header()
-        report +=  self.build_df_table(df=self.data[:20])
-        return report
-    
-    # Override
-    async def send_report(self):
-        """Overrides the parent function to add buttons to screener message"""
-        message = await super().send_report(view=self.buttons)
-        return message
-
-    # Override
-    class Buttons(discord.ui.View):
-        """Custom buttons for Popularity Screener:
-            - ApeWisdom
-            """
-        def __init__(self):
-            super().__init__(timeout=None)
-            self.add_item(discord.ui.Button(label="ApeWisdom", style=discord.ButtonStyle.url, url = "https://apewisdom.io/"))    
-
-class NewsReport(Report):
-    """Report subclass to post news articles about the input query"""
-    def __init__(self, news, query):
-        # No channel for this report so no need to init super
-        self.news = news
-        self.query = query
-
-    # Override
-    def build_report_header(self):
-        """Overrides the parent function to generate custom header"""
-        logger.debug("Building News Report header...")
-        # Append ticker name, today's date, and external links to message
-        header = f"## News articles for '{self.query}'\n"
-        return header + "\n"
-
-    def build_news(self):
-        """Return message content with up to the top 10 news articles hyperlinked"""
-        logger.debug("Building news...")
-        report = ''
-        for article in self.news['articles'][:10]:
-            article_date = date_utils.format_date_from_iso(date=article['publishedAt']).strftime("%m/%d/%y %H:%M:%S EST")
-            article = f"[{article['title']} - {article['source']['name']} ({article_date})](<{article['url']}>)\n"
-            if len(report + article) <= 1900:
-                report += article
-            else:
-                break
-        return report
-
-    def build_report(self):
-        """Overrides the parent function to generate custom report"""
-        logger.debug("Building News Report...")
-        report = ''
-        report += self.build_report_header()
-        report += self.build_news()
-        return report + '\n'  
-
-    # Override
-    async def send_report(self, interaction:discord.Interaction):
-        """Override parent function to always post report as response to interation"""
-        logger.debug("Sending News Report...")
-        await interaction.response.send_message(self.message)
-
-class PopularityReport(Report):
-    """Report subclass for posting the most recent popularity ranking for stocks in the input filter"""
-    def __init__(self, channel:discord.channel, popular_stocks:pd.DataFrame, filter:str):
-        super().__init__(channel=channel)
-        self.popular_stocks = popular_stocks
-        self.filter = filter
-        self.column_map = {'rank':'Rank',
-                           'ticker':'Ticker',
-                           'mentions': 'Mentions',
-                           'rank_24h_ago':"Rank 24H Ago",
-                           'mentions_24h_ago':'Mentions 24H Ago'}
-        
-        # Init files
-        self.filepath = f"{utils.datapaths.attachments_path}/popular-stocks_{filter}_{datetime.datetime.today().strftime("%m-%d-%Y")}.csv"
-        self.write_df_to_file(df=self.popular_stocks, filepath=self.filepath)
-        self.files = [discord.File(self.filepath)]
-        self.buttons = self.Buttons()
-        
-        
-    def format_columns(self):
-        """Format all columns in self.data per column map - rename and drop columns accordingly"""
-        # Drop all unwanted columns and map column names
-        self.popular_stocks = self.popular_stocks.filter(list(self.column_map.keys()))
-        self.popular_stocks = self.popular_stocks.rename(columns=self.column_map)
-
-    # Override
-    def build_report_header(self):
-        """Overrides the parent function to generate custom header"""
-        logger.debug("Building Popularity Report header...")
-        return f"# Most Popular Stocks ({self.filter}) {datetime.datetime.today().strftime("%m/%d/%Y")}\n\n"
-
-    def build_report(self):
-        """Overrides the parent function to generate custom report"""
-        logger.debug("Building Popularity Report...")
-        report = ''
-        report += self.build_report_header()
-        report += self.build_df_table(self.popular_stocks.drop(columns=['name'])[:20])
-        return report
-
-    async def send_report(self, interaction:discord.Interaction = None, visibility:str ="public"):
-        """Override the parent function with interaction and visibility parameters"""
-        message = await super().send_report(interaction=interaction, visibility=visibility)
-        return message
-
-    # Override
-    class Buttons(discord.ui.View):
-        """Custom buttons for Popuarlity Report:
-        - ApeWisdom shortcut
-        """
-        def __init__(self):
-            super().__init__(timeout=None)
-            self.add_item(discord.ui.Button(label="ApeWisdom", style=discord.ButtonStyle.url, url = "https://apewisdom.io/"))
-
-class EarningsSpotlightReport(Report):
-    """Report subclass to post spotlight on random stock reporting earnings today"""
-    def __init__(self, channel:discord.channel, ticker_info:pd.DataFrame, daily_price_history:pd.DataFrame,
-                 next_earnings_info:pd.DataFrame, historical_earnings:pd.DataFrame, quote:dict, fundamentals:dict):
-        super().__init__(channel=channel,
-                         ticker_info=ticker_info,
-                         daily_price_history=daily_price_history,
-                         next_earnings_info=next_earnings_info,
-                         historical_earnings=historical_earnings,
-                         quote=quote,
-                         fundamentals=fundamentals)
-        self.buttons = StockReport.Buttons(self.ticker)
-        
-
-    def build_report_header(self):
-        """Overrides the parent function to generate custom header"""
-        logger.debug("Building Earnings Spotlight Report header...")
-        return f"# :bulb: Earnings Spotight: {self.ticker}\n\n"
-
-    def build_report(self):
-        """Overrides the parent function to generate custom report"""
-        logger.debug("Building Earnings Spotlight Report...")
-        report = ""
-        report += self.build_report_header()
-        report += self.build_earnings_date()
-        report += self.build_ticker_info()
-        report += self.build_fundamentals()
-        report += self.build_performance()
-        report += self.build_upcoming_earnings_summary()
-        report += self.build_recent_earnings()
-        return report
-    
-    async def send_report(self):
-        """Overrides parent class to add buttons"""
-        message = await super().send_report(view=self.buttons)
-        return message
-
-class WeeklyEarningsScreener(Screener):
-    """Screener subclass for posting upcoming week's earnings reports"""
-    def __init__(self, channel:discord.channel, upcoming_earnings:pd.DataFrame, watchlist_tickers:list):
-
-        self.today = datetime.datetime.now(tz=date_utils.timezone()).date()
-        self.watchlist_tickers = watchlist_tickers
-        self.upcoming_earnings = upcoming_earnings[upcoming_earnings['date'].between(self.today, self.today + datetime.timedelta(days=7))]
-        column_map = {'date': 'Date',
-                      'ticker': 'Ticker',
-                      'time': 'Time',
-                      'fiscal_quarter_ending': 'Fiscal Quarter Ending',
-                      'eps_forecast':'EPS Forecast',
-                      'no_of_ests':'# of Ests',
-                      'last_year_eps':'Last Year EPS',
-                      'last_year_rpt_dt':'Last Year Report Date'}
-        super().__init__(channel=channel,
-                         screener_type='weekly-earnings',
-                         market_period=None,
-                         data=self.upcoming_earnings,
-                         column_map=column_map)
-
-        # Init files
-        self.filepath = f"{utils.datapaths.attachments_path}/upcoming_earnings.csv"
-        self.write_df_to_file(df=self.upcoming_earnings, filepath=self.filepath)
-        self.files = [discord.File(self.filepath)]
-
-    def build_report_header(self):
-        """Overrides the parent function to generate custom header"""
-        logger.debug(f"Building '{self.screener_type}' screener header...")
-        return f"# Earnings Releasing the Week of {date_utils.format_date_mdy(self.today)}\n\n"
-
-    def build_upcoming_earnings(self):
-        """Return message content with table of upcoming earnings reports divided by day of the week"""
-        logger.debug("Identifying upcoming earnings for tickers that exist on user watchlists")
-        watchlist_earnings = {}
-
-        # Screener created on Monday - iterate Monday through Friday and find
-        # upcoming earnings for tickers on watchlists
-        for i in range(0, 5):
-            date = self.today + datetime.timedelta(days=i)
-            tickers = self.data[self.data['Date'] == date]['Ticker'].values
-            if tickers.any(): # np array
-                watchlist_earnings[date.strftime('%A')] = [ticker for ticker in tickers if ticker in self.watchlist_tickers]
-
-        # Format DataFrame and build table
-        watchlist_earnings_df = pd.DataFrame(dict([(date, pd.Series(tickers)) for date, tickers in watchlist_earnings.items()])).fillna(' ')
-        message = self.build_df_table(df=watchlist_earnings_df, style='borderless')
-        return message
-
-    def build_report(self):
-        """Overrides the parent function to generate custom screener"""
-        logger.debug(f"Building '{self.screener_type}' screener...")
-        report = ""
-        report += self.build_report_header()
-        report += self.build_upcoming_earnings()
-        return report
-
-    async def send_report(self):
-        """Overrides parent function with files parameter"""
-        message = await super().send_report(files=[self.files])
-        return message
-    
-class PoliticianReport(Report):
-    """Screener subclass for posting upcoming week's earnings reports"""
-    def __init__(self, channel:discord.channel, politician:dict, trades:pd.DataFrame, politician_facts:dict):
-
-        super().__init__(channel=channel,
-                         politician=politician,
-                         trades=trades,
-                         politician_facts=politician_facts)
-
-        # Init files
-        self.filepath = f"{utils.datapaths.attachments_path}/{politician['politician_id']}_trades.csv"
-        self.write_df_to_file(df=self.trades, filepath=self.filepath)
-        self.files = [discord.File(self.filepath)]
-
-        self.buttons = self.Buttons(pid=self.politician['politician_id'])
-
-    def build_report_header(self):
-        """Overrides the parent function to generate custom header"""
-        logger.debug(f"Building Politician Report header...")
-        return f"# Politician Report: {self.politician['name']}\n"
-
-    def build_report(self):
-        """Overrides the parent function to generate custom report"""
-        logger.debug(f"Building Politician Report...")
-        report = ""
-        report += self.build_report_header()
-        report += self.build_politician_info()
-        report += self.build_politician_trades()
-        return report
-
-    async def send_report(self, interaction:discord.Interaction, visibility:str):
-        """Overrides parent function to add buttons"""
-        message = await super().send_report(interaction=interaction, visibility=visibility, view=self.buttons, files=self.files)
-        return message
-    
-    # Override
-    class Buttons(discord.ui.View):
-        """Custom buttons for Politician Report:
-            - Capitol Trades
-            """
-        def __init__(self, pid:str):
-            super().__init__(timeout=None)
-            self.add_item(discord.ui.Button(label="Capitol Trades", style=discord.ButtonStyle.url, url = f"https://www.capitoltrades.com/politicians/{pid}"))
+        # Override
+        class Buttons(discord.ui.View):
+            """Custom buttons for Politician Report:
+                - Capitol Trades
+                """
+            def __init__(self, pid:str):
+                super().__init__(timeout=None)
+                self.add_item(discord.ui.Button(label="Capitol Trades", style=discord.ButtonStyle.url, url = f"https://www.capitoltrades.com/politicians/{pid}"))
 
 
 
-        
-#########        
-# Setup #
-#########
+            
+    #########        
+    # Setup #
+    #########
 
-async def setup(bot):
-    await bot.add_cog(Reports(bot=bot, stock_data=bot.stock_data))
+    async def setup(bot):
+        await bot.add_cog(Reports(bot=bot, stock_data=bot.stock_data))
