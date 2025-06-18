@@ -75,7 +75,7 @@ class Reports(commands.Cog):
             self.stock_data.insert_popularity(popular_stocks=popular_stocks)
 
             # Generate screener
-            report = await self.report_builder.build_popularity_screener(popular_stocks=popular_stocks)
+            report = await self.build_popularity_screener(popular_stocks=popular_stocks)
 
             # Update alert tickers with popular stocks
             await self.stock_data.update_alert_tickers(tickers=report.get_tickers()[:250], source='popularity')
