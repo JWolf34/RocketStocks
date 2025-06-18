@@ -27,7 +27,6 @@ class Reports(commands.Cog):
         self.bot = bot
         self.stock_data = stock_data
         self.mutils = market_utils()
-        self.report_builder = ReportBuilder(bot=self.bot, stock_data=self.stock_data)
 
         # Init channels
         self.reports_channel = self.bot.get_channel(discord_utils.reports_channel_id)
@@ -596,9 +595,9 @@ class Reports(commands.Cog):
                                   politician_facts=politician_facts)
         return report
 
-##################
-# Report Classes #
-##################
+    ##################
+    # Report Classes #
+    ##################
 
     class Report(object):
         """Post information about a stock or stocks to the input Discord channel"""
@@ -1737,10 +1736,10 @@ class Reports(commands.Cog):
 
 
 
-            
-    #########        
-    # Setup #
-    #########
+        
+#########        
+# Setup #
+#########
 
-    async def setup(bot):
-        await bot.add_cog(Reports(bot=bot, stock_data=bot.stock_data))
+async def setup(bot):
+    await bot.add_cog(Reports(bot=bot, stock_data=bot.stock_data))

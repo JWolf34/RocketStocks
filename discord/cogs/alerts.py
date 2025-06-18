@@ -1,7 +1,7 @@
 import discord
 from discord.ext import commands
 from discord.ext import tasks
-from reports import Report, StockReport, NewsReport
+from reports import Reports
 from stock_data import StockData
 import analysis as an
 import numpy as np
@@ -388,7 +388,7 @@ class Alerts(commands.Cog):
 # Alerts Classes #
 ##################
     
-class Alert(Report):
+class Alert(Reports.Report):
     def __init__(self, channel:discord.channel, alert_type:str, override_buttons = False, **kwargs):
         super().__init__(channel=channel,
                          **kwargs)
