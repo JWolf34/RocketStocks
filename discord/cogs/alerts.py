@@ -81,7 +81,7 @@ class Alerts(commands.Cog):
 
     # Start posting report at next 0 or 5 minute interval
     # + 30 seconds to allow for reports to generate and add tickers to the alert list
-    #@send_alerts.before_loop
+    @send_alerts.before_loop
     async def send_alerts_before_loop(self):
         """Before loop for 'send_alerts'"""
         DELTA = 30

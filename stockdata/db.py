@@ -192,7 +192,8 @@ class Postgres():
         # On conflict, do nothing
         insert_script += sql.SQL("ON CONFLICT DO NOTHING;")
         
-        for row in values:
+        for index, row in enumerate(values):
+            print(f"{index}.{len(values)}, row: {row}")
             self.cur.execute(insert_script, row)
 
         self.conn.commit()

@@ -355,16 +355,18 @@ class StockData():
         num_tickers = len(tickers)
         curr_ticker = 1
         for ticker in tickers:
-            logger.debug(f"Inserting 5m price data for ticker {ticker}, {curr_ticker}/{num_tickers}")
+            logger.info(f"Inserting 5m price data for ticker {ticker}, {curr_ticker}/{num_tickers}")
             await self.update_5m_price_history_by_ticker(ticker)
             curr_ticker += 1
 
         end_time = time.time()
         logger.info("Completed update to 5m price history in database")
-        logger.debug(f"Updating 5m price history completed in {time.strftime("H:M:S", end_time-start_time)}")
+        logger.info(f"Updating 5m price history completed in {time.strftime("H:M:S", end_time-start_time)}")
     
     async def update_5m_price_history_by_ticker(self, ticker):
         """Update database with latest 5m price data for input ticker"""
+
+       
 
         # Query
         """SELECT datetime FROM five_minute_price_history
@@ -379,8 +381,9 @@ class StockData():
                                    where_conditions=[('ticker', ticker)],
                                    order_by=('datetime', 'DESC'),
                                    fetchall=False)
+        # No data found, use default start datetime of one year ago
         if not result:
-            start_datetime = result # No data found
+            start_datetime = datetime.datetime.now() - datetime.timedelta(days=365)
             logger.debug(f"No 5m price history for ticker {ticker} in database, fetching price history from default date")
         else:
             start_datetime = result[0]
@@ -389,7 +392,7 @@ class StockData():
         price_history = await self.schwab.get_5m_price_history(ticker, start_datetime=start_datetime)
 
         # Found price history for ticker, insert into database
-        if price_history:
+        if not price_history.empty:
             fields = price_history.columns.to_list()
             values = [tuple(row) for row in price_history.values]
             self.db.insert(table='five_minute_price_history', fields=fields, values=values)

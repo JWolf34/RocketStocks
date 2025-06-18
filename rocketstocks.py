@@ -74,13 +74,13 @@ def rocketStocks():
 def test():
     import asyncio
     sd = StockData()
-    sd.db.create_tables()
+    asyncio.run(sd.update_5m_price_history())
     
 
 if (__name__ == '__main__'):
     setup_logging()
-    rocketStocks()
-    #test()
+    #rocketStocks()
+    test()
     
     
 
