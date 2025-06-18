@@ -134,7 +134,7 @@ class Alerts(commands.Cog):
             if abs(pct_change) > 10.0:
 
                 logger.debug(f"Identified ticker '{ticker}' on watchlist with percent change {"{:.2f}%".format(pct_change)}")
-                alert = self.build_watchlist_mover(ticker=ticker)
+                alert = await self.build_watchlist_mover(ticker=ticker)
                 await alert.send_alert()
         
     async def send_unusual_volume_movers(self, quotes:dict):
@@ -314,6 +314,8 @@ class Alerts(commands.Cog):
                                     ticker=ticker,
                                     quote=quote,
                                     watchlist=watchlist)
+        
+        return alert
 
 
     
