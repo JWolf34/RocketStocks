@@ -24,7 +24,6 @@ class Reports(commands.Cog):
     """Cog for managing Reports and Screeners to be posted to Discord"""
     def __init__(self, bot:commands.Bot, stock_data:StockData):
         # Init vars
-        # Init vars
         self.bot = bot
         self.stock_data = stock_data
         self.mutils = market_utils()
@@ -76,7 +75,10 @@ class Reports(commands.Cog):
             self.stock_data.insert_popularity(popular_stocks=popular_stocks)
 
             # Generate screener
-            report = await self.build_popularity_screener(popular_stocks=popular_stocks)
+            report = await self.report_builder.build_popularity_screener(popular_stocks=popular_stocks)
+
+            # Update alert tickers with popular stocks
+            await self.stock_data.update_alert_tickers(tickers=report.get_tickers()[:250], source='popularity')
 
             # Post screener
             logger.info("Posting popularity screener")
@@ -455,12 +457,6 @@ class Reports(commands.Cog):
     ####################
     # Report Factories #
     ####################    
-
-class ReportBuilder():
-
-    def __init__(self, stock_data:StockData=None):
-        self.stock_data = stock_data if stock_data else StockData()
-        
 
     async def build_popularity_screener(self, **kwargs):
 
