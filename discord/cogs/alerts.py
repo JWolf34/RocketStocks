@@ -88,6 +88,12 @@ class Alerts(commands.Cog):
         await asyncio.sleep(date_utils.seconds_until_minute_interval(5) + DELTA)
 
     async def send_earnings_movers(self, quotes:dict):
+        """Send earnings alerts to Discord if criteria is met
+        
+        Criteria:
+            - stock has earnings today
+            - % change > +-5%
+        """
         logger.info("Processing earnings movers")
         today = datetime.date.today()
         earnings_today = self.stock_data.earnings.get_earnings_on_date(date=today)
@@ -98,7 +104,7 @@ class Alerts(commands.Cog):
         # Check to see if tickers reporting earninsg today have a % change greater than threshold
         for ticker, quote in quotes.items():
             pct_change = quote['quote']['netPercentChange']   
-            if abs(pct_change) > 2.0:
+            if abs(pct_change) > 5.0:
                 logger.debug(f"Identified ticker '{ticker}' reporting earnings today with percent change {"{:.2f}%".format(pct_change)}")
                 next_earnings_info = earnings_today[earnings_today['ticker'] == ticker].to_dict(orient='records')[0]
                 alert = await self.build_earnings_mover(ticker=ticker,
@@ -120,6 +126,11 @@ class Alerts(commands.Cog):
             await asyncio.sleep(1)
 
     async def send_watchlist_movers(self, quotes:dict):
+        """Send watchlist alerts to Discord if criteria is met
+        
+        Criteria:
+            - % change > +-10%
+        """
         logger.info("Processing watchlist movers")
 
         # Filter quotes for tickers on watchlists
@@ -129,8 +140,6 @@ class Alerts(commands.Cog):
         # Check to see if each ticker has % change greater than threshold
         for ticker, quote in quotes.items():
             pct_change = quote['quote']['netPercentChange']  
-
-
             if abs(pct_change) > 10.0:
 
                 logger.debug(f"Identified ticker '{ticker}' on watchlist with percent change {"{:.2f}%".format(pct_change)}")
@@ -146,11 +155,13 @@ class Alerts(commands.Cog):
         """
         logger.info("Processing unusual volume movers")
                 
-        # Calculate RVOL for each ticker over x periods
+        
         for ticker, quote in quotes.items():
             # Validate daliy price history
             daily_price_history = self.stock_data.fetch_daily_price_history(ticker=ticker)
             if not daily_price_history.empty:
+                # Calculate RVOL for each ticker over x periods
+                periods = 10
                 curr_volume = quote['quote']['totalVolume']
                 rvol = an.indicators.volume.rvol(data=daily_price_history, periods=periods, curr_volume=curr_volume)
                 pct_change = quote['quote']['netPercentChange'] 
@@ -173,13 +184,13 @@ class Alerts(commands.Cog):
         """
         logger.info("Processing volume spike movers")
 
-        # Calculate RVOL_AT_TIME for each ticker over x periods
         for ticker, quote in quotes.items():
-            
+            # Validate stock has 5m data
             now = datetime.datetime.now()
             fivem_price_history = self.stock_data.fetch_5m_price_history(ticker=ticker)
-            # Validate stock has 5m data
+            
             if not fivem_price_history.empty:
+                # Calculate RVOL_AT_TIME for each ticker over x periods
                 periods = 10
                 today_data = await self.stock_data.schwab.get_5m_price_history(ticker=ticker, start_datetime=now)
                 rvol_at_time = an.indicators.volume.rvol_at_time(data=fivem_price_history, today_data=today_data, periods=periods, dt=now)
@@ -280,7 +291,7 @@ class Alerts(commands.Cog):
         """Builder for EarningsMoverAlert"""
 
         # Collect data to build alert
-        quote = kwargs.pop('quote', self.stock_data.schwab.get_quote(ticker=ticker))
+        quote = kwargs.pop('quote', await self.stock_data.schwab.get_quote(ticker=ticker))
         next_earnings_info = kwargs.pop('next_earnings_info', self.stock_data.earnings.get_next_earnings_info(ticker=ticker))
         historical_earnings = kwargs.pop('historical_earnings', self.stock_data.earnings.get_historical_earnings(ticker=ticker))
 
@@ -325,7 +336,7 @@ class Alerts(commands.Cog):
         """Builder for VolumeMoverAlert"""
 
         # Collect data to build alert
-        quote = kwargs.pop('quote', self.stock_data.schwab.get_quote(ticker=ticker))
+        quote = kwargs.pop('quote', await self.stock_data.schwab.get_quote(ticker=ticker))
         daily_price_history = kwargs.pop('daily_price_history', self.stock_data.fetch_daily_price_history(ticker=ticker))
         rvol = kwargs.pop('rvol', an.indicators.volume.rvol(data=daily_price_history,
                                                             curr_volume=quote['quote']['totalVolume']))
@@ -343,7 +354,7 @@ class Alerts(commands.Cog):
         """Builder for VolumeSpikeAlert"""
 
         # Collect data to build alert
-        quote = kwargs.pop('quote', self.stock_data.schwab.get_quote(ticker=ticker))
+        quote = kwargs.pop('quote', await self.stock_data.schwab.get_quote(ticker=ticker))
         rvol_at_time = an.indicators.volume.rvol_at_time(data = self.stock_data.fetch_5m_price_history(ticker=ticker), 
                                                          today_data = await self.stock_data.schwab.get_5m_price_history(ticker=ticker,
                                                                                                                        start_datetime=datetime.datetime.now()),
@@ -357,7 +368,7 @@ class Alerts(commands.Cog):
             avg_vol_at_time, time = an.indicators.volume.avg_vol_at_time(data=fivem_price_history)
 
         if not isinstance(time, str):
-            time = time.astimezone(tz=date_utils.timezone())
+            #time = time.astimezone(tz=date_utils.timezone())
             time = time.strftime("%I:%M %p")
         
         # Generate alert
@@ -449,9 +460,9 @@ class Alert(Report):
 
         # RVOL at time
         if self.rvol_at_time and self.avg_vol_at_time:
-            volume_stats[f'Relative Volume at Time ({self.time})'] = "{:.2f}x".format(self.alert_data['rvol_at_time'])
+            volume_stats[f'Relative Volume at Time ({self.time})'] = "{:.2f}x".format(self.rvol_at_time)
             volume_stats[f'Current Volume at Time ({self.time})']  = self.format_large_num(self.rvol_at_time * self.avg_vol_at_time)
-            volume_stats[f'Average Volume at Time ({self.time})']  = self.format_large_num(self.alert_data['avg_vol_at_time'])
+            volume_stats[f'Average Volume at Time ({self.time})']  = self.format_large_num(self.avg_vol_at_time)
 
         # Average volume from daily price history
         if not self.daily_price_history.empty:

@@ -124,7 +124,7 @@ class Reports(commands.Cog):
 
             # Update alert tickers with unusual volume movers
             #await self.stock_data.update_alert_tickers(tickers=report.get_tickers(), source='unusual-volume')
-            await self.stock_data.update_alert_tickers(tickers=volume_spike['ticker'].to_list(), source='volume-spike')
+            await self.stock_data.update_alert_tickers(tickers=volume_spike['name'].to_list(), source='volume-spike')
 
             # Send report
             #logger.info("Posting unusual volume screener")
