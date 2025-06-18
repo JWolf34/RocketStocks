@@ -1068,14 +1068,14 @@ class Report(object):
 
     async def send_report(self, interaction:discord.Interaction = None, visibility:str = "public", files=None, view=None):
         """Send report to report's channel, adding files and buttons as needed"""
-        self.message = self.build_report() + "\n\n"
+        message = self.build_report() + "\n\n"
         logger.info("Sending report...")
-        logger.debug(f"Report has content of length {len(self.message)}")
+        logger.debug(f"Report has content of length {len(message)}")
         if visibility == 'private' and interaction:
-            message = await interaction.user.send(self.message, files=files, view=view)
+            message = await interaction.user.send(message, files=files, view=view)
             return message
         else:
-            message = await self.channel.send(self.message, files=files, view=view)
+            message = await self.channel.send(message, files=files, view=view)
             return message
 
     #####################
@@ -1524,7 +1524,8 @@ class NewsReport(Report):
     async def send_report(self, interaction:discord.Interaction):
         """Override parent function to always post report as response to interation"""
         logger.debug("Sending News Report...")
-        await interaction.response.send_message(self.message)
+        message = self.build_report()
+        await interaction.response.send_message(message)
 
 class PopularityReport(Report):
     """Report subclass for posting the most recent popularity ranking for stocks in the input filter"""

@@ -402,7 +402,7 @@ class StockData():
     
     def fetch_daily_price_history(self, ticker, start_date:datetime.date = None, end_date:datetime.date = None):
         """Return daily price history for input ticker from database"""
-        logger.info(f"Fetching daily price history for ticker '{ticker}' from database")
+        logger.debug(f"Fetching daily price history for ticker '{ticker}' from database")
 
         # Query
         """SELECT * FROM daily_price_history
@@ -429,7 +429,7 @@ class StockData():
 
     def fetch_5m_price_history(self, ticker, start_datetime:datetime.datetime = None, end_datetime:datetime.datetime = None):
         """Return 5m price history for input ticker from daytabase"""
-        logger.info(f"Fetching 5m price history for ticker '{ticker}' from database")
+        logger.debug(f"Fetching 5m price history for ticker '{ticker}' from database")
 
         # Query
         """SELECT * FROM five_minute_price_history
