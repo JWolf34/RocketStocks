@@ -1,4 +1,4 @@
-@echo off
+9644c37299d38af663c65abd6605f33cc2b0cf5d@echo off
 for /F "tokens=*" %%A in (.env) do SET %%A
 set CALLBACK_URL="https://127.0.0.1:8182"
 set TOKEN_FILE="data/schwab-token.json"
