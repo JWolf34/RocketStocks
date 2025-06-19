@@ -61,7 +61,7 @@ class Alerts(commands.Cog):
             logger.info("Processing alerts")
 
             # Fetch alert tickers and get quotes to analyze movement
-            all_alert_tickers = list(set([ticker for tickers in self.stock_data.alert_tickers.values() for ticker in tickers]))
+            self.all_alert_tickers = all_alert_tickers = list(set([ticker for tickers in self.stock_data.alert_tickers.values() for ticker in tickers]))
             #all_alert_tickers = ['RYDE', 'APVO', 'GURE', 'ZEO']
 
             # Fetch quotes for tickers from Schwab in chunks of 'chunk_size'
@@ -213,55 +213,49 @@ class Alerts(commands.Cog):
     @tasks.loop(minutes=30)
     async def send_popularity_movers(self):
         logger.info("Processing popularity movers")
-
-
-
-        blacklist_tickers = ['DTE', 'AM', 'PM', 'DM']
-        top_stocks = self.bot.stockdata.apewisdom.get_top_stocks()
-        top_stocks = top_stocks[~top_stocks['ticker'].isin(blacklist_tickers)]
-
         
-        for index, row in top_stocks.iterrows():
-            ticker = row['ticker']
-            if ticker not in blacklist_tickers:
-                todays_rank = row['rank']
-                popularity = sd.StockData.get_historical_popularity(ticker)
-                popularity = popularity[popularity['date'] > (datetime.date.today() - datetime.timedelta(days=5))]
-                low_rank = 1000 # Farther from 1
-                low_rank_date = None
-                high_rank = 0 # Closer to 1
-                high_rank_date = None
-                for index, popular_row in popularity.iterrows():
-                    if low_rank < popular_row['rank'] or low_rank == 1000:
-                        low_rank = popular_row['rank']
-                        low_rank_date = popular_row['date']
-                    if high_rank > popular_row['rank'] or high_rank == 0:
-                        high_rank = popular_row['rank']
-                        high_rank_date = popular_row['date']
-                today_is_max = False
-                if low_rank < todays_rank:
-                    low_rank = todays_rank
-                    low_rank_date = datetime.date.today()
-                if high_rank > todays_rank:
-                    today_is_max = True
-                    high_rank = todays_rank
-                    high_rank_date = datetime.date.today()
-                    
-                popularity_change = ((float(low_rank) - float(high_rank)) / float(low_rank)) * 100.0
-                POPULARITY_CHANGE_THRESHOLD = 75.0
-                if (popularity_change >= POPULARITY_CHANGE_THRESHOLD) and low_rank > 10 and sd.StockData.validate_ticker(ticker) and today_is_max:
-                    logger.debug(f"Identified ticker '{ticker}' with popularity change {"{:.2f}%".format(popularity_change)}, low rank {low_rank} ({low_rank_date}) and high rank {high_rank} ({high_rank_date})")
+        for ticker in self.all_alert_tickers:
+            # Validate stock has popularity
+            popularity = self.stock_data.fetch_popularity(ticker=ticker)
+            if not popularity.empty:
+                # Get current rank and ensure the stock has one today
+                now = date_utils.round_down_nearest_minute(30)
+                popularity_today = popularity[(self.popularity['datetime'] == now)]
+                current_rank = popularity_today['rank'].iloc[0] if not popularity_today.empty else 'N/A'
 
-                    alert_data = {}
-                    alert_data['todays_rank'] = row['rank']
-                    alert_data['high_rank'] = high_rank
-                    alert_data['high_rank_date'] = utils.date_utils.format_date_mdy(high_rank_date)
-                    alert_data['low_rank'] = low_rank
-                    alert_data['low_rank_date'] = utils.date_utils.format_date_mdy(low_rank_date)
-                    alert = self.PopularityAlert(ticker = ticker, 
-                                            channel=self.alerts_channel,
-                                            alert_data=alert_data) 
-                    await alert.send_alert()
+                if not current_rank == 'N/A':
+
+                    # Get highest popularity rank across select intervals
+                    interval_map = {"High 1D":1,
+                                    "High 2D":2,
+                                    "High 3D":3,
+                                    "High 4D":4,
+                                    "High 5D":5,
+                                    }
+
+
+                    for label, interval in interval_map.items():
+                        # Find max rank within defined interval and compare against current rank
+                        interval_date = now - datetime.timedelta(days=interval)
+                        interval_popularity = popularity[popularity['datetime']==interval_date]
+                        if not interval_popularity.empty:
+                            interval_max_rank = interval_popularity['rank'].min()
+                        else:
+                            interval_max_rank = 'N/A'
+
+                        # If difference between max rank and current rank is > 75%, post popularity alert
+                        pct_diff = abs((float(current_rank) - float(interval_max_rank)) / float(interval_max_rank))*100.0
+                        if pct_diff > 75.00:
+                            #Popularity ALert
+                            pass
+
+
+                        
+                # Not a popular stock today
+                else:
+                    pass   
+         
+            # No popularity data for this ticker                                  
             else:
                 pass
 
@@ -739,9 +733,16 @@ class Alerts(commands.Cog):
 
 
     class PopularityAlert(Alert):
-        def __init__(self, ticker, channel, alert_data):
-            self.alert_type = "POPULARITY"
-            super().__init__(ticker, channel, alert_data)
+        def __init__(self, channel:discord.channel, ticker:str, quote:dict, popularity:str):
+            super().__init__(channel=channel,
+                            alert_type="POPUALRITY_MOVER",
+                            ticker=ticker,
+                            quote=quote,
+                            popularity=popularity)
+        
+        def get_popularity_stats(self):
+            # Calculate max rank and changes over last 5D
+            pass
                 
         def build_alert_header(self):
             header = f"## :rotating_light: Popularity Mover: {self.ticker}\n\n\n"
