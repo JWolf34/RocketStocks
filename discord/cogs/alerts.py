@@ -544,19 +544,19 @@ class Alerts(commands.Cog):
 
 
         class Buttons(discord.ui.View):
-                def __init__(self, ticker:str, reports):
+                def __init__(self, ticker:str, reports:commands.Cog):
                     super().__init__(timeout=None)
                     self.ticker = ticker
-                    self.channel = channel
+                    self.reports = reports
                     self.add_item(discord.ui.Button(label="Google it", style=discord.ButtonStyle.url, url = "https://www.google.com/search?q={}".format(self.ticker)))
                     self.add_item(discord.ui.Button(label="StockInvest", style=discord.ButtonStyle.url, url = "https://stockinvest.us/stock/{}".format(self.ticker)))
                     self.add_item(discord.ui.Button(label="FinViz", style=discord.ButtonStyle.url, url = "https://finviz.com/quote.ashx?t={}".format(self.ticker)))
                     self.add_item(discord.ui.Button(label="Yahoo! Finance", style=discord.ButtonStyle.url, url = "https://finance.yahoo.com/quote/{}".format(self.ticker)))
 
-                    
+                '''
                 @discord.ui.button(label="Generate report", style=discord.ButtonStyle.primary)
                 async def generate_chart(self, interaction:discord.Interaction, button:discord.ui.Button,):
-                    report = self.reports
+                    report = self.reports.build_stock
                     await report.send_report(interaction, visibility="public")
 
                 @discord.ui.button(label="Get news", style=discord.ButtonStyle.primary)
@@ -564,7 +564,7 @@ class Alerts(commands.Cog):
                     news_report = Reports.build_news_report(self.ticker)
                     await news_report.send_report(interaction)
                     await interaction.response.send_message(f"Fetched news for {self.ticker}!", ephemeral=True)
-
+                '''
     class EarningsMoverAlert(Alert):
         def __init__(self, channel:discord.channel, ticker:str, quote:dict, next_earnings_info:dict,
                     historical_earnings:pd.DataFrame):
