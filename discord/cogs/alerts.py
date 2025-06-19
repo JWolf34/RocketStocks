@@ -57,7 +57,7 @@ class Alerts(commands.Cog):
     async def send_alerts(self):
         '''Process alerts every 5 minutes if the market is open and in intraday or after hours'''
         market_period = self.mutils.get_market_period()
-        if True: #(self.mutils.market_open_today() and market_period != 'EOD'):
+        if (self.mutils.market_open_today() and market_period != 'EOD'):
             logger.info("Processing alerts")
 
             # Fetch alert tickers and get quotes to analyze movement
@@ -213,14 +213,13 @@ class Alerts(commands.Cog):
     @tasks.loop(minutes=30)
     async def send_popularity_movers(self):
         logger.info("Processing popularity movers")
+
+
+
         blacklist_tickers = ['DTE', 'AM', 'PM', 'DM']
         top_stocks = self.bot.stockdata.apewisdom.get_top_stocks()
         top_stocks = top_stocks[~top_stocks['ticker'].isin(blacklist_tickers)]
 
-        # Update alert tickers with gainers
-        self.bot.stock_date.update_alert_tickers(tickers=top_stocks, source='popularity')
-
-        #await self.update_alert_tickers(key='popular-stocks', tickers=top_stocks['ticker'].to_list()[50])
         
         for index, row in top_stocks.iterrows():
             ticker = row['ticker']
