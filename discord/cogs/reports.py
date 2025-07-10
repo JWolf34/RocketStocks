@@ -609,19 +609,19 @@ class Report(object):
         self.channel = channel
 
         # Parse data from keyword args
-        self.ticker_info = kwargs.pop('ticker_info', None)
-        self.ticker = self.ticker_info['ticker'] if self.ticker_info else kwargs.pop('ticker', None)
-        self.quote = kwargs.pop('quote', None)
-        self.fundamentals = kwargs.pop('fundamentals', None)
-        self.daily_price_history = kwargs.pop('daily_price_history', None)
-        self.next_earnings_info = kwargs.pop('next_earnings_info', None)
-        self.historical_earnings = kwargs.pop('historical_earnings', None)
-        self.recent_sec_filings = kwargs.pop('recent_sec_filings', None)
-        self.popularity = kwargs.pop('popularity', None)
-        self.company_facts = kwargs.pop('company_facts', None)
-        self.politician = kwargs.pop('politician', None)
-        self.trades = kwargs.pop('trades', None)
-        self.politician_facts = kwargs.pop('politician_facts', None)
+        self.ticker_info: dict = kwargs.pop('ticker_info', None)
+        self.ticker: str = self.ticker_info['ticker'] if self.ticker_info else kwargs.pop('ticker', None)
+        self.quote: dict = kwargs.pop('quote', None)
+        self.fundamentals: dict = kwargs.pop('fundamentals', None)
+        self.daily_price_history: pd.DataFrame = kwargs.pop('daily_price_history', None)
+        self.next_earnings_info: dict = kwargs.pop('next_earnings_info', None)
+        self.historical_earnings: pd.DataFrame = kwargs.pop('historical_earnings', None)
+        self.recent_sec_filings: dict = kwargs.pop('recent_sec_filings', None)
+        self.popularity: pd.DataFrame = kwargs.pop('popularity', None)
+        self.company_facts: dict = kwargs.pop('company_facts', None)
+        self.politician: dict = kwargs.pop('politician', None)
+        self.trades: pd.DataFrame = kwargs.pop('trades', None)
+        self.politician_facts: dict = kwargs.pop('politician_facts', None)
 
         # ASCII table styles
         self.table_styles = {'ascii':PresetStyle.ascii,

@@ -246,8 +246,8 @@ class Alerts(commands.Cog):
                             interval_max_rank = 'N/A'
 
                         # If difference between max rank and current rank is > 75%, post popularity alert
-                        pct_diff = abs((float(current_rank) - float(interval_max_rank)) / float(interval_max_rank))*100.0
-                        if pct_diff > 75.00 and interval_max_rank >= 10:
+                        pct_diff = abs((float(current_rank) - float(interval_max_rank)) / float(interval_max_rank))*100.0 if (current_rank != 'N/A' and interval_max_rank != 'N/A') else 0.0
+                        if pct_diff > 75.00 and  interval_max_rank != 'N/A' and interval_max_rank >= 10:
                             alert = await self.build_popularity_mover(
                                 ticker=ticker,
                                 popularity=popularity
@@ -489,7 +489,7 @@ class Alerts(commands.Cog):
             if volume_stats:
                 message += self.build_stats_table(header={}, body=volume_stats, adjust='right')
             else:
-                message += f"No volume stats available"
+                message += "No volume stats available"
 
             return message
 
@@ -579,6 +579,7 @@ class Alerts(commands.Cog):
                     await news_report.send_report(interaction)
                     await interaction.response.send_message(f"Fetched news for {self.ticker}!", ephemeral=True)
                 '''
+
     class EarningsMoverAlert(Alert):
         def __init__(self, channel:discord.channel, ticker:str, quote:dict, next_earnings_info:dict,
                     historical_earnings:pd.DataFrame):
@@ -597,7 +598,7 @@ class Alerts(commands.Cog):
         def build_todays_change(self):
             logger.debug("Building today's change...")
             message = super().build_todays_change()
-            message += f" and reports earnings today\n"
+            message += " and reports earnings today\n"
             return message
 
         def build_alert(self):
@@ -866,8 +867,8 @@ class Alerts(commands.Cog):
             return alert
 
         # Override
-        def override_and_edit(self, old_alert_data):
-            if self.alert_data['high_rank'] < (0.5 * float(old_alert_data['high_rank'])):
+        def override_and_edit(self, prev_alert_data:dict):
+            if self.alert_data['high_rank'] < (0.5 * float(prev_alert_data['high_rank'])):
                 return True
             else:
                 return False
