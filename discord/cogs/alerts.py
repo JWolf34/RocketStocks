@@ -247,7 +247,7 @@ class Alerts(commands.Cog):
 
                         # If difference between max rank and current rank is > 75%, post popularity alert
                         pct_diff = abs((float(current_rank) - float(interval_max_rank)) / float(interval_max_rank))*100.0 if (current_rank != 'N/A' and interval_max_rank != 'N/A') else 0.0
-                        if pct_diff > 75.00 and  interval_max_rank != 'N/A' and interval_max_rank >= 10:
+                        if (current_rank != 'N/A' and interval_max_rank != 'N/A') and  pct_diff > 75.00 and current_rank < interval_max_rank and interval_max_rank >= 10:
                             alert = await self.build_popularity_mover(
                                 ticker=ticker,
                                 popularity=popularity
