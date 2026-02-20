@@ -19,3 +19,7 @@ http_cache.sqlite
 
 # Logging
 logs/
+
+# Claude
+.claude/
+CLAUDE.md
