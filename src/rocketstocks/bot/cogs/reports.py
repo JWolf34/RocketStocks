@@ -304,7 +304,7 @@ class Reports(commands.Cog):
     @app_commands.autocomplete(sort_by=autocomplete_sortby,)
     async def news(self, interaction: discord.Interaction, query: str, sort_by: str = 'publishedAt'):
         """Generate and send News Report for the input query"""
-        logger.info("/news function called by user {}".format(interaction.user.name))
+        logger.info(f"/news function called by user {interaction.user.name}")
         news_data = News().get_news(query=query, sort_by=sort_by)
         content = NewsReport(query=query, news=news_data)
         message_text = content.build_report()
@@ -328,7 +328,7 @@ class Reports(commands.Cog):
     async def popular_stocks(self, interaction: discord.Interaction, source: str, visibility: app_commands.Choice[str]):
         """Generate and send Popularity Report for tickers from the input source"""
         await interaction.response.defer(ephemeral=True)
-        logger.info("/popular-stocks function called by user {}".format(interaction.user.name))
+        logger.info(f"/popular-stocks function called by user {interaction.user.name}")
 
         popular_stocks = self.stock_data.popularity.get_popular_stocks(filter_name=source)
         filter_val = self.stock_data.popularity.get_filter(source)

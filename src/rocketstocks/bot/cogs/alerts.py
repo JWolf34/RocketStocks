@@ -110,7 +110,7 @@ class Alerts(commands.Cog):
             if abs(pct_change) > 5.0:
                 logger.debug(
                     f"Identified ticker '{ticker}' reporting earnings today with percent change "
-                    f"{'{:.2f}%'.format(pct_change)}"
+                    f"{pct_change:.2f}%"
                 )
                 alert = await self.build_earnings_mover(ticker=ticker, quote=quote,
                                                         next_earnings_info=earnings_today[
@@ -128,7 +128,7 @@ class Alerts(commands.Cog):
             if filings.size > 0 and abs(pct_change) > 10.0:
                 logger.debug(
                     f"Identified ticker '{ticker}' with SEC filings today and percent change "
-                    f"{'{:.2f}%'.format(pct_change)}"
+                    f"{pct_change:.2f}%"
                 )
                 alert = SECFilingMoverAlert(ticker=ticker, quote=quotes[ticker])
                 view = AlertButtons(ticker=ticker)
@@ -148,7 +148,7 @@ class Alerts(commands.Cog):
             if abs(pct_change) > 10.0:
                 logger.debug(
                     f"Identified ticker '{ticker}' on watchlist with percent change "
-                    f"{'{:.2f}%'.format(pct_change)}"
+                    f"{pct_change:.2f}%"
                 )
                 alert = await self.build_watchlist_mover(ticker=ticker)
                 view = AlertButtons(ticker=ticker)
@@ -169,8 +169,8 @@ class Alerts(commands.Cog):
 
                 if rvol > 25.0 and abs(pct_change) > 10.0 and rvol is not np.nan:
                     logger.debug(
-                        f"Identified ticker '{ticker}' with RVOL {'{:.2f}x'.format(rvol)} "
-                        f"and percent change {'{:.2f}%'.format(pct_change)}"
+                        f"Identified ticker '{ticker}' with RVOL {rvol:.2f}x "
+                        f"and percent change {pct_change:.2f}%"
                     )
                     alert = await self.build_volume_mover(ticker=ticker, rvol=rvol, quote=quote,
                                                           daily_price_history=daily_price_history)
@@ -202,8 +202,8 @@ class Alerts(commands.Cog):
                         and rvol_at_time is not np.nan and avg_vol_at_time is not np.nan):
                     logger.debug(
                         f"Identified ticker '{ticker}' with RVOL at time ({time}) "
-                        f"{'{:.2f}x'.format(rvol_at_time)} and percent change "
-                        f"{'{:.2f}%'.format(pct_change)}"
+                        f"{rvol_at_time:.2f}x and percent change "
+                        f"{pct_change:.2f}%"
                     )
                     alert = await self.build_volume_spike_alert(
                         ticker=ticker, quote=quote,

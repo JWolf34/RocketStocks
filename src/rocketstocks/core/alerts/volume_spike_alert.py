@@ -31,7 +31,7 @@ class VolumeSpikeAlert(Alert):
         """Extends the parent to include RVOL_AT_TIME data."""
         logger.debug("Building today's change...")
         message = super().build_todays_change()
-        message += f" with volume up **{'{:.2f} times'.format(self.rvol_at_time)}** the normal at this time\n"
+        message += f" with volume up **{self.rvol_at_time:.2f} times** the normal at this time\n"
         return message
 
     def build_alert(self):

@@ -19,7 +19,7 @@ class SECFilingMoverAlert(Alert):
     def build_todays_change(self):
         logger.debug("Building today's change...")
         symbol = "🟢" if self.pct_change > 0 else "🔻"
-        return f"**{self.ticker}** is {symbol} **{'{:.2f}'.format(self.pct_change)}%** and filed with the SEC today\n"
+        return f"**{self.ticker}** is {symbol} **{self.pct_change:.2f}%** and filed with the SEC today\n"
 
     def build_alert(self):
         logger.debug("Building SEC Filing Mover Alert...")

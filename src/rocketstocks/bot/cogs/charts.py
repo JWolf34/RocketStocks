@@ -110,7 +110,7 @@ class Charts(commands.Cog):
                     archer_obv: app_commands.Choice[str] = 'False'):
 
         await interaction.response.defer(ephemeral=True)
-        logger.info("/plot-chart function called by user {}".format(interaction.user.name))
+        logger.info(f"/plot-chart function called by user {interaction.user.name}")
         tickers, invalid_tickers = sd.get_list_from_tickers(tickers)
 
         plot_args = locals()

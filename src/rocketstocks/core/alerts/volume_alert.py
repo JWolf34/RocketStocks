@@ -30,7 +30,7 @@ class VolumeMoverAlert(Alert):
         """Extends the parent to include RVOL data."""
         logger.debug("Building today's change...")
         message = super().build_todays_change()
-        message += f" with volume up **{'{:.2f} times'.format(self.rvol)}** the 10-day average\n"
+        message += f" with volume up **{self.rvol:.2f} times** the 10-day average\n"
         return message
 
     def build_alert(self):

@@ -10,14 +10,19 @@ from rocketstocks.core.config.paths import validate_path, datapaths
 
 logger = logging.getLogger(__name__)
 
-discord_logger = logging.getLogger('discord')
-for handler in logger.handlers:
-    if handler.name == 'file':
-        discord_logger.addHandler(handler)
-
 intents = discord.Intents.default()
 bot = commands.Bot(command_prefix='$', intents=intents)
 token = secrets.discord_token
+
+
+def _attach_discord_file_handler() -> None:
+    """Route discord library logs to the file handler (WARNING+ only)."""
+    discord_logger = logging.getLogger("discord")
+    discord_logger.setLevel(logging.WARNING)
+    for handler in logging.getLogger().handlers:
+        if handler.name == "file":
+            discord_logger.addHandler(handler)
+            break
 
 
 async def load():
@@ -30,6 +35,8 @@ async def load():
 
 
 def run_bot(stock_data: StockData):
+    _attach_discord_file_handler()
+
     @bot.event
     async def on_ready():
         logger.info("RocketStocks bot ready!")

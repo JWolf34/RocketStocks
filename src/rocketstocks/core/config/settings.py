@@ -12,11 +12,11 @@ class config:
 
     def load_config(self):
         try:
-            config = open(self.path)
-            data = json.load(config)
+            with open(self.path) as config:
+                data = json.load(config)
             return data
-        except FileNotFoundError as e:
-            print("File not found")
+        except FileNotFoundError:
+            logger.error(f"Config file not found: {self.path}")
 
     def write_config(self, data):
         with open(self.path, 'w') as config_file:

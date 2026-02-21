@@ -15,32 +15,32 @@ PLOTS_PATH = "data/plots"
 class Chart(object):
     def __init__(self, df: pd.DataFrame = None, ticker: str = "SPY", strategy: ta.Strategy = ta.CommonStrategy, *args, **kwargs):
         self.verbose = kwargs.pop("verbose", False)
-        logging.info("Charting {} for ticker {}".format(strategy.name, ticker))
+        logger.info(f"Charting {strategy.name} for ticker {ticker}")
 
         self.ticker = ticker
         if isinstance(df, pd.DataFrame) and df.ta.datetime_ordered:
             self.df = df
-            logging.debug("Loaded DataFrame {} {}".format(self.ticker, self.df.shape))
+            logger.debug(f"Loaded DataFrame {self.ticker} {self.df.shape}")
         else:
-            logging.error("DataFrame missing 'ohlcv' data or index is not datetime ordered.\n")
+            logger.error("DataFrame missing 'ohlcv' data or index is not datetime ordered.\n")
             return None
 
         self._validate_chart_kwargs(**kwargs)
         self._validate_mpf_kwargs(**kwargs)
         self._validate_ta_strategy(strategy)
 
-        logging.info("Building plot for ticker '{}'".format(self.ticker))
+        logger.info(f"Building plot for ticker '{self.ticker}'")
         self._plot(**kwargs)
 
     def _validate_ta_strategy(self, strategy):
-        logging.info("Validating strategy to be charted")
+        logger.info("Validating strategy to be charted")
         if strategy is not None or isinstance(strategy, ta.Strategy):
             self.strategy = strategy
         else:
             self.strategy = ta.CommonStrategy
 
     def _validate_chart_kwargs(self, **kwargs):
-        logging.info("Validating chart kwargs")
+        logger.info("Validating chart kwargs")
         self.config = {}
         self.config["last"] = kwargs.pop("last", recent_bars(self.df))
         self.config["rpad"] = kwargs.pop("rpad", 10)
@@ -48,7 +48,7 @@ class Chart(object):
         self.config["volume"] = kwargs.pop("volume", True)
 
     def _validate_mpf_kwargs(self, **kwargs):
-        logging.info("Validating mpf args")
+        logger.info("Validating mpf args")
         default_mpf_width = {
             'candle_linewidth': 0.6,
             'candle_width': 0.525,
@@ -88,7 +88,7 @@ class Chart(object):
 
     def _plot(self, **kwargs):
         if not isinstance(self.mpfchart["plot_ratios"], tuple):
-            logging.error("plot_ratios must be a tuple")
+            logger.error("plot_ratios must be a tuple")
             return
 
         chart_title = self.config["title"]
@@ -358,13 +358,13 @@ class Chart(object):
 
         filename = kwargs.pop("filename", "plot")
         savepath = kwargs.pop("savepath", PLOTS_PATH)
-        savefilepath = '{}/{}'.format(savepath, self.ticker)
+        savefilepath = f"{savepath}/{self.ticker}"
         validate_path(savefilepath)
-        savefilepath = "{}/{}.png".format(savefilepath, filename)
+        savefilepath = f"{savefilepath}/{filename}.png"
 
         save = dict(fname=savefilepath, dpi=500, pad_inches=0.25)
 
-        logging.info("Plotting...")
+        logger.info("Plotting...")
         mpf.plot(mpfdf,
             title=chart_title,
             type=self.mpfchart["type"],
@@ -381,4 +381,4 @@ class Chart(object):
             addplot=taplots,
             savefig=save
         )
-        logging.info("Plot success!")
+        logger.info("Plot success!")

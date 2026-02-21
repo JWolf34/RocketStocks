@@ -18,7 +18,7 @@ class Utils(commands.Cog):
     @app_commands.checks.has_permissions(administrator=True)
     async def sync(self, interaction: discord.Interaction):
         """Sync bot commands to Discord's servers. Use this after adding or removing an app command"""
-        logger.info("/sync command called by user {}".format(interaction.user.name))
+        logger.info(f"/sync command called by user {interaction.user.name}")
         await self.bot.tree.sync()
         await interaction.response.send_message("Bot commands synced!", ephemeral=True)
         logger.info("Bot commands synced!")
@@ -26,7 +26,7 @@ class Utils(commands.Cog):
     @app_commands.command(name="help", description="Show help on the bot's commands",)
     async def help(self, interaction: discord.Interaction):
         """Post message in discord with documentation on the bot's commands"""
-        logger.info("/help function called by user {}".format(interaction.user.name))
+        logger.info(f"/help function called by user {interaction.user.name}")
         embeds = []
 
         for cog_name, cog in self.bot.cogs.items():

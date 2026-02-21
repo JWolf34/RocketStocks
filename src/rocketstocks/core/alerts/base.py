@@ -48,7 +48,7 @@ class Alert(Report):
     def build_todays_change(self):
         logger.debug("Building today's change...")
         symbol = "🟢" if self.pct_change > 0 else "🔻"
-        return f"`{self.ticker}` is {symbol} **{'{:.2f}'.format(self.pct_change)}%**"
+        return f"`{self.ticker}` is {symbol} **{self.pct_change:.2f}%**"
 
     def build_volume_stats(self):
         """Return message content with volume statistics for the alert's ticker."""
@@ -60,10 +60,10 @@ class Alert(Report):
             volume_stats['Volume Today'] = self.format_large_num(self.quote['quote']['totalVolume'])
 
         if self.rvol:
-            volume_stats['Relative Volume (10 Day)'] = "{:.2f}x".format(self.rvol)
+            volume_stats['Relative Volume (10 Day)'] = f"{self.rvol:.2f}x"
 
         if self.rvol_at_time and self.avg_vol_at_time:
-            volume_stats[f'Relative Volume at Time ({self.time})'] = "{:.2f}x".format(self.rvol_at_time)
+            volume_stats[f'Relative Volume at Time ({self.time})'] = f"{self.rvol_at_time:.2f}x"
             volume_stats[f'Current Volume at Time ({self.time})'] = self.format_large_num(self.rvol_at_time * self.avg_vol_at_time)
             volume_stats[f'Average Volume at Time ({self.time})'] = self.format_large_num(self.avg_vol_at_time)
 
