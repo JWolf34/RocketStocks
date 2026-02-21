@@ -23,3 +23,6 @@ logs/
 # Claude
 .claude/
 CLAUDE.md
+
+#setuptools-egg-info
+*.egg-info/

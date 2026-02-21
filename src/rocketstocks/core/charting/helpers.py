@@ -2,7 +2,7 @@ import logging
 import numpy as np
 import pandas as pd
 import mplfinance as mpf
-import pandas_ta as ta
+import pandas_ta_classic as ta
 
 logger = logging.getLogger(__name__)
 

@@ -2,7 +2,7 @@ APScheduler
 discord.py
 pandas-datareader
 yfinance
-pandas-ta
+pandas-ta-classic
 mplfinance
 Backtesting
 tradingview_screener
@@ -13,5 +13,5 @@ ratelimit
 pandas_market_calendars
 schwab-py
 beautifulsoup4
-numpy==1.26.4
+numpy>=2.4.0
 python-dotenv
