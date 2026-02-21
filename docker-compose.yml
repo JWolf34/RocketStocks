@@ -3,11 +3,12 @@ version: "3.7"
 services:
   rocketstocks:
     build:
-      context: . 
+      context: .
     restart: always
     environment:
       DISCORD_TOKEN: "1"
       REPORTS_CHANNEL_ID: "1"
     volumes:
       - "/path/to/persistent/data:/RocketStocks/data"
+      - "/path/to/persistent/logs:/RocketStocks/logs"
 
