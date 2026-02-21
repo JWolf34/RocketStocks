@@ -1,0 +1,17 @@
+APScheduler
+discord.py
+pandas-datareader
+yfinance
+pandas-ta
+mplfinance
+Backtesting
+tradingview_screener
+newsapi-python
+table2ascii
+psycopg2-binary
+ratelimit
+pandas_market_calendars
+schwab-py
+beautifulsoup4
+numpy==1.26.4
+python-dotenv
