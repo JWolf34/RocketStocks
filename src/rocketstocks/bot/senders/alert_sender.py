@@ -2,7 +2,6 @@ import datetime
 import json
 import logging
 import discord
-from rocketstocks.core.alerts.base import Alert
 from rocketstocks.core.utils.dates import date_utils
 from rocketstocks.data.discord_state import DiscordState
 
@@ -10,7 +9,7 @@ logger = logging.getLogger(__name__)
 
 
 async def send_alert(
-    alert: Alert,
+    alert,
     channel: discord.TextChannel,
     dstate: DiscordState,
     view: discord.ui.View = None,
