@@ -32,9 +32,10 @@ class StockReportButtons(discord.ui.View):
     @discord.ui.button(label="Get news", style=discord.ButtonStyle.primary)
     async def get_news(self, interaction: discord.Interaction, button: discord.ui.Button):
         from rocketstocks.data.clients.news import News
-        from rocketstocks.core.reports.news_report import NewsReport
+        from rocketstocks.core.content.reports.news_report import NewsReport
+        from rocketstocks.core.content.models import NewsReportData
         news = News().get_news(query=self.ticker)
-        news_report = NewsReport(news=news, query=self.ticker)
+        news_report = NewsReport(data=NewsReportData(query=self.ticker, news=news))
         message = news_report.build_report()
         await interaction.response.send_message(message, ephemeral=True)
 
