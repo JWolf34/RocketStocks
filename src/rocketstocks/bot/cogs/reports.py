@@ -14,15 +14,26 @@ from rocketstocks.core.utils.market import market_utils
 from rocketstocks.core.utils.dates import date_utils
 from rocketstocks.core.config.settings import reports_channel_id, screeners_channel_id, guild_id
 
-from rocketstocks.core.reports.stock_report import StockReport
-from rocketstocks.core.reports.news_report import NewsReport
-from rocketstocks.core.reports.popularity_report import PopularityReport
-from rocketstocks.core.reports.popularity_screener import PopularityScreener
-from rocketstocks.core.reports.gainer_screener import GainerScreener
-from rocketstocks.core.reports.volume_screener import VolumeScreener
-from rocketstocks.core.reports.earnings_report import EarningsSpotlightReport
-from rocketstocks.core.reports.earnings_screener import WeeklyEarningsScreener
-from rocketstocks.core.reports.politician_report import PoliticianReport
+from rocketstocks.core.content.models import (
+    StockReportData,
+    NewsReportData,
+    PopularityReportData,
+    PopularityScreenerData,
+    GainerScreenerData,
+    VolumeScreenerData,
+    EarningsSpotlightData,
+    WeeklyEarningsData,
+    PoliticianReportData,
+)
+from rocketstocks.core.content.reports.stock_report import StockReport
+from rocketstocks.core.content.reports.news_report import NewsReport
+from rocketstocks.core.content.reports.popularity_report import PopularityReport
+from rocketstocks.core.content.reports.earnings_report import EarningsSpotlightReport
+from rocketstocks.core.content.reports.politician_report import PoliticianReport
+from rocketstocks.core.content.screeners.popularity_screener import PopularityScreener
+from rocketstocks.core.content.screeners.gainer_screener import GainerScreener
+from rocketstocks.core.content.screeners.volume_screener import VolumeScreener
+from rocketstocks.core.content.screeners.earnings_screener import WeeklyEarningsScreener
 
 from rocketstocks.bot.views.report_views import (
     StockReportButtons, GainerScreenerButtons, VolumeScreenerButtons,
@@ -77,6 +88,7 @@ class Reports(commands.Cog):
             self.stock_data.insert_popularity(popular_stocks=popular_stocks)
 
             content = self.build_popularity_screener(popular_stocks=popular_stocks)
+            self._update_screener_watchlist(content)
             await self.stock_data.update_alert_tickers(tickers=content.get_tickers()[:250], source='popularity')
 
             logger.info("Posting popularity screener")
@@ -92,6 +104,7 @@ class Reports(commands.Cog):
         if self.mutils.market_open_today() and market_period != 'EOD':
             unusual_volume = self.stock_data.trading_view.get_unusual_volume_movers()
             content = self.build_volume_screener(unusual_volume=unusual_volume)
+            self._update_screener_watchlist(content)
             await self.stock_data.update_alert_tickers(tickers=content.get_tickers(), source='unusual-volume')
 
             logger.info("Posting unusual volume screener")
@@ -112,6 +125,7 @@ class Reports(commands.Cog):
         market_period = self.mutils.get_market_period()
         if self.mutils.market_open_today() and market_period != 'EOD':
             content = self.build_gainer_screener(market_period=market_period)
+            self._update_screener_watchlist(content)
             await self.stock_data.update_alert_tickers(tickers=content.get_tickers(), source='gainers')
 
             logger.info(f"Sending {content.market_period} gainers screener")
@@ -306,7 +320,7 @@ class Reports(commands.Cog):
         """Generate and send News Report for the input query"""
         logger.info(f"/news function called by user {interaction.user.name}")
         news_data = News().get_news(query=query, sort_by=sort_by)
-        content = NewsReport(query=query, news=news_data)
+        content = NewsReport(data=NewsReportData(query=query, news=news_data))
         message_text = content.build_report()
         await interaction.response.send_message(message_text)
         logger.info(f"Posted news for query '{query}'")
@@ -334,7 +348,7 @@ class Reports(commands.Cog):
         filter_val = self.stock_data.popularity.get_filter(source)
 
         if not popular_stocks.empty:
-            content = PopularityReport(popular_stocks=popular_stocks, filter=filter_val)
+            content = PopularityReport(data=PopularityReportData(popular_stocks=popular_stocks, filter=filter_val))
             view = PopularityReportButtons()
             files = [discord.File(content.filepath)]
             message = await send_report(content, self.reports_channel, interaction=interaction,
@@ -386,13 +400,31 @@ class Reports(commands.Cog):
     # Builders #
     ###########
 
+    def _update_screener_watchlist(self, screener) -> None:
+        """Update the system-generated watchlist for the given screener (moved from Screener.__init__)."""
+        watchlist_id = screener.screener_type
+        watchlist_tickers = screener.get_tickers()[:20]
+
+        if not self.stock_data.watchlists.validate_watchlist(watchlist_id):
+            self.stock_data.watchlists.create_watchlist(
+                watchlist_id=watchlist_id, tickers=watchlist_tickers, systemGenerated=True
+            )
+            logger.info(f"Created new watchlist from '{screener.screener_type}' screener")
+            logger.debug(f"Watchlist created with {len(watchlist_tickers)} tickers: {watchlist_tickers}")
+        else:
+            self.stock_data.watchlists.update_watchlist(
+                watchlist_id=watchlist_id, tickers=watchlist_tickers
+            )
+            logger.info(f"Updated watchlist '{screener.screener_type}'")
+            logger.debug(f"Watchlist updated with {len(watchlist_tickers)} tickers: {watchlist_tickers}")
+
     def build_popularity_screener(self, **kwargs) -> PopularityScreener:
         popular_stocks = kwargs.pop('popular_stocks', self.stock_data.popularity.get_popular_stocks())
-        return PopularityScreener(popular_stocks=popular_stocks)
+        return PopularityScreener(data=PopularityScreenerData(popular_stocks=popular_stocks))
 
     def build_volume_screener(self, **kwargs) -> VolumeScreener:
         unusual_volume = kwargs.pop('unusual_volume', self.stock_data.trading_view.get_unusual_volume_movers())
-        return VolumeScreener(unusual_volume=unusual_volume)
+        return VolumeScreener(data=VolumeScreenerData(unusual_volume=unusual_volume))
 
     def build_gainer_screener(self, market_period: str) -> GainerScreener:
         if market_period == 'premarket':
@@ -403,7 +435,7 @@ class Reports(commands.Cog):
             gainers = self.stock_data.trading_view.get_postmarket_gainers()
         else:
             gainers = pd.DataFrame()
-        return GainerScreener(market_period=market_period, gainers=gainers)
+        return GainerScreener(data=GainerScreenerData(market_period=market_period, gainers=gainers))
 
     async def build_stock_report(self, ticker: str, **kwargs) -> StockReport:
         ticker_info = kwargs.pop('ticker_info', self.stock_data.get_ticker_info(ticker=ticker))
@@ -414,7 +446,8 @@ class Reports(commands.Cog):
         next_earnings_info = kwargs.pop('next_earnings_info', self.stock_data.earnings.get_next_earnings_info(ticker=ticker))
         quote = kwargs.pop('quote', await self.stock_data.schwab.get_quote(ticker=ticker))
         fundamentals = kwargs.pop('fundamentals', await self.stock_data.schwab.get_fundamentals(tickers=[ticker]))
-        return StockReport(
+        return StockReport(data=StockReportData(
+            ticker=ticker,
             ticker_info=ticker_info,
             daily_price_history=daily_price_history,
             popularity=popularity,
@@ -423,7 +456,7 @@ class Reports(commands.Cog):
             next_earnings_info=next_earnings_info,
             quote=quote,
             fundamentals=fundamentals,
-        )
+        ))
 
     async def build_earnings_spotlight_report(self, ticker: str, **kwargs) -> EarningsSpotlightReport:
         ticker_info = self.stock_data.get_ticker_info(ticker=ticker)
@@ -432,26 +465,34 @@ class Reports(commands.Cog):
         historical_earnings = self.stock_data.earnings.get_historical_earnings(ticker=ticker)
         quote = await self.stock_data.schwab.get_quote(ticker=ticker)
         fundamentals = await self.stock_data.schwab.get_fundamentals(tickers=[ticker])
-        return EarningsSpotlightReport(
+        return EarningsSpotlightReport(data=EarningsSpotlightData(
+            ticker=ticker,
             ticker_info=ticker_info,
             daily_price_history=daily_price_history,
             next_earnings_info=next_earnings_info,
             historical_earnings=historical_earnings,
             quote=quote,
             fundamentals=fundamentals,
-        )
+        ))
 
     def build_weekly_earnings_screener(self, **kwargs) -> WeeklyEarningsScreener:
         upcoming_earnings = kwargs.pop('upcoming_earnings', self.stock_data.earnings.fetch_upcoming_earnings())
         watchlist_tickers = kwargs.pop('watchlist_tickers',
                                        self.stock_data.watchlists.get_all_watchlist_tickers(no_personal=True, no_systemGenerated=True))
-        return WeeklyEarningsScreener(upcoming_earnings=upcoming_earnings, watchlist_tickers=watchlist_tickers)
+        return WeeklyEarningsScreener(data=WeeklyEarningsData(
+            upcoming_earnings=upcoming_earnings,
+            watchlist_tickers=watchlist_tickers,
+        ))
 
     def build_politician_report(self, politician_name: str = None, **kwargs) -> PoliticianReport:
         politician = kwargs.pop('politician', self.stock_data.capitol_trades.politician(name=politician_name))
         trades = kwargs.pop('trades', self.stock_data.capitol_trades.trades(pid=politician['politician_id']))
         politician_facts = kwargs.pop('politician_facts', self.stock_data.capitol_trades.politician_facts(pid=politician['politician_id']))
-        return PoliticianReport(politician=politician, trades=trades, politician_facts=politician_facts)
+        return PoliticianReport(data=PoliticianReportData(
+            politician=politician,
+            trades=trades,
+            politician_facts=politician_facts,
+        ))
 
 
 async def setup(bot):

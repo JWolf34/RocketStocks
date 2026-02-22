@@ -2,7 +2,6 @@ import datetime
 import logging
 import asyncio
 import numpy as np
-import discord
 from discord.ext import commands, tasks
 
 from rocketstocks.data.stock_data import StockData
@@ -12,13 +11,22 @@ from rocketstocks.core.utils.dates import date_utils
 from rocketstocks.core.config.settings import alerts_channel_id, reports_channel_id
 import rocketstocks.core.analysis.indicators as an
 
-from rocketstocks.core.alerts.earnings_alert import EarningsMoverAlert
-from rocketstocks.core.alerts.sec_filing_alert import SECFilingMoverAlert
-from rocketstocks.core.alerts.watchlist_alert import WatchlistMoverAlert
-from rocketstocks.core.alerts.volume_alert import VolumeMoverAlert
-from rocketstocks.core.alerts.volume_spike_alert import VolumeSpikeAlert
-from rocketstocks.core.alerts.popularity_alert import PopularityAlert
-from rocketstocks.core.alerts.politician_alert import PoliticianTradeAlert
+from rocketstocks.core.content.models import (
+    EarningsMoverData,
+    VolumeMoverData,
+    VolumeSpikeData,
+    WatchlistMoverData,
+    SECFilingData,
+    PopularityAlertData,
+    PoliticianTradeAlertData,
+)
+from rocketstocks.core.content.alerts.earnings_alert import EarningsMoverAlert
+from rocketstocks.core.content.alerts.sec_filing_alert import SECFilingMoverAlert
+from rocketstocks.core.content.alerts.watchlist_alert import WatchlistMoverAlert
+from rocketstocks.core.content.alerts.volume_alert import VolumeMoverAlert
+from rocketstocks.core.content.alerts.volume_spike_alert import VolumeSpikeAlert
+from rocketstocks.core.content.alerts.popularity_alert import PopularityAlert
+from rocketstocks.core.content.alerts.politician_alert import PoliticianTradeAlert
 
 from rocketstocks.bot.views.alert_views import AlertButtons, PoliticianTradeButtons
 from rocketstocks.bot.senders.alert_sender import send_alert
@@ -130,7 +138,13 @@ class Alerts(commands.Cog):
                     f"Identified ticker '{ticker}' with SEC filings today and percent change "
                     f"{pct_change:.2f}%"
                 )
-                alert = SECFilingMoverAlert(ticker=ticker, quote=quotes[ticker])
+                recent_sec_filings = self.stock_data.sec.get_recent_filings(ticker=ticker)
+                alert = SECFilingMoverAlert(data=SECFilingData(
+                    ticker=ticker,
+                    ticker_info=self.stock_data.get_ticker_info(ticker=ticker),
+                    quote=quotes[ticker],
+                    recent_sec_filings=recent_sec_filings,
+                ))
                 view = AlertButtons(ticker=ticker)
                 await send_alert(alert, self.alerts_channel, self.dstate, view=view)
             await asyncio.sleep(1)
@@ -263,10 +277,10 @@ class Alerts(commands.Cog):
         today = date_utils.format_date_mdy(datetime.date.today())
         todays_trades = trades[trades['Published Date'].apply(lambda x: x == today)]
         if not todays_trades.empty:
-            alert = PoliticianTradeAlert(
+            alert = PoliticianTradeAlert(data=PoliticianTradeAlertData(
                 politician=politician,
                 trades=todays_trades,
-            )
+            ))
             view = PoliticianTradeButtons(politician=politician)
             await send_alert(alert, self.alerts_channel, self.dstate, view=view)
 
@@ -287,12 +301,13 @@ class Alerts(commands.Cog):
         historical_earnings = kwargs.pop(
             'historical_earnings', self.stock_data.earnings.get_historical_earnings(ticker=ticker)
         )
-        return EarningsMoverAlert(
+        return EarningsMoverAlert(data=EarningsMoverData(
             ticker=ticker,
+            ticker_info=self.stock_data.get_ticker_info(ticker=ticker),
             quote=quote,
             next_earnings_info=next_earnings_info,
             historical_earnings=historical_earnings,
-        )
+        ))
 
     async def build_watchlist_mover(self, ticker: str, **kwargs) -> WatchlistMoverAlert:
         """Build a WatchlistMoverAlert for the given ticker."""
@@ -307,7 +322,12 @@ class Alerts(commands.Cog):
 
         quote = kwargs.pop('quote', self.stock_data.schwab.get_quote(ticker=ticker))
         watchlist = kwargs.pop('watchlist', get_ticker_watchlist(ticker=ticker))
-        return WatchlistMoverAlert(ticker=ticker, quote=quote, watchlist=watchlist)
+        return WatchlistMoverAlert(data=WatchlistMoverData(
+            ticker=ticker,
+            ticker_info=self.stock_data.get_ticker_info(ticker=ticker),
+            quote=quote,
+            watchlist=watchlist,
+        ))
 
     async def build_volume_mover(self, ticker: str, **kwargs) -> VolumeMoverAlert:
         """Build a VolumeMoverAlert for the given ticker."""
@@ -318,9 +338,13 @@ class Alerts(commands.Cog):
         rvol = kwargs.pop('rvol', an.indicators.volume.rvol(
             data=daily_price_history, curr_volume=quote['quote']['totalVolume']
         ))
-        return VolumeMoverAlert(
-            ticker=ticker, rvol=rvol, quote=quote, daily_price_history=daily_price_history
-        )
+        return VolumeMoverAlert(data=VolumeMoverData(
+            ticker=ticker,
+            ticker_info=self.stock_data.get_ticker_info(ticker=ticker),
+            quote=quote,
+            rvol=rvol,
+            daily_price_history=daily_price_history,
+        ))
 
     async def build_volume_spike_alert(self, ticker: str, **kwargs) -> VolumeSpikeAlert:
         """Build a VolumeSpikeAlert for the given ticker."""
@@ -342,16 +366,25 @@ class Alerts(commands.Cog):
         if not isinstance(time, str):
             time = time.strftime("%I:%M %p")
 
-        return VolumeSpikeAlert(
-            ticker=ticker, rvol_at_time=rvol_at_time,
-            avg_vol_at_time=avg_vol_at_time, quote=quote, time=time,
-        )
+        return VolumeSpikeAlert(data=VolumeSpikeData(
+            ticker=ticker,
+            ticker_info=self.stock_data.get_ticker_info(ticker=ticker),
+            quote=quote,
+            rvol_at_time=rvol_at_time,
+            avg_vol_at_time=avg_vol_at_time,
+            time=time,
+        ))
 
     async def build_popularity_mover(self, ticker: str, **kwargs) -> PopularityAlert:
         """Build a PopularityAlert for the given ticker."""
         quote = kwargs.pop('quote', await self.stock_data.schwab.get_quote(ticker=ticker))
         popularity = kwargs.pop('popularity', self.stock_data.fetch_popularity(ticker=ticker))
-        return PopularityAlert(ticker=ticker, quote=quote, popularity=popularity)
+        return PopularityAlert(data=PopularityAlertData(
+            ticker=ticker,
+            ticker_info=self.stock_data.get_ticker_info(ticker=ticker),
+            quote=quote,
+            popularity=popularity,
+        ))
 
 
 #########

@@ -49,15 +49,20 @@ class GainerScreener(Screener):
         self._format_extra_columns()
 
     def _format_extra_columns(self) -> None:
-        """Format Volume, Market Cap, and % Change columns."""
+        """Format Volume, Market Cap, and % Change columns (skips if columns absent)."""
+        if self.data.empty:
+            return
+
         volume_cols = self.data.filter(like='Volume').columns.to_list()
         for volume_col in volume_cols:
             self.data[volume_col] = self.data[volume_col].apply(lambda x: format_large_num(x))
 
-        self.data['Market Cap'] = self.data['Market Cap'].apply(lambda x: format_large_num(x))
-        self.data['Change (%)'] = self.data['Change (%)'].apply(
-            lambda x: "{:.2f}%".format(float(x)) if x is not None else 0.00
-        )
+        if 'Market Cap' in self.data.columns:
+            self.data['Market Cap'] = self.data['Market Cap'].apply(lambda x: format_large_num(x))
+        if 'Change (%)' in self.data.columns:
+            self.data['Change (%)'] = self.data['Change (%)'].apply(
+                lambda x: "{:.2f}%".format(float(x)) if x is not None else 0.00
+            )
 
     def build_report(self) -> str:
         logger.debug(f"Building '{self.screener_type}' screener...")
