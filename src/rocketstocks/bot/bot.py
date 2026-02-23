@@ -7,6 +7,7 @@ from rocketstocks.data.stockdata import StockData
 from rocketstocks.data.db import Postgres
 from rocketstocks.core.config.secrets import secrets
 from rocketstocks.core.config.paths import validate_path, datapaths
+from rocketstocks.core.notifications import EventEmitter, NotificationConfig
 
 logger = logging.getLogger(__name__)
 
@@ -36,7 +37,7 @@ async def load(bot: commands.Bot):
     logger.info("Loaded extensions")
 
 
-def run_bot(stock_data: StockData):
+def run_bot(stock_data: StockData, emitter: EventEmitter, notification_config: NotificationConfig):
     _attach_discord_file_handler()
     bot = create_bot()
 
@@ -49,4 +50,6 @@ def run_bot(stock_data: StockData):
         validate_path(datapaths.attachments_path)
 
     bot.stock_data = stock_data
+    bot.emitter = emitter
+    bot.notification_config = notification_config
     bot.run(secrets.discord_token)

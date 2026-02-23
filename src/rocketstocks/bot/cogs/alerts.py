@@ -1,6 +1,8 @@
 import datetime
 import logging
 import asyncio
+import time
+import traceback as tb
 import numpy as np
 from discord.ext import commands, tasks
 
@@ -9,6 +11,8 @@ from rocketstocks.data.discord_state import DiscordState
 from rocketstocks.core.utils.market import market_utils
 from rocketstocks.core.utils.dates import date_utils
 from rocketstocks.core.config.settings import alerts_channel_id, reports_channel_id
+from rocketstocks.core.notifications.config import NotificationLevel
+from rocketstocks.core.notifications.event import NotificationEvent
 import rocketstocks.core.analysis.indicators as an
 
 from rocketstocks.core.content.models import (
@@ -65,34 +69,74 @@ class Alerts(commands.Cog):
     @tasks.loop(time=datetime.time(hour=6, minute=0, second=0))  # UTC
     async def post_alerts_date(self):
         """Post a date-separator message in the alerts channel."""
-        if self.mutils.market_open_today():
-            date_string = date_utils.format_date_mdy(datetime.datetime.today())
-            await self.alerts_channel.send(f"# :rotating_light: Alerts for {date_string} :rotating_light:")
+        _start = time.monotonic()
+        try:
+            if self.mutils.market_open_today():
+                date_string = date_utils.format_date_mdy(datetime.datetime.today())
+                await self.alerts_channel.send(f"# :rotating_light: Alerts for {date_string} :rotating_light:")
+
+            self.bot.emitter.emit(NotificationEvent(
+                level=NotificationLevel.SUCCESS,
+                source=__name__,
+                job_name="post_alerts_date",
+                message="Task completed successfully",
+                elapsed_seconds=time.monotonic() - _start,
+            ))
+        except Exception as exc:
+            self.bot.emitter.emit(NotificationEvent(
+                level=NotificationLevel.FAILURE,
+                source=__name__,
+                job_name="post_alerts_date",
+                message=str(exc),
+                traceback=tb.format_exc(),
+                elapsed_seconds=time.monotonic() - _start,
+            ))
+            raise
 
     @tasks.loop(minutes=5)
     async def send_alerts(self):
         """Process alerts every 5 minutes if the market is open."""
-        market_period = self.mutils.get_market_period()
-        if self.mutils.market_open_today() and market_period != 'EOD':
-            logger.info("Processing alerts")
+        _start = time.monotonic()
+        try:
+            market_period = self.mutils.get_market_period()
+            if self.mutils.market_open_today() and market_period != 'EOD':
+                logger.info("Processing alerts")
 
-            self.all_alert_tickers = all_alert_tickers = list(
-                set([ticker for tickers in self.stock_data.alert_tickers.values() for ticker in tickers])
-            )
+                self.all_alert_tickers = all_alert_tickers = list(
+                    set([ticker for tickers in self.stock_data.alert_tickers.values() for ticker in tickers])
+                )
 
-            quotes = {}
-            chunk_size = 25
-            for i in range(0, len(all_alert_tickers), chunk_size):
-                tickers = all_alert_tickers[i:i + chunk_size]
-                quotes = quotes | await self.stock_data.schwab.get_quotes(tickers=tickers)
-            logger.info(f"Encountered {len(quotes.pop('errors', []))} errors fetching quotes for alert tickers")
+                quotes = {}
+                chunk_size = 25
+                for i in range(0, len(all_alert_tickers), chunk_size):
+                    tickers = all_alert_tickers[i:i + chunk_size]
+                    quotes = quotes | await self.stock_data.schwab.get_quotes(tickers=tickers)
+                logger.info(f"Encountered {len(quotes.pop('errors', []))} errors fetching quotes for alert tickers")
 
-            await self.send_unusual_volume_movers(quotes=quotes)
-            await self.send_volume_spike_movers(quotes=quotes)
-            await self.send_earnings_movers(quotes=quotes)
-            # await self.send_sec_filing_movers(tickers=all_alert_tickers, quotes=quotes)
-            await self.send_watchlist_movers(quotes=quotes)
-            logger.info("Alerts posted")
+                await self.send_unusual_volume_movers(quotes=quotes)
+                await self.send_volume_spike_movers(quotes=quotes)
+                await self.send_earnings_movers(quotes=quotes)
+                # await self.send_sec_filing_movers(tickers=all_alert_tickers, quotes=quotes)
+                await self.send_watchlist_movers(quotes=quotes)
+                logger.info("Alerts posted")
+
+            self.bot.emitter.emit(NotificationEvent(
+                level=NotificationLevel.SUCCESS,
+                source=__name__,
+                job_name="send_alerts",
+                message="Task completed successfully",
+                elapsed_seconds=time.monotonic() - _start,
+            ))
+        except Exception as exc:
+            self.bot.emitter.emit(NotificationEvent(
+                level=NotificationLevel.FAILURE,
+                source=__name__,
+                job_name="send_alerts",
+                message=str(exc),
+                traceback=tb.format_exc(),
+                elapsed_seconds=time.monotonic() - _start,
+            ))
+            raise
 
     @send_alerts.before_loop
     async def send_alerts_before_loop(self):
@@ -207,7 +251,7 @@ class Alerts(commands.Cog):
                 rvol_at_time = an.indicators.volume.rvol_at_time(
                     data=fivem_price_history, today_data=today_data, periods=periods, dt=now
                 )
-                avg_vol_at_time, time = an.indicators.volume.avg_vol_at_time(
+                avg_vol_at_time, time_val = an.indicators.volume.avg_vol_at_time(
                     data=fivem_price_history, periods=periods
                 )
                 pct_change = quote['quote']['netPercentChange']
@@ -215,13 +259,13 @@ class Alerts(commands.Cog):
                 if (rvol_at_time > 50.0 and abs(pct_change) > 10.0
                         and rvol_at_time is not np.nan and avg_vol_at_time is not np.nan):
                     logger.debug(
-                        f"Identified ticker '{ticker}' with RVOL at time ({time}) "
+                        f"Identified ticker '{ticker}' with RVOL at time ({time_val}) "
                         f"{rvol_at_time:.2f}x and percent change "
                         f"{pct_change:.2f}%"
                     )
                     alert = await self.build_volume_spike_alert(
                         ticker=ticker, quote=quote,
-                        rvol_at_time=rvol_at_time, avg_vol_at_time=avg_vol_at_time, time=time
+                        rvol_at_time=rvol_at_time, avg_vol_at_time=avg_vol_at_time, time=time_val
                     )
                     view = AlertButtons(ticker=ticker)
                     await send_alert(alert, self.alerts_channel, self.dstate, view=view)
@@ -229,60 +273,100 @@ class Alerts(commands.Cog):
 
     @tasks.loop(minutes=30)
     async def send_popularity_movers(self):
-        logger.info("Processing popularity movers")
+        _start = time.monotonic()
+        try:
+            logger.info("Processing popularity movers")
 
-        pop_stocks = self.stock_data.popularity.get_popular_stocks(num_stocks=100)['ticker'].to_list()
+            pop_stocks = self.stock_data.popularity.get_popular_stocks(num_stocks=100)['ticker'].to_list()
 
-        for ticker in pop_stocks:
-            popularity = self.stock_data.popularity.fetch_popularity(ticker=ticker)
-            if not popularity.empty:
-                now = date_utils.round_down_nearest_minute(30)
-                popularity_today = popularity[(popularity['datetime'] == now)]
-                current_rank = popularity_today['rank'].iloc[0] if not popularity_today.empty else 'N/A'
+            for ticker in pop_stocks:
+                popularity = self.stock_data.popularity.fetch_popularity(ticker=ticker)
+                if not popularity.empty:
+                    now = date_utils.round_down_nearest_minute(30)
+                    popularity_today = popularity[(popularity['datetime'] == now)]
+                    current_rank = popularity_today['rank'].iloc[0] if not popularity_today.empty else 'N/A'
 
-                if current_rank != 'N/A':
-                    interval_map = {
-                        "High 1D": 1,
-                        "High 2D": 2,
-                        "High 3D": 3,
-                        "High 4D": 4,
-                        "High 5D": 5,
-                    }
+                    if current_rank != 'N/A':
+                        interval_map = {
+                            "High 1D": 1,
+                            "High 2D": 2,
+                            "High 3D": 3,
+                            "High 4D": 4,
+                            "High 5D": 5,
+                        }
 
-                    for label, interval in interval_map.items():
-                        interval_date = now - datetime.timedelta(days=interval)
-                        interval_popularity = popularity[popularity['datetime'] == interval_date]
-                        if not interval_popularity.empty:
-                            interval_max_rank = interval_popularity['rank'].max()
-                        else:
-                            interval_max_rank = 'N/A'
+                        for label, interval in interval_map.items():
+                            interval_date = now - datetime.timedelta(days=interval)
+                            interval_popularity = popularity[popularity['datetime'] == interval_date]
+                            if not interval_popularity.empty:
+                                interval_max_rank = interval_popularity['rank'].max()
+                            else:
+                                interval_max_rank = 'N/A'
 
-                        pct_diff = (
-                            abs((float(current_rank) - float(interval_max_rank)) / float(interval_max_rank)) * 100.0
-                            if (current_rank != 'N/A' and interval_max_rank != 'N/A') else 0.0
-                        )
-                        if (current_rank != 'N/A' and interval_max_rank != 'N/A'
-                                and pct_diff > 75.0 and current_rank < interval_max_rank
-                                and interval_max_rank >= 10):
-                            alert = await self.build_popularity_mover(
-                                ticker=ticker, popularity=popularity
+                            pct_diff = (
+                                abs((float(current_rank) - float(interval_max_rank)) / float(interval_max_rank)) * 100.0
+                                if (current_rank != 'N/A' and interval_max_rank != 'N/A') else 0.0
                             )
-                            view = AlertButtons(ticker=ticker)
-                            await send_alert(alert, self.alerts_channel, self.dstate, view=view)
+                            if (current_rank != 'N/A' and interval_max_rank != 'N/A'
+                                    and pct_diff > 75.0 and current_rank < interval_max_rank
+                                    and interval_max_rank >= 10):
+                                alert = await self.build_popularity_mover(
+                                    ticker=ticker, popularity=popularity
+                                )
+                                view = AlertButtons(ticker=ticker)
+                                await send_alert(alert, self.alerts_channel, self.dstate, view=view)
+
+            self.bot.emitter.emit(NotificationEvent(
+                level=NotificationLevel.SUCCESS,
+                source=__name__,
+                job_name="send_popularity_movers",
+                message="Task completed successfully",
+                elapsed_seconds=time.monotonic() - _start,
+            ))
+        except Exception as exc:
+            self.bot.emitter.emit(NotificationEvent(
+                level=NotificationLevel.FAILURE,
+                source=__name__,
+                job_name="send_popularity_movers",
+                message=str(exc),
+                traceback=tb.format_exc(),
+                elapsed_seconds=time.monotonic() - _start,
+            ))
+            raise
 
     @tasks.loop(hours=1)
     async def send_politician_trade_alerts(self):
-        politician = self.stock_data.capitol_trades.politician(name='Nancy Pelosi')
-        trades = self.stock_data.capitol_trades.trades(pid=politician['politician_id'])
-        today = date_utils.format_date_mdy(datetime.date.today())
-        todays_trades = trades[trades['Published Date'].apply(lambda x: x == today)]
-        if not todays_trades.empty:
-            alert = PoliticianTradeAlert(data=PoliticianTradeAlertData(
-                politician=politician,
-                trades=todays_trades,
+        _start = time.monotonic()
+        try:
+            politician = self.stock_data.capitol_trades.politician(name='Nancy Pelosi')
+            trades = self.stock_data.capitol_trades.trades(pid=politician['politician_id'])
+            today = date_utils.format_date_mdy(datetime.date.today())
+            todays_trades = trades[trades['Published Date'].apply(lambda x: x == today)]
+            if not todays_trades.empty:
+                alert = PoliticianTradeAlert(data=PoliticianTradeAlertData(
+                    politician=politician,
+                    trades=todays_trades,
+                ))
+                view = PoliticianTradeButtons(politician=politician)
+                await send_alert(alert, self.alerts_channel, self.dstate, view=view)
+
+            self.bot.emitter.emit(NotificationEvent(
+                level=NotificationLevel.SUCCESS,
+                source=__name__,
+                job_name="send_politician_trade_alerts",
+                message="Task completed successfully",
+                elapsed_seconds=time.monotonic() - _start,
             ))
-            view = PoliticianTradeButtons(politician=politician)
-            await send_alert(alert, self.alerts_channel, self.dstate, view=view)
+        except Exception as exc:
+            self.bot.emitter.emit(NotificationEvent(
+                level=NotificationLevel.FAILURE,
+                source=__name__,
+                job_name="send_politician_trade_alerts",
+                message=str(exc),
+                traceback=tb.format_exc(),
+                elapsed_seconds=time.monotonic() - _start,
+            ))
+            raise
 
     @send_politician_trade_alerts.before_loop
     async def sleep_until_5m_interval(self):
@@ -350,7 +434,7 @@ class Alerts(commands.Cog):
         """Build a VolumeSpikeAlert for the given ticker."""
         quote = kwargs.pop('quote', await self.stock_data.schwab.get_quote(ticker=ticker))
         avg_vol_at_time = kwargs.pop('avg_vol_at_time', None)
-        time = kwargs.pop('time', None)
+        time_val = kwargs.pop('time', None)
         rvol_at_time = kwargs.pop('rvol_at_time', an.indicators.volume.rvol_at_time(
             data=self.stock_data.price_history.fetch_5m_price_history(ticker=ticker),
             today_data=await self.stock_data.schwab.get_5m_price_history(
@@ -359,12 +443,12 @@ class Alerts(commands.Cog):
             dt=datetime.datetime.now(),
         ))
 
-        if not avg_vol_at_time and not time:
+        if not avg_vol_at_time and not time_val:
             fivem_price_history = self.stock_data.price_history.fetch_5m_price_history(ticker=ticker)
-            avg_vol_at_time, time = an.indicators.volume.avg_vol_at_time(data=fivem_price_history)
+            avg_vol_at_time, time_val = an.indicators.volume.avg_vol_at_time(data=fivem_price_history)
 
-        if not isinstance(time, str):
-            time = time.strftime("%I:%M %p")
+        if not isinstance(time_val, str):
+            time_val = time_val.strftime("%I:%M %p")
 
         return VolumeSpikeAlert(data=VolumeSpikeData(
             ticker=ticker,
@@ -372,7 +456,7 @@ class Alerts(commands.Cog):
             quote=quote,
             rvol_at_time=rvol_at_time,
             avg_vol_at_time=avg_vol_at_time,
-            time=time,
+            time=time_val,
         ))
 
     async def build_popularity_mover(self, ticker: str, **kwargs) -> PopularityAlert:

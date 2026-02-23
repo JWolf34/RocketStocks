@@ -2,6 +2,8 @@ import datetime
 import logging
 import random
 import asyncio
+import time
+import traceback as tb
 import pandas as pd
 import discord
 from discord import app_commands
@@ -13,6 +15,8 @@ from rocketstocks.data.clients.news import News
 from rocketstocks.core.utils.market import market_utils
 from rocketstocks.core.utils.dates import date_utils
 from rocketstocks.core.config.settings import reports_channel_id, screeners_channel_id, guild_id
+from rocketstocks.core.notifications.config import NotificationLevel
+from rocketstocks.core.notifications.event import NotificationEvent
 
 from rocketstocks.core.content.models import (
     StockReportData,
@@ -78,59 +82,139 @@ class Reports(commands.Cog):
     @tasks.loop(minutes=30)
     async def post_popularity_screener(self):
         """Retrieve latest popularity, insert into database, and post screener"""
-        popular_stocks = self.stock_data.popularity.get_popular_stocks()
+        _start = time.monotonic()
+        try:
+            popular_stocks = self.stock_data.popularity.get_popular_stocks()
 
-        if not popular_stocks.empty:
-            popular_stocks.insert(loc=0,
-                                  column='datetime',
-                                  value=pd.Series([date_utils.round_down_nearest_minute(30)] * popular_stocks.shape[0]).values)
+            if not popular_stocks.empty:
+                popular_stocks.insert(loc=0,
+                                      column='datetime',
+                                      value=pd.Series([date_utils.round_down_nearest_minute(30)] * popular_stocks.shape[0]).values)
 
-            self.stock_data.popularity.insert_popularity(popular_stocks=popular_stocks)
+                self.stock_data.popularity.insert_popularity(popular_stocks=popular_stocks)
 
-            content = self.build_popularity_screener(popular_stocks=popular_stocks)
-            self._update_screener_watchlist(content)
-            await self.stock_data.update_alert_tickers(tickers=content.get_tickers()[:250], source='popularity')
+                content = self.build_popularity_screener(popular_stocks=popular_stocks)
+                self._update_screener_watchlist(content)
+                await self.stock_data.update_alert_tickers(tickers=content.get_tickers()[:250], source='popularity')
 
-            logger.info("Posting popularity screener")
-            view = PopularityScreenerButtons()
-            await send_screener(content, self.screeners_channel, self.dstate, view=view)
-        else:
-            logger.error("No popular stocks found when attempting to update screener")
+                logger.info("Posting popularity screener")
+                view = PopularityScreenerButtons()
+                await send_screener(content, self.screeners_channel, self.dstate, view=view)
+            else:
+                logger.error("No popular stocks found when attempting to update screener")
+
+            self.bot.emitter.emit(NotificationEvent(
+                level=NotificationLevel.SUCCESS,
+                source=__name__,
+                job_name="post_popularity_screener",
+                message="Task completed successfully",
+                elapsed_seconds=time.monotonic() - _start,
+            ))
+        except Exception as exc:
+            self.bot.emitter.emit(NotificationEvent(
+                level=NotificationLevel.FAILURE,
+                source=__name__,
+                job_name="post_popularity_screener",
+                message=str(exc),
+                traceback=tb.format_exc(),
+                elapsed_seconds=time.monotonic() - _start,
+            ))
+            raise
 
     @tasks.loop(minutes=5)
     async def post_volume_screener(self):
         """Retrieve latest unusual volume data and post screener"""
-        market_period = self.mutils.get_market_period()
-        if self.mutils.market_open_today() and market_period != 'EOD':
-            unusual_volume = self.stock_data.trading_view.get_unusual_volume_movers()
-            content = self.build_volume_screener(unusual_volume=unusual_volume)
-            self._update_screener_watchlist(content)
-            await self.stock_data.update_alert_tickers(tickers=content.get_tickers(), source='unusual-volume')
+        _start = time.monotonic()
+        try:
+            market_period = self.mutils.get_market_period()
+            if self.mutils.market_open_today() and market_period != 'EOD':
+                unusual_volume = self.stock_data.trading_view.get_unusual_volume_movers()
+                content = self.build_volume_screener(unusual_volume=unusual_volume)
+                self._update_screener_watchlist(content)
+                await self.stock_data.update_alert_tickers(tickers=content.get_tickers(), source='unusual-volume')
 
-            logger.info("Posting unusual volume screener")
-            view = VolumeScreenerButtons()
-            await send_screener(content, self.screeners_channel, self.dstate, view=view)
+                logger.info("Posting unusual volume screener")
+                view = VolumeScreenerButtons()
+                await send_screener(content, self.screeners_channel, self.dstate, view=view)
+
+            self.bot.emitter.emit(NotificationEvent(
+                level=NotificationLevel.SUCCESS,
+                source=__name__,
+                job_name="post_volume_screener",
+                message="Task completed successfully",
+                elapsed_seconds=time.monotonic() - _start,
+            ))
+        except Exception as exc:
+            self.bot.emitter.emit(NotificationEvent(
+                level=NotificationLevel.FAILURE,
+                source=__name__,
+                job_name="post_volume_screener",
+                message=str(exc),
+                traceback=tb.format_exc(),
+                elapsed_seconds=time.monotonic() - _start,
+            ))
+            raise
 
     @tasks.loop(minutes=5)
     async def post_volume_at_time_screener(self):
         """Retrieve latest volume spike data — used only to update alert_tickers"""
-        market_period = self.mutils.get_market_period()
-        if self.mutils.market_open_today() and market_period != 'EOD':
-            volume_spike = self.stock_data.trading_view.get_unusual_volume_at_time_movers()
-            await self.stock_data.update_alert_tickers(tickers=volume_spike['name'].to_list(), source='volume-spike')
+        _start = time.monotonic()
+        try:
+            market_period = self.mutils.get_market_period()
+            if self.mutils.market_open_today() and market_period != 'EOD':
+                volume_spike = self.stock_data.trading_view.get_unusual_volume_at_time_movers()
+                await self.stock_data.update_alert_tickers(tickers=volume_spike['name'].to_list(), source='volume-spike')
+
+            self.bot.emitter.emit(NotificationEvent(
+                level=NotificationLevel.SUCCESS,
+                source=__name__,
+                job_name="post_volume_at_time_screener",
+                message="Task completed successfully",
+                elapsed_seconds=time.monotonic() - _start,
+            ))
+        except Exception as exc:
+            self.bot.emitter.emit(NotificationEvent(
+                level=NotificationLevel.FAILURE,
+                source=__name__,
+                job_name="post_volume_at_time_screener",
+                message=str(exc),
+                traceback=tb.format_exc(),
+                elapsed_seconds=time.monotonic() - _start,
+            ))
+            raise
 
     @tasks.loop(minutes=5)
     async def post_gainer_screener(self):
         """Retrieve latest gainers data based on market period and post screener"""
-        market_period = self.mutils.get_market_period()
-        if self.mutils.market_open_today() and market_period != 'EOD':
-            content = self.build_gainer_screener(market_period=market_period)
-            self._update_screener_watchlist(content)
-            await self.stock_data.update_alert_tickers(tickers=content.get_tickers(), source='gainers')
+        _start = time.monotonic()
+        try:
+            market_period = self.mutils.get_market_period()
+            if self.mutils.market_open_today() and market_period != 'EOD':
+                content = self.build_gainer_screener(market_period=market_period)
+                self._update_screener_watchlist(content)
+                await self.stock_data.update_alert_tickers(tickers=content.get_tickers(), source='gainers')
 
-            logger.info(f"Sending {content.market_period} gainers screener")
-            view = GainerScreenerButtons(market_period=market_period)
-            await send_screener(content, self.screeners_channel, self.dstate, view=view)
+                logger.info(f"Sending {content.market_period} gainers screener")
+                view = GainerScreenerButtons(market_period=market_period)
+                await send_screener(content, self.screeners_channel, self.dstate, view=view)
+
+            self.bot.emitter.emit(NotificationEvent(
+                level=NotificationLevel.SUCCESS,
+                source=__name__,
+                job_name="post_gainer_screener",
+                message="Task completed successfully",
+                elapsed_seconds=time.monotonic() - _start,
+            ))
+        except Exception as exc:
+            self.bot.emitter.emit(NotificationEvent(
+                level=NotificationLevel.FAILURE,
+                source=__name__,
+                job_name="post_gainer_screener",
+                message=str(exc),
+                traceback=tb.format_exc(),
+                elapsed_seconds=time.monotonic() - _start,
+            ))
+            raise
 
     @post_gainer_screener.before_loop
     @post_volume_screener.before_loop
@@ -149,83 +233,143 @@ class Reports(commands.Cog):
     @tasks.loop(time=datetime.time(hour=12, minute=30, second=0))
     async def post_earnings_spotlight(self):
         """Find random ticker reporting earnings today and post spotlight report"""
-        if self.mutils.market_open_today():
-            earnings_today = self.stock_data.earnings.get_earnings_on_date(date=datetime.date.today())
-            spotlight_ticker = earnings_today['ticker'].iloc[random.randint(0, earnings_today['ticker'].size - 1)]
-            while not await self.stock_data.tickers.validate_ticker(ticker=spotlight_ticker):
+        _start = time.monotonic()
+        try:
+            if self.mutils.market_open_today():
+                earnings_today = self.stock_data.earnings.get_earnings_on_date(date=datetime.date.today())
                 spotlight_ticker = earnings_today['ticker'].iloc[random.randint(0, earnings_today['ticker'].size - 1)]
+                while not await self.stock_data.tickers.validate_ticker(ticker=spotlight_ticker):
+                    spotlight_ticker = earnings_today['ticker'].iloc[random.randint(0, earnings_today['ticker'].size - 1)]
 
-            content = await self.build_earnings_spotlight_report(ticker=spotlight_ticker)
-            logger.info(f"Posting today's earnings spotlight: '{content.ticker}'")
-            view = StockReportButtons(ticker=content.ticker)
-            await send_report(content, self.reports_channel, view=view)
+                content = await self.build_earnings_spotlight_report(ticker=spotlight_ticker)
+                logger.info(f"Posting today's earnings spotlight: '{content.ticker}'")
+                view = StockReportButtons(ticker=content.ticker)
+                await send_report(content, self.reports_channel, view=view)
+
+            self.bot.emitter.emit(NotificationEvent(
+                level=NotificationLevel.SUCCESS,
+                source=__name__,
+                job_name="post_earnings_spotlight",
+                message="Task completed successfully",
+                elapsed_seconds=time.monotonic() - _start,
+            ))
+        except Exception as exc:
+            self.bot.emitter.emit(NotificationEvent(
+                level=NotificationLevel.FAILURE,
+                source=__name__,
+                job_name="post_earnings_spotlight",
+                message=str(exc),
+                traceback=tb.format_exc(),
+                elapsed_seconds=time.monotonic() - _start,
+            ))
+            raise
 
     @tasks.loop(time=datetime.time(hour=12, minute=0, second=0))
     async def post_weekly_earnings(self):
         """Retrieve upcoming earnings data and post screener for earnings reporting this week"""
-        today = datetime.datetime.now(tz=date_utils.timezone()).date()
-        if today.weekday() == 0:
-            content = self.build_weekly_earnings_screener()
-            logger.info("Posting weekly earnings screener...")
-            files = [discord.File(content.filepath)]
-            await send_screener(content, self.screeners_channel, self.dstate, files=files)
+        _start = time.monotonic()
+        try:
+            today = datetime.datetime.now(tz=date_utils.timezone()).date()
+            if today.weekday() == 0:
+                content = self.build_weekly_earnings_screener()
+                logger.info("Posting weekly earnings screener...")
+                files = [discord.File(content.filepath)]
+                await send_screener(content, self.screeners_channel, self.dstate, files=files)
+
+            self.bot.emitter.emit(NotificationEvent(
+                level=NotificationLevel.SUCCESS,
+                source=__name__,
+                job_name="post_weekly_earnings",
+                message="Task completed successfully",
+                elapsed_seconds=time.monotonic() - _start,
+            ))
+        except Exception as exc:
+            self.bot.emitter.emit(NotificationEvent(
+                level=NotificationLevel.FAILURE,
+                source=__name__,
+                job_name="post_weekly_earnings",
+                message=str(exc),
+                traceback=tb.format_exc(),
+                elapsed_seconds=time.monotonic() - _start,
+            ))
+            raise
 
     @tasks.loop(time=datetime.time(hour=6, minute=0, second=0))
     async def update_earnings_calendar(self):
         """Update guild Discord calendar with upcoming earnings report dates for tickers on watchlists"""
-        logger.info("Creating calendar events for upcoming earnings dates")
-        gld = self.bot.get_guild(guild_id)
-        tickers = self.stock_data.watchlists.get_all_watchlist_tickers(no_personal=False, no_systemGenerated=True)
-        logger.debug(f"Identified {len(tickers)} watchlist tickers to create earnings events for")
+        _start = time.monotonic()
+        try:
+            logger.info("Creating calendar events for upcoming earnings dates")
+            gld = self.bot.get_guild(guild_id)
+            tickers = self.stock_data.watchlists.get_all_watchlist_tickers(no_personal=False, no_systemGenerated=True)
+            logger.debug(f"Identified {len(tickers)} watchlist tickers to create earnings events for")
 
-        curr_events = await gld.fetch_scheduled_events()
-        logger.debug(f"{len(curr_events)} events already in the calendar")
+            curr_events = await gld.fetch_scheduled_events()
+            logger.debug(f"{len(curr_events)} events already in the calendar")
 
-        for ticker in tickers:
-            earnings_info = self.stock_data.earnings.get_next_earnings_info(ticker)
-            if earnings_info:
-                event_exists = False
-                name = f"{ticker} Earnings"
+            for ticker in tickers:
+                earnings_info = self.stock_data.earnings.get_next_earnings_info(ticker)
+                if earnings_info:
+                    event_exists = False
+                    name = f"{ticker} Earnings"
 
-                if curr_events:
-                    for event in curr_events:
-                        if event.name == name:
-                            event_exists = True
-                            break
+                    if curr_events:
+                        for event in curr_events:
+                            if event.name == name:
+                                event_exists = True
+                                break
 
-                if not event_exists:
-                    release_time = "unspecified"
-                    start_time = datetime.datetime.combine(earnings_info['date'], datetime.datetime.strptime('1230', '%H%M').time()).astimezone()
-                    if "pre-market" in earnings_info['time'][0]:
-                        start_time = start_time.replace(hour=8, minute=30)
-                        release_time = "pre-market"
-                    elif "after-hours" in earnings_info['time'][0]:
-                        release_time = "after hours"
-                        start_time = start_time.replace(hour=15, minute=0)
+                    if not event_exists:
+                        release_time = "unspecified"
+                        start_time = datetime.datetime.combine(earnings_info['date'], datetime.datetime.strptime('1230', '%H%M').time()).astimezone()
+                        if "pre-market" in earnings_info['time'][0]:
+                            start_time = start_time.replace(hour=8, minute=30)
+                            release_time = "pre-market"
+                        elif "after-hours" in earnings_info['time'][0]:
+                            release_time = "after hours"
+                            start_time = start_time.replace(hour=15, minute=0)
 
-                    now = datetime.datetime.now().astimezone()
-                    if start_time > now:
-                        description = f"**Quarter:** {earnings_info['fiscal_quarter_ending']}\n"
-                        description += f"**Release Time:** {release_time}\n"
-                        description += f"**EPS Forecast:** {earnings_info['eps_forecast']}\n"
-                        description += f"**Last Year's EPS:** {earnings_info['last_year_eps']}\n"
-                        description += f"**Last Year's Report Date:** {earnings_info['last_year_rpt_dt']}\n"
+                        now = datetime.datetime.now().astimezone()
+                        if start_time > now:
+                            description = f"**Quarter:** {earnings_info['fiscal_quarter_ending']}\n"
+                            description += f"**Release Time:** {release_time}\n"
+                            description += f"**EPS Forecast:** {earnings_info['eps_forecast']}\n"
+                            description += f"**Last Year's EPS:** {earnings_info['last_year_eps']}\n"
+                            description += f"**Last Year's Report Date:** {earnings_info['last_year_rpt_dt']}\n"
 
-                        await gld.create_scheduled_event(
-                            name=name,
-                            description=description,
-                            start_time=start_time,
-                            end_time=start_time + datetime.timedelta(minutes=30),
-                            entity_type=discord.EntityType.external,
-                            privacy_level=discord.PrivacyLevel.guild_only,
-                            location="Wall Street",
-                        )
-                        logger.info(f"Earnings report '{name}' created at {start_time}")
+                            await gld.create_scheduled_event(
+                                name=name,
+                                description=description,
+                                start_time=start_time,
+                                end_time=start_time + datetime.timedelta(minutes=30),
+                                entity_type=discord.EntityType.external,
+                                privacy_level=discord.PrivacyLevel.guild_only,
+                                location="Wall Street",
+                            )
+                            logger.info(f"Earnings report '{name}' created at {start_time}")
+                        else:
+                            logger.info(f"Start time {start_time} for event '{name}' is in the past - skipping...")
                     else:
-                        logger.info(f"Start time {start_time} for event '{name}' is in the past - skipping...")
-                else:
-                    logger.info(f"Event '{name}' already exists in the calendar. Skipping...")
-        logger.info("Completed updating earnings calendar")
+                        logger.info(f"Event '{name}' already exists in the calendar. Skipping...")
+            logger.info("Completed updating earnings calendar")
+
+            self.bot.emitter.emit(NotificationEvent(
+                level=NotificationLevel.SUCCESS,
+                source=__name__,
+                job_name="update_earnings_calendar",
+                message="Task completed successfully",
+                elapsed_seconds=time.monotonic() - _start,
+            ))
+        except Exception as exc:
+            self.bot.emitter.emit(NotificationEvent(
+                level=NotificationLevel.FAILURE,
+                source=__name__,
+                job_name="update_earnings_calendar",
+                message=str(exc),
+                traceback=tb.format_exc(),
+                elapsed_seconds=time.monotonic() - _start,
+            ))
+            raise
 
     #####################
     # Slash commands    #
