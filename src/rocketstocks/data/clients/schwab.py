@@ -10,8 +10,8 @@ logger = logging.getLogger(__name__)
 
 
 class Schwab:
-    def __init__(self):
-        self.client = schwab.auth.easy_client(
+    def __init__(self, client=None):
+        self.client = client or schwab.auth.easy_client(
             api_key=secrets.schwab_api_key,
             app_secret=secrets.schwab_api_secret,
             callback_url="https://127.0.0.1:8182",

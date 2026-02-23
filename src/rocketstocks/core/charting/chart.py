@@ -5,6 +5,7 @@ import pandas_ta_classic as ta
 import mplfinance as mpf
 import random as rnd
 from rocketstocks.core.config.paths import validate_path
+from rocketstocks.core.charting.helpers import all_values_are_nan, recent_bars, ta_ylim, hline
 
 logger = logging.getLogger(__name__)
 
@@ -18,6 +19,8 @@ class Chart(object):
         logger.info(f"Charting {strategy.name} for ticker {ticker}")
 
         self.ticker = ticker
+        self._init_kwargs = kwargs  # saved for render()
+
         if isinstance(df, pd.DataFrame) and df.ta.datetime_ordered:
             self.df = df
             logger.debug(f"Loaded DataFrame {self.ticker} {self.df.shape}")
@@ -29,8 +32,12 @@ class Chart(object):
         self._validate_mpf_kwargs(**kwargs)
         self._validate_ta_strategy(strategy)
 
+    def render(self, **kwargs):
+        """Build and save the plot. Returns the file path."""
+        merged = {**self._init_kwargs, **kwargs}
         logger.info(f"Building plot for ticker '{self.ticker}'")
-        self._plot(**kwargs)
+        self._plot(**merged)
+        return getattr(self, "filepath", None)
 
     def _validate_ta_strategy(self, strategy):
         logger.info("Validating strategy to be charted")
@@ -78,7 +85,7 @@ class Chart(object):
     def _right_pad_df(self, rpad: int, delta_unit: str = "D", range_freq: str = "B"):
         if rpad > 0:
             dfpad = self.df[-rpad:].copy()
-            dfpad.iloc[:, :] = np.NaN
+            dfpad.iloc[:, :] = np.nan
 
             df_frequency = self.df.index.value_counts().mode()[0]
             freq_delta = pd.Timedelta(df_frequency, unit=delta_unit)
@@ -361,6 +368,7 @@ class Chart(object):
         savefilepath = f"{savepath}/{self.ticker}"
         validate_path(savefilepath)
         savefilepath = f"{savefilepath}/{filename}.png"
+        self.filepath = savefilepath
 
         save = dict(fname=savefilepath, dpi=500, pad_inches=0.25)
 

@@ -8,8 +8,8 @@ logger = logging.getLogger(__name__)
 class DiscordState:
     """Database-backed state tracker for Discord message IDs (screeners and alerts)."""
 
-    def __init__(self):
-        self.db = Postgres()
+    def __init__(self, db=None):
+        self.db = db or Postgres()
 
     # Screener message IDs #
 

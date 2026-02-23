@@ -3,16 +3,18 @@ import pathlib
 import logging
 import discord
 from discord.ext import commands
-from src.rocketstocks.data.stockdata import StockData
+from rocketstocks.data.stockdata import StockData
 from rocketstocks.data.db import Postgres
 from rocketstocks.core.config.secrets import secrets
 from rocketstocks.core.config.paths import validate_path, datapaths
 
 logger = logging.getLogger(__name__)
 
-intents = discord.Intents.default()
-bot = commands.Bot(command_prefix='$', intents=intents)
-token = secrets.discord_token
+
+def create_bot() -> commands.Bot:
+    """Create and return a new Bot instance."""
+    intents = discord.Intents.default()
+    return commands.Bot(command_prefix='$', intents=intents)
 
 
 def _attach_discord_file_handler() -> None:
@@ -25,7 +27,7 @@ def _attach_discord_file_handler() -> None:
             break
 
 
-async def load():
+async def load(bot: commands.Bot):
     """Dynamically load all cog modules from the bot/cogs/ package directory."""
     cogs_dir = pathlib.Path(__file__).parent / 'cogs'
     for filename in os.listdir(cogs_dir):
@@ -36,14 +38,15 @@ async def load():
 
 def run_bot(stock_data: StockData):
     _attach_discord_file_handler()
+    bot = create_bot()
 
     @bot.event
     async def on_ready():
         logger.info("RocketStocks bot ready!")
-        await load()
+        await load(bot)
         # Create database tables that do not exist and ensure data paths exist
         Postgres().create_tables()
         validate_path(datapaths.attachments_path)
 
     bot.stock_data = stock_data
-    bot.run(token)
+    bot.run(secrets.discord_token)
