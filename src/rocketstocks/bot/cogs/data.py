@@ -1,7 +1,7 @@
 import discord
 from discord import app_commands
 from discord.ext import commands
-from rocketstocks.data.stock_data import StockData
+from src.rocketstocks.data.stockdata import StockData
 from rocketstocks.core.config.settings import reports_channel_id
 from rocketstocks.core.config.paths import datapaths
 from rocketstocks.core.utils.formatting import ticker_string
@@ -39,14 +39,14 @@ class Data(commands.Cog):
         logger.info(f"/csv function called by user {interaction.user.name}")
 
         frequency = frequency.value
-        tickers, invalid_tickers = await self.stock_data.parse_valid_tickers(tickers)
+        tickers, invalid_tickers = await self.stock_data.tickers.parse_valid_tickers(tickers)
         logger.info(f"Data file(s) requested for {tickers}")
 
         for ticker in tickers:
             if frequency == 'daily':
-                data = self.stock_data.fetch_daily_price_history(ticker=ticker)
+                data = self.stock_data.price_history.fetch_daily_price_history(ticker=ticker)
             else:
-                data = self.stock_data.fetch_5m_price_history(ticker=ticker)
+                data = self.stock_data.price_history.fetch_5m_price_history(ticker=ticker)
             message = ""
             file = None
             if not data.empty:
@@ -75,7 +75,7 @@ class Data(commands.Cog):
         await interaction.response.defer(ephemeral=True)
         logger.info(f"/financials function called by user {interaction.user.name}")
 
-        tickers, invalid_tickers = await self.stock_data.parse_valid_tickers(tickers)
+        tickers, invalid_tickers = await self.stock_data.tickers.parse_valid_tickers(tickers)
         logger.info(f"Financials requested for {tickers}")
 
         for ticker in tickers:
@@ -122,7 +122,7 @@ class Data(commands.Cog):
     async def all_tickers_csv(self, interaction: discord.Interaction):
         """Return CSV file with contents of 'tickers' table in database"""
         logger.info(f"/all-tickers-into function called by user {interaction.user.name}")
-        data = self.stock_data.get_all_ticker_info()
+        data = self.stock_data.tickers.get_all_ticker_info()
         filepath = f"{datapaths.attachments_path}/all-tickers-info.csv"
         data.to_csv(filepath)
         csv_file = discord.File(filepath)
@@ -142,7 +142,7 @@ class Data(commands.Cog):
         await interaction.response.defer(ephemeral=True)
         logger.info(f"/earnings function called by user {interaction.user.name}")
 
-        tickers, invalid_tickers = await self.stock_data.parse_valid_tickers(tickers)
+        tickers, invalid_tickers = await self.stock_data.tickers.parse_valid_tickers(tickers)
         logger.info(f"Earnings requested for {tickers}")
 
         column_map = {'date': 'Date Reported',
@@ -191,7 +191,7 @@ class Data(commands.Cog):
         await interaction.response.defer()
         logger.info(f"/form function called by user {interaction.user.name}")
 
-        tickers, invalid_tickers = await self.stock_data.parse_valid_tickers(tickers)
+        tickers, invalid_tickers = await self.stock_data.tickers.parse_valid_tickers(tickers)
 
         message = ""
         for ticker in tickers:
@@ -224,7 +224,7 @@ class Data(commands.Cog):
         await interaction.response.defer(ephemeral=True)
         logger.info(f"/fundamentals function called by user {interaction.user.name}")
 
-        tickers, invalid_tickers = await self.stock_data.parse_valid_tickers(tickers)
+        tickers, invalid_tickers = await self.stock_data.tickers.parse_valid_tickers(tickers)
         logger.info(f"Fundamentals requested for tickers {tickers}")
 
         for ticker in tickers:
@@ -256,7 +256,7 @@ class Data(commands.Cog):
         await interaction.response.defer(ephemeral=True)
         logger.info(f"/options function called by user {interaction.user.name}")
 
-        tickers, invalid_tickers = await self.stock_data.parse_valid_tickers(tickers)
+        tickers, invalid_tickers = await self.stock_data.tickers.parse_valid_tickers(tickers)
         logger.info(f"Options chain(s) requested for tickers {tickers}")
 
         for ticker in tickers:
@@ -287,11 +287,11 @@ class Data(commands.Cog):
         await interaction.response.defer(ephemeral=True)
         logger.info(f"/popularity function called by user {interaction.user.name}")
 
-        tickers, invalid_tickers = await self.stock_data.parse_valid_tickers(tickers)
+        tickers, invalid_tickers = await self.stock_data.tickers.parse_valid_tickers(tickers)
         logger.info(f"Historical popularity requested for tickers {tickers}")
 
         for ticker in tickers:
-            data = self.stock_data.fetch_popularity(ticker=ticker)
+            data = self.stock_data.popularity.fetch_popularity(ticker=ticker)
             if not data.empty:
                 message = f"Popularity for `{ticker}`"
                 filepath = f"{datapaths.attachments_path}/{ticker}_popularity.csv"

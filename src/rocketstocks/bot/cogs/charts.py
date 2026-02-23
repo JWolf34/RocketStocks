@@ -3,7 +3,7 @@ from discord import app_commands
 from discord.ext import commands
 from discord.ext import tasks
 from rocketstocks.bot.cogs.watchlists import Watchlists
-from rocketstocks.data.stock_data import StockData
+from src.rocketstocks.data.stockdata import StockData
 from rocketstocks.core.charting.helpers import get_plot_timeframes, get_plot_types, get_plot_styles
 import logging
 

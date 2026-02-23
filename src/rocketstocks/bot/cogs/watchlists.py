@@ -1,7 +1,7 @@
 import discord
 from discord import app_commands
 from discord.ext import commands
-from rocketstocks.data.stock_data import StockData
+from src.rocketstocks.data.stockdata import StockData
 import logging
 
 logger = logging.getLogger(__name__)
@@ -35,7 +35,7 @@ class Watchlists(commands.Cog):
         await interaction.response.defer(ephemeral=True)
         logger.info(f"/add-tickers function called by user {interaction.user.name}")
 
-        tickers, invalid_tickers = await self.stock_data.parse_valid_tickers(tickers.upper())
+        tickers, invalid_tickers = await self.stock_data.tickers.parse_valid_tickers(tickers.upper())
 
         watchlist_id = watchlist if watchlist != 'personal' else str(interaction.user.id)
 
@@ -70,7 +70,7 @@ class Watchlists(commands.Cog):
         await interaction.response.defer(ephemeral=True)
         logger.info(f"/remove-tickers function called by user {interaction.user.name}")
 
-        tickers, invalid_tickers = await self.stock_data.parse_valid_tickers(tickers.upper())
+        tickers, invalid_tickers = await self.stock_data.tickers.parse_valid_tickers(tickers.upper())
 
         watchlist_id = watchlist if watchlist != 'personal' else str(interaction.user.id)
 
@@ -129,7 +129,7 @@ class Watchlists(commands.Cog):
         await interaction.response.defer(ephemeral=True)
         logger.info(f"/set-tickers function called by user {interaction.user.name}")
 
-        tickers, invalid_tickers = await self.stock_data.parse_valid_tickers(tickers.upper())
+        tickers, invalid_tickers = await self.stock_data.tickers.parse_valid_tickers(tickers.upper())
 
         watchlist_id = watchlist if watchlist != 'personal' else str(interaction.user.id)
 
@@ -160,7 +160,7 @@ class Watchlists(commands.Cog):
         watchlist_id = watchlist if watchlist != 'personal' else str(interaction.user.id)
 
         if not self.watchlists.validate_watchlist(watchlist_id=watchlist_id):
-            tickers, invalid_tickers = await self.stock_data.parse_valid_tickers(tickers.upper())
+            tickers, invalid_tickers = await self.stock_data.tickers.parse_valid_tickers(tickers.upper())
             self.watchlists.create_watchlist(watchlist_id=watchlist, tickers=tickers, systemGenerated=False)
             logger.info(f"Watchlist '{watchlist}' set to {tickers}")
 

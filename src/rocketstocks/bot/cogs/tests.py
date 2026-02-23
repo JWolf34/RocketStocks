@@ -1,7 +1,7 @@
 import discord
 from discord import app_commands
 from discord.ext import commands
-from rocketstocks.data.stock_data import StockData
+from src.rocketstocks.data.stockdata import StockData
 from rocketstocks.core.utils.market import market_utils
 from rocketstocks.core.config.settings import screeners_channel_id
 import logging
@@ -35,7 +35,8 @@ class Tests(commands.Cog):
     async def force_update_5m_data(self, interaction: discord.Interaction):
         await interaction.response.defer(ephemeral=True)
         logger.info(f"/force-update-5m-data function called by user {interaction.user.name}")
-        await self.stock_data.update_5m_price_history()
+        tickers = self.stock_data.tickers.get_all_tickers()
+        await self.stock_data.price_history.update_5m_price_history(tickers)
         await interaction.followup.send("5m price history table updated")
 
     @app_commands.checks.has_permissions(administrator=True)
@@ -43,7 +44,8 @@ class Tests(commands.Cog):
     async def force_update_daily_data(self, interaction: discord.Interaction):
         await interaction.response.defer(ephemeral=True)
         logger.info(f"/force-update-daily-data function called by user {interaction.user.name}")
-        await self.stock_data.update_daily_price_history()
+        tickers = self.stock_data.tickers.get_all_tickers()
+        await self.stock_data.price_history.update_daily_price_history(tickers)
         await interaction.followup.send("Daily price history table updated")
 
 

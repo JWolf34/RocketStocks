@@ -3,7 +3,7 @@ import pathlib
 import logging
 import discord
 from discord.ext import commands
-from rocketstocks.data.stock_data import StockData
+from src.rocketstocks.data.stockdata import StockData
 from rocketstocks.data.db import Postgres
 from rocketstocks.core.config.secrets import secrets
 from rocketstocks.core.config.paths import validate_path, datapaths

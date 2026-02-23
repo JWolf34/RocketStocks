@@ -2,7 +2,7 @@ import logging
 import threading
 
 from rocketstocks.core.utils.logging_config import setup_logging
-from rocketstocks.data.stock_data import StockData
+from src.rocketstocks.data.stockdata import StockData
 from rocketstocks.bot import bot as Discord
 from rocketstocks.core.scheduler import jobs as scheduler
 

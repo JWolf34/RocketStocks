@@ -7,7 +7,7 @@ import discord
 from discord import app_commands
 from discord.ext import commands, tasks
 
-from rocketstocks.data.stock_data import StockData
+from src.rocketstocks.data.stockdata import StockData
 from rocketstocks.data.discord_state import DiscordState
 from rocketstocks.data.clients.news import News
 from rocketstocks.core.utils.market import market_utils
@@ -85,7 +85,7 @@ class Reports(commands.Cog):
                                   column='datetime',
                                   value=pd.Series([date_utils.round_down_nearest_minute(30)] * popular_stocks.shape[0]).values)
 
-            self.stock_data.insert_popularity(popular_stocks=popular_stocks)
+            self.stock_data.popularity.insert_popularity(popular_stocks=popular_stocks)
 
             content = self.build_popularity_screener(popular_stocks=popular_stocks)
             self._update_screener_watchlist(content)
@@ -152,7 +152,7 @@ class Reports(commands.Cog):
         if self.mutils.market_open_today():
             earnings_today = self.stock_data.earnings.get_earnings_on_date(date=datetime.date.today())
             spotlight_ticker = earnings_today['ticker'].iloc[random.randint(0, earnings_today['ticker'].size - 1)]
-            while not await self.stock_data.validate_ticker(ticker=spotlight_ticker):
+            while not await self.stock_data.tickers.validate_ticker(ticker=spotlight_ticker):
                 spotlight_ticker = earnings_today['ticker'].iloc[random.randint(0, earnings_today['ticker'].size - 1)]
 
             content = await self.build_earnings_spotlight_report(ticker=spotlight_ticker)
@@ -281,7 +281,7 @@ class Reports(commands.Cog):
         await interaction.response.defer(ephemeral=True)
         logger.info(f"/report function called by user {interaction.user.name}")
 
-        tickers, invalid_tickers = await self.stock_data.parse_valid_tickers(tickers.upper())
+        tickers, invalid_tickers = await self.stock_data.tickers.parse_valid_tickers(tickers.upper())
         logger.info(f"Reports requested for tickers {tickers}. Invalid tickers: {invalid_tickers}")
         message = None
         for ticker in tickers:
@@ -438,9 +438,9 @@ class Reports(commands.Cog):
         return GainerScreener(data=GainerScreenerData(market_period=market_period, gainers=gainers))
 
     async def build_stock_report(self, ticker: str, **kwargs) -> StockReport:
-        ticker_info = kwargs.pop('ticker_info', self.stock_data.get_ticker_info(ticker=ticker))
-        daily_price_history = kwargs.pop('daily_price_history', self.stock_data.fetch_daily_price_history(ticker=ticker))
-        popularity = kwargs.pop('popularity', self.stock_data.fetch_popularity(ticker=ticker))
+        ticker_info = kwargs.pop('ticker_info', self.stock_data.tickers.get_ticker_info(ticker=ticker))
+        daily_price_history = kwargs.pop('daily_price_history', self.stock_data.price_history.fetch_daily_price_history(ticker=ticker))
+        popularity = kwargs.pop('popularity', self.stock_data.popularity.fetch_popularity(ticker=ticker))
         recent_sec_filings = kwargs.pop('recent_sec_filings', self.stock_data.sec.get_recent_filings(ticker=ticker))
         historical_earnings = kwargs.pop('historical_earnings', self.stock_data.earnings.get_historical_earnings(ticker=ticker))
         next_earnings_info = kwargs.pop('next_earnings_info', self.stock_data.earnings.get_next_earnings_info(ticker=ticker))
@@ -459,8 +459,8 @@ class Reports(commands.Cog):
         ))
 
     async def build_earnings_spotlight_report(self, ticker: str, **kwargs) -> EarningsSpotlightReport:
-        ticker_info = self.stock_data.get_ticker_info(ticker=ticker)
-        daily_price_history = self.stock_data.fetch_daily_price_history(ticker=ticker)
+        ticker_info = self.stock_data.tickers.get_ticker_info(ticker=ticker)
+        daily_price_history = self.stock_data.price_history.fetch_daily_price_history(ticker=ticker)
         next_earnings_info = self.stock_data.earnings.get_next_earnings_info(ticker=ticker)
         historical_earnings = self.stock_data.earnings.get_historical_earnings(ticker=ticker)
         quote = await self.stock_data.schwab.get_quote(ticker=ticker)

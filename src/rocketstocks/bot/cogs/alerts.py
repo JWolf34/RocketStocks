@@ -4,7 +4,7 @@ import asyncio
 import numpy as np
 from discord.ext import commands, tasks
 
-from rocketstocks.data.stock_data import StockData
+from src.rocketstocks.data.stockdata import StockData
 from rocketstocks.data.discord_state import DiscordState
 from rocketstocks.core.utils.market import market_utils
 from rocketstocks.core.utils.dates import date_utils
@@ -141,7 +141,7 @@ class Alerts(commands.Cog):
                 recent_sec_filings = self.stock_data.sec.get_recent_filings(ticker=ticker)
                 alert = SECFilingMoverAlert(data=SECFilingData(
                     ticker=ticker,
-                    ticker_info=self.stock_data.get_ticker_info(ticker=ticker),
+                    ticker_info=self.stock_data.tickers.get_ticker_info(ticker=ticker),
                     quote=quotes[ticker],
                     recent_sec_filings=recent_sec_filings,
                 ))
@@ -173,7 +173,7 @@ class Alerts(commands.Cog):
         logger.info("Processing unusual volume movers")
 
         for ticker, quote in quotes.items():
-            daily_price_history = self.stock_data.fetch_daily_price_history(ticker=ticker)
+            daily_price_history = self.stock_data.price_history.fetch_daily_price_history(ticker=ticker)
             if not daily_price_history.empty:
                 periods = 10
                 curr_volume = quote['quote']['totalVolume']
@@ -197,7 +197,7 @@ class Alerts(commands.Cog):
 
         for ticker, quote in quotes.items():
             now = datetime.datetime.now()
-            fivem_price_history = self.stock_data.fetch_5m_price_history(ticker=ticker)
+            fivem_price_history = self.stock_data.price_history.fetch_5m_price_history(ticker=ticker)
 
             if not fivem_price_history.empty:
                 periods = 10
@@ -234,7 +234,7 @@ class Alerts(commands.Cog):
         pop_stocks = self.stock_data.popularity.get_popular_stocks(num_stocks=100)['ticker'].to_list()
 
         for ticker in pop_stocks:
-            popularity = self.stock_data.fetch_popularity(ticker=ticker)
+            popularity = self.stock_data.popularity.fetch_popularity(ticker=ticker)
             if not popularity.empty:
                 now = date_utils.round_down_nearest_minute(30)
                 popularity_today = popularity[(popularity['datetime'] == now)]
@@ -303,7 +303,7 @@ class Alerts(commands.Cog):
         )
         return EarningsMoverAlert(data=EarningsMoverData(
             ticker=ticker,
-            ticker_info=self.stock_data.get_ticker_info(ticker=ticker),
+            ticker_info=self.stock_data.tickers.get_ticker_info(ticker=ticker),
             quote=quote,
             next_earnings_info=next_earnings_info,
             historical_earnings=historical_earnings,
@@ -324,7 +324,7 @@ class Alerts(commands.Cog):
         watchlist = kwargs.pop('watchlist', get_ticker_watchlist(ticker=ticker))
         return WatchlistMoverAlert(data=WatchlistMoverData(
             ticker=ticker,
-            ticker_info=self.stock_data.get_ticker_info(ticker=ticker),
+            ticker_info=self.stock_data.tickers.get_ticker_info(ticker=ticker),
             quote=quote,
             watchlist=watchlist,
         ))
@@ -333,14 +333,14 @@ class Alerts(commands.Cog):
         """Build a VolumeMoverAlert for the given ticker."""
         quote = kwargs.pop('quote', await self.stock_data.schwab.get_quote(ticker=ticker))
         daily_price_history = kwargs.pop(
-            'daily_price_history', self.stock_data.fetch_daily_price_history(ticker=ticker)
+            'daily_price_history', self.stock_data.price_history.fetch_daily_price_history(ticker=ticker)
         )
         rvol = kwargs.pop('rvol', an.indicators.volume.rvol(
             data=daily_price_history, curr_volume=quote['quote']['totalVolume']
         ))
         return VolumeMoverAlert(data=VolumeMoverData(
             ticker=ticker,
-            ticker_info=self.stock_data.get_ticker_info(ticker=ticker),
+            ticker_info=self.stock_data.tickers.get_ticker_info(ticker=ticker),
             quote=quote,
             rvol=rvol,
             daily_price_history=daily_price_history,
@@ -352,7 +352,7 @@ class Alerts(commands.Cog):
         avg_vol_at_time = kwargs.pop('avg_vol_at_time', None)
         time = kwargs.pop('time', None)
         rvol_at_time = kwargs.pop('rvol_at_time', an.indicators.volume.rvol_at_time(
-            data=self.stock_data.fetch_5m_price_history(ticker=ticker),
+            data=self.stock_data.price_history.fetch_5m_price_history(ticker=ticker),
             today_data=await self.stock_data.schwab.get_5m_price_history(
                 ticker=ticker, start_datetime=datetime.datetime.now()
             ),
@@ -360,7 +360,7 @@ class Alerts(commands.Cog):
         ))
 
         if not avg_vol_at_time and not time:
-            fivem_price_history = self.stock_data.fetch_5m_price_history(ticker=ticker)
+            fivem_price_history = self.stock_data.price_history.fetch_5m_price_history(ticker=ticker)
             avg_vol_at_time, time = an.indicators.volume.avg_vol_at_time(data=fivem_price_history)
 
         if not isinstance(time, str):
@@ -368,7 +368,7 @@ class Alerts(commands.Cog):
 
         return VolumeSpikeAlert(data=VolumeSpikeData(
             ticker=ticker,
-            ticker_info=self.stock_data.get_ticker_info(ticker=ticker),
+            ticker_info=self.stock_data.tickers.get_ticker_info(ticker=ticker),
             quote=quote,
             rvol_at_time=rvol_at_time,
             avg_vol_at_time=avg_vol_at_time,
@@ -378,10 +378,10 @@ class Alerts(commands.Cog):
     async def build_popularity_mover(self, ticker: str, **kwargs) -> PopularityAlert:
         """Build a PopularityAlert for the given ticker."""
         quote = kwargs.pop('quote', await self.stock_data.schwab.get_quote(ticker=ticker))
-        popularity = kwargs.pop('popularity', self.stock_data.fetch_popularity(ticker=ticker))
+        popularity = kwargs.pop('popularity', self.stock_data.popularity.fetch_popularity(ticker=ticker))
         return PopularityAlert(data=PopularityAlertData(
             ticker=ticker,
-            ticker_info=self.stock_data.get_ticker_info(ticker=ticker),
+            ticker_info=self.stock_data.tickers.get_ticker_info(ticker=ticker),
             quote=quote,
             popularity=popularity,
         ))
