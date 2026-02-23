@@ -16,6 +16,8 @@ def _make_bot(channel_id=999):
     channel.send = AsyncMock()
     bot.get_channel.return_value = channel
     bot.wait_until_ready = AsyncMock()
+    # iter_channels yields (guild_id, channel) tuples
+    bot.iter_channels.return_value = [(channel_id, channel)]
     return bot, channel
 
 
@@ -59,8 +61,7 @@ class TestDrainNotifications:
             ))
 
         # Manually call the drain coroutine
-        with patch("rocketstocks.bot.cogs.notifications.notifications_channel_id", 999):
-            await Notifications.drain_notifications.coro(cog)
+        await Notifications.drain_notifications.coro(cog)
 
         assert channel.send.call_count == 2
 
@@ -84,8 +85,7 @@ class TestDrainNotifications:
             message="error",
         ))
 
-        with patch("rocketstocks.bot.cogs.notifications.notifications_channel_id", 999):
-            await Notifications.drain_notifications.coro(cog)
+        await Notifications.drain_notifications.coro(cog)
 
         channel.send.assert_not_called()
 
@@ -109,17 +109,16 @@ class TestDrainNotifications:
             level=NotificationLevel.FAILURE, source="test", job_name="fail", message="error"
         ))
 
-        with patch("rocketstocks.bot.cogs.notifications.notifications_channel_id", 999):
-            await Notifications.drain_notifications.coro(cog)
+        await Notifications.drain_notifications.coro(cog)
 
         # Only failure should be sent
         assert channel.send.call_count == 1
 
     @pytest.mark.asyncio
-    async def test_no_send_when_channel_not_found(self):
+    async def test_no_send_when_no_channels_configured(self):
         from rocketstocks.bot.cogs.notifications import Notifications
         bot, channel = _make_bot()
-        bot.get_channel.return_value = None  # channel not found
+        bot.iter_channels.return_value = []  # no channels configured
         emitter = EventEmitter()
         config = NotificationConfig(filter=NotificationFilter.ALL)
 
@@ -133,8 +132,7 @@ class TestDrainNotifications:
             level=NotificationLevel.SUCCESS, source="test", job_name="job", message="ok"
         ))
 
-        with patch("rocketstocks.bot.cogs.notifications.notifications_channel_id", 999):
-            await Notifications.drain_notifications.coro(cog)
+        await Notifications.drain_notifications.coro(cog)
 
         channel.send.assert_not_called()
 
@@ -156,8 +154,7 @@ class TestDrainNotifications:
                 level=NotificationLevel.SUCCESS, source="test", job_name=f"job{i}", message="ok"
             ))
 
-        with patch("rocketstocks.bot.cogs.notifications.notifications_channel_id", 999):
-            await Notifications.drain_notifications.coro(cog)
+        await Notifications.drain_notifications.coro(cog)
 
         assert len(cog._recent_events) == 5
 

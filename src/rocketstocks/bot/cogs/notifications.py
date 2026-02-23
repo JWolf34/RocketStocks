@@ -5,7 +5,7 @@ import discord
 from discord import app_commands
 from discord.ext import commands, tasks
 
-from rocketstocks.core.config.settings import notifications_channel_id
+from rocketstocks.data.channel_config import NOTIFICATIONS
 from rocketstocks.core.notifications.config import NotificationConfig, NotificationFilter, NotificationLevel
 from rocketstocks.core.notifications.emitter import EventEmitter
 from rocketstocks.core.notifications.event import NotificationEvent
@@ -52,20 +52,22 @@ class Notifications(commands.Cog):
 
     @tasks.loop(seconds=10)
     async def drain_notifications(self):
-        """Drain the event queue and post filtered embeds to the notifications channel."""
-        channel = self.bot.get_channel(notifications_channel_id)
-        if channel is None:
+        """Drain the event queue and post filtered embeds to all configured notification channels."""
+        events = self.emitter.drain()
+        if not events:
             return
 
-        events = self.emitter.drain()
         for event in events:
             self._recent_events.append(event)
-            if self.config.should_notify(event):
-                embed = format_notification(event)
-                try:
-                    await channel.send(embed=embed)
-                except discord.HTTPException as exc:
-                    logger.error(f"Failed to send notification embed: {exc}")
+
+        for _, channel in self.bot.iter_channels(NOTIFICATIONS):
+            for event in events:
+                if self.config.should_notify(event):
+                    embed = format_notification(event)
+                    try:
+                        await channel.send(embed=embed)
+                    except discord.HTTPException as exc:
+                        logger.error(f"Failed to send notification embed: {exc}")
 
     @tasks.loop(seconds=30)
     async def check_latency(self):

@@ -10,11 +10,11 @@ from discord import app_commands
 from discord.ext import commands, tasks
 
 from src.rocketstocks.data.stockdata import StockData
+from rocketstocks.data.channel_config import REPORTS, SCREENERS
 from rocketstocks.data.discord_state import DiscordState
 from rocketstocks.data.clients.news import News
 from rocketstocks.core.utils.market import market_utils
 from rocketstocks.core.utils.dates import date_utils
-from rocketstocks.core.config.settings import reports_channel_id, screeners_channel_id, guild_id
 from rocketstocks.core.notifications.config import NotificationLevel
 from rocketstocks.core.notifications.event import NotificationEvent
 
@@ -57,9 +57,6 @@ class Reports(commands.Cog):
         self.mutils = market_utils()
         self.dstate = DiscordState()
 
-        self.reports_channel = self.bot.get_channel(reports_channel_id)
-        self.screeners_channel = self.bot.get_channel(screeners_channel_id)
-
         self.post_popularity_screener.start()
         self.post_volume_screener.start()
         self.post_volume_at_time_screener.start()
@@ -99,7 +96,8 @@ class Reports(commands.Cog):
 
                 logger.info("Posting popularity screener")
                 view = PopularityScreenerButtons()
-                await send_screener(content, self.screeners_channel, self.dstate, view=view)
+                for _, channel in self.bot.iter_channels(SCREENERS):
+                    await send_screener(content, channel, self.dstate, view=view)
             else:
                 logger.error("No popular stocks found when attempting to update screener")
 
@@ -135,7 +133,8 @@ class Reports(commands.Cog):
 
                 logger.info("Posting unusual volume screener")
                 view = VolumeScreenerButtons()
-                await send_screener(content, self.screeners_channel, self.dstate, view=view)
+                for _, channel in self.bot.iter_channels(SCREENERS):
+                    await send_screener(content, channel, self.dstate, view=view)
 
             self.bot.emitter.emit(NotificationEvent(
                 level=NotificationLevel.SUCCESS,
@@ -196,7 +195,8 @@ class Reports(commands.Cog):
 
                 logger.info(f"Sending {content.market_period} gainers screener")
                 view = GainerScreenerButtons(market_period=market_period)
-                await send_screener(content, self.screeners_channel, self.dstate, view=view)
+                for _, channel in self.bot.iter_channels(SCREENERS):
+                    await send_screener(content, channel, self.dstate, view=view)
 
             self.bot.emitter.emit(NotificationEvent(
                 level=NotificationLevel.SUCCESS,
@@ -244,7 +244,8 @@ class Reports(commands.Cog):
                 content = await self.build_earnings_spotlight_report(ticker=spotlight_ticker)
                 logger.info(f"Posting today's earnings spotlight: '{content.ticker}'")
                 view = StockReportButtons(ticker=content.ticker)
-                await send_report(content, self.reports_channel, view=view)
+                for _, channel in self.bot.iter_channels(REPORTS):
+                    await send_report(content, channel, view=view)
 
             self.bot.emitter.emit(NotificationEvent(
                 level=NotificationLevel.SUCCESS,
@@ -274,7 +275,8 @@ class Reports(commands.Cog):
                 content = self.build_weekly_earnings_screener()
                 logger.info("Posting weekly earnings screener...")
                 files = [discord.File(content.filepath)]
-                await send_screener(content, self.screeners_channel, self.dstate, files=files)
+                for _, channel in self.bot.iter_channels(SCREENERS):
+                    await send_screener(content, channel, self.dstate, files=files)
 
             self.bot.emitter.emit(NotificationEvent(
                 level=NotificationLevel.SUCCESS,
@@ -300,57 +302,57 @@ class Reports(commands.Cog):
         _start = time.monotonic()
         try:
             logger.info("Creating calendar events for upcoming earnings dates")
-            gld = self.bot.get_guild(guild_id)
             tickers = self.stock_data.watchlists.get_all_watchlist_tickers(no_personal=False, no_systemGenerated=True)
             logger.debug(f"Identified {len(tickers)} watchlist tickers to create earnings events for")
 
-            curr_events = await gld.fetch_scheduled_events()
-            logger.debug(f"{len(curr_events)} events already in the calendar")
+            for gld in self.bot.guilds:
+                curr_events = await gld.fetch_scheduled_events()
+                logger.debug(f"Guild '{gld.name}': {len(curr_events)} events already in the calendar")
 
-            for ticker in tickers:
-                earnings_info = self.stock_data.earnings.get_next_earnings_info(ticker)
-                if earnings_info:
-                    event_exists = False
-                    name = f"{ticker} Earnings"
+                for ticker in tickers:
+                    earnings_info = self.stock_data.earnings.get_next_earnings_info(ticker)
+                    if earnings_info:
+                        event_exists = False
+                        name = f"{ticker} Earnings"
 
-                    if curr_events:
-                        for event in curr_events:
-                            if event.name == name:
-                                event_exists = True
-                                break
+                        if curr_events:
+                            for event in curr_events:
+                                if event.name == name:
+                                    event_exists = True
+                                    break
 
-                    if not event_exists:
-                        release_time = "unspecified"
-                        start_time = datetime.datetime.combine(earnings_info['date'], datetime.datetime.strptime('1230', '%H%M').time()).astimezone()
-                        if "pre-market" in earnings_info['time'][0]:
-                            start_time = start_time.replace(hour=8, minute=30)
-                            release_time = "pre-market"
-                        elif "after-hours" in earnings_info['time'][0]:
-                            release_time = "after hours"
-                            start_time = start_time.replace(hour=15, minute=0)
+                        if not event_exists:
+                            release_time = "unspecified"
+                            start_time = datetime.datetime.combine(earnings_info['date'], datetime.datetime.strptime('1230', '%H%M').time()).astimezone()
+                            if "pre-market" in earnings_info['time'][0]:
+                                start_time = start_time.replace(hour=8, minute=30)
+                                release_time = "pre-market"
+                            elif "after-hours" in earnings_info['time'][0]:
+                                release_time = "after hours"
+                                start_time = start_time.replace(hour=15, minute=0)
 
-                        now = datetime.datetime.now().astimezone()
-                        if start_time > now:
-                            description = f"**Quarter:** {earnings_info['fiscal_quarter_ending']}\n"
-                            description += f"**Release Time:** {release_time}\n"
-                            description += f"**EPS Forecast:** {earnings_info['eps_forecast']}\n"
-                            description += f"**Last Year's EPS:** {earnings_info['last_year_eps']}\n"
-                            description += f"**Last Year's Report Date:** {earnings_info['last_year_rpt_dt']}\n"
+                            now = datetime.datetime.now().astimezone()
+                            if start_time > now:
+                                description = f"**Quarter:** {earnings_info['fiscal_quarter_ending']}\n"
+                                description += f"**Release Time:** {release_time}\n"
+                                description += f"**EPS Forecast:** {earnings_info['eps_forecast']}\n"
+                                description += f"**Last Year's EPS:** {earnings_info['last_year_eps']}\n"
+                                description += f"**Last Year's Report Date:** {earnings_info['last_year_rpt_dt']}\n"
 
-                            await gld.create_scheduled_event(
-                                name=name,
-                                description=description,
-                                start_time=start_time,
-                                end_time=start_time + datetime.timedelta(minutes=30),
-                                entity_type=discord.EntityType.external,
-                                privacy_level=discord.PrivacyLevel.guild_only,
-                                location="Wall Street",
-                            )
-                            logger.info(f"Earnings report '{name}' created at {start_time}")
+                                await gld.create_scheduled_event(
+                                    name=name,
+                                    description=description,
+                                    start_time=start_time,
+                                    end_time=start_time + datetime.timedelta(minutes=30),
+                                    entity_type=discord.EntityType.external,
+                                    privacy_level=discord.PrivacyLevel.guild_only,
+                                    location="Wall Street",
+                                )
+                                logger.info(f"Earnings report '{name}' created at {start_time} for guild '{gld.name}'")
+                            else:
+                                logger.info(f"Start time {start_time} for event '{name}' is in the past - skipping...")
                         else:
-                            logger.info(f"Start time {start_time} for event '{name}' is in the past - skipping...")
-                    else:
-                        logger.info(f"Event '{name}' already exists in the calendar. Skipping...")
+                            logger.info(f"Event '{name}' already exists in the calendar. Skipping...")
             logger.info("Completed updating earnings calendar")
 
             self.bot.emitter.emit(NotificationEvent(
@@ -402,11 +404,15 @@ class Reports(commands.Cog):
         if not tickers:
             await interaction.followup.send("No tickers on the watchlist. Use /addticker to build a watchlist.", ephemeral=True)
         else:
+            channel = self.bot.get_channel_for_guild(interaction.guild_id, REPORTS)
+            if channel is None:
+                await interaction.followup.send("Use `/setup` to configure the reports channel.", ephemeral=True)
+                return
             message = None
             for ticker in tickers:
                 content = await self.build_stock_report(ticker=ticker)
                 view = StockReportButtons(ticker=content.ticker)
-                message = await send_report(content, self.reports_channel, interaction=interaction,
+                message = await send_report(content, channel, interaction=interaction,
                                             visibility=visibility.value, view=view)
 
             logger.info("Reports have been posted")
@@ -427,11 +433,15 @@ class Reports(commands.Cog):
 
         tickers, invalid_tickers = await self.stock_data.tickers.parse_valid_tickers(tickers.upper())
         logger.info(f"Reports requested for tickers {tickers}. Invalid tickers: {invalid_tickers}")
+        channel = self.bot.get_channel_for_guild(interaction.guild_id, REPORTS)
+        if channel is None and visibility.value == 'public':
+            await interaction.followup.send("Use `/setup` to configure the reports channel.", ephemeral=True)
+            return
         message = None
         for ticker in tickers:
             content = await self.build_stock_report(ticker=ticker)
             view = StockReportButtons(ticker=content.ticker)
-            message = await send_report(content, self.reports_channel, interaction=interaction,
+            message = await send_report(content, channel, interaction=interaction,
                                         visibility=visibility.value, view=view)
 
         follow_up = ""
@@ -492,10 +502,14 @@ class Reports(commands.Cog):
         filter_val = self.stock_data.popularity.get_filter(source)
 
         if not popular_stocks.empty:
+            channel = self.bot.get_channel_for_guild(interaction.guild_id, REPORTS)
+            if channel is None and visibility.value == 'public':
+                await interaction.followup.send("Use `/setup` to configure the reports channel.", ephemeral=True)
+                return
             content = PopularityReport(data=PopularityReportData(popular_stocks=popular_stocks, filter=filter_val))
             view = PopularityReportButtons()
             files = [discord.File(content.filepath)]
-            message = await send_report(content, self.reports_channel, interaction=interaction,
+            message = await send_report(content, channel, interaction=interaction,
                                         visibility=visibility.value, view=view, files=files)
             follow_up = f"[Posted popularity reports!]({message.jump_url})"
             await interaction.followup.send(follow_up, ephemeral=True)
@@ -528,10 +542,14 @@ class Reports(commands.Cog):
         politician = self.stock_data.capitol_trades.politician(name=politician_name)
 
         if politician:
+            channel = self.bot.get_channel_for_guild(interaction.guild_id, REPORTS)
+            if channel is None and visibility.value == 'public':
+                await interaction.followup.send("Use `/setup` to configure the reports channel.", ephemeral=True)
+                return
             content = self.build_politician_report(politician=politician)
             view = PoliticianReportButtons(pid=politician['politician_id'])
             files = [discord.File(content.filepath)]
-            message = await send_report(content, self.reports_channel, interaction=interaction,
+            message = await send_report(content, channel, interaction=interaction,
                                         visibility=visibility.value, view=view, files=files)
             follow_up = f"Posted report on [{politician['name']}]({message.jump_url})"
             await interaction.followup.send(follow_up, ephemeral=True)

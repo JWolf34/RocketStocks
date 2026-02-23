@@ -2,7 +2,7 @@ import discord
 from discord import app_commands
 from discord.ext import commands
 from src.rocketstocks.data.stockdata import StockData
-from rocketstocks.core.config.settings import reports_channel_id
+from rocketstocks.data.channel_config import REPORTS
 from rocketstocks.core.config.paths import datapaths
 from rocketstocks.core.utils.formatting import ticker_string
 from rocketstocks.core.utils.dates import date_utils
@@ -20,7 +20,6 @@ class Data(commands.Cog):
     def __init__(self, bot: commands.Bot, stock_data: StockData):
         self.bot = bot
         self.stock_data = stock_data
-        self.reports_channel = self.bot.get_channel(reports_channel_id)
 
     @commands.Cog.listener()
     async def on_ready(self):
@@ -172,7 +171,11 @@ class Data(commands.Cog):
             if visibility.value == "private":
                 message = await interaction.user.send(message, files=[file])
             else:
-                message = await self.reports_channel.send(message, files=[file])
+                channel = self.bot.get_channel_for_guild(interaction.guild_id, REPORTS)
+                if channel is None:
+                    await interaction.followup.send("Use `/setup` to configure the reports channel.", ephemeral=True)
+                    return
+                message = await channel.send(message, files=[file])
 
         if tickers:
             message = f"Fetched EPS data for tickers [{ticker_string(tickers)}]({message.jump_url})."

@@ -51,6 +51,7 @@ def mock_stock_data():
     sd.tickers = MagicMock(name="tickers")
     sd.price_history = MagicMock(name="price_history")
     sd.popularity = MagicMock(name="popularity")
+    sd.channel_config = MagicMock(name="channel_config")
     sd.alert_tickers = {}
     return sd
 
@@ -91,11 +92,6 @@ def env_override(monkeypatch):
     """Patch os.getenv to return safe test values, preventing .env leakage."""
     env_values = {
         "DISCORD_TOKEN": "test-token",
-        "DISCORD_GUILD_ID": "123456789",
-        "REPORTS_CHANNEL_ID": "111",
-        "ALERTS_CHANNEL_ID": "222",
-        "SCREENERS_CHANNEL_ID": "333",
-        "CHARTS_CHANNEL_ID": "444",
         "POSTGRES_USER": "testuser",
         "POSTGRES_PASSWORD": "testpass",
         "POSTGRES_DB": "testdb",

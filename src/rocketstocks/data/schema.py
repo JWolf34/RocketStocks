@@ -97,6 +97,13 @@ CREATE TABLE IF NOT EXISTS ct_politicians (
     party           varchar(16),
     state           varchar(32)
 );
+
+CREATE TABLE IF NOT EXISTS channel_config (
+    guild_id    BIGINT      NOT NULL,
+    config_type VARCHAR(64) NOT NULL,
+    channel_id  BIGINT      NOT NULL,
+    PRIMARY KEY (guild_id, config_type)
+);
 """
 
 _DROP_ALL_SCRIPT = """
@@ -110,6 +117,7 @@ DROP TABLE IF EXISTS tickers;
 DROP TABLE IF EXISTS upcoming_earnings;
 DROP TABLE IF EXISTS watchlists;
 DROP TABLE IF EXISTS ct_politicians;
+DROP TABLE IF EXISTS channel_config;
 """
 
 

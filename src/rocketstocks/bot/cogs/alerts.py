@@ -7,10 +7,10 @@ import numpy as np
 from discord.ext import commands, tasks
 
 from src.rocketstocks.data.stockdata import StockData
+from rocketstocks.data.channel_config import ALERTS, REPORTS
 from rocketstocks.data.discord_state import DiscordState
 from rocketstocks.core.utils.market import market_utils
 from rocketstocks.core.utils.dates import date_utils
-from rocketstocks.core.config.settings import alerts_channel_id, reports_channel_id
 from rocketstocks.core.notifications.config import NotificationLevel
 from rocketstocks.core.notifications.event import NotificationEvent
 import rocketstocks.core.analysis.indicators as an
@@ -47,9 +47,6 @@ class Alerts(commands.Cog):
         self.mutils = market_utils()
         self.dstate = DiscordState()
 
-        self.alerts_channel = self.bot.get_channel(alerts_channel_id)
-        self.reports_channel = self.bot.get_channel(reports_channel_id)
-
         self.alert_tickers = {}
 
         self.post_alerts_date.start()
@@ -68,12 +65,13 @@ class Alerts(commands.Cog):
 
     @tasks.loop(time=datetime.time(hour=6, minute=0, second=0))  # UTC
     async def post_alerts_date(self):
-        """Post a date-separator message in the alerts channel."""
+        """Post a date-separator message in all configured alerts channels."""
         _start = time.monotonic()
         try:
             if self.mutils.market_open_today():
                 date_string = date_utils.format_date_mdy(datetime.datetime.today())
-                await self.alerts_channel.send(f"# :rotating_light: Alerts for {date_string} :rotating_light:")
+                for _, channel in self.bot.iter_channels(ALERTS):
+                    await channel.send(f"# :rotating_light: Alerts for {date_string} :rotating_light:")
 
             self.bot.emitter.emit(NotificationEvent(
                 level=NotificationLevel.SUCCESS,
@@ -102,23 +100,27 @@ class Alerts(commands.Cog):
             if self.mutils.market_open_today() and market_period != 'EOD':
                 logger.info("Processing alerts")
 
-                self.all_alert_tickers = all_alert_tickers = list(
-                    set([ticker for tickers in self.stock_data.alert_tickers.values() for ticker in tickers])
-                )
+                alert_channels = [ch for _, ch in self.bot.iter_channels(ALERTS)]
+                if not alert_channels:
+                    logger.warning("No alerts channels configured — skipping alert processing")
+                else:
+                    self.all_alert_tickers = all_alert_tickers = list(
+                        set([ticker for tickers in self.stock_data.alert_tickers.values() for ticker in tickers])
+                    )
 
-                quotes = {}
-                chunk_size = 25
-                for i in range(0, len(all_alert_tickers), chunk_size):
-                    tickers = all_alert_tickers[i:i + chunk_size]
-                    quotes = quotes | await self.stock_data.schwab.get_quotes(tickers=tickers)
-                logger.info(f"Encountered {len(quotes.pop('errors', []))} errors fetching quotes for alert tickers")
+                    quotes = {}
+                    chunk_size = 25
+                    for i in range(0, len(all_alert_tickers), chunk_size):
+                        tickers = all_alert_tickers[i:i + chunk_size]
+                        quotes = quotes | await self.stock_data.schwab.get_quotes(tickers=tickers)
+                    logger.info(f"Encountered {len(quotes.pop('errors', []))} errors fetching quotes for alert tickers")
 
-                await self.send_unusual_volume_movers(quotes=quotes)
-                await self.send_volume_spike_movers(quotes=quotes)
-                await self.send_earnings_movers(quotes=quotes)
-                # await self.send_sec_filing_movers(tickers=all_alert_tickers, quotes=quotes)
-                await self.send_watchlist_movers(quotes=quotes)
-                logger.info("Alerts posted")
+                    await self.send_unusual_volume_movers(quotes=quotes, channels=alert_channels)
+                    await self.send_volume_spike_movers(quotes=quotes, channels=alert_channels)
+                    await self.send_earnings_movers(quotes=quotes, channels=alert_channels)
+                    # await self.send_sec_filing_movers(tickers=all_alert_tickers, quotes=quotes)
+                    await self.send_watchlist_movers(quotes=quotes, channels=alert_channels)
+                    logger.info("Alerts posted")
 
             self.bot.emitter.emit(NotificationEvent(
                 level=NotificationLevel.SUCCESS,
@@ -148,7 +150,7 @@ class Alerts(commands.Cog):
     # Alert trigger methods
     # -------------------------------------------------------------------------
 
-    async def send_earnings_movers(self, quotes: dict):
+    async def send_earnings_movers(self, quotes: dict, channels: list):
         """Send earnings alerts when a reporting stock moves > ±5%."""
         logger.info("Processing earnings movers")
         today = datetime.date.today()
@@ -169,9 +171,10 @@ class Alerts(commands.Cog):
                                                             earnings_today['ticker'] == ticker
                                                         ].to_dict(orient='records')[0])
                 view = AlertButtons(ticker=ticker)
-                await send_alert(alert, self.alerts_channel, self.dstate, view=view)
+                for channel in channels:
+                    await send_alert(alert, channel, self.dstate, view=view)
 
-    async def send_sec_filing_movers(self, gainers, quotes: dict):
+    async def send_sec_filing_movers(self, gainers, quotes: dict, channels: list):
         logger.info("Processing SEC filing movers")
         for index, row in gainers.iterrows():
             ticker = row['Ticker']
@@ -190,10 +193,11 @@ class Alerts(commands.Cog):
                     recent_sec_filings=recent_sec_filings,
                 ))
                 view = AlertButtons(ticker=ticker)
-                await send_alert(alert, self.alerts_channel, self.dstate, view=view)
+                for channel in channels:
+                    await send_alert(alert, channel, self.dstate, view=view)
             await asyncio.sleep(1)
 
-    async def send_watchlist_movers(self, quotes: dict):
+    async def send_watchlist_movers(self, quotes: dict, channels: list):
         """Send watchlist alerts when a watched stock moves > ±10%."""
         logger.info("Processing watchlist movers")
 
@@ -210,9 +214,10 @@ class Alerts(commands.Cog):
                 )
                 alert = await self.build_watchlist_mover(ticker=ticker)
                 view = AlertButtons(ticker=ticker)
-                await send_alert(alert, self.alerts_channel, self.dstate, view=view)
+                for channel in channels:
+                    await send_alert(alert, channel, self.dstate, view=view)
 
-    async def send_unusual_volume_movers(self, quotes: dict):
+    async def send_unusual_volume_movers(self, quotes: dict, channels: list):
         """Send unusual-volume alerts when RVOL > 25 and % change > ±10%."""
         logger.info("Processing unusual volume movers")
 
@@ -233,9 +238,10 @@ class Alerts(commands.Cog):
                     alert = await self.build_volume_mover(ticker=ticker, rvol=rvol, quote=quote,
                                                           daily_price_history=daily_price_history)
                     view = AlertButtons(ticker=ticker)
-                    await send_alert(alert, self.alerts_channel, self.dstate, view=view)
+                    for channel in channels:
+                        await send_alert(alert, channel, self.dstate, view=view)
 
-    async def send_volume_spike_movers(self, quotes: dict):
+    async def send_volume_spike_movers(self, quotes: dict, channels: list):
         """Send volume-spike alerts when RVOL_AT_TIME > 50 and % change > ±10%."""
         logger.info("Processing volume spike movers")
 
@@ -268,7 +274,8 @@ class Alerts(commands.Cog):
                         rvol_at_time=rvol_at_time, avg_vol_at_time=avg_vol_at_time, time=time_val
                     )
                     view = AlertButtons(ticker=ticker)
-                    await send_alert(alert, self.alerts_channel, self.dstate, view=view)
+                    for channel in channels:
+                        await send_alert(alert, channel, self.dstate, view=view)
                     await asyncio.sleep(1)
 
     @tasks.loop(minutes=30)
@@ -314,7 +321,8 @@ class Alerts(commands.Cog):
                                     ticker=ticker, popularity=popularity
                                 )
                                 view = AlertButtons(ticker=ticker)
-                                await send_alert(alert, self.alerts_channel, self.dstate, view=view)
+                                for _, channel in self.bot.iter_channels(ALERTS):
+                                    await send_alert(alert, channel, self.dstate, view=view)
 
             self.bot.emitter.emit(NotificationEvent(
                 level=NotificationLevel.SUCCESS,
@@ -348,7 +356,8 @@ class Alerts(commands.Cog):
                     trades=todays_trades,
                 ))
                 view = PoliticianTradeButtons(politician=politician)
-                await send_alert(alert, self.alerts_channel, self.dstate, view=view)
+                for _, channel in self.bot.iter_channels(ALERTS):
+                    await send_alert(alert, channel, self.dstate, view=view)
 
             self.bot.emitter.emit(NotificationEvent(
                 level=NotificationLevel.SUCCESS,

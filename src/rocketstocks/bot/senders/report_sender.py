@@ -41,6 +41,13 @@ async def send_screener(content, channel: discord.TextChannel,
                         view=None, files=None) -> discord.Message:
     """Post or edit-in-place a Screener content object.
 
+    NOTE (multi-guild limitation): The `reports` table uses `type VARCHAR(64) PRIMARY KEY`
+    with no `guild_id`, so edit-in-place tracking works correctly for only one guild.
+    In a multi-guild deployment, each guild will receive a new screener message on each
+    run instead of editing the previous one. Fixing this requires adding `guild_id` to
+    the `reports` table (deferred).
+
+
     Checks for an existing message posted today for this screener type. If found,
     edits it instead of posting a new one. Stores the new message ID in the DB.
 

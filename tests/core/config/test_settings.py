@@ -35,21 +35,4 @@ class TestConfig:
         assert result == {"foo": "bar"}
 
 
-class TestChannelIds:
-    def test_channel_ids_are_ints_when_set(self):
-        """Channel IDs should parse to int from numeric string env vars."""
-        with patch("rocketstocks.core.config.environment.get_env", return_value="12345"):
-            import rocketstocks.core.config.settings as settings_mod
-            importlib.reload(settings_mod)
-            assert isinstance(settings_mod.reports_channel_id, int)
-            assert settings_mod.reports_channel_id == 12345
 
-    def test_channel_ids_default_to_zero_on_missing(self):
-        """When env vars are missing (None), IDs should default to 0."""
-        with patch("rocketstocks.core.config.environment.get_env", return_value=None):
-            import rocketstocks.core.config.settings as settings_mod
-            importlib.reload(settings_mod)
-            assert settings_mod.reports_channel_id == 0
-            assert settings_mod.alerts_channel_id == 0
-            assert settings_mod.screeners_channel_id == 0
-            assert settings_mod.charts_channel_id == 0

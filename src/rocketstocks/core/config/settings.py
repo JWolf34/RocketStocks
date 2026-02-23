@@ -23,10 +23,3 @@ class config:
             json.dump(data, config_file)
 
 
-# Channel IDs and guild ID — read from environment
-guild_id = int(get_env('DISCORD_GUILD_ID') or '0')
-reports_channel_id = int(get_env("REPORTS_CHANNEL_ID") or '0')
-alerts_channel_id = int(get_env("ALERTS_CHANNEL_ID") or '0')
-screeners_channel_id = int(get_env("SCREENERS_CHANNEL_ID") or '0')
-charts_channel_id = int(get_env("CHARTS_CHANNEL_ID") or '0')
-notifications_channel_id = int(get_env("NOTIFICATIONS_CHANNEL_ID") or '0')
