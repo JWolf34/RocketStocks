@@ -1,5 +1,5 @@
-# Data folder
-data/
+# Local data folder (root level only)
+/data/
 
 # Attachments folder
 discord/attachments
