@@ -3,7 +3,7 @@ from discord import app_commands
 from discord.ext import commands
 from src.rocketstocks.data.stockdata import StockData
 from rocketstocks.core.utils.market import market_utils
-from rocketstocks.core.config.settings import screeners_channel_id
+from rocketstocks.data.channel_config import SCREENERS
 import logging
 
 logger = logging.getLogger(__name__)
@@ -13,7 +13,6 @@ class Tests(commands.Cog):
     def __init__(self, bot: commands.Bot, stock_data: StockData):
         self.bot = bot
         self.stock_data = stock_data
-        self.gainers_channel = self.bot.get_channel(screeners_channel_id)
 
     @commands.Cog.listener()
     async def on_ready(self):
