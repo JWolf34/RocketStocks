@@ -156,6 +156,9 @@ class Alerts(commands.Cog):
         today = datetime.date.today()
         earnings_today = self.stock_data.earnings.get_earnings_on_date(date=today)
 
+        if earnings_today.empty:
+            return
+
         quotes = {ticker: quote for ticker, quote in quotes.items()
                   if ticker in earnings_today['ticker'].to_list()}
 
