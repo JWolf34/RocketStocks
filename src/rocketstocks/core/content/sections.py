@@ -10,6 +10,7 @@ import datetime
 import logging
 
 import pandas as pd
+import pandas_ta_classic as ta
 
 from rocketstocks.core.content.formatting import (
     build_df_table,
@@ -133,8 +134,16 @@ def performance_section(daily_price_history: pd.DataFrame, quote: dict) -> str:
     return message
 
 
-def fundamentals_section(fundamentals: dict, quote: dict) -> str:
-    """Stock fundamentals section: market cap, EPS, P/E, beta, dividend, shortable."""
+def fundamentals_section(
+    fundamentals: dict,
+    quote: dict,
+    daily_price_history: pd.DataFrame | None = None,
+) -> str:
+    """Stock fundamentals section: market cap, EPS, P/E, beta, dividend, shortable.
+
+    If ``daily_price_history`` is provided, appends 52-week high/low and
+    the current price's distance from the 52-week high.
+    """
     logger.debug("Building ticker stats...")
     message = "## Fundamentals\n"
     table_body = {}
@@ -148,10 +157,103 @@ def fundamentals_section(fundamentals: dict, quote: dict) -> str:
         table_body['Dividend'] = "Yes" if fundamentals['instruments'][0]['fundamental']['dividendAmount'] else "No"
         table_body['Shortable'] = "Yes" if quote['reference']['isShortable'] else "No"
         table_body['HTB'] = "Yes" if quote['reference']['isHardToBorrow'] else "No"
+
+        if daily_price_history is not None and not daily_price_history.empty:
+            close = quote['regular']['regularMarketLastPrice']
+            w52_high = daily_price_history['high'].tail(252).max()
+            w52_low = daily_price_history['low'].tail(252).min()
+            from_high = ((close - w52_high) / w52_high) * 100.0
+            table_body['52W High'] = f"${w52_high:.2f}"
+            table_body['52W Low'] = f"${w52_low:.2f}"
+            table_body['% From 52W High'] = f"{from_high:.2f}%"
+
         message += build_stats_table(header={}, body=table_body, adjust='right')
     else:
         message += "No fundamentals found"
 
+    return message
+
+
+def technical_signals_section(daily_price_history: pd.DataFrame) -> str:
+    """Technical indicators section: RSI, MACD, ADX, and SMA cross."""
+    logger.debug("Building technical signals...")
+    message = "## Technical Signals\n"
+
+    if daily_price_history is None or daily_price_history.empty:
+        message += "No price data available for technical signals\n"
+        return message
+
+    close = daily_price_history['close']
+    n = len(close)
+
+    table_body = {}
+
+    # RSI(14)
+    if n >= 15:
+        rsi_series = ta.rsi(close, length=14)
+        rsi_val = rsi_series.iloc[-1] if rsi_series is not None and not rsi_series.empty else None
+        if rsi_val is not None and not pd.isna(rsi_val):
+            label = "Overbought" if rsi_val > 70 else "Oversold" if rsi_val < 30 else "Neutral"
+            table_body['RSI (14)'] = f"{rsi_val:.1f}  — {label}"
+        else:
+            table_body['RSI (14)'] = "N/A"
+    else:
+        table_body['RSI (14)'] = "N/A"
+
+    # MACD (12/26/9)
+    if n >= 35:
+        macd_df = ta.macd(close)
+        if macd_df is not None and not macd_df.empty:
+            macd_line = macd_df.iloc[-1, 0]   # MACD_12_26_9
+            macd_hist = macd_df.iloc[-1, 1]   # MACDh_12_26_9
+            if not pd.isna(macd_line) and not pd.isna(macd_hist):
+                direction = "Bullish" if macd_hist > 0 else "Bearish"
+                sign = "+" if macd_hist > 0 else ""
+                table_body['MACD'] = f"{direction} (hist {sign}{macd_hist:.2f})"
+            else:
+                table_body['MACD'] = "N/A"
+        else:
+            table_body['MACD'] = "N/A"
+    else:
+        table_body['MACD'] = "N/A"
+
+    # ADX(14)
+    if n >= 28 and 'high' in daily_price_history.columns and 'low' in daily_price_history.columns:
+        high = daily_price_history['high']
+        low = daily_price_history['low']
+        adx_df = ta.adx(close=close, high=high, low=low)
+        if adx_df is not None and not adx_df.empty:
+            adx_val = adx_df.iloc[-1, 0]   # ADX_14
+            dip = adx_df.iloc[-1, 1]        # DMP_14
+            din = adx_df.iloc[-1, 2]        # DMN_14
+            if not pd.isna(adx_val):
+                trend_label = "Trending" if adx_val > 25 else "Ranging"
+                direction_arrow = "↑" if dip > din else "↓"
+                table_body['Trend (ADX)'] = f"{adx_val:.1f}  — {trend_label} {direction_arrow}"
+            else:
+                table_body['Trend (ADX)'] = "N/A"
+        else:
+            table_body['Trend (ADX)'] = "N/A"
+    else:
+        table_body['Trend (ADX)'] = "N/A"
+
+    # SMA 50/200 cross
+    if n >= 200:
+        sma50 = ta.sma(close, 50)
+        sma200 = ta.sma(close, 200)
+        s50 = sma50.iloc[-1] if sma50 is not None and not sma50.empty else None
+        s200 = sma200.iloc[-1] if sma200 is not None and not sma200.empty else None
+        if s50 is not None and s200 is not None and not pd.isna(s50) and not pd.isna(s200):
+            if s50 > s200:
+                table_body['50/200 MA'] = "50 > 200  — Golden Cross 🟢"
+            else:
+                table_body['50/200 MA'] = "50 < 200  — Death Cross 🔻"
+        else:
+            table_body['50/200 MA'] = "N/A"
+    else:
+        table_body['50/200 MA'] = "N/A (< 200 candles)"
+
+    message += build_stats_table(header={}, body=table_body, adjust='right')
     return message
 
 
@@ -196,7 +298,7 @@ def popularity_section(popularity: pd.DataFrame) -> str:
 
 
 def recent_earnings_section(historical_earnings: pd.DataFrame) -> str:
-    """Overview of the 4 most recent earnings reports."""
+    """Overview of the 4 most recent earnings reports with beat/miss streak."""
     logger.debug("Building recent earnings...")
     message = "## Recent Earnings Overview\n"
 
@@ -216,6 +318,22 @@ def recent_earnings_section(historical_earnings: pd.DataFrame) -> str:
         )
         recent_earnings['Surprise'] = recent_earnings['Surprise'].apply(lambda x: f"{x}%")
         message += build_df_table(df=recent_earnings, style='borderless')
+
+        # Beat/miss streak — walk backwards from the most recent report
+        surprises = historical_earnings['surprise'].dropna().tolist()
+        if surprises:
+            last = surprises[-1]
+            is_beat = last > 0
+            streak = 0
+            for s in reversed(surprises):
+                if (s > 0) == is_beat:
+                    streak += 1
+                else:
+                    break
+            if is_beat:
+                message += f"\n📈 Beat estimates **{streak}** straight quarter{'s' if streak != 1 else ''}\n"
+            else:
+                message += f"\n📉 Missed estimates **{streak}** straight quarter{'s' if streak != 1 else ''}\n"
     else:
         message += "No historical earnings found for this ticker"
     return message + "\n"
@@ -318,11 +436,24 @@ def alert_header(label: str) -> str:
     return f"## :rotating_light: {label}\n\n\n"
 
 
-def todays_change(ticker: str, pct_change: float) -> str:
-    """One-liner showing ticker's percent change today."""
+def todays_change(
+    ticker: str,
+    pct_change: float,
+    price: float | None = None,
+    company_name: str | None = None,
+) -> str:
+    """One-liner showing ticker's percent change today.
+
+    When ``price`` and ``company_name`` are supplied, the format is:
+    **CompanyName** · `TICKER` is 🟢 **+4.23%** — **$187.50**
+    """
     logger.debug("Building today's change...")
     symbol = "🟢" if pct_change > 0 else "🔻"
-    return f"`{ticker}` is {symbol} **{pct_change:.2f}%**"
+    sign = "+" if pct_change > 0 else ""
+    pct_str = f"{symbol} **{sign}{pct_change:.2f}%**"
+    if company_name and price is not None:
+        return f"**{company_name}** · `{ticker}` is {pct_str} — **${price:.2f}**"
+    return f"`{ticker}` is {pct_str}"
 
 
 def volume_stats_section(

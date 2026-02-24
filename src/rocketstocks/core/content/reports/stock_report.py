@@ -20,7 +20,11 @@ class StockReport:
             + sections.ticker_info_section(self.data.ticker_info, self.data.quote)
             + sections.daily_summary_section(self.data.quote)
             + sections.performance_section(self.data.daily_price_history, self.data.quote)
-            + sections.fundamentals_section(self.data.fundamentals, self.data.quote)
+            + sections.fundamentals_section(
+                self.data.fundamentals, self.data.quote,
+                daily_price_history=self.data.daily_price_history,
+            )
+            + sections.technical_signals_section(self.data.daily_price_history)
             + sections.popularity_section(self.data.popularity)
             + sections.recent_earnings_section(self.data.historical_earnings)
             + sections.sec_filings_section(self.data.recent_sec_filings)

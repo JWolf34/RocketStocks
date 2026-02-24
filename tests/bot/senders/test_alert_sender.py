@@ -15,6 +15,8 @@ def _make_alert(ticker="AAPL", alert_type="VOLUME_MOVER", build_text="alert text
     alert.ticker = ticker
     alert.alert_type = alert_type
     alert.build_alert.return_value = build_text
+    # Simulate an alert that hasn't implemented build_embed_spec — forces plain-text fallback
+    alert.build_embed_spec.side_effect = NotImplementedError
     alert.alert_data = {"pct_change": 5.0}
     alert.override_and_edit.return_value = False
     return alert
@@ -129,5 +131,7 @@ class TestSendAlertExistingWithOverride:
         with _patch_date_utils():
             await send_alert(alert, channel, dstate)
 
-        sent_text = channel.send.call_args[0][0]
+        # In plain-text fallback path, message is the first positional argument
+        sent_args, sent_kwargs = channel.send.call_args
+        sent_text = sent_args[0] if sent_args else ""
         assert "https://discord.com/jump/to/prev" in sent_text

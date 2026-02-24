@@ -482,3 +482,174 @@ def test_todays_sec_filings_section_no_today_filings():
     # No today filings — just the header
     assert 'SEC Filings' in result
     assert '10-K' not in result
+
+
+# ---------------------------------------------------------------------------
+# technical_signals_section
+# ---------------------------------------------------------------------------
+
+@pytest.fixture
+def ohlcv_price_history():
+    """250 candles of OHLCV data — enough for all indicators including SMA200."""
+    n = 250
+    import numpy as np
+    closes = [100.0 + i * 0.05 + (i % 10) * 0.2 for i in range(n)]
+    return pd.DataFrame({
+        'date': [datetime.date.today() - datetime.timedelta(days=i) for i in range(n)],
+        'open': [c - 0.5 for c in closes],
+        'high': [c + 1.0 for c in closes],
+        'low': [c - 1.0 for c in closes],
+        'close': closes,
+        'volume': [1_000_000] * n,
+    })
+
+
+def test_technical_signals_section_returns_string(ohlcv_price_history):
+    result = sections.technical_signals_section(ohlcv_price_history)
+    assert isinstance(result, str)
+    assert 'Technical Signals' in result
+
+
+def test_technical_signals_section_contains_rsi(ohlcv_price_history):
+    result = sections.technical_signals_section(ohlcv_price_history)
+    assert 'RSI' in result
+
+
+def test_technical_signals_section_contains_macd(ohlcv_price_history):
+    result = sections.technical_signals_section(ohlcv_price_history)
+    assert 'MACD' in result
+
+
+def test_technical_signals_section_contains_adx(ohlcv_price_history):
+    result = sections.technical_signals_section(ohlcv_price_history)
+    assert 'ADX' in result
+
+
+def test_technical_signals_section_contains_sma_cross(ohlcv_price_history):
+    result = sections.technical_signals_section(ohlcv_price_history)
+    assert '50/200 MA' in result
+    # With 250 candles we should get either Golden or Death Cross, not N/A
+    assert 'Cross' in result
+
+
+def test_technical_signals_section_short_history():
+    """Fewer than 35 candles — MACD and ADX should show N/A."""
+    short_df = pd.DataFrame({
+        'date': [datetime.date.today() - datetime.timedelta(days=i) for i in range(20)],
+        'open': [100.0] * 20,
+        'high': [101.0] * 20,
+        'low': [99.0] * 20,
+        'close': [100.0] * 20,
+        'volume': [1_000_000] * 20,
+    })
+    result = sections.technical_signals_section(short_df)
+    assert 'N/A' in result
+
+
+def test_technical_signals_section_empty_df():
+    result = sections.technical_signals_section(pd.DataFrame())
+    assert 'No price data' in result
+
+
+# ---------------------------------------------------------------------------
+# fundamentals_section — 52W additions
+# ---------------------------------------------------------------------------
+
+def test_fundamentals_section_with_52w(fundamentals, quote, ohlcv_price_history):
+    result = sections.fundamentals_section(fundamentals, quote, daily_price_history=ohlcv_price_history)
+    assert '52W High' in result
+    assert '52W Low' in result
+    assert '% From 52W High' in result
+
+
+def test_fundamentals_section_without_52w(fundamentals, quote):
+    """Without price history, 52W fields should not appear."""
+    result = sections.fundamentals_section(fundamentals, quote)
+    assert '52W High' not in result
+
+
+def test_fundamentals_section_52w_from_high_is_nonpositive(fundamentals, quote, ohlcv_price_history):
+    """% From 52W High should always be ≤ 0 since current price ≤ 52W high."""
+    result = sections.fundamentals_section(fundamentals, quote, daily_price_history=ohlcv_price_history)
+    # Extract the percentage — it appears as something like "-5.23%"
+    import re
+    match = re.search(r'% From 52W High.*?(-?\d+\.\d+)%', result)
+    if match:
+        pct = float(match.group(1))
+        assert pct <= 0
+
+
+# ---------------------------------------------------------------------------
+# todays_change — enhanced signature
+# ---------------------------------------------------------------------------
+
+def test_todays_change_with_price_and_name():
+    result = sections.todays_change('AAPL', 4.23, price=187.50, company_name='Apple Inc.')
+    assert 'Apple Inc.' in result
+    assert 'AAPL' in result
+    assert '$187.50' in result
+    assert '4.23%' in result
+
+
+def test_todays_change_without_optionals():
+    result = sections.todays_change('TSLA', -2.5)
+    assert 'TSLA' in result
+    assert '2.50%' in result
+    # Should not contain $ price
+    assert '$' not in result
+
+
+def test_todays_change_shows_plus_sign_for_positive():
+    result = sections.todays_change('NVDA', 5.0)
+    assert '+5.00%' in result
+
+
+def test_todays_change_no_plus_sign_for_negative():
+    result = sections.todays_change('NVDA', -5.0)
+    assert '-5.00%' in result
+    assert '+-' not in result
+
+
+# ---------------------------------------------------------------------------
+# recent_earnings_section — beat/miss streak
+# ---------------------------------------------------------------------------
+
+def test_recent_earnings_streak_all_beats(historical_earnings):
+    """All 4 rows have positive surprise — should show beat streak of 4."""
+    result = sections.recent_earnings_section(historical_earnings)
+    assert 'Beat estimates' in result
+    assert '4' in result
+
+
+def test_recent_earnings_streak_all_misses():
+    df = pd.DataFrame({
+        'date': [datetime.date(2024, 1, 30), datetime.date(2024, 4, 30)],
+        'eps': [1.40, 1.50],
+        'surprise': [-2.0, -1.5],
+        'epsforecast': [1.45, 1.55],
+        'fiscalquarterending': ['Dec 2023', 'Mar 2024'],
+    })
+    result = sections.recent_earnings_section(df)
+    assert 'Missed estimates' in result
+
+
+def test_recent_earnings_streak_mixed():
+    df = pd.DataFrame({
+        'date': [datetime.date(2024, 1, 30), datetime.date(2024, 4, 30),
+                 datetime.date(2024, 7, 30), datetime.date(2024, 10, 30)],
+        'eps': [1.50, 1.60, 1.70, 1.80],
+        'surprise': [2.5, -1.0, -0.5, 4.5],  # last 2 entries: miss then beat
+        'epsforecast': [1.45, 1.65, 1.75, 1.75],
+        'fiscalquarterending': ['Dec 2023', 'Mar 2024', 'Jun 2024', 'Sep 2024'],
+    })
+    result = sections.recent_earnings_section(df)
+    # Most recent (4.5) is a beat, only 1 consecutive beat
+    assert 'Beat estimates' in result
+    assert '**1**' in result
+
+
+def test_recent_earnings_section_empty_no_streak():
+    result = sections.recent_earnings_section(pd.DataFrame())
+    assert 'No historical earnings' in result
+    assert 'Beat' not in result
+    assert 'Missed' not in result

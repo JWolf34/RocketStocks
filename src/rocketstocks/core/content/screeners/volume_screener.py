@@ -47,8 +47,11 @@ class VolumeScreener(Screener):
     def build_report(self) -> str:
         logger.debug(f"Building '{self.screener_type}' screener...")
         now = datetime.datetime.now(tz=date_utils.timezone())
-        header = "### :rotating_light: Unusual Volume {} (Updated {})\n\n".format(
+        count = len(self.data[:12])
+        header = "### :rotating_light: Unusual Volume — **{} stocks** · {} (Updated {})\n\n".format(
+            count,
             now.date().strftime("%m/%d/%Y"),
             now.strftime("%I:%M %p"),
         )
-        return header + build_df_table(self.data[:12])
+        footer = "-# Data via TradingView · {}\n".format(now.strftime("%m/%d/%Y %I:%M %p"))
+        return header + build_df_table(self.data[:12]) + "\n" + footer

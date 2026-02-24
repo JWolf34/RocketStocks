@@ -5,9 +5,42 @@ This replaces the ~13 optional kwargs on Report.__init__ with explicit, type-che
 """
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 import pandas as pd
+
+
+# ---------------------------------------------------------------------------
+# Discord-agnostic embed colors (no discord import needed)
+# ---------------------------------------------------------------------------
+
+COLOR_GREEN  = 0x2ecc71
+COLOR_RED    = 0xe74c3c
+COLOR_ORANGE = 0xe67e22
+COLOR_BLUE   = 0x3498db
+
+
+# ---------------------------------------------------------------------------
+# Discord-agnostic embed specification
+# ---------------------------------------------------------------------------
+
+@dataclass
+class EmbedField:
+    name: str
+    value: str
+    inline: bool = False
+
+
+@dataclass
+class EmbedSpec:
+    title: str
+    description: str
+    color: int
+    fields: list[EmbedField] = field(default_factory=list)
+    footer: str | None = None
+    timestamp: bool = False
+    url: str | None = None
+    thumbnail_url: str | None = None
 
 
 # ---------------------------------------------------------------------------

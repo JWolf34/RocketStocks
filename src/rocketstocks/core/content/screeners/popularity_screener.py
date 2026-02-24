@@ -30,8 +30,12 @@ class PopularityScreener(Screener):
     def build_report(self) -> str:
         logger.debug(f"Building '{self.screener_type}' screener...")
         now = datetime.datetime.now(tz=date_utils.timezone())
-        header = "### :rotating_light: Popular Stocks {} (Updated {})\n\n".format(
+        count = len(self.data[:20])
+        updated_time = date_utils.round_down_nearest_minute(30).astimezone(date_utils.timezone()).strftime("%I:%M %p")
+        header = "### :rotating_light: Popular Stocks — **{} stocks** · {} (Updated {})\n\n".format(
+            count,
             now.date().strftime("%m/%d/%Y"),
-            date_utils.round_down_nearest_minute(30).astimezone(date_utils.timezone()).strftime("%I:%M %p"),
+            updated_time,
         )
-        return header + build_df_table(df=self.data[:20])
+        footer = "-# Data via ApeWisdom · {}\n".format(now.strftime("%m/%d/%Y %I:%M %p"))
+        return header + build_df_table(df=self.data[:20]) + "\n" + footer

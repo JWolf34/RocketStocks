@@ -20,6 +20,14 @@ class Alert:
     def build_alert(self) -> str:
         raise NotImplementedError
 
+    def build_embed_spec(self):
+        """Return an EmbedSpec for rich Discord embed output.
+
+        Subclasses should override this. The bot layer calls build_alert() as a
+        plain-text fallback when this raises NotImplementedError.
+        """
+        raise NotImplementedError
+
     def override_and_edit(self, prev_alert_data: dict) -> bool:
         """Return True if the alert should be re-posted based on significant movement.
 

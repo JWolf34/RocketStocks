@@ -73,9 +73,12 @@ class GainerScreener(Screener):
             else "After Hours" if self.market_period == 'aftermarket'
             else ""
         )
-        header = "### :rotating_light: {} Gainers {} (Updated {})\n\n".format(
+        count = len(self.data[:15])
+        header = "### :rotating_light: {} Gainers — **{} stocks** · {} (Updated {})\n\n".format(
             label,
+            count,
             now.date().strftime("%m/%d/%Y"),
             now.strftime("%I:%M %p"),
         )
-        return header + build_df_table(self.data[:15])
+        footer = "-# Data via TradingView · {}\n".format(now.strftime("%m/%d/%Y %I:%M %p"))
+        return header + build_df_table(self.data[:15]) + "\n" + footer

@@ -8,6 +8,24 @@ from rocketstocks.data.discord_state import DiscordState
 logger = logging.getLogger(__name__)
 
 
+def _spec_to_embed(spec) -> discord.Embed:
+    """Convert a core-layer EmbedSpec to a discord.Embed."""
+    embed = discord.Embed(
+        title=spec.title,
+        description=spec.description,
+        color=spec.color,
+        url=spec.url if spec.url else discord.utils.MISSING,
+        timestamp=datetime.datetime.utcnow() if spec.timestamp else discord.utils.MISSING,
+    )
+    for f in spec.fields:
+        embed.add_field(name=f.name, value=f.value, inline=f.inline)
+    if spec.footer:
+        embed.set_footer(text=spec.footer)
+    if spec.thumbnail_url:
+        embed.set_thumbnail(url=spec.thumbnail_url)
+    return embed
+
+
 async def send_alert(
     alert,
     channel: discord.TextChannel,
@@ -15,6 +33,10 @@ async def send_alert(
     view: discord.ui.View = None,
 ) -> discord.Message | None:
     """Send an alert to a Discord channel, with edit-in-place support.
+
+    Attempts to build a rich Discord embed via alert.build_embed_spec(). Falls
+    back to plain text via alert.build_alert() if the alert has not yet
+    implemented build_embed_spec().
 
     If the alert was already posted today:
       - Calls alert.override_and_edit(prev_data) to decide whether to post an update.
@@ -24,7 +46,14 @@ async def send_alert(
 
     Returns the new discord.Message, or None if no message was sent.
     """
-    message = alert.build_alert()
+    # Try embed first; fall back to plain text
+    embed = None
+    message = None
+    try:
+        spec = alert.build_embed_spec()
+        embed = _spec_to_embed(spec)
+    except NotImplementedError:
+        message = alert.build_alert()
 
     today = datetime.datetime.now(tz=date_utils.timezone()).date()
     message_id = dstate.get_alert_message_id(
@@ -48,12 +77,19 @@ async def send_alert(
             )
             prev_message = await channel.fetch_message(message_id)
             prev_message_time = prev_message.created_at.astimezone(date_utils.timezone())
-            message += (
-                f"\n[Updated from last alert at "
+            update_link = (
+                f"[Updated from last alert at "
                 f"{prev_message_time.strftime('%I:%M %p')} {prev_message_time.tzname()}]"
                 f"({prev_message.jump_url})"
             )
-            sent = await channel.send(message, view=view)
+
+            if embed is not None:
+                # Append update link to embed description
+                embed.description = (embed.description or "") + f"\n{update_link}"
+                sent = await channel.send(embed=embed, view=view)
+            else:
+                sent = await channel.send(message + f"\n{update_link}", view=view)
+
             dstate.update_alert_message_data(
                 date=today,
                 ticker=alert.ticker,
@@ -68,7 +104,10 @@ async def send_alert(
             )
             return None
     else:
-        sent = await channel.send(message, view=view)
+        if embed is not None:
+            sent = await channel.send(embed=embed, view=view)
+        else:
+            sent = await channel.send(message, view=view)
         dstate.insert_alert_message_id(
             date=today,
             ticker=alert.ticker,

@@ -1,8 +1,12 @@
 import logging
 
 from rocketstocks.core.content.alerts.base import Alert
-from rocketstocks.core.content.models import VolumeMoverData
+from rocketstocks.core.content.models import (
+    COLOR_ORANGE, COLOR_RED,
+    VolumeMoverData, EmbedField, EmbedSpec,
+)
 from rocketstocks.core.content import sections
+from rocketstocks.core.content.formatting import format_large_num
 
 logger = logging.getLogger(__name__)
 
@@ -34,6 +38,37 @@ class VolumeMoverAlert(Alert):
                 daily_price_history=self.data.daily_price_history,
                 rvol=self.data.rvol,
             )
+        )
+
+    def build_embed_spec(self) -> EmbedSpec:
+        logger.debug("Building Volume Mover EmbedSpec...")
+        pct_change = self.alert_data['pct_change']
+        price = self.data.quote['regular']['regularMarketLastPrice']
+        company_name = self.data.ticker_info.get('name', self.data.ticker)
+        sign = "+" if pct_change > 0 else ""
+        volume = self.data.quote['quote']['totalVolume']
+
+        description = (
+            f"**{company_name}** · `{self.data.ticker}` is "
+            f"{'🟢' if pct_change > 0 else '🔻'} **{sign}{pct_change:.2f}%** — **${price:.2f}** "
+            f"with volume **{self.data.rvol:.2f}x** the 10-day average"
+        )
+
+        fields = [
+            EmbedField(name="Price", value=f"${price:.2f}", inline=True),
+            EmbedField(name="Change", value=f"{sign}{pct_change:.2f}%", inline=True),
+            EmbedField(name="RVOL (10D)", value=f"{self.data.rvol:.2f}x", inline=True),
+            EmbedField(name="Volume", value=format_large_num(volume), inline=True),
+        ]
+
+        return EmbedSpec(
+            title=f"🚨 Volume Mover: {self.data.ticker}",
+            description=description,
+            color=COLOR_ORANGE if pct_change > 0 else COLOR_RED,
+            fields=fields,
+            footer="RocketStocks · volume-mover",
+            timestamp=True,
+            url=f"https://finviz.com/quote.ashx?t={self.data.ticker}",
         )
 
     def override_and_edit(self, prev_alert_data: dict) -> bool:
