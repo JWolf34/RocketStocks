@@ -276,19 +276,14 @@ class Tests(commands.Cog):
         try:
             spec = alert.build_embed_spec()
             embed = _spec_to_embed(spec)
-            await interaction.user.send(embed=embed)
+            await interaction.followup.send(embed=embed)
         except NotImplementedError:
             msg = alert.build_alert()
-            await interaction.user.send(msg)
+            await interaction.followup.send(msg, ephemeral=True)
         except Exception as exc:
             logger.exception(f"Failed to send test alert DM to {interaction.user.name}")
             await interaction.followup.send(f"Error sending DM: {exc}", ephemeral=True)
             return
-
-        await interaction.followup.send(
-            f"Test **{alert_type.name}** alert sent to your DMs!", ephemeral=True
-        )
-
 
 async def setup(bot):
     await bot.add_cog(Tests(bot, bot.stock_data))
