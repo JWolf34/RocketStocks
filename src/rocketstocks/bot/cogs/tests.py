@@ -25,7 +25,6 @@ from rocketstocks.core.content.models import (
 )
 from rocketstocks.core.utils.dates import date_utils
 from rocketstocks.core.utils.market import market_utils
-from rocketstocks.data.channel_config import SCREENERS
 from src.rocketstocks.data.stockdata import StockData
 
 logger = logging.getLogger(__name__)

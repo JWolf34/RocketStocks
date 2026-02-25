@@ -18,9 +18,10 @@ class Utils(commands.Cog):
     @app_commands.checks.has_permissions(administrator=True)
     async def sync(self, interaction: discord.Interaction):
         """Sync bot commands to Discord's servers. Use this after adding or removing an app command"""
+        await interaction.response.defer(ephemeral=True)
         logger.info(f"/sync command called by user {interaction.user.name}")
         await self.bot.tree.sync()
-        await interaction.response.send_message("Bot commands synced!", ephemeral=True)
+        await interaction.followup.send("Bot commands synced!", ephemeral=True)
         logger.info("Bot commands synced!")
 
     @app_commands.command(name="help", description="Show help on the bot's commands",)
