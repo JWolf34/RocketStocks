@@ -59,6 +59,13 @@ class PoliticianTradeAlert(Alert):
             ),
         ]
 
+        politician_id = self.data.politician.get('politician_id')
+        url = (
+            f"https://www.capitoltrades.com/politicians/{politician_id}"
+            if politician_id
+            else None
+        )
+
         return EmbedSpec(
             title=f"🚨 Politician Trade Alert: {name}",
             description=description,
@@ -66,6 +73,7 @@ class PoliticianTradeAlert(Alert):
             fields=fields,
             footer="RocketStocks · politician-trade",
             timestamp=True,
+            url=url,
         )
 
     def override_and_edit(self, prev_alert_data: dict) -> bool:

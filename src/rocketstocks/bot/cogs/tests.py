@@ -180,7 +180,7 @@ def _build_dummy_alert(alert_type: str):
             ticker=ticker,
             ticker_info=ticker_info,
             quote=quote,
-            watchlist='Tech Watchlist',
+            watchlist='Tech',
         ))
 
     if alert_type == 'sec_filing':
@@ -201,7 +201,7 @@ def _build_dummy_alert(alert_type: str):
 
     if alert_type == 'politician_trade':
         return PoliticianTradeAlert(PoliticianTradeAlertData(
-            politician={'name': 'Jane Smith', 'party': 'Independent', 'state': 'California'},
+            politician={'name': 'Jane Smith', 'party': 'Independent', 'state': 'California', 'politician_id': 'jane-smith'},
             trades=_dummy_politician_trades(),
         ))
 

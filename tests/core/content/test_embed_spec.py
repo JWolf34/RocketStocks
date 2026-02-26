@@ -306,8 +306,16 @@ def test_politician_embed_spec_color_is_blue(politician, trades_df):
     assert spec.color == COLOR_BLUE
 
 
-def test_politician_embed_spec_no_url(politician, trades_df):
+def test_politician_embed_spec_has_capitol_trades_url(politician, trades_df):
     data = PoliticianTradeAlertData(politician=politician, trades=trades_df)
+    alert = PoliticianTradeAlert(data=data)
+    spec = alert.build_embed_spec()
+    assert spec.url is not None and 'capitoltrades.com' in spec.url
+
+
+def test_politician_embed_spec_no_url_when_politician_id_missing(trades_df):
+    politician_no_id = {'name': 'Jane Smith', 'party': 'Independent', 'state': 'California'}
+    data = PoliticianTradeAlertData(politician=politician_no_id, trades=trades_df)
     alert = PoliticianTradeAlert(data=data)
     spec = alert.build_embed_spec()
     assert spec.url is None
