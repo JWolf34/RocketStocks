@@ -297,10 +297,14 @@ def popularity_section(popularity: pd.DataFrame) -> str:
     return message
 
 
-def recent_earnings_section(historical_earnings: pd.DataFrame) -> str:
+def recent_earnings_section(historical_earnings: pd.DataFrame, is_markdown:bool = False) -> str:
     """Overview of the 4 most recent earnings reports with beat/miss streak."""
     logger.debug("Building recent earnings...")
-    message = "## Recent Earnings Overview\n"
+    message = ""
+
+    # Only build header if using markdown instead of embed
+    if is_markdown:
+        message = "## Recent Earnings Overview\n"
 
     if not historical_earnings.empty:
         column_map = {
