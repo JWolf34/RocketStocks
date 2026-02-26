@@ -61,7 +61,7 @@ class PopularityAlert(Alert):
     def build_embed_spec(self) -> EmbedSpec:
         logger.debug("Building Popularity Alert EmbedSpec...")
         pct_change = self.alert_data['pct_change']
-        company_name = self.data.ticker_info.get('name', self.data.ticker)
+        company_name = (self.data.ticker_info or {}).get('name', self.data.ticker)
         high_rank = self.alert_data['high_rank']
         low_rank = self.alert_data['low_rank']
         spot_diff = high_rank - low_rank

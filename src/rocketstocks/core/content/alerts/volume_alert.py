@@ -44,7 +44,7 @@ class VolumeMoverAlert(Alert):
         logger.debug("Building Volume Mover EmbedSpec...")
         pct_change = self.alert_data['pct_change']
         price = self.data.quote['regular']['regularMarketLastPrice']
-        company_name = self.data.ticker_info.get('name', self.data.ticker)
+        company_name = (self.data.ticker_info or {}).get('name', self.data.ticker)
         sign = "+" if pct_change > 0 else ""
         volume = self.data.quote['quote']['totalVolume']
 

@@ -23,7 +23,7 @@ class EarningsMoverAlert(Alert):
         logger.debug("Building Earnings Mover Alert...")
         pct_change = self.alert_data['pct_change']
         price = self.data.quote['regular']['regularMarketLastPrice']
-        company_name = self.data.ticker_info.get('name', '')
+        company_name = (self.data.ticker_info or {}).get('name', '')
         todays_change = (
             sections.todays_change(self.data.ticker, pct_change, price=price, company_name=company_name)
             + " and reports earnings today\n"
@@ -39,7 +39,7 @@ class EarningsMoverAlert(Alert):
         logger.debug("Building Earnings Mover EmbedSpec...")
         pct_change = self.alert_data['pct_change']
         price = self.data.quote['regular']['regularMarketLastPrice']
-        company_name = self.data.ticker_info.get('name', self.data.ticker)
+        company_name = (self.data.ticker_info or {}).get('name', self.data.ticker)
         sign = "+" if pct_change > 0 else ""
 
         next_info = self.data.next_earnings_info or {}

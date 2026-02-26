@@ -331,6 +331,66 @@ def test_politician_embed_spec_name_in_title(politician, trades_df):
 
 
 # ---------------------------------------------------------------------------
+# ticker_info=None guard — all TickerData-based alerts must not raise
+# ---------------------------------------------------------------------------
+
+def test_earnings_mover_embed_spec_none_ticker_info(quote_up):
+    data = EarningsMoverData(
+        ticker='GME', ticker_info=None, quote=quote_up,
+        next_earnings_info=None,
+        historical_earnings=pd.DataFrame(),
+    )
+    alert = EarningsMoverAlert(data=data)
+    spec = alert.build_embed_spec()
+    assert 'GME' in spec.description
+
+
+def test_earnings_mover_build_alert_none_ticker_info(quote_up):
+    data = EarningsMoverData(
+        ticker='GME', ticker_info=None, quote=quote_up,
+        next_earnings_info=None,
+        historical_earnings=pd.DataFrame(),
+    )
+    alert = EarningsMoverAlert(data=data)
+    assert 'GME' in alert.build_alert()
+
+
+def test_volume_mover_embed_spec_none_ticker_info(quote_up, price_history):
+    data = VolumeMoverData(ticker='GME', ticker_info=None, quote=quote_up,
+                           rvol=10.0, daily_price_history=price_history)
+    spec = VolumeMoverAlert(data=data).build_embed_spec()
+    assert 'GME' in spec.description
+
+
+def test_volume_spike_embed_spec_none_ticker_info(quote_up):
+    data = VolumeSpikeData(ticker='NVDA', ticker_info=None, quote=quote_up,
+                           rvol_at_time=20.0, avg_vol_at_time=100_000.0, time='10:30 AM')
+    spec = VolumeSpikeAlert(data=data).build_embed_spec()
+    assert 'NVDA' in spec.description
+
+
+def test_watchlist_mover_embed_spec_none_ticker_info(quote_up):
+    data = WatchlistMoverData(ticker='AAPL', ticker_info=None, quote=quote_up,
+                              watchlist='my-list')
+    spec = WatchlistMoverAlert(data=data).build_embed_spec()
+    assert 'AAPL' in spec.description
+
+
+def test_sec_filing_embed_spec_none_ticker_info(quote_up):
+    data = SECFilingData(ticker='GME', ticker_info=None, quote=quote_up,
+                         recent_sec_filings=pd.DataFrame())
+    spec = SECFilingMoverAlert(data=data).build_embed_spec()
+    assert 'GME' in spec.description
+
+
+def test_popularity_embed_spec_none_ticker_info(quote_up, pop_df):
+    data = PopularityAlertData(ticker='GME', ticker_info=None, quote=quote_up,
+                               popularity=pop_df)
+    spec = PopularityAlert(data=data).build_embed_spec()
+    assert 'GME' in spec.description
+
+
+# ---------------------------------------------------------------------------
 # Base Alert — build_embed_spec raises NotImplementedError by default
 # ---------------------------------------------------------------------------
 

@@ -45,7 +45,7 @@ class VolumeSpikeAlert(Alert):
         logger.debug("Building Volume Spike EmbedSpec...")
         pct_change = self.alert_data['pct_change']
         price = self.data.quote['regular']['regularMarketLastPrice']
-        company_name = self.data.ticker_info.get('name', self.data.ticker)
+        company_name = (self.data.ticker_info or {}).get('name', self.data.ticker)
         sign = "+" if pct_change > 0 else ""
         volume_at_time = format_large_num(self.data.rvol_at_time * self.data.avg_vol_at_time)
 
