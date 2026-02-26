@@ -60,6 +60,7 @@ class VolumeSpikeAlert(Alert):
             EmbedField(name="Change", value=f"{sign}{pct_change:.2f}%", inline=True),
             EmbedField(name=f"RVOL at {self.data.time}", value=f"{self.data.rvol_at_time:.2f}x", inline=True),
             EmbedField(name=f"Volume at {self.data.time}", value=volume_at_time, inline=True),
+            EmbedField(name=f"Avg Volume at {self.data.time}", value=format_large_num(self.data.avg_vol_at_time), inline=True),
         ]
 
         return EmbedSpec(

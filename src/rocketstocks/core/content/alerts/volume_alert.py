@@ -47,6 +47,7 @@ class VolumeMoverAlert(Alert):
         company_name = (self.data.ticker_info or {}).get('name', self.data.ticker)
         sign = "+" if pct_change > 0 else ""
         volume = self.data.quote['quote']['totalVolume']
+        avg_volume_10d = format_large_num(self.data.daily_price_history['volume'].tail(10).mean()) if self.data.daily_price_history is not None and not self.data.daily_price_history.empty else "N/A"
 
         description = (
             f"**{company_name}** · `{self.data.ticker}` is "
@@ -59,6 +60,7 @@ class VolumeMoverAlert(Alert):
             EmbedField(name="Change", value=f"{sign}{pct_change:.2f}%", inline=True),
             EmbedField(name="RVOL (10D)", value=f"{self.data.rvol:.2f}x", inline=True),
             EmbedField(name="Volume", value=format_large_num(volume), inline=True),
+            EmbedField(name="Avg Volume (10D)", value=avg_volume_10d, inline=True),
         ]
 
         return EmbedSpec(
