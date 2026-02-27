@@ -2,7 +2,7 @@ import datetime
 import logging
 
 from rocketstocks.core.content.formatting import build_df_table
-from rocketstocks.core.content.models import PopularityScreenerData
+from rocketstocks.core.content.models import COLOR_BLUE, EmbedSpec, PopularityScreenerData
 from rocketstocks.core.content.screeners.base import Screener
 from rocketstocks.core.utils.dates import date_utils
 
@@ -39,3 +39,23 @@ class PopularityScreener(Screener):
         )
         footer = "-# Data via ApeWisdom · {}\n".format(now.strftime("%m/%d/%Y %I:%M %p"))
         return header + build_df_table(df=self.data[:20]) + "\n" + footer
+
+    def build_embed_spec(self) -> EmbedSpec:
+        logger.debug(f"Building '{self.screener_type}' screener EmbedSpec...")
+        now = datetime.datetime.now(tz=date_utils.timezone())
+        count = len(self.data[:20])
+        updated_time = date_utils.round_down_nearest_minute(30).astimezone(date_utils.timezone()).strftime("%I:%M %p")
+        title = "🚨 Popular Stocks — {} stocks · {} (Updated {})".format(
+            count,
+            now.date().strftime("%m/%d/%Y"),
+            updated_time,
+        )
+        description = build_df_table(df=self.data[:20])
+        footer = "Data via ApeWisdom · {}".format(now.strftime("%m/%d/%Y %I:%M %p"))
+        return EmbedSpec(
+            title=title,
+            description=description,
+            color=COLOR_BLUE,
+            footer=footer,
+            timestamp=True,
+        )

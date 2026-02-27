@@ -3,7 +3,7 @@ import logging
 
 from rocketstocks.core.config.paths import datapaths
 from rocketstocks.core.content.formatting import build_df_table, write_df_to_file
-from rocketstocks.core.content.models import PopularityReportData
+from rocketstocks.core.content.models import COLOR_BLUE, EmbedSpec, PopularityReportData
 from rocketstocks.core.content import sections
 
 logger = logging.getLogger(__name__)
@@ -36,4 +36,22 @@ class PopularityReport:
         return (
             sections.popularity_report_header(self.data.filter)
             + build_df_table(self._display_data.drop(columns=['name'], errors='ignore')[:20])
+        )
+
+    def build_embed_spec(self) -> EmbedSpec:
+        logger.debug("Building Popularity Report EmbedSpec...")
+        full = self.build_report()
+        lines = full.split('\n')
+        title = lines[0].lstrip('# ').strip()
+        description = '\n'.join(lines[1:]).lstrip('\n')
+
+        if len(description) > 4096:
+            description = description[:4093] + '...'
+
+        return EmbedSpec(
+            title=title,
+            description=description,
+            color=COLOR_BLUE,
+            footer="RocketStocks · popularity-report",
+            timestamp=True,
         )

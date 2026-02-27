@@ -4,26 +4,9 @@ import logging
 import discord
 from rocketstocks.core.utils.dates import date_utils
 from rocketstocks.data.discord_state import DiscordState
+from rocketstocks.bot.senders.embed_utils import spec_to_embed
 
 logger = logging.getLogger(__name__)
-
-
-def _spec_to_embed(spec) -> discord.Embed:
-    """Convert a core-layer EmbedSpec to a discord.Embed."""
-    embed = discord.Embed(
-        title=spec.title,
-        description=spec.description,
-        color=spec.color,
-        url=spec.url if spec.url else discord.utils.MISSING,
-        timestamp=datetime.datetime.utcnow() if spec.timestamp else discord.utils.MISSING,
-    )
-    for f in spec.fields:
-        embed.add_field(name=f.name, value=f.value, inline=f.inline)
-    if spec.footer:
-        embed.set_footer(text=spec.footer)
-    if spec.thumbnail_url:
-        embed.set_thumbnail(url=spec.thumbnail_url)
-    return embed
 
 
 async def send_alert(
@@ -51,7 +34,7 @@ async def send_alert(
     message = None
     try:
         spec = alert.build_embed_spec()
-        embed = _spec_to_embed(spec)
+        embed = spec_to_embed(spec)
     except NotImplementedError:
         message = alert.build_alert()
 

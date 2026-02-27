@@ -1,6 +1,6 @@
 import logging
 
-from rocketstocks.core.content.models import NewsReportData
+from rocketstocks.core.content.models import COLOR_BLUE, EmbedSpec, NewsReportData
 from rocketstocks.core.content import sections
 
 logger = logging.getLogger(__name__)
@@ -18,4 +18,22 @@ class NewsReport:
             sections.news_report_header(self.data.query)
             + sections.news_section(self.data.news)
             + '\n'
+        )
+
+    def build_embed_spec(self) -> EmbedSpec:
+        logger.debug("Building News Report EmbedSpec...")
+        full = self.build_report()
+        lines = full.split('\n')
+        title = lines[0].lstrip('# ').strip()
+        description = '\n'.join(lines[1:]).lstrip('\n')
+
+        if len(description) > 4096:
+            description = description[:4093] + '...'
+
+        return EmbedSpec(
+            title=title,
+            description=description,
+            color=COLOR_BLUE,
+            footer="RocketStocks · news-report",
+            timestamp=True,
         )

@@ -5,7 +5,7 @@ import pandas as pd
 
 from rocketstocks.core.config.paths import datapaths
 from rocketstocks.core.content.formatting import build_df_table, write_df_to_file
-from rocketstocks.core.content.models import WeeklyEarningsData
+from rocketstocks.core.content.models import COLOR_BLUE, EmbedSpec, WeeklyEarningsData
 from rocketstocks.core.content.screeners.base import Screener
 from rocketstocks.core.utils.dates import date_utils
 
@@ -65,3 +65,15 @@ class WeeklyEarningsScreener(Screener):
         logger.debug(f"Building '{self.screener_type}' screener...")
         header = f"# Earnings Releasing the Week of {date_utils.format_date_mdy(self.today)}\n\n"
         return header + self._build_upcoming_earnings()
+
+    def build_embed_spec(self) -> EmbedSpec:
+        logger.debug(f"Building '{self.screener_type}' screener EmbedSpec...")
+        title = f"📅 Earnings Releasing the Week of {date_utils.format_date_mdy(self.today)}"
+        description = self._build_upcoming_earnings()
+        return EmbedSpec(
+            title=title,
+            description=description,
+            color=COLOR_BLUE,
+            footer="RocketStocks · weekly-earnings",
+            timestamp=True,
+        )

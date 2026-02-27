@@ -1,6 +1,9 @@
 import logging
 
-from rocketstocks.core.content.models import StockReportData
+from rocketstocks.core.content.models import (
+    COLOR_BLUE, COLOR_GREEN, COLOR_RED,
+    EmbedSpec, StockReportData,
+)
 from rocketstocks.core.content import sections
 
 logger = logging.getLogger(__name__)
@@ -28,4 +31,28 @@ class StockReport:
             + sections.popularity_section(self.data.popularity)
             + sections.recent_earnings_section(self.data.historical_earnings)
             + sections.sec_filings_section(self.data.recent_sec_filings)
+        )
+
+    def build_embed_spec(self) -> EmbedSpec:
+        logger.debug("Building Stock Report EmbedSpec...")
+        pct_change = self.data.quote['quote'].get('netPercentChange', 0)
+        color = COLOR_GREEN if pct_change > 0 else COLOR_RED if pct_change < 0 else COLOR_BLUE
+
+        full = self.build_report()
+        # First non-empty line is the header; strip markdown # prefix for embed title
+        lines = full.split('\n')
+        title = lines[0].lstrip('# ').strip()
+        description = '\n'.join(lines[1:]).lstrip('\n')
+
+        # Truncate description to Discord's 4096 embed description limit
+        if len(description) > 4096:
+            description = description[:4093] + '...'
+
+        return EmbedSpec(
+            title=title,
+            description=description,
+            color=color,
+            footer="RocketStocks · stock-report",
+            timestamp=True,
+            url=f"https://finviz.com/quote.ashx?t={self.data.ticker}",
         )

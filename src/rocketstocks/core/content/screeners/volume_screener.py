@@ -2,7 +2,7 @@ import datetime
 import logging
 
 from rocketstocks.core.content.formatting import build_df_table, format_large_num
-from rocketstocks.core.content.models import VolumeScreenerData
+from rocketstocks.core.content.models import COLOR_ORANGE, EmbedSpec, VolumeScreenerData
 from rocketstocks.core.content.screeners.base import Screener
 from rocketstocks.core.utils.dates import date_utils
 
@@ -55,3 +55,22 @@ class VolumeScreener(Screener):
         )
         footer = "-# Data via TradingView · {}\n".format(now.strftime("%m/%d/%Y %I:%M %p"))
         return header + build_df_table(self.data[:12]) + "\n" + footer
+
+    def build_embed_spec(self) -> EmbedSpec:
+        logger.debug(f"Building '{self.screener_type}' screener EmbedSpec...")
+        now = datetime.datetime.now(tz=date_utils.timezone())
+        count = len(self.data[:12])
+        title = "🚨 Unusual Volume — {} stocks · {} (Updated {})".format(
+            count,
+            now.date().strftime("%m/%d/%Y"),
+            now.strftime("%I:%M %p"),
+        )
+        description = build_df_table(self.data[:12])
+        footer = "Data via TradingView · {}".format(now.strftime("%m/%d/%Y %I:%M %p"))
+        return EmbedSpec(
+            title=title,
+            description=description,
+            color=COLOR_ORANGE,
+            footer=footer,
+            timestamp=True,
+        )

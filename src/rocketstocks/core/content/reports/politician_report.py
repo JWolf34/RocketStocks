@@ -2,7 +2,7 @@ import logging
 
 from rocketstocks.core.config.paths import datapaths
 from rocketstocks.core.content.formatting import write_df_to_file
-from rocketstocks.core.content.models import PoliticianReportData
+from rocketstocks.core.content.models import COLOR_BLUE, EmbedSpec, PoliticianReportData
 from rocketstocks.core.content import sections
 
 logger = logging.getLogger(__name__)
@@ -22,4 +22,22 @@ class PoliticianReport:
             sections.politician_report_header(self.data.politician['name'])
             + sections.politician_info_section(self.data.politician, self.data.politician_facts)
             + sections.politician_trades_section(self.data.trades)
+        )
+
+    def build_embed_spec(self) -> EmbedSpec:
+        logger.debug("Building Politician Report EmbedSpec...")
+        full = self.build_report()
+        lines = full.split('\n')
+        title = lines[0].lstrip('# ').strip()
+        description = '\n'.join(lines[1:]).lstrip('\n')
+
+        if len(description) > 4096:
+            description = description[:4093] + '...'
+
+        return EmbedSpec(
+            title=title,
+            description=description,
+            color=COLOR_BLUE,
+            footer="RocketStocks · politician-report",
+            timestamp=True,
         )

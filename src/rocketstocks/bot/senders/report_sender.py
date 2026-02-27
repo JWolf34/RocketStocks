@@ -3,8 +3,21 @@ import logging
 import discord
 from rocketstocks.data.discord_state import DiscordState
 from rocketstocks.core.utils.dates import date_utils
+from rocketstocks.bot.senders.embed_utils import spec_to_embed
 
 logger = logging.getLogger(__name__)
+
+
+def _try_build_embed(content) -> discord.Embed | None:
+    """Try to build a discord.Embed from content.build_embed_spec().
+
+    Returns None if the content class has not implemented build_embed_spec().
+    """
+    try:
+        spec = content.build_embed_spec()
+        return spec_to_embed(spec)
+    except NotImplementedError:
+        return None
 
 
 async def send_report(content, channel: discord.TextChannel,
@@ -12,6 +25,9 @@ async def send_report(content, channel: discord.TextChannel,
                       visibility: str = "public",
                       files=None, view=None) -> discord.Message:
     """Send a Report content object to the target channel.
+
+    Attempts to send as a rich Discord embed via content.build_embed_spec().
+    Falls back to plain text via content.build_report() if not implemented.
 
     Args:
         content: A Report subclass instance with a build_report() method.
@@ -24,14 +40,22 @@ async def send_report(content, channel: discord.TextChannel,
     Returns:
         The Discord Message object that was sent.
     """
-    message_text = content.build_report() + "\n\n"
+    embed = _try_build_embed(content)
     logger.info("Sending report...")
-    logger.debug(f"Report has content of length {len(message_text)}")
 
-    if visibility == 'private' and interaction:
-        message = await interaction.user.send(message_text, files=files, view=view)
+    if embed is not None:
+        logger.debug(f"Sending report as embed (title: {embed.title!r})")
+        if visibility == 'private' and interaction:
+            message = await interaction.user.send(embed=embed, files=files, view=view)
+        else:
+            message = await channel.send(embed=embed, files=files, view=view)
     else:
-        message = await channel.send(message_text, files=files, view=view)
+        message_text = content.build_report() + "\n\n"
+        logger.debug(f"Sending report as plaintext (length: {len(message_text)})")
+        if visibility == 'private' and interaction:
+            message = await interaction.user.send(message_text, files=files, view=view)
+        else:
+            message = await channel.send(message_text, files=files, view=view)
 
     return message
 
@@ -41,12 +65,14 @@ async def send_screener(content, channel: discord.TextChannel,
                         view=None, files=None) -> discord.Message:
     """Post or edit-in-place a Screener content object.
 
+    Attempts to send as a rich Discord embed via content.build_embed_spec().
+    Falls back to plain text via content.build_report() if not implemented.
+
     NOTE (multi-guild limitation): The `reports` table uses `type VARCHAR(64) PRIMARY KEY`
     with no `guild_id`, so edit-in-place tracking works correctly for only one guild.
     In a multi-guild deployment, each guild will receive a new screener message on each
     run instead of editing the previous one. Fixing this requires adding `guild_id` to
     the `reports` table (deferred).
-
 
     Checks for an existing message posted today for this screener type. If found,
     edits it instead of posting a new one. Stores the new message ID in the DB.
@@ -62,7 +88,8 @@ async def send_screener(content, channel: discord.TextChannel,
     Returns:
         The Discord Message object that was sent or edited (None when editing).
     """
-    message_text = content.build_report() + "\n\n"
+    embed = _try_build_embed(content)
+    use_embed = embed is not None
 
     # Normalize screener_type for DB key
     screener_type = content.screener_type.upper().replace("-", "_")
@@ -78,18 +105,30 @@ async def send_screener(content, channel: discord.TextChannel,
 
         if message_create_date < today:
             # Old message — create new one for today
-            message = await channel.send(message_text, view=view, files=files)
+            if use_embed:
+                message = await channel.send(embed=embed, view=view, files=files)
+            else:
+                message_text = content.build_report() + "\n\n"
+                message = await channel.send(message_text, view=view, files=files)
             logger.info(f"Posted new '{screener_type}' screener for today")
             dstate.update_screener_message_id(message_id=message.id, screener_type=screener_type)
             return message
         else:
             # Same-day — edit in-place
-            await curr_message.edit(content=message_text)
+            if use_embed:
+                await curr_message.edit(embed=embed, content=None)
+            else:
+                message_text = content.build_report() + "\n\n"
+                await curr_message.edit(content=message_text)
             logger.info(f"Updated '{screener_type}' screener")
             return None
     else:
         logger.debug(f"No existing message for '{screener_type}' screener")
-        message = await channel.send(message_text, view=view)
+        if use_embed:
+            message = await channel.send(embed=embed, view=view)
+        else:
+            message_text = content.build_report() + "\n\n"
+            message = await channel.send(message_text, view=view)
         logger.info(f"Posted new '{screener_type}' screener for today")
         dstate.insert_screener_message_id(message_id=message.id, screener_type=screener_type)
         return message

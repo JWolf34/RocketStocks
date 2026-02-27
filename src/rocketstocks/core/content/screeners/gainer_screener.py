@@ -2,7 +2,7 @@ import datetime
 import logging
 
 from rocketstocks.core.content.formatting import build_df_table, format_large_num
-from rocketstocks.core.content.models import GainerScreenerData
+from rocketstocks.core.content.models import COLOR_GREEN, EmbedSpec, GainerScreenerData
 from rocketstocks.core.content.screeners.base import Screener
 from rocketstocks.core.utils.dates import date_utils
 
@@ -64,21 +64,43 @@ class GainerScreener(Screener):
                 lambda x: "{:.2f}%".format(float(x)) if x is not None else 0.00
             )
 
-    def build_report(self) -> str:
-        logger.debug(f"Building '{self.screener_type}' screener...")
-        now = datetime.datetime.now(tz=date_utils.timezone())
-        label = (
+    def _label(self) -> str:
+        return (
             "Pre-market" if self.market_period == 'premarket'
             else "Intraday" if self.market_period == 'intraday'
             else "After Hours" if self.market_period == 'aftermarket'
             else ""
         )
+
+    def build_report(self) -> str:
+        logger.debug(f"Building '{self.screener_type}' screener...")
+        now = datetime.datetime.now(tz=date_utils.timezone())
         count = len(self.data[:15])
         header = "### :rotating_light: {} Gainers — **{} stocks** · {} (Updated {})\n\n".format(
-            label,
+            self._label(),
             count,
             now.date().strftime("%m/%d/%Y"),
             now.strftime("%I:%M %p"),
         )
         footer = "-# Data via TradingView · {}\n".format(now.strftime("%m/%d/%Y %I:%M %p"))
         return header + build_df_table(self.data[:15]) + "\n" + footer
+
+    def build_embed_spec(self) -> EmbedSpec:
+        logger.debug(f"Building '{self.screener_type}' screener EmbedSpec...")
+        now = datetime.datetime.now(tz=date_utils.timezone())
+        count = len(self.data[:15])
+        title = "🚨 {} Gainers — {} stocks · {} (Updated {})".format(
+            self._label(),
+            count,
+            now.date().strftime("%m/%d/%Y"),
+            now.strftime("%I:%M %p"),
+        )
+        description = build_df_table(self.data[:15])
+        footer = "Data via TradingView · {}".format(now.strftime("%m/%d/%Y %I:%M %p"))
+        return EmbedSpec(
+            title=title,
+            description=description,
+            color=COLOR_GREEN,
+            footer=footer,
+            timestamp=True,
+        )
