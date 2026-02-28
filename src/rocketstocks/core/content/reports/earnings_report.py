@@ -1,10 +1,15 @@
 import logging
+import re
 
 from rocketstocks.core.content.models import (
     COLOR_GREEN, COLOR_RED, COLOR_ORANGE,
     EmbedSpec, EarningsSpotlightData,
 )
 from rocketstocks.core.content import sections
+from rocketstocks.core.content.sections_embed import (
+    ticker_info_description,
+    todays_change_description,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -40,7 +45,16 @@ class EarningsSpotlightReport:
         full = self.build_report()
         lines = full.split('\n')
         title = lines[0].lstrip('# ').strip()
-        description = '\n'.join(lines[1:]).lstrip('\n')
+        body = '\n'.join(lines[1:]).lstrip('\n')
+
+        # Replace markdown headers with bold text (Discord doesn't render ## in embeds)
+        body = re.sub(r'^#{1,3} (.+)$', r'**\1**', body, flags=re.MULTILINE)
+
+        # Compact one-liner header: name · ticker · sector · exchange + today's change
+        compact_header = ticker_info_description(self.data.ticker_info, self.data.quote)
+        compact_header += '\n' + todays_change_description(self.data.quote)
+
+        description = compact_header + '\n\n' + body
 
         if len(description) > 4096:
             description = description[:4093] + '...'

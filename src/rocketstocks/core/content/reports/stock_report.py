@@ -1,10 +1,15 @@
 import logging
+import re
 
 from rocketstocks.core.content.models import (
     COLOR_BLUE, COLOR_GREEN, COLOR_RED,
     EmbedSpec, StockReportData,
 )
 from rocketstocks.core.content import sections
+from rocketstocks.core.content.sections_embed import (
+    ticker_info_description,
+    todays_change_description,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -39,12 +44,21 @@ class StockReport:
         color = COLOR_GREEN if pct_change > 0 else COLOR_RED if pct_change < 0 else COLOR_BLUE
 
         full = self.build_report()
-        # First non-empty line is the header; strip markdown # prefix for embed title
+        # First non-empty line is the title; drop it from body
         lines = full.split('\n')
         title = lines[0].lstrip('# ').strip()
-        description = '\n'.join(lines[1:]).lstrip('\n')
+        body = '\n'.join(lines[1:]).lstrip('\n')
 
-        # Truncate description to Discord's 4096 embed description limit
+        # Replace markdown headers with bold text (Discord doesn't render ## in embeds)
+        body = re.sub(r'^#{1,3} (.+)$', r'**\1**', body, flags=re.MULTILINE)
+
+        # Compact one-liner header: name · ticker · sector · exchange + today's change
+        compact_header = ticker_info_description(self.data.ticker_info, self.data.quote)
+        compact_header += '\n' + todays_change_description(self.data.quote)
+
+        description = compact_header + '\n\n' + body
+
+        # Truncate to Discord's 4096 embed description limit
         if len(description) > 4096:
             description = description[:4093] + '...'
 

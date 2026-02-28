@@ -1,5 +1,6 @@
 import datetime
 import logging
+import re
 
 from rocketstocks.core.config.paths import datapaths
 from rocketstocks.core.content.formatting import build_df_table, write_df_to_file
@@ -44,6 +45,9 @@ class PopularityReport:
         lines = full.split('\n')
         title = lines[0].lstrip('# ').strip()
         description = '\n'.join(lines[1:]).lstrip('\n')
+
+        # Replace markdown headers with bold text (Discord doesn't render ## in embeds)
+        description = re.sub(r'^#{1,3} (.+)$', r'**\1**', description, flags=re.MULTILINE)
 
         if len(description) > 4096:
             description = description[:4093] + '...'

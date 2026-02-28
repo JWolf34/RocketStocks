@@ -1,4 +1,5 @@
 import logging
+import re
 
 from rocketstocks.core.content.models import COLOR_BLUE, EmbedSpec, NewsReportData
 from rocketstocks.core.content import sections
@@ -26,6 +27,9 @@ class NewsReport:
         lines = full.split('\n')
         title = lines[0].lstrip('# ').strip()
         description = '\n'.join(lines[1:]).lstrip('\n')
+
+        # Replace markdown headers with bold text (Discord doesn't render ## in embeds)
+        description = re.sub(r'^#{1,3} (.+)$', r'**\1**', description, flags=re.MULTILINE)
 
         if len(description) > 4096:
             description = description[:4093] + '...'
