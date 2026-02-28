@@ -49,7 +49,7 @@ class VolumeScreener(Screener):
         logger.debug(f"Building '{self.screener_type}' screener...")
         now = datetime.datetime.now(tz=date_utils.timezone())
         count = len(self.data[:12])
-        header = "### :rotating_light: Unusual Volume — **{} stocks** · {} (Updated {})\n\n".format(
+        header = "🚨 Unusual Volume — **{} stocks** · {} (Updated {})\n\n".format(
             count,
             now.date().strftime("%m/%d/%Y"),
             now.strftime("%I:%M %p"),
@@ -66,7 +66,7 @@ class VolumeScreener(Screener):
             now.date().strftime("%m/%d/%Y"),
             now.strftime("%I:%M %p"),
         )
-        description = volume_screener_cards(self.data, limit=12)
+        description = volume_screener_cards(self.data, limit=20)
         footer = "Data via TradingView · {}".format(now.strftime("%m/%d/%Y %I:%M %p"))
         return EmbedSpec(
             title=title,

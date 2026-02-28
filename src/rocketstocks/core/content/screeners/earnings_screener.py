@@ -64,7 +64,7 @@ class WeeklyEarningsScreener(Screener):
 
     def build_report(self) -> str:
         logger.debug(f"Building '{self.screener_type}' screener...")
-        header = f"# Earnings Releasing the Week of {date_utils.format_date_mdy(self.today)}\n\n"
+        header = f"📅 Earnings Releasing the Week of {date_utils.format_date_mdy(self.today)}\n\n"
         return header + self._build_upcoming_earnings()
 
     def build_embed_spec(self) -> EmbedSpec:

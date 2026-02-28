@@ -345,7 +345,7 @@ def upcoming_earnings_card(next_earnings_info: dict) -> str:
     last_year_eps = next_earnings_info.get('last_year_eps', 'N/A')
     last_year_rpt_dt = next_earnings_info.get('last_year_rpt_dt', 'N/A')
 
-    line1 = f"📅 **{date_str}** · {time_label} · {quarter}"
+    line1 = f'**{date_str}** · {time_label} · {quarter}'
     eps_str = f"**${eps_forecast}**" if eps_forecast else "N/A"
     line2 = f"EPS Est {eps_str} ({no_of_ests} ests) · Last Year: **${last_year_eps}** ({last_year_rpt_dt})"
 

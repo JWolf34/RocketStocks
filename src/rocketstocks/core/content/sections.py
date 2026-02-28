@@ -36,25 +36,25 @@ def report_header(ticker: str) -> str:
 def earnings_spotlight_header(ticker: str) -> str:
     """Header for the earnings spotlight report."""
     logger.debug("Building Earnings Spotlight Report header...")
-    return f"# :bulb: Earnings Spotlight: {ticker}\n\n"
+    return f"💡 Earnings Spotlight: {ticker}\n\n"
 
 
 def popularity_report_header(filter_val: str) -> str:
     """Header for the popularity report."""
     logger.debug("Building Popularity Report header...")
-    return f"# Most Popular Stocks ({filter_val}) {datetime.datetime.today().strftime('%m/%d/%Y')}\n\n"
+    return f"🔥 Most Popular Stocks ({filter_val}) {datetime.datetime.today().strftime('%m/%d/%Y')}\n\n"
 
 
 def politician_report_header(politician_name: str) -> str:
     """Header for the politician report."""
     logger.debug("Building Politician Report header...")
-    return f"# Politician Report: {politician_name}\n"
+    return f"🏛️ Politician Report: {politician_name}\n"
 
 
 def news_report_header(query: str) -> str:
     """Header for the news report."""
     logger.debug("Building News Report header...")
-    return f"## News articles for '{query}'\n\n"
+    return f"📰 News articles for '{query}'\n\n"
 
 
 def ticker_info_section(ticker_info: dict, quote: dict) -> str:
@@ -358,7 +358,7 @@ def earnings_date_section(ticker: str, next_earnings_info: dict) -> str:
     logger.debug("Building earnings date...")
     message = ''
     if next_earnings_info:
-        message = f"{ticker} reports earnings on "
+        message = f"`{ticker}` reports earnings on "
         message += f"{date_utils.format_date_mdy(next_earnings_info['date'])}, "
         earnings_time = next_earnings_info['time']
         if "pre-market" in earnings_time:
@@ -367,7 +367,7 @@ def earnings_date_section(ticker: str, next_earnings_info: dict) -> str:
             message += "after market close"
         else:
             message += "time not specified"
-        message += "\n"
+        message += "\n\n"
     return message
 
 

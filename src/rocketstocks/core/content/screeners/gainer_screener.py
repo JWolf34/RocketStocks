@@ -77,7 +77,7 @@ class GainerScreener(Screener):
         logger.debug(f"Building '{self.screener_type}' screener...")
         now = datetime.datetime.now(tz=date_utils.timezone())
         count = len(self.data[:15])
-        header = "### :rotating_light: {} Gainers — **{} stocks** · {} (Updated {})\n\n".format(
+        header = "📈 {} Gainers — **{} stocks** · {} (Updated {})\n\n".format(
             self._label(),
             count,
             now.date().strftime("%m/%d/%Y"),
@@ -90,13 +90,13 @@ class GainerScreener(Screener):
         logger.debug(f"Building '{self.screener_type}' screener EmbedSpec...")
         now = datetime.datetime.now(tz=date_utils.timezone())
         count = len(self.data[:15])
-        title = "🚨 {} Gainers — {} stocks · {} (Updated {})".format(
+        title = "📈 {} Gainers — {} stocks · {} (Updated {})".format(
             self._label(),
             count,
             now.date().strftime("%m/%d/%Y"),
             now.strftime("%I:%M %p"),
         )
-        description = gainer_screener_cards(self.data, limit=15)
+        description = gainer_screener_cards(self.data, limit=20)
         footer = "Data via TradingView · {}".format(now.strftime("%m/%d/%Y %I:%M %p"))
         return EmbedSpec(
             title=title,

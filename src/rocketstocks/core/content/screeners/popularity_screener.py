@@ -33,7 +33,7 @@ class PopularityScreener(Screener):
         now = datetime.datetime.now(tz=date_utils.timezone())
         count = len(self.data[:20])
         updated_time = date_utils.round_down_nearest_minute(30).astimezone(date_utils.timezone()).strftime("%I:%M %p")
-        header = "### :rotating_light: Popular Stocks — **{} stocks** · {} (Updated {})\n\n".format(
+        header = "🔥 Popular Stocks — **{} stocks** · {} (Updated {})\n\n".format(
             count,
             now.date().strftime("%m/%d/%Y"),
             updated_time,
@@ -46,7 +46,7 @@ class PopularityScreener(Screener):
         now = datetime.datetime.now(tz=date_utils.timezone())
         count = len(self.data[:20])
         updated_time = date_utils.round_down_nearest_minute(30).astimezone(date_utils.timezone()).strftime("%I:%M %p")
-        title = "🚨 Popular Stocks — {} stocks · {} (Updated {})".format(
+        title = "🔥 Popular Stocks — {} stocks · {} (Updated {})".format(
             count,
             now.date().strftime("%m/%d/%Y"),
             updated_time,
