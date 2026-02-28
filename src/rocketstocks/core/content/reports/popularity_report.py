@@ -1,11 +1,11 @@
 import datetime
 import logging
-import re
 
 from rocketstocks.core.config.paths import datapaths
-from rocketstocks.core.content.formatting import build_df_table, write_df_to_file
+from rocketstocks.core.content.formatting import write_df_to_file
 from rocketstocks.core.content.models import COLOR_BLUE, EmbedSpec, PopularityReportData
 from rocketstocks.core.content import sections
+from rocketstocks.core.content.sections_card import popularity_screener_cards
 
 logger = logging.getLogger(__name__)
 
@@ -34,6 +34,7 @@ class PopularityReport:
 
     def build_report(self) -> str:
         logger.debug("Building Popularity Report...")
+        from rocketstocks.core.content.formatting import build_df_table
         return (
             sections.popularity_report_header(self.data.filter)
             + build_df_table(self._display_data.drop(columns=['name'], errors='ignore')[:20])
@@ -41,13 +42,8 @@ class PopularityReport:
 
     def build_embed_spec(self) -> EmbedSpec:
         logger.debug("Building Popularity Report EmbedSpec...")
-        full = self.build_report()
-        lines = full.split('\n')
-        title = lines[0].lstrip('# ').strip()
-        description = '\n'.join(lines[1:]).lstrip('\n')
-
-        # Replace markdown headers with bold text (Discord doesn't render ## in embeds)
-        description = re.sub(r'^#{1,3} (.+)$', r'**\1**', description, flags=re.MULTILINE)
+        title = sections.popularity_report_header(self.data.filter).splitlines()[0].lstrip('# ').strip()
+        description = popularity_screener_cards(self._display_data[:20])
 
         if len(description) > 4096:
             description = description[:4093] + '...'

@@ -1,12 +1,15 @@
 import logging
-import re
 
 from rocketstocks.core.content.models import (
     COLOR_GREEN, COLOR_RED, COLOR_ORANGE,
     EmbedSpec, EarningsSpotlightData,
 )
 from rocketstocks.core.content import sections
-from rocketstocks.core.content.sections_card import ohlcv_card, recent_earnings_card
+from rocketstocks.core.content.sections_card import (
+    ohlcv_card, recent_earnings_card,
+    performance_card, fundamentals_card, technical_signals_card,
+    upcoming_earnings_card,
+)
 from rocketstocks.core.content.sections_embed import (
     ticker_info_description,
     todays_change_description,
@@ -49,23 +52,19 @@ class EarningsSpotlightReport:
         compact_header = ticker_info_description(self.data.ticker_info, self.data.quote)
         compact_header += '\n' + todays_change_description(self.data.quote)
 
-        # Build body section by section — swap multi-column tables for card format
+        # Build body section by section — card format throughout
         body = (
             sections.earnings_date_section(self.data.ticker, self.data.next_earnings_info)
-            + sections.ticker_info_section(self.data.ticker_info, self.data.quote)
             + ohlcv_card(self.data.quote)
-            + sections.fundamentals_section(
+            + performance_card(self.data.daily_price_history, self.data.quote)
+            + fundamentals_card(
                 self.data.fundamentals, self.data.quote,
                 daily_price_history=self.data.daily_price_history,
             )
-            + sections.performance_section(self.data.daily_price_history, self.data.quote)
-            + sections.technical_signals_section(self.data.daily_price_history)
-            + sections.upcoming_earnings_summary_section(self.data.next_earnings_info)
+            + technical_signals_card(self.data.daily_price_history)
+            + upcoming_earnings_card(self.data.next_earnings_info)
             + recent_earnings_card(self.data.historical_earnings)
         )
-
-        # Replace markdown headers with bold text (Discord doesn't render ## in embeds)
-        body = re.sub(r'^#{1,3} (.+)$', r'**\1**', body, flags=re.MULTILINE)
 
         description = compact_header + '\n\n' + body
 

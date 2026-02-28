@@ -1,12 +1,15 @@
 import logging
-import re
 
 from rocketstocks.core.content.models import (
     COLOR_BLUE, COLOR_GREEN, COLOR_RED,
     EmbedSpec, StockReportData,
 )
 from rocketstocks.core.content import sections
-from rocketstocks.core.content.sections_card import ohlcv_card, recent_earnings_card
+from rocketstocks.core.content.sections_card import (
+    ohlcv_card, recent_earnings_card,
+    performance_card, fundamentals_card, technical_signals_card,
+    popularity_card, sec_filings_card,
+)
 from rocketstocks.core.content.sections_embed import (
     ticker_info_description,
     todays_change_description,
@@ -50,23 +53,19 @@ class StockReport:
         compact_header = ticker_info_description(self.data.ticker_info, self.data.quote)
         compact_header += '\n' + todays_change_description(self.data.quote)
 
-        # Build body section by section — swap multi-column tables for card format
+        # Build body section by section — card format throughout
         body = (
-            sections.ticker_info_section(self.data.ticker_info, self.data.quote)
-            + ohlcv_card(self.data.quote)
-            + sections.performance_section(self.data.daily_price_history, self.data.quote)
-            + sections.fundamentals_section(
+            ohlcv_card(self.data.quote)
+            + performance_card(self.data.daily_price_history, self.data.quote)
+            + fundamentals_card(
                 self.data.fundamentals, self.data.quote,
                 daily_price_history=self.data.daily_price_history,
             )
-            + sections.technical_signals_section(self.data.daily_price_history)
-            + sections.popularity_section(self.data.popularity)
+            + technical_signals_card(self.data.daily_price_history)
+            + popularity_card(self.data.popularity)
             + recent_earnings_card(self.data.historical_earnings)
-            + sections.sec_filings_section(self.data.recent_sec_filings)
+            + sec_filings_card(self.data.recent_sec_filings)
         )
-
-        # Replace markdown headers with bold text (Discord doesn't render ## in embeds)
-        body = re.sub(r'^#{1,3} (.+)$', r'**\1**', body, flags=re.MULTILINE)
 
         description = compact_header + '\n\n' + body
 

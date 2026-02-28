@@ -387,6 +387,154 @@ class TestPopularityScreenerEmbedSpec:
         assert len(self._make_screener().build_embed_spec().description) <= 4096
 
 
+# ---------------------------------------------------------------------------
+# TestCardFunctions
+# ---------------------------------------------------------------------------
+
+class TestCardFunctions:
+    """Tests for the 7 new card-format section builder functions."""
+
+    def test_performance_card_returns_nonempty(self):
+        from rocketstocks.core.content.sections_card import performance_card
+        result = performance_card(_price_history(), _minimal_quote())
+        assert isinstance(result, str) and len(result) > 0
+
+    def test_performance_card_no_hash_headers(self):
+        from rocketstocks.core.content.sections_card import performance_card
+        result = performance_card(_price_history(), _minimal_quote())
+        assert '##' not in result
+
+    def test_performance_card_empty_df(self):
+        from rocketstocks.core.content.sections_card import performance_card
+        result = performance_card(pd.DataFrame(), _minimal_quote())
+        assert 'No price data' in result
+
+    def test_fundamentals_card_returns_nonempty(self):
+        from rocketstocks.core.content.sections_card import fundamentals_card
+        result = fundamentals_card(_minimal_fundamentals(), _minimal_quote(), _price_history())
+        assert isinstance(result, str) and len(result) > 0
+
+    def test_fundamentals_card_no_hash_headers(self):
+        from rocketstocks.core.content.sections_card import fundamentals_card
+        result = fundamentals_card(_minimal_fundamentals(), _minimal_quote())
+        assert '##' not in result
+
+    def test_fundamentals_card_no_fundamentals(self):
+        from rocketstocks.core.content.sections_card import fundamentals_card
+        result = fundamentals_card(None, _minimal_quote())
+        assert 'No fundamentals' in result
+
+    def test_fundamentals_card_includes_52w_when_history_provided(self):
+        from rocketstocks.core.content.sections_card import fundamentals_card
+        result = fundamentals_card(_minimal_fundamentals(), _minimal_quote(), _price_history())
+        assert '52W' in result
+
+    def test_technical_signals_card_returns_nonempty(self):
+        from rocketstocks.core.content.sections_card import technical_signals_card
+        result = technical_signals_card(_price_history())
+        assert isinstance(result, str) and len(result) > 0
+
+    def test_technical_signals_card_no_hash_headers(self):
+        from rocketstocks.core.content.sections_card import technical_signals_card
+        result = technical_signals_card(_price_history())
+        assert '##' not in result
+
+    def test_technical_signals_card_empty_df(self):
+        from rocketstocks.core.content.sections_card import technical_signals_card
+        result = technical_signals_card(pd.DataFrame())
+        assert 'No price data' in result
+
+    def test_popularity_card_returns_nonempty(self):
+        from rocketstocks.core.content.sections_card import popularity_card
+        result = popularity_card(pd.DataFrame())
+        assert isinstance(result, str) and len(result) > 0
+
+    def test_popularity_card_no_hash_headers(self):
+        from rocketstocks.core.content.sections_card import popularity_card
+        result = popularity_card(pd.DataFrame())
+        assert '##' not in result
+
+    def test_popularity_card_empty_df(self):
+        from rocketstocks.core.content.sections_card import popularity_card
+        result = popularity_card(pd.DataFrame())
+        assert 'No popularity data' in result
+
+    def test_upcoming_earnings_card_returns_nonempty(self):
+        from rocketstocks.core.content.sections_card import upcoming_earnings_card
+        info = {
+            'date': datetime.date(2026, 3, 15),
+            'time': 'after-hours',
+            'fiscal_quarter_ending': 'Jan 2026',
+            'eps_forecast': '0.89',
+            'no_of_ests': '42',
+            'last_year_rpt_dt': '2025-02-26',
+            'last_year_eps': '0.76',
+        }
+        result = upcoming_earnings_card(info)
+        assert isinstance(result, str) and len(result) > 0
+
+    def test_upcoming_earnings_card_no_hash_headers(self):
+        from rocketstocks.core.content.sections_card import upcoming_earnings_card
+        result = upcoming_earnings_card({'date': datetime.date(2026, 3, 15), 'time': 'after-hours',
+                                         'fiscal_quarter_ending': 'Q1', 'eps_forecast': '1.0',
+                                         'no_of_ests': '10', 'last_year_rpt_dt': '2025-01-01',
+                                         'last_year_eps': '0.9'})
+        assert '##' not in result
+
+    def test_upcoming_earnings_card_empty(self):
+        from rocketstocks.core.content.sections_card import upcoming_earnings_card
+        result = upcoming_earnings_card(None)
+        assert 'No upcoming earnings' in result
+
+    def test_upcoming_earnings_card_falsy_empty_dict(self):
+        from rocketstocks.core.content.sections_card import upcoming_earnings_card
+        result = upcoming_earnings_card({})
+        assert 'No upcoming earnings' in result
+
+    def test_politician_info_card_returns_nonempty(self):
+        from rocketstocks.core.content.sections_card import politician_info_card
+        result = politician_info_card(
+            {'name': 'Nancy Pelosi', 'party': 'Democrat', 'state': 'California'},
+            {'Net Worth': '$120M'},
+        )
+        assert isinstance(result, str) and len(result) > 0
+
+    def test_politician_info_card_no_hash_headers(self):
+        from rocketstocks.core.content.sections_card import politician_info_card
+        result = politician_info_card({'party': 'Democrat', 'state': 'CA'}, {})
+        assert '##' not in result
+
+    def test_politician_info_card_empty_facts(self):
+        from rocketstocks.core.content.sections_card import politician_info_card
+        result = politician_info_card({'party': 'Republican', 'state': 'TX'}, None)
+        assert 'Republican' in result
+
+    def test_sec_filings_card_returns_nonempty(self):
+        from rocketstocks.core.content.sections_card import sec_filings_card
+        df = pd.DataFrame({
+            'form': ['10-K', '8-K'],
+            'filingDate': ['2026-01-15', '2026-02-03'],
+            'link': ['https://example.com/1', 'https://example.com/2'],
+        })
+        result = sec_filings_card(df)
+        assert isinstance(result, str) and len(result) > 0
+
+    def test_sec_filings_card_no_hash_headers(self):
+        from rocketstocks.core.content.sections_card import sec_filings_card
+        df = pd.DataFrame({
+            'form': ['10-K'],
+            'filingDate': ['2026-01-15'],
+            'link': ['https://example.com/1'],
+        })
+        result = sec_filings_card(df)
+        assert '##' not in result
+
+    def test_sec_filings_card_empty_df(self):
+        from rocketstocks.core.content.sections_card import sec_filings_card
+        result = sec_filings_card(pd.DataFrame())
+        assert 'No recent SEC filings' in result
+
+
 class TestWeeklyEarningsScreenerEmbedSpec:
     def _make_screener(self):
         from unittest.mock import patch
