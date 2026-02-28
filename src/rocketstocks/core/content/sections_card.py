@@ -98,12 +98,12 @@ def gainer_screener_cards(data: pd.DataFrame, limit: int = 15) -> str:
         line1 = f"**{ticker}** · {change} · {price_str}"
         line2_parts = []
         if vol_col:
-            line2_parts.append(f"Vol {row[vol_col]}")
+            line2_parts.append(f"Vol **{row[vol_col]}**")
         if 'Market Cap' in data.columns:
-            line2_parts.append(f"MCap {row['Market Cap']}")
+            line2_parts.append(f"MCap **{row['Market Cap']}**")
         lines.append(line1)
         if line2_parts:
-            lines.append('  '.join(line2_parts))
+            lines.append(' · '.join(line2_parts))
         lines.append("")
     return '\n'.join(lines).strip()
 
@@ -123,14 +123,14 @@ def volume_screener_cards(data: pd.DataFrame, limit: int = 12) -> str:
         line1 = f"**{ticker}** · RVOL {rvol} · {change} · {price_str}"
         line2_parts = []
         if 'Volume' in data.columns:
-            line2_parts.append(f"Vol {row['Volume']}")
+            line2_parts.append(f"Vol **{row['Volume']}**")
         if 'Avg Volume (10 Day)' in data.columns:
-            line2_parts.append(f"Avg {row['Avg Volume (10 Day)']}")
+            line2_parts.append(f"Avg **{row['Avg Volume (10 Day)']}**")
         if 'Market Cap' in data.columns:
-            line2_parts.append(f"MCap {row['Market Cap']}")
+            line2_parts.append(f"MCap **{row['Market Cap']}**")
         lines.append(line1)
         if line2_parts:
-            lines.append('  '.join(line2_parts))
+            lines.append(' · '.join(line2_parts))
         lines.append("")
     return '\n'.join(lines).strip()
 
@@ -143,7 +143,7 @@ def popularity_screener_cards(data: pd.DataFrame, limit: int = 20) -> str:
         ticker = row.get('Ticker', 'N/A')
         mentions = row.get('Mentions', 'N/A')
         rank_24h = row.get('Rank 24H Ago', 'N/A')
-        mentions_24h = row.get('Mentions 24H Ago', 'N/A')
+        mentions_24h = int(row.get('Mentions 24H Ago', 'N/A'))
         lines.append(f"**#{rank} {ticker}** · {mentions} mentions")
         lines.append(f"24H ago: #{rank_24h} · {mentions_24h} mentions")
         lines.append("")
