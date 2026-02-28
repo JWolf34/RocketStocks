@@ -21,27 +21,24 @@ logger = logging.getLogger(__name__)
 
 
 def ohlcv_card(quote: dict) -> str:
-    """OHLCV as a stacked card — one item per line."""
+    """OHLCV — OHLC grouped on one line, Vol on a second line."""
     open_ = quote['quote']['openPrice']
     high = quote['quote']['highPrice']
     low = quote['quote']['lowPrice']
     close = quote['regular']['regularMarketLastPrice']
     vol = format_large_num(quote['quote']['totalVolume'])
     return (
-        "**Today's Summary**\n"
-        f"Open **${open_:.2f}**\n"
-        f"High **${high:.2f}**\n"
-        f"Low **${low:.2f}**\n"
-        f"Close **${close:.2f}**\n"
+        "__**Today's Summary**__\n"
+        f"Open **${open_:.2f}** · High **${high:.2f}** · Low **${low:.2f}** · Close **${close:.2f}**\n"
         f"Vol **{vol}**\n\n"
     )
 
 
 def recent_earnings_card(historical_earnings: pd.DataFrame) -> str:
     """Recent earnings as stacked per-quarter cards instead of a multi-column table."""
-    header = "**Recent Earnings**\n"
+    header = "__**Recent Earnings**__"
     if historical_earnings is None or historical_earnings.empty:
-        return header + "No historical earnings found\n\n"
+        return header + "\nNo historical earnings found\n\n"
 
     lines = [header]
     for _, row in historical_earnings.tail(4).iterrows():
@@ -69,9 +66,9 @@ def recent_earnings_card(historical_earnings: pd.DataFrame) -> str:
 
 def politician_trades_card(trades: pd.DataFrame) -> str:
     """Politician trades as stacked per-trade cards instead of a multi-column table."""
-    header = "**Latest Trades**\n"
+    header = "__**Latest Trades**__"
     if trades is None or trades.empty:
-        return header + "No trades found\n\n"
+        return header + "\nNo trades found\n\n"
 
     lines = [header]
     for _, row in trades.head(10).iterrows():
@@ -154,16 +151,15 @@ def popularity_screener_cards(data: pd.DataFrame, limit: int = 20) -> str:
 
 
 def performance_card(daily_price_history: pd.DataFrame, quote: dict) -> str:
-    """Stock performance over recent intervals — one item per line."""
-    header = "**Performance**\n"
+    """Stock performance over recent intervals — header owns close, intervals on one dot-line."""
     if daily_price_history is None or daily_price_history.empty:
-        return header + "No price data\n\n"
+        return "__**Performance**__\nNo price data\n\n"
 
     close = quote['regular']['regularMarketLastPrice']
     interval_map = {"1D": 1, "5D": 5, "1M": 30, "3M": 90, "6M": 180}
     today = datetime.datetime.now(tz=date_utils.timezone()).date()
 
-    interval_lines = []
+    interval_parts = []
     for label, interval in interval_map.items():
         interval_date = today - datetime.timedelta(days=interval)
         while interval_date.weekday() > 4:
@@ -175,15 +171,14 @@ def performance_card(daily_price_history: pd.DataFrame, quote: dict) -> str:
             change = ((close - prev_close) / prev_close) * 100.0
             symbol = "🔻" if change < 0 else "🟢"
             sign = "+" if change >= 0 else ""
-            interval_lines.append(f"{label} {symbol} **{sign}{change:.2f}%**")
+            interval_parts.append(f"{label} {symbol} **{sign}{change:.2f}%**")
         else:
-            interval_lines.append(f"{label} N/A")
+            interval_parts.append(f"{label} N/A")
 
     return (
-        header
-        + f"Close **${close:.2f}**\n\n"
-        + "\n".join(interval_lines)
-        + "\n\n"
+        f"__**Performance**__ · Close **${close:.2f}**\n"
+        + " · ".join(interval_parts[:3]) + "\n"
+        + " · ".join(interval_parts[3:]) + "\n\n"
     )
 
 
@@ -192,10 +187,9 @@ def fundamentals_card(
     quote: dict,
     daily_price_history: pd.DataFrame | None = None,
 ) -> str:
-    """Stock fundamentals as a compact one-liner with optional 52W line."""
-    header = "**Fundamentals**\n"
+    """Stock fundamentals — metrics on one dot-line, optional 52W on a second dot-line."""
     if not fundamentals:
-        return header + "No fundamentals found\n\n"
+        return "__**Fundamentals**__\nNo fundamentals found\n\n"
 
     fund = fundamentals['instruments'][0]['fundamental']
     mcap = format_large_num(fund['marketCap'])
@@ -206,16 +200,11 @@ def fundamentals_card(
     short = "Yes" if quote['reference']['isShortable'] else "No"
     htb = "Yes" if quote['reference']['isHardToBorrow'] else "No"
 
-    lines = [
-        header,
-        f"MCap **{mcap}**",
-        f"EPS **{eps}**",
-        f"P/E **{pe}**",
-        f"Beta **{beta}**",
-        f"Div **{div}**",
-        f"Short **{short}**",
-        f"HTB **{htb}**",
-    ]
+    result = (
+        "__**Fundamentals**__\n"
+        f"MCap **{mcap}** · EPS **{eps}** · P/E **{pe}** · Beta **{beta}**\n"
+        f"Div **{div}** · Short **{short}** · HTB **{htb}**\n"
+    )
 
     if daily_price_history is not None and not daily_price_history.empty:
         close = quote['regular']['regularMarketLastPrice']
@@ -223,18 +212,15 @@ def fundamentals_card(
         w52_low = daily_price_history['low'].tail(252).min()
         from_high = ((close - w52_high) / w52_high) * 100.0
         sign = "+" if from_high >= 0 else ""
-        lines.append(f"52W High **${w52_high:.2f}**")
-        lines.append(f"52W Low **${w52_low:.2f}**")
-        lines.append(f"**{sign}{from_high:.1f}%** from 52W high")
+        result += f"52W High **${w52_high:.2f}** · 52W Low **${w52_low:.2f}** · **{sign}{from_high:.1f}%** from high\n"
 
-    return "\n".join(lines) + "\n\n"
+    return result + "\n"
 
 
 def technical_signals_card(daily_price_history: pd.DataFrame) -> str:
-    """Key technical indicators as a compact inline summary."""
-    header = "**Technical Signals**\n"
+    """Key technical indicators — RSI+MACD on line 1, ADX+MA on line 2."""
     if daily_price_history is None or daily_price_history.empty:
-        return header + "No price data available\n\n"
+        return "__**Technical Signals**__\nNo price data available\n\n"
 
     close = daily_price_history['close']
     n = len(close)
@@ -302,44 +288,45 @@ def technical_signals_card(daily_price_history: pd.DataFrame) -> str:
     else:
         parts.append("50/200 MA **N/A** (< 200 candles)")
 
-    return header + "\n".join(parts) + "\n\n"
+    # Group: RSI + MACD (momentum), ADX + 50/200 MA (trend)
+    line1 = " · ".join(parts[0:2])
+    line2 = " · ".join(parts[2:4])
+    return "__**Technical Signals**__\n" + line1 + "\n" + line2 + "\n\n"
 
 
 def popularity_card(popularity: pd.DataFrame) -> str:
-    """Stock popularity ranking over select intervals as a compact inline summary."""
-    header = "**Popularity**\n"
+    """Stock popularity ranking — header owns current rank, intervals on one dot-line."""
     if popularity is None or popularity.empty:
-        return header + "No popularity data\n\n"
+        return "__**Popularity**__\nNo popularity data\n\n"
 
     now = date_utils.round_down_nearest_minute(30)
     today_pop = popularity[popularity['datetime'] == now]
     current_rank = today_pop['rank'].iloc[0] if not today_pop.empty else None
 
     if current_rank is None:
-        return header + "No popularity data\n\n"
+        return "__**Popularity**__\nNo popularity data\n\n"
 
     interval_map = {"1D Best": 1, "7D Best": 7, "1M Best": 30, "3M Best": 90, "6M Best": 180}
-    interval_lines = []
+    interval_parts = []
     for label, interval in interval_map.items():
         interval_date = now - datetime.timedelta(days=interval)
         interval_pop = popularity[popularity['datetime'].between(interval_date, now)]
         if not interval_pop.empty:
             best = interval_pop['rank'].min()
-            interval_lines.append(f"{label} **#{best}**")
+            interval_parts.append(f"{label} **#{best}**")
         else:
-            interval_lines.append(f"{label} N/A")
+            interval_parts.append(f"{label} N/A")
 
     return (
-        header
-        + f"Rank **#{current_rank}**\n\n"
-        + "\n".join(interval_lines)
-        + "\n\n"
+        f"__**Popularity**__ · Rank **#{current_rank}**\n"
+        + " · ".join(interval_parts[:3]) + "\n"
+        + " · ".join(interval_parts[3:]) + "\n\n"
     )
 
 
 def upcoming_earnings_card(next_earnings_info: dict) -> str:
     """Next earnings date and estimates as a compact card."""
-    header = "**Next Earnings**\n"
+    header = "__**Next Earnings**__\n"
     if not next_earnings_info:
         return header + "No upcoming earnings\n\n"
 
@@ -367,7 +354,7 @@ def upcoming_earnings_card(next_earnings_info: dict) -> str:
 
 def politician_info_card(politician: dict, politician_facts: dict) -> str:
     """Politician party, state, and facts as a compact card."""
-    header = "**About**\n"
+    header = "__**About**__"
     party = politician.get('party', 'N/A')
     state = politician.get('state', 'N/A')
     line1 = f"🏛️ **{party}** · **{state}**"
@@ -382,9 +369,9 @@ def politician_info_card(politician: dict, politician_facts: dict) -> str:
 
 def sec_filings_card(recent_sec_filings: pd.DataFrame) -> str:
     """5 most recent SEC filings as hyperlinks with bold header."""
-    header = "**Recent SEC Filings**\n"
+    header = "__**Recent SEC Filings**__"
     if recent_sec_filings is None or recent_sec_filings.empty:
-        return header + "No recent SEC filings\n\n"
+        return header + "\nNo recent SEC filings\n\n"
 
     lines = [header]
     for filing in recent_sec_filings.head(5).to_dict(orient='records'):

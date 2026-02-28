@@ -29,7 +29,7 @@ logger = logging.getLogger(__name__)
 def report_header(ticker: str) -> str:
     """Standard stock report header with ticker and today's date."""
     logger.debug("Building report header...")
-    header = "# " + ticker + " Report " + date_utils.format_date_mdy(datetime.datetime.now(tz=date_utils.timezone()).date())
+    header = "📊 " + ticker + " Report " + date_utils.format_date_mdy(datetime.datetime.now(tz=date_utils.timezone()).date())
     return header + "\n\n"
 
 
