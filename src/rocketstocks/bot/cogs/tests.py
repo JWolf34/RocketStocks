@@ -6,7 +6,7 @@ import pandas as pd
 from discord import app_commands
 from discord.ext import commands
 
-from rocketstocks.bot.senders.alert_sender import _spec_to_embed
+from rocketstocks.bot.senders.embed_utils import spec_to_embed
 from rocketstocks.core.content.alerts.earnings_alert import EarningsMoverAlert
 from rocketstocks.core.content.alerts.politician_alert import PoliticianTradeAlert
 from rocketstocks.core.content.alerts.popularity_alert import PopularityAlert
@@ -275,7 +275,7 @@ class Tests(commands.Cog):
 
         try:
             spec = alert.build_embed_spec()
-            embed = _spec_to_embed(spec)
+            embed = spec_to_embed(spec)
             await interaction.followup.send(embed=embed)
         except NotImplementedError:
             msg = alert.build_alert()
