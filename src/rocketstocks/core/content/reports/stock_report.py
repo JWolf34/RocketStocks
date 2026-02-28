@@ -6,6 +6,7 @@ from rocketstocks.core.content.models import (
     EmbedSpec, StockReportData,
 )
 from rocketstocks.core.content import sections
+from rocketstocks.core.content.sections_card import ohlcv_card, recent_earnings_card
 from rocketstocks.core.content.sections_embed import (
     ticker_info_description,
     todays_change_description,
@@ -43,18 +44,29 @@ class StockReport:
         pct_change = self.data.quote['quote'].get('netPercentChange', 0)
         color = COLOR_GREEN if pct_change > 0 else COLOR_RED if pct_change < 0 else COLOR_BLUE
 
-        full = self.build_report()
-        # First non-empty line is the title; drop it from body
-        lines = full.split('\n')
-        title = lines[0].lstrip('# ').strip()
-        body = '\n'.join(lines[1:]).lstrip('\n')
+        title = sections.report_header(self.data.ticker).splitlines()[0].lstrip('# ').strip()
+
+        # Compact one-liner header at top of description
+        compact_header = ticker_info_description(self.data.ticker_info, self.data.quote)
+        compact_header += '\n' + todays_change_description(self.data.quote)
+
+        # Build body section by section — swap multi-column tables for card format
+        body = (
+            sections.ticker_info_section(self.data.ticker_info, self.data.quote)
+            + ohlcv_card(self.data.quote)
+            + sections.performance_section(self.data.daily_price_history, self.data.quote)
+            + sections.fundamentals_section(
+                self.data.fundamentals, self.data.quote,
+                daily_price_history=self.data.daily_price_history,
+            )
+            + sections.technical_signals_section(self.data.daily_price_history)
+            + sections.popularity_section(self.data.popularity)
+            + recent_earnings_card(self.data.historical_earnings)
+            + sections.sec_filings_section(self.data.recent_sec_filings)
+        )
 
         # Replace markdown headers with bold text (Discord doesn't render ## in embeds)
         body = re.sub(r'^#{1,3} (.+)$', r'**\1**', body, flags=re.MULTILINE)
-
-        # Compact one-liner header: name · ticker · sector · exchange + today's change
-        compact_header = ticker_info_description(self.data.ticker_info, self.data.quote)
-        compact_header += '\n' + todays_change_description(self.data.quote)
 
         description = compact_header + '\n\n' + body
 

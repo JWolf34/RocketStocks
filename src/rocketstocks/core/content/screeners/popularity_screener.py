@@ -4,6 +4,7 @@ import logging
 from rocketstocks.core.content.formatting import build_df_table
 from rocketstocks.core.content.models import COLOR_BLUE, EmbedSpec, PopularityScreenerData
 from rocketstocks.core.content.screeners.base import Screener
+from rocketstocks.core.content.sections_card import popularity_screener_cards
 from rocketstocks.core.utils.dates import date_utils
 
 logger = logging.getLogger(__name__)
@@ -50,7 +51,7 @@ class PopularityScreener(Screener):
             now.date().strftime("%m/%d/%Y"),
             updated_time,
         )
-        description = build_df_table(df=self.data[:20])
+        description = popularity_screener_cards(self.data, limit=20)
         footer = "Data via ApeWisdom · {}".format(now.strftime("%m/%d/%Y %I:%M %p"))
         return EmbedSpec(
             title=title,

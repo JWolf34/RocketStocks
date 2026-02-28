@@ -328,9 +328,9 @@ class TestGainerScreenerEmbedSpec:
         spec = self._make_screener().build_embed_spec()
         assert "Gainers" in spec.title
 
-    def test_description_is_code_block(self):
+    def test_description_contains_ticker(self):
         spec = self._make_screener().build_embed_spec()
-        assert spec.description.startswith("```")
+        assert "TK0" in spec.description
 
     def test_description_under_4096(self):
         spec = self._make_screener().build_embed_spec()

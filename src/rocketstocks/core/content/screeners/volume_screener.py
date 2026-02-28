@@ -4,6 +4,7 @@ import logging
 from rocketstocks.core.content.formatting import build_df_table, format_large_num
 from rocketstocks.core.content.models import COLOR_ORANGE, EmbedSpec, VolumeScreenerData
 from rocketstocks.core.content.screeners.base import Screener
+from rocketstocks.core.content.sections_card import volume_screener_cards
 from rocketstocks.core.utils.dates import date_utils
 
 logger = logging.getLogger(__name__)
@@ -65,7 +66,7 @@ class VolumeScreener(Screener):
             now.date().strftime("%m/%d/%Y"),
             now.strftime("%I:%M %p"),
         )
-        description = build_df_table(self.data[:12])
+        description = volume_screener_cards(self.data, limit=12)
         footer = "Data via TradingView · {}".format(now.strftime("%m/%d/%Y %I:%M %p"))
         return EmbedSpec(
             title=title,
