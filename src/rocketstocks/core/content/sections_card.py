@@ -21,7 +21,7 @@ logger = logging.getLogger(__name__)
 
 
 def ohlcv_card(quote: dict) -> str:
-    """OHLCV as a single compact line instead of a multi-column table."""
+    """OHLCV as a stacked card — one item per line."""
     open_ = quote['quote']['openPrice']
     high = quote['quote']['highPrice']
     low = quote['quote']['lowPrice']
@@ -29,8 +29,11 @@ def ohlcv_card(quote: dict) -> str:
     vol = format_large_num(quote['quote']['totalVolume'])
     return (
         "**Today's Summary**\n"
-        f"Open **${open_:.2f}** · High **${high:.2f}** · Low **${low:.2f}** · "
-        f"Close **${close:.2f}** · Vol **{vol}**\n\n"
+        f"Open **${open_:.2f}**\n"
+        f"High **${high:.2f}**\n"
+        f"Low **${low:.2f}**\n"
+        f"Close **${close:.2f}**\n"
+        f"Vol **{vol}**\n\n"
     )
 
 
@@ -151,17 +154,16 @@ def popularity_screener_cards(data: pd.DataFrame, limit: int = 20) -> str:
 
 
 def performance_card(daily_price_history: pd.DataFrame, quote: dict) -> str:
-    """Stock performance over recent intervals as a compact single line."""
+    """Stock performance over recent intervals — one item per line."""
     header = "**Performance**\n"
     if daily_price_history is None or daily_price_history.empty:
         return header + "No price data\n\n"
 
     close = quote['regular']['regularMarketLastPrice']
-    parts = [f"Close **${close:.2f}**"]
-
     interval_map = {"1D": 1, "5D": 5, "1M": 30, "3M": 90, "6M": 180}
     today = datetime.datetime.now(tz=date_utils.timezone()).date()
 
+    interval_lines = []
     for label, interval in interval_map.items():
         interval_date = today - datetime.timedelta(days=interval)
         while interval_date.weekday() > 4:
@@ -173,11 +175,16 @@ def performance_card(daily_price_history: pd.DataFrame, quote: dict) -> str:
             change = ((close - prev_close) / prev_close) * 100.0
             symbol = "🔻" if change < 0 else "🟢"
             sign = "+" if change >= 0 else ""
-            parts.append(f"{label} {symbol} **{sign}{change:.2f}%**")
+            interval_lines.append(f"{label} {symbol} **{sign}{change:.2f}%**")
         else:
-            parts.append(f"{label} N/A")
+            interval_lines.append(f"{label} N/A")
 
-    return header + " · ".join(parts) + "\n\n"
+    return (
+        header
+        + f"Close **${close:.2f}**\n\n"
+        + "\n".join(interval_lines)
+        + "\n\n"
+    )
 
 
 def fundamentals_card(
@@ -199,11 +206,16 @@ def fundamentals_card(
     short = "Yes" if quote['reference']['isShortable'] else "No"
     htb = "Yes" if quote['reference']['isHardToBorrow'] else "No"
 
-    line1 = (
-        f"MCap **{mcap}** · EPS **{eps}** · P/E **{pe}** · "
-        f"Beta **{beta}** · Div **{div}** · Short **{short}** · HTB **{htb}**"
-    )
-    lines = [header, line1]
+    lines = [
+        header,
+        f"MCap **{mcap}**",
+        f"EPS **{eps}**",
+        f"P/E **{pe}**",
+        f"Beta **{beta}**",
+        f"Div **{div}**",
+        f"Short **{short}**",
+        f"HTB **{htb}**",
+    ]
 
     if daily_price_history is not None and not daily_price_history.empty:
         close = quote['regular']['regularMarketLastPrice']
@@ -211,10 +223,9 @@ def fundamentals_card(
         w52_low = daily_price_history['low'].tail(252).min()
         from_high = ((close - w52_high) / w52_high) * 100.0
         sign = "+" if from_high >= 0 else ""
-        lines.append(
-            f"52W High **${w52_high:.2f}** · 52W Low **${w52_low:.2f}** · "
-            f"**{sign}{from_high:.1f}%** from high"
-        )
+        lines.append(f"52W High **${w52_high:.2f}**")
+        lines.append(f"52W Low **${w52_low:.2f}**")
+        lines.append(f"**{sign}{from_high:.1f}%** from 52W high")
 
     return "\n".join(lines) + "\n\n"
 
@@ -291,7 +302,7 @@ def technical_signals_card(daily_price_history: pd.DataFrame) -> str:
     else:
         parts.append("50/200 MA **N/A** (< 200 candles)")
 
-    return header + " · ".join(parts) + "\n\n"
+    return header + "\n".join(parts) + "\n\n"
 
 
 def popularity_card(popularity: pd.DataFrame) -> str:
@@ -307,19 +318,23 @@ def popularity_card(popularity: pd.DataFrame) -> str:
     if current_rank is None:
         return header + "No popularity data\n\n"
 
-    parts = [f"Rank **#{current_rank}**"]
     interval_map = {"1D Best": 1, "7D Best": 7, "1M Best": 30, "3M Best": 90, "6M Best": 180}
-
+    interval_lines = []
     for label, interval in interval_map.items():
         interval_date = now - datetime.timedelta(days=interval)
         interval_pop = popularity[popularity['datetime'].between(interval_date, now)]
         if not interval_pop.empty:
             best = interval_pop['rank'].min()
-            parts.append(f"{label} **#{best}**")
+            interval_lines.append(f"{label} **#{best}**")
         else:
-            parts.append(f"{label} N/A")
+            interval_lines.append(f"{label} N/A")
 
-    return header + " · ".join(parts) + "\n\n"
+    return (
+        header
+        + f"Rank **#{current_rank}**\n\n"
+        + "\n".join(interval_lines)
+        + "\n\n"
+    )
 
 
 def upcoming_earnings_card(next_earnings_info: dict) -> str:
