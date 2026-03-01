@@ -64,13 +64,13 @@ def recent_earnings_card(historical_earnings: pd.DataFrame, *, show_header: bool
     return '\n'.join(lines) + '\n\n'
 
 
-def politician_trades_card(trades: pd.DataFrame) -> str:
+def politician_trades_card(trades: pd.DataFrame, *, show_header: bool = True) -> str:
     """Politician trades as stacked per-trade cards instead of a multi-column table."""
     header = "__**Latest Trades**__"
     if trades is None or trades.empty:
-        return header + "\nNo trades found\n\n"
+        return (header + "\n" if show_header else "") + "No trades found\n\n"
 
-    lines = [header]
+    lines = [header] if show_header else []
     for _, row in trades.head(10).iterrows():
         ticker = row.get('Ticker', 'N/A')
         pub_date = row.get('Published Date', 'N/A')

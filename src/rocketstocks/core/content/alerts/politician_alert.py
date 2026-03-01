@@ -54,7 +54,7 @@ class PoliticianTradeAlert(Alert):
             EmbedField(name="Trades Today", value=str(num_trades), inline=True),
             EmbedField(
                 name="Trades",
-                value=sections_card.politician_trades_card(self.data.trades),
+                value=sections_card.politician_trades_card(self.data.trades, show_header=False),
                 inline=False,
             ),
         ]
