@@ -12,7 +12,7 @@ from rocketstocks.core.content.alerts.sec_filing_alert import SECFilingMoverAler
 from rocketstocks.core.content.alerts.popularity_alert import PopularityAlert
 from rocketstocks.core.content.alerts.politician_alert import PoliticianTradeAlert
 from rocketstocks.core.content.models import (
-    COLOR_GREEN, COLOR_RED, COLOR_ORANGE, COLOR_BLUE,
+    COLOR_GREEN, COLOR_RED, COLOR_ORANGE, COLOR_PURPLE,
     EarningsMoverData, VolumeMoverData, VolumeSpikeData,
     WatchlistMoverData, SECFilingData, PopularityAlertData,
     PoliticianTradeAlertData, EmbedSpec, EmbedField,
@@ -299,11 +299,11 @@ def trades_df():
     })
 
 
-def test_politician_embed_spec_color_is_blue(politician, trades_df):
+def test_politician_embed_spec_color_is_purple(politician, trades_df):
     data = PoliticianTradeAlertData(politician=politician, trades=trades_df)
     alert = PoliticianTradeAlert(data=data)
     spec = alert.build_embed_spec()
-    assert spec.color == COLOR_BLUE
+    assert spec.color == COLOR_PURPLE
 
 
 def test_politician_embed_spec_no_url(politician, trades_df):

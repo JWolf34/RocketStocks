@@ -2,7 +2,7 @@ import logging
 
 from rocketstocks.core.config.paths import datapaths
 from rocketstocks.core.content.formatting import write_df_to_file
-from rocketstocks.core.content.models import COLOR_BLUE, EmbedSpec, PoliticianReportData
+from rocketstocks.core.content.models import COLOR_TEAL, EmbedSpec, PoliticianReportData
 from rocketstocks.core.content import sections
 from rocketstocks.core.content.sections_card import politician_info_card, politician_trades_card
 
@@ -42,7 +42,7 @@ class PoliticianReport:
         return EmbedSpec(
             title=title,
             description=description,
-            color=COLOR_BLUE,
+            color=COLOR_TEAL,
             footer="RocketStocks · politician-report",
             timestamp=True,
         )

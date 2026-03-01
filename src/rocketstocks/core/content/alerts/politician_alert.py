@@ -4,7 +4,7 @@ import logging
 from rocketstocks.core.content.alerts.base import Alert
 from rocketstocks.core.content.formatting import build_df_table
 from rocketstocks.core.content.models import (
-    COLOR_BLUE,
+    COLOR_PURPLE,
     PoliticianTradeAlertData, EmbedField, EmbedSpec,
 )
 from rocketstocks.core.content import sections
@@ -62,7 +62,7 @@ class PoliticianTradeAlert(Alert):
         return EmbedSpec(
             title=f"🚨 Politician Trade Alert: {name}",
             description=description,
-            color=COLOR_BLUE,
+            color=COLOR_PURPLE,
             fields=fields,
             footer="RocketStocks · politician-trade",
             timestamp=True,

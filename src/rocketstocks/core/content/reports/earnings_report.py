@@ -1,7 +1,7 @@
 import logging
 
 from rocketstocks.core.content.models import (
-    COLOR_GREEN, COLOR_RED, COLOR_ORANGE,
+    COLOR_GOLD,
     EmbedSpec, EarningsSpotlightData,
 )
 from rocketstocks.core.content import sections
@@ -43,8 +43,7 @@ class EarningsSpotlightReport:
 
     def build_embed_spec(self) -> EmbedSpec:
         logger.debug("Building Earnings Spotlight EmbedSpec...")
-        pct_change = self.data.quote['quote'].get('netPercentChange', 0)
-        color = COLOR_GREEN if pct_change > 0 else COLOR_RED if pct_change < 0 else COLOR_ORANGE
+        color = COLOR_GOLD
 
         title = sections.earnings_spotlight_header(self.data.ticker).splitlines()[0].lstrip('# ').strip()
 

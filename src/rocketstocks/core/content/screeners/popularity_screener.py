@@ -2,7 +2,7 @@ import datetime
 import logging
 
 from rocketstocks.core.content.formatting import build_df_table
-from rocketstocks.core.content.models import COLOR_BLUE, EmbedSpec, PopularityScreenerData
+from rocketstocks.core.content.models import COLOR_CYAN, EmbedSpec, PopularityScreenerData
 from rocketstocks.core.content.screeners.base import Screener
 from rocketstocks.core.content.sections_card import popularity_screener_cards
 from rocketstocks.core.utils.dates import date_utils
@@ -56,7 +56,7 @@ class PopularityScreener(Screener):
         return EmbedSpec(
             title=title,
             description=description,
-            color=COLOR_BLUE,
+            color=COLOR_CYAN,
             footer=footer,
             timestamp=True,
         )

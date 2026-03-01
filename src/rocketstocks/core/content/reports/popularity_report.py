@@ -3,7 +3,7 @@ import logging
 
 from rocketstocks.core.config.paths import datapaths
 from rocketstocks.core.content.formatting import write_df_to_file
-from rocketstocks.core.content.models import COLOR_BLUE, EmbedSpec, PopularityReportData
+from rocketstocks.core.content.models import COLOR_PINK, EmbedSpec, PopularityReportData
 from rocketstocks.core.content import sections
 from rocketstocks.core.content.sections_card import popularity_screener_cards
 
@@ -51,7 +51,7 @@ class PopularityReport:
         return EmbedSpec(
             title=title,
             description=description,
-            color=COLOR_BLUE,
+            color=COLOR_PINK,
             footer="RocketStocks · popularity-report",
             timestamp=True,
         )

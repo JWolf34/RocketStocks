@@ -11,7 +11,8 @@ import pandas as pd
 import pytest
 
 from rocketstocks.core.content.models import (
-    COLOR_BLUE, COLOR_GREEN, COLOR_ORANGE, COLOR_RED,
+    COLOR_BLUE, COLOR_GREEN, COLOR_ORANGE,
+    COLOR_GOLD, COLOR_INDIGO, COLOR_PINK, COLOR_CYAN, COLOR_AMBER,
     EmbedSpec,
     EarningsSpotlightData, GainerScreenerData, NewsReportData,
     PopularityReportData, PopularityScreenerData, StockReportData,
@@ -130,13 +131,10 @@ class TestStockReportEmbedSpec:
         spec = self._make_report().build_embed_spec()
         assert "AAPL" in spec.title
 
-    def test_color_green_when_positive(self):
-        spec = self._make_report(pct=2.5).build_embed_spec()
-        assert spec.color == COLOR_GREEN
-
-    def test_color_red_when_negative(self):
-        spec = self._make_report(pct=-1.5).build_embed_spec()
-        assert spec.color == COLOR_RED
+    def test_color_is_always_blue(self):
+        assert self._make_report(pct=2.5).build_embed_spec().color == COLOR_BLUE
+        assert self._make_report(pct=-1.5).build_embed_spec().color == COLOR_BLUE
+        assert self._make_report(pct=0).build_embed_spec().color == COLOR_BLUE
 
     def test_has_footer(self):
         spec = self._make_report().build_embed_spec()
@@ -224,9 +222,10 @@ class TestEarningsSpotlightEmbedSpec:
         spec = self._make_report().build_embed_spec()
         assert "NVDA" in spec.title
 
-    def test_color_orange_when_neutral(self):
-        spec = self._make_report(pct=0).build_embed_spec()
-        assert spec.color == COLOR_ORANGE
+    def test_color_is_always_gold(self):
+        assert self._make_report(pct=0).build_embed_spec().color == COLOR_GOLD
+        assert self._make_report(pct=2.5).build_embed_spec().color == COLOR_GOLD
+        assert self._make_report(pct=-1.5).build_embed_spec().color == COLOR_GOLD
 
     def test_char_budget_under_6000(self):
         spec = self._make_report().build_embed_spec()
@@ -262,8 +261,8 @@ class TestNewsReportEmbedSpec:
         spec = self._make_report().build_embed_spec()
         assert "AAPL" in spec.title
 
-    def test_color_is_blue(self):
-        assert self._make_report().build_embed_spec().color == COLOR_BLUE
+    def test_color_is_indigo(self):
+        assert self._make_report().build_embed_spec().color == COLOR_INDIGO
 
     def test_description_under_4096(self):
         spec = self._make_report().build_embed_spec()
@@ -294,8 +293,8 @@ class TestPopularityReportEmbedSpec:
         spec = self._make_report(tmp_path).build_embed_spec()
         assert isinstance(spec, EmbedSpec)
 
-    def test_color_is_blue(self, tmp_path):
-        assert self._make_report(tmp_path).build_embed_spec().color == COLOR_BLUE
+    def test_color_is_pink(self, tmp_path):
+        assert self._make_report(tmp_path).build_embed_spec().color == COLOR_PINK
 
     def test_description_under_4096(self, tmp_path):
         spec = self._make_report(tmp_path).build_embed_spec()
@@ -380,8 +379,8 @@ class TestPopularityScreenerEmbedSpec:
     def test_returns_embed_spec(self):
         assert isinstance(self._make_screener().build_embed_spec(), EmbedSpec)
 
-    def test_color_is_blue(self):
-        assert self._make_screener().build_embed_spec().color == COLOR_BLUE
+    def test_color_is_cyan(self):
+        assert self._make_screener().build_embed_spec().color == COLOR_CYAN
 
     def test_description_under_4096(self):
         assert len(self._make_screener().build_embed_spec().description) <= 4096
@@ -560,8 +559,8 @@ class TestWeeklyEarningsScreenerEmbedSpec:
     def test_returns_embed_spec(self):
         assert isinstance(self._make_screener().build_embed_spec(), EmbedSpec)
 
-    def test_color_is_blue(self):
-        assert self._make_screener().build_embed_spec().color == COLOR_BLUE
+    def test_color_is_amber(self):
+        assert self._make_screener().build_embed_spec().color == COLOR_AMBER
 
     def test_title_contains_week(self):
         spec = self._make_screener().build_embed_spec()

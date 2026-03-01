@@ -1,6 +1,6 @@
 import logging
 
-from rocketstocks.core.content.models import COLOR_BLUE, EmbedSpec, NewsReportData
+from rocketstocks.core.content.models import COLOR_INDIGO, EmbedSpec, NewsReportData
 from rocketstocks.core.content import sections
 
 logger = logging.getLogger(__name__)
@@ -31,7 +31,7 @@ class NewsReport:
         return EmbedSpec(
             title=title,
             description=description,
-            color=COLOR_BLUE,
+            color=COLOR_INDIGO,
             footer="RocketStocks · news-report",
             timestamp=True,
         )

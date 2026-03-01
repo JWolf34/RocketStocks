@@ -1,7 +1,7 @@
 import logging
 
 from rocketstocks.core.content.models import (
-    COLOR_BLUE, COLOR_GREEN, COLOR_RED,
+    COLOR_BLUE,
     EmbedSpec, StockReportData,
 )
 from rocketstocks.core.content import sections
@@ -44,8 +44,7 @@ class StockReport:
 
     def build_embed_spec(self) -> EmbedSpec:
         logger.debug("Building Stock Report EmbedSpec...")
-        pct_change = self.data.quote['quote'].get('netPercentChange', 0)
-        color = COLOR_GREEN if pct_change > 0 else COLOR_RED if pct_change < 0 else COLOR_BLUE
+        color = COLOR_BLUE
 
         title = sections.report_header(self.data.ticker).splitlines()[0].lstrip('# ').strip()
 

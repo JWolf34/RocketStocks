@@ -18,6 +18,13 @@ COLOR_GREEN  = 0x2ecc71
 COLOR_RED    = 0xe74c3c
 COLOR_ORANGE = 0xe67e22
 COLOR_BLUE   = 0x3498db
+COLOR_PURPLE = 0x9b59b6
+COLOR_INDIGO = 0x3f51b5
+COLOR_TEAL   = 0x1abc9c
+COLOR_GOLD   = 0xf1c40f
+COLOR_PINK   = 0xe91e63
+COLOR_CYAN   = 0x00bcd4
+COLOR_AMBER  = 0xf39c12
 
 
 # ---------------------------------------------------------------------------
