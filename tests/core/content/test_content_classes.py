@@ -24,36 +24,6 @@ from rocketstocks.core.content.screeners.volume_screener import VolumeScreener
 
 
 # ---------------------------------------------------------------------------
-# Fixtures
-# ---------------------------------------------------------------------------
-
-@pytest.fixture
-def quote():
-    return {
-        'quote': {
-            'netPercentChange': 7.5,
-            'openPrice': 50.0, 'highPrice': 55.0, 'lowPrice': 49.0,
-            'totalVolume': 5_000_000,
-        },
-        'regular': {'regularMarketLastPrice': 54.0},
-        'assetSubType': 'CS',
-        'reference': {'exchangeName': 'NYSE', 'isShortable': True, 'isHardToBorrow': False},
-    }
-
-
-@pytest.fixture
-def ticker_info():
-    return {'ticker': 'GME', 'name': 'GameStop Corp', 'sector': 'Consumer',
-            'industry': 'Retail', 'country': 'US'}
-
-
-@pytest.fixture
-def price_history():
-    dates = [datetime.date.today() - datetime.timedelta(days=i) for i in range(100)]
-    return pd.DataFrame({'date': dates, 'close': [10.0] * 100, 'volume': [500_000] * 100})
-
-
-# ---------------------------------------------------------------------------
 # Alert.override_and_edit base logic
 # ---------------------------------------------------------------------------
 
@@ -89,24 +59,24 @@ def test_alert_base_override_missing_prev_pct_returns_false():
 # VolumeMoverAlert
 # ---------------------------------------------------------------------------
 
-def test_volume_mover_alert_data_contains_pct_and_rvol(quote, ticker_info, price_history):
-    data = VolumeMoverData(ticker='GME', ticker_info=ticker_info, quote=quote,
+def test_volume_mover_alert_data_contains_pct_and_rvol(quote_up, ticker_info, price_history):
+    data = VolumeMoverData(ticker='GME', ticker_info=ticker_info, quote=quote_up,
                            rvol=30.0, daily_price_history=price_history)
     alert = VolumeMoverAlert(data=data)
     assert alert.alert_data['pct_change'] == 7.5
     assert alert.alert_data['rvol'] == 30.0
 
 
-def test_volume_mover_override_rvol_doubling(quote, ticker_info, price_history):
-    data = VolumeMoverData(ticker='GME', ticker_info=ticker_info, quote=quote,
+def test_volume_mover_override_rvol_doubling(quote_up, ticker_info, price_history):
+    data = VolumeMoverData(ticker='GME', ticker_info=ticker_info, quote=quote_up,
                            rvol=60.0, daily_price_history=price_history)
     alert = VolumeMoverAlert(data=data)
     prev = {'pct_change': 7.5, 'rvol': 25.0}  # rvol doubled: 60 > 2*25 → override
     assert alert.override_and_edit(prev) is True
 
 
-def test_volume_mover_override_no_trigger(quote, ticker_info, price_history):
-    data = VolumeMoverData(ticker='GME', ticker_info=ticker_info, quote=quote,
+def test_volume_mover_override_no_trigger(quote_up, ticker_info, price_history):
+    data = VolumeMoverData(ticker='GME', ticker_info=ticker_info, quote=quote_up,
                            rvol=30.0, daily_price_history=price_history)
     alert = VolumeMoverAlert(data=data)
     prev = {'pct_change': 7.5, 'rvol': 20.0}  # 30 < 2*20=40 → no override
@@ -117,8 +87,8 @@ def test_volume_mover_override_no_trigger(quote, ticker_info, price_history):
 # VolumeSpikeAlert
 # ---------------------------------------------------------------------------
 
-def test_volume_spike_override_on_rvol_at_time_increase(quote, ticker_info):
-    data = VolumeSpikeData(ticker='NVDA', ticker_info=ticker_info, quote=quote,
+def test_volume_spike_override_on_rvol_at_time_increase(quote_up, ticker_info):
+    data = VolumeSpikeData(ticker='NVDA', ticker_info=ticker_info, quote=quote_up,
                            rvol_at_time=80.0, avg_vol_at_time=200_000.0, time='11:00 AM')
     alert = VolumeSpikeAlert(data=data)
     prev = {'pct_change': 7.5, 'rvol_at_time': 50.0}  # 80 > 1.5*50=75 → override
@@ -141,7 +111,7 @@ def test_watchlist_mover_alert_type():
 # PopularityAlert.override_and_edit
 # ---------------------------------------------------------------------------
 
-def test_popularity_alert_override_on_high_rank_improvement(quote, ticker_info):
+def test_popularity_alert_override_on_high_rank_improvement(quote_up, ticker_info):
     now = datetime.datetime.now()
     rounded = now.replace(minute=(now.minute // 30) * 30, second=0, microsecond=0)
     # Create 5 days of data
@@ -151,7 +121,7 @@ def test_popularity_alert_override_on_high_rank_improvement(quote, ticker_info):
         pop_data.append({'datetime': d, 'ticker': 'GME', 'rank': 50 - i * 2})
     pop_df = pd.DataFrame(pop_data)
 
-    data = PopularityAlertData(ticker='GME', ticker_info=ticker_info, quote=quote,
+    data = PopularityAlertData(ticker='GME', ticker_info=ticker_info, quote=quote_up,
                                popularity=pop_df)
     alert = PopularityAlert(data=data)
     # alert high_rank (50) < 0.5 * prev high_rank (200 = 100) → override
@@ -160,14 +130,14 @@ def test_popularity_alert_override_on_high_rank_improvement(quote, ticker_info):
     assert alert.override_and_edit(prev) is True
 
 
-def test_popularity_alert_no_override(quote, ticker_info):
+def test_popularity_alert_no_override(quote_up, ticker_info):
     now = datetime.datetime.now()
     rounded = now.replace(minute=(now.minute // 30) * 30, second=0, microsecond=0)
     pop_data = [{'datetime': rounded - datetime.timedelta(days=i), 'ticker': 'GME', 'rank': 90 - i}
                 for i in range(6)]
     pop_df = pd.DataFrame(pop_data)
 
-    data = PopularityAlertData(ticker='GME', ticker_info=ticker_info, quote=quote,
+    data = PopularityAlertData(ticker='GME', ticker_info=ticker_info, quote=quote_up,
                                popularity=pop_df)
     alert = PopularityAlert(data=data)
     prev = {'pct_change': 7.5, 'high_rank': 80, 'high_rank_date': '2024-01-01',
