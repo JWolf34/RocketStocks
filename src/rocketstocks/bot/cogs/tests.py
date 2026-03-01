@@ -385,7 +385,7 @@ def _build_dummy_alert(alert_type: str):
             ticker=ticker,
             ticker_info=ticker_info,
             quote=quote,
-            watchlist='Tech Watchlist',
+            watchlist='Tech',
         ))
 
     if alert_type == 'sec_filing':

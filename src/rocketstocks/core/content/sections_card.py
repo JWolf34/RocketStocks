@@ -357,7 +357,7 @@ def politician_info_card(politician: dict, politician_facts: dict) -> str:
     header = "__**About**__"
     party = politician.get('party', 'N/A')
     state = politician.get('state', 'N/A')
-    line1 = f"🏛️ **{party}** · **{state}**"
+    line1 = f"s**{party}** · **{state}**"
 
     lines = [header, line1]
     if politician_facts:
