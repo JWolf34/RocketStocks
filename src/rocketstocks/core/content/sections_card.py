@@ -4,7 +4,7 @@ Each function returns a plain string that can be embedded directly in an
 EmbedSpec description. Data is presented as stacked per-record cards instead
 of wide multi-column tables, which wrap unreadably on narrow mobile screens.
 
-Used exclusively by build_embed_spec() methods — build_report() is unchanged.
+Used by all content class build() methods to format embed descriptions.
 """
 from __future__ import annotations
 
@@ -378,6 +378,65 @@ def sec_filings_card(recent_sec_filings: pd.DataFrame) -> str:
         lines.append(f"[Form {filing['form']} - {filing['filingDate']}]({filing['link']})")
 
     return "\n".join(lines) + "\n\n"
+
+
+def earnings_date_section(ticker: str, next_earnings_info: dict) -> str:
+    """One-liner stating when the ticker reports earnings (embed-compatible)."""
+    if not next_earnings_info:
+        return ''
+    message = f"`{ticker}` reports earnings on "
+    message += f"{date_utils.format_date_mdy(next_earnings_info['date'])}, "
+    earnings_time = next_earnings_info['time']
+    if "pre-market" in earnings_time:
+        message += "before market open"
+    elif "after-hours" in earnings_time:
+        message += "after market close"
+    else:
+        message += "time not specified"
+    return message + "\n\n"
+
+
+def news_section(news: dict) -> str:
+    """Up to 10 recent news articles as hyperlinks (embed-compatible)."""
+    report = ''
+    for article in news['articles'][:10]:
+        article_date = date_utils.format_date_from_iso(date=article['publishedAt']).strftime("%m/%d/%y %H:%M:%S EST")
+        article_line = f"[{article['title']} - {article['source']['name']} ({article_date})](<{article['url']}>)\n"
+        if len(report + article_line) <= 1900:
+            report += article_line
+        else:
+            break
+    return report
+
+
+def ticker_info_description(ticker_info: dict, quote: dict) -> str:
+    """One-line compact ticker info for embed description header."""
+    parts = []
+    name = (ticker_info or {}).get('name', '')
+    if name:
+        parts.append(f"**{name}**")
+    ticker = quote.get('symbol', '')
+    if ticker:
+        parts.append(f"`{ticker}`")
+    sector = (ticker_info or {}).get('sector', '')
+    if sector and sector != 'NaN':
+        parts.append(sector)
+    industry = (ticker_info or {}).get('industry', '')
+    if industry and industry != 'NaN':
+        parts.append(industry)
+    exchange = quote.get('reference', {}).get('exchangeName', '')
+    if exchange:
+        parts.append(exchange)
+    return ' · '.join(parts)
+
+
+def todays_change_description(quote: dict) -> str:
+    """One-line price and percent change for embed description header."""
+    pct = quote['quote'].get('netPercentChange', 0)
+    price = quote['regular']['regularMarketLastPrice']
+    symbol = '🟢' if pct > 0 else '🔻'
+    sign = '+' if pct > 0 else ''
+    return f"{symbol} **{sign}{pct:.2f}%** — **${price:.2f}**"
 
 
 def weekly_earnings_cards(data: pd.DataFrame, watchlist_tickers: list[str]) -> str:
