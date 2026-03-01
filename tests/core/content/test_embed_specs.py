@@ -1,4 +1,4 @@
-"""Tests for build_embed_spec() on all report and screener classes.
+"""Tests for build() on all report and screener classes.
 
 Verifies:
 - EmbedSpec is returned with correct structure
@@ -124,52 +124,52 @@ class TestStockReportEmbedSpec:
         return StockReport(data)
 
     def test_returns_embed_spec(self):
-        spec = self._make_report().build_embed_spec()
+        spec = self._make_report().build()
         assert isinstance(spec, EmbedSpec)
 
     def test_title_contains_ticker_and_date(self):
-        spec = self._make_report().build_embed_spec()
+        spec = self._make_report().build()
         assert "AAPL" in spec.title
 
     def test_color_is_always_blue(self):
-        assert self._make_report(pct=2.5).build_embed_spec().color == COLOR_BLUE
-        assert self._make_report(pct=-1.5).build_embed_spec().color == COLOR_BLUE
-        assert self._make_report(pct=0).build_embed_spec().color == COLOR_BLUE
+        assert self._make_report(pct=2.5).build().color == COLOR_BLUE
+        assert self._make_report(pct=-1.5).build().color == COLOR_BLUE
+        assert self._make_report(pct=0).build().color == COLOR_BLUE
 
     def test_has_footer(self):
-        spec = self._make_report().build_embed_spec()
+        spec = self._make_report().build()
         assert spec.footer is not None
         assert "stock-report" in spec.footer
 
     def test_has_timestamp(self):
-        spec = self._make_report().build_embed_spec()
+        spec = self._make_report().build()
         assert spec.timestamp is True
 
     def test_has_finviz_url(self):
-        spec = self._make_report().build_embed_spec()
+        spec = self._make_report().build()
         assert spec.url is not None
         assert "AAPL" in spec.url
 
     def test_char_budget_under_6000(self):
-        spec = self._make_report().build_embed_spec()
+        spec = self._make_report().build()
         total = _embed_char_count(spec)
         assert total < 6000, f"Embed char count {total} exceeds 6000"
 
     def test_description_under_4096(self):
-        spec = self._make_report().build_embed_spec()
+        spec = self._make_report().build()
         assert len(spec.description) <= 4096
 
     def test_fields_each_under_1024(self):
-        spec = self._make_report().build_embed_spec()
+        spec = self._make_report().build()
         for f in spec.fields:
             assert len(f.value) <= 1024, f"Field '{f.name}' value exceeds 1024 chars"
 
     def test_no_more_than_25_fields(self):
-        spec = self._make_report().build_embed_spec()
+        spec = self._make_report().build()
         assert len(spec.fields) <= 25
 
     def test_empty_popularity_does_not_crash(self):
-        spec = self._make_report().build_embed_spec()
+        spec = self._make_report().build()
         assert spec is not None
 
     def test_empty_earnings_does_not_crash(self):
@@ -185,7 +185,7 @@ class TestStockReportEmbedSpec:
             next_earnings_info={},
             recent_sec_filings=pd.DataFrame(),
         )
-        spec = StockReport(data).build_embed_spec()
+        spec = StockReport(data).build()
         assert isinstance(spec, EmbedSpec)
 
 
@@ -216,23 +216,23 @@ class TestEarningsSpotlightEmbedSpec:
         return EarningsSpotlightReport(data)
 
     def test_returns_embed_spec(self):
-        assert isinstance(self._make_report().build_embed_spec(), EmbedSpec)
+        assert isinstance(self._make_report().build(), EmbedSpec)
 
     def test_title_contains_ticker(self):
-        spec = self._make_report().build_embed_spec()
+        spec = self._make_report().build()
         assert "NVDA" in spec.title
 
     def test_color_is_always_gold(self):
-        assert self._make_report(pct=0).build_embed_spec().color == COLOR_GOLD
-        assert self._make_report(pct=2.5).build_embed_spec().color == COLOR_GOLD
-        assert self._make_report(pct=-1.5).build_embed_spec().color == COLOR_GOLD
+        assert self._make_report(pct=0).build().color == COLOR_GOLD
+        assert self._make_report(pct=2.5).build().color == COLOR_GOLD
+        assert self._make_report(pct=-1.5).build().color == COLOR_GOLD
 
     def test_char_budget_under_6000(self):
-        spec = self._make_report().build_embed_spec()
+        spec = self._make_report().build()
         assert _embed_char_count(spec) < 6000
 
     def test_description_under_4096(self):
-        spec = self._make_report().build_embed_spec()
+        spec = self._make_report().build()
         assert len(spec.description) <= 4096
 
 
@@ -255,17 +255,17 @@ class TestNewsReportEmbedSpec:
         return NewsReport(NewsReportData(query="AAPL", news=news))
 
     def test_returns_embed_spec(self):
-        assert isinstance(self._make_report().build_embed_spec(), EmbedSpec)
+        assert isinstance(self._make_report().build(), EmbedSpec)
 
     def test_title_contains_query(self):
-        spec = self._make_report().build_embed_spec()
+        spec = self._make_report().build()
         assert "AAPL" in spec.title
 
     def test_color_is_indigo(self):
-        assert self._make_report().build_embed_spec().color == COLOR_INDIGO
+        assert self._make_report().build().color == COLOR_INDIGO
 
     def test_description_under_4096(self):
-        spec = self._make_report().build_embed_spec()
+        spec = self._make_report().build()
         assert len(spec.description) <= 4096
 
 
@@ -290,14 +290,14 @@ class TestPopularityReportEmbedSpec:
                 return PopularityReport(PopularityReportData(popular_stocks=df, filter="all"))
 
     def test_returns_embed_spec(self, tmp_path):
-        spec = self._make_report(tmp_path).build_embed_spec()
+        spec = self._make_report(tmp_path).build()
         assert isinstance(spec, EmbedSpec)
 
     def test_color_is_pink(self, tmp_path):
-        assert self._make_report(tmp_path).build_embed_spec().color == COLOR_PINK
+        assert self._make_report(tmp_path).build().color == COLOR_PINK
 
     def test_description_under_4096(self, tmp_path):
-        spec = self._make_report(tmp_path).build_embed_spec()
+        spec = self._make_report(tmp_path).build()
         assert len(spec.description) <= 4096
 
 
@@ -318,25 +318,25 @@ class TestGainerScreenerEmbedSpec:
         return GainerScreener(GainerScreenerData(market_period='intraday', gainers=df))
 
     def test_returns_embed_spec(self):
-        assert isinstance(self._make_screener().build_embed_spec(), EmbedSpec)
+        assert isinstance(self._make_screener().build(), EmbedSpec)
 
     def test_color_is_green(self):
-        assert self._make_screener().build_embed_spec().color == COLOR_GREEN
+        assert self._make_screener().build().color == COLOR_GREEN
 
     def test_title_contains_gainers(self):
-        spec = self._make_screener().build_embed_spec()
+        spec = self._make_screener().build()
         assert "Gainers" in spec.title
 
     def test_description_contains_ticker(self):
-        spec = self._make_screener().build_embed_spec()
+        spec = self._make_screener().build()
         assert "TK0" in spec.description
 
     def test_description_under_4096(self):
-        spec = self._make_screener().build_embed_spec()
+        spec = self._make_screener().build()
         assert len(spec.description) <= 4096
 
     def test_char_budget_under_6000(self):
-        spec = self._make_screener().build_embed_spec()
+        spec = self._make_screener().build()
         assert _embed_char_count(spec) < 6000
 
 
@@ -355,13 +355,13 @@ class TestVolumeScreenerEmbedSpec:
         return VolumeScreener(VolumeScreenerData(unusual_volume=df))
 
     def test_returns_embed_spec(self):
-        assert isinstance(self._make_screener().build_embed_spec(), EmbedSpec)
+        assert isinstance(self._make_screener().build(), EmbedSpec)
 
     def test_color_is_orange(self):
-        assert self._make_screener().build_embed_spec().color == COLOR_ORANGE
+        assert self._make_screener().build().color == COLOR_ORANGE
 
     def test_description_under_4096(self):
-        assert len(self._make_screener().build_embed_spec().description) <= 4096
+        assert len(self._make_screener().build().description) <= 4096
 
 
 class TestPopularityScreenerEmbedSpec:
@@ -377,13 +377,13 @@ class TestPopularityScreenerEmbedSpec:
         return PopularityScreener(PopularityScreenerData(popular_stocks=df))
 
     def test_returns_embed_spec(self):
-        assert isinstance(self._make_screener().build_embed_spec(), EmbedSpec)
+        assert isinstance(self._make_screener().build(), EmbedSpec)
 
     def test_color_is_cyan(self):
-        assert self._make_screener().build_embed_spec().color == COLOR_CYAN
+        assert self._make_screener().build().color == COLOR_CYAN
 
     def test_description_under_4096(self):
-        assert len(self._make_screener().build_embed_spec().description) <= 4096
+        assert len(self._make_screener().build().description) <= 4096
 
 
 # ---------------------------------------------------------------------------
@@ -557,11 +557,11 @@ class TestWeeklyEarningsScreenerEmbedSpec:
                 ))
 
     def test_returns_embed_spec(self):
-        assert isinstance(self._make_screener().build_embed_spec(), EmbedSpec)
+        assert isinstance(self._make_screener().build(), EmbedSpec)
 
     def test_color_is_amber(self):
-        assert self._make_screener().build_embed_spec().color == COLOR_AMBER
+        assert self._make_screener().build().color == COLOR_AMBER
 
     def test_title_contains_week(self):
-        spec = self._make_screener().build_embed_spec()
+        spec = self._make_screener().build()
         assert "Earnings" in spec.title

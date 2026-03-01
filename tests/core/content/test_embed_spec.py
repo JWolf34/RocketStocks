@@ -1,4 +1,4 @@
-"""Tests for build_embed_spec() on all alert classes."""
+"""Tests for build() on all alert classes."""
 import datetime
 
 import pandas as pd
@@ -97,7 +97,7 @@ def test_earnings_mover_embed_spec_positive(quote_up, ticker_info):
         historical_earnings=pd.DataFrame(),
     )
     alert = EarningsMoverAlert(data=data)
-    spec = alert.build_embed_spec()
+    spec = alert.build()
     assert isinstance(spec, EmbedSpec)
     assert spec.color == COLOR_GREEN
     assert 'GME' in spec.title
@@ -113,7 +113,7 @@ def test_earnings_mover_embed_spec_negative(quote_down, ticker_info):
         historical_earnings=pd.DataFrame(),
     )
     alert = EarningsMoverAlert(data=data)
-    spec = alert.build_embed_spec()
+    spec = alert.build()
     assert spec.color == COLOR_RED
 
 
@@ -126,7 +126,7 @@ def test_earnings_mover_embed_spec_has_eps_and_time_fields(quote_up, ticker_info
         historical_earnings=pd.DataFrame(),
     )
     alert = EarningsMoverAlert(data=data)
-    spec = alert.build_embed_spec()
+    spec = alert.build()
     field_names = [f.name for f in spec.fields]
     assert 'EPS Forecast' in field_names
     assert 'Time' in field_names
@@ -140,7 +140,7 @@ def test_volume_mover_embed_spec_positive(quote_up, ticker_info, price_history):
     data = VolumeMoverData(ticker='GME', ticker_info=ticker_info, quote=quote_up,
                            rvol=15.0, daily_price_history=price_history)
     alert = VolumeMoverAlert(data=data)
-    spec = alert.build_embed_spec()
+    spec = alert.build()
     assert spec.color == COLOR_ORANGE
     assert 'GME' in spec.title
     assert '15.00x' in spec.description
@@ -150,7 +150,7 @@ def test_volume_mover_embed_spec_negative(quote_down, ticker_info, price_history
     data = VolumeMoverData(ticker='GME', ticker_info=ticker_info, quote=quote_down,
                            rvol=8.0, daily_price_history=price_history)
     alert = VolumeMoverAlert(data=data)
-    spec = alert.build_embed_spec()
+    spec = alert.build()
     assert spec.color == COLOR_RED
 
 
@@ -158,7 +158,7 @@ def test_volume_mover_embed_inline_fields(quote_up, ticker_info, price_history):
     data = VolumeMoverData(ticker='GME', ticker_info=ticker_info, quote=quote_up,
                            rvol=20.0, daily_price_history=price_history)
     alert = VolumeMoverAlert(data=data)
-    spec = alert.build_embed_spec()
+    spec = alert.build()
     field_names = [f.name for f in spec.fields]
     assert 'RVOL (10D)' in field_names
     assert 'Volume' in field_names
@@ -172,7 +172,7 @@ def test_volume_spike_embed_spec_positive(quote_up, ticker_info):
     data = VolumeSpikeData(ticker='NVDA', ticker_info=ticker_info, quote=quote_up,
                            rvol_at_time=50.0, avg_vol_at_time=200_000.0, time='10:30 AM')
     alert = VolumeSpikeAlert(data=data)
-    spec = alert.build_embed_spec()
+    spec = alert.build()
     assert spec.color == COLOR_ORANGE
     assert 'NVDA' in spec.title
     assert '10:30 AM' in spec.description
@@ -182,7 +182,7 @@ def test_volume_spike_embed_spec_negative(quote_down, ticker_info):
     data = VolumeSpikeData(ticker='NVDA', ticker_info=ticker_info, quote=quote_down,
                            rvol_at_time=30.0, avg_vol_at_time=100_000.0, time='11:00 AM')
     alert = VolumeSpikeAlert(data=data)
-    spec = alert.build_embed_spec()
+    spec = alert.build()
     assert spec.color == COLOR_RED
 
 
@@ -194,7 +194,7 @@ def test_watchlist_mover_embed_spec_positive(quote_up, ticker_info):
     data = WatchlistMoverData(ticker='AAPL', ticker_info=ticker_info, quote=quote_up,
                               watchlist='my-portfolio')
     alert = WatchlistMoverAlert(data=data)
-    spec = alert.build_embed_spec()
+    spec = alert.build()
     assert spec.color == COLOR_GREEN
     assert 'AAPL' in spec.title
     assert 'my-portfolio' in spec.description
@@ -204,7 +204,7 @@ def test_watchlist_mover_embed_spec_negative(quote_down, ticker_info):
     data = WatchlistMoverData(ticker='AAPL', ticker_info=ticker_info, quote=quote_down,
                               watchlist='watchlist-a')
     alert = WatchlistMoverAlert(data=data)
-    spec = alert.build_embed_spec()
+    spec = alert.build()
     assert spec.color == COLOR_RED
 
 
@@ -212,7 +212,7 @@ def test_watchlist_mover_embed_has_watchlist_field(quote_up, ticker_info):
     data = WatchlistMoverData(ticker='AAPL', ticker_info=ticker_info, quote=quote_up,
                               watchlist='specials')
     alert = WatchlistMoverAlert(data=data)
-    spec = alert.build_embed_spec()
+    spec = alert.build()
     field_values = {f.name: f.value for f in spec.fields}
     assert 'Watchlist' in field_values
     assert field_values['Watchlist'] == 'specials'
@@ -232,7 +232,7 @@ def test_sec_filing_embed_spec_positive(quote_up, ticker_info):
     data = SECFilingData(ticker='GME', ticker_info=ticker_info, quote=quote_up,
                          recent_sec_filings=filings)
     alert = SECFilingMoverAlert(data=data)
-    spec = alert.build_embed_spec()
+    spec = alert.build()
     assert spec.color == COLOR_GREEN
     assert 'GME' in spec.title
     assert '8-K' in spec.description or '8-K' in str([f.value for f in spec.fields])
@@ -242,7 +242,7 @@ def test_sec_filing_embed_spec_negative(quote_down, ticker_info):
     data = SECFilingData(ticker='GME', ticker_info=ticker_info, quote=quote_down,
                          recent_sec_filings=pd.DataFrame())
     alert = SECFilingMoverAlert(data=data)
-    spec = alert.build_embed_spec()
+    spec = alert.build()
     assert spec.color == COLOR_RED
 
 
@@ -264,7 +264,7 @@ def test_popularity_embed_spec_returns_embed_spec(quote_up, ticker_info, pop_df)
     data = PopularityAlertData(ticker='GME', ticker_info=ticker_info, quote=quote_up,
                                popularity=pop_df)
     alert = PopularityAlert(data=data)
-    spec = alert.build_embed_spec()
+    spec = alert.build()
     assert isinstance(spec, EmbedSpec)
     assert 'GME' in spec.title
 
@@ -273,7 +273,7 @@ def test_popularity_embed_spec_has_inline_fields(quote_up, ticker_info, pop_df):
     data = PopularityAlertData(ticker='GME', ticker_info=ticker_info, quote=quote_up,
                                popularity=pop_df)
     alert = PopularityAlert(data=data)
-    spec = alert.build_embed_spec()
+    spec = alert.build()
     field_names = [f.name for f in spec.fields]
     assert 'Current Rank' in field_names
     assert '5D Best Rank' in field_names
@@ -302,21 +302,21 @@ def trades_df():
 def test_politician_embed_spec_color_is_purple(politician, trades_df):
     data = PoliticianTradeAlertData(politician=politician, trades=trades_df)
     alert = PoliticianTradeAlert(data=data)
-    spec = alert.build_embed_spec()
+    spec = alert.build()
     assert spec.color == COLOR_PURPLE
 
 
 def test_politician_embed_spec_no_url(politician, trades_df):
     data = PoliticianTradeAlertData(politician=politician, trades=trades_df)
     alert = PoliticianTradeAlert(data=data)
-    spec = alert.build_embed_spec()
+    spec = alert.build()
     assert spec.url is None
 
 
 def test_politician_embed_spec_has_party_and_state_fields(politician, trades_df):
     data = PoliticianTradeAlertData(politician=politician, trades=trades_df)
     alert = PoliticianTradeAlert(data=data)
-    spec = alert.build_embed_spec()
+    spec = alert.build()
     field_names = [f.name for f in spec.fields]
     assert 'Party' in field_names
     assert 'State' in field_names
@@ -326,7 +326,7 @@ def test_politician_embed_spec_has_party_and_state_fields(politician, trades_df)
 def test_politician_embed_spec_name_in_title(politician, trades_df):
     data = PoliticianTradeAlertData(politician=politician, trades=trades_df)
     alert = PoliticianTradeAlert(data=data)
-    spec = alert.build_embed_spec()
+    spec = alert.build()
     assert 'Nancy Pelosi' in spec.title
 
 
@@ -341,57 +341,47 @@ def test_earnings_mover_embed_spec_none_ticker_info(quote_up):
         historical_earnings=pd.DataFrame(),
     )
     alert = EarningsMoverAlert(data=data)
-    spec = alert.build_embed_spec()
+    spec = alert.build()
     assert 'GME' in spec.description
-
-
-def test_earnings_mover_build_alert_none_ticker_info(quote_up):
-    data = EarningsMoverData(
-        ticker='GME', ticker_info=None, quote=quote_up,
-        next_earnings_info=None,
-        historical_earnings=pd.DataFrame(),
-    )
-    alert = EarningsMoverAlert(data=data)
-    assert 'GME' in alert.build_alert()
 
 
 def test_volume_mover_embed_spec_none_ticker_info(quote_up, price_history):
     data = VolumeMoverData(ticker='GME', ticker_info=None, quote=quote_up,
                            rvol=10.0, daily_price_history=price_history)
-    spec = VolumeMoverAlert(data=data).build_embed_spec()
+    spec = VolumeMoverAlert(data=data).build()
     assert 'GME' in spec.description
 
 
 def test_volume_spike_embed_spec_none_ticker_info(quote_up):
     data = VolumeSpikeData(ticker='NVDA', ticker_info=None, quote=quote_up,
                            rvol_at_time=20.0, avg_vol_at_time=100_000.0, time='10:30 AM')
-    spec = VolumeSpikeAlert(data=data).build_embed_spec()
+    spec = VolumeSpikeAlert(data=data).build()
     assert 'NVDA' in spec.description
 
 
 def test_watchlist_mover_embed_spec_none_ticker_info(quote_up):
     data = WatchlistMoverData(ticker='AAPL', ticker_info=None, quote=quote_up,
                               watchlist='my-list')
-    spec = WatchlistMoverAlert(data=data).build_embed_spec()
+    spec = WatchlistMoverAlert(data=data).build()
     assert 'AAPL' in spec.description
 
 
 def test_sec_filing_embed_spec_none_ticker_info(quote_up):
     data = SECFilingData(ticker='GME', ticker_info=None, quote=quote_up,
                          recent_sec_filings=pd.DataFrame())
-    spec = SECFilingMoverAlert(data=data).build_embed_spec()
+    spec = SECFilingMoverAlert(data=data).build()
     assert 'GME' in spec.description
 
 
 def test_popularity_embed_spec_none_ticker_info(quote_up, pop_df):
     data = PopularityAlertData(ticker='GME', ticker_info=None, quote=quote_up,
                                popularity=pop_df)
-    spec = PopularityAlert(data=data).build_embed_spec()
+    spec = PopularityAlert(data=data).build()
     assert 'GME' in spec.description
 
 
 # ---------------------------------------------------------------------------
-# Base Alert — build_embed_spec raises NotImplementedError by default
+# Base Alert — build() raises NotImplementedError by default
 # ---------------------------------------------------------------------------
 
 from rocketstocks.core.content.alerts.base import Alert
@@ -405,11 +395,8 @@ class MinimalAlert(Alert):
         self.ticker = 'X'
         self.alert_data['pct_change'] = 1.0
 
-    def build_alert(self) -> str:
-        return 'minimal'
 
-
-def test_base_alert_build_embed_spec_raises():
+def test_base_alert_build_raises():
     alert = MinimalAlert()
     with pytest.raises(NotImplementedError):
-        alert.build_embed_spec()
+        alert.build()

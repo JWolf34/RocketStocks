@@ -5,15 +5,12 @@ import pandas as pd
 import pytest
 
 from rocketstocks.core.content.alerts.base import Alert
-from rocketstocks.core.content.alerts.earnings_alert import EarningsMoverAlert
-from rocketstocks.core.content.alerts.popularity_alert import PopularityAlert
 from rocketstocks.core.content.alerts.volume_alert import VolumeMoverAlert
 from rocketstocks.core.content.alerts.volume_spike_alert import VolumeSpikeAlert
 from rocketstocks.core.content.alerts.watchlist_alert import WatchlistMoverAlert
+from rocketstocks.core.content.alerts.popularity_alert import PopularityAlert
 from rocketstocks.core.content.models import (
-    EarningsMoverData,
     GainerScreenerData,
-    NewsReportData,
     PopularityAlertData,
     PopularityScreenerData,
     VolumeScreenerData,
@@ -21,7 +18,6 @@ from rocketstocks.core.content.models import (
     VolumeSpikeData,
     WatchlistMoverData,
 )
-from rocketstocks.core.content.reports.news_report import NewsReport
 from rocketstocks.core.content.screeners.gainer_screener import GainerScreener
 from rocketstocks.core.content.screeners.popularity_screener import PopularityScreener
 from rocketstocks.core.content.screeners.volume_screener import VolumeScreener
@@ -69,9 +65,6 @@ class ConcreteAlert(Alert):
         self.ticker = 'TEST'
         self.alert_data['pct_change'] = pct_change
 
-    def build_alert(self) -> str:
-        return 'test alert'
-
 
 def test_alert_base_override_triggers_on_100pct_move():
     alert = ConcreteAlert(pct_change=20.0)
@@ -95,15 +88,6 @@ def test_alert_base_override_missing_prev_pct_returns_false():
 # ---------------------------------------------------------------------------
 # VolumeMoverAlert
 # ---------------------------------------------------------------------------
-
-def test_volume_mover_alert_build_alert_contains_ticker(quote, ticker_info, price_history):
-    data = VolumeMoverData(ticker='GME', ticker_info=ticker_info, quote=quote,
-                           rvol=30.0, daily_price_history=price_history)
-    alert = VolumeMoverAlert(data=data)
-    result = alert.build_alert()
-    assert 'GME' in result
-    assert '30.00 times' in result
-
 
 def test_volume_mover_alert_data_contains_pct_and_rvol(quote, ticker_info, price_history):
     data = VolumeMoverData(ticker='GME', ticker_info=ticker_info, quote=quote,
@@ -133,15 +117,6 @@ def test_volume_mover_override_no_trigger(quote, ticker_info, price_history):
 # VolumeSpikeAlert
 # ---------------------------------------------------------------------------
 
-def test_volume_spike_alert_contains_rvol_at_time(quote, ticker_info):
-    data = VolumeSpikeData(ticker='NVDA', ticker_info=ticker_info, quote=quote,
-                           rvol_at_time=75.0, avg_vol_at_time=200_000.0, time='10:30 AM')
-    alert = VolumeSpikeAlert(data=data)
-    result = alert.build_alert()
-    assert '75.00 times' in result
-    assert 'NVDA' in result
-
-
 def test_volume_spike_override_on_rvol_at_time_increase(quote, ticker_info):
     data = VolumeSpikeData(ticker='NVDA', ticker_info=ticker_info, quote=quote,
                            rvol_at_time=80.0, avg_vol_at_time=200_000.0, time='11:00 AM')
@@ -154,37 +129,12 @@ def test_volume_spike_override_on_rvol_at_time_increase(quote, ticker_info):
 # WatchlistMoverAlert
 # ---------------------------------------------------------------------------
 
-def test_watchlist_mover_alert_build_alert(quote, ticker_info):
-    data = WatchlistMoverData(ticker='AAPL', ticker_info=ticker_info, quote=quote,
-                              watchlist='my-portfolio')
-    alert = WatchlistMoverAlert(data=data)
-    result = alert.build_alert()
-    assert 'AAPL' in result
-    assert 'my-portfolio' in result
-
-
 def test_watchlist_mover_alert_type():
     quote = {'quote': {'netPercentChange': 5.0}, 'regular': {}, 'assetSubType': '', 'reference': {}}
     info = {'ticker': 'X', 'name': '', 'sector': '', 'industry': '', 'country': ''}
     data = WatchlistMoverData(ticker='X', ticker_info=info, quote=quote, watchlist='wl')
     alert = WatchlistMoverAlert(data=data)
     assert alert.alert_type == 'WATCHLIST_MOVER'
-
-
-# ---------------------------------------------------------------------------
-# EarningsMoverAlert
-# ---------------------------------------------------------------------------
-
-def test_earnings_mover_alert_build_alert(quote, ticker_info):
-    data = EarningsMoverData(
-        ticker='TSLA', ticker_info=ticker_info, quote=quote,
-        next_earnings_info={'date': datetime.date.today(), 'time': ['pre-market']},
-        historical_earnings=pd.DataFrame(),
-    )
-    alert = EarningsMoverAlert(data=data)
-    result = alert.build_alert()
-    assert 'TSLA' in result
-    assert 'earnings today' in result
 
 
 # ---------------------------------------------------------------------------
@@ -227,34 +177,6 @@ def test_popularity_alert_no_override(quote, ticker_info):
 
 
 # ---------------------------------------------------------------------------
-# NewsReport
-# ---------------------------------------------------------------------------
-
-def test_news_report_build_report_contains_query():
-    news_data = {'articles': []}
-    data = NewsReportData(query='semiconductor stocks', news=news_data)
-    report = NewsReport(data=data)
-    result = report.build_report()
-    assert 'semiconductor stocks' in result
-
-
-def test_news_report_build_report_with_articles():
-    news_data = {
-        'articles': [{
-            'title': 'Big Tech Earnings',
-            'source': {'name': 'Bloomberg'},
-            'publishedAt': '2024-01-30T10:00:00Z',
-            'url': 'https://bloomberg.com/article1',
-        }]
-    }
-    data = NewsReportData(query='tech', news=news_data)
-    report = NewsReport(data=data)
-    result = report.build_report()
-    assert 'Big Tech Earnings' in result
-    assert 'Bloomberg' in result
-
-
-# ---------------------------------------------------------------------------
 # Screener classes
 # ---------------------------------------------------------------------------
 
@@ -281,16 +203,6 @@ def test_popularity_screener_screener_type():
     })
     screener = PopularityScreener(data=PopularityScreenerData(popular_stocks=df))
     assert screener.screener_type == 'popular-stocks'
-
-
-def test_popularity_screener_build_report_contains_header():
-    df = pd.DataFrame({
-        'rank': [1, 2], 'ticker': ['AAPL', 'TSLA'],
-        'mentions': [500, 400], 'rank_24h_ago': [2, 1], 'mentions_24h_ago': [450, 420],
-    })
-    screener = PopularityScreener(data=PopularityScreenerData(popular_stocks=df))
-    result = screener.build_report()
-    assert 'Popular Stocks' in result
 
 
 def test_volume_screener_formats_change_pct():
@@ -356,17 +268,3 @@ def test_gainer_screener_unknown_period_empty_columns():
     screener = GainerScreener(data=data)
     # No columns match the empty column_map → data has no columns
     assert screener.data.columns.tolist() == []
-
-
-def test_gainer_screener_build_report_contains_header():
-    df = pd.DataFrame({
-        'name': ['GME'],
-        'change': [15.0],
-        'close': [20.0],
-        'volume': [50_000_000],
-        'market_cap_basic': [5_000_000_000],
-    })
-    screener = GainerScreener(data=GainerScreenerData(market_period='intraday', gainers=df))
-    result = screener.build_report()
-    assert 'Intraday' in result
-    assert 'Gainers' in result
