@@ -4,7 +4,6 @@ import logging
 from rocketstocks.core.config.paths import datapaths
 from rocketstocks.core.content.formatting import write_df_to_file
 from rocketstocks.core.content.models import COLOR_PINK, EmbedSpec, PopularityReportData
-from rocketstocks.core.content import sections
 from rocketstocks.core.content.sections_card import popularity_screener_cards
 
 logger = logging.getLogger(__name__)
@@ -32,17 +31,9 @@ class PopularityReport:
         # Format columns for display
         self._display_data = data.popular_stocks.filter(list(_COLUMN_MAP.keys())).rename(columns=_COLUMN_MAP)
 
-    def build_report(self) -> str:
-        logger.debug("Building Popularity Report...")
-        from rocketstocks.core.content.formatting import build_df_table
-        return (
-            sections.popularity_report_header(self.data.filter)
-            + build_df_table(self._display_data.drop(columns=['name'], errors='ignore')[:20])
-        )
-
-    def build_embed_spec(self) -> EmbedSpec:
-        logger.debug("Building Popularity Report EmbedSpec...")
-        title = sections.popularity_report_header(self.data.filter).splitlines()[0].lstrip('# ').strip()
+    def build(self) -> EmbedSpec:
+        logger.debug("Building Popularity Report embed...")
+        title = f"🔥 Most Popular Stocks ({self.data.filter}) {datetime.datetime.today().strftime('%m/%d/%Y')}"
         description = popularity_screener_cards(self._display_data[:20])
 
         if len(description) > 4096:

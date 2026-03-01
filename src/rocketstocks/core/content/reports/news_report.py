@@ -1,7 +1,7 @@
 import logging
 
 from rocketstocks.core.content.models import COLOR_INDIGO, EmbedSpec, NewsReportData
-from rocketstocks.core.content import sections
+from rocketstocks.core.content.sections_card import news_section
 
 logger = logging.getLogger(__name__)
 
@@ -12,18 +12,10 @@ class NewsReport:
     def __init__(self, data: NewsReportData):
         self.data = data
 
-    def build_report(self) -> str:
-        logger.debug("Building News Report...")
-        return (
-            sections.news_report_header(self.data.query)
-            + sections.news_section(self.data.news)
-            + '\n'
-        )
-
-    def build_embed_spec(self) -> EmbedSpec:
-        logger.debug("Building News Report EmbedSpec...")
+    def build(self) -> EmbedSpec:
+        logger.debug("Building News Report embed...")
         title = f"News articles for '{self.data.query}'"
-        description = sections.news_section(self.data.news)
+        description = news_section(self.data.news)
 
         if len(description) > 4096:
             description = description[:4093] + '...'

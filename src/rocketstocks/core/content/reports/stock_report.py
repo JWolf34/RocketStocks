@@ -4,15 +4,11 @@ from rocketstocks.core.content.models import (
     COLOR_BLUE,
     EmbedSpec, StockReportData,
 )
-from rocketstocks.core.content import sections
 from rocketstocks.core.content.sections_card import (
     ohlcv_card, recent_earnings_card,
     performance_card, fundamentals_card, technical_signals_card,
     popularity_card, sec_filings_card,
-)
-from rocketstocks.core.content.sections_embed import (
-    ticker_info_description,
-    todays_change_description,
+    ticker_info_description, todays_change_description,
 )
 
 logger = logging.getLogger(__name__)
@@ -25,28 +21,10 @@ class StockReport:
         self.data = data
         self.ticker = data.ticker
 
-    def build_report(self) -> str:
-        logger.debug("Building Stock Report...")
-        return (
-            sections.report_header(self.data.ticker)
-            + sections.ticker_info_section(self.data.ticker_info, self.data.quote)
-            + sections.daily_summary_section(self.data.quote)
-            + sections.performance_section(self.data.daily_price_history, self.data.quote)
-            + sections.fundamentals_section(
-                self.data.fundamentals, self.data.quote,
-                daily_price_history=self.data.daily_price_history,
-            )
-            + sections.technical_signals_section(self.data.daily_price_history)
-            + sections.popularity_section(self.data.popularity)
-            + sections.recent_earnings_section(self.data.historical_earnings)
-            + sections.sec_filings_section(self.data.recent_sec_filings)
-        )
-
-    def build_embed_spec(self) -> EmbedSpec:
-        logger.debug("Building Stock Report EmbedSpec...")
+    def build(self) -> EmbedSpec:
+        logger.debug("Building Stock Report embed...")
         color = COLOR_BLUE
-
-        title = sections.report_header(self.data.ticker).splitlines()[0].lstrip('# ').strip()
+        title = f"📊 {self.data.ticker} Stock Report"
 
         # Compact one-liner header at top of description
         compact_header = ticker_info_description(self.data.ticker_info, self.data.quote)
