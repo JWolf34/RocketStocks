@@ -380,8 +380,8 @@ def sec_filings_card(recent_sec_filings: pd.DataFrame) -> str:
     return "\n".join(lines) + "\n\n"
 
 
-def earnings_date_section(ticker: str, next_earnings_info: dict) -> str:
-    """One-liner stating when the ticker reports earnings (embed-compatible)."""
+def earnings_date_card(ticker: str, next_earnings_info: dict) -> str:
+    """One-liner stating when the ticker reports earnings."""
     if not next_earnings_info:
         return ''
     message = f"`{ticker}` reports earnings on "
@@ -396,8 +396,8 @@ def earnings_date_section(ticker: str, next_earnings_info: dict) -> str:
     return message + "\n\n"
 
 
-def news_section(news: dict) -> str:
-    """Up to 10 recent news articles as hyperlinks (embed-compatible)."""
+def news_card(news: dict) -> str:
+    """Up to 10 recent news articles as hyperlinks."""
     report = ''
     for article in news['articles'][:10]:
         article_date = date_utils.format_date_from_iso(date=article['publishedAt']).strftime("%m/%d/%y %H:%M:%S EST")
@@ -409,7 +409,7 @@ def news_section(news: dict) -> str:
     return report
 
 
-def ticker_info_description(ticker_info: dict, quote: dict) -> str:
+def ticker_info_card(ticker_info: dict, quote: dict) -> str:
     """One-line compact ticker info for embed description header."""
     parts = []
     name = (ticker_info or {}).get('name', '')
@@ -430,7 +430,7 @@ def ticker_info_description(ticker_info: dict, quote: dict) -> str:
     return ' · '.join(parts)
 
 
-def todays_change_description(quote: dict) -> str:
+def todays_change_card(quote: dict) -> str:
     """One-line price and percent change for embed description header."""
     pct = quote['quote'].get('netPercentChange', 0)
     price = quote['regular']['regularMarketLastPrice']

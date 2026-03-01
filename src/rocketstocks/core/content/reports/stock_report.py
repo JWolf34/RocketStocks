@@ -8,7 +8,7 @@ from rocketstocks.core.content.sections_card import (
     ohlcv_card, recent_earnings_card,
     performance_card, fundamentals_card, technical_signals_card,
     popularity_card, sec_filings_card,
-    ticker_info_description, todays_change_description,
+    ticker_info_card, todays_change_card,
 )
 
 logger = logging.getLogger(__name__)
@@ -27,8 +27,8 @@ class StockReport:
         title = f"📊 {self.data.ticker} Stock Report"
 
         # Compact one-liner header at top of description
-        compact_header = ticker_info_description(self.data.ticker_info, self.data.quote)
-        compact_header += '\n' + todays_change_description(self.data.quote)
+        compact_header = ticker_info_card(self.data.ticker_info, self.data.quote)
+        compact_header += '\n' + todays_change_card(self.data.quote)
 
         # Build body section by section — card format throughout
         body = (
