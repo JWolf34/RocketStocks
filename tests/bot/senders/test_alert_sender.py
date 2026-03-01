@@ -5,18 +5,22 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+from rocketstocks.core.content.models import COLOR_GREEN, EmbedSpec
+
 
 _TZ = datetime.timezone.utc
 _TODAY = datetime.date.today()
 
 
-def _make_alert(ticker="AAPL", alert_type="VOLUME_MOVER", build_text="alert text"):
+def _make_alert(ticker="AAPL", alert_type="VOLUME_MOVER"):
     alert = MagicMock()
     alert.ticker = ticker
     alert.alert_type = alert_type
-    alert.build_alert.return_value = build_text
-    # Simulate an alert that hasn't implemented build_embed_spec — forces plain-text fallback
-    alert.build_embed_spec.side_effect = NotImplementedError
+    alert.build.return_value = EmbedSpec(
+        title=f"🚨 {alert_type}: {ticker}",
+        description="Alert description",
+        color=COLOR_GREEN,
+    )
     alert.alert_data = {"pct_change": 5.0}
     alert.override_and_edit.return_value = False
     return alert
@@ -55,6 +59,8 @@ class TestSendAlertNewAlert:
             result = await send_alert(alert, channel, dstate)
 
         channel.send.assert_awaited_once()
+        call_kwargs = channel.send.call_args.kwargs
+        assert "embed" in call_kwargs
         dstate.insert_alert_message_id.assert_called_once()
         assert result is sent_msg
 
@@ -109,10 +115,12 @@ class TestSendAlertExistingWithOverride:
             result = await send_alert(alert, channel, dstate)
 
         channel.send.assert_awaited_once()
+        call_kwargs = channel.send.call_args.kwargs
+        assert "embed" in call_kwargs
         dstate.update_alert_message_data.assert_called_once()
         assert result is sent_msg
 
-    async def test_update_message_contains_previous_link(self):
+    async def test_update_embed_contains_previous_link(self):
         from rocketstocks.bot.senders.alert_sender import send_alert
         channel, _ = _make_channel()
         alert = _make_alert()
@@ -131,7 +139,6 @@ class TestSendAlertExistingWithOverride:
         with _patch_date_utils():
             await send_alert(alert, channel, dstate)
 
-        # In plain-text fallback path, message is the first positional argument
-        sent_args, sent_kwargs = channel.send.call_args
-        sent_text = sent_args[0] if sent_args else ""
-        assert "https://discord.com/jump/to/prev" in sent_text
+        sent_kwargs = channel.send.call_args.kwargs
+        sent_embed = sent_kwargs["embed"]
+        assert "https://discord.com/jump/to/prev" in sent_embed.description

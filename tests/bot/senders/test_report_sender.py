@@ -15,20 +15,11 @@ def _make_channel():
     return channel, sent_msg
 
 
-def _make_content_plaintext(report_text="report body", screener_type="GAINER"):
-    """Content mock that falls back to plaintext (no embed support)."""
-    content = MagicMock()
-    content.build_report.return_value = report_text
-    content.screener_type = screener_type
-    content.build_embed_spec.side_effect = NotImplementedError
-    return content
-
-
-def _make_content_embed(screener_type="GAINER"):
-    """Content mock with embed support."""
+def _make_content(screener_type="GAINER"):
+    """Content mock that returns an EmbedSpec from build()."""
     content = MagicMock()
     content.screener_type = screener_type
-    content.build_embed_spec.return_value = EmbedSpec(
+    content.build.return_value = EmbedSpec(
         title="Test Title",
         description="Test description",
         color=COLOR_BLUE,
@@ -44,19 +35,10 @@ def _make_dstate(message_id=None):
 
 class TestSendReport:
     @pytest.mark.asyncio
-    async def test_sends_to_channel_when_public_plaintext(self):
+    async def test_sends_to_channel_when_public(self):
         from rocketstocks.bot.senders.report_sender import send_report
         channel, sent_msg = _make_channel()
-        content = _make_content_plaintext()
-        result = await send_report(content, channel, visibility="public")
-        channel.send.assert_awaited_once()
-        assert result is sent_msg
-
-    @pytest.mark.asyncio
-    async def test_sends_to_channel_when_public_embed(self):
-        from rocketstocks.bot.senders.report_sender import send_report
-        channel, sent_msg = _make_channel()
-        content = _make_content_embed()
+        content = _make_content()
         result = await send_report(content, channel, visibility="public")
         channel.send.assert_awaited_once()
         call_kwargs = channel.send.call_args.kwargs
@@ -67,7 +49,7 @@ class TestSendReport:
     async def test_sends_to_dm_when_private(self):
         from rocketstocks.bot.senders.report_sender import send_report
         channel, _ = _make_channel()
-        content = _make_content_plaintext()
+        content = _make_content()
         interaction = AsyncMock()
         interaction.user = AsyncMock()
         dm_msg = AsyncMock()
@@ -77,21 +59,13 @@ class TestSendReport:
         channel.send.assert_not_awaited()
 
     @pytest.mark.asyncio
-    async def test_appends_double_newline_to_report_plaintext(self):
+    async def test_uses_embed(self):
         from rocketstocks.bot.senders.report_sender import send_report
         channel, _ = _make_channel()
-        content = _make_content_plaintext("hello")
+        content = _make_content()
         await send_report(content, channel)
-        sent_text = channel.send.call_args[0][0]
-        assert sent_text.endswith("\n\n")
-
-    @pytest.mark.asyncio
-    async def test_embed_path_does_not_call_build_report(self):
-        from rocketstocks.bot.senders.report_sender import send_report
-        channel, _ = _make_channel()
-        content = _make_content_embed()
-        await send_report(content, channel)
-        content.build_report.assert_not_called()
+        call_kwargs = channel.send.call_args.kwargs
+        assert "embed" in call_kwargs
 
 
 class TestSendScreener:
@@ -99,23 +73,7 @@ class TestSendScreener:
     async def test_inserts_new_message_when_no_existing(self):
         from rocketstocks.bot.senders.report_sender import send_screener
         channel, sent_msg = _make_channel()
-        content = _make_content_plaintext(screener_type="gainer")
-        dstate = _make_dstate(message_id=None)
-
-        mock_du = MagicMock()
-        mock_du.timezone.return_value = datetime.timezone.utc
-        with patch("rocketstocks.bot.senders.report_sender.date_utils", mock_du):
-            result = await send_screener(content, channel, dstate)
-
-        channel.send.assert_awaited_once()
-        dstate.insert_screener_message_id.assert_called_once()
-        assert result is sent_msg
-
-    @pytest.mark.asyncio
-    async def test_inserts_new_embed_when_no_existing(self):
-        from rocketstocks.bot.senders.report_sender import send_screener
-        channel, sent_msg = _make_channel()
-        content = _make_content_embed(screener_type="gainer")
+        content = _make_content(screener_type="gainer")
         dstate = _make_dstate(message_id=None)
 
         mock_du = MagicMock()
@@ -134,7 +92,7 @@ class TestSendScreener:
         from rocketstocks.bot.senders.report_sender import send_screener
         today = datetime.datetime.now()
         channel, _ = _make_channel()
-        content = _make_content_plaintext(screener_type="gainer")
+        content = _make_content(screener_type="gainer")
         dstate = _make_dstate(message_id=999)
 
         existing_msg = AsyncMock()
@@ -151,30 +109,6 @@ class TestSendScreener:
             with patch("rocketstocks.bot.senders.report_sender.datetime") as mock_dt:
                 mock_dt.datetime.now.return_value = mock_today
 
-                result = await send_screener(content, channel, dstate)
-
-        existing_msg.edit.assert_awaited_once()
-        assert result is None
-
-    @pytest.mark.asyncio
-    async def test_edits_embed_in_place_for_same_day_message(self):
-        from rocketstocks.bot.senders.report_sender import send_screener
-        today = datetime.datetime.now()
-        channel, _ = _make_channel()
-        content = _make_content_embed(screener_type="gainer")
-        dstate = _make_dstate(message_id=999)
-
-        existing_msg = AsyncMock()
-        existing_msg.created_at = MagicMock()
-        existing_msg.created_at.astimezone.return_value.date.return_value = today.date()
-        channel.fetch_message.return_value = existing_msg
-
-        with patch("rocketstocks.bot.senders.report_sender.date_utils") as mock_du:
-            mock_du.timezone.return_value = datetime.timezone.utc
-            mock_today = MagicMock()
-            mock_today.date.return_value = today.date()
-            with patch("rocketstocks.bot.senders.report_sender.datetime") as mock_dt:
-                mock_dt.datetime.now.return_value = mock_today
                 result = await send_screener(content, channel, dstate)
 
         existing_msg.edit.assert_awaited_once()
@@ -189,7 +123,7 @@ class TestSendScreener:
         yesterday = today - datetime.timedelta(days=1)
 
         channel, sent_msg = _make_channel()
-        content = _make_content_plaintext(screener_type="gainer")
+        content = _make_content(screener_type="gainer")
         dstate = _make_dstate(message_id=888)
 
         existing_msg = AsyncMock()
