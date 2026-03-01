@@ -6,7 +6,6 @@ from rocketstocks.core.content.models import (
     COLOR_GREEN, COLOR_RED,
     SECFilingData, EmbedField, EmbedSpec,
 )
-from rocketstocks.core.content import sections
 
 logger = logging.getLogger(__name__)
 
@@ -20,19 +19,8 @@ class SECFilingMoverAlert(Alert):
         self.ticker = data.ticker
         self.alert_data['pct_change'] = data.quote['quote']['netPercentChange']
 
-    def build_alert(self) -> str:
-        logger.debug("Building SEC Filing Mover Alert...")
-        pct_change = self.alert_data['pct_change']
-        symbol = "🟢" if pct_change > 0 else "🔻"
-        todays_change = f"**{self.data.ticker}** is {symbol} **{pct_change:.2f}%** and filed with the SEC today\n"
-        return (
-            sections.alert_header(f"SEC Filing Mover: {self.data.ticker}")
-            + todays_change
-            + sections.todays_sec_filings_section(self.data.recent_sec_filings)
-        )
-
-    def build_embed_spec(self) -> EmbedSpec:
-        logger.debug("Building SEC Filing Mover EmbedSpec...")
+    def build(self) -> EmbedSpec:
+        logger.debug("Building SEC Filing Mover embed...")
         pct_change = self.alert_data['pct_change']
         price = self.data.quote['regular']['regularMarketLastPrice']
         company_name = (self.data.ticker_info or {}).get('name', self.data.ticker)

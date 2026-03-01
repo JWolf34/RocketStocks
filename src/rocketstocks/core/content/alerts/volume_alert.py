@@ -5,7 +5,6 @@ from rocketstocks.core.content.models import (
     COLOR_ORANGE, COLOR_RED,
     VolumeMoverData, EmbedField, EmbedSpec,
 )
-from rocketstocks.core.content import sections
 from rocketstocks.core.content.formatting import format_large_num
 
 logger = logging.getLogger(__name__)
@@ -23,25 +22,8 @@ class VolumeMoverAlert(Alert):
         self.alert_data['pct_change'] = data.quote['quote']['netPercentChange']
         self.alert_data['rvol'] = data.rvol
 
-    def build_alert(self) -> str:
-        logger.debug("Building Volume Mover Alert...")
-        pct_change = self.alert_data['pct_change']
-        todays_change = (
-            sections.todays_change(self.data.ticker, pct_change)
-            + f" with volume up **{self.data.rvol:.2f} times** the 10-day average\n"
-        )
-        return (
-            sections.alert_header(f"Volume Mover: {self.data.ticker}")
-            + todays_change
-            + sections.volume_stats_section(
-                quote=self.data.quote,
-                daily_price_history=self.data.daily_price_history,
-                rvol=self.data.rvol,
-            )
-        )
-
-    def build_embed_spec(self) -> EmbedSpec:
-        logger.debug("Building Volume Mover EmbedSpec...")
+    def build(self) -> EmbedSpec:
+        logger.debug("Building Volume Mover embed...")
         pct_change = self.alert_data['pct_change']
         price = self.data.quote['regular']['regularMarketLastPrice']
         company_name = (self.data.ticker_info or {}).get('name', self.data.ticker)

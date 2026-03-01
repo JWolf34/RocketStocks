@@ -1,13 +1,15 @@
 """Base Alert — standalone, no Report inheritance."""
 import logging
 
+from rocketstocks.core.content.models import EmbedSpec
+
 logger = logging.getLogger(__name__)
 
 
 class Alert:
     """Standalone base alert.
 
-    Concrete subclasses declare alert_type and implement build_alert() and
+    Concrete subclasses declare alert_type and implement build() and
     override_and_edit(). The pct_change threshold check is provided as a helper
     so subclasses can reuse the logic without deep inheritance.
     """
@@ -17,14 +19,10 @@ class Alert:
     def __init__(self):
         self.alert_data: dict = {}
 
-    def build_alert(self) -> str:
-        raise NotImplementedError
-
-    def build_embed_spec(self):
+    def build(self) -> EmbedSpec:
         """Return an EmbedSpec for rich Discord embed output.
 
-        Subclasses should override this. The bot layer calls build_alert() as a
-        plain-text fallback when this raises NotImplementedError.
+        Subclasses must override this.
         """
         raise NotImplementedError
 

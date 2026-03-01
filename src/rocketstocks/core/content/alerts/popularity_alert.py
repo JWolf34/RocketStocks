@@ -6,7 +6,6 @@ from rocketstocks.core.content.models import (
     COLOR_GREEN, COLOR_RED,
     PopularityAlertData, EmbedField, EmbedSpec,
 )
-from rocketstocks.core.content import sections
 from rocketstocks.core.utils.dates import date_utils
 
 logger = logging.getLogger(__name__)
@@ -45,21 +44,8 @@ class PopularityAlert(Alert):
         self.alert_data['low_rank'] = low_rank_row['rank']
         self.alert_data['low_rank_date'] = date_utils.format_date_ymd(low_rank_row['date'])
 
-    def build_alert(self) -> str:
-        logger.debug("Building Popularity Alert...")
-        todays_change = " ".join([
-            f"`{self.data.ticker}` has moved **{self.alert_data['high_rank'] - self.alert_data['low_rank']}** spots",
-            f"between {date_utils.format_date_mdy(self.alert_data['high_rank_date'])} **({self.alert_data['high_rank']})** "
-            f"and {date_utils.format_date_mdy(self.alert_data['low_rank_date'])} **({self.alert_data['low_rank']})** \n",
-        ])
-        return (
-            sections.alert_header(f"Popularity Mover: {self.data.ticker}")
-            + todays_change
-            + sections.popularity_stats_section(self.data.popularity)
-        )
-
-    def build_embed_spec(self) -> EmbedSpec:
-        logger.debug("Building Popularity Alert EmbedSpec...")
+    def build(self) -> EmbedSpec:
+        logger.debug("Building Popularity Alert embed...")
         pct_change = self.alert_data['pct_change']
         company_name = (self.data.ticker_info or {}).get('name', self.data.ticker)
         high_rank = self.alert_data['high_rank']

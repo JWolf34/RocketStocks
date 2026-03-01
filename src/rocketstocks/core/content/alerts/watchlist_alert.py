@@ -5,7 +5,6 @@ from rocketstocks.core.content.models import (
     COLOR_GREEN, COLOR_RED,
     WatchlistMoverData, EmbedField, EmbedSpec,
 )
-from rocketstocks.core.content import sections
 
 logger = logging.getLogger(__name__)
 
@@ -19,20 +18,8 @@ class WatchlistMoverAlert(Alert):
         self.ticker = data.ticker
         self.alert_data['pct_change'] = data.quote['quote']['netPercentChange']
 
-    def build_alert(self) -> str:
-        logger.debug("Building Watchlist Mover Alert...")
-        pct_change = self.alert_data['pct_change']
-        todays_change = (
-            sections.todays_change(self.data.ticker, pct_change)
-            + f" and is on your *{self.data.watchlist}* watchlist\n"
-        )
-        return (
-            sections.alert_header(f"Watchlist Mover: {self.data.ticker}")
-            + todays_change
-        )
-
-    def build_embed_spec(self) -> EmbedSpec:
-        logger.debug("Building Watchlist Mover EmbedSpec...")
+    def build(self) -> EmbedSpec:
+        logger.debug("Building Watchlist Mover embed...")
         pct_change = self.alert_data['pct_change']
         price = self.data.quote['regular']['regularMarketLastPrice']
         company_name = (self.data.ticker_info or {}).get('name', self.data.ticker)

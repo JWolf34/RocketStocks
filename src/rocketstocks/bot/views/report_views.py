@@ -34,10 +34,11 @@ class StockReportButtons(discord.ui.View):
         from rocketstocks.data.clients.news import News
         from rocketstocks.core.content.reports.news_report import NewsReport
         from rocketstocks.core.content.models import NewsReportData
+        from rocketstocks.bot.senders.embed_utils import spec_to_embed
         news = News().get_news(query=self.ticker)
         news_report = NewsReport(data=NewsReportData(query=self.ticker, news=news))
-        message = news_report.build_report()
-        await interaction.response.send_message(message, ephemeral=True)
+        embed = spec_to_embed(news_report.build())
+        await interaction.response.send_message(embed=embed, ephemeral=True)
 
 
 class GainerScreenerButtons(discord.ui.View):

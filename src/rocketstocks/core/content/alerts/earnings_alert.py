@@ -5,7 +5,7 @@ from rocketstocks.core.content.models import (
     COLOR_GREEN, COLOR_RED,
     EarningsMoverData, EmbedField, EmbedSpec,
 )
-from rocketstocks.core.content import sections, sections_card
+from rocketstocks.core.content import sections_card
 
 logger = logging.getLogger(__name__)
 
@@ -19,24 +19,8 @@ class EarningsMoverAlert(Alert):
         self.ticker = data.ticker
         self.alert_data['pct_change'] = data.quote['quote']['netPercentChange']
 
-    def build_alert(self) -> str:
-        logger.debug("Building Earnings Mover Alert...")
-        pct_change = self.alert_data['pct_change']
-        price = self.data.quote['regular']['regularMarketLastPrice']
-        company_name = (self.data.ticker_info or {}).get('name', '')
-        todays_change = (
-            sections.todays_change(self.data.ticker, pct_change, price=price, company_name=company_name)
-            + " and reports earnings today\n"
-        )
-        return (
-            sections.alert_header(f"Earnings Mover: {self.data.ticker}")
-            + todays_change
-            + sections.earnings_date_section(self.data.ticker, self.data.next_earnings_info)
-            + sections.recent_earnings_section(self.data.historical_earnings)
-        )
-
-    def build_embed_spec(self) -> EmbedSpec:
-        logger.debug("Building Earnings Mover EmbedSpec...")
+    def build(self) -> EmbedSpec:
+        logger.debug("Building Earnings Mover embed...")
         pct_change = self.alert_data['pct_change']
         price = self.data.quote['regular']['regularMarketLastPrice']
         company_name = (self.data.ticker_info or {}).get('name', self.data.ticker)

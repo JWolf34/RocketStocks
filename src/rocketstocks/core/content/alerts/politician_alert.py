@@ -2,12 +2,11 @@ import datetime
 import logging
 
 from rocketstocks.core.content.alerts.base import Alert
-from rocketstocks.core.content.formatting import build_df_table
 from rocketstocks.core.content.models import (
     COLOR_PURPLE,
     PoliticianTradeAlertData, EmbedField, EmbedSpec,
 )
-from rocketstocks.core.content import sections, sections_card
+from rocketstocks.core.content import sections_card
 from rocketstocks.core.utils.dates import date_utils
 
 logger = logging.getLogger(__name__)
@@ -23,21 +22,8 @@ class PoliticianTradeAlert(Alert):
         # Store count for override comparison (trades DataFrame not JSON-serializable)
         self.alert_data['num_trades'] = len(data.trades)
 
-    def build_alert(self) -> str:
-        logger.debug("Building Politician Trade Alert...")
-        todays_change = (
-            f"**{self.data.politician['name']}** has published "
-            f"**{len(self.data.trades)}** trades today, "
-            f"{date_utils.format_date_mdy(datetime.date.today())} \n"
-        )
-        return (
-            sections.alert_header(f"Politician Trade Alert: {self.data.politician['name']}")
-            + todays_change
-            + build_df_table(df=self.data.trades)
-        )
-
-    def build_embed_spec(self) -> EmbedSpec:
-        logger.debug("Building Politician Trade Alert EmbedSpec...")
+    def build(self) -> EmbedSpec:
+        logger.debug("Building Politician Trade Alert embed...")
         name = self.data.politician['name']
         party = self.data.politician.get('party', 'N/A')
         state = self.data.politician.get('state', 'N/A')
