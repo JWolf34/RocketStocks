@@ -3,7 +3,7 @@ import logging
 
 import pandas as pd
 
-from rocketstocks.core.content.formatting import build_df_table
+from rocketstocks.core.content.models import EmbedSpec
 
 logger = logging.getLogger(__name__)
 
@@ -12,7 +12,7 @@ class Screener:
     """Standalone base screener.
 
     Concrete subclasses declare screener_type, column_map, and override
-    build_report(). The update_watchlist() DB side-effect has been moved to
+    build(). The update_watchlist() DB side-effect has been moved to
     bot/cogs/reports.py so this class remains free of data-layer imports.
     """
 
@@ -31,5 +31,5 @@ class Screener:
         self.data = self.data.filter(list(self.column_map.keys()))
         self.data = self.data.rename(columns=self.column_map)
 
-    def build_report(self) -> str:
+    def build(self) -> EmbedSpec:
         raise NotImplementedError

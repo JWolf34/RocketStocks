@@ -1,10 +1,8 @@
 import datetime
 import logging
 
-import pandas as pd
-
 from rocketstocks.core.config.paths import datapaths
-from rocketstocks.core.content.formatting import build_df_table, write_df_to_file
+from rocketstocks.core.content.formatting import write_df_to_file
 from rocketstocks.core.content.models import COLOR_AMBER, EmbedSpec, WeeklyEarningsData
 from rocketstocks.core.content.screeners.base import Screener
 from rocketstocks.core.content.sections_card import weekly_earnings_cards
@@ -44,31 +42,8 @@ class WeeklyEarningsScreener(Screener):
         self.filepath = f"{datapaths.attachments_path}/upcoming_earnings.csv"
         write_df_to_file(df=self.data, filepath=self.filepath)
 
-    def _build_upcoming_earnings(self) -> str:
-        """Table of watchlist tickers reporting earnings, grouped by day."""
-        logger.debug("Identifying upcoming earnings for tickers on user watchlists")
-        watchlist_earnings = {}
-
-        for i in range(0, 5):
-            date = self.today + datetime.timedelta(days=i)
-            tickers = self.data[self.data['Date'] == date]['Ticker'].values
-            if tickers.any():
-                watchlist_earnings[date.strftime('%A')] = [
-                    ticker for ticker in tickers if ticker in self.watchlist_tickers
-                ]
-
-        watchlist_earnings_df = pd.DataFrame(
-            {date: pd.Series(tickers) for date, tickers in watchlist_earnings.items()}
-        ).fillna(' ')
-        return build_df_table(df=watchlist_earnings_df, style='borderless')
-
-    def build_report(self) -> str:
-        logger.debug(f"Building '{self.screener_type}' screener...")
-        header = f"📅 Earnings Releasing the Week of {date_utils.format_date_mdy(self.today)}\n\n"
-        return header + self._build_upcoming_earnings()
-
-    def build_embed_spec(self) -> EmbedSpec:
-        logger.debug(f"Building '{self.screener_type}' screener EmbedSpec...")
+    def build(self) -> EmbedSpec:
+        logger.debug(f"Building '{self.screener_type}' screener embed...")
         title = f"📅 Earnings Releasing the Week of {date_utils.format_date_mdy(self.today)}"
         description = weekly_earnings_cards(self.data, self.watchlist_tickers)
         return EmbedSpec(

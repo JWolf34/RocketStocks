@@ -1,7 +1,6 @@
 import datetime
 import logging
 
-from rocketstocks.core.content.formatting import build_df_table
 from rocketstocks.core.content.models import COLOR_CYAN, EmbedSpec, PopularityScreenerData
 from rocketstocks.core.content.screeners.base import Screener
 from rocketstocks.core.content.sections_card import popularity_screener_cards
@@ -28,21 +27,8 @@ class PopularityScreener(Screener):
             column_map=_COLUMN_MAP,
         )
 
-    def build_report(self) -> str:
-        logger.debug(f"Building '{self.screener_type}' screener...")
-        now = datetime.datetime.now(tz=date_utils.timezone())
-        count = len(self.data[:20])
-        updated_time = date_utils.round_down_nearest_minute(30).astimezone(date_utils.timezone()).strftime("%I:%M %p")
-        header = "🔥 Popular Stocks — **{} stocks** · {} (Updated {})\n\n".format(
-            count,
-            now.date().strftime("%m/%d/%Y"),
-            updated_time,
-        )
-        footer = "-# Data via ApeWisdom · {}\n".format(now.strftime("%m/%d/%Y %I:%M %p"))
-        return header + build_df_table(df=self.data[:20]) + "\n" + footer
-
-    def build_embed_spec(self) -> EmbedSpec:
-        logger.debug(f"Building '{self.screener_type}' screener EmbedSpec...")
+    def build(self) -> EmbedSpec:
+        logger.debug(f"Building '{self.screener_type}' screener embed...")
         now = datetime.datetime.now(tz=date_utils.timezone())
         count = len(self.data[:20])
         updated_time = date_utils.round_down_nearest_minute(30).astimezone(date_utils.timezone()).strftime("%I:%M %p")

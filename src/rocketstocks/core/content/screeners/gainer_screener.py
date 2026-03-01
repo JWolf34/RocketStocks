@@ -1,7 +1,7 @@
 import datetime
 import logging
 
-from rocketstocks.core.content.formatting import build_df_table, format_large_num
+from rocketstocks.core.content.formatting import format_large_num
 from rocketstocks.core.content.models import COLOR_GREEN, EmbedSpec, GainerScreenerData
 from rocketstocks.core.content.screeners.base import Screener
 from rocketstocks.core.content.sections_card import gainer_screener_cards
@@ -73,21 +73,8 @@ class GainerScreener(Screener):
             else ""
         )
 
-    def build_report(self) -> str:
-        logger.debug(f"Building '{self.screener_type}' screener...")
-        now = datetime.datetime.now(tz=date_utils.timezone())
-        count = len(self.data[:15])
-        header = "📈 {} Gainers — **{} stocks** · {} (Updated {})\n\n".format(
-            self._label(),
-            count,
-            now.date().strftime("%m/%d/%Y"),
-            now.strftime("%I:%M %p"),
-        )
-        footer = "-# Data via TradingView · {}\n".format(now.strftime("%m/%d/%Y %I:%M %p"))
-        return header + build_df_table(self.data[:15]) + "\n" + footer
-
-    def build_embed_spec(self) -> EmbedSpec:
-        logger.debug(f"Building '{self.screener_type}' screener EmbedSpec...")
+    def build(self) -> EmbedSpec:
+        logger.debug(f"Building '{self.screener_type}' screener embed...")
         now = datetime.datetime.now(tz=date_utils.timezone())
         count = len(self.data[:15])
         title = "📈 {} Gainers — {} stocks · {} (Updated {})".format(
