@@ -44,6 +44,7 @@ from rocketstocks.bot.views.report_views import (
     PopularityScreenerButtons, PopularityReportButtons, PoliticianReportButtons,
 )
 from rocketstocks.bot.senders.report_sender import send_report, send_screener
+from rocketstocks.bot.senders.embed_utils import spec_to_embed
 
 logger = logging.getLogger(__name__)
 
@@ -475,8 +476,8 @@ class Reports(commands.Cog):
         logger.info(f"/news function called by user {interaction.user.name}")
         news_data = News().get_news(query=query, sort_by=sort_by)
         content = NewsReport(data=NewsReportData(query=query, news=news_data))
-        message_text = content.build_report()
-        await interaction.response.send_message(message_text)
+        embed = spec_to_embed(content.build())
+        await interaction.response.send_message(embed=embed)
         logger.info(f"Posted news for query '{query}'")
 
     async def autocomplete_filter(self, interaction: discord.Interaction, current: str):

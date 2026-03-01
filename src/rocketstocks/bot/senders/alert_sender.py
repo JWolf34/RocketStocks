@@ -17,10 +17,6 @@ async def send_alert(
 ) -> discord.Message | None:
     """Send an alert to a Discord channel, with edit-in-place support.
 
-    Attempts to build a rich Discord embed via alert.build_embed_spec(). Falls
-    back to plain text via alert.build_alert() if the alert has not yet
-    implemented build_embed_spec().
-
     If the alert was already posted today:
       - Calls alert.override_and_edit(prev_data) to decide whether to post an update.
       - If update warranted: sends a new message linking back to the previous one.
@@ -29,14 +25,7 @@ async def send_alert(
 
     Returns the new discord.Message, or None if no message was sent.
     """
-    # Try embed first; fall back to plain text
-    embed = None
-    message = None
-    try:
-        spec = alert.build_embed_spec()
-        embed = spec_to_embed(spec)
-    except NotImplementedError:
-        message = alert.build_alert()
+    embed = spec_to_embed(alert.build())
 
     today = datetime.datetime.now(tz=date_utils.timezone()).date()
     message_id = dstate.get_alert_message_id(
@@ -66,12 +55,8 @@ async def send_alert(
                 f"({prev_message.jump_url})"
             )
 
-            if embed is not None:
-                # Append update link to embed description
-                embed.description = (embed.description or "") + f"\n{update_link}"
-                sent = await channel.send(embed=embed, view=view)
-            else:
-                sent = await channel.send(message + f"\n{update_link}", view=view)
+            embed.description = (embed.description or "") + f"\n{update_link}"
+            sent = await channel.send(embed=embed, view=view)
 
             dstate.update_alert_message_data(
                 date=today,
@@ -87,10 +72,7 @@ async def send_alert(
             )
             return None
     else:
-        if embed is not None:
-            sent = await channel.send(embed=embed, view=view)
-        else:
-            sent = await channel.send(message, view=view)
+        sent = await channel.send(embed=embed, view=view)
         dstate.insert_alert_message_id(
             date=today,
             ticker=alert.ticker,
