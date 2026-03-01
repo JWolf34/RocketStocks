@@ -69,7 +69,7 @@ class EarningsMoverAlert(Alert):
         if not self.data.historical_earnings.empty:
             fields.append(EmbedField(
                 name="Recent Earnings",
-                value=sections_card.recent_earnings_card(self.data.historical_earnings),
+                value=sections_card.recent_earnings_card(self.data.historical_earnings, show_header=False),
                 inline=False,
             ))
 

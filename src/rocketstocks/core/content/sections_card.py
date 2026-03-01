@@ -34,13 +34,13 @@ def ohlcv_card(quote: dict) -> str:
     )
 
 
-def recent_earnings_card(historical_earnings: pd.DataFrame) -> str:
+def recent_earnings_card(historical_earnings: pd.DataFrame, *, show_header: bool = True) -> str:
     """Recent earnings as stacked per-quarter cards instead of a multi-column table."""
     header = "__**Recent Earnings**__"
     if historical_earnings is None or historical_earnings.empty:
-        return header + "\nNo historical earnings found\n\n"
+        return (header + "\n" if show_header else "") + "No historical earnings found\n\n"
 
-    lines = [header]
+    lines = [header] if show_header else []
     for _, row in historical_earnings.tail(4).iterrows():
         date_str = date_utils.format_date_mdy(row['date'])
         eps = row['eps']
