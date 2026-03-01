@@ -7,7 +7,7 @@ from rocketstocks.core.content.models import (
     COLOR_PURPLE,
     PoliticianTradeAlertData, EmbedField, EmbedSpec,
 )
-from rocketstocks.core.content import sections
+from rocketstocks.core.content import sections, sections_card
 from rocketstocks.core.utils.dates import date_utils
 
 logger = logging.getLogger(__name__)
@@ -54,7 +54,7 @@ class PoliticianTradeAlert(Alert):
             EmbedField(name="Trades Today", value=str(num_trades), inline=True),
             EmbedField(
                 name="Trades",
-                value=build_df_table(df=self.data.trades),
+                value=sections_card.politician_trades_card(self.data.trades),
                 inline=False,
             ),
         ]

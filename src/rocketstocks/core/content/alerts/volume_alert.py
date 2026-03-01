@@ -54,11 +54,16 @@ class VolumeMoverAlert(Alert):
             f"with volume **{self.data.rvol:.2f}x** the 10-day average"
         )
 
+        avg_volume = format_large_num(
+            self.data.daily_price_history['volume'].tail(10).mean()
+        ) if not self.data.daily_price_history.empty else "N/A"
+
         fields = [
             EmbedField(name="Price", value=f"${price:.2f}", inline=True),
             EmbedField(name="Change", value=f"{sign}{pct_change:.2f}%", inline=True),
             EmbedField(name="RVOL (10D)", value=f"{self.data.rvol:.2f}x", inline=True),
             EmbedField(name="Volume", value=format_large_num(volume), inline=True),
+            EmbedField(name="Avg Volume (10D)", value=avg_volume, inline=True),
         ]
 
         return EmbedSpec(

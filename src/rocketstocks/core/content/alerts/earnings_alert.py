@@ -5,7 +5,7 @@ from rocketstocks.core.content.models import (
     COLOR_GREEN, COLOR_RED,
     EarningsMoverData, EmbedField, EmbedSpec,
 )
-from rocketstocks.core.content import sections
+from rocketstocks.core.content import sections, sections_card
 
 logger = logging.getLogger(__name__)
 
@@ -69,7 +69,7 @@ class EarningsMoverAlert(Alert):
         if not self.data.historical_earnings.empty:
             fields.append(EmbedField(
                 name="Recent Earnings",
-                value=sections.recent_earnings_section(self.data.historical_earnings),
+                value=sections_card.recent_earnings_card(self.data.historical_earnings),
                 inline=False,
             ))
 
