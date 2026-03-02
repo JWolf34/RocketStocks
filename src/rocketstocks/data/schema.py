@@ -121,6 +121,21 @@ CREATE TABLE IF NOT EXISTS ticker_stats (
     bb_mid          float,
     updated_at      timestamp DEFAULT CURRENT_TIMESTAMP
 );
+
+CREATE TABLE IF NOT EXISTS popularity_surges (
+    ticker          varchar(8) NOT NULL,
+    flagged_at      timestamp NOT NULL,
+    surge_types     varchar(255) NOT NULL,
+    current_rank    int,
+    mention_ratio   float,
+    rank_change     int,
+    price_at_flag   float,
+    alert_message_id bigint,
+    confirmed       boolean DEFAULT FALSE,
+    confirmed_at    timestamp,
+    expired         boolean DEFAULT FALSE,
+    PRIMARY KEY (ticker, flagged_at)
+);
 """
 
 _DROP_ALL_SCRIPT = """
@@ -136,6 +151,7 @@ DROP TABLE IF EXISTS watchlists;
 DROP TABLE IF EXISTS ct_politicians;
 DROP TABLE IF EXISTS channel_config;
 DROP TABLE IF EXISTS ticker_stats;
+DROP TABLE IF EXISTS popularity_surges;
 """
 
 
