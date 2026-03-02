@@ -107,6 +107,29 @@ class TestRegisterJobs:
         assert "Update 5m price history (daily)" in wrapper_names
 
 
+    def test_misfire_grace_times(self):
+        """Data-update jobs use misfire_grace_time=600; token-expiry job uses 60."""
+        from rocketstocks.core.scheduler.jobs import register_jobs
+        mock_sched = MagicMock()
+        sd = _make_stock_data()
+        emitter = _make_emitter()
+        register_jobs(mock_sched, sd, emitter)
+        for call in mock_sched.add_job.call_args_list:
+            name = call.kwargs.get("name")
+            grace = call.kwargs.get("misfire_grace_time")
+            if name == "Check Schwab token expiry":
+                assert grace == 60, f"Token expiry job should use misfire_grace_time=60, got {grace}"
+            else:
+                assert grace == 600, f"Job '{name}' should use misfire_grace_time=600, got {grace}"
+
+    def test_scheduler_function_removed(self):
+        """The scheduler() thread-entry function must not exist (it was removed)."""
+        import rocketstocks.core.scheduler.jobs as jobs_module
+        assert not hasattr(jobs_module, "scheduler"), (
+            "scheduler() thread-entry function should have been removed"
+        )
+
+
 class TestCheckSchwabTokenExpiry:
     @pytest.mark.asyncio
     async def test_emits_failure_when_token_is_none(self):
