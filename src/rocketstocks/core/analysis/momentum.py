@@ -111,7 +111,7 @@ def should_update_alert(
         f"Momentum acceleration z-score: {accel_zscore:.2f} "
         f"(current_accel={current_accel:.4f}, mean={mean_a:.4f}, std={std_a:.4f})"
     )
-    return abs(accel_zscore) >= accel_zscore_threshold
+    return bool(abs(accel_zscore) >= accel_zscore_threshold)
 
 
 def build_momentum_snapshot(

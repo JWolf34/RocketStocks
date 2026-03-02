@@ -1,6 +1,7 @@
 import logging
 
 from rocketstocks.core.content.alerts.base import Alert
+from rocketstocks.core.content.alerts.earnings_alert import _stat_fields_from_trigger
 from rocketstocks.core.content.models import (
     COLOR_ORANGE, COLOR_RED,
     VolumeMoverData, EmbedField, EmbedSpec,
@@ -21,6 +22,16 @@ class VolumeMoverAlert(Alert):
         self.ticker = data.ticker
         self.alert_data['pct_change'] = data.quote['quote']['netPercentChange']
         self.alert_data['rvol'] = data.rvol
+
+        tr = data.trigger_result
+        if tr is not None:
+            self.alert_data['zscore'] = tr.zscore
+            self.alert_data['percentile'] = tr.percentile
+            self.alert_data['classification'] = getattr(tr.classification, 'value', str(tr.classification))
+            self.alert_data['signal_type'] = tr.signal_type
+            self.alert_data['bb_position'] = tr.bb_position
+            self.alert_data['confluence_count'] = tr.confluence_count
+            self.alert_data['volume_zscore'] = tr.volume_zscore
 
     def build(self) -> EmbedSpec:
         logger.debug("Building Volume Mover embed...")
@@ -48,6 +59,8 @@ class VolumeMoverAlert(Alert):
             EmbedField(name="Avg Volume (10D)", value=avg_volume, inline=True),
         ]
 
+        fields += _stat_fields_from_trigger(self.data.trigger_result)
+
         return EmbedSpec(
             title=f"🚨 Volume Mover: {self.data.ticker}",
             description=description,
@@ -57,8 +70,3 @@ class VolumeMoverAlert(Alert):
             timestamp=True,
             url=f"https://finviz.com/quote.ashx?t={self.data.ticker}",
         )
-
-    def override_and_edit(self, prev_alert_data: dict) -> bool:
-        if super().override_and_edit(prev_alert_data):
-            return True
-        return self.alert_data['rvol'] > (2.0 * prev_alert_data.get('rvol', 0))

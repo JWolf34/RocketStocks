@@ -1,4 +1,5 @@
 import logging
+import math
 
 from rocketstocks.core.content.alerts.base import Alert
 from rocketstocks.core.content.models import (
@@ -10,6 +11,46 @@ from rocketstocks.core.content import sections_card
 logger = logging.getLogger(__name__)
 
 
+def _stat_fields_from_trigger(trigger_result) -> list[EmbedField]:
+    """Build embed fields from an AlertTriggerResult (or return empty list)."""
+    if trigger_result is None:
+        return []
+    fields = []
+    zscore = trigger_result.zscore
+    percentile = trigger_result.percentile
+    classification = trigger_result.classification
+
+    if zscore is not None and not (isinstance(zscore, float) and math.isnan(zscore)):
+        fields.append(EmbedField(name="Z-Score", value=f"{zscore:.2f}σ", inline=True))
+    if percentile is not None and not (isinstance(percentile, float) and math.isnan(percentile)):
+        fields.append(EmbedField(name="Move Percentile", value=f"{percentile:.0f}th", inline=True))
+    if classification is not None:
+        fields.append(EmbedField(name="Class", value=str(classification.value).replace('_', ' ').title(), inline=True))
+
+    # Blue chip extras
+    if str(getattr(classification, 'value', '')).lower() == 'blue_chip':
+        if trigger_result.bb_position:
+            bb_label = {
+                'above_upper': 'Above Upper Band',
+                'below_lower': 'Below Lower Band',
+                'within': 'Within Bands',
+            }.get(trigger_result.bb_position, trigger_result.bb_position)
+            fields.append(EmbedField(name="BB Position", value=bb_label, inline=True))
+        if trigger_result.confluence_count is not None and trigger_result.confluence_total is not None:
+            fields.append(EmbedField(
+                name="Confluence",
+                value=f"{trigger_result.confluence_count}/{trigger_result.confluence_total}",
+                inline=True,
+            ))
+        if trigger_result.signal_type:
+            fields.append(EmbedField(
+                name="Signal",
+                value=trigger_result.signal_type.replace('_', ' ').title(),
+                inline=True,
+            ))
+    return fields
+
+
 class EarningsMoverAlert(Alert):
     alert_type = "EARNINGS_MOVER"
 
@@ -18,6 +59,16 @@ class EarningsMoverAlert(Alert):
         self.data = data
         self.ticker = data.ticker
         self.alert_data['pct_change'] = data.quote['quote']['netPercentChange']
+
+        tr = data.trigger_result
+        if tr is not None:
+            self.alert_data['zscore'] = tr.zscore
+            self.alert_data['percentile'] = tr.percentile
+            self.alert_data['classification'] = getattr(tr.classification, 'value', str(tr.classification))
+            self.alert_data['signal_type'] = tr.signal_type
+            self.alert_data['bb_position'] = tr.bb_position
+            self.alert_data['confluence_count'] = tr.confluence_count
+            self.alert_data['volume_zscore'] = tr.volume_zscore
 
     def build(self) -> EmbedSpec:
         logger.debug("Building Earnings Mover embed...")
@@ -49,6 +100,8 @@ class EarningsMoverAlert(Alert):
             EmbedField(name="EPS Forecast", value=str(eps_forecast), inline=True),
             EmbedField(name="Time", value=time_label, inline=True),
         ]
+
+        fields += _stat_fields_from_trigger(self.data.trigger_result)
 
         if not self.data.historical_earnings.empty:
             fields.append(EmbedField(

@@ -1,5 +1,6 @@
 import datetime
 import logging
+import math
 
 from rocketstocks.core.content.alerts.base import Alert
 from rocketstocks.core.content.models import (
@@ -19,6 +20,8 @@ class PopularityAlert(Alert):
         self.data = data
         self.ticker = data.ticker
         self.alert_data['pct_change'] = data.quote['quote']['netPercentChange']
+        self.alert_data['rank_velocity'] = data.rank_velocity
+        self.alert_data['rank_velocity_zscore'] = data.rank_velocity_zscore
         self._compute_popularity_alert_data()
 
     def _compute_popularity_alert_data(self) -> None:
@@ -74,6 +77,23 @@ class PopularityAlert(Alert):
             EmbedField(name="Price Change", value=f"{sign}{pct_change:.2f}%", inline=True),
         ]
 
+        # Rank velocity stats
+        rv = self.data.rank_velocity
+        rv_zscore = self.data.rank_velocity_zscore
+        if rv is not None and not (isinstance(rv, float) and math.isnan(rv)):
+            direction = "gaining" if rv < 0 else "losing"
+            fields.append(EmbedField(
+                name="Rank Velocity",
+                value=f"{rv:+.1f} spots/interval ({direction})",
+                inline=True,
+            ))
+        if rv_zscore is not None and not (isinstance(rv_zscore, float) and math.isnan(rv_zscore)):
+            fields.append(EmbedField(
+                name="Velocity Z-Score",
+                value=f"{rv_zscore:.2f}σ",
+                inline=True,
+            ))
+
         return EmbedSpec(
             title=f"🚨 Popularity Mover: {self.data.ticker}",
             description=description,
@@ -85,4 +105,11 @@ class PopularityAlert(Alert):
         )
 
     def override_and_edit(self, prev_alert_data: dict) -> bool:
-        return self.alert_data['high_rank'] < (0.5 * float(prev_alert_data.get('high_rank', float('inf'))))
+        """Update when rank velocity z-score exceeds threshold vs when last posted."""
+        rv_zscore = self.alert_data.get('rank_velocity_zscore', 0.0)
+        prev_rv_zscore = prev_alert_data.get('rank_velocity_zscore', 0.0)
+        # Trigger if current z-score is significantly higher than when last posted
+        if abs(rv_zscore) >= 2.0 and abs(rv_zscore) > abs(prev_rv_zscore or 0.0) * 1.5:
+            return True
+        # Fall back to base momentum logic
+        return super().override_and_edit(prev_alert_data)

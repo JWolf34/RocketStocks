@@ -1,6 +1,7 @@
 import logging
 
 from rocketstocks.core.content.alerts.base import Alert
+from rocketstocks.core.content.alerts.earnings_alert import _stat_fields_from_trigger
 from rocketstocks.core.content.models import (
     COLOR_GREEN, COLOR_RED,
     WatchlistMoverData, EmbedField, EmbedSpec,
@@ -17,6 +18,16 @@ class WatchlistMoverAlert(Alert):
         self.data = data
         self.ticker = data.ticker
         self.alert_data['pct_change'] = data.quote['quote']['netPercentChange']
+
+        tr = data.trigger_result
+        if tr is not None:
+            self.alert_data['zscore'] = tr.zscore
+            self.alert_data['percentile'] = tr.percentile
+            self.alert_data['classification'] = getattr(tr.classification, 'value', str(tr.classification))
+            self.alert_data['signal_type'] = tr.signal_type
+            self.alert_data['bb_position'] = tr.bb_position
+            self.alert_data['confluence_count'] = tr.confluence_count
+            self.alert_data['volume_zscore'] = tr.volume_zscore
 
     def build(self) -> EmbedSpec:
         logger.debug("Building Watchlist Mover embed...")
@@ -36,6 +47,8 @@ class WatchlistMoverAlert(Alert):
             EmbedField(name="Change", value=f"{sign}{pct_change:.2f}%", inline=True),
             EmbedField(name="Watchlist", value=self.data.watchlist, inline=True),
         ]
+
+        fields += _stat_fields_from_trigger(self.data.trigger_result)
 
         return EmbedSpec(
             title=f"🚨 Watchlist Mover: {self.data.ticker}",
