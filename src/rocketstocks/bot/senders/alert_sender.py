@@ -28,6 +28,16 @@ async def send_alert(
     """
     embed = spec_to_embed(alert.build())
 
+    # For MomentumConfirmationAlert: link back to the original surge alert
+    if (hasattr(alert, 'data')
+            and hasattr(alert.data, 'surge_alert_message_id')
+            and alert.data.surge_alert_message_id):
+        surge_link = (
+            f"https://discord.com/channels/{channel.guild.id}/"
+            f"{channel.id}/{alert.data.surge_alert_message_id}"
+        )
+        embed.description = (embed.description or "") + f"\n[📡 View original surge alert]({surge_link})"
+
     today = datetime.datetime.now(tz=date_utils.timezone()).date()
     message_id = await dstate.get_alert_message_id(
         date=today, ticker=alert.ticker, alert_type=alert.alert_type

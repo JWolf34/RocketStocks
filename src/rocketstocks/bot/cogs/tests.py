@@ -8,29 +8,25 @@ from discord.ext import commands
 
 from rocketstocks.bot.senders.embed_utils import spec_to_embed
 from rocketstocks.core.content.alerts.earnings_alert import EarningsMoverAlert
-from rocketstocks.core.content.alerts.politician_alert import PoliticianTradeAlert
-from rocketstocks.core.content.alerts.popularity_alert import PopularityAlert
-from rocketstocks.core.content.alerts.sec_filing_alert import SECFilingMoverAlert
-from rocketstocks.core.content.alerts.volume_alert import VolumeMoverAlert
-from rocketstocks.core.content.alerts.volume_spike_alert import VolumeSpikeAlert
 from rocketstocks.core.content.alerts.watchlist_alert import WatchlistMoverAlert
+from rocketstocks.core.content.alerts.popularity_surge_alert import PopularitySurgeAlert
+from rocketstocks.core.content.alerts.momentum_confirmation_alert import MomentumConfirmationAlert
+from rocketstocks.core.content.alerts.market_alert import MarketAlert
 from rocketstocks.core.content.models import (
     EarningsMoverData,
     EarningsSpotlightData,
     GainerScreenerData,
     NewsReportData,
     PoliticianReportData,
-    PoliticianTradeAlertData,
-    PopularityAlertData,
     PopularityReportData,
     PopularityScreenerData,
-    SECFilingData,
     StockReportData,
-    VolumeMoverData,
-    VolumeSpikeData,
     VolumeScreenerData,
     WatchlistMoverData,
     WeeklyEarningsData,
+    PopularitySurgeData,
+    MomentumConfirmationData,
+    MarketAlertData,
 )
 from rocketstocks.core.content.reports.earnings_report import EarningsSpotlightReport
 from rocketstocks.core.content.reports.news_report import NewsReport
@@ -127,18 +123,8 @@ def _dummy_next_earnings_info() -> dict:
     }
 
 
-def _dummy_sec_filings() -> pd.DataFrame:
-    today_str = datetime.datetime.today().strftime("%Y-%m-%d")
-    return pd.DataFrame({
-        'filingDate': [today_str, today_str],
-        'form': ['10-K', '8-K'],
-        'link': ['https://www.sec.gov', 'https://www.sec.gov'],
-    })
-
-
 def _dummy_popularity() -> pd.DataFrame:
-    """Create popularity rows spanning the past 6 days, including an entry at
-    the exact round-down-30-min timestamp for today (required by PopularityAlert)."""
+    """Create popularity rows spanning the past 6 days for surge detection."""
     now = date_utils.round_down_nearest_minute(30)
     rows = []
     for day_offset in range(6):
@@ -150,14 +136,6 @@ def _dummy_popularity() -> pd.DataFrame:
         rows.append({'datetime': morning, 'rank': rank + 5})
     return pd.DataFrame(rows)
 
-
-def _dummy_politician_trades() -> pd.DataFrame:
-    return pd.DataFrame({
-        'ticker': ['NVDA', 'AAPL', 'MSFT'],
-        'type': ['Buy', 'Sell', 'Buy'],
-        'amount': ['$1M–$5M', '$500K–$1M', '$250K–$500K'],
-        'date': [str(datetime.date.today())] * 3,
-    })
 
 
 def _dummy_weekly_earnings_data() -> WeeklyEarningsData:
@@ -361,25 +339,6 @@ def _build_dummy_alert(alert_type: str):
             historical_earnings=_dummy_historical_earnings(),
         ))
 
-    if alert_type == 'volume_mover':
-        return VolumeMoverAlert(VolumeMoverData(
-            ticker=ticker,
-            ticker_info=ticker_info,
-            quote=quote,
-            rvol=3.72,
-            daily_price_history=_dummy_daily_price_history(),
-        ))
-
-    if alert_type == 'volume_spike':
-        return VolumeSpikeAlert(VolumeSpikeData(
-            ticker=ticker,
-            ticker_info=ticker_info,
-            quote=quote,
-            rvol_at_time=4.21,
-            avg_vol_at_time=150_000,
-            time='10:30 AM',
-        ))
-
     if alert_type == 'watchlist_mover':
         return WatchlistMoverAlert(WatchlistMoverData(
             ticker=ticker,
@@ -388,26 +347,89 @@ def _build_dummy_alert(alert_type: str):
             watchlist='Tech',
         ))
 
-    if alert_type == 'sec_filing':
-        return SECFilingMoverAlert(SECFilingData(
+    if alert_type == 'popularity_surge':
+        from rocketstocks.core.analysis.popularity_signals import (
+            PopularitySurgeResult, SurgeType,
+        )
+        surge_result = PopularitySurgeResult(
+            ticker=ticker,
+            is_surging=True,
+            surge_types=[SurgeType.MENTION_SURGE, SurgeType.RANK_JUMP],
+            current_rank=45,
+            rank_24h_ago=180,
+            rank_change=135,
+            mentions=3200,
+            mentions_24h_ago=900,
+            mention_ratio=3.56,
+            rank_velocity=-12.0,
+            rank_velocity_zscore=-2.8,
+        )
+        return PopularitySurgeAlert(PopularitySurgeData(
             ticker=ticker,
             ticker_info=ticker_info,
             quote=quote,
-            recent_sec_filings=_dummy_sec_filings(),
+            surge_result=surge_result,
         ))
 
-    if alert_type == 'popularity':
-        return PopularityAlert(PopularityAlertData(
+    if alert_type == 'momentum_confirmation':
+        from rocketstocks.core.analysis.alert_strategy import AlertTriggerResult
+        from rocketstocks.core.analysis.classification import StockClass
+        trigger = AlertTriggerResult(
+            should_alert=True,
+            classification=StockClass.STANDARD,
+            zscore=3.1,
+            percentile=97.5,
+            bb_position=None,
+            confluence_count=None,
+            confluence_total=None,
+            confluence_details=None,
+            volume_zscore=2.8,
+            signal_type='unusual_move',
+        )
+        return MomentumConfirmationAlert(MomentumConfirmationData(
             ticker=ticker,
             ticker_info=ticker_info,
             quote=quote,
-            popularity=_dummy_popularity(),
+            surge_flagged_at=datetime.datetime.now() - datetime.timedelta(hours=2),
+            surge_types=['mention_surge', 'rank_jump'],
+            price_at_flag=170.0,
+            price_change_since_flag=5.0,
+            surge_alert_message_id=None,
+            trigger_result=trigger,
         ))
 
-    if alert_type == 'politician_trade':
-        return PoliticianTradeAlert(PoliticianTradeAlertData(
-            politician={'name': 'Jane Smith', 'party': 'Independent', 'state': 'California'},
-            trades=_dummy_politician_trades(),
+    if alert_type == 'market_alert':
+        from rocketstocks.core.analysis.alert_strategy import AlertTriggerResult
+        from rocketstocks.core.analysis.classification import StockClass
+        from rocketstocks.core.analysis.composite_score import CompositeScoreResult
+        trigger = AlertTriggerResult(
+            should_alert=True,
+            classification=StockClass.VOLATILE,
+            zscore=3.5,
+            percentile=98.5,
+            bb_position=None,
+            confluence_count=None,
+            confluence_total=None,
+            confluence_details=None,
+            volume_zscore=4.2,
+            signal_type='unusual_move',
+        )
+        composite = CompositeScoreResult(
+            composite_score=3.1,
+            should_alert=True,
+            volume_component=4.2,
+            price_component=3.5,
+            cross_signal_component=0.0,
+            classification_component=2.0,
+            trigger_result=trigger,
+            dominant_signal='volume',
+        )
+        return MarketAlert(MarketAlertData(
+            ticker=ticker,
+            ticker_info=ticker_info,
+            quote=quote,
+            composite_result=composite,
+            rvol=4.5,
         ))
 
     raise ValueError(f"Unknown alert type: {alert_type!r}")
@@ -459,13 +481,11 @@ class Tests(commands.Cog):
     @app_commands.command(name="test-alert", description="Send a test alert to your DMs with dummy data")
     @app_commands.describe(alert_type="The type of alert to preview")
     @app_commands.choices(alert_type=[
-        app_commands.Choice(name="Earnings Mover",   value="earnings_mover"),
-        app_commands.Choice(name="Volume Mover",     value="volume_mover"),
-        app_commands.Choice(name="Volume Spike",     value="volume_spike"),
-        app_commands.Choice(name="Watchlist Mover",  value="watchlist_mover"),
-        app_commands.Choice(name="SEC Filing Mover", value="sec_filing"),
-        app_commands.Choice(name="Popularity Mover", value="popularity"),
-        app_commands.Choice(name="Politician Trade", value="politician_trade"),
+        app_commands.Choice(name="Earnings Mover",         value="earnings_mover"),
+        app_commands.Choice(name="Watchlist Mover",        value="watchlist_mover"),
+        app_commands.Choice(name="Popularity Surge",       value="popularity_surge"),
+        app_commands.Choice(name="Momentum Confirmation",  value="momentum_confirmation"),
+        app_commands.Choice(name="Market Alert",           value="market_alert"),
     ])
     async def test_alert(self, interaction: discord.Interaction, alert_type: app_commands.Choice[str]):
         await interaction.response.defer(ephemeral=True)

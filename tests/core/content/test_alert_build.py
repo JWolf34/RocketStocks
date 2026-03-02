@@ -6,18 +6,18 @@ import pytest
 
 from rocketstocks.core.analysis.alert_strategy import AlertTriggerResult
 from rocketstocks.core.analysis.classification import StockClass
+from rocketstocks.core.analysis.composite_score import CompositeScoreResult
+from rocketstocks.core.analysis.popularity_signals import PopularitySurgeResult, SurgeType
 from rocketstocks.core.content.alerts.earnings_alert import EarningsMoverAlert
-from rocketstocks.core.content.alerts.volume_alert import VolumeMoverAlert
-from rocketstocks.core.content.alerts.volume_spike_alert import VolumeSpikeAlert
 from rocketstocks.core.content.alerts.watchlist_alert import WatchlistMoverAlert
-from rocketstocks.core.content.alerts.sec_filing_alert import SECFilingMoverAlert
-from rocketstocks.core.content.alerts.popularity_alert import PopularityAlert
-from rocketstocks.core.content.alerts.politician_alert import PoliticianTradeAlert
+from rocketstocks.core.content.alerts.popularity_surge_alert import PopularitySurgeAlert
+from rocketstocks.core.content.alerts.momentum_confirmation_alert import MomentumConfirmationAlert
+from rocketstocks.core.content.alerts.market_alert import MarketAlert
 from rocketstocks.core.content.models import (
-    COLOR_GREEN, COLOR_RED, COLOR_ORANGE, COLOR_PURPLE,
-    EarningsMoverData, VolumeMoverData, VolumeSpikeData,
-    WatchlistMoverData, SECFilingData, PopularityAlertData,
-    PoliticianTradeAlertData, EmbedSpec, EmbedField,
+    COLOR_GREEN, COLOR_RED, COLOR_PURPLE, COLOR_GOLD, COLOR_CYAN,
+    EarningsMoverData, WatchlistMoverData,
+    PopularitySurgeData, MomentumConfirmationData, MarketAlertData,
+    EmbedSpec, EmbedField,
 )
 
 
@@ -48,6 +48,39 @@ def _make_blue_chip_trigger():
         confluence_details={'rsi': False, 'macd': True, 'adx': True, 'obv': True},
         volume_zscore=2.5,
         signal_type='trend_breakout',
+    )
+
+
+def _make_surge_result(ticker='GME', surge_types=None):
+    if surge_types is None:
+        surge_types = [SurgeType.MENTION_SURGE, SurgeType.RANK_JUMP]
+    return PopularitySurgeResult(
+        ticker=ticker,
+        is_surging=True,
+        surge_types=surge_types,
+        current_rank=45,
+        rank_24h_ago=180,
+        rank_change=135,
+        mentions=3200,
+        mentions_24h_ago=900,
+        mention_ratio=3.56,
+        rank_velocity=-12.0,
+        rank_velocity_zscore=-2.8,
+    )
+
+
+def _make_composite_result(trigger_result=None, dominant='volume'):
+    if trigger_result is None:
+        trigger_result = _make_trigger_result()
+    return CompositeScoreResult(
+        composite_score=3.1,
+        should_alert=True,
+        volume_component=4.2,
+        price_component=2.8,
+        cross_signal_component=0.0,
+        classification_component=2.0,
+        trigger_result=trigger_result,
+        dominant_signal=dominant,
     )
 
 
@@ -118,60 +151,6 @@ def test_earnings_mover_embed_spec_has_eps_and_time_fields(quote_up, ticker_info
 
 
 # ---------------------------------------------------------------------------
-# VolumeMoverAlert
-# ---------------------------------------------------------------------------
-
-def test_volume_mover_embed_spec_positive(quote_up, ticker_info, price_history):
-    data = VolumeMoverData(ticker='GME', ticker_info=ticker_info, quote=quote_up,
-                           rvol=15.0, daily_price_history=price_history)
-    alert = VolumeMoverAlert(data=data)
-    spec = alert.build()
-    assert spec.color == COLOR_ORANGE
-    assert 'GME' in spec.title
-    assert '15.00x' in spec.description
-
-
-def test_volume_mover_embed_spec_negative(quote_down, ticker_info, price_history):
-    data = VolumeMoverData(ticker='GME', ticker_info=ticker_info, quote=quote_down,
-                           rvol=8.0, daily_price_history=price_history)
-    alert = VolumeMoverAlert(data=data)
-    spec = alert.build()
-    assert spec.color == COLOR_RED
-
-
-def test_volume_mover_embed_inline_fields(quote_up, ticker_info, price_history):
-    data = VolumeMoverData(ticker='GME', ticker_info=ticker_info, quote=quote_up,
-                           rvol=20.0, daily_price_history=price_history)
-    alert = VolumeMoverAlert(data=data)
-    spec = alert.build()
-    field_names = [f.name for f in spec.fields]
-    assert 'RVOL (10D)' in field_names
-    assert 'Volume' in field_names
-
-
-# ---------------------------------------------------------------------------
-# VolumeSpikeAlert
-# ---------------------------------------------------------------------------
-
-def test_volume_spike_embed_spec_positive(quote_up, ticker_info):
-    data = VolumeSpikeData(ticker='NVDA', ticker_info=ticker_info, quote=quote_up,
-                           rvol_at_time=50.0, avg_vol_at_time=200_000.0, time='10:30 AM')
-    alert = VolumeSpikeAlert(data=data)
-    spec = alert.build()
-    assert spec.color == COLOR_ORANGE
-    assert 'NVDA' in spec.title
-    assert '10:30 AM' in spec.description
-
-
-def test_volume_spike_embed_spec_negative(quote_down, ticker_info):
-    data = VolumeSpikeData(ticker='NVDA', ticker_info=ticker_info, quote=quote_down,
-                           rvol_at_time=30.0, avg_vol_at_time=100_000.0, time='11:00 AM')
-    alert = VolumeSpikeAlert(data=data)
-    spec = alert.build()
-    assert spec.color == COLOR_RED
-
-
-# ---------------------------------------------------------------------------
 # WatchlistMoverAlert
 # ---------------------------------------------------------------------------
 
@@ -204,115 +183,263 @@ def test_watchlist_mover_embed_has_watchlist_field(quote_up, ticker_info):
 
 
 # ---------------------------------------------------------------------------
-# SECFilingMoverAlert
+# PopularitySurgeAlert
 # ---------------------------------------------------------------------------
 
-def test_sec_filing_embed_spec_positive(quote_up, ticker_info):
-    today = datetime.datetime.today().strftime("%Y-%m-%d")
-    filings = pd.DataFrame({
-        'form': ['8-K', '10-Q'],
-        'filingDate': [today, today],
-        'link': ['https://sec.gov/1', 'https://sec.gov/2'],
-    })
-    data = SECFilingData(ticker='GME', ticker_info=ticker_info, quote=quote_up,
-                         recent_sec_filings=filings)
-    alert = SECFilingMoverAlert(data=data)
-    spec = alert.build()
-    assert spec.color == COLOR_GREEN
-    assert 'GME' in spec.title
-    assert '8-K' in spec.description or '8-K' in str([f.value for f in spec.fields])
-
-
-def test_sec_filing_embed_spec_negative(quote_down, ticker_info):
-    data = SECFilingData(ticker='GME', ticker_info=ticker_info, quote=quote_down,
-                         recent_sec_filings=pd.DataFrame())
-    alert = SECFilingMoverAlert(data=data)
-    spec = alert.build()
-    assert spec.color == COLOR_RED
-
-
-# ---------------------------------------------------------------------------
-# PopularityAlert
-# ---------------------------------------------------------------------------
-
-@pytest.fixture
-def pop_df():
-    now = datetime.datetime.now()
-    rounded = now.replace(minute=(now.minute // 30) * 30, second=0, microsecond=0)
-    rows = []
-    for i in range(6):
-        rows.append({'datetime': rounded - datetime.timedelta(days=i), 'ticker': 'GME', 'rank': 50 - i * 3})
-    return pd.DataFrame(rows)
-
-
-def test_popularity_embed_spec_returns_embed_spec(quote_up, ticker_info, pop_df):
-    data = PopularityAlertData(ticker='GME', ticker_info=ticker_info, quote=quote_up,
-                               popularity=pop_df)
-    alert = PopularityAlert(data=data)
+def test_popularity_surge_embed_returns_spec(quote_up, ticker_info):
+    surge_result = _make_surge_result()
+    data = PopularitySurgeData(ticker='GME', ticker_info=ticker_info, quote=quote_up,
+                               surge_result=surge_result)
+    alert = PopularitySurgeAlert(data=data)
     spec = alert.build()
     assert isinstance(spec, EmbedSpec)
     assert 'GME' in spec.title
+    assert spec.color == COLOR_PURPLE
+    assert spec.footer == "RocketStocks · popularity-surge"
+    assert spec.timestamp is True
 
 
-def test_popularity_embed_spec_has_inline_fields(quote_up, ticker_info, pop_df):
-    data = PopularityAlertData(ticker='GME', ticker_info=ticker_info, quote=quote_up,
-                               popularity=pop_df)
-    alert = PopularityAlert(data=data)
-    spec = alert.build()
+def test_popularity_surge_embed_shows_rank_fields(quote_up, ticker_info):
+    surge_result = _make_surge_result()
+    data = PopularitySurgeData(ticker='GME', ticker_info=ticker_info, quote=quote_up,
+                               surge_result=surge_result)
+    spec = PopularitySurgeAlert(data=data).build()
     field_names = [f.name for f in spec.fields]
     assert 'Current Rank' in field_names
-    assert '5D Best Rank' in field_names
+    assert 'Rank 24h Ago' in field_names
+    assert 'Rank Change' in field_names
 
 
-# ---------------------------------------------------------------------------
-# PoliticianTradeAlert
-# ---------------------------------------------------------------------------
-
-@pytest.fixture
-def politician():
-    return {'name': 'Nancy Pelosi', 'party': 'Democrat', 'state': 'CA',
-            'politician_id': 'nancy-pelosi'}
-
-
-@pytest.fixture
-def trades_df():
-    return pd.DataFrame({
-        'Stock': ['AAPL', 'MSFT'],
-        'Amount': ['$10K-$50K', '$50K-$100K'],
-        'Date': ['2024-01-01', '2024-01-01'],
-        'Type': ['Purchase', 'Purchase'],
-    })
-
-
-def test_politician_embed_spec_color_is_purple(politician, trades_df):
-    data = PoliticianTradeAlertData(politician=politician, trades=trades_df)
-    alert = PoliticianTradeAlert(data=data)
-    spec = alert.build()
-    assert spec.color == COLOR_PURPLE
-
-
-def test_politician_embed_spec_no_url(politician, trades_df):
-    data = PoliticianTradeAlertData(politician=politician, trades=trades_df)
-    alert = PoliticianTradeAlert(data=data)
-    spec = alert.build()
-    assert spec.url is None
-
-
-def test_politician_embed_spec_has_party_and_state_fields(politician, trades_df):
-    data = PoliticianTradeAlertData(politician=politician, trades=trades_df)
-    alert = PoliticianTradeAlert(data=data)
-    spec = alert.build()
+def test_popularity_surge_embed_shows_mention_ratio(quote_up, ticker_info):
+    surge_result = _make_surge_result()
+    data = PopularitySurgeData(ticker='GME', ticker_info=ticker_info, quote=quote_up,
+                               surge_result=surge_result)
+    spec = PopularitySurgeAlert(data=data).build()
     field_names = [f.name for f in spec.fields]
-    assert 'Party' in field_names
-    assert 'State' in field_names
-    assert 'Trades Today' in field_names
+    assert 'Mention Surge' in field_names
 
 
-def test_politician_embed_spec_name_in_title(politician, trades_df):
-    data = PoliticianTradeAlertData(politician=politician, trades=trades_df)
-    alert = PoliticianTradeAlert(data=data)
+def test_popularity_surge_embed_description_contains_reasons(quote_up, ticker_info):
+    surge_result = _make_surge_result(surge_types=[SurgeType.MENTION_SURGE])
+    data = PopularitySurgeData(ticker='GME', ticker_info=ticker_info, quote=quote_up,
+                               surge_result=surge_result)
+    spec = PopularitySurgeAlert(data=data).build()
+    assert 'Mentions surged' in spec.description
+
+
+def test_popularity_surge_alert_data_stored(quote_up, ticker_info):
+    surge_result = _make_surge_result()
+    data = PopularitySurgeData(ticker='GME', ticker_info=ticker_info, quote=quote_up,
+                               surge_result=surge_result)
+    alert = PopularitySurgeAlert(data=data)
+    assert alert.alert_data['current_rank'] == 45
+    assert alert.alert_data['mention_ratio'] == pytest.approx(3.56)
+    assert 'mention_surge' in alert.alert_data['surge_types']
+
+
+def test_popularity_surge_override_on_intensifying(quote_up, ticker_info):
+    """override_and_edit returns True when mention_ratio is 1.5x previous."""
+    surge_result = _make_surge_result()
+    data = PopularitySurgeData(ticker='GME', ticker_info=ticker_info, quote=quote_up,
+                               surge_result=surge_result)
+    alert = PopularitySurgeAlert(data=data)
+    alert.alert_data['mention_ratio'] = 4.5
+
+    prev_data = {'mention_ratio': 2.0, 'pct_change': 7.5}
+    # 4.5 >= 1.5 and 4.5 > 2.0 * 1.5 = 3.0 → True
+    assert alert.override_and_edit(prev_data) is True
+
+
+def test_popularity_surge_override_not_triggered_small_ratio(quote_up, ticker_info):
+    """override_and_edit stays False when mention_ratio hasn't grown enough."""
+    surge_result = _make_surge_result()
+    data = PopularitySurgeData(ticker='GME', ticker_info=ticker_info, quote=quote_up,
+                               surge_result=surge_result)
+    alert = PopularitySurgeAlert(data=data)
+    alert.alert_data['mention_ratio'] = 2.0
+
+    prev_data = {'mention_ratio': 2.5, 'pct_change': 7.5}
+    # 2.0 < 2.5 * 1.5 = 3.75 → falls through to base logic
+    # base: pct_change same → no override
+    assert alert.override_and_edit(prev_data) is False
+
+
+# ---------------------------------------------------------------------------
+# MomentumConfirmationAlert
+# ---------------------------------------------------------------------------
+
+def test_momentum_confirmation_embed_returns_spec(quote_up, ticker_info):
+    tr = _make_trigger_result()
+    data = MomentumConfirmationData(
+        ticker='GME', ticker_info=ticker_info, quote=quote_up,
+        surge_flagged_at=datetime.datetime.now() - datetime.timedelta(hours=2),
+        surge_types=['mention_surge', 'rank_jump'],
+        price_at_flag=50.0,
+        price_change_since_flag=8.0,
+        trigger_result=tr,
+    )
+    alert = MomentumConfirmationAlert(data=data)
     spec = alert.build()
-    assert 'Nancy Pelosi' in spec.title
+    assert isinstance(spec, EmbedSpec)
+    assert 'GME' in spec.title
+    assert spec.color == COLOR_GOLD
+    assert spec.footer == "RocketStocks · momentum-confirmation"
+    assert spec.timestamp is True
+
+
+def test_momentum_confirmation_embed_shows_price_delta(quote_up, ticker_info):
+    tr = _make_trigger_result()
+    data = MomentumConfirmationData(
+        ticker='GME', ticker_info=ticker_info, quote=quote_up,
+        surge_flagged_at=datetime.datetime.now(),
+        surge_types=['rank_jump'],
+        price_at_flag=50.0,
+        price_change_since_flag=7.5,
+        trigger_result=tr,
+    )
+    spec = MomentumConfirmationAlert(data=data).build()
+    field_names = [f.name for f in spec.fields]
+    assert 'Change Since Flag' in field_names
+
+
+def test_momentum_confirmation_embed_shows_surge_types(quote_up, ticker_info):
+    tr = _make_trigger_result()
+    data = MomentumConfirmationData(
+        ticker='GME', ticker_info=ticker_info, quote=quote_up,
+        surge_flagged_at=datetime.datetime.now(),
+        surge_types=['mention_surge', 'velocity_spike'],
+        trigger_result=tr,
+    )
+    spec = MomentumConfirmationAlert(data=data).build()
+    field_names = [f.name for f in spec.fields]
+    assert 'Original Surge Types' in field_names
+
+
+def test_momentum_confirmation_alert_data_stored(quote_up, ticker_info):
+    tr = _make_trigger_result()
+    flagged_at = datetime.datetime(2026, 3, 2, 10, 0, 0)
+    data = MomentumConfirmationData(
+        ticker='GME', ticker_info=ticker_info, quote=quote_up,
+        surge_flagged_at=flagged_at,
+        surge_types=['rank_jump'],
+        price_change_since_flag=5.0,
+        trigger_result=tr,
+    )
+    alert = MomentumConfirmationAlert(data=data)
+    assert alert.alert_data['price_change_since_flag'] == pytest.approx(5.0)
+    assert alert.alert_data['zscore'] == pytest.approx(2.8)
+
+
+# ---------------------------------------------------------------------------
+# MarketAlert
+# ---------------------------------------------------------------------------
+
+def test_market_alert_embed_returns_spec(quote_up, ticker_info):
+    tr = _make_trigger_result()
+    cr = _make_composite_result(trigger_result=tr, dominant='volume')
+    data = MarketAlertData(ticker='GME', ticker_info=ticker_info, quote=quote_up,
+                           composite_result=cr, rvol=4.5)
+    alert = MarketAlert(data=data)
+    spec = alert.build()
+    assert isinstance(spec, EmbedSpec)
+    assert 'GME' in spec.title
+    assert spec.timestamp is True
+    assert 'market-alert' in spec.footer
+
+
+def test_market_alert_embed_positive_color(quote_up, ticker_info):
+    tr = _make_trigger_result()
+    cr = _make_composite_result(trigger_result=tr, dominant='volume')
+    data = MarketAlertData(ticker='GME', ticker_info=ticker_info, quote=quote_up,
+                           composite_result=cr)
+    spec = MarketAlert(data=data).build()
+    assert spec.color == COLOR_CYAN
+
+
+def test_market_alert_embed_negative_color(quote_down, ticker_info):
+    tr = _make_trigger_result()
+    cr = _make_composite_result(trigger_result=tr, dominant='price')
+    data = MarketAlertData(ticker='GME', ticker_info=ticker_info, quote=quote_down,
+                           composite_result=cr)
+    spec = MarketAlert(data=data).build()
+    assert spec.color == COLOR_RED
+
+
+def test_market_alert_embed_shows_composite_score(quote_up, ticker_info):
+    tr = _make_trigger_result()
+    cr = _make_composite_result(trigger_result=tr)
+    data = MarketAlertData(ticker='GME', ticker_info=ticker_info, quote=quote_up,
+                           composite_result=cr)
+    spec = MarketAlert(data=data).build()
+    field_names = [f.name for f in spec.fields]
+    assert 'Composite Score' in field_names
+    assert 'Score Breakdown' in field_names
+
+
+def test_market_alert_narrative_volume_driven(quote_up, ticker_info):
+    tr = _make_trigger_result()
+    cr = _make_composite_result(trigger_result=tr, dominant='volume')
+    data = MarketAlertData(ticker='GME', ticker_info=ticker_info, quote=quote_up,
+                           composite_result=cr)
+    spec = MarketAlert(data=data).build()
+    assert 'volume activity' in spec.description
+
+
+def test_market_alert_narrative_price_driven(quote_up, ticker_info):
+    tr = _make_trigger_result()
+    cr = _make_composite_result(trigger_result=tr, dominant='price')
+    data = MarketAlertData(ticker='GME', ticker_info=ticker_info, quote=quote_up,
+                           composite_result=cr)
+    spec = MarketAlert(data=data).build()
+    assert 'price move' in spec.description
+
+
+def test_market_alert_narrative_mixed(quote_up, ticker_info):
+    tr = _make_trigger_result()
+    cr = _make_composite_result(trigger_result=tr, dominant='mixed')
+    data = MarketAlertData(ticker='GME', ticker_info=ticker_info, quote=quote_up,
+                           composite_result=cr)
+    spec = MarketAlert(data=data).build()
+    assert 'mixed' in spec.description
+
+
+def test_market_alert_shows_rvol_when_available(quote_up, ticker_info):
+    tr = _make_trigger_result()
+    cr = _make_composite_result(trigger_result=tr)
+    data = MarketAlertData(ticker='GME', ticker_info=ticker_info, quote=quote_up,
+                           composite_result=cr, rvol=4.5)
+    spec = MarketAlert(data=data).build()
+    field_names = [f.name for f in spec.fields]
+    assert 'RVOL' in field_names
+
+
+def test_market_alert_no_rvol_field_when_none(quote_up, ticker_info):
+    tr = _make_trigger_result()
+    cr = _make_composite_result(trigger_result=tr)
+    data = MarketAlertData(ticker='GME', ticker_info=ticker_info, quote=quote_up,
+                           composite_result=cr, rvol=None)
+    spec = MarketAlert(data=data).build()
+    field_names = [f.name for f in spec.fields]
+    assert 'RVOL' not in field_names
+
+
+def test_market_alert_dominant_in_footer(quote_up, ticker_info):
+    tr = _make_trigger_result()
+    cr = _make_composite_result(trigger_result=tr, dominant='volume')
+    data = MarketAlertData(ticker='GME', ticker_info=ticker_info, quote=quote_up,
+                           composite_result=cr)
+    spec = MarketAlert(data=data).build()
+    assert 'volume' in spec.footer
+
+
+def test_market_alert_stores_composite_score_in_alert_data(quote_up, ticker_info):
+    tr = _make_trigger_result()
+    cr = _make_composite_result(trigger_result=tr)
+    data = MarketAlertData(ticker='GME', ticker_info=ticker_info, quote=quote_up,
+                           composite_result=cr)
+    alert = MarketAlert(data=data)
+    assert alert.alert_data['composite_score'] == pytest.approx(3.1)
+    assert alert.alert_data['dominant_signal'] == 'volume'
 
 
 # ---------------------------------------------------------------------------
@@ -330,20 +457,6 @@ def test_earnings_mover_embed_spec_none_ticker_info(quote_up):
     assert 'GME' in spec.description
 
 
-def test_volume_mover_embed_spec_none_ticker_info(quote_up, price_history):
-    data = VolumeMoverData(ticker='GME', ticker_info=None, quote=quote_up,
-                           rvol=10.0, daily_price_history=price_history)
-    spec = VolumeMoverAlert(data=data).build()
-    assert 'GME' in spec.description
-
-
-def test_volume_spike_embed_spec_none_ticker_info(quote_up):
-    data = VolumeSpikeData(ticker='NVDA', ticker_info=None, quote=quote_up,
-                           rvol_at_time=20.0, avg_vol_at_time=100_000.0, time='10:30 AM')
-    spec = VolumeSpikeAlert(data=data).build()
-    assert 'NVDA' in spec.description
-
-
 def test_watchlist_mover_embed_spec_none_ticker_info(quote_up):
     data = WatchlistMoverData(ticker='AAPL', ticker_info=None, quote=quote_up,
                               watchlist='my-list')
@@ -351,17 +464,31 @@ def test_watchlist_mover_embed_spec_none_ticker_info(quote_up):
     assert 'AAPL' in spec.description
 
 
-def test_sec_filing_embed_spec_none_ticker_info(quote_up):
-    data = SECFilingData(ticker='GME', ticker_info=None, quote=quote_up,
-                         recent_sec_filings=pd.DataFrame())
-    spec = SECFilingMoverAlert(data=data).build()
+def test_popularity_surge_embed_none_ticker_info(quote_up):
+    surge_result = _make_surge_result()
+    data = PopularitySurgeData(ticker='GME', ticker_info=None, quote=quote_up,
+                               surge_result=surge_result)
+    spec = PopularitySurgeAlert(data=data).build()
     assert 'GME' in spec.description
 
 
-def test_popularity_embed_spec_none_ticker_info(quote_up, pop_df):
-    data = PopularityAlertData(ticker='GME', ticker_info=None, quote=quote_up,
-                               popularity=pop_df)
-    spec = PopularityAlert(data=data).build()
+def test_momentum_confirmation_embed_none_ticker_info(quote_up):
+    tr = _make_trigger_result()
+    data = MomentumConfirmationData(
+        ticker='GME', ticker_info=None, quote=quote_up,
+        surge_flagged_at=None,
+        trigger_result=tr,
+    )
+    spec = MomentumConfirmationAlert(data=data).build()
+    assert 'GME' in spec.description
+
+
+def test_market_alert_embed_none_ticker_info(quote_up):
+    tr = _make_trigger_result()
+    cr = _make_composite_result(trigger_result=tr)
+    data = MarketAlertData(ticker='GME', ticker_info=None, quote=quote_up,
+                           composite_result=cr)
+    spec = MarketAlert(data=data).build()
     assert 'GME' in spec.description
 
 
@@ -403,27 +530,12 @@ def test_earnings_mover_stores_zscore_in_alert_data(quote_up, ticker_info):
     assert alert.alert_data.get('classification') == 'standard'
 
 
-def test_volume_mover_stores_zscore_in_alert_data(quote_up, ticker_info, price_history):
-    tr = _make_trigger_result()
-    data = VolumeMoverData(ticker='GME', ticker_info=ticker_info, quote=quote_up,
-                           rvol=15.0, daily_price_history=price_history, trigger_result=tr)
-    alert = VolumeMoverAlert(data=data)
-    assert alert.alert_data.get('zscore') == pytest.approx(2.8)
-
-
 def test_watchlist_mover_stores_zscore_in_alert_data(quote_up, ticker_info):
     tr = _make_trigger_result()
     data = WatchlistMoverData(ticker='AAPL', ticker_info=ticker_info, quote=quote_up,
                               watchlist='my-list', trigger_result=tr)
     alert = WatchlistMoverAlert(data=data)
     assert alert.alert_data.get('zscore') == pytest.approx(2.8)
-
-
-def test_no_trigger_result_does_not_add_zscore(quote_up, ticker_info, price_history):
-    data = VolumeMoverData(ticker='GME', ticker_info=ticker_info, quote=quote_up,
-                           rvol=10.0, daily_price_history=price_history, trigger_result=None)
-    alert = VolumeMoverAlert(data=data)
-    assert 'zscore' not in alert.alert_data
 
 
 def test_earnings_mover_embed_has_zscore_field(quote_up, ticker_info):
@@ -440,9 +552,9 @@ def test_earnings_mover_embed_has_zscore_field(quote_up, ticker_info):
 
 def test_blue_chip_alert_shows_bb_position(quote_up, ticker_info, price_history):
     tr = _make_blue_chip_trigger()
-    data = VolumeMoverData(ticker='AAPL', ticker_info=ticker_info, quote=quote_up,
-                           rvol=5.0, daily_price_history=price_history, trigger_result=tr)
-    spec = VolumeMoverAlert(data=data).build()
+    data = WatchlistMoverData(ticker='AAPL', ticker_info=ticker_info, quote=quote_up,
+                              watchlist='portfolio', trigger_result=tr)
+    spec = WatchlistMoverAlert(data=data).build()
     field_names = [f.name for f in spec.fields]
     assert 'BB Position' in field_names
     assert 'Confluence' in field_names
@@ -465,40 +577,13 @@ def test_record_momentum_appends_to_history():
 
 def test_record_momentum_no_pct_change_does_nothing():
     alert = MinimalAlert()
-    del alert.alert_data['pct_change']  # remove pct_change
+    del alert.alert_data['pct_change']
     alert.record_momentum(prev_alert_data={'pct_change': 5.0})
-    # No history should be recorded
     assert 'momentum_history' not in alert.alert_data
 
 
 def test_override_and_edit_uses_momentum_logic():
     alert = MinimalAlert()
     alert.alert_data['pct_change'] = 50.0
-    # Fallback path (no history): 50.0 from 5.0 = 900% relative → should trigger
     result = alert.override_and_edit({'pct_change': 5.0})
     assert result is True
-
-
-# ---------------------------------------------------------------------------
-# PopularityAlert — rank velocity fields
-# ---------------------------------------------------------------------------
-
-def test_popularity_alert_stores_rank_velocity(quote_up, ticker_info, pop_df):
-    data = PopularityAlertData(
-        ticker='GME', ticker_info=ticker_info, quote=quote_up,
-        popularity=pop_df, rank_velocity=-3.5, rank_velocity_zscore=2.2,
-    )
-    alert = PopularityAlert(data=data)
-    assert alert.alert_data.get('rank_velocity') == pytest.approx(-3.5)
-    assert alert.alert_data.get('rank_velocity_zscore') == pytest.approx(2.2)
-
-
-def test_popularity_embed_has_velocity_field(quote_up, ticker_info, pop_df):
-    data = PopularityAlertData(
-        ticker='GME', ticker_info=ticker_info, quote=quote_up,
-        popularity=pop_df, rank_velocity=-3.5, rank_velocity_zscore=2.2,
-    )
-    spec = PopularityAlert(data=data).build()
-    field_names = [f.name for f in spec.fields]
-    assert 'Rank Velocity' in field_names
-    assert 'Velocity Z-Score' in field_names

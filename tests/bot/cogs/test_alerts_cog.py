@@ -7,6 +7,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 from rocketstocks.bot.cogs.alerts import Alerts
 from rocketstocks.core.analysis.alert_strategy import AlertTriggerResult
 from rocketstocks.core.analysis.classification import StockClass
+from rocketstocks.core.analysis.composite_score import CompositeScoreResult
 
 
 def _make_bot():
@@ -22,6 +23,9 @@ def _make_stock_data(earnings_df: pd.DataFrame):
     sd.alert_tickers = {}
     sd.ticker_stats.get_all_classifications.return_value = {}
     sd.price_history.fetch_daily_price_history.return_value = pd.DataFrame()
+    sd.surge_store.get_active_surges.return_value = []
+    sd.surge_store.expire_old_surges.return_value = None
+    sd.watchlists.get_all_watchlist_tickers.return_value = []
     return sd
 
 
@@ -40,13 +44,27 @@ def _make_trigger_result(should_alert=True):
     )
 
 
+def _make_composite_result(should_alert=True):
+    return CompositeScoreResult(
+        composite_score=3.1 if should_alert else 1.0,
+        should_alert=should_alert,
+        volume_component=4.2,
+        price_component=2.8,
+        cross_signal_component=0.0,
+        classification_component=2.0,
+        trigger_result=_make_trigger_result(should_alert=should_alert),
+        dominant_signal='volume',
+    )
+
+
 def _make_cog(earnings_df: pd.DataFrame):
     bot = _make_bot()
     sd = _make_stock_data(earnings_df)
     with (
         patch.object(Alerts, "post_alerts_date"),
-        patch.object(Alerts, "send_popularity_movers"),
-        patch.object(Alerts, "send_alerts"),
+        patch.object(Alerts, "detect_popularity_surges"),
+        patch.object(Alerts, "process_alerts"),
+        patch("rocketstocks.bot.cogs.alerts.DiscordState"),
     ):
         cog = Alerts(bot=bot, stock_data=sd)
     cog.dstate = MagicMock()
@@ -54,25 +72,32 @@ def _make_cog(earnings_df: pd.DataFrame):
     return cog
 
 
-class TestSendEarningsMovers:
+# ---------------------------------------------------------------------------
+# Earnings pipeline
+# ---------------------------------------------------------------------------
+
+class TestEarningsPipeline:
     @pytest.mark.asyncio
     async def test_empty_dataframe_returns_early(self):
         """Should not raise KeyError when no earnings exist for today."""
         cog = _make_cog(earnings_df=pd.DataFrame())
-        await cog.send_earnings_movers(
+        await cog._earnings_pipeline(
             quotes={"AAPL": {"quote": {"netPercentChange": 10.0, "totalVolume": 1_000_000}}},
+            classifications={},
             channels=[],
+            earnings_tickers=set(),
         )
 
     @pytest.mark.asyncio
     async def test_no_matching_tickers_sends_no_alerts(self):
-        """Tickers in quotes not in earnings_today produce no alerts."""
-        df = pd.DataFrame({"ticker": ["MSFT"], "date": [datetime.date.today()]})
-        cog = _make_cog(earnings_df=df)
+        """Tickers in quotes not in earnings_tickers produce no alerts."""
+        cog = _make_cog(earnings_df=pd.DataFrame({"ticker": ["MSFT"], "date": [datetime.date.today()]}))
         channel = AsyncMock()
-        await cog.send_earnings_movers(
+        await cog._earnings_pipeline(
             quotes={"AAPL": {"quote": {"netPercentChange": 10.0, "totalVolume": 1_000_000}}},
+            classifications={},
             channels=[channel],
+            earnings_tickers={"MSFT"},
         )
         channel.send.assert_not_called()
 
@@ -82,40 +107,37 @@ class TestSendEarningsMovers:
         df = pd.DataFrame({"ticker": ["AAPL"], "date": [datetime.date.today()]})
         cog = _make_cog(earnings_df=df)
         channel = AsyncMock()
-
         fake_trigger = _make_trigger_result(should_alert=False)
 
-        with (
-            patch("rocketstocks.bot.cogs.alerts.evaluate_price_alert",
-                  return_value=fake_trigger) as mock_eval,
-        ):
-            await cog.send_earnings_movers(
+        with patch("rocketstocks.bot.cogs.alerts.evaluate_price_alert",
+                   return_value=fake_trigger) as mock_eval:
+            await cog._earnings_pipeline(
                 quotes={"AAPL": {"quote": {"netPercentChange": 3.0, "totalVolume": 1_000_000}}},
+                classifications={},
                 channels=[channel],
+                earnings_tickers={"AAPL"},
             )
             mock_eval.assert_called_once()
 
     @pytest.mark.asyncio
-    async def test_matching_ticker_alert_sent_when_trigger_true(self):
+    async def test_alert_sent_when_trigger_true(self):
         """Alert is sent when evaluate_price_alert returns should_alert=True."""
-        df = pd.DataFrame({
-            "ticker": ["AAPL"],
-            "date": [datetime.date.today()],
-        })
+        df = pd.DataFrame({"ticker": ["AAPL"], "date": [datetime.date.today()]})
         cog = _make_cog(earnings_df=df)
         channel = AsyncMock()
         fake_trigger = _make_trigger_result(should_alert=True)
 
         with (
-            patch("rocketstocks.bot.cogs.alerts.evaluate_price_alert",
-                  return_value=fake_trigger),
+            patch("rocketstocks.bot.cogs.alerts.evaluate_price_alert", return_value=fake_trigger),
             patch.object(cog, "build_earnings_mover", new_callable=AsyncMock) as mock_build,
             patch("rocketstocks.bot.cogs.alerts.send_alert", new_callable=AsyncMock) as mock_send,
         ):
             mock_build.return_value = MagicMock()
-            await cog.send_earnings_movers(
+            await cog._earnings_pipeline(
                 quotes={"AAPL": {"quote": {"netPercentChange": 8.5, "totalVolume": 1_000_000}}},
+                classifications={},
                 channels=[channel],
+                earnings_tickers={"AAPL"},
             )
             mock_build.assert_called_once()
             mock_send.assert_called_once()
@@ -129,18 +151,251 @@ class TestSendEarningsMovers:
         fake_trigger = _make_trigger_result(should_alert=False)
 
         with (
-            patch("rocketstocks.bot.cogs.alerts.evaluate_price_alert",
-                  return_value=fake_trigger),
+            patch("rocketstocks.bot.cogs.alerts.evaluate_price_alert", return_value=fake_trigger),
             patch.object(cog, "build_earnings_mover", new_callable=AsyncMock) as mock_build,
             patch("rocketstocks.bot.cogs.alerts.send_alert", new_callable=AsyncMock) as mock_send,
         ):
-            await cog.send_earnings_movers(
+            await cog._earnings_pipeline(
                 quotes={"AAPL": {"quote": {"netPercentChange": 8.5, "totalVolume": 1_000_000}}},
+                classifications={},
                 channels=[channel],
+                earnings_tickers={"AAPL"},
             )
             mock_build.assert_not_called()
             mock_send.assert_not_called()
 
+
+# ---------------------------------------------------------------------------
+# Watchlist pipeline
+# ---------------------------------------------------------------------------
+
+class TestWatchlistPipeline:
+    @pytest.mark.asyncio
+    async def test_quote_passed_to_builder(self):
+        """_watchlist_pipeline passes the pre-fetched quote to build_watchlist_mover."""
+        cog = _make_cog(earnings_df=pd.DataFrame())
+        ticker = "AAPL"
+        quote = {"quote": {"netPercentChange": 15.0, "totalVolume": 1_000_000}}
+        fake_trigger = _make_trigger_result(should_alert=True)
+
+        with (
+            patch("rocketstocks.bot.cogs.alerts.evaluate_price_alert", return_value=fake_trigger),
+            patch.object(cog, "build_watchlist_mover", new_callable=AsyncMock) as mock_build,
+            patch("rocketstocks.bot.cogs.alerts.send_alert", new_callable=AsyncMock),
+        ):
+            mock_build.return_value = MagicMock()
+            await cog._watchlist_pipeline(
+                quotes={ticker: quote},
+                classifications={},
+                channels=[AsyncMock()],
+                watchlist_tickers={ticker},
+            )
+
+        mock_build.assert_called_once()
+        _, call_kwargs = mock_build.call_args
+        assert call_kwargs.get("quote") == quote
+
+
+# ---------------------------------------------------------------------------
+# Market pipeline
+# ---------------------------------------------------------------------------
+
+class TestMarketPipeline:
+    @pytest.mark.asyncio
+    async def test_alert_sent_on_high_composite_score(self):
+        """_market_pipeline sends alert when composite score exceeds threshold."""
+        cog = _make_cog(earnings_df=pd.DataFrame())
+        ticker = "GME"
+        quote = {"quote": {"netPercentChange": 15.0, "totalVolume": 5_000_000},
+                 "regular": {"regularMarketLastPrice": 25.0}}
+        fake_trigger = _make_trigger_result(should_alert=True)
+        fake_composite = _make_composite_result(should_alert=True)
+
+        with (
+            patch("rocketstocks.bot.cogs.alerts.evaluate_price_alert", return_value=fake_trigger),
+            patch("rocketstocks.bot.cogs.alerts.compute_composite_score", return_value=fake_composite),
+            patch.object(cog, "build_market_alert", new_callable=AsyncMock) as mock_build,
+            patch("rocketstocks.bot.cogs.alerts.send_alert", new_callable=AsyncMock) as mock_send,
+        ):
+            mock_build.return_value = MagicMock()
+            await cog._market_pipeline(
+                quotes={ticker: quote},
+                classifications={},
+                channels=[AsyncMock()],
+                exclude=set(),
+            )
+            mock_build.assert_called_once()
+            mock_send.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_no_alert_below_threshold(self):
+        """_market_pipeline skips alert when composite score is below threshold."""
+        cog = _make_cog(earnings_df=pd.DataFrame())
+        ticker = "GME"
+        quote = {"quote": {"netPercentChange": 1.0, "totalVolume": 100_000},
+                 "regular": {"regularMarketLastPrice": 25.0}}
+        fake_trigger = _make_trigger_result(should_alert=False)
+        fake_composite = _make_composite_result(should_alert=False)
+
+        with (
+            patch("rocketstocks.bot.cogs.alerts.evaluate_price_alert", return_value=fake_trigger),
+            patch("rocketstocks.bot.cogs.alerts.compute_composite_score", return_value=fake_composite),
+            patch.object(cog, "build_market_alert", new_callable=AsyncMock) as mock_build,
+            patch("rocketstocks.bot.cogs.alerts.send_alert", new_callable=AsyncMock) as mock_send,
+        ):
+            await cog._market_pipeline(
+                quotes={ticker: quote},
+                classifications={},
+                channels=[AsyncMock()],
+                exclude=set(),
+            )
+            mock_build.assert_not_called()
+            mock_send.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_excluded_tickers_skipped(self):
+        """Tickers in the exclude set are not processed by _market_pipeline."""
+        cog = _make_cog(earnings_df=pd.DataFrame())
+        ticker = "GME"
+        quote = {"quote": {"netPercentChange": 15.0, "totalVolume": 5_000_000}}
+
+        with patch("rocketstocks.bot.cogs.alerts.evaluate_price_alert") as mock_eval:
+            await cog._market_pipeline(
+                quotes={ticker: quote},
+                classifications={},
+                channels=[AsyncMock()],
+                exclude={ticker},
+            )
+            mock_eval.assert_not_called()
+
+
+# ---------------------------------------------------------------------------
+# Confirmation pipeline
+# ---------------------------------------------------------------------------
+
+class TestConfirmationPipeline:
+    @pytest.mark.asyncio
+    async def test_confirmation_fires_on_price_alert(self):
+        """_confirmation_pipeline confirms a surge when price alert triggers."""
+        cog = _make_cog(earnings_df=pd.DataFrame())
+        ticker = "GME"
+        quote = {
+            "quote": {"netPercentChange": 12.0, "totalVolume": 5_000_000},
+            "regular": {"regularMarketLastPrice": 27.0},
+        }
+        surge = {
+            "ticker": ticker,
+            "flagged_at": datetime.datetime.utcnow() - datetime.timedelta(hours=1),
+            "surge_types": "mention_surge,rank_jump",
+            "price_at_flag": 25.0,
+            "alert_message_id": 111222333,
+        }
+        fake_trigger = _make_trigger_result(should_alert=True)
+
+        with (
+            patch("rocketstocks.bot.cogs.alerts.evaluate_price_alert", return_value=fake_trigger),
+            patch.object(cog, "build_momentum_confirmation", new_callable=AsyncMock) as mock_build,
+            patch("rocketstocks.bot.cogs.alerts.send_alert", new_callable=AsyncMock) as mock_send,
+        ):
+            mock_build.return_value = MagicMock()
+            await cog._confirmation_pipeline(
+                active_surges=[surge],
+                quotes={ticker: quote},
+                classifications={},
+                channels=[AsyncMock()],
+            )
+            mock_build.assert_called_once()
+            mock_send.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_confirmation_marks_surge_confirmed(self):
+        """_confirmation_pipeline calls surge_store.mark_confirmed after alert."""
+        cog = _make_cog(earnings_df=pd.DataFrame())
+        ticker = "GME"
+        flagged_at = datetime.datetime.utcnow() - datetime.timedelta(hours=1)
+        quote = {
+            "quote": {"netPercentChange": 12.0, "totalVolume": 5_000_000},
+            "regular": {"regularMarketLastPrice": 27.0},
+        }
+        surge = {
+            "ticker": ticker,
+            "flagged_at": flagged_at,
+            "surge_types": "mention_surge",
+            "price_at_flag": 25.0,
+            "alert_message_id": None,
+        }
+        fake_trigger = _make_trigger_result(should_alert=True)
+
+        with (
+            patch("rocketstocks.bot.cogs.alerts.evaluate_price_alert", return_value=fake_trigger),
+            patch.object(cog, "build_momentum_confirmation", new_callable=AsyncMock) as mock_build,
+            patch("rocketstocks.bot.cogs.alerts.send_alert", new_callable=AsyncMock),
+        ):
+            mock_build.return_value = MagicMock()
+            await cog._confirmation_pipeline(
+                active_surges=[surge],
+                quotes={ticker: quote},
+                classifications={},
+                channels=[AsyncMock()],
+            )
+
+        cog.stock_data.surge_store.mark_confirmed.assert_called_once_with(ticker, flagged_at)
+
+    @pytest.mark.asyncio
+    async def test_confirmation_skips_when_no_trigger(self):
+        """_confirmation_pipeline does not confirm if price alert doesn't fire."""
+        cog = _make_cog(earnings_df=pd.DataFrame())
+        ticker = "GME"
+        quote = {
+            "quote": {"netPercentChange": 0.5, "totalVolume": 1_000},
+            "regular": {"regularMarketLastPrice": 25.0},
+        }
+        surge = {
+            "ticker": ticker,
+            "flagged_at": datetime.datetime.utcnow(),
+            "surge_types": "mention_surge",
+            "price_at_flag": 25.0,
+            "alert_message_id": None,
+        }
+        fake_trigger = _make_trigger_result(should_alert=False)
+
+        with (
+            patch("rocketstocks.bot.cogs.alerts.evaluate_price_alert", return_value=fake_trigger),
+            patch("rocketstocks.bot.cogs.alerts.send_alert", new_callable=AsyncMock) as mock_send,
+        ):
+            await cog._confirmation_pipeline(
+                active_surges=[surge],
+                quotes={ticker: quote},
+                classifications={},
+                channels=[AsyncMock()],
+            )
+            mock_send.assert_not_called()
+        cog.stock_data.surge_store.mark_confirmed.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_confirmation_skips_when_ticker_not_in_quotes(self):
+        """_confirmation_pipeline skips surges whose ticker is not in quotes."""
+        cog = _make_cog(earnings_df=pd.DataFrame())
+        surge = {
+            "ticker": "GME",
+            "flagged_at": datetime.datetime.utcnow(),
+            "surge_types": "mention_surge",
+            "price_at_flag": 25.0,
+            "alert_message_id": None,
+        }
+        with patch("rocketstocks.bot.cogs.alerts.evaluate_price_alert") as mock_eval:
+            await cog._confirmation_pipeline(
+                active_surges=[surge],
+                quotes={},  # GME not in quotes
+                classifications={},
+                channels=[],
+            )
+            mock_eval.assert_not_called()
+
+
+# ---------------------------------------------------------------------------
+# BuildWatchlistMover
+# ---------------------------------------------------------------------------
 
 class TestBuildWatchlistMover:
     @pytest.mark.asyncio
@@ -160,53 +415,28 @@ class TestBuildWatchlistMover:
             mock_data_cls.return_value = MagicMock()
             await cog.build_watchlist_mover(ticker="AAPL")
 
-        # get_quote was awaited (AsyncMock confirms this)
         cog.stock_data.schwab.get_quote.assert_called_once_with(ticker="AAPL")
-        # The quote value passed to WatchlistMoverData is the actual resolved dict, not a coroutine
         _, data_kwargs = mock_data_cls.call_args
         assert data_kwargs["quote"] == expected_quote
 
 
-class TestSendWatchlistMovers:
-    @pytest.mark.asyncio
-    async def test_quote_passed_to_builder(self):
-        """send_watchlist_movers must pass the pre-fetched quote to build_watchlist_mover."""
-        cog = _make_cog(earnings_df=pd.DataFrame())
-
-        ticker = "AAPL"
-        quote = {"quote": {"netPercentChange": 15.0, "totalVolume": 1_000_000}}
-        cog.stock_data.watchlists.get_all_watchlist_tickers.return_value = [ticker]
-        fake_trigger = _make_trigger_result(should_alert=True)
-
-        with (
-            patch("rocketstocks.bot.cogs.alerts.evaluate_price_alert",
-                  return_value=fake_trigger),
-            patch.object(cog, "build_watchlist_mover", new_callable=AsyncMock) as mock_build,
-            patch("rocketstocks.bot.cogs.alerts.send_alert", new_callable=AsyncMock),
-        ):
-            mock_build.return_value = MagicMock()
-            await cog.send_watchlist_movers(quotes={ticker: quote}, channels=[AsyncMock()])
-
-        mock_build.assert_called_once()
-        _, call_kwargs = mock_build.call_args
-        assert call_kwargs.get("quote") == quote
-
+# ---------------------------------------------------------------------------
+# Per-ticker isolation
+# ---------------------------------------------------------------------------
 
 class TestPerTickerIsolation:
     @pytest.mark.asyncio
-    async def test_earnings_mover_isolation(self):
-        """A single failing ticker in send_earnings_movers does not abort the rest."""
+    async def test_earnings_pipeline_isolation(self):
+        """A single failing ticker in _earnings_pipeline does not abort the rest."""
         df = pd.DataFrame({
             "ticker": ["AAPL", "MSFT"],
             "date": [datetime.date.today(), datetime.date.today()],
         })
         cog = _make_cog(earnings_df=df)
-
         quotes = {
             "AAPL": {"quote": {"netPercentChange": 10.0}},
             "MSFT": {"quote": {"netPercentChange": 12.0}},
         }
-
         built = []
 
         async def mock_build(ticker, **kwargs):
@@ -221,22 +451,22 @@ class TestPerTickerIsolation:
             patch.object(cog, "build_earnings_mover", side_effect=mock_build),
             patch("rocketstocks.bot.cogs.alerts.send_alert", new_callable=AsyncMock) as mock_send,
         ):
-            await cog.send_earnings_movers(quotes=quotes, channels=[AsyncMock()])
+            await cog._earnings_pipeline(
+                quotes=quotes, classifications={}, channels=[AsyncMock()],
+                earnings_tickers={"AAPL", "MSFT"},
+            )
 
         assert "MSFT" in built
         mock_send.assert_called_once()
 
     @pytest.mark.asyncio
-    async def test_watchlist_mover_isolation(self):
-        """A single failing ticker in send_watchlist_movers does not abort the rest."""
+    async def test_watchlist_pipeline_isolation(self):
+        """A single failing ticker in _watchlist_pipeline does not abort the rest."""
         cog = _make_cog(earnings_df=pd.DataFrame())
-        cog.stock_data.watchlists.get_all_watchlist_tickers.return_value = ["AAPL", "MSFT"]
-
         quotes = {
             "AAPL": {"quote": {"netPercentChange": 15.0}},
             "MSFT": {"quote": {"netPercentChange": 15.0}},
         }
-
         built = []
 
         async def mock_build(ticker, **kwargs):
@@ -251,136 +481,71 @@ class TestPerTickerIsolation:
             patch.object(cog, "build_watchlist_mover", side_effect=mock_build),
             patch("rocketstocks.bot.cogs.alerts.send_alert", new_callable=AsyncMock) as mock_send,
         ):
-            await cog.send_watchlist_movers(quotes=quotes, channels=[AsyncMock()])
+            await cog._watchlist_pipeline(
+                quotes=quotes, classifications={}, channels=[AsyncMock()],
+                watchlist_tickers={"AAPL", "MSFT"},
+            )
 
         assert "MSFT" in built
         mock_send.assert_called_once()
 
     @pytest.mark.asyncio
-    async def test_unusual_volume_mover_isolation(self):
-        """A single failing ticker in send_unusual_volume_movers does not abort the rest."""
+    async def test_market_pipeline_isolation(self):
+        """A single failing ticker in _market_pipeline does not abort the rest."""
         cog = _make_cog(earnings_df=pd.DataFrame())
-
         quotes = {
             "AAPL": {"quote": {"netPercentChange": 15.0, "totalVolume": 1_000_000}},
             "MSFT": {"quote": {"netPercentChange": 15.0, "totalVolume": 1_000_000}},
         }
-
         processed = []
 
         def fetch_daily_side_effect(ticker):
             if ticker == "AAPL":
                 raise RuntimeError("price history failed")
             processed.append(ticker)
-            return pd.DataFrame()  # empty → no alert, but not an error
+            return pd.DataFrame()
 
         cog.stock_data.price_history.fetch_daily_price_history.side_effect = fetch_daily_side_effect
 
-        await cog.send_unusual_volume_movers(quotes=quotes, channels=[AsyncMock()])
-
-        assert "MSFT" in processed
-
-    @pytest.mark.asyncio
-    async def test_volume_spike_mover_isolation(self):
-        """A single failing ticker in send_volume_spike_movers does not abort the rest."""
-        cog = _make_cog(earnings_df=pd.DataFrame())
-
-        quotes = {
-            "AAPL": {"quote": {"netPercentChange": 15.0, "totalVolume": 1_000_000}},
-            "MSFT": {"quote": {"netPercentChange": 15.0, "totalVolume": 1_000_000}},
-        }
-
-        processed = []
-
-        def fetch_5m_side_effect(ticker):
-            if ticker == "AAPL":
-                raise RuntimeError("5m history failed")
-            processed.append(ticker)
-            return pd.DataFrame()  # empty → no alert
-
-        cog.stock_data.price_history.fetch_5m_price_history.side_effect = fetch_5m_side_effect
-
-        await cog.send_volume_spike_movers(quotes=quotes, channels=[AsyncMock()])
-
-        assert "MSFT" in processed
-
-    @pytest.mark.asyncio
-    async def test_popularity_mover_isolation(self):
-        """A failing ticker in send_popularity_movers loop does not abort the rest."""
-        cog = _make_cog(earnings_df=pd.DataFrame())
-        cog.mutils.market_open_today.return_value = True
-
-        pop_df = pd.DataFrame({"ticker": ["AAPL", "MSFT"]})
-        cog.stock_data.popularity.get_popular_stocks.return_value = pop_df
-
-        processed = []
-
-        def fetch_popularity_side_effect(ticker):
-            if ticker == "AAPL":
-                raise RuntimeError("popularity failed")
-            processed.append(ticker)
-            return pd.DataFrame()  # empty → no alert
-
-        cog.stock_data.popularity.fetch_popularity.side_effect = fetch_popularity_side_effect
-
-        await cog._send_popularity_movers_impl()
+        await cog._market_pipeline(
+            quotes=quotes, classifications={}, channels=[AsyncMock()], exclude=set()
+        )
 
         assert "MSFT" in processed
 
 
-class TestSendAlertsImpl:
-    @pytest.mark.asyncio
-    async def test_per_type_isolation(self):
-        """A failing send_*_movers method does not abort the remaining methods."""
-        cog = _make_cog(earnings_df=pd.DataFrame())
-        cog.mutils.market_open_today.return_value = True
-        cog.mutils.get_market_period.return_value = "intraday"
+# ---------------------------------------------------------------------------
+# ProcessAlertsImpl
+# ---------------------------------------------------------------------------
 
-        mock_channel = MagicMock()
-        cog.bot.iter_channels.return_value = [(1, mock_channel)]
-        cog.stock_data.schwab.get_quotes = AsyncMock(return_value={})
-        cog.stock_data.ticker_stats.get_all_classifications = MagicMock(return_value={})
-
-        with (
-            patch.object(cog, "send_unusual_volume_movers", new_callable=AsyncMock, side_effect=RuntimeError("boom")) as mock_uvol,
-            patch.object(cog, "send_volume_spike_movers", new_callable=AsyncMock) as mock_spike,
-            patch.object(cog, "send_earnings_movers", new_callable=AsyncMock) as mock_earnings,
-            patch.object(cog, "send_watchlist_movers", new_callable=AsyncMock) as mock_watchlist,
-        ):
-            await cog._send_alerts_impl()
-
-        # Despite unusual_volume raising, the other three are still called
-        mock_spike.assert_called_once()
-        mock_earnings.assert_called_once()
-        mock_watchlist.assert_called_once()
-
+class TestProcessAlertsImpl:
     @pytest.mark.asyncio
     async def test_skips_when_market_closed(self):
-        """send_alerts does nothing when market is closed."""
+        """process_alerts does nothing when market is closed."""
         cog = _make_cog(earnings_df=pd.DataFrame())
         cog.mutils.market_open_today.return_value = False
         cog.mutils.get_market_period.return_value = "closed"
 
-        with patch.object(cog, "send_unusual_volume_movers", new_callable=AsyncMock) as mock_uvol:
-            await cog._send_alerts_impl()
+        with patch.object(cog, "_market_pipeline", new_callable=AsyncMock) as mock_market:
+            await cog._process_alerts_impl()
 
-        mock_uvol.assert_not_called()
+        mock_market.assert_not_called()
 
     @pytest.mark.asyncio
     async def test_skips_when_eod(self):
-        """send_alerts does nothing at EOD."""
+        """process_alerts does nothing at EOD."""
         cog = _make_cog(earnings_df=pd.DataFrame())
         cog.mutils.market_open_today.return_value = True
         cog.mutils.get_market_period.return_value = "EOD"
 
-        with patch.object(cog, "send_earnings_movers", new_callable=AsyncMock) as mock_earnings:
-            await cog._send_alerts_impl()
+        with patch.object(cog, "_earnings_pipeline", new_callable=AsyncMock) as mock_earnings:
+            await cog._process_alerts_impl()
 
         mock_earnings.assert_not_called()
 
     @pytest.mark.asyncio
-    async def test_classifications_fetched_and_passed_to_subtasks(self):
-        """get_all_classifications is called and result passed to each detection method."""
+    async def test_classifications_fetched_and_passed(self):
+        """get_all_classifications is called and classifications passed to each pipeline."""
         cog = _make_cog(earnings_df=pd.DataFrame())
         cog.mutils.market_open_today.return_value = True
         cog.mutils.get_market_period.return_value = "intraday"
@@ -391,21 +556,115 @@ class TestSendAlertsImpl:
             return_value=expected_classifications
         )
 
-        received_classifications = []
+        received = []
 
-        async def capture_classifications(**kwargs):
-            received_classifications.append(kwargs.get('classifications'))
+        async def capture_classifications(quotes, classifications, channels, exclude=None):
+            received.append(classifications)
 
         with (
-            patch.object(cog, "send_unusual_volume_movers", side_effect=capture_classifications),
-            patch.object(cog, "send_volume_spike_movers", new_callable=AsyncMock),
-            patch.object(cog, "send_earnings_movers", new_callable=AsyncMock),
-            patch.object(cog, "send_watchlist_movers", new_callable=AsyncMock),
+            patch.object(cog, "_confirmation_pipeline", new_callable=AsyncMock),
+            patch.object(cog, "_market_pipeline", side_effect=capture_classifications),
+            patch.object(cog, "_watchlist_pipeline", new_callable=AsyncMock),
+            patch.object(cog, "_earnings_pipeline", new_callable=AsyncMock),
         ):
-            await cog._send_alerts_impl()
+            await cog._process_alerts_impl()
 
-        assert received_classifications[0] == expected_classifications
+        assert received[0] == expected_classifications
 
+    @pytest.mark.asyncio
+    async def test_surge_tickers_excluded_from_market_pipeline(self):
+        """Active surge tickers are excluded from _market_pipeline."""
+        cog = _make_cog(earnings_df=pd.DataFrame())
+        cog.mutils.market_open_today.return_value = True
+        cog.mutils.get_market_period.return_value = "intraday"
+        cog.bot.iter_channels.return_value = [(1, MagicMock())]
+        cog.stock_data.schwab.get_quotes = AsyncMock(return_value={})
+        cog.stock_data.surge_store.get_active_surges.return_value = [
+            {"ticker": "GME", "flagged_at": datetime.datetime.utcnow(), "surge_types": "mention_surge",
+             "price_at_flag": 20.0, "alert_message_id": None}
+        ]
+
+        market_exclude = []
+
+        async def capture_market_exclude(quotes, classifications, channels, exclude=None):
+            market_exclude.append(exclude or set())
+
+        with (
+            patch.object(cog, "_confirmation_pipeline", new_callable=AsyncMock),
+            patch.object(cog, "_market_pipeline", side_effect=capture_market_exclude),
+            patch.object(cog, "_watchlist_pipeline", new_callable=AsyncMock),
+            patch.object(cog, "_earnings_pipeline", new_callable=AsyncMock),
+        ):
+            await cog._process_alerts_impl()
+
+        assert 'GME' in market_exclude[0]
+
+    @pytest.mark.asyncio
+    async def test_all_pipelines_run_concurrently(self):
+        """All four pipeline methods are invoked."""
+        cog = _make_cog(earnings_df=pd.DataFrame())
+        cog.mutils.market_open_today.return_value = True
+        cog.mutils.get_market_period.return_value = "intraday"
+        cog.bot.iter_channels.return_value = [(1, MagicMock())]
+        cog.stock_data.schwab.get_quotes = AsyncMock(return_value={})
+        cog.stock_data.ticker_stats.get_all_classifications = MagicMock(return_value={})
+
+        with (
+            patch.object(cog, "_confirmation_pipeline", new_callable=AsyncMock) as mock_conf,
+            patch.object(cog, "_market_pipeline", new_callable=AsyncMock) as mock_market,
+            patch.object(cog, "_watchlist_pipeline", new_callable=AsyncMock) as mock_watchlist,
+            patch.object(cog, "_earnings_pipeline", new_callable=AsyncMock) as mock_earnings,
+        ):
+            await cog._process_alerts_impl()
+
+        mock_conf.assert_called_once()
+        mock_market.assert_called_once()
+        mock_watchlist.assert_called_once()
+        mock_earnings.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_exception_in_pipeline_logged_not_raised(self):
+        """An exception in one gather sub-task is logged but does not raise."""
+        cog = _make_cog(earnings_df=pd.DataFrame())
+        cog.mutils.market_open_today.return_value = True
+        cog.mutils.get_market_period.return_value = "intraday"
+        cog.bot.iter_channels.return_value = [(1, MagicMock())]
+        cog.stock_data.schwab.get_quotes = AsyncMock(return_value={})
+        cog.stock_data.ticker_stats.get_all_classifications = MagicMock(return_value={})
+
+        with (
+            patch.object(cog, "_confirmation_pipeline", new_callable=AsyncMock, side_effect=RuntimeError("boom")),
+            patch.object(cog, "_market_pipeline", new_callable=AsyncMock),
+            patch.object(cog, "_watchlist_pipeline", new_callable=AsyncMock),
+            patch.object(cog, "_earnings_pipeline", new_callable=AsyncMock),
+        ):
+            # Must not raise
+            await cog._process_alerts_impl()
+
+    @pytest.mark.asyncio
+    async def test_expire_surges_called(self):
+        """expire_old_surges is called at the end of _process_alerts_impl."""
+        cog = _make_cog(earnings_df=pd.DataFrame())
+        cog.mutils.market_open_today.return_value = True
+        cog.mutils.get_market_period.return_value = "intraday"
+        cog.bot.iter_channels.return_value = [(1, MagicMock())]
+        cog.stock_data.schwab.get_quotes = AsyncMock(return_value={})
+        cog.stock_data.ticker_stats.get_all_classifications = MagicMock(return_value={})
+
+        with (
+            patch.object(cog, "_confirmation_pipeline", new_callable=AsyncMock),
+            patch.object(cog, "_market_pipeline", new_callable=AsyncMock),
+            patch.object(cog, "_watchlist_pipeline", new_callable=AsyncMock),
+            patch.object(cog, "_earnings_pipeline", new_callable=AsyncMock),
+        ):
+            await cog._process_alerts_impl()
+
+        cog.stock_data.surge_store.expire_old_surges.assert_called_once()
+
+
+# ---------------------------------------------------------------------------
+# RunTask
+# ---------------------------------------------------------------------------
 
 class TestRunTask:
     @pytest.mark.asyncio
@@ -432,7 +691,6 @@ class TestRunTask:
         async def failing():
             raise ValueError("something went wrong")
 
-        # Should not raise
         await cog._run_task("bad_job", failing())
 
         cog.bot.emitter.emit.assert_called_once()
@@ -443,79 +701,153 @@ class TestRunTask:
 
     @pytest.mark.asyncio
     async def test_no_reraise_on_exception(self):
-        """_run_task must not re-raise exceptions so discord.py reschedules normally."""
+        """_run_task must not re-raise exceptions."""
         cog = _make_cog(earnings_df=pd.DataFrame())
 
         async def failing():
             raise RuntimeError("fatal")
 
-        # Must complete without raising
         try:
             await cog._run_task("job", failing())
         except RuntimeError:
             pytest.fail("_run_task must not re-raise exceptions")
 
 
-class TestPopularityMoversMarketGuard:
+# ---------------------------------------------------------------------------
+# DetectPopularitySurges
+# ---------------------------------------------------------------------------
+
+class TestDetectPopularitySurges:
     @pytest.mark.asyncio
     async def test_skips_when_market_closed(self):
-        """_send_popularity_movers_impl does nothing when market is closed."""
+        """_detect_popularity_surges_impl does nothing when market is closed."""
         cog = _make_cog(earnings_df=pd.DataFrame())
         cog.mutils.market_open_today.return_value = False
 
-        await cog._send_popularity_movers_impl()
+        await cog._detect_popularity_surges_impl()
 
         cog.stock_data.popularity.get_popular_stocks.assert_not_called()
 
-
-class TestSendAlertsGather:
     @pytest.mark.asyncio
-    async def test_all_subtasks_run_concurrently(self):
-        """All four alert sub-tasks are invoked even when running via asyncio.gather."""
+    async def test_skips_already_flagged_tickers(self):
+        """Tickers already flagged in surge_store are skipped."""
         cog = _make_cog(earnings_df=pd.DataFrame())
         cog.mutils.market_open_today.return_value = True
-        cog.mutils.get_market_period.return_value = "intraday"
         cog.bot.iter_channels.return_value = [(1, MagicMock())]
-        cog.stock_data.schwab.get_quotes = AsyncMock(return_value={})
-        cog.stock_data.ticker_stats.get_all_classifications = MagicMock(return_value={})
 
-        with (
-            patch.object(cog, "send_unusual_volume_movers", new_callable=AsyncMock) as mock_uvol,
-            patch.object(cog, "send_volume_spike_movers", new_callable=AsyncMock) as mock_spike,
-            patch.object(cog, "send_earnings_movers", new_callable=AsyncMock) as mock_earnings,
-            patch.object(cog, "send_watchlist_movers", new_callable=AsyncMock) as mock_watchlist,
-        ):
-            await cog._send_alerts_impl()
+        pop_df = pd.DataFrame({
+            "ticker": ["GME"],
+            "rank": [50],
+            "rank_24h_ago": [200],
+            "mentions": [3000],
+            "mentions_24h_ago": [500],
+        })
+        cog.stock_data.popularity.get_popular_stocks.return_value = pop_df
+        cog.stock_data.surge_store.is_already_flagged.return_value = True
 
-        mock_uvol.assert_called_once()
-        mock_spike.assert_called_once()
-        mock_earnings.assert_called_once()
-        mock_watchlist.assert_called_once()
+        with patch("rocketstocks.bot.cogs.alerts.evaluate_popularity_surge") as mock_surge:
+            await cog._detect_popularity_surges_impl()
+            mock_surge.assert_not_called()
 
     @pytest.mark.asyncio
-    async def test_exception_in_one_subtask_logged_not_raised(self):
-        """An exception in one gather sub-task is logged but does not raise."""
+    async def test_sends_alert_when_surge_detected(self):
+        """PopularitySurgeAlert is sent when evaluate_popularity_surge returns is_surging=True."""
+        from rocketstocks.core.analysis.popularity_signals import PopularitySurgeResult, SurgeType
         cog = _make_cog(earnings_df=pd.DataFrame())
         cog.mutils.market_open_today.return_value = True
-        cog.mutils.get_market_period.return_value = "intraday"
         cog.bot.iter_channels.return_value = [(1, MagicMock())]
-        cog.stock_data.schwab.get_quotes = AsyncMock(return_value={})
-        cog.stock_data.ticker_stats.get_all_classifications = MagicMock(return_value={})
+
+        pop_df = pd.DataFrame({
+            "ticker": ["GME"],
+            "rank": [50],
+            "rank_24h_ago": [200],
+            "mentions": [3000],
+            "mentions_24h_ago": [500],
+        })
+        cog.stock_data.popularity.get_popular_stocks.return_value = pop_df
+        cog.stock_data.surge_store.is_already_flagged.return_value = False
+        cog.stock_data.popularity.fetch_popularity.return_value = pd.DataFrame()
+        cog.stock_data.schwab.get_quote = AsyncMock(return_value={
+            "quote": {"netPercentChange": 5.0},
+            "regular": {"regularMarketLastPrice": 25.0},
+        })
+        cog.stock_data.tickers.get_ticker_info.return_value = {"name": "GameStop"}
+
+        surge_result = PopularitySurgeResult(
+            ticker="GME",
+            is_surging=True,
+            surge_types=[SurgeType.MENTION_SURGE],
+            current_rank=50,
+            rank_24h_ago=200,
+            rank_change=150,
+            mentions=3000,
+            mentions_24h_ago=500,
+            mention_ratio=6.0,
+            rank_velocity=-10.0,
+            rank_velocity_zscore=-2.5,
+        )
 
         with (
-            patch.object(cog, "send_unusual_volume_movers", new_callable=AsyncMock, side_effect=RuntimeError("boom")),
-            patch.object(cog, "send_volume_spike_movers", new_callable=AsyncMock),
-            patch.object(cog, "send_earnings_movers", new_callable=AsyncMock),
-            patch.object(cog, "send_watchlist_movers", new_callable=AsyncMock),
+            patch("rocketstocks.bot.cogs.alerts.evaluate_popularity_surge", return_value=surge_result),
+            patch("rocketstocks.bot.cogs.alerts.send_alert", new_callable=AsyncMock) as mock_send,
         ):
-            # Must not raise
-            await cog._send_alerts_impl()
+            mock_send.return_value = MagicMock(id=999)
+            await cog._detect_popularity_surges_impl()
+            mock_send.assert_called_once()
 
+        cog.stock_data.surge_store.insert_surge.assert_called_once()
 
-class TestPopularityMoversBeforeLoop:
     @pytest.mark.asyncio
-    async def test_before_loop_calls_sleep(self):
-        """send_popularity_movers_before_loop sleeps until the next 30-min boundary."""
+    async def test_no_alert_when_not_surging(self):
+        """No alert is sent when is_surging=False."""
+        from rocketstocks.core.analysis.popularity_signals import PopularitySurgeResult
+        cog = _make_cog(earnings_df=pd.DataFrame())
+        cog.mutils.market_open_today.return_value = True
+        cog.bot.iter_channels.return_value = [(1, MagicMock())]
+
+        pop_df = pd.DataFrame({
+            "ticker": ["GME"],
+            "rank": [50],
+            "rank_24h_ago": [55],
+            "mentions": [300],
+            "mentions_24h_ago": [290],
+        })
+        cog.stock_data.popularity.get_popular_stocks.return_value = pop_df
+        cog.stock_data.surge_store.is_already_flagged.return_value = False
+        cog.stock_data.popularity.fetch_popularity.return_value = pd.DataFrame()
+
+        no_surge = PopularitySurgeResult(
+            ticker="GME",
+            is_surging=False,
+            surge_types=[],
+            current_rank=50,
+            rank_24h_ago=55,
+            rank_change=5,
+            mentions=300,
+            mentions_24h_ago=290,
+            mention_ratio=1.03,
+            rank_velocity=None,
+            rank_velocity_zscore=None,
+        )
+
+        with (
+            patch("rocketstocks.bot.cogs.alerts.evaluate_popularity_surge", return_value=no_surge),
+            patch("rocketstocks.bot.cogs.alerts.send_alert", new_callable=AsyncMock) as mock_send,
+        ):
+            await cog._detect_popularity_surges_impl()
+            mock_send.assert_not_called()
+
+        cog.stock_data.surge_store.insert_surge.assert_not_called()
+
+
+# ---------------------------------------------------------------------------
+# Before-loop timing
+# ---------------------------------------------------------------------------
+
+class TestBeforeLoops:
+    @pytest.mark.asyncio
+    async def test_detect_surges_before_loop_calls_sleep(self):
+        """detect_popularity_surges_before_loop sleeps until the next 30-min boundary."""
         cog = _make_cog(earnings_df=pd.DataFrame())
 
         with (
@@ -523,7 +855,7 @@ class TestPopularityMoversBeforeLoop:
             patch("rocketstocks.bot.cogs.alerts.asyncio.sleep", new_callable=AsyncMock) as mock_sleep,
         ):
             mock_du.seconds_until_minute_interval.return_value = 42
-            await cog.send_popularity_movers_before_loop()
+            await cog.detect_popularity_surges_before_loop()
 
         mock_du.seconds_until_minute_interval.assert_called_once_with(30)
         mock_sleep.assert_awaited_once_with(42)

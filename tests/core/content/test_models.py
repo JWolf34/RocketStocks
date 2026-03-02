@@ -8,17 +8,16 @@ from rocketstocks.core.content.models import (
     EarningsMoverData,
     EarningsSpotlightData,
     GainerScreenerData,
+    MarketAlertData,
+    MomentumConfirmationData,
     NewsReportData,
     PoliticianReportData,
-    PoliticianTradeAlertData,
-    PopularityAlertData,
     PopularityReportData,
     PopularityScreenerData,
-    SECFilingData,
+    PopularitySurgeData,
     StockReportData,
     TickerData,
-    VolumeMoverData,
-    VolumeSpikeData,
+    VolumeScreenerData,
     WatchlistMoverData,
     WeeklyEarningsData,
 )
@@ -133,7 +132,6 @@ def test_gainer_screener_data_construction(empty_df):
 
 
 def test_volume_screener_data_construction(empty_df):
-    from rocketstocks.core.content.models import VolumeScreenerData
     data = VolumeScreenerData(unusual_volume=empty_df)
     assert data.unusual_volume is empty_df
 
@@ -163,30 +161,6 @@ def test_earnings_mover_data_construction(minimal_ticker_info, minimal_quote, em
     assert data.ticker == 'NVDA'
 
 
-def test_volume_mover_data_construction(minimal_ticker_info, minimal_quote, empty_df):
-    data = VolumeMoverData(
-        ticker='AMD',
-        ticker_info=minimal_ticker_info,
-        quote=minimal_quote,
-        rvol=15.7,
-        daily_price_history=empty_df,
-    )
-    assert data.rvol == 15.7
-
-
-def test_volume_spike_data_construction(minimal_ticker_info, minimal_quote):
-    data = VolumeSpikeData(
-        ticker='GME',
-        ticker_info=minimal_ticker_info,
-        quote=minimal_quote,
-        rvol_at_time=75.3,
-        avg_vol_at_time=500_000.0,
-        time='10:30 AM',
-    )
-    assert data.rvol_at_time == 75.3
-    assert data.time == '10:30 AM'
-
-
 def test_watchlist_mover_data_construction(minimal_ticker_info, minimal_quote):
     data = WatchlistMoverData(
         ticker='AAPL',
@@ -197,27 +171,83 @@ def test_watchlist_mover_data_construction(minimal_ticker_info, minimal_quote):
     assert data.watchlist == 'my-watchlist'
 
 
-def test_sec_filing_data_construction(minimal_ticker_info, minimal_quote, empty_df):
-    data = SECFilingData(
-        ticker='AAPL',
-        ticker_info=minimal_ticker_info,
-        quote=minimal_quote,
-        recent_sec_filings=empty_df,
+def test_popularity_surge_data_construction(minimal_ticker_info, minimal_quote, empty_df):
+    from rocketstocks.core.analysis.popularity_signals import PopularitySurgeResult, SurgeType
+    surge_result = PopularitySurgeResult(
+        ticker='GME',
+        is_surging=True,
+        surge_types=[SurgeType.MENTION_SURGE],
+        current_rank=50,
+        rank_24h_ago=200,
+        rank_change=150,
+        mentions=3000,
+        mentions_24h_ago=800,
+        mention_ratio=3.75,
+        rank_velocity=-10.0,
+        rank_velocity_zscore=-2.5,
     )
-    assert data.ticker == 'AAPL'
-
-
-def test_popularity_alert_data_construction(minimal_ticker_info, minimal_quote, empty_df):
-    data = PopularityAlertData(
+    data = PopularitySurgeData(
         ticker='GME',
         ticker_info=minimal_ticker_info,
         quote=minimal_quote,
-        popularity=empty_df,
+        surge_result=surge_result,
     )
     assert data.ticker == 'GME'
+    assert data.surge_result is surge_result
+    assert data.popularity_history.empty  # default
 
 
-def test_politician_trade_alert_data_construction(empty_df):
-    politician = {'name': 'Nancy Pelosi', 'politician_id': 'nancy-pelosi'}
-    data = PoliticianTradeAlertData(politician=politician, trades=empty_df)
-    assert data.politician['politician_id'] == 'nancy-pelosi'
+def test_momentum_confirmation_data_construction(minimal_ticker_info, minimal_quote, empty_df):
+    flagged_at = datetime.datetime(2026, 3, 2, 10, 0)
+    data = MomentumConfirmationData(
+        ticker='GME',
+        ticker_info=minimal_ticker_info,
+        quote=minimal_quote,
+        surge_flagged_at=flagged_at,
+        surge_types=['mention_surge'],
+        price_at_flag=50.0,
+        price_change_since_flag=8.5,
+        surge_alert_message_id=123456789,
+    )
+    assert data.ticker == 'GME'
+    assert data.price_change_since_flag == pytest.approx(8.5)
+    assert data.surge_alert_message_id == 123456789
+    assert data.daily_price_history.empty  # default
+
+
+def test_market_alert_data_construction(minimal_ticker_info, minimal_quote, empty_df):
+    from rocketstocks.core.analysis.alert_strategy import AlertTriggerResult
+    from rocketstocks.core.analysis.classification import StockClass
+    from rocketstocks.core.analysis.composite_score import CompositeScoreResult
+    trigger = AlertTriggerResult(
+        should_alert=True,
+        classification=StockClass.VOLATILE,
+        zscore=3.5,
+        percentile=98.5,
+        bb_position=None,
+        confluence_count=None,
+        confluence_total=None,
+        confluence_details=None,
+        volume_zscore=4.2,
+        signal_type='unusual_move',
+    )
+    composite = CompositeScoreResult(
+        composite_score=3.1,
+        should_alert=True,
+        volume_component=4.2,
+        price_component=3.5,
+        cross_signal_component=0.0,
+        classification_component=2.0,
+        trigger_result=trigger,
+        dominant_signal='volume',
+    )
+    data = MarketAlertData(
+        ticker='GME',
+        ticker_info=minimal_ticker_info,
+        quote=minimal_quote,
+        composite_result=composite,
+        rvol=4.5,
+    )
+    assert data.ticker == 'GME'
+    assert data.rvol == pytest.approx(4.5)
+    assert data.composite_result is composite

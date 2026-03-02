@@ -134,25 +134,33 @@ class WeeklyEarningsData:
 # ---------------------------------------------------------------------------
 
 @dataclass
+class PopularitySurgeData(TickerData):
+    surge_result: object  # PopularitySurgeResult (object to avoid circular import)
+    popularity_history: pd.DataFrame = field(default_factory=pd.DataFrame)
+
+
+@dataclass
+class MomentumConfirmationData(TickerData):
+    surge_flagged_at: object  # datetime
+    surge_types: list = field(default_factory=list)
+    price_at_flag: float | None = None
+    price_change_since_flag: float | None = None
+    surge_alert_message_id: int | None = None
+    daily_price_history: pd.DataFrame = field(default_factory=pd.DataFrame)
+    trigger_result: object | None = None  # AlertTriggerResult | None
+
+
+@dataclass
+class MarketAlertData(TickerData):
+    composite_result: object  # CompositeScoreResult
+    daily_price_history: pd.DataFrame = field(default_factory=pd.DataFrame)
+    rvol: float | None = None
+
+
+@dataclass
 class EarningsMoverData(TickerData):
     next_earnings_info: dict
     historical_earnings: pd.DataFrame
-    daily_price_history: pd.DataFrame = field(default_factory=pd.DataFrame)
-    trigger_result: object | None = None   # AlertTriggerResult | None
-
-
-@dataclass
-class VolumeMoverData(TickerData):
-    rvol: float
-    daily_price_history: pd.DataFrame
-    trigger_result: object | None = None   # AlertTriggerResult | None
-
-
-@dataclass
-class VolumeSpikeData(TickerData):
-    rvol_at_time: float
-    avg_vol_at_time: float
-    time: str
     daily_price_history: pd.DataFrame = field(default_factory=pd.DataFrame)
     trigger_result: object | None = None   # AlertTriggerResult | None
 
@@ -164,21 +172,3 @@ class WatchlistMoverData(TickerData):
     trigger_result: object | None = None   # AlertTriggerResult | None
 
 
-@dataclass
-class SECFilingData(TickerData):
-    recent_sec_filings: pd.DataFrame
-    daily_price_history: pd.DataFrame = field(default_factory=pd.DataFrame)
-    trigger_result: object | None = None   # AlertTriggerResult | None
-
-
-@dataclass
-class PopularityAlertData(TickerData):
-    popularity: pd.DataFrame
-    rank_velocity: float = 0.0
-    rank_velocity_zscore: float = 0.0
-
-
-@dataclass
-class PoliticianTradeAlertData:
-    politician: dict
-    trades: pd.DataFrame

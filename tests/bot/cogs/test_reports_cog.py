@@ -28,6 +28,7 @@ def _make_cog():
         patch.object(Reports, "update_earnings_calendar"),
         patch.object(Reports, "post_earnings_spotlight"),
         patch.object(Reports, "post_weekly_earnings"),
+        patch("rocketstocks.bot.cogs.reports.DiscordState"),
     ):
         cog = Reports(bot=bot, stock_data=sd)
     cog.dstate = MagicMock()

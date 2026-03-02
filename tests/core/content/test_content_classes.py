@@ -5,18 +5,15 @@ import pandas as pd
 import pytest
 
 from rocketstocks.core.content.alerts.base import Alert
-from rocketstocks.core.content.alerts.volume_alert import VolumeMoverAlert
-from rocketstocks.core.content.alerts.volume_spike_alert import VolumeSpikeAlert
 from rocketstocks.core.content.alerts.watchlist_alert import WatchlistMoverAlert
-from rocketstocks.core.content.alerts.popularity_alert import PopularityAlert
+from rocketstocks.core.content.alerts.popularity_surge_alert import PopularitySurgeAlert
+from rocketstocks.core.analysis.popularity_signals import PopularitySurgeResult, SurgeType
 from rocketstocks.core.content.models import (
     GainerScreenerData,
-    PopularityAlertData,
     PopularityScreenerData,
     VolumeScreenerData,
-    VolumeMoverData,
-    VolumeSpikeData,
     WatchlistMoverData,
+    PopularitySurgeData,
 )
 from rocketstocks.core.content.screeners.gainer_screener import GainerScreener
 from rocketstocks.core.content.screeners.popularity_screener import PopularityScreener
@@ -56,51 +53,6 @@ def test_alert_base_override_missing_prev_pct_returns_false():
 
 
 # ---------------------------------------------------------------------------
-# VolumeMoverAlert
-# ---------------------------------------------------------------------------
-
-def test_volume_mover_alert_data_contains_pct_and_rvol(quote_up, ticker_info, price_history):
-    data = VolumeMoverData(ticker='GME', ticker_info=ticker_info, quote=quote_up,
-                           rvol=30.0, daily_price_history=price_history)
-    alert = VolumeMoverAlert(data=data)
-    assert alert.alert_data['pct_change'] == 7.5
-    assert alert.alert_data['rvol'] == 30.0
-
-
-def test_volume_mover_override_triggers_on_large_pct_move(quote_up, ticker_info, price_history):
-    """Large pct_change movement triggers override via momentum fallback (>100% relative)."""
-    # quote_up has pct_change=7.5; prev_pct=1.0 → (7.5-1)/1 * 100 = 650% > 100 → True
-    data = VolumeMoverData(ticker='GME', ticker_info=ticker_info, quote=quote_up,
-                           rvol=60.0, daily_price_history=price_history)
-    alert = VolumeMoverAlert(data=data)
-    prev = {'pct_change': 1.0, 'rvol': 60.0}
-    assert alert.override_and_edit(prev) is True
-
-
-def test_volume_mover_override_no_trigger_small_move(quote_up, ticker_info, price_history):
-    """Small relative pct_change does not trigger override."""
-    data = VolumeMoverData(ticker='GME', ticker_info=ticker_info, quote=quote_up,
-                           rvol=30.0, daily_price_history=price_history)
-    alert = VolumeMoverAlert(data=data)
-    prev = {'pct_change': 7.0, 'rvol': 30.0}  # (7.5 - 7.0) / 7.0 = 7.1% → no trigger
-    assert alert.override_and_edit(prev) is False
-
-
-# ---------------------------------------------------------------------------
-# VolumeSpikeAlert
-# ---------------------------------------------------------------------------
-
-def test_volume_spike_override_triggers_on_large_pct_move(quote_up, ticker_info):
-    """Volume spike alert uses base class momentum logic for override."""
-    data = VolumeSpikeData(ticker='NVDA', ticker_info=ticker_info, quote=quote_up,
-                           rvol_at_time=80.0, avg_vol_at_time=200_000.0, time='11:00 AM')
-    alert = VolumeSpikeAlert(data=data)
-    # quote_up pct_change=7.5; prev_pct=1.0 → 650% relative change → trigger
-    prev = {'pct_change': 1.0, 'rvol_at_time': 80.0}
-    assert alert.override_and_edit(prev) is True
-
-
-# ---------------------------------------------------------------------------
 # WatchlistMoverAlert
 # ---------------------------------------------------------------------------
 
@@ -113,38 +65,46 @@ def test_watchlist_mover_alert_type():
 
 
 # ---------------------------------------------------------------------------
-# PopularityAlert.override_and_edit
+# PopularitySurgeAlert.override_and_edit
 # ---------------------------------------------------------------------------
 
-def test_popularity_alert_override_on_high_velocity_zscore(quote_up, ticker_info):
-    """PopularityAlert overrides when rank_velocity_zscore is high."""
-    now = datetime.datetime.now()
-    rounded = now.replace(minute=(now.minute // 30) * 30, second=0, microsecond=0)
-    pop_data = [{'datetime': rounded - datetime.timedelta(days=i), 'ticker': 'GME', 'rank': 50 - i}
-                for i in range(6)]
-    pop_df = pd.DataFrame(pop_data)
+def _make_surge_result(mention_ratio=3.56):
+    return PopularitySurgeResult(
+        ticker='GME',
+        is_surging=True,
+        surge_types=[SurgeType.MENTION_SURGE],
+        current_rank=45,
+        rank_24h_ago=180,
+        rank_change=135,
+        mentions=3200,
+        mentions_24h_ago=900,
+        mention_ratio=mention_ratio,
+        rank_velocity=-12.0,
+        rank_velocity_zscore=-2.8,
+    )
 
-    data = PopularityAlertData(ticker='GME', ticker_info=ticker_info, quote=quote_up,
-                               popularity=pop_df, rank_velocity=-5.0, rank_velocity_zscore=3.0)
-    alert = PopularityAlert(data=data)
-    # rv_zscore=3.0 >= 2.0, and 3.0 > 0.5*1.5=0.75 → override via velocity path
-    prev = {'pct_change': 7.5, 'rank_velocity_zscore': 1.0}
+
+def test_popularity_surge_override_on_intensifying_mention_ratio(quote_up, ticker_info):
+    """PopularitySurgeAlert overrides when mention_ratio is 1.5x previous."""
+    surge = _make_surge_result(mention_ratio=4.5)
+    data = PopularitySurgeData(ticker='GME', ticker_info=ticker_info, quote=quote_up,
+                               surge_result=surge)
+    alert = PopularitySurgeAlert(data=data)
+    alert.alert_data['mention_ratio'] = 4.5
+    prev = {'pct_change': 7.5, 'mention_ratio': 2.0}
+    # 4.5 >= 1.5 and 4.5 > 2.0 * 1.5 = 3.0 → True
     assert alert.override_and_edit(prev) is True
 
 
-def test_popularity_alert_no_override_low_velocity(quote_up, ticker_info):
-    """PopularityAlert does not override with low rank velocity z-score."""
-    now = datetime.datetime.now()
-    rounded = now.replace(minute=(now.minute // 30) * 30, second=0, microsecond=0)
-    pop_data = [{'datetime': rounded - datetime.timedelta(days=i), 'ticker': 'GME', 'rank': 90 - i}
-                for i in range(6)]
-    pop_df = pd.DataFrame(pop_data)
-
-    data = PopularityAlertData(ticker='GME', ticker_info=ticker_info, quote=quote_up,
-                               popularity=pop_df, rank_velocity=-0.5, rank_velocity_zscore=0.5)
-    alert = PopularityAlert(data=data)
-    # rv_zscore < 2.0 → velocity path doesn't trigger; pct_change similar → momentum fallback also no
-    prev = {'pct_change': 7.0, 'rank_velocity_zscore': 0.4}
+def test_popularity_surge_no_override_when_ratio_low(quote_up, ticker_info):
+    """PopularitySurgeAlert does not override when mention ratio hasn't grown enough."""
+    surge = _make_surge_result(mention_ratio=2.0)
+    data = PopularitySurgeData(ticker='GME', ticker_info=ticker_info, quote=quote_up,
+                               surge_result=surge)
+    alert = PopularitySurgeAlert(data=data)
+    alert.alert_data['mention_ratio'] = 2.0
+    prev = {'pct_change': 7.5, 'mention_ratio': 3.0}
+    # 2.0 < 3.0 * 1.5 = 4.5 → velocity path doesn't trigger; similar pct → no momentum override
     assert alert.override_and_edit(prev) is False
 
 
