@@ -96,3 +96,28 @@ class Watchlists(object):
             return False
         else:
             return True
+
+    def get_classification_overrides(self) -> dict[str, str]:
+        """Return {ticker: classification} from watchlists named ``class:<category>``.
+
+        Watchlists with IDs of the form ``class:volatile``, ``class:meme``,
+        ``class:blue_chip``, or ``class:standard`` are treated as explicit
+        classification overrides for their member tickers.
+        """
+        logger.debug("Fetching classification overrides from watchlists")
+        watchlists = self.db.select(
+            table='watchlists',
+            fields=['id', 'tickers'],
+            fetchall=True,
+        )
+        overrides: dict[str, str] = {}
+        for row in (watchlists or []):
+            watchlist_id, tickers_str = row[0], row[1]
+            if not watchlist_id.startswith('class:'):
+                continue
+            category = watchlist_id[len('class:'):]
+            for ticker in (tickers_str or '').split():
+                if ticker:
+                    overrides[ticker] = category
+        logger.debug(f"Found {len(overrides)} classification overrides")
+        return overrides
