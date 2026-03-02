@@ -41,3 +41,138 @@ class indicators:
             except IndexError:
                 logger.debug(f"Could not process rvol_at_time - no volume data exists at time {time}. Latest row:\n{today_data.iloc[0]}")
                 return np.nan
+
+    class price:
+        """Price-based statistical indicators using daily price history."""
+
+        @staticmethod
+        def intraday_zscore(
+            daily_prices_df: pd.DataFrame,
+            current_pct_change: float,
+            period: int = 20,
+        ) -> float:
+            """Return the z-score of *current_pct_change* vs the stock's own 20-day history.
+
+            Args:
+                daily_prices_df: Daily OHLCV DataFrame with a 'close' column.
+                current_pct_change: Today's current percentage change (as a number, e.g. 5.0 = 5%).
+                period: Lookback window for baseline stats (default 20).
+
+            Returns:
+                Z-score float, or NaN if there is insufficient data.
+            """
+            logger.debug(f"Calculating intraday z-score (period={period})")
+            if daily_prices_df.empty or 'close' not in daily_prices_df.columns:
+                return float('nan')
+            close = daily_prices_df['close'].tail(period + 1)
+            if len(close) < 2:
+                return float('nan')
+            hist_returns = close.pct_change().dropna() * 100.0
+            if len(hist_returns) < 2:
+                return float('nan')
+            mean_r = hist_returns.mean()
+            std_r = hist_returns.std()
+            if std_r == 0 or np.isnan(std_r):
+                return float('nan')
+            return float((current_pct_change - mean_r) / std_r)
+
+        @staticmethod
+        def return_percentile(
+            daily_prices_df: pd.DataFrame,
+            current_pct_change: float,
+            period: int = 60,
+        ) -> float:
+            """Return the percentile of *current_pct_change* in the 60-day return distribution.
+
+            Args:
+                daily_prices_df: Daily OHLCV DataFrame with a 'close' column.
+                current_pct_change: Today's current percentage change.
+                period: Lookback window (default 60).
+
+            Returns:
+                Percentile in [0, 100], or NaN if there is insufficient data.
+            """
+            logger.debug(f"Calculating return percentile (period={period})")
+            if daily_prices_df.empty or 'close' not in daily_prices_df.columns:
+                return float('nan')
+            close = daily_prices_df['close'].tail(period + 1)
+            if len(close) < 2:
+                return float('nan')
+            hist_returns = close.pct_change().dropna() * 100.0
+            if len(hist_returns) < 1:
+                return float('nan')
+            n_below = (hist_returns < current_pct_change).sum()
+            return float(n_below / len(hist_returns) * 100.0)
+
+    class popularity:
+        """Popularity-rank statistical indicators."""
+
+        @staticmethod
+        def rank_velocity(popularity_df: pd.DataFrame, periods: int = 5) -> float:
+            """Return the average rank change per day over the last *periods* observations.
+
+            A negative velocity means the stock is gaining popularity (rank decreasing).
+            A positive velocity means the stock is losing popularity (rank increasing).
+
+            Args:
+                popularity_df: DataFrame with 'rank' and 'datetime' columns, sorted by datetime.
+                periods: Number of most-recent periods to use (default 5).
+
+            Returns:
+                Average rank change per period, or NaN if insufficient data.
+            """
+            logger.debug(f"Calculating rank velocity (periods={periods})")
+            if popularity_df.empty or 'rank' not in popularity_df.columns:
+                return float('nan')
+            recent = popularity_df.sort_values('datetime').tail(periods + 1)['rank']
+            if len(recent) < 2:
+                return float('nan')
+            diffs = recent.diff().dropna()
+            return float(diffs.mean())
+
+        @staticmethod
+        def rank_velocity_zscore(
+            popularity_df: pd.DataFrame,
+            lookback: int = 30,
+            velocity_window: int = 5,
+        ) -> float:
+            """Return the z-score of the current rank velocity vs its historical distribution.
+
+            Args:
+                popularity_df: DataFrame with 'rank' and 'datetime' columns.
+                lookback: Number of observations to use for the historical baseline (default 30).
+                velocity_window: Window for computing each rolling velocity (default 5).
+
+            Returns:
+                Z-score float, or NaN if there is insufficient data.
+            """
+            logger.debug(f"Calculating rank velocity z-score (lookback={lookback}, window={velocity_window})")
+            if popularity_df.empty or 'rank' not in popularity_df.columns:
+                return float('nan')
+            sorted_df = popularity_df.sort_values('datetime')
+            ranks = sorted_df['rank']
+            if len(ranks) < velocity_window + lookback:
+                return float('nan')
+
+            # Compute rolling velocities over the lookback window
+            velocities = []
+            for i in range(lookback):
+                window_end = len(ranks) - i - 1
+                window_start = window_end - velocity_window
+                if window_start < 0:
+                    break
+                window = ranks.iloc[window_start:window_end + 1]
+                diffs = window.diff().dropna()
+                if not diffs.empty:
+                    velocities.append(float(diffs.mean()))
+
+            if len(velocities) < 2:
+                return float('nan')
+
+            current_velocity = velocities[0]  # most-recent
+            hist_velocities = velocities[1:]   # older observations
+            mean_v = np.mean(hist_velocities)
+            std_v = np.std(hist_velocities, ddof=1)
+            if std_v == 0 or np.isnan(std_v):
+                return float('nan')
+            return float((current_velocity - mean_v) / std_v)
