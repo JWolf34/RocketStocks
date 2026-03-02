@@ -205,10 +205,11 @@ class Reports(commands.Cog):
 
         remaining = list(earnings_today['ticker'])
         random.shuffle(remaining)
-        valid_ticker = next(
-            (t for t in remaining if await self.stock_data.tickers.validate_ticker(t)),
-            None
-        )
+        valid_ticker = None
+        for t in remaining:
+            if await self.stock_data.tickers.validate_ticker(t):
+                valid_ticker = t
+                break
         if valid_ticker is None:
             logger.warning("No valid earnings tickers today — skipping spotlight")
             return

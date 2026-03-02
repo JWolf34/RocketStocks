@@ -31,6 +31,7 @@ def _make_cog():
     ):
         cog = Reports(bot=bot, stock_data=sd)
     cog.dstate = MagicMock()
+    cog.mutils = MagicMock()
     return cog
 
 

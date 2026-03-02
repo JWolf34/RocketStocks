@@ -31,6 +31,7 @@ def _make_cog(earnings_df: pd.DataFrame):
     ):
         cog = Alerts(bot=bot, stock_data=sd)
     cog.dstate = MagicMock()
+    cog.mutils = MagicMock()
     return cog
 
 
@@ -99,15 +100,18 @@ class TestBuildWatchlistMover:
         cog.stock_data.watchlists.get_watchlists.return_value = {}
         cog.stock_data.tickers.get_ticker_info.return_value = {}
 
-        with patch("rocketstocks.bot.cogs.alerts.WatchlistMoverAlert") as mock_alert_cls:
-            mock_alert_cls.return_value = MagicMock()
-            result = await cog.build_watchlist_mover(ticker="AAPL")
+        with (
+            patch("rocketstocks.bot.cogs.alerts.WatchlistMoverData") as mock_data_cls,
+            patch("rocketstocks.bot.cogs.alerts.WatchlistMoverAlert"),
+        ):
+            mock_data_cls.return_value = MagicMock()
+            await cog.build_watchlist_mover(ticker="AAPL")
 
-        # Verify get_quote was actually called (awaited), not returned as coroutine
+        # get_quote was awaited (AsyncMock confirms this)
         cog.stock_data.schwab.get_quote.assert_called_once_with(ticker="AAPL")
-        # Confirm the quote passed to WatchlistMoverData is the resolved value, not a coroutine
-        call_kwargs = mock_alert_cls.call_args[1]
-        assert call_kwargs["data"].quote == expected_quote
+        # The quote value passed to WatchlistMoverData is the actual resolved dict, not a coroutine
+        _, data_kwargs = mock_data_cls.call_args
+        assert data_kwargs["quote"] == expected_quote
 
 
 class TestSendWatchlistMovers:
