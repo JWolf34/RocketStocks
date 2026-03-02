@@ -28,7 +28,7 @@ async def send_alert(
     embed = spec_to_embed(alert.build())
 
     today = datetime.datetime.now(tz=date_utils.timezone()).date()
-    message_id = dstate.get_alert_message_id(
+    message_id = await dstate.get_alert_message_id(
         date=today, ticker=alert.ticker, alert_type=alert.alert_type
     )
 
@@ -36,7 +36,7 @@ async def send_alert(
         logger.debug(
             f"Alert {alert.alert_type} already reported for ticker '{alert.ticker}' today"
         )
-        prev_alert_data = dstate.get_alert_message_data(
+        prev_alert_data = await dstate.get_alert_message_data(
             date=today, ticker=alert.ticker, alert_type=alert.alert_type
         )
         # Deserialize if the DB column returns a JSON string instead of a dict
@@ -58,7 +58,7 @@ async def send_alert(
             embed.description = (embed.description or "") + f"\n{update_link}"
             sent = await channel.send(embed=embed, view=view)
 
-            dstate.update_alert_message_data(
+            await dstate.update_alert_message_data(
                 date=today,
                 ticker=alert.ticker,
                 alert_type=alert.alert_type,
@@ -73,7 +73,7 @@ async def send_alert(
             return None
     else:
         sent = await channel.send(embed=embed, view=view)
-        dstate.insert_alert_message_id(
+        await dstate.insert_alert_message_id(
             date=today,
             ticker=alert.ticker,
             alert_type=alert.alert_type,

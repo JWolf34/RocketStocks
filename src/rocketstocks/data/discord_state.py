@@ -1,3 +1,4 @@
+import asyncio
 import json
 import logging
 from rocketstocks.data.db import Postgres
@@ -53,48 +54,35 @@ class DiscordState:
 
     # Alert message IDs #
 
-    def update_alert_message_data(self, date, ticker, alert_type, messageid, alert_data):
-        self.db.update(table='alerts',
-                       set_fields=[
-                           ('messageid', messageid),
-                           ('alert_data', json.dumps(alert_data))
-                       ],
-                       where_conditions=[
-                           ('date', date),
-                           ('ticker', ticker),
-                           ('alert_type', alert_type)
-                       ])
+    async def update_alert_message_data(self, date, ticker, alert_type, messageid, alert_data):
+        await asyncio.to_thread(
+            self.db.update,
+            table='alerts',
+            set_fields=[('messageid', messageid), ('alert_data', json.dumps(alert_data))],
+            where_conditions=[('date', date), ('ticker', ticker), ('alert_type', alert_type)],
+        )
 
-    def get_alert_message_id(self, date, ticker, alert_type):
-        result = self.db.select(table='alerts',
-                                fields=['messageid'],
-                                where_conditions=[
-                                    ('date', date),
-                                    ('ticker', ticker),
-                                    ('alert_type', alert_type)
-                                ],
-                                fetchall=False)
-        if result is None:
-            return result
-        else:
-            return result[0]
+    async def get_alert_message_id(self, date, ticker, alert_type):
+        result = await asyncio.to_thread(
+            self.db.select,
+            table='alerts',
+            fields=['messageid'],
+            where_conditions=[('date', date), ('ticker', ticker), ('alert_type', alert_type)],
+            fetchall=False,
+        )
+        return result[0] if result else None
 
-    def get_alert_message_data(self, date, ticker, alert_type):
-        result = self.db.select(table='alerts',
-                                fields=['alert_data'],
-                                where_conditions=[
-                                    ('date', date),
-                                    ('ticker', ticker),
-                                    ('alert_type', alert_type)
-                                ],
-                                fetchall=False)
-        if result is None:
-            return result
-        else:
-            return result[0]
+    async def get_alert_message_data(self, date, ticker, alert_type):
+        result = await asyncio.to_thread(
+            self.db.select,
+            table='alerts',
+            fields=['alert_data'],
+            where_conditions=[('date', date), ('ticker', ticker), ('alert_type', alert_type)],
+            fetchall=False,
+        )
+        return result[0] if result else None
 
-    def insert_alert_message_id(self, date, ticker, alert_type, message_id, alert_data):
-        table = 'alerts'
-        fields = self.db.get_table_columns(table)
+    async def insert_alert_message_id(self, date, ticker, alert_type, message_id, alert_data):
+        fields = await asyncio.to_thread(self.db.get_table_columns, 'alerts')
         values = [(date, ticker, alert_type, message_id, json.dumps(alert_data))]
-        self.db.insert(table=table, fields=fields, values=values)
+        await asyncio.to_thread(self.db.insert, table='alerts', fields=fields, values=values)
