@@ -123,16 +123,22 @@ class Alerts(commands.Cog):
                 quotes = quotes | await self.stock_data.schwab.get_quotes(tickers=tickers)
             logger.info(f"Encountered {len(quotes.pop('errors', []))} errors fetching quotes for alert tickers")
 
-            for fn, label in [
-                (self.send_unusual_volume_movers(quotes=quotes, channels=alert_channels), "send_unusual_volume_movers"),
-                (self.send_volume_spike_movers(quotes=quotes, channels=alert_channels), "send_volume_spike_movers"),
-                (self.send_earnings_movers(quotes=quotes, channels=alert_channels), "send_earnings_movers"),
-                (self.send_watchlist_movers(quotes=quotes, channels=alert_channels), "send_watchlist_movers"),
-            ]:
-                try:
-                    await fn
-                except Exception as exc:
-                    logger.error(f"[send_alerts] {label} failed: {exc}", exc_info=True)
+            labels = [
+                "send_unusual_volume_movers",
+                "send_volume_spike_movers",
+                "send_earnings_movers",
+                "send_watchlist_movers",
+            ]
+            results = await asyncio.gather(
+                self.send_unusual_volume_movers(quotes=quotes, channels=alert_channels),
+                self.send_volume_spike_movers(quotes=quotes, channels=alert_channels),
+                self.send_earnings_movers(quotes=quotes, channels=alert_channels),
+                self.send_watchlist_movers(quotes=quotes, channels=alert_channels),
+                return_exceptions=True,
+            )
+            for label, result in zip(labels, results):
+                if isinstance(result, Exception):
+                    logger.error(f"[send_alerts] {label} failed: {result}", exc_info=result)
 
             logger.info("Alerts posted")
 
@@ -145,6 +151,11 @@ class Alerts(commands.Cog):
     @tasks.loop(minutes=30)
     async def send_popularity_movers(self):
         await self._run_task("send_popularity_movers", self._send_popularity_movers_impl())
+
+    @send_popularity_movers.before_loop
+    async def send_popularity_movers_before_loop(self):
+        """Wait until the next 30-minute boundary before starting the popularity loop."""
+        await asyncio.sleep(date_utils.seconds_until_minute_interval(30))
 
     async def _send_popularity_movers_impl(self):
         if not self.mutils.market_open_today():
@@ -193,6 +204,7 @@ class Alerts(commands.Cog):
                                     await send_alert(alert, channel, self.dstate, view=view)
             except Exception:
                 logger.error(f"[send_popularity_movers] Failed to process ticker '{ticker}'", exc_info=True)
+            await asyncio.sleep(0)
 
     @tasks.loop(hours=1)
     async def send_politician_trade_alerts(self):
