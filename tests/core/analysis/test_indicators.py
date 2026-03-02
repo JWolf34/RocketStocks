@@ -86,3 +86,101 @@ class TestRvolAtTime:
             data=hist_df, today_data=today_df, periods=10, dt=target_dt
         )
         assert math.isnan(result)
+
+
+# ---------------------------------------------------------------------------
+# indicators.price
+# ---------------------------------------------------------------------------
+
+def _make_daily_price_df(n=60, base=100.0, std_pct=2.0, seed=42):
+    """Build a daily OHLCV DataFrame with 'close' and 'volume' columns."""
+    rng = np.random.default_rng(seed)
+    returns = rng.normal(0, std_pct / 100, n)
+    close = [base]
+    for r in returns[1:]:
+        close.append(close[-1] * (1 + r))
+    close = close[:n]
+    return pd.DataFrame({
+        'open': [c * 0.99 for c in close],
+        'high': [c * 1.01 for c in close],
+        'low':  [c * 0.98 for c in close],
+        'close': close,
+        'volume': [1_000_000.0] * n,
+    })
+
+
+class TestIndicatorsPrice:
+    def test_intraday_zscore_returns_float(self):
+        df = _make_daily_price_df()
+        z = indicators.price.intraday_zscore(df, current_pct_change=2.0)
+        assert isinstance(z, float)
+
+    def test_intraday_zscore_returns_nan_for_empty_df(self):
+        z = indicators.price.intraday_zscore(pd.DataFrame(), current_pct_change=5.0)
+        assert math.isnan(z)
+
+    def test_intraday_zscore_extreme_move_has_high_magnitude(self):
+        df = _make_daily_price_df(n=60, std_pct=0.5)
+        z = indicators.price.intraday_zscore(df, current_pct_change=10.0)
+        assert abs(z) > 2.0
+
+    def test_return_percentile_in_valid_range(self):
+        df = _make_daily_price_df(n=70)
+        p = indicators.price.return_percentile(df, current_pct_change=0.0)
+        if not math.isnan(p):
+            assert 0.0 <= p <= 100.0
+
+    def test_return_percentile_returns_nan_for_empty_df(self):
+        p = indicators.price.return_percentile(pd.DataFrame(), current_pct_change=1.0)
+        assert math.isnan(p)
+
+    def test_return_percentile_high_pct_gives_high_percentile(self):
+        df = _make_daily_price_df(n=70, std_pct=1.0)
+        p = indicators.price.return_percentile(df, current_pct_change=20.0)
+        assert p > 80.0 if not math.isnan(p) else True
+
+
+# ---------------------------------------------------------------------------
+# indicators.popularity
+# ---------------------------------------------------------------------------
+
+def _make_popularity_df(n=40, start_rank=100, seed=42):
+    """Build a popularity DataFrame with 'rank' and 'datetime' columns."""
+    rng = np.random.default_rng(seed)
+    base = datetime.datetime(2024, 1, 1, 0, 0)
+    rows = []
+    rank = start_rank
+    for i in range(n):
+        rank = max(1, rank + int(rng.integers(-5, 5)))
+        rows.append({'datetime': base + datetime.timedelta(hours=i), 'rank': rank})
+    return pd.DataFrame(rows)
+
+
+class TestIndicatorsPopularity:
+    def test_rank_velocity_returns_float(self):
+        df = _make_popularity_df()
+        v = indicators.popularity.rank_velocity(df)
+        assert isinstance(v, float)
+
+    def test_rank_velocity_returns_nan_for_empty_df(self):
+        v = indicators.popularity.rank_velocity(pd.DataFrame())
+        assert math.isnan(v)
+
+    def test_rank_velocity_returns_nan_for_insufficient_data(self):
+        df = pd.DataFrame({'rank': [10], 'datetime': [datetime.datetime.now()]})
+        v = indicators.popularity.rank_velocity(df, periods=5)
+        assert math.isnan(v)
+
+    def test_rank_velocity_zscore_returns_float(self):
+        df = _make_popularity_df(n=60)
+        z = indicators.popularity.rank_velocity_zscore(df)
+        assert isinstance(z, float)
+
+    def test_rank_velocity_zscore_returns_nan_for_insufficient_data(self):
+        df = _make_popularity_df(n=5)
+        z = indicators.popularity.rank_velocity_zscore(df, lookback=30, velocity_window=5)
+        assert math.isnan(z)
+
+    def test_rank_velocity_zscore_returns_nan_for_empty(self):
+        z = indicators.popularity.rank_velocity_zscore(pd.DataFrame())
+        assert math.isnan(z)

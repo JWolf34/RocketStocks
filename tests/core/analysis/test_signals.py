@@ -134,3 +134,119 @@ class TestRoc:
         close = _price_series(60)
         result = signals.roc(close)
         assert len(result) == 60
+
+
+# ---------------------------------------------------------------------------
+# New statistical signal methods
+# ---------------------------------------------------------------------------
+
+class TestBollingerBands:
+    def test_returns_dataframe(self):
+        close = _price_series(60)
+        result = signals.bollinger_bands(close)
+        assert hasattr(result, 'columns')
+
+    def test_returns_empty_for_insufficient_data(self):
+        close = _price_series(5)  # less than length=20
+        result = signals.bollinger_bands(close)
+        assert result.empty
+
+    def test_has_bbl_bbu_columns(self):
+        close = _price_series(60)
+        result = signals.bollinger_bands(close)
+        if not result.empty:
+            cols = result.columns.tolist()
+            assert any(c.startswith('BBL') for c in cols)
+            assert any(c.startswith('BBU') for c in cols)
+
+
+class TestPriceZscore:
+    def test_returns_float(self):
+        close = _price_series(60)
+        z = signals.price_zscore(close)
+        assert isinstance(z, float)
+
+    def test_returns_nan_for_insufficient_data(self):
+        close = _price_series(5)
+        z = signals.price_zscore(close, period=20)
+        assert np.isnan(z)
+
+    def test_extreme_move_gives_high_zscore(self):
+        # A steadily rising series then a huge spike
+        close = pd.Series([100.0 + i * 0.1 for i in range(50)] + [200.0])
+        z = signals.price_zscore(close, period=20)
+        assert abs(z) > 2.0
+
+
+class TestReturnPercentile:
+    def test_returns_float(self):
+        close = _price_series(80)
+        p = signals.return_percentile(close, period=60)
+        assert isinstance(p, float)
+
+    def test_in_valid_range(self):
+        close = _price_series(80)
+        p = signals.return_percentile(close, period=60)
+        if not np.isnan(p):
+            assert 0.0 <= p <= 100.0
+
+    def test_returns_nan_for_insufficient_data(self):
+        close = _price_series(5)
+        p = signals.return_percentile(close, period=60)
+        assert np.isnan(p)
+
+
+class TestVolumeZscore:
+    def _vol_series(self, mean=1_000_000.0, std=100_000.0, n=30, seed=42):
+        rng = np.random.default_rng(seed)
+        return pd.Series(rng.normal(mean, std, n))
+
+    def test_returns_float(self):
+        volume = self._vol_series()
+        z = signals.volume_zscore(volume, curr_volume=5_000_000.0)
+        assert isinstance(z, float)
+
+    def test_high_volume_gives_positive_zscore(self):
+        volume = self._vol_series(mean=1_000_000.0, std=100_000.0)
+        z = signals.volume_zscore(volume, curr_volume=10_000_000.0)
+        assert z > 0
+
+    def test_low_volume_gives_negative_zscore(self):
+        volume = self._vol_series(mean=1_000_000.0, std=100_000.0)
+        z = signals.volume_zscore(volume, curr_volume=100_000.0)
+        assert z < 0
+
+    def test_returns_nan_for_insufficient_data(self):
+        volume = pd.Series([1_000_000.0])  # only 1 row
+        z = signals.volume_zscore(volume, curr_volume=2_000_000.0)
+        assert np.isnan(z)
+
+    def test_returns_nan_for_zero_std(self):
+        volume = pd.Series([1_000_000.0] * 30)
+        # All same values → std = 0
+        z = signals.volume_zscore(volume, curr_volume=1_000_000.0)
+        assert np.isnan(z)
+
+
+class TestTechnicalConfluence:
+    def test_returns_tuple_of_three(self):
+        high, low, close, volume = _ohlcv(60)
+        result = signals.technical_confluence(close, high, low, volume)
+        assert isinstance(result, tuple)
+        assert len(result) == 3
+
+    def test_count_lte_total(self):
+        high, low, close, volume = _ohlcv(60)
+        count, total, details = signals.technical_confluence(close, high, low, volume)
+        assert count <= total
+
+    def test_details_has_four_keys(self):
+        high, low, close, volume = _ohlcv(60)
+        count, total, details = signals.technical_confluence(close, high, low, volume)
+        assert set(details.keys()) == {'rsi', 'macd', 'adx', 'obv'}
+
+    def test_details_values_are_bool_or_none(self):
+        high, low, close, volume = _ohlcv(60)
+        count, total, details = signals.technical_confluence(close, high, low, volume)
+        for v in details.values():
+            assert v is None or isinstance(v, bool)

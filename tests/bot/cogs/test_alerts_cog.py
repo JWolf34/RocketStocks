@@ -5,6 +5,8 @@ import pandas as pd
 from unittest.mock import AsyncMock, MagicMock, patch
 
 from rocketstocks.bot.cogs.alerts import Alerts
+from rocketstocks.core.analysis.alert_strategy import AlertTriggerResult
+from rocketstocks.core.analysis.classification import StockClass
 
 
 def _make_bot():
@@ -18,7 +20,24 @@ def _make_stock_data(earnings_df: pd.DataFrame):
     sd = MagicMock(name="StockData")
     sd.earnings.get_earnings_on_date.return_value = earnings_df
     sd.alert_tickers = {}
+    sd.ticker_stats.get_all_classifications.return_value = {}
+    sd.price_history.fetch_daily_price_history.return_value = pd.DataFrame()
     return sd
+
+
+def _make_trigger_result(should_alert=True):
+    return AlertTriggerResult(
+        should_alert=should_alert,
+        classification=StockClass.STANDARD,
+        zscore=3.0,
+        percentile=98.0,
+        bb_position=None,
+        confluence_count=None,
+        confluence_total=None,
+        confluence_details=None,
+        volume_zscore=2.5,
+        signal_type='unusual_move',
+    )
 
 
 def _make_cog(earnings_df: pd.DataFrame):
@@ -40,8 +59,10 @@ class TestSendEarningsMovers:
     async def test_empty_dataframe_returns_early(self):
         """Should not raise KeyError when no earnings exist for today."""
         cog = _make_cog(earnings_df=pd.DataFrame())
-        # Must not raise — previously raised KeyError: 'ticker'
-        await cog.send_earnings_movers(quotes={"AAPL": {"quote": {"netPercentChange": 10.0}}}, channels=[])
+        await cog.send_earnings_movers(
+            quotes={"AAPL": {"quote": {"netPercentChange": 10.0, "totalVolume": 1_000_000}}},
+            channels=[],
+        )
 
     @pytest.mark.asyncio
     async def test_no_matching_tickers_sends_no_alerts(self):
@@ -49,44 +70,76 @@ class TestSendEarningsMovers:
         df = pd.DataFrame({"ticker": ["MSFT"], "date": [datetime.date.today()]})
         cog = _make_cog(earnings_df=df)
         channel = AsyncMock()
-        await cog.send_earnings_movers(quotes={"AAPL": {"quote": {"netPercentChange": 10.0}}}, channels=[channel])
-        channel.send.assert_not_called()
-
-    @pytest.mark.asyncio
-    async def test_matching_ticker_below_threshold_sends_no_alert(self):
-        """A reporting ticker with < ±5% change should not trigger an alert."""
-        df = pd.DataFrame({"ticker": ["AAPL"], "date": [datetime.date.today()]})
-        cog = _make_cog(earnings_df=df)
-        channel = AsyncMock()
         await cog.send_earnings_movers(
-            quotes={"AAPL": {"quote": {"netPercentChange": 3.0}}}, channels=[channel]
+            quotes={"AAPL": {"quote": {"netPercentChange": 10.0, "totalVolume": 1_000_000}}},
+            channels=[channel],
         )
         channel.send.assert_not_called()
 
     @pytest.mark.asyncio
-    async def test_matching_ticker_above_threshold_sends_alert(self):
-        """A reporting ticker with > ±5% change should send an alert."""
-        df = pd.DataFrame({
-            "ticker": ["AAPL"],
-            "date": [datetime.date.today()],
-            "eps_estimate": [1.5],
-            "eps_actual": [1.8],
-            "revenue_estimate": [None],
-            "revenue_actual": [None],
-        })
+    async def test_matching_ticker_evaluate_called(self):
+        """evaluate_price_alert is called for matching tickers."""
+        df = pd.DataFrame({"ticker": ["AAPL"], "date": [datetime.date.today()]})
         cog = _make_cog(earnings_df=df)
         channel = AsyncMock()
 
+        fake_trigger = _make_trigger_result(should_alert=False)
+
         with (
+            patch("rocketstocks.bot.cogs.alerts.evaluate_price_alert",
+                  return_value=fake_trigger) as mock_eval,
+        ):
+            await cog.send_earnings_movers(
+                quotes={"AAPL": {"quote": {"netPercentChange": 3.0, "totalVolume": 1_000_000}}},
+                channels=[channel],
+            )
+            mock_eval.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_matching_ticker_alert_sent_when_trigger_true(self):
+        """Alert is sent when evaluate_price_alert returns should_alert=True."""
+        df = pd.DataFrame({
+            "ticker": ["AAPL"],
+            "date": [datetime.date.today()],
+        })
+        cog = _make_cog(earnings_df=df)
+        channel = AsyncMock()
+        fake_trigger = _make_trigger_result(should_alert=True)
+
+        with (
+            patch("rocketstocks.bot.cogs.alerts.evaluate_price_alert",
+                  return_value=fake_trigger),
             patch.object(cog, "build_earnings_mover", new_callable=AsyncMock) as mock_build,
             patch("rocketstocks.bot.cogs.alerts.send_alert", new_callable=AsyncMock) as mock_send,
         ):
             mock_build.return_value = MagicMock()
             await cog.send_earnings_movers(
-                quotes={"AAPL": {"quote": {"netPercentChange": 8.5}}}, channels=[channel]
+                quotes={"AAPL": {"quote": {"netPercentChange": 8.5, "totalVolume": 1_000_000}}},
+                channels=[channel],
             )
             mock_build.assert_called_once()
             mock_send.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_no_alert_when_trigger_false(self):
+        """No alert sent when evaluate_price_alert returns should_alert=False."""
+        df = pd.DataFrame({"ticker": ["AAPL"], "date": [datetime.date.today()]})
+        cog = _make_cog(earnings_df=df)
+        channel = AsyncMock()
+        fake_trigger = _make_trigger_result(should_alert=False)
+
+        with (
+            patch("rocketstocks.bot.cogs.alerts.evaluate_price_alert",
+                  return_value=fake_trigger),
+            patch.object(cog, "build_earnings_mover", new_callable=AsyncMock) as mock_build,
+            patch("rocketstocks.bot.cogs.alerts.send_alert", new_callable=AsyncMock) as mock_send,
+        ):
+            await cog.send_earnings_movers(
+                quotes={"AAPL": {"quote": {"netPercentChange": 8.5, "totalVolume": 1_000_000}}},
+                channels=[channel],
+            )
+            mock_build.assert_not_called()
+            mock_send.assert_not_called()
 
 
 class TestBuildWatchlistMover:
@@ -121,10 +174,13 @@ class TestSendWatchlistMovers:
         cog = _make_cog(earnings_df=pd.DataFrame())
 
         ticker = "AAPL"
-        quote = {"quote": {"netPercentChange": 15.0}}
+        quote = {"quote": {"netPercentChange": 15.0, "totalVolume": 1_000_000}}
         cog.stock_data.watchlists.get_all_watchlist_tickers.return_value = [ticker]
+        fake_trigger = _make_trigger_result(should_alert=True)
 
         with (
+            patch("rocketstocks.bot.cogs.alerts.evaluate_price_alert",
+                  return_value=fake_trigger),
             patch.object(cog, "build_watchlist_mover", new_callable=AsyncMock) as mock_build,
             patch("rocketstocks.bot.cogs.alerts.send_alert", new_callable=AsyncMock),
         ):
@@ -159,7 +215,9 @@ class TestPerTickerIsolation:
             built.append(ticker)
             return MagicMock()
 
+        fake_trigger = _make_trigger_result(should_alert=True)
         with (
+            patch("rocketstocks.bot.cogs.alerts.evaluate_price_alert", return_value=fake_trigger),
             patch.object(cog, "build_earnings_mover", side_effect=mock_build),
             patch("rocketstocks.bot.cogs.alerts.send_alert", new_callable=AsyncMock) as mock_send,
         ):
@@ -187,7 +245,9 @@ class TestPerTickerIsolation:
             built.append(ticker)
             return MagicMock()
 
+        fake_trigger = _make_trigger_result(should_alert=True)
         with (
+            patch("rocketstocks.bot.cogs.alerts.evaluate_price_alert", return_value=fake_trigger),
             patch.object(cog, "build_watchlist_mover", side_effect=mock_build),
             patch("rocketstocks.bot.cogs.alerts.send_alert", new_callable=AsyncMock) as mock_send,
         ):
@@ -279,6 +339,7 @@ class TestSendAlertsImpl:
         mock_channel = MagicMock()
         cog.bot.iter_channels.return_value = [(1, mock_channel)]
         cog.stock_data.schwab.get_quotes = AsyncMock(return_value={})
+        cog.stock_data.ticker_stats.get_all_classifications = MagicMock(return_value={})
 
         with (
             patch.object(cog, "send_unusual_volume_movers", new_callable=AsyncMock, side_effect=RuntimeError("boom")) as mock_uvol,
@@ -316,6 +377,34 @@ class TestSendAlertsImpl:
             await cog._send_alerts_impl()
 
         mock_earnings.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_classifications_fetched_and_passed_to_subtasks(self):
+        """get_all_classifications is called and result passed to each detection method."""
+        cog = _make_cog(earnings_df=pd.DataFrame())
+        cog.mutils.market_open_today.return_value = True
+        cog.mutils.get_market_period.return_value = "intraday"
+        cog.bot.iter_channels.return_value = [(1, MagicMock())]
+        cog.stock_data.schwab.get_quotes = AsyncMock(return_value={})
+        expected_classifications = {'AAPL': 'blue_chip', 'GME': 'meme'}
+        cog.stock_data.ticker_stats.get_all_classifications = MagicMock(
+            return_value=expected_classifications
+        )
+
+        received_classifications = []
+
+        async def capture_classifications(**kwargs):
+            received_classifications.append(kwargs.get('classifications'))
+
+        with (
+            patch.object(cog, "send_unusual_volume_movers", side_effect=capture_classifications),
+            patch.object(cog, "send_volume_spike_movers", new_callable=AsyncMock),
+            patch.object(cog, "send_earnings_movers", new_callable=AsyncMock),
+            patch.object(cog, "send_watchlist_movers", new_callable=AsyncMock),
+        ):
+            await cog._send_alerts_impl()
+
+        assert received_classifications[0] == expected_classifications
 
 
 class TestRunTask:
@@ -388,6 +477,7 @@ class TestSendAlertsGather:
         cog.mutils.get_market_period.return_value = "intraday"
         cog.bot.iter_channels.return_value = [(1, MagicMock())]
         cog.stock_data.schwab.get_quotes = AsyncMock(return_value={})
+        cog.stock_data.ticker_stats.get_all_classifications = MagicMock(return_value={})
 
         with (
             patch.object(cog, "send_unusual_volume_movers", new_callable=AsyncMock) as mock_uvol,
@@ -410,6 +500,7 @@ class TestSendAlertsGather:
         cog.mutils.get_market_period.return_value = "intraday"
         cog.bot.iter_channels.return_value = [(1, MagicMock())]
         cog.stock_data.schwab.get_quotes = AsyncMock(return_value={})
+        cog.stock_data.ticker_stats.get_all_classifications = MagicMock(return_value={})
 
         with (
             patch.object(cog, "send_unusual_volume_movers", new_callable=AsyncMock, side_effect=RuntimeError("boom")),

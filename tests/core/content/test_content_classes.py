@@ -67,19 +67,22 @@ def test_volume_mover_alert_data_contains_pct_and_rvol(quote_up, ticker_info, pr
     assert alert.alert_data['rvol'] == 30.0
 
 
-def test_volume_mover_override_rvol_doubling(quote_up, ticker_info, price_history):
+def test_volume_mover_override_triggers_on_large_pct_move(quote_up, ticker_info, price_history):
+    """Large pct_change movement triggers override via momentum fallback (>100% relative)."""
+    # quote_up has pct_change=7.5; prev_pct=1.0 → (7.5-1)/1 * 100 = 650% > 100 → True
     data = VolumeMoverData(ticker='GME', ticker_info=ticker_info, quote=quote_up,
                            rvol=60.0, daily_price_history=price_history)
     alert = VolumeMoverAlert(data=data)
-    prev = {'pct_change': 7.5, 'rvol': 25.0}  # rvol doubled: 60 > 2*25 → override
+    prev = {'pct_change': 1.0, 'rvol': 60.0}
     assert alert.override_and_edit(prev) is True
 
 
-def test_volume_mover_override_no_trigger(quote_up, ticker_info, price_history):
+def test_volume_mover_override_no_trigger_small_move(quote_up, ticker_info, price_history):
+    """Small relative pct_change does not trigger override."""
     data = VolumeMoverData(ticker='GME', ticker_info=ticker_info, quote=quote_up,
                            rvol=30.0, daily_price_history=price_history)
     alert = VolumeMoverAlert(data=data)
-    prev = {'pct_change': 7.5, 'rvol': 20.0}  # 30 < 2*20=40 → no override
+    prev = {'pct_change': 7.0, 'rvol': 30.0}  # (7.5 - 7.0) / 7.0 = 7.1% → no trigger
     assert alert.override_and_edit(prev) is False
 
 
@@ -87,11 +90,13 @@ def test_volume_mover_override_no_trigger(quote_up, ticker_info, price_history):
 # VolumeSpikeAlert
 # ---------------------------------------------------------------------------
 
-def test_volume_spike_override_on_rvol_at_time_increase(quote_up, ticker_info):
+def test_volume_spike_override_triggers_on_large_pct_move(quote_up, ticker_info):
+    """Volume spike alert uses base class momentum logic for override."""
     data = VolumeSpikeData(ticker='NVDA', ticker_info=ticker_info, quote=quote_up,
                            rvol_at_time=80.0, avg_vol_at_time=200_000.0, time='11:00 AM')
     alert = VolumeSpikeAlert(data=data)
-    prev = {'pct_change': 7.5, 'rvol_at_time': 50.0}  # 80 > 1.5*50=75 → override
+    # quote_up pct_change=7.5; prev_pct=1.0 → 650% relative change → trigger
+    prev = {'pct_change': 1.0, 'rvol_at_time': 80.0}
     assert alert.override_and_edit(prev) is True
 
 
@@ -111,26 +116,24 @@ def test_watchlist_mover_alert_type():
 # PopularityAlert.override_and_edit
 # ---------------------------------------------------------------------------
 
-def test_popularity_alert_override_on_high_rank_improvement(quote_up, ticker_info):
+def test_popularity_alert_override_on_high_velocity_zscore(quote_up, ticker_info):
+    """PopularityAlert overrides when rank_velocity_zscore is high."""
     now = datetime.datetime.now()
     rounded = now.replace(minute=(now.minute // 30) * 30, second=0, microsecond=0)
-    # Create 5 days of data
-    pop_data = []
-    for i in range(6):
-        d = rounded - datetime.timedelta(days=i)
-        pop_data.append({'datetime': d, 'ticker': 'GME', 'rank': 50 - i * 2})
+    pop_data = [{'datetime': rounded - datetime.timedelta(days=i), 'ticker': 'GME', 'rank': 50 - i}
+                for i in range(6)]
     pop_df = pd.DataFrame(pop_data)
 
     data = PopularityAlertData(ticker='GME', ticker_info=ticker_info, quote=quote_up,
-                               popularity=pop_df)
+                               popularity=pop_df, rank_velocity=-5.0, rank_velocity_zscore=3.0)
     alert = PopularityAlert(data=data)
-    # alert high_rank (50) < 0.5 * prev high_rank (200 = 100) → override
-    prev = {'pct_change': 7.5, 'high_rank': 200, 'high_rank_date': '2024-01-01',
-            'low_rank': 40, 'low_rank_date': '2024-01-05'}
+    # rv_zscore=3.0 >= 2.0, and 3.0 > 0.5*1.5=0.75 → override via velocity path
+    prev = {'pct_change': 7.5, 'rank_velocity_zscore': 1.0}
     assert alert.override_and_edit(prev) is True
 
 
-def test_popularity_alert_no_override(quote_up, ticker_info):
+def test_popularity_alert_no_override_low_velocity(quote_up, ticker_info):
+    """PopularityAlert does not override with low rank velocity z-score."""
     now = datetime.datetime.now()
     rounded = now.replace(minute=(now.minute // 30) * 30, second=0, microsecond=0)
     pop_data = [{'datetime': rounded - datetime.timedelta(days=i), 'ticker': 'GME', 'rank': 90 - i}
@@ -138,11 +141,10 @@ def test_popularity_alert_no_override(quote_up, ticker_info):
     pop_df = pd.DataFrame(pop_data)
 
     data = PopularityAlertData(ticker='GME', ticker_info=ticker_info, quote=quote_up,
-                               popularity=pop_df)
+                               popularity=pop_df, rank_velocity=-0.5, rank_velocity_zscore=0.5)
     alert = PopularityAlert(data=data)
-    prev = {'pct_change': 7.5, 'high_rank': 80, 'high_rank_date': '2024-01-01',
-            'low_rank': 50, 'low_rank_date': '2024-01-05'}
-    # high_rank >= 0.5 * 80 = 40 → no override
+    # rv_zscore < 2.0 → velocity path doesn't trigger; pct_change similar → momentum fallback also no
+    prev = {'pct_change': 7.0, 'rank_velocity_zscore': 0.4}
     assert alert.override_and_edit(prev) is False
 
 

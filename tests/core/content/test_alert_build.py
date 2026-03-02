@@ -4,6 +4,8 @@ import datetime
 import pandas as pd
 import pytest
 
+from rocketstocks.core.analysis.alert_strategy import AlertTriggerResult
+from rocketstocks.core.analysis.classification import StockClass
 from rocketstocks.core.content.alerts.earnings_alert import EarningsMoverAlert
 from rocketstocks.core.content.alerts.volume_alert import VolumeMoverAlert
 from rocketstocks.core.content.alerts.volume_spike_alert import VolumeSpikeAlert
@@ -17,6 +19,36 @@ from rocketstocks.core.content.models import (
     WatchlistMoverData, SECFilingData, PopularityAlertData,
     PoliticianTradeAlertData, EmbedSpec, EmbedField,
 )
+
+
+def _make_trigger_result(classification=StockClass.STANDARD, should_alert=True):
+    return AlertTriggerResult(
+        should_alert=should_alert,
+        classification=classification,
+        zscore=2.8,
+        percentile=97.5,
+        bb_position=None,
+        confluence_count=None,
+        confluence_total=None,
+        confluence_details=None,
+        volume_zscore=3.1,
+        signal_type='unusual_move',
+    )
+
+
+def _make_blue_chip_trigger():
+    return AlertTriggerResult(
+        should_alert=True,
+        classification=StockClass.BLUE_CHIP,
+        zscore=2.2,
+        percentile=92.0,
+        bb_position='above_upper',
+        confluence_count=3,
+        confluence_total=4,
+        confluence_details={'rsi': False, 'macd': True, 'adx': True, 'obv': True},
+        volume_zscore=2.5,
+        signal_type='trend_breakout',
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -353,3 +385,120 @@ def test_base_alert_build_raises():
     alert = MinimalAlert()
     with pytest.raises(NotImplementedError):
         alert.build()
+
+
+# ---------------------------------------------------------------------------
+# Trigger result stored in alert_data
+# ---------------------------------------------------------------------------
+
+def test_earnings_mover_stores_zscore_in_alert_data(quote_up, ticker_info):
+    tr = _make_trigger_result()
+    data = EarningsMoverData(
+        ticker='GME', ticker_info=ticker_info, quote=quote_up,
+        next_earnings_info=None, historical_earnings=pd.DataFrame(),
+        trigger_result=tr,
+    )
+    alert = EarningsMoverAlert(data=data)
+    assert alert.alert_data.get('zscore') == pytest.approx(2.8)
+    assert alert.alert_data.get('classification') == 'standard'
+
+
+def test_volume_mover_stores_zscore_in_alert_data(quote_up, ticker_info, price_history):
+    tr = _make_trigger_result()
+    data = VolumeMoverData(ticker='GME', ticker_info=ticker_info, quote=quote_up,
+                           rvol=15.0, daily_price_history=price_history, trigger_result=tr)
+    alert = VolumeMoverAlert(data=data)
+    assert alert.alert_data.get('zscore') == pytest.approx(2.8)
+
+
+def test_watchlist_mover_stores_zscore_in_alert_data(quote_up, ticker_info):
+    tr = _make_trigger_result()
+    data = WatchlistMoverData(ticker='AAPL', ticker_info=ticker_info, quote=quote_up,
+                              watchlist='my-list', trigger_result=tr)
+    alert = WatchlistMoverAlert(data=data)
+    assert alert.alert_data.get('zscore') == pytest.approx(2.8)
+
+
+def test_no_trigger_result_does_not_add_zscore(quote_up, ticker_info, price_history):
+    data = VolumeMoverData(ticker='GME', ticker_info=ticker_info, quote=quote_up,
+                           rvol=10.0, daily_price_history=price_history, trigger_result=None)
+    alert = VolumeMoverAlert(data=data)
+    assert 'zscore' not in alert.alert_data
+
+
+def test_earnings_mover_embed_has_zscore_field(quote_up, ticker_info):
+    tr = _make_trigger_result()
+    data = EarningsMoverData(
+        ticker='GME', ticker_info=ticker_info, quote=quote_up,
+        next_earnings_info=None, historical_earnings=pd.DataFrame(),
+        trigger_result=tr,
+    )
+    spec = EarningsMoverAlert(data=data).build()
+    field_names = [f.name for f in spec.fields]
+    assert 'Z-Score' in field_names
+
+
+def test_blue_chip_alert_shows_bb_position(quote_up, ticker_info, price_history):
+    tr = _make_blue_chip_trigger()
+    data = VolumeMoverData(ticker='AAPL', ticker_info=ticker_info, quote=quote_up,
+                           rvol=5.0, daily_price_history=price_history, trigger_result=tr)
+    spec = VolumeMoverAlert(data=data).build()
+    field_names = [f.name for f in spec.fields]
+    assert 'BB Position' in field_names
+    assert 'Confluence' in field_names
+
+
+# ---------------------------------------------------------------------------
+# Base Alert — record_momentum
+# ---------------------------------------------------------------------------
+
+def test_record_momentum_appends_to_history():
+    alert = MinimalAlert()
+    alert.alert_data['pct_change'] = 10.0
+    prev_data = {'pct_change': 5.0}
+    alert.record_momentum(prev_alert_data=prev_data)
+    history = alert.alert_data.get('momentum_history', [])
+    assert len(history) == 1
+    assert 'velocity' in history[0]
+    assert 'acceleration' in history[0]
+
+
+def test_record_momentum_no_pct_change_does_nothing():
+    alert = MinimalAlert()
+    del alert.alert_data['pct_change']  # remove pct_change
+    alert.record_momentum(prev_alert_data={'pct_change': 5.0})
+    # No history should be recorded
+    assert 'momentum_history' not in alert.alert_data
+
+
+def test_override_and_edit_uses_momentum_logic():
+    alert = MinimalAlert()
+    alert.alert_data['pct_change'] = 50.0
+    # Fallback path (no history): 50.0 from 5.0 = 900% relative → should trigger
+    result = alert.override_and_edit({'pct_change': 5.0})
+    assert result is True
+
+
+# ---------------------------------------------------------------------------
+# PopularityAlert — rank velocity fields
+# ---------------------------------------------------------------------------
+
+def test_popularity_alert_stores_rank_velocity(quote_up, ticker_info, pop_df):
+    data = PopularityAlertData(
+        ticker='GME', ticker_info=ticker_info, quote=quote_up,
+        popularity=pop_df, rank_velocity=-3.5, rank_velocity_zscore=2.2,
+    )
+    alert = PopularityAlert(data=data)
+    assert alert.alert_data.get('rank_velocity') == pytest.approx(-3.5)
+    assert alert.alert_data.get('rank_velocity_zscore') == pytest.approx(2.2)
+
+
+def test_popularity_embed_has_velocity_field(quote_up, ticker_info, pop_df):
+    data = PopularityAlertData(
+        ticker='GME', ticker_info=ticker_info, quote=quote_up,
+        popularity=pop_df, rank_velocity=-3.5, rank_velocity_zscore=2.2,
+    )
+    spec = PopularityAlert(data=data).build()
+    field_names = [f.name for f in spec.fields]
+    assert 'Rank Velocity' in field_names
+    assert 'Velocity Z-Score' in field_names
