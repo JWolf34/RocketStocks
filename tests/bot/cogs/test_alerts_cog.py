@@ -377,3 +377,62 @@ class TestPopularityMoversMarketGuard:
         await cog._send_popularity_movers_impl()
 
         cog.stock_data.popularity.get_popular_stocks.assert_not_called()
+
+
+class TestSendAlertsGather:
+    @pytest.mark.asyncio
+    async def test_all_subtasks_run_concurrently(self):
+        """All four alert sub-tasks are invoked even when running via asyncio.gather."""
+        cog = _make_cog(earnings_df=pd.DataFrame())
+        cog.mutils.market_open_today.return_value = True
+        cog.mutils.get_market_period.return_value = "intraday"
+        cog.bot.iter_channels.return_value = [(1, MagicMock())]
+        cog.stock_data.schwab.get_quotes = AsyncMock(return_value={})
+
+        with (
+            patch.object(cog, "send_unusual_volume_movers", new_callable=AsyncMock) as mock_uvol,
+            patch.object(cog, "send_volume_spike_movers", new_callable=AsyncMock) as mock_spike,
+            patch.object(cog, "send_earnings_movers", new_callable=AsyncMock) as mock_earnings,
+            patch.object(cog, "send_watchlist_movers", new_callable=AsyncMock) as mock_watchlist,
+        ):
+            await cog._send_alerts_impl()
+
+        mock_uvol.assert_called_once()
+        mock_spike.assert_called_once()
+        mock_earnings.assert_called_once()
+        mock_watchlist.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_exception_in_one_subtask_logged_not_raised(self):
+        """An exception in one gather sub-task is logged but does not raise."""
+        cog = _make_cog(earnings_df=pd.DataFrame())
+        cog.mutils.market_open_today.return_value = True
+        cog.mutils.get_market_period.return_value = "intraday"
+        cog.bot.iter_channels.return_value = [(1, MagicMock())]
+        cog.stock_data.schwab.get_quotes = AsyncMock(return_value={})
+
+        with (
+            patch.object(cog, "send_unusual_volume_movers", new_callable=AsyncMock, side_effect=RuntimeError("boom")),
+            patch.object(cog, "send_volume_spike_movers", new_callable=AsyncMock),
+            patch.object(cog, "send_earnings_movers", new_callable=AsyncMock),
+            patch.object(cog, "send_watchlist_movers", new_callable=AsyncMock),
+        ):
+            # Must not raise
+            await cog._send_alerts_impl()
+
+
+class TestPopularityMoversBeforeLoop:
+    @pytest.mark.asyncio
+    async def test_before_loop_calls_sleep(self):
+        """send_popularity_movers_before_loop sleeps until the next 30-min boundary."""
+        cog = _make_cog(earnings_df=pd.DataFrame())
+
+        with (
+            patch("rocketstocks.bot.cogs.alerts.date_utils") as mock_du,
+            patch("rocketstocks.bot.cogs.alerts.asyncio.sleep", new_callable=AsyncMock) as mock_sleep,
+        ):
+            mock_du.seconds_until_minute_interval.return_value = 42
+            await cog.send_popularity_movers_before_loop()
+
+        mock_du.seconds_until_minute_interval.assert_called_once_with(30)
+        mock_sleep.assert_awaited_once_with(42)

@@ -3,6 +3,7 @@ import json
 from unittest.mock import MagicMock
 
 import pytest
+import pytest_asyncio
 
 from rocketstocks.data.discord_state import DiscordState
 
@@ -58,41 +59,46 @@ class TestInsertScreenerMessageId:
 
 
 class TestAlertMessageId:
-    def test_get_alert_message_id_returns_id(self):
+    @pytest.mark.asyncio
+    async def test_get_alert_message_id_returns_id(self):
         db = MagicMock()
         db.select.return_value = ("777",)
         ds = _make(db)
-        result = ds.get_alert_message_id("2024-01-01", "AAPL", "VOLUME_MOVER")
+        result = await ds.get_alert_message_id("2024-01-01", "AAPL", "VOLUME_MOVER")
         assert result == "777"
 
-    def test_get_alert_message_id_returns_none_when_missing(self):
+    @pytest.mark.asyncio
+    async def test_get_alert_message_id_returns_none_when_missing(self):
         db = MagicMock()
         db.select.return_value = None
         ds = _make(db)
-        assert ds.get_alert_message_id("2024-01-01", "AAPL", "VOLUME_MOVER") is None
+        assert await ds.get_alert_message_id("2024-01-01", "AAPL", "VOLUME_MOVER") is None
 
-    def test_get_alert_message_data_deserializes_string(self):
+    @pytest.mark.asyncio
+    async def test_get_alert_message_data_deserializes_string(self):
         db = MagicMock()
         payload = {"pct_change": 5.0}
         db.select.return_value = (json.dumps(payload),)
         ds = _make(db)
-        result = ds.get_alert_message_data("2024-01-01", "AAPL", "VOLUME_MOVER")
+        result = await ds.get_alert_message_data("2024-01-01", "AAPL", "VOLUME_MOVER")
         # Returns the raw stored value (caller deserializes)
         assert json.dumps(payload) in result or result == json.dumps(payload)
 
-    def test_insert_alert_message_id_calls_db_insert(self):
+    @pytest.mark.asyncio
+    async def test_insert_alert_message_id_calls_db_insert(self):
         db = MagicMock()
         db.get_table_columns.return_value = ["date", "ticker", "alert_type", "messageid", "alert_data"]
         ds = _make(db)
-        ds.insert_alert_message_id("2024-01-01", "AAPL", "VOLUME_MOVER", "888", {"pct_change": 5.0})
+        await ds.insert_alert_message_id("2024-01-01", "AAPL", "VOLUME_MOVER", "888", {"pct_change": 5.0})
         db.insert.assert_called_once()
         call_kwargs = db.insert.call_args[1]
         assert call_kwargs["table"] == "alerts"
 
-    def test_update_alert_message_data_calls_db_update(self):
+    @pytest.mark.asyncio
+    async def test_update_alert_message_data_calls_db_update(self):
         db = MagicMock()
         ds = _make(db)
-        ds.update_alert_message_data("2024-01-01", "AAPL", "VOLUME_MOVER", "888", {"pct_change": 6.0})
+        await ds.update_alert_message_data("2024-01-01", "AAPL", "VOLUME_MOVER", "888", {"pct_change": 6.0})
         db.update.assert_called_once()
         call_kwargs = db.update.call_args[1]
         assert call_kwargs["table"] == "alerts"

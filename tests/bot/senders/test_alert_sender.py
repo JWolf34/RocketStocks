@@ -36,8 +36,10 @@ def _make_channel(sent_id=777):
 
 def _make_dstate(message_id=None, alert_data=None):
     dstate = MagicMock()
-    dstate.get_alert_message_id.return_value = message_id
-    dstate.get_alert_message_data.return_value = alert_data or json.dumps({"pct_change": 3.0})
+    dstate.get_alert_message_id = AsyncMock(return_value=message_id)
+    dstate.get_alert_message_data = AsyncMock(return_value=alert_data or json.dumps({"pct_change": 3.0}))
+    dstate.insert_alert_message_id = AsyncMock()
+    dstate.update_alert_message_data = AsyncMock()
     return dstate
 
 
