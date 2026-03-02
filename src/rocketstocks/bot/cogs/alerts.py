@@ -1,19 +1,24 @@
 import datetime
 import logging
 import asyncio
+import math
 import time
 import traceback as tb
 import numpy as np
+import pandas as pd
 from discord.ext import commands, tasks
 
 from src.rocketstocks.data.stockdata import StockData
-from rocketstocks.data.channel_config import ALERTS, REPORTS
+from rocketstocks.data.channel_config import ALERTS
 from rocketstocks.data.discord_state import DiscordState
 from rocketstocks.core.utils.market import market_utils
 from rocketstocks.core.utils.dates import date_utils
 from rocketstocks.core.notifications.config import NotificationLevel
 from rocketstocks.core.notifications.event import NotificationEvent
 import rocketstocks.core.analysis.indicators as an
+
+from rocketstocks.core.analysis.alert_strategy import evaluate_price_alert
+from rocketstocks.core.analysis.indicators import indicators
 
 from rocketstocks.core.content.models import (
     EarningsMoverData,
@@ -123,6 +128,11 @@ class Alerts(commands.Cog):
                 quotes = quotes | await self.stock_data.schwab.get_quotes(tickers=tickers)
             logger.info(f"Encountered {len(quotes.pop('errors', []))} errors fetching quotes for alert tickers")
 
+            # Fetch all classifications once for the alert loop
+            classifications = await asyncio.to_thread(
+                self.stock_data.ticker_stats.get_all_classifications
+            )
+
             labels = [
                 "send_unusual_volume_movers",
                 "send_volume_spike_movers",
@@ -130,10 +140,14 @@ class Alerts(commands.Cog):
                 "send_watchlist_movers",
             ]
             results = await asyncio.gather(
-                self.send_unusual_volume_movers(quotes=quotes, channels=alert_channels),
-                self.send_volume_spike_movers(quotes=quotes, channels=alert_channels),
-                self.send_earnings_movers(quotes=quotes, channels=alert_channels),
-                self.send_watchlist_movers(quotes=quotes, channels=alert_channels),
+                self.send_unusual_volume_movers(quotes=quotes, channels=alert_channels,
+                                               classifications=classifications),
+                self.send_volume_spike_movers(quotes=quotes, channels=alert_channels,
+                                              classifications=classifications),
+                self.send_earnings_movers(quotes=quotes, channels=alert_channels,
+                                         classifications=classifications),
+                self.send_watchlist_movers(quotes=quotes, channels=alert_channels,
+                                          classifications=classifications),
                 return_exceptions=True,
             )
             for label, result in zip(labels, results):
@@ -170,38 +184,31 @@ class Alerts(commands.Cog):
                 if not popularity.empty:
                     now = date_utils.round_down_nearest_minute(30)
                     popularity_today = popularity[(popularity['datetime'] == now)]
-                    current_rank = popularity_today['rank'].iloc[0] if not popularity_today.empty else 'N/A'
+                    current_rank = popularity_today['rank'].iloc[0] if not popularity_today.empty else None
 
-                    if current_rank != 'N/A':
-                        interval_map = {
-                            "High 1D": 1,
-                            "High 2D": 2,
-                            "High 3D": 3,
-                            "High 4D": 4,
-                            "High 5D": 5,
-                        }
+                    if current_rank is not None:
+                        # Compute rank velocity z-score
+                        rv_zscore = indicators.popularity.rank_velocity_zscore(
+                            popularity_df=popularity,
+                            lookback=30,
+                            velocity_window=5,
+                        )
+                        rv = indicators.popularity.rank_velocity(
+                            popularity_df=popularity,
+                            periods=5,
+                        )
 
-                        for label, interval in interval_map.items():
-                            interval_date = now - datetime.timedelta(days=interval)
-                            interval_popularity = popularity[popularity['datetime'] == interval_date]
-                            if not interval_popularity.empty:
-                                interval_max_rank = interval_popularity['rank'].max()
-                            else:
-                                interval_max_rank = 'N/A'
-
-                            pct_diff = (
-                                abs((float(current_rank) - float(interval_max_rank)) / float(interval_max_rank)) * 100.0
-                                if (current_rank != 'N/A' and interval_max_rank != 'N/A') else 0.0
+                        # Alert when rank velocity z-score indicates unusual acceleration
+                        if not math.isnan(rv_zscore) and abs(rv_zscore) >= 2.0:
+                            alert = await self.build_popularity_mover(
+                                ticker=ticker,
+                                popularity=popularity,
+                                rank_velocity=rv,
+                                rank_velocity_zscore=rv_zscore,
                             )
-                            if (current_rank != 'N/A' and interval_max_rank != 'N/A'
-                                    and pct_diff > 75.0 and current_rank < interval_max_rank
-                                    and interval_max_rank >= 10):
-                                alert = await self.build_popularity_mover(
-                                    ticker=ticker, popularity=popularity
-                                )
-                                view = AlertButtons(ticker=ticker)
-                                for _, channel in self.bot.iter_channels(ALERTS):
-                                    await send_alert(alert, channel, self.dstate, view=view)
+                            view = AlertButtons(ticker=ticker)
+                            for _, channel in self.bot.iter_channels(ALERTS):
+                                await send_alert(alert, channel, self.dstate, view=view)
             except Exception:
                 logger.error(f"[send_popularity_movers] Failed to process ticker '{ticker}'", exc_info=True)
             await asyncio.sleep(0)
@@ -232,8 +239,13 @@ class Alerts(commands.Cog):
     # Alert trigger methods
     # -------------------------------------------------------------------------
 
-    async def send_earnings_movers(self, quotes: dict, channels: list):
-        """Send earnings alerts when a reporting stock moves > ±5%."""
+    async def send_earnings_movers(
+        self,
+        quotes: dict,
+        channels: list,
+        classifications: dict | None = None,
+    ):
+        """Send earnings alerts when a reporting stock moves significantly (z-score based)."""
         logger.info("Processing earnings movers")
         today = datetime.date.today()
         earnings_today = self.stock_data.earnings.get_earnings_on_date(date=today)
@@ -247,15 +259,33 @@ class Alerts(commands.Cog):
         for ticker, quote in quotes.items():
             try:
                 pct_change = quote['quote']['netPercentChange']
-                if abs(pct_change) > 5.0:
+                classification = (classifications or {}).get(ticker, 'standard')
+                daily_price_history = await asyncio.to_thread(
+                    self.stock_data.price_history.fetch_daily_price_history, ticker=ticker
+                )
+                current_volume = quote['quote'].get('totalVolume')
+
+                trigger_result = evaluate_price_alert(
+                    classification=classification,
+                    pct_change=pct_change,
+                    daily_prices=daily_price_history,
+                    current_volume=current_volume,
+                )
+
+                if trigger_result.should_alert:
                     logger.debug(
                         f"Identified ticker '{ticker}' reporting earnings today with percent change "
-                        f"{pct_change:.2f}%"
+                        f"{pct_change:.2f}% (z-score: {trigger_result.zscore:.2f})"
                     )
-                    alert = await self.build_earnings_mover(ticker=ticker, quote=quote,
-                                                            next_earnings_info=earnings_today[
-                                                                earnings_today['ticker'] == ticker
-                                                            ].to_dict(orient='records')[0])
+                    alert = await self.build_earnings_mover(
+                        ticker=ticker,
+                        quote=quote,
+                        next_earnings_info=earnings_today[
+                            earnings_today['ticker'] == ticker
+                        ].to_dict(orient='records')[0],
+                        daily_price_history=daily_price_history,
+                        trigger_result=trigger_result,
+                    )
                     view = AlertButtons(ticker=ticker)
                     for channel in channels:
                         await send_alert(alert, channel, self.dstate, view=view)
@@ -285,8 +315,13 @@ class Alerts(commands.Cog):
                     await send_alert(alert, channel, self.dstate, view=view)
             await asyncio.sleep(1)
 
-    async def send_watchlist_movers(self, quotes: dict, channels: list):
-        """Send watchlist alerts when a watched stock moves > ±10%."""
+    async def send_watchlist_movers(
+        self,
+        quotes: dict,
+        channels: list,
+        classifications: dict | None = None,
+    ):
+        """Send watchlist alerts when a watched stock moves significantly (z-score based)."""
         logger.info("Processing watchlist movers")
 
         all_watchlist_tickers = self.stock_data.watchlists.get_all_watchlist_tickers()
@@ -296,20 +331,43 @@ class Alerts(commands.Cog):
         for ticker, quote in quotes.items():
             try:
                 pct_change = quote['quote']['netPercentChange']
-                if abs(pct_change) > 10.0:
+                classification = (classifications or {}).get(ticker, 'standard')
+                daily_price_history = await asyncio.to_thread(
+                    self.stock_data.price_history.fetch_daily_price_history, ticker=ticker
+                )
+                current_volume = quote['quote'].get('totalVolume')
+
+                trigger_result = evaluate_price_alert(
+                    classification=classification,
+                    pct_change=pct_change,
+                    daily_prices=daily_price_history,
+                    current_volume=current_volume,
+                )
+
+                if trigger_result.should_alert:
                     logger.debug(
                         f"Identified ticker '{ticker}' on watchlist with percent change "
-                        f"{pct_change:.2f}%"
+                        f"{pct_change:.2f}% (z-score: {trigger_result.zscore:.2f})"
                     )
-                    alert = await self.build_watchlist_mover(ticker=ticker, quote=quote)
+                    alert = await self.build_watchlist_mover(
+                        ticker=ticker,
+                        quote=quote,
+                        daily_price_history=daily_price_history,
+                        trigger_result=trigger_result,
+                    )
                     view = AlertButtons(ticker=ticker)
                     for channel in channels:
                         await send_alert(alert, channel, self.dstate, view=view)
             except Exception:
                 logger.error(f"[send_watchlist_movers] Failed to process ticker '{ticker}'", exc_info=True)
 
-    async def send_unusual_volume_movers(self, quotes: dict, channels: list):
-        """Send unusual-volume alerts when RVOL > 25 and % change > ±10%."""
+    async def send_unusual_volume_movers(
+        self,
+        quotes: dict,
+        channels: list,
+        classifications: dict | None = None,
+    ):
+        """Send unusual-volume alerts when z-score thresholds are met."""
         logger.info("Processing unusual volume movers")
 
         for ticker, quote in quotes.items():
@@ -319,24 +377,43 @@ class Alerts(commands.Cog):
                     periods = 10
                     curr_volume = quote['quote']['totalVolume']
                     rvol = an.indicators.volume.rvol(data=daily_price_history, periods=periods,
-                                                      curr_volume=curr_volume)
+                                                     curr_volume=curr_volume)
                     pct_change = quote['quote']['netPercentChange']
+                    classification = (classifications or {}).get(ticker, 'standard')
 
-                    if rvol > 25.0 and abs(pct_change) > 10.0 and rvol is not np.nan:
+                    trigger_result = evaluate_price_alert(
+                        classification=classification,
+                        pct_change=pct_change,
+                        daily_prices=daily_price_history,
+                        current_volume=curr_volume,
+                    )
+
+                    if trigger_result.should_alert and rvol is not np.nan:
                         logger.debug(
                             f"Identified ticker '{ticker}' with RVOL {rvol:.2f}x "
-                            f"and percent change {pct_change:.2f}%"
+                            f"and percent change {pct_change:.2f}% "
+                            f"(z-score: {trigger_result.zscore:.2f})"
                         )
-                        alert = await self.build_volume_mover(ticker=ticker, rvol=rvol, quote=quote,
-                                                              daily_price_history=daily_price_history)
+                        alert = await self.build_volume_mover(
+                            ticker=ticker,
+                            rvol=rvol,
+                            quote=quote,
+                            daily_price_history=daily_price_history,
+                            trigger_result=trigger_result,
+                        )
                         view = AlertButtons(ticker=ticker)
                         for channel in channels:
                             await send_alert(alert, channel, self.dstate, view=view)
             except Exception:
                 logger.error(f"[send_unusual_volume_movers] Failed to process ticker '{ticker}'", exc_info=True)
 
-    async def send_volume_spike_movers(self, quotes: dict, channels: list):
-        """Send volume-spike alerts when RVOL_AT_TIME > 50 and % change > ±10%."""
+    async def send_volume_spike_movers(
+        self,
+        quotes: dict,
+        channels: list,
+        classifications: dict | None = None,
+    ):
+        """Send volume-spike alerts when z-score thresholds are met."""
         logger.info("Processing volume spike movers")
 
         for ticker, quote in quotes.items():
@@ -356,17 +433,35 @@ class Alerts(commands.Cog):
                         data=fivem_price_history, periods=periods
                     )
                     pct_change = quote['quote']['netPercentChange']
+                    classification = (classifications or {}).get(ticker, 'standard')
 
-                    if (rvol_at_time > 50.0 and abs(pct_change) > 10.0
-                            and rvol_at_time is not np.nan and avg_vol_at_time is not np.nan):
+                    # Fetch daily price history for statistical evaluation
+                    daily_price_history = self.stock_data.price_history.fetch_daily_price_history(ticker=ticker)
+                    curr_volume = quote['quote'].get('totalVolume')
+
+                    trigger_result = evaluate_price_alert(
+                        classification=classification,
+                        pct_change=pct_change,
+                        daily_prices=daily_price_history,
+                        current_volume=curr_volume,
+                    )
+
+                    if (trigger_result.should_alert
+                            and rvol_at_time is not np.nan
+                            and avg_vol_at_time is not np.nan):
                         logger.debug(
                             f"Identified ticker '{ticker}' with RVOL at time ({time_val}) "
                             f"{rvol_at_time:.2f}x and percent change "
-                            f"{pct_change:.2f}%"
+                            f"{pct_change:.2f}% (z-score: {trigger_result.zscore:.2f})"
                         )
                         alert = await self.build_volume_spike_alert(
-                            ticker=ticker, quote=quote,
-                            rvol_at_time=rvol_at_time, avg_vol_at_time=avg_vol_at_time, time=time_val
+                            ticker=ticker,
+                            quote=quote,
+                            rvol_at_time=rvol_at_time,
+                            avg_vol_at_time=avg_vol_at_time,
+                            time=time_val,
+                            daily_price_history=daily_price_history,
+                            trigger_result=trigger_result,
                         )
                         view = AlertButtons(ticker=ticker)
                         for channel in channels:
@@ -388,12 +483,16 @@ class Alerts(commands.Cog):
         historical_earnings = kwargs.pop(
             'historical_earnings', self.stock_data.earnings.get_historical_earnings(ticker=ticker)
         )
+        daily_price_history = kwargs.pop('daily_price_history', None)
+        trigger_result = kwargs.pop('trigger_result', None)
         return EarningsMoverAlert(data=EarningsMoverData(
             ticker=ticker,
             ticker_info=self.stock_data.tickers.get_ticker_info(ticker=ticker),
             quote=quote,
             next_earnings_info=next_earnings_info,
             historical_earnings=historical_earnings,
+            daily_price_history=daily_price_history if daily_price_history is not None else pd.DataFrame(),
+            trigger_result=trigger_result,
         ))
 
     async def build_watchlist_mover(self, ticker: str, **kwargs) -> WatchlistMoverAlert:
@@ -409,11 +508,15 @@ class Alerts(commands.Cog):
 
         quote = kwargs.pop('quote', await self.stock_data.schwab.get_quote(ticker=ticker))
         watchlist = kwargs.pop('watchlist', get_ticker_watchlist(ticker=ticker))
+        daily_price_history = kwargs.pop('daily_price_history', None)
+        trigger_result = kwargs.pop('trigger_result', None)
         return WatchlistMoverAlert(data=WatchlistMoverData(
             ticker=ticker,
             ticker_info=self.stock_data.tickers.get_ticker_info(ticker=ticker),
             quote=quote,
             watchlist=watchlist,
+            daily_price_history=daily_price_history if daily_price_history is not None else pd.DataFrame(),
+            trigger_result=trigger_result,
         ))
 
     async def build_volume_mover(self, ticker: str, **kwargs) -> VolumeMoverAlert:
@@ -425,12 +528,14 @@ class Alerts(commands.Cog):
         rvol = kwargs.pop('rvol', an.indicators.volume.rvol(
             data=daily_price_history, curr_volume=quote['quote']['totalVolume']
         ))
+        trigger_result = kwargs.pop('trigger_result', None)
         return VolumeMoverAlert(data=VolumeMoverData(
             ticker=ticker,
             ticker_info=self.stock_data.tickers.get_ticker_info(ticker=ticker),
             quote=quote,
             rvol=rvol,
             daily_price_history=daily_price_history,
+            trigger_result=trigger_result,
         ))
 
     async def build_volume_spike_alert(self, ticker: str, **kwargs) -> VolumeSpikeAlert:
@@ -438,6 +543,8 @@ class Alerts(commands.Cog):
         quote = kwargs.pop('quote', await self.stock_data.schwab.get_quote(ticker=ticker))
         avg_vol_at_time = kwargs.pop('avg_vol_at_time', None)
         time_val = kwargs.pop('time', None)
+        daily_price_history = kwargs.pop('daily_price_history', None)
+        trigger_result = kwargs.pop('trigger_result', None)
         rvol_at_time = kwargs.pop('rvol_at_time', an.indicators.volume.rvol_at_time(
             data=self.stock_data.price_history.fetch_5m_price_history(ticker=ticker),
             today_data=await self.stock_data.schwab.get_5m_price_history(
@@ -460,17 +567,23 @@ class Alerts(commands.Cog):
             rvol_at_time=rvol_at_time,
             avg_vol_at_time=avg_vol_at_time,
             time=time_val,
+            daily_price_history=daily_price_history if daily_price_history is not None else pd.DataFrame(),
+            trigger_result=trigger_result,
         ))
 
     async def build_popularity_mover(self, ticker: str, **kwargs) -> PopularityAlert:
         """Build a PopularityAlert for the given ticker."""
         quote = kwargs.pop('quote', await self.stock_data.schwab.get_quote(ticker=ticker))
         popularity = kwargs.pop('popularity', self.stock_data.popularity.fetch_popularity(ticker=ticker))
+        rank_velocity = kwargs.pop('rank_velocity', 0.0)
+        rank_velocity_zscore = kwargs.pop('rank_velocity_zscore', 0.0)
         return PopularityAlert(data=PopularityAlertData(
             ticker=ticker,
             ticker_info=self.stock_data.tickers.get_ticker_info(ticker=ticker),
             quote=quote,
             popularity=popularity,
+            rank_velocity=rank_velocity,
+            rank_velocity_zscore=rank_velocity_zscore,
         ))
 
 
