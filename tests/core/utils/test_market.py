@@ -33,7 +33,7 @@ def _make_schedule(pre, market_open, market_close, post):
 class TestMarketOpenToday:
     def test_returns_true_when_valid_day(self):
         mu, mock_cal = _make_market_utils()
-        today = datetime.date.today()
+        today = datetime.datetime.now(datetime.UTC).date()
         mock_dates = MagicMock()
         mock_dates.date = [today]
         mock_cal.valid_days.return_value = mock_dates
