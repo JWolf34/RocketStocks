@@ -47,8 +47,6 @@ class Alerts(commands.Cog):
         self.mutils = market_utils()
         self.dstate = DiscordState()
 
-        self.alert_tickers = {}
-
         self.post_alerts_date.start()
         self.send_popularity_movers.start()
         # self.send_politician_trade_alerts.start()  # TODO
@@ -58,87 +56,85 @@ class Alerts(commands.Cog):
     async def on_ready(self):
         logger.info(f"Cog {__name__} loaded!")
 
-    async def update_alert_tickers(self, key: str, tickers: list):
-        """Update tickers to trigger alerts for."""
-        logger.info(f"Updating alert tickers - key: {key}, tickers: {tickers}")
-        self.alert_tickers[key] = tickers
+    # -------------------------------------------------------------------------
+    # Task runner helper
+    # -------------------------------------------------------------------------
+
+    async def _run_task(self, name: str, coro) -> None:
+        """Run *coro*, emit SUCCESS/FAILURE notification. Never re-raises."""
+        _start = time.monotonic()
+        try:
+            await coro
+            self.bot.emitter.emit(NotificationEvent(
+                level=NotificationLevel.SUCCESS,
+                source=__name__,
+                job_name=name,
+                message="Task completed successfully",
+                elapsed_seconds=time.monotonic() - _start,
+            ))
+        except Exception as exc:
+            self.bot.emitter.emit(NotificationEvent(
+                level=NotificationLevel.FAILURE,
+                source=__name__,
+                job_name=name,
+                message=str(exc),
+                traceback=tb.format_exc(),
+                elapsed_seconds=time.monotonic() - _start,
+            ))
+
+    # -------------------------------------------------------------------------
+    # Tasks
+    # -------------------------------------------------------------------------
 
     @tasks.loop(time=datetime.time(hour=6, minute=0, second=0))  # UTC
     async def post_alerts_date(self):
         """Post a date-separator message in all configured alerts channels."""
-        _start = time.monotonic()
-        try:
-            if self.mutils.market_open_today():
-                date_string = date_utils.format_date_mdy(datetime.datetime.today())
-                for _, channel in self.bot.iter_channels(ALERTS):
-                    await channel.send(f"# :rotating_light: Alerts for {date_string} :rotating_light:")
+        await self._run_task("post_alerts_date", self._post_alerts_date_impl())
 
-            self.bot.emitter.emit(NotificationEvent(
-                level=NotificationLevel.SUCCESS,
-                source=__name__,
-                job_name="post_alerts_date",
-                message="Task completed successfully",
-                elapsed_seconds=time.monotonic() - _start,
-            ))
-        except Exception as exc:
-            self.bot.emitter.emit(NotificationEvent(
-                level=NotificationLevel.FAILURE,
-                source=__name__,
-                job_name="post_alerts_date",
-                message=str(exc),
-                traceback=tb.format_exc(),
-                elapsed_seconds=time.monotonic() - _start,
-            ))
-            raise
+    async def _post_alerts_date_impl(self):
+        if self.mutils.market_open_today():
+            date_string = date_utils.format_date_mdy(datetime.datetime.today())
+            for _, channel in self.bot.iter_channels(ALERTS):
+                await channel.send(f"# :rotating_light: Alerts for {date_string} :rotating_light:")
 
     @tasks.loop(minutes=5)
     async def send_alerts(self):
         """Process alerts every 5 minutes if the market is open."""
-        _start = time.monotonic()
-        try:
-            market_period = self.mutils.get_market_period()
-            if self.mutils.market_open_today() and market_period != 'EOD':
-                logger.info("Processing alerts")
+        await self._run_task("send_alerts", self._send_alerts_impl())
 
-                alert_channels = [ch for _, ch in self.bot.iter_channels(ALERTS)]
-                if not alert_channels:
-                    logger.warning("No alerts channels configured — skipping alert processing")
-                else:
-                    self.all_alert_tickers = all_alert_tickers = list(
-                        set([ticker for tickers in self.stock_data.alert_tickers.values() for ticker in tickers])
-                    )
+    async def _send_alerts_impl(self):
+        market_period = self.mutils.get_market_period()
+        if self.mutils.market_open_today() and market_period != 'EOD':
+            logger.info("Processing alerts")
 
-                    quotes = {}
-                    chunk_size = 25
-                    for i in range(0, len(all_alert_tickers), chunk_size):
-                        tickers = all_alert_tickers[i:i + chunk_size]
-                        quotes = quotes | await self.stock_data.schwab.get_quotes(tickers=tickers)
-                    logger.info(f"Encountered {len(quotes.pop('errors', []))} errors fetching quotes for alert tickers")
+            alert_channels = [ch for _, ch in self.bot.iter_channels(ALERTS)]
+            if not alert_channels:
+                logger.warning("No alerts channels configured — skipping alert processing")
+                return
 
-                    await self.send_unusual_volume_movers(quotes=quotes, channels=alert_channels)
-                    await self.send_volume_spike_movers(quotes=quotes, channels=alert_channels)
-                    await self.send_earnings_movers(quotes=quotes, channels=alert_channels)
-                    # await self.send_sec_filing_movers(tickers=all_alert_tickers, quotes=quotes)
-                    await self.send_watchlist_movers(quotes=quotes, channels=alert_channels)
-                    logger.info("Alerts posted")
+            self.all_alert_tickers = all_alert_tickers = list(
+                set([ticker for tickers in self.stock_data.alert_tickers.values() for ticker in tickers])
+            )
 
-            self.bot.emitter.emit(NotificationEvent(
-                level=NotificationLevel.SUCCESS,
-                source=__name__,
-                job_name="send_alerts",
-                message="Task completed successfully",
-                elapsed_seconds=time.monotonic() - _start,
-            ))
-        except Exception as exc:
-            self.bot.emitter.emit(NotificationEvent(
-                level=NotificationLevel.FAILURE,
-                source=__name__,
-                job_name="send_alerts",
-                message=str(exc),
-                traceback=tb.format_exc(),
-                elapsed_seconds=time.monotonic() - _start,
-            ))
-            raise
+            quotes = {}
+            chunk_size = 25
+            for i in range(0, len(all_alert_tickers), chunk_size):
+                tickers = all_alert_tickers[i:i + chunk_size]
+                quotes = quotes | await self.stock_data.schwab.get_quotes(tickers=tickers)
+            logger.info(f"Encountered {len(quotes.pop('errors', []))} errors fetching quotes for alert tickers")
+
+            for fn, label in [
+                (self.send_unusual_volume_movers(quotes=quotes, channels=alert_channels), "send_unusual_volume_movers"),
+                (self.send_volume_spike_movers(quotes=quotes, channels=alert_channels), "send_volume_spike_movers"),
+                (self.send_earnings_movers(quotes=quotes, channels=alert_channels), "send_earnings_movers"),
+                (self.send_watchlist_movers(quotes=quotes, channels=alert_channels), "send_watchlist_movers"),
+            ]:
+                try:
+                    await fn
+                except Exception as exc:
+                    logger.error(f"[send_alerts] {label} failed: {exc}", exc_info=True)
+
+            logger.info("Alerts posted")
 
     @send_alerts.before_loop
     async def send_alerts_before_loop(self):
@@ -146,150 +142,19 @@ class Alerts(commands.Cog):
         DELTA = 30
         await asyncio.sleep(date_utils.seconds_until_minute_interval(5) + DELTA)
 
-    # -------------------------------------------------------------------------
-    # Alert trigger methods
-    # -------------------------------------------------------------------------
-
-    async def send_earnings_movers(self, quotes: dict, channels: list):
-        """Send earnings alerts when a reporting stock moves > ±5%."""
-        logger.info("Processing earnings movers")
-        today = datetime.date.today()
-        earnings_today = self.stock_data.earnings.get_earnings_on_date(date=today)
-
-        if earnings_today.empty:
-            return
-
-        quotes = {ticker: quote for ticker, quote in quotes.items()
-                  if ticker in earnings_today['ticker'].to_list()}
-
-        for ticker, quote in quotes.items():
-            pct_change = quote['quote']['netPercentChange']
-            if abs(pct_change) > 5.0:
-                logger.debug(
-                    f"Identified ticker '{ticker}' reporting earnings today with percent change "
-                    f"{pct_change:.2f}%"
-                )
-                alert = await self.build_earnings_mover(ticker=ticker, quote=quote,
-                                                        next_earnings_info=earnings_today[
-                                                            earnings_today['ticker'] == ticker
-                                                        ].to_dict(orient='records')[0])
-                view = AlertButtons(ticker=ticker)
-                for channel in channels:
-                    await send_alert(alert, channel, self.dstate, view=view)
-
-    async def send_sec_filing_movers(self, gainers, quotes: dict, channels: list):
-        logger.info("Processing SEC filing movers")
-        for index, row in gainers.iterrows():
-            ticker = row['Ticker']
-            filings = self.bot.sec.get_filings_from_today(ticker)
-            pct_change = quotes[ticker]['quote']['netPercentChange']
-            if filings.size > 0 and abs(pct_change) > 10.0:
-                logger.debug(
-                    f"Identified ticker '{ticker}' with SEC filings today and percent change "
-                    f"{pct_change:.2f}%"
-                )
-                recent_sec_filings = self.stock_data.sec.get_recent_filings(ticker=ticker)
-                alert = SECFilingMoverAlert(data=SECFilingData(
-                    ticker=ticker,
-                    ticker_info=self.stock_data.tickers.get_ticker_info(ticker=ticker),
-                    quote=quotes[ticker],
-                    recent_sec_filings=recent_sec_filings,
-                ))
-                view = AlertButtons(ticker=ticker)
-                for channel in channels:
-                    await send_alert(alert, channel, self.dstate, view=view)
-            await asyncio.sleep(1)
-
-    async def send_watchlist_movers(self, quotes: dict, channels: list):
-        """Send watchlist alerts when a watched stock moves > ±10%."""
-        logger.info("Processing watchlist movers")
-
-        all_watchlist_tickers = self.stock_data.watchlists.get_all_watchlist_tickers()
-        quotes = {ticker: quote for ticker, quote in quotes.items()
-                  if ticker in all_watchlist_tickers}
-
-        for ticker, quote in quotes.items():
-            pct_change = quote['quote']['netPercentChange']
-            if abs(pct_change) > 10.0:
-                logger.debug(
-                    f"Identified ticker '{ticker}' on watchlist with percent change "
-                    f"{pct_change:.2f}%"
-                )
-                alert = await self.build_watchlist_mover(ticker=ticker)
-                view = AlertButtons(ticker=ticker)
-                for channel in channels:
-                    await send_alert(alert, channel, self.dstate, view=view)
-
-    async def send_unusual_volume_movers(self, quotes: dict, channels: list):
-        """Send unusual-volume alerts when RVOL > 25 and % change > ±10%."""
-        logger.info("Processing unusual volume movers")
-
-        for ticker, quote in quotes.items():
-            daily_price_history = self.stock_data.price_history.fetch_daily_price_history(ticker=ticker)
-            if not daily_price_history.empty:
-                periods = 10
-                curr_volume = quote['quote']['totalVolume']
-                rvol = an.indicators.volume.rvol(data=daily_price_history, periods=periods,
-                                                  curr_volume=curr_volume)
-                pct_change = quote['quote']['netPercentChange']
-
-                if rvol > 25.0 and abs(pct_change) > 10.0 and rvol is not np.nan:
-                    logger.debug(
-                        f"Identified ticker '{ticker}' with RVOL {rvol:.2f}x "
-                        f"and percent change {pct_change:.2f}%"
-                    )
-                    alert = await self.build_volume_mover(ticker=ticker, rvol=rvol, quote=quote,
-                                                          daily_price_history=daily_price_history)
-                    view = AlertButtons(ticker=ticker)
-                    for channel in channels:
-                        await send_alert(alert, channel, self.dstate, view=view)
-
-    async def send_volume_spike_movers(self, quotes: dict, channels: list):
-        """Send volume-spike alerts when RVOL_AT_TIME > 50 and % change > ±10%."""
-        logger.info("Processing volume spike movers")
-
-        for ticker, quote in quotes.items():
-            now = datetime.datetime.now()
-            fivem_price_history = self.stock_data.price_history.fetch_5m_price_history(ticker=ticker)
-
-            if not fivem_price_history.empty:
-                periods = 10
-                today_data = await self.stock_data.schwab.get_5m_price_history(
-                    ticker=ticker, start_datetime=now
-                )
-                rvol_at_time = an.indicators.volume.rvol_at_time(
-                    data=fivem_price_history, today_data=today_data, periods=periods, dt=now
-                )
-                avg_vol_at_time, time_val = an.indicators.volume.avg_vol_at_time(
-                    data=fivem_price_history, periods=periods
-                )
-                pct_change = quote['quote']['netPercentChange']
-
-                if (rvol_at_time > 50.0 and abs(pct_change) > 10.0
-                        and rvol_at_time is not np.nan and avg_vol_at_time is not np.nan):
-                    logger.debug(
-                        f"Identified ticker '{ticker}' with RVOL at time ({time_val}) "
-                        f"{rvol_at_time:.2f}x and percent change "
-                        f"{pct_change:.2f}%"
-                    )
-                    alert = await self.build_volume_spike_alert(
-                        ticker=ticker, quote=quote,
-                        rvol_at_time=rvol_at_time, avg_vol_at_time=avg_vol_at_time, time=time_val
-                    )
-                    view = AlertButtons(ticker=ticker)
-                    for channel in channels:
-                        await send_alert(alert, channel, self.dstate, view=view)
-                    await asyncio.sleep(1)
-
     @tasks.loop(minutes=30)
     async def send_popularity_movers(self):
-        _start = time.monotonic()
-        try:
-            logger.info("Processing popularity movers")
+        await self._run_task("send_popularity_movers", self._send_popularity_movers_impl())
 
-            pop_stocks = self.stock_data.popularity.get_popular_stocks(num_stocks=100)['ticker'].to_list()
+    async def _send_popularity_movers_impl(self):
+        if not self.mutils.market_open_today():
+            return
+        logger.info("Processing popularity movers")
 
-            for ticker in pop_stocks:
+        pop_stocks = self.stock_data.popularity.get_popular_stocks(num_stocks=100)['ticker'].to_list()
+
+        for ticker in pop_stocks:
+            try:
                 popularity = self.stock_data.popularity.fetch_popularity(ticker=ticker)
                 if not popularity.empty:
                     now = date_utils.round_down_nearest_minute(30)
@@ -326,63 +191,177 @@ class Alerts(commands.Cog):
                                 view = AlertButtons(ticker=ticker)
                                 for _, channel in self.bot.iter_channels(ALERTS):
                                     await send_alert(alert, channel, self.dstate, view=view)
-
-            self.bot.emitter.emit(NotificationEvent(
-                level=NotificationLevel.SUCCESS,
-                source=__name__,
-                job_name="send_popularity_movers",
-                message="Task completed successfully",
-                elapsed_seconds=time.monotonic() - _start,
-            ))
-        except Exception as exc:
-            self.bot.emitter.emit(NotificationEvent(
-                level=NotificationLevel.FAILURE,
-                source=__name__,
-                job_name="send_popularity_movers",
-                message=str(exc),
-                traceback=tb.format_exc(),
-                elapsed_seconds=time.monotonic() - _start,
-            ))
-            raise
+            except Exception:
+                logger.error(f"[send_popularity_movers] Failed to process ticker '{ticker}'", exc_info=True)
 
     @tasks.loop(hours=1)
     async def send_politician_trade_alerts(self):
-        _start = time.monotonic()
-        try:
-            politician = self.stock_data.capitol_trades.politician(name='Nancy Pelosi')
-            trades = self.stock_data.capitol_trades.trades(pid=politician['politician_id'])
-            today = date_utils.format_date_mdy(datetime.date.today())
-            todays_trades = trades[trades['Published Date'].apply(lambda x: x == today)]
-            if not todays_trades.empty:
-                alert = PoliticianTradeAlert(data=PoliticianTradeAlertData(
-                    politician=politician,
-                    trades=todays_trades,
-                ))
-                view = PoliticianTradeButtons(politician=politician)
-                for _, channel in self.bot.iter_channels(ALERTS):
-                    await send_alert(alert, channel, self.dstate, view=view)
+        await self._run_task("send_politician_trade_alerts", self._send_politician_trade_alerts_impl())
 
-            self.bot.emitter.emit(NotificationEvent(
-                level=NotificationLevel.SUCCESS,
-                source=__name__,
-                job_name="send_politician_trade_alerts",
-                message="Task completed successfully",
-                elapsed_seconds=time.monotonic() - _start,
+    async def _send_politician_trade_alerts_impl(self):
+        politician = self.stock_data.capitol_trades.politician(name='Nancy Pelosi')
+        trades = self.stock_data.capitol_trades.trades(pid=politician['politician_id'])
+        today = date_utils.format_date_mdy(datetime.date.today())
+        todays_trades = trades[trades['Published Date'].apply(lambda x: x == today)]
+        if not todays_trades.empty:
+            alert = PoliticianTradeAlert(data=PoliticianTradeAlertData(
+                politician=politician,
+                trades=todays_trades,
             ))
-        except Exception as exc:
-            self.bot.emitter.emit(NotificationEvent(
-                level=NotificationLevel.FAILURE,
-                source=__name__,
-                job_name="send_politician_trade_alerts",
-                message=str(exc),
-                traceback=tb.format_exc(),
-                elapsed_seconds=time.monotonic() - _start,
-            ))
-            raise
+            view = PoliticianTradeButtons(politician=politician)
+            for _, channel in self.bot.iter_channels(ALERTS):
+                await send_alert(alert, channel, self.dstate, view=view)
 
     @send_politician_trade_alerts.before_loop
     async def sleep_until_5m_interval(self):
         await asyncio.sleep(date_utils.seconds_until_minute_interval(5))
+
+    # -------------------------------------------------------------------------
+    # Alert trigger methods
+    # -------------------------------------------------------------------------
+
+    async def send_earnings_movers(self, quotes: dict, channels: list):
+        """Send earnings alerts when a reporting stock moves > ±5%."""
+        logger.info("Processing earnings movers")
+        today = datetime.date.today()
+        earnings_today = self.stock_data.earnings.get_earnings_on_date(date=today)
+
+        if earnings_today.empty:
+            return
+
+        quotes = {ticker: quote for ticker, quote in quotes.items()
+                  if ticker in earnings_today['ticker'].to_list()}
+
+        for ticker, quote in quotes.items():
+            try:
+                pct_change = quote['quote']['netPercentChange']
+                if abs(pct_change) > 5.0:
+                    logger.debug(
+                        f"Identified ticker '{ticker}' reporting earnings today with percent change "
+                        f"{pct_change:.2f}%"
+                    )
+                    alert = await self.build_earnings_mover(ticker=ticker, quote=quote,
+                                                            next_earnings_info=earnings_today[
+                                                                earnings_today['ticker'] == ticker
+                                                            ].to_dict(orient='records')[0])
+                    view = AlertButtons(ticker=ticker)
+                    for channel in channels:
+                        await send_alert(alert, channel, self.dstate, view=view)
+            except Exception:
+                logger.error(f"[send_earnings_movers] Failed to process ticker '{ticker}'", exc_info=True)
+
+    async def send_sec_filing_movers(self, gainers, quotes: dict, channels: list):
+        logger.info("Processing SEC filing movers")
+        for index, row in gainers.iterrows():
+            ticker = row['Ticker']
+            filings = self.bot.sec.get_filings_from_today(ticker)
+            pct_change = quotes[ticker]['quote']['netPercentChange']
+            if filings.size > 0 and abs(pct_change) > 10.0:
+                logger.debug(
+                    f"Identified ticker '{ticker}' with SEC filings today and percent change "
+                    f"{pct_change:.2f}%"
+                )
+                recent_sec_filings = self.stock_data.sec.get_recent_filings(ticker=ticker)
+                alert = SECFilingMoverAlert(data=SECFilingData(
+                    ticker=ticker,
+                    ticker_info=self.stock_data.tickers.get_ticker_info(ticker=ticker),
+                    quote=quotes[ticker],
+                    recent_sec_filings=recent_sec_filings,
+                ))
+                view = AlertButtons(ticker=ticker)
+                for channel in channels:
+                    await send_alert(alert, channel, self.dstate, view=view)
+            await asyncio.sleep(1)
+
+    async def send_watchlist_movers(self, quotes: dict, channels: list):
+        """Send watchlist alerts when a watched stock moves > ±10%."""
+        logger.info("Processing watchlist movers")
+
+        all_watchlist_tickers = self.stock_data.watchlists.get_all_watchlist_tickers()
+        quotes = {ticker: quote for ticker, quote in quotes.items()
+                  if ticker in all_watchlist_tickers}
+
+        for ticker, quote in quotes.items():
+            try:
+                pct_change = quote['quote']['netPercentChange']
+                if abs(pct_change) > 10.0:
+                    logger.debug(
+                        f"Identified ticker '{ticker}' on watchlist with percent change "
+                        f"{pct_change:.2f}%"
+                    )
+                    alert = await self.build_watchlist_mover(ticker=ticker, quote=quote)
+                    view = AlertButtons(ticker=ticker)
+                    for channel in channels:
+                        await send_alert(alert, channel, self.dstate, view=view)
+            except Exception:
+                logger.error(f"[send_watchlist_movers] Failed to process ticker '{ticker}'", exc_info=True)
+
+    async def send_unusual_volume_movers(self, quotes: dict, channels: list):
+        """Send unusual-volume alerts when RVOL > 25 and % change > ±10%."""
+        logger.info("Processing unusual volume movers")
+
+        for ticker, quote in quotes.items():
+            try:
+                daily_price_history = self.stock_data.price_history.fetch_daily_price_history(ticker=ticker)
+                if not daily_price_history.empty:
+                    periods = 10
+                    curr_volume = quote['quote']['totalVolume']
+                    rvol = an.indicators.volume.rvol(data=daily_price_history, periods=periods,
+                                                      curr_volume=curr_volume)
+                    pct_change = quote['quote']['netPercentChange']
+
+                    if rvol > 25.0 and abs(pct_change) > 10.0 and rvol is not np.nan:
+                        logger.debug(
+                            f"Identified ticker '{ticker}' with RVOL {rvol:.2f}x "
+                            f"and percent change {pct_change:.2f}%"
+                        )
+                        alert = await self.build_volume_mover(ticker=ticker, rvol=rvol, quote=quote,
+                                                              daily_price_history=daily_price_history)
+                        view = AlertButtons(ticker=ticker)
+                        for channel in channels:
+                            await send_alert(alert, channel, self.dstate, view=view)
+            except Exception:
+                logger.error(f"[send_unusual_volume_movers] Failed to process ticker '{ticker}'", exc_info=True)
+
+    async def send_volume_spike_movers(self, quotes: dict, channels: list):
+        """Send volume-spike alerts when RVOL_AT_TIME > 50 and % change > ±10%."""
+        logger.info("Processing volume spike movers")
+
+        for ticker, quote in quotes.items():
+            try:
+                now = datetime.datetime.now()
+                fivem_price_history = self.stock_data.price_history.fetch_5m_price_history(ticker=ticker)
+
+                if not fivem_price_history.empty:
+                    periods = 10
+                    today_data = await self.stock_data.schwab.get_5m_price_history(
+                        ticker=ticker, start_datetime=now
+                    )
+                    rvol_at_time = an.indicators.volume.rvol_at_time(
+                        data=fivem_price_history, today_data=today_data, periods=periods, dt=now
+                    )
+                    avg_vol_at_time, time_val = an.indicators.volume.avg_vol_at_time(
+                        data=fivem_price_history, periods=periods
+                    )
+                    pct_change = quote['quote']['netPercentChange']
+
+                    if (rvol_at_time > 50.0 and abs(pct_change) > 10.0
+                            and rvol_at_time is not np.nan and avg_vol_at_time is not np.nan):
+                        logger.debug(
+                            f"Identified ticker '{ticker}' with RVOL at time ({time_val}) "
+                            f"{rvol_at_time:.2f}x and percent change "
+                            f"{pct_change:.2f}%"
+                        )
+                        alert = await self.build_volume_spike_alert(
+                            ticker=ticker, quote=quote,
+                            rvol_at_time=rvol_at_time, avg_vol_at_time=avg_vol_at_time, time=time_val
+                        )
+                        view = AlertButtons(ticker=ticker)
+                        for channel in channels:
+                            await send_alert(alert, channel, self.dstate, view=view)
+                        await asyncio.sleep(1)
+            except Exception:
+                logger.error(f"[send_volume_spike_movers] Failed to process ticker '{ticker}'", exc_info=True)
 
     # -------------------------------------------------------------------------
     # Builder methods
@@ -416,7 +395,7 @@ class Alerts(commands.Cog):
                 if ticker in watchlist_tickers:
                     return watchlist_id
 
-        quote = kwargs.pop('quote', self.stock_data.schwab.get_quote(ticker=ticker))
+        quote = kwargs.pop('quote', await self.stock_data.schwab.get_quote(ticker=ticker))
         watchlist = kwargs.pop('watchlist', get_ticker_watchlist(ticker=ticker))
         return WatchlistMoverAlert(data=WatchlistMoverData(
             ticker=ticker,
