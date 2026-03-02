@@ -1,8 +1,5 @@
 """Repository for the ticker_stats table."""
 import logging
-from contextlib import contextmanager
-
-import psycopg2.extras
 
 logger = logging.getLogger(__name__)
 
