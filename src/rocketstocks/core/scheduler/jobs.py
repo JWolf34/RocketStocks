@@ -1,4 +1,3 @@
-import asyncio
 import logging
 import datetime
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
@@ -80,24 +79,12 @@ def register_jobs(aio_sched: AsyncIOScheduler, stock_data: StockData, emitter: E
     check_schwab_token_expiry_trigger = CronTrigger(hour="*/6", minute=0, timezone=timezone, start_date=datetime.datetime(2000, 1, 1, 6, 0, 0))
 
     # Jobs — each wrapped with emitter.job_wrapper for notification on success/failure
-    aio_sched.add_job(emitter.job_wrapper("Update tickers data in DB", stock_data.tickers.update_tickers), trigger=update_tickers_trigger, name="Update tickers data in DB", timezone=timezone, replace_existing=True)
-    aio_sched.add_job(emitter.job_wrapper("Insert new tickers into DB", stock_data.tickers.insert_tickers), trigger=insert_new_tickers_trigger, name="Insert new tickers into DB", timezone=timezone, replace_existing=True)
-    aio_sched.add_job(emitter.job_wrapper("Update upcoming earnings", stock_data.earnings.update_upcoming_earnings), trigger=update_upcoming_earnings_trigger, name="Update upcoming earnings", timezone=timezone, replace_existing=True)
-    aio_sched.add_job(emitter.job_wrapper("Remove past earnings", stock_data.earnings.remove_past_earnings), trigger=remove_past_earnings_trigger, name="Remove past earnings", timezone=timezone, replace_existing=True)
-    aio_sched.add_job(emitter.job_wrapper("Update historical earnings", stock_data.earnings.update_historical_earnings), trigger=update_historical_earnings_trigger, name="Update historical earnings", timezone=timezone, replace_existing=True)
-    aio_sched.add_job(emitter.job_wrapper("Update daily price history (daily)", _update_daily), trigger=update_daily_data_daily_trigger, name="Update daily price history (daily)", timezone=timezone, replace_existing=True)
-    aio_sched.add_job(emitter.job_wrapper("Update 5m price history (daily)", _update_5m), trigger=update_5m_data_daily_trigger, name="Update 5m price history (daily)", timezone=timezone, replace_existing=True)
-    aio_sched.add_job(emitter.job_wrapper("Update politicians", stock_data.capitol_trades.update_politicians), trigger=update_politicians_trigger, name="Update politicians", timezone=timezone, replace_existing=True)
-    aio_sched.add_job(_check_schwab_token_expiry, trigger=check_schwab_token_expiry_trigger, name="Check Schwab token expiry", timezone=timezone, replace_existing=True)
-
-
-def scheduler(stock_data: StockData, emitter: EventEmitter):
-    async def async_scheduler(stock_data: StockData, emitter: EventEmitter):
-        aio_sched = AsyncIOScheduler()
-        register_jobs(aio_sched, stock_data, emitter)
-        aio_sched.start()
-
-        while True:
-            await asyncio.sleep(1000)
-
-    asyncio.run(async_scheduler(stock_data, emitter))
+    aio_sched.add_job(emitter.job_wrapper("Update tickers data in DB", stock_data.tickers.update_tickers), trigger=update_tickers_trigger, name="Update tickers data in DB", timezone=timezone, replace_existing=True, misfire_grace_time=600)
+    aio_sched.add_job(emitter.job_wrapper("Insert new tickers into DB", stock_data.tickers.insert_tickers), trigger=insert_new_tickers_trigger, name="Insert new tickers into DB", timezone=timezone, replace_existing=True, misfire_grace_time=600)
+    aio_sched.add_job(emitter.job_wrapper("Update upcoming earnings", stock_data.earnings.update_upcoming_earnings), trigger=update_upcoming_earnings_trigger, name="Update upcoming earnings", timezone=timezone, replace_existing=True, misfire_grace_time=600)
+    aio_sched.add_job(emitter.job_wrapper("Remove past earnings", stock_data.earnings.remove_past_earnings), trigger=remove_past_earnings_trigger, name="Remove past earnings", timezone=timezone, replace_existing=True, misfire_grace_time=600)
+    aio_sched.add_job(emitter.job_wrapper("Update historical earnings", stock_data.earnings.update_historical_earnings), trigger=update_historical_earnings_trigger, name="Update historical earnings", timezone=timezone, replace_existing=True, misfire_grace_time=600)
+    aio_sched.add_job(emitter.job_wrapper("Update daily price history (daily)", _update_daily), trigger=update_daily_data_daily_trigger, name="Update daily price history (daily)", timezone=timezone, replace_existing=True, misfire_grace_time=600)
+    aio_sched.add_job(emitter.job_wrapper("Update 5m price history (daily)", _update_5m), trigger=update_5m_data_daily_trigger, name="Update 5m price history (daily)", timezone=timezone, replace_existing=True, misfire_grace_time=600)
+    aio_sched.add_job(emitter.job_wrapper("Update politicians", stock_data.capitol_trades.update_politicians), trigger=update_politicians_trigger, name="Update politicians", timezone=timezone, replace_existing=True, misfire_grace_time=600)
+    aio_sched.add_job(_check_schwab_token_expiry, trigger=check_schwab_token_expiry_trigger, name="Check Schwab token expiry", timezone=timezone, replace_existing=True, misfire_grace_time=60)

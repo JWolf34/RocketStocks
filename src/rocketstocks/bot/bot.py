@@ -3,12 +3,14 @@ import pathlib
 import logging
 import discord
 from discord.ext import commands
+from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from rocketstocks.data.stockdata import StockData
 from rocketstocks.data.channel_config import REPORTS, ALERTS, SCREENERS, CHARTS, NOTIFICATIONS
 from rocketstocks.data.schema import create_tables
 from rocketstocks.core.config.secrets import secrets
 from rocketstocks.core.config.paths import validate_path, datapaths
 from rocketstocks.core.notifications import EventEmitter, NotificationConfig
+from rocketstocks.core.scheduler.jobs import register_jobs
 
 logger = logging.getLogger(__name__)
 
@@ -27,6 +29,7 @@ class RocketStocksBot(commands.Bot):
     stock_data: StockData
     emitter: EventEmitter
     notification_config: NotificationConfig
+    aio_sched: AsyncIOScheduler
 
     def get_channel_for_guild(self, guild_id: int, config_type: str) -> discord.TextChannel | None:
         """Return the configured TextChannel for (guild_id, config_type), or None."""
@@ -46,6 +49,13 @@ class RocketStocksBot(commands.Bot):
                 yield guild_id, channel
             else:
                 logger.warning(f"Skipping guild={guild_id} type={config_type}: channel {channel_id} not in cache")
+
+    async def setup_hook(self) -> None:
+        """Start APScheduler in the bot's event loop (called once before connecting)."""
+        self.aio_sched = AsyncIOScheduler()
+        register_jobs(self.aio_sched, self.stock_data, self.emitter)
+        self.aio_sched.start()
+        logger.info("APScheduler started via setup_hook")
 
 
 def create_bot() -> RocketStocksBot:
