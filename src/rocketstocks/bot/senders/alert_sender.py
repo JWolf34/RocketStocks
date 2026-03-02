@@ -20,6 +20,7 @@ async def send_alert(
     If the alert was already posted today:
       - Calls alert.override_and_edit(prev_data) to decide whether to post an update.
       - If update warranted: sends a new message linking back to the previous one.
+        Records a momentum snapshot in alert_data before persisting.
     If not yet posted:
       - Sends a new message and records the message ID in the database.
 
@@ -57,6 +58,9 @@ async def send_alert(
 
             embed.description = (embed.description or "") + f"\n{update_link}"
             sent = await channel.send(embed=embed, view=view)
+
+            # Record momentum snapshot before persisting
+            alert.record_momentum(prev_alert_data=prev_alert_data)
 
             await dstate.update_alert_message_data(
                 date=today,
