@@ -104,6 +104,23 @@ CREATE TABLE IF NOT EXISTS channel_config (
     channel_id  BIGINT      NOT NULL,
     PRIMARY KEY (guild_id, config_type)
 );
+
+CREATE TABLE IF NOT EXISTS ticker_stats (
+    ticker          varchar(8) PRIMARY KEY,
+    market_cap      bigint,
+    classification  varchar(16) NOT NULL DEFAULT 'standard',
+    volatility_20d  float,
+    mean_return_20d float,
+    std_return_20d  float,
+    mean_return_60d float,
+    std_return_60d  float,
+    avg_rvol_20d    float,
+    std_rvol_20d    float,
+    bb_upper        float,
+    bb_lower        float,
+    bb_mid          float,
+    updated_at      timestamp DEFAULT CURRENT_TIMESTAMP
+);
 """
 
 _DROP_ALL_SCRIPT = """
@@ -118,6 +135,7 @@ DROP TABLE IF EXISTS upcoming_earnings;
 DROP TABLE IF EXISTS watchlists;
 DROP TABLE IF EXISTS ct_politicians;
 DROP TABLE IF EXISTS channel_config;
+DROP TABLE IF EXISTS ticker_stats;
 """
 
 
