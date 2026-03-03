@@ -11,7 +11,7 @@ dependencies = [
     "discord.py",
     "pandas-datareader",
     "yfinance",
-    "pandas-ta @ https://www.pandas-ta.dev/assets/zip/pandas_ta-0.4.25b0.tar.gz",
+    "pandas-ta @ https://www.pandas-ta.dev/assets/zip/pandas_ta-0.3.14b.tar.gz",
     "mplfinance",
     "Backtesting",
     "tradingview_screener",
