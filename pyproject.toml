@@ -11,7 +11,7 @@ dependencies = [
     "discord.py",
     "pandas-datareader",
     "yfinance",
-    "pandas-ta-classic",
+    "pandas-ta",
     "mplfinance",
     "Backtesting",
     "tradingview_screener",
@@ -22,7 +22,7 @@ dependencies = [
     "pandas_market_calendars",
     "schwab-py",
     "beautifulsoup4",
-    "numpy>=1.26.4",
+    "numpy>=1.26.4,<2.0",
     "python-dotenv",
 ]
 
