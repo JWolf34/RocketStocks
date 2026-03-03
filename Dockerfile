@@ -1,10 +1,13 @@
-FROM python:3.13
+FROM python:3.13-slim
 
 WORKDIR /RocketStocks
 
-COPY requirements.txt pyproject.toml ./
-RUN pip install -r requirements.txt && pip install -e .
+# Install dependencies first for better layer caching
+COPY pyproject.toml ./
+COPY src/ src/
+RUN pip install --no-cache-dir .
 
+# Copy remaining project files
 COPY . .
 
-CMD ["python3", "-m", "rocketstocks"]
+CMD ["python", "-m", "rocketstocks"]
