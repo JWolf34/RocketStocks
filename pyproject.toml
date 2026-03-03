@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "rocketstocks"
 version = "0.5.0"
-requires-python = ">=3.13"
+requires-python = ">=3.12"
 dependencies = [
     "APScheduler",
     "discord.py",
