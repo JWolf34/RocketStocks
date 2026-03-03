@@ -5,7 +5,7 @@ WORKDIR /RocketStocks
 # Install dependencies first for better layer caching
 COPY pyproject.toml ./
 COPY src/ src/
-RUN pip install --no-cache-dir setuptools && pip install --no-cache-dir .
+RUN pip install --no-cache-dir .
 
 # Copy remaining project files
 COPY . .

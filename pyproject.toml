@@ -24,6 +24,7 @@ dependencies = [
     "beautifulsoup4",
     "numpy>=1.26.4,<2.0",
     "python-dotenv",
+    "setuptools",
 ]
 
 [project.optional-dependencies]
