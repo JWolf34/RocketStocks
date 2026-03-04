@@ -4,17 +4,52 @@ import logging
 logger = logging.getLogger(__name__)
 
 
+class WatchlistSelect(discord.ui.View):
+    """Ephemeral dropdown for adding a ticker to a watchlist."""
+
+    def __init__(self, ticker: str, watchlists: list[str]):
+        super().__init__(timeout=60)
+        self.ticker = ticker
+        options = [
+            discord.SelectOption(label="Personal" if wl == "personal" else wl, value=wl)
+            for wl in watchlists
+        ]
+        select = discord.ui.Select(placeholder="Choose a watchlist...", options=options)
+        select.callback = self._select_callback
+        self.add_item(select)
+
+    async def _select_callback(self, interaction: discord.Interaction):
+        selected = interaction.data["values"][0]
+        watchlist_id = str(interaction.user.id) if selected == "personal" else selected
+        watchlists = interaction.client.stock_data.watchlists
+        try:
+            if not watchlists.validate_watchlist(watchlist_id):
+                watchlists.create_watchlist(watchlist_id=watchlist_id, tickers=[], systemGenerated=False)
+            current_tickers = watchlists.get_watchlist_tickers(watchlist_id) or []
+            if self.ticker in current_tickers:
+                await interaction.response.send_message(
+                    f"**{self.ticker}** is already on the *{selected}* watchlist.", ephemeral=True
+                )
+                return
+            merged = sorted(set(current_tickers + [self.ticker]))
+            watchlists.update_watchlist(watchlist_id=watchlist_id, tickers=merged)
+            await interaction.response.send_message(
+                f"Added **{self.ticker}** to the *{selected}* watchlist! ({len(merged)} tickers total)",
+                ephemeral=True,
+            )
+        except Exception:
+            logger.exception("Error adding ticker to watchlist")
+            await interaction.response.send_message(
+                "An error occurred while updating the watchlist.", ephemeral=True
+            )
+
+
 class AlertButtons(discord.ui.View):
     """Standard URL buttons shown on most alert messages."""
 
     def __init__(self, ticker: str):
         super().__init__(timeout=None)
         self.ticker = ticker
-        self.add_item(discord.ui.Button(
-            label="Google it",
-            style=discord.ButtonStyle.url,
-            url=f"https://www.google.com/search?q={ticker}",
-        ))
         self.add_item(discord.ui.Button(
             label="StockInvest",
             style=discord.ButtonStyle.url,
@@ -30,6 +65,38 @@ class AlertButtons(discord.ui.View):
             style=discord.ButtonStyle.url,
             url=f"https://finance.yahoo.com/quote/{ticker}",
         ))
+
+    @discord.ui.button(label="Add to Watchlist", style=discord.ButtonStyle.success)
+    async def add_to_watchlist(self, interaction: discord.Interaction, button: discord.ui.Button):
+        try:
+            watchlists = interaction.client.stock_data.watchlists.get_watchlists()
+            view = WatchlistSelect(ticker=self.ticker, watchlists=watchlists)
+            await interaction.response.send_message(
+                f"Choose a watchlist to add **{self.ticker}** to:", view=view, ephemeral=True
+            )
+        except Exception:
+            logger.exception("Error fetching watchlists")
+            await interaction.response.send_message(
+                "An error occurred while fetching watchlists.", ephemeral=True
+            )
+
+    @discord.ui.button(label="Generate Report", style=discord.ButtonStyle.primary)
+    async def generate_report(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.defer(ephemeral=True)
+        try:
+            reports_cog = interaction.client.get_cog("Reports")
+            if reports_cog is None:
+                await interaction.followup.send("Reports cog is not available.", ephemeral=True)
+                return
+            from rocketstocks.bot.senders.embed_utils import spec_to_embed
+            content = await reports_cog.build_stock_report(self.ticker)
+            embed = spec_to_embed(content.build())
+            await interaction.followup.send(embed=embed, ephemeral=True)
+        except Exception:
+            logger.exception("Error generating stock report")
+            await interaction.followup.send(
+                "An error occurred while generating the report.", ephemeral=True
+            )
 
 
 class PoliticianTradeButtons(discord.ui.View):
