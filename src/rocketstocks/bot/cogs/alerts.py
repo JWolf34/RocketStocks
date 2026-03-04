@@ -347,7 +347,7 @@ class Alerts(commands.Cog):
                         daily_price_history=daily_price_history,
                         trigger_result=trigger_result,
                     )
-                    view = AlertButtons(ticker=ticker)
+                    view = PopularitySurgeAlertButtons(ticker=ticker)
                     for channel in channels:
                         await send_alert(alert, channel, self.dstate, view=view)
 
