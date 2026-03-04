@@ -83,6 +83,24 @@ class Watchlists(object):
         logger.debug(f"Deleting watchlist '{watchlist_id}'...")
         self.db.delete(table=self.db_table, where_conditions=[('id', watchlist_id)])
 
+    # Rename watchlist from old_id to new_id
+    def rename_watchlist(self, old_id: str, new_id: str) -> bool:
+        """Rename a watchlist. Returns False if old_id doesn't exist or new_id already exists."""
+        logger.debug(f"Renaming watchlist '{old_id}' to '{new_id}'")
+        if not self.validate_watchlist(old_id):
+            logger.warning(f"Cannot rename: watchlist '{old_id}' does not exist")
+            return False
+        if self.validate_watchlist(new_id):
+            logger.warning(f"Cannot rename: watchlist '{new_id}' already exists")
+            return False
+        row = self.db.select(table=self.db_table, fields=['tickers', 'systemgenerated'],
+                             where_conditions=[('id', old_id)], fetchall=False)
+        tickers_str, system_generated = row[0], row[1]
+        self.db.insert(table=self.db_table, fields=self.db_fields,
+                       values=[(new_id, tickers_str, system_generated)])
+        self.db.delete(table=self.db_table, where_conditions=[('id', old_id)])
+        return True
+
     # Validate watchlist exists in the database
     def validate_watchlist(self, watchlist_id):
         logger.debug(f"Validating watchlist '{watchlist_id}' exists")
