@@ -99,6 +99,18 @@ class AlertButtons(discord.ui.View):
             )
 
 
+class PopularitySurgeAlertButtons(AlertButtons):
+    """AlertButtons with an added ApeWisdom link for popularity surge alerts."""
+
+    def __init__(self, ticker: str):
+        super().__init__(ticker)
+        self.add_item(discord.ui.Button(
+            label="ApeWisdom",
+            style=discord.ButtonStyle.url,
+            url=f"https://apewisdom.io/stocks/{ticker}",
+        ))
+
+
 class PoliticianTradeButtons(discord.ui.View):
     """URL button linking to a politician's Capitol Trades profile."""
 

@@ -258,6 +258,22 @@ class TestAlertButtonsGenerateReport:
         assert "error" in msg.lower()
 
 
+class TestPopularitySurgeAlertButtons:
+    async def test_has_apewisdom_url(self):
+        from rocketstocks.bot.views.alert_views import PopularitySurgeAlertButtons
+        v = PopularitySurgeAlertButtons("GME")
+        urls = _get_button_urls(v)
+        assert any("apewisdom.io" in u for u in urls)
+
+    async def test_inherits_standard_alert_buttons(self):
+        from rocketstocks.bot.views.alert_views import PopularitySurgeAlertButtons
+        v = PopularitySurgeAlertButtons("GME")
+        urls = _get_button_urls(v)
+        assert any("finviz.com" in u and "GME" in u for u in urls)
+        assert any("finance.yahoo.com" in u and "GME" in u for u in urls)
+        assert any("stockinvest.us" in u and "GME" in u for u in urls)
+
+
 class TestPoliticianTradeButtons:
     async def test_url_contains_politician_id(self):
         from rocketstocks.bot.views.alert_views import PoliticianTradeButtons

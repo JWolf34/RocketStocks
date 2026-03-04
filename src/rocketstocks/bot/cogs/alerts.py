@@ -33,7 +33,7 @@ from rocketstocks.core.content.alerts.popularity_surge_alert import PopularitySu
 from rocketstocks.core.content.alerts.momentum_confirmation_alert import MomentumConfirmationAlert
 from rocketstocks.core.content.alerts.market_alert import MarketAlert
 
-from rocketstocks.bot.views.alert_views import AlertButtons
+from rocketstocks.bot.views.alert_views import AlertButtons, PopularitySurgeAlertButtons
 from rocketstocks.bot.senders.alert_sender import send_alert
 
 logger = logging.getLogger(__name__)
@@ -188,7 +188,7 @@ class Alerts(commands.Cog):
                         surge_result=surge_result,
                         popularity_history=popularity_history,
                     ))
-                    view = AlertButtons(ticker=ticker)
+                    view = PopularitySurgeAlertButtons(ticker=ticker)
 
                     flagged_at = datetime.datetime.utcnow()
                     surge_types_str = ",".join(st.value for st in surge_result.surge_types)
