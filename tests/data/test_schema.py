@@ -1,5 +1,5 @@
 """Tests for data/schema.py DDL functions."""
-from unittest.mock import MagicMock, patch, call
+from unittest.mock import MagicMock
 
 
 class TestCreateTables:
@@ -13,10 +13,10 @@ class TestCreateTables:
         create_tables(mock_db)
 
         mock_cur.execute.assert_called_once()
-        script = mock_cur.execute.call_args[0][0]
-        assert 'CREATE TABLE IF NOT EXISTS tickers' in script
-        assert 'CREATE TABLE IF NOT EXISTS popularity' in script
-        assert 'CREATE TABLE IF NOT EXISTS alerts' in script
+        create_script = mock_cur.execute.call_args[0][0]
+        assert 'CREATE TABLE IF NOT EXISTS tickers' in create_script
+        assert 'CREATE TABLE IF NOT EXISTS popularity' in create_script
+        assert 'CREATE TABLE IF NOT EXISTS alerts' in create_script
 
     def test_create_tables_creates_all_expected_tables(self):
         from rocketstocks.data.schema import _CREATE_SCRIPT

@@ -65,37 +65,6 @@ class TestTickerRepository:
         repo = self._make(db=db)
         assert repo.get_cik('FAKE') is None
 
-    def test_get_market_cap_returns_float(self):
-        db = MagicMock()
-        db.select.return_value = ('3000000000000',)
-        repo = self._make(db=db)
-        result = repo.get_market_cap('AAPL')
-        assert isinstance(result, float)
-        assert result == 3_000_000_000_000.0
-
-    def test_get_market_cap_returns_none_when_not_found(self):
-        db = MagicMock()
-        db.select.return_value = None
-        repo = self._make(db=db)
-        assert repo.get_market_cap('FAKE') is None
-
-    def test_get_all_tickers_by_market_cap_filters_correctly(self):
-        db = MagicMock()
-        db.select.return_value = [
-            ('AAPL', '3000000000000'),
-            ('SMALL', '50000000'),
-            ('MID', '1000000000'),
-            ('NONE', ''),    # empty string — should be skipped
-            ('NULL', None),  # None — should be skipped
-        ]
-        repo = self._make(db=db)
-        result = repo.get_all_tickers_by_market_cap(1_000_000_000)
-        assert 'AAPL' in result
-        assert 'MID' in result
-        assert 'SMALL' not in result
-        assert 'NONE' not in result
-        assert 'NULL' not in result
-
     def test_get_all_tickers_by_sector_uses_correct_field(self):
         """B6 fix: should select 'ticker', not 'tickers'."""
         db = MagicMock()

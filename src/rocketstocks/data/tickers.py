@@ -19,7 +19,6 @@ class TickerRepository:
 
         column_map = {
             'name': 'name',
-            'marketCap': 'marketcap',
             'country': 'country',
             'ipoyear': 'ipoyear',
             'industry': 'industry',
@@ -116,12 +115,6 @@ class TickerRepository:
         results = self._db.select(table='tickers', fields=['ticker'], fetchall=True)
         return [r[0] for r in results]
 
-    def get_all_tickers_by_market_cap(self, market_cap: float) -> list:
-        """Return list of tickers with market cap >= *market_cap*."""
-        logger.info(f"Fetching all tickers with market cap >= {market_cap} from database")
-        results = self._db.select(table='tickers', fields=['ticker', 'marketcap'], fetchall=True)
-        return [r[0] for r in results if r[1] and float(r[1]) >= market_cap]
-
     def get_all_tickers_by_sector(self, sector: str) -> list | None:
         """Return list of tickers whose sector matches *sector*."""
         logger.info(f"Fetching all tickers in sector {sector} from database")
@@ -141,17 +134,6 @@ class TickerRepository:
             fetchall=False,
         )
         return result[0] if result else None
-
-    def get_market_cap(self, ticker: str) -> float | None:
-        """Return market cap of *ticker* from database."""
-        logger.info(f"Retrieving market cap for ticker '{ticker}' from database")
-        result = self._db.select(
-            table='tickers',
-            fields=['marketcap'],
-            where_conditions=[('ticker', ticker)],
-            fetchall=False,
-        )
-        return float(result[0]) if result else None
 
     async def validate_ticker(self, ticker: str) -> bool:
         """Return True if *ticker* exists in database."""
