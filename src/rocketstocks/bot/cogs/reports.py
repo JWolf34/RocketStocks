@@ -340,6 +340,22 @@ class Reports(commands.Cog):
             follow_up = f"Posted reports for tickers [{', '.join(tickers)}]({message.jump_url})!"
             await interaction.followup.send(follow_up, ephemeral=True)
 
+    async def ticker_autocomplete(self, interaction: discord.Interaction, current: str) -> list[app_commands.Choice[str]]:
+        """Autocomplete last token in space-separated tickers string from DB."""
+        tokens = current.upper().split()
+        if not current.endswith(" ") and tokens:
+            prefix_tokens = tokens[:-1]
+            partial = tokens[-1]
+        else:
+            prefix_tokens = tokens
+            partial = ""
+        all_tickers = self.stock_data.tickers.get_all_tickers()
+        prefix_str = (" ".join(prefix_tokens) + " ") if prefix_tokens else ""
+        return [
+            app_commands.Choice(name=f"{prefix_str}{ticker}", value=f"{prefix_str}{ticker}")
+            for ticker in all_tickers if ticker.startswith(partial)
+        ][:25]
+
     @app_commands.command(name="report", description="Fetch stock reports of the specified tickers",)
     @app_commands.describe(tickers="Tickers to post reports for (separated by spaces)")
     @app_commands.describe(visibility="'private' to send to DMs, 'public' to send to the channel")
@@ -347,6 +363,7 @@ class Reports(commands.Cog):
         app_commands.Choice(name="private", value='private'),
         app_commands.Choice(name="public", value='public'),
     ])
+    @app_commands.autocomplete(tickers=ticker_autocomplete)
     async def report(self, interaction: discord.interactions, tickers: str, visibility: app_commands.Choice[str]):
         """Generate and send Stock Reports for all valid tickers input by the user"""
         await interaction.response.defer(ephemeral=True)

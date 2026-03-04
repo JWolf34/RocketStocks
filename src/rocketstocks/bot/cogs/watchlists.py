@@ -48,10 +48,27 @@ class Watchlists(commands.Cog):
             for watchlist in watchlists if current.lower() in watchlist.lower()
         ][:25]
 
+    async def ticker_autocomplete(self, interaction: discord.Interaction, current: str) -> list[app_commands.Choice[str]]:
+        """Autocomplete last token in space-separated tickers string from DB."""
+        tokens = current.upper().split()
+        if not current.endswith(" ") and tokens:
+            prefix_tokens = tokens[:-1]
+            partial = tokens[-1]
+        else:
+            prefix_tokens = tokens
+            partial = ""
+        all_tickers = self.stock_data.tickers.get_all_tickers()
+        prefix_str = (" ".join(prefix_tokens) + " ") if prefix_tokens else ""
+        return [
+            app_commands.Choice(name=f"{prefix_str}{ticker}", value=f"{prefix_str}{ticker}")
+            for ticker in all_tickers if ticker.startswith(partial)
+        ][:25]
+
     @app_commands.command(name="add-tickers", description="Add tickers to the selected watchlist")
     @app_commands.describe(tickers="Tickers to add to watchlist (separated by spaces)")
     @app_commands.describe(watchlist="Which watchlist you want to make changes to")
     @app_commands.autocomplete(watchlist=watchlist_options)
+    @app_commands.autocomplete(tickers=ticker_autocomplete)
     async def addtickers(self, interaction: discord.Interaction, tickers: str, watchlist: str):
         """Add valid input tickers to input watchlist"""
         await interaction.response.defer(ephemeral=True)
@@ -87,6 +104,7 @@ class Watchlists(commands.Cog):
     @app_commands.describe(tickers="Tickers to remove from watchlist (separated by spaces)")
     @app_commands.describe(watchlist="Which watchlist you want to make changes to")
     @app_commands.autocomplete(watchlist=watchlist_options)
+    @app_commands.autocomplete(tickers=ticker_autocomplete)
     async def removetickers(self, interaction: discord.Interaction, tickers: str, watchlist: str):
         """Remove valid input tickers from input watchlist"""
         await interaction.response.defer(ephemeral=True)
@@ -146,6 +164,7 @@ class Watchlists(commands.Cog):
     @app_commands.describe(tickers="Tickers to add to watchlist (separated by spaces)")
     @app_commands.describe(watchlist="Which watchlist you want to make changes to")
     @app_commands.autocomplete(watchlist=watchlist_options)
+    @app_commands.autocomplete(tickers=ticker_autocomplete)
     async def set_watchlist(self, interaction: discord.Interaction, tickers: str, watchlist: str):
         """Set input watchlist to valid input tickers"""
         await interaction.response.defer(ephemeral=True)
@@ -173,6 +192,7 @@ class Watchlists(commands.Cog):
     @app_commands.command(name="create-watchlist", description="Create a new watchlist with the specified tickers")
     @app_commands.describe(watchlist="Name of the watchlist to create")
     @app_commands.describe(tickers="Tickers to add to watchlist (separated by spaces)")
+    @app_commands.autocomplete(tickers=ticker_autocomplete)
     async def create_watchlist(self, interaction: discord.Interaction, watchlist: str, tickers: str):
         """Create watchlist with valid input tickers"""
         await interaction.response.defer(ephemeral=True)
