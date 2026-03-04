@@ -94,6 +94,19 @@ class TestAlertButtons:
         assert len(urls) == 3
         assert all("GME" in u for u in urls)
 
+    async def test_doc_url_adds_what_does_this_mean_button(self):
+        from rocketstocks.bot.views.alert_views import AlertButtons, MARKET_ALERT_DOC_URL
+        v = AlertButtons("GME", doc_url=MARKET_ALERT_DOC_URL)
+        urls = _get_button_urls(v)
+        assert len(urls) == 4
+        assert MARKET_ALERT_DOC_URL in urls
+
+    async def test_without_doc_url_no_what_does_this_mean_button(self):
+        from rocketstocks.bot.views.alert_views import AlertButtons
+        v = AlertButtons("GME")
+        urls = _get_button_urls(v)
+        assert not any("docs/alerts" in u for u in urls)
+
 
 class TestWatchlistSelect:
     async def test_adds_ticker_to_selected_watchlist(self):
@@ -272,6 +285,18 @@ class TestPopularitySurgeAlertButtons:
         assert any("finviz.com" in u and "GME" in u for u in urls)
         assert any("finance.yahoo.com" in u and "GME" in u for u in urls)
         assert any("stockinvest.us" in u and "GME" in u for u in urls)
+
+    async def test_doc_url_included(self):
+        from rocketstocks.bot.views.alert_views import PopularitySurgeAlertButtons, POPULARITY_SURGE_DOC_URL
+        v = PopularitySurgeAlertButtons("GME", doc_url=POPULARITY_SURGE_DOC_URL)
+        urls = _get_button_urls(v)
+        assert POPULARITY_SURGE_DOC_URL in urls
+
+    async def test_momentum_confirmation_doc_url(self):
+        from rocketstocks.bot.views.alert_views import PopularitySurgeAlertButtons, MOMENTUM_CONFIRMATION_DOC_URL
+        v = PopularitySurgeAlertButtons("GME", doc_url=MOMENTUM_CONFIRMATION_DOC_URL)
+        urls = _get_button_urls(v)
+        assert MOMENTUM_CONFIRMATION_DOC_URL in urls
 
 
 class TestPoliticianTradeButtons:
