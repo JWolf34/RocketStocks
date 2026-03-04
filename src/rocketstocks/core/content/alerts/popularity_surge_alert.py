@@ -50,8 +50,8 @@ class PopularitySurgeAlert(Alert):
             elif st.value == 'new_entrant':
                 reasons.append(f"• Newly entered top {new_entrant_cutoff_label(surge_result.current_rank)}")
             elif st.value == 'velocity_spike':
-                zscore = surge_result.rank_velocity_zscore or 0
-                reasons.append(f"• Rank velocity z-score: **{zscore:.2f}σ**")
+                display_zscore = -(surge_result.rank_velocity_zscore or 0)
+                reasons.append(f"• Gaining popularity at **+{display_zscore:.2f}σ** above normal pace")
 
         reason_text = "\n".join(reasons) if reasons else "Unusual popularity activity detected"
         description = (
@@ -85,6 +85,20 @@ class PopularitySurgeAlert(Alert):
 
         fields.append(EmbedField(name="Price", value=f"${price:.2f}", inline=True))
         fields.append(EmbedField(name="Change", value=f"{sign}{pct_change:.2f}%", inline=True))
+
+        history = self.data.popularity_history
+        if (not history.empty
+                and 'rank' in history.columns
+                and 'datetime' in history.columns):
+            recent = (
+                history
+                .sort_values('datetime')
+                .tail(6)['rank']
+                .tolist()
+            )
+            if len(recent) >= 2:
+                trend_str = " → ".join(str(int(r)) for r in recent)
+                fields.append(EmbedField(name="Rank Trend", value=trend_str, inline=False))
 
         return EmbedSpec(
             title=f"🔥 Popularity Surge: {self.data.ticker}",
