@@ -106,10 +106,10 @@ def test_rank_drop_does_not_trigger():
 # NEW_ENTRANT
 # ---------------------------------------------------------------------------
 
-def test_new_entrant_top_500_triggers():
-    """current_rank=400, rank_24h_ago=None → NEW_ENTRANT."""
+def test_new_entrant_top_200_triggers():
+    """current_rank=150, rank_24h_ago=None → NEW_ENTRANT (within top 200)."""
     result = evaluate_popularity_surge(
-        ticker='GME', current_rank=400, rank_24h_ago=None,
+        ticker='GME', current_rank=150, rank_24h_ago=None,
         mentions=500, mentions_24h_ago=100,
     )
     assert SurgeType.NEW_ENTRANT in result.surge_types
@@ -117,18 +117,18 @@ def test_new_entrant_top_500_triggers():
 
 
 def test_new_entrant_exactly_at_cutoff_triggers():
-    """current_rank=500 with no prior rank → NEW_ENTRANT (<=cutoff)."""
+    """current_rank=200 with no prior rank → NEW_ENTRANT (<=cutoff)."""
     result = evaluate_popularity_surge(
-        ticker='GME', current_rank=500, rank_24h_ago=None,
+        ticker='GME', current_rank=200, rank_24h_ago=None,
         mentions=500, mentions_24h_ago=100,
     )
     assert SurgeType.NEW_ENTRANT in result.surge_types
 
 
 def test_new_entrant_above_cutoff_no_trigger():
-    """current_rank=600 > 500 → no NEW_ENTRANT even with no prior rank."""
+    """current_rank=250 > 200 → no NEW_ENTRANT even with no prior rank."""
     result = evaluate_popularity_surge(
-        ticker='GME', current_rank=600, rank_24h_ago=None,
+        ticker='GME', current_rank=250, rank_24h_ago=None,
         mentions=500, mentions_24h_ago=100,
     )
     assert SurgeType.NEW_ENTRANT not in result.surge_types
@@ -143,32 +143,42 @@ def test_new_entrant_requires_no_prior_rank():
     assert SurgeType.NEW_ENTRANT not in result.surge_types
 
 
+def test_new_entrant_rank_201_to_500_no_trigger():
+    """Ranks 201-500 no longer qualify as NEW_ENTRANT with tightened cutoff."""
+    for rank in [201, 300, 400, 500]:
+        result = evaluate_popularity_surge(
+            ticker='GME', current_rank=rank, rank_24h_ago=None,
+            mentions=500, mentions_24h_ago=100,
+        )
+        assert SurgeType.NEW_ENTRANT not in result.surge_types, f"rank={rank} should not trigger"
+
+
 # ---------------------------------------------------------------------------
 # VELOCITY_SPIKE
 # ---------------------------------------------------------------------------
 
 def test_velocity_spike_triggers_with_high_zscore():
-    """Mocked rank_velocity_zscore >= 2.0 → VELOCITY_SPIKE."""
+    """Mocked rank_velocity_zscore = -2.5 (gaining popularity) → VELOCITY_SPIKE."""
     history = pd.DataFrame({'rank': [100, 90, 80, 70, 60], 'datetime': pd.date_range('2026-01-01', periods=5)})
     with (
         patch('rocketstocks.core.analysis.popularity_signals.indicators') as mock_ind,
     ):
         mock_ind.popularity.rank_velocity.return_value = -5.0
-        mock_ind.popularity.rank_velocity_zscore.return_value = 2.5
+        mock_ind.popularity.rank_velocity_zscore.return_value = -2.5
         result = evaluate_popularity_surge(
             ticker='GME', current_rank=60, rank_24h_ago=60,
             mentions=100, mentions_24h_ago=100,
             popularity_history=history,
         )
     assert SurgeType.VELOCITY_SPIKE in result.surge_types
-    assert result.rank_velocity_zscore == pytest.approx(2.5)
+    assert result.rank_velocity_zscore == pytest.approx(-2.5)
 
 
-def test_velocity_spike_negative_zscore_still_triggers():
-    """abs(zscore) >= 2.0 — direction doesn't matter."""
+def test_velocity_spike_gaining_popularity_triggers():
+    """Negative z-score means gaining popularity — direction matters now."""
     history = pd.DataFrame({'rank': [50, 60, 70, 80, 90], 'datetime': pd.date_range('2026-01-01', periods=5)})
     with patch('rocketstocks.core.analysis.popularity_signals.indicators') as mock_ind:
-        mock_ind.popularity.rank_velocity.return_value = 5.0
+        mock_ind.popularity.rank_velocity.return_value = -5.0
         mock_ind.popularity.rank_velocity_zscore.return_value = -2.5
         result = evaluate_popularity_surge(
             ticker='GME', current_rank=90, rank_24h_ago=50,
@@ -179,13 +189,27 @@ def test_velocity_spike_negative_zscore_still_triggers():
 
 
 def test_velocity_spike_below_threshold_no_trigger():
-    """zscore = 1.8 < 2.0 → no VELOCITY_SPIKE."""
+    """zscore = -2.0 is not <= -2.5 → no VELOCITY_SPIKE."""
     history = pd.DataFrame({'rank': [100, 95, 90, 85, 80], 'datetime': pd.date_range('2026-01-01', periods=5)})
     with patch('rocketstocks.core.analysis.popularity_signals.indicators') as mock_ind:
         mock_ind.popularity.rank_velocity.return_value = -3.0
-        mock_ind.popularity.rank_velocity_zscore.return_value = 1.8
+        mock_ind.popularity.rank_velocity_zscore.return_value = -2.0
         result = evaluate_popularity_surge(
             ticker='GME', current_rank=80, rank_24h_ago=80,
+            mentions=100, mentions_24h_ago=100,
+            popularity_history=history,
+        )
+    assert SurgeType.VELOCITY_SPIKE not in result.surge_types
+
+
+def test_velocity_spike_positive_zscore_no_trigger():
+    """Positive z-score = losing popularity → no VELOCITY_SPIKE (direction now matters)."""
+    history = pd.DataFrame({'rank': [60, 70, 80, 90, 100], 'datetime': pd.date_range('2026-01-01', periods=5)})
+    with patch('rocketstocks.core.analysis.popularity_signals.indicators') as mock_ind:
+        mock_ind.popularity.rank_velocity.return_value = 5.0
+        mock_ind.popularity.rank_velocity_zscore.return_value = 3.0  # positive = losing popularity
+        result = evaluate_popularity_surge(
+            ticker='GME', current_rank=100, rank_24h_ago=60,
             mentions=100, mentions_24h_ago=100,
             popularity_history=history,
         )
@@ -231,13 +255,13 @@ def test_all_four_surge_types_detected():
     history = pd.DataFrame({'rank': [500, 400, 300, 200, 100], 'datetime': pd.date_range('2026-01-01', periods=5)})
     with patch('rocketstocks.core.analysis.popularity_signals.indicators') as mock_ind:
         mock_ind.popularity.rank_velocity.return_value = -100.0
-        mock_ind.popularity.rank_velocity_zscore.return_value = 3.0
+        mock_ind.popularity.rank_velocity_zscore.return_value = -3.0
         result = evaluate_popularity_surge(
             ticker='NEW', current_rank=50, rank_24h_ago=None,  # NEW_ENTRANT
             mentions=4000, mentions_24h_ago=500,               # MENTION_SURGE (8x)
             popularity_history=history,
         )
-    # NEW_ENTRANT (rank<=500, no prior) + MENTION_SURGE + VELOCITY_SPIKE
+    # NEW_ENTRANT (rank<=200, no prior) + MENTION_SURGE + VELOCITY_SPIKE
     assert SurgeType.NEW_ENTRANT in result.surge_types
     assert SurgeType.MENTION_SURGE in result.surge_types
     assert SurgeType.VELOCITY_SPIKE in result.surge_types
@@ -263,13 +287,14 @@ def test_no_surge_when_nothing_unusual():
 # ---------------------------------------------------------------------------
 
 def test_missing_mentions_does_not_crash():
-    """None mentions → no MENTION_SURGE but no crash."""
+    """None mentions → early return, no surge, no crash."""
     result = evaluate_popularity_surge(
         ticker='GME', current_rank=50, rank_24h_ago=200,
         mentions=None, mentions_24h_ago=None,
     )
     assert result.mention_ratio is None
     assert SurgeType.MENTION_SURGE not in result.surge_types
+    assert result.is_surging is False
 
 
 def test_missing_rank_does_not_crash():
@@ -313,6 +338,79 @@ def test_empty_history_skips_velocity():
     )
     assert result.rank_velocity is None
     assert SurgeType.VELOCITY_SPIKE not in result.surge_types
+
+
+# ---------------------------------------------------------------------------
+# Minimum mention filter
+# ---------------------------------------------------------------------------
+
+def test_min_mentions_filter_blocks_all_surges():
+    """3 mentions with strong signals → is_surging=False (below min_mentions=5)."""
+    result = evaluate_popularity_surge(
+        ticker='GME', current_rank=50, rank_24h_ago=200,
+        mentions=3, mentions_24h_ago=1,
+    )
+    assert result.is_surging is False
+    assert result.surge_types == []
+
+
+def test_min_mentions_filter_none_mentions():
+    """None mentions → early return, is_surging=False."""
+    result = evaluate_popularity_surge(
+        ticker='GME', current_rank=50, rank_24h_ago=200,
+        mentions=None, mentions_24h_ago=None,
+    )
+    assert result.is_surging is False
+    assert result.mention_ratio is None
+    assert result.rank_velocity is None
+
+
+def test_min_mentions_exactly_five_passes():
+    """5 mentions passes filter; surge detection proceeds normally."""
+    result = evaluate_popularity_surge(
+        ticker='GME', current_rank=50, rank_24h_ago=200,
+        mentions=5, mentions_24h_ago=1,         # 5x ratio → MENTION_SURGE
+    )
+    assert result.is_surging is True
+    assert SurgeType.MENTION_SURGE in result.surge_types
+
+
+def test_min_mentions_four_blocked():
+    """4 mentions < 5 → early return even if ratio would trigger."""
+    result = evaluate_popularity_surge(
+        ticker='GME', current_rank=50, rank_24h_ago=200,
+        mentions=4, mentions_24h_ago=1,
+    )
+    assert result.is_surging is False
+    assert result.surge_types == []
+
+
+def test_min_mentions_custom_threshold():
+    """Custom min_mentions=10: 8 mentions blocked, 10 passes."""
+    blocked = evaluate_popularity_surge(
+        ticker='GME', current_rank=50, rank_24h_ago=200,
+        mentions=8, mentions_24h_ago=1,
+        min_mentions=10,
+    )
+    assert blocked.is_surging is False
+
+    passes = evaluate_popularity_surge(
+        ticker='GME', current_rank=50, rank_24h_ago=200,
+        mentions=10, mentions_24h_ago=1,         # 10x ratio → MENTION_SURGE
+        min_mentions=10,
+    )
+    assert passes.is_surging is True
+
+
+def test_min_mentions_early_return_computes_rank_change():
+    """Early return due to low mentions still populates rank_change."""
+    result = evaluate_popularity_surge(
+        ticker='GME', current_rank=50, rank_24h_ago=200,
+        mentions=2, mentions_24h_ago=1,
+    )
+    assert result.rank_change == 150   # 200 - 50
+    assert result.rank_velocity is None
+    assert result.rank_velocity_zscore is None
 
 
 # ---------------------------------------------------------------------------
