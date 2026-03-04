@@ -12,7 +12,7 @@ import datetime
 import logging
 
 import pandas as pd
-import pandas_ta as ta
+import pandas_ta_classic as ta
 
 from rocketstocks.core.content.formatting import format_large_num
 from rocketstocks.core.utils.dates import date_utils

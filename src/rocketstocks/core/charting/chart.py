@@ -1,7 +1,7 @@
 import logging
 import numpy as np
 import pandas as pd
-import pandas_ta as ta
+import pandas_ta_classic as ta
 import mplfinance as mpf
 import random as rnd
 from rocketstocks.core.config.paths import validate_path
