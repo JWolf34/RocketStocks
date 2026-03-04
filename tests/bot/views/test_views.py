@@ -87,12 +87,175 @@ class TestPoliticianReportButtons:
 
 
 class TestAlertButtons:
-    async def test_all_four_urls_contain_ticker(self):
+    async def test_three_urls_contain_ticker(self):
         from rocketstocks.bot.views.alert_views import AlertButtons
         v = AlertButtons("GME")
         urls = _get_button_urls(v)
-        assert len(urls) == 4
+        assert len(urls) == 3
         assert all("GME" in u for u in urls)
+
+
+class TestWatchlistSelect:
+    async def test_adds_ticker_to_selected_watchlist(self):
+        from unittest.mock import AsyncMock, MagicMock
+        from rocketstocks.bot.views.alert_views import WatchlistSelect
+
+        view = WatchlistSelect("GME", ["global", "personal"])
+
+        interaction = AsyncMock()
+        interaction.user.id = 12345
+        interaction.data = {"values": ["global"]}
+
+        watchlists = MagicMock()
+        watchlists.validate_watchlist.return_value = True
+        watchlists.get_watchlist_tickers.return_value = ["AAPL", "TSLA"]
+        interaction.client.stock_data.watchlists = watchlists
+
+        await view._select_callback(interaction)
+
+        watchlists.update_watchlist.assert_called_once()
+        interaction.response.send_message.assert_awaited_once()
+        msg = interaction.response.send_message.call_args[0][0]
+        assert "GME" in msg
+
+    async def test_already_on_watchlist_message(self):
+        from unittest.mock import AsyncMock, MagicMock
+        from rocketstocks.bot.views.alert_views import WatchlistSelect
+
+        view = WatchlistSelect("AAPL", ["global"])
+
+        interaction = AsyncMock()
+        interaction.user.id = 12345
+        interaction.data = {"values": ["global"]}
+
+        watchlists = MagicMock()
+        watchlists.validate_watchlist.return_value = True
+        watchlists.get_watchlist_tickers.return_value = ["AAPL", "TSLA"]
+        interaction.client.stock_data.watchlists = watchlists
+
+        await view._select_callback(interaction)
+
+        watchlists.update_watchlist.assert_not_called()
+        msg = interaction.response.send_message.call_args[0][0]
+        assert "already" in msg.lower()
+
+    async def test_error_handling(self):
+        from unittest.mock import AsyncMock, MagicMock
+        from rocketstocks.bot.views.alert_views import WatchlistSelect
+
+        view = WatchlistSelect("GME", ["global"])
+
+        interaction = AsyncMock()
+        interaction.user.id = 12345
+        interaction.data = {"values": ["global"]}
+
+        watchlists = MagicMock()
+        watchlists.validate_watchlist.side_effect = Exception("DB error")
+        interaction.client.stock_data.watchlists = watchlists
+
+        await view._select_callback(interaction)
+
+        interaction.response.send_message.assert_awaited_once()
+        msg = interaction.response.send_message.call_args[0][0]
+        assert "error" in msg.lower()
+
+
+class TestAlertButtonsAddToWatchlist:
+    async def test_populates_dropdown_with_watchlists(self):
+        from unittest.mock import AsyncMock, MagicMock
+        from rocketstocks.bot.views.alert_views import AlertButtons, WatchlistSelect
+
+        v = AlertButtons("GME")
+
+        interaction = AsyncMock()
+        watchlists_obj = MagicMock()
+        watchlists_obj.get_watchlists.return_value = ["global", "personal"]
+        interaction.client.stock_data.watchlists = watchlists_obj
+
+        await v.add_to_watchlist.callback(interaction)
+
+        interaction.response.send_message.assert_awaited_once()
+        _, kwargs = interaction.response.send_message.call_args
+        assert isinstance(kwargs["view"], WatchlistSelect)
+        assert kwargs["ephemeral"] is True
+
+    async def test_error_handling(self):
+        from unittest.mock import AsyncMock, MagicMock
+        from rocketstocks.bot.views.alert_views import AlertButtons
+
+        v = AlertButtons("GME")
+
+        interaction = AsyncMock()
+        watchlists_obj = MagicMock()
+        watchlists_obj.get_watchlists.side_effect = Exception("DB error")
+        interaction.client.stock_data.watchlists = watchlists_obj
+
+        await v.add_to_watchlist.callback(interaction)
+
+        interaction.response.send_message.assert_awaited_once()
+        msg = interaction.response.send_message.call_args[0][0]
+        assert "error" in msg.lower()
+
+
+class TestAlertButtonsGenerateReport:
+    async def test_successful_generation(self):
+        from unittest.mock import AsyncMock, MagicMock, patch
+        from rocketstocks.bot.views.alert_views import AlertButtons
+
+        v = AlertButtons("GME")
+
+        interaction = AsyncMock()
+        interaction.client = MagicMock()
+        reports_cog = AsyncMock()
+        mock_report = MagicMock()
+        mock_embed = MagicMock()
+        mock_report.build.return_value = MagicMock()
+        reports_cog.build_stock_report.return_value = mock_report
+        interaction.client.get_cog.return_value = reports_cog
+
+        with patch("rocketstocks.bot.senders.embed_utils.spec_to_embed", return_value=mock_embed):
+            await v.generate_report.callback(interaction)
+
+        interaction.response.defer.assert_awaited_once_with(ephemeral=True)
+        interaction.followup.send.assert_awaited_once()
+        _, kwargs = interaction.followup.send.call_args
+        assert kwargs["embed"] == mock_embed
+
+    async def test_reports_cog_unavailable(self):
+        from unittest.mock import AsyncMock, MagicMock
+        from rocketstocks.bot.views.alert_views import AlertButtons
+
+        v = AlertButtons("GME")
+
+        interaction = AsyncMock()
+        interaction.client = MagicMock()
+        interaction.client.get_cog.return_value = None
+
+        await v.generate_report.callback(interaction)
+
+        interaction.response.defer.assert_awaited_once_with(ephemeral=True)
+        interaction.followup.send.assert_awaited_once()
+        msg = interaction.followup.send.call_args[0][0]
+        assert "not available" in msg.lower()
+
+    async def test_error_handling(self):
+        from unittest.mock import AsyncMock, MagicMock
+        from rocketstocks.bot.views.alert_views import AlertButtons
+
+        v = AlertButtons("GME")
+
+        interaction = AsyncMock()
+        interaction.client = MagicMock()
+        reports_cog = AsyncMock()
+        reports_cog.build_stock_report.side_effect = Exception("API error")
+        interaction.client.get_cog.return_value = reports_cog
+
+        await v.generate_report.callback(interaction)
+
+        interaction.response.defer.assert_awaited_once_with(ephemeral=True)
+        interaction.followup.send.assert_awaited_once()
+        msg = interaction.followup.send.call_args[0][0]
+        assert "error" in msg.lower()
 
 
 class TestPoliticianTradeButtons:
