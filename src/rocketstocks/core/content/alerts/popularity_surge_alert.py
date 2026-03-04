@@ -93,12 +93,12 @@ class PopularitySurgeAlert(Alert):
             recent = (
                 history
                 .sort_values('datetime')
-                .tail(6)['rank']
+                .tail(8)['rank']
                 .tolist()
             )
             if len(recent) >= 2:
                 trend_str = " → ".join(str(int(r)) for r in recent)
-                fields.append(EmbedField(name="Rank Trend", value=trend_str, inline=False))
+                fields.append(EmbedField(name=f"Rank Trend (Last {len(recent)} Intervals)", value=trend_str, inline=False))
 
         return EmbedSpec(
             title=f"🔥 Popularity Surge: {self.data.ticker}",
