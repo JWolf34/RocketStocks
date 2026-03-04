@@ -43,7 +43,9 @@ def evaluate_popularity_surge(
     mentions_24h_ago: int | None,
     popularity_history: pd.DataFrame | None = None,
     mention_surge_threshold: float = 3.0,
-    rank_jump_threshold: int = 100,
+    mention_surge_min_base: int = 15,
+    rank_jump_ratio_threshold: float = 1.5,
+    rank_jump_min_spots: int = 50,
     new_entrant_cutoff: int = 200,
     velocity_zscore_threshold: float = 2.5,
     min_mentions: int = 5,
@@ -58,7 +60,9 @@ def evaluate_popularity_surge(
         mentions_24h_ago: Mention count 24 hours ago.
         popularity_history: DataFrame with 'rank' and 'datetime' columns.
         mention_surge_threshold: Ratio threshold for MENTION_SURGE (default 3.0x).
-        rank_jump_threshold: Spots gained threshold for RANK_JUMP (default 100).
+        mention_surge_min_base: Minimum 24h-ago mentions required for MENTION_SURGE (default 15).
+        rank_jump_ratio_threshold: rank_change/current_rank threshold for RANK_JUMP (default 1.5).
+        rank_jump_min_spots: Minimum spots gained for RANK_JUMP (default 50).
         new_entrant_cutoff: Rank cutoff for NEW_ENTRANT detection (default 200).
         velocity_zscore_threshold: Z-score threshold for VELOCITY_SPIKE (default 2.5).
         min_mentions: Minimum mention count required to trigger any surge (default 5).
@@ -111,11 +115,18 @@ def evaluate_popularity_surge(
         )
 
     # --- MENTION_SURGE ---
-    if mention_ratio is not None and mention_ratio >= mention_surge_threshold:
+    if (mention_ratio is not None
+            and mention_ratio >= mention_surge_threshold
+            and mentions_24h_ago is not None
+            and mentions_24h_ago >= mention_surge_min_base):
         surge_types.append(SurgeType.MENTION_SURGE)
 
     # --- RANK_JUMP ---
-    if rank_change is not None and rank_change >= rank_jump_threshold:
+    if (rank_change is not None
+            and current_rank is not None
+            and current_rank > 0
+            and rank_change >= rank_jump_min_spots
+            and rank_change / current_rank >= rank_jump_ratio_threshold):
         surge_types.append(SurgeType.RANK_JUMP)
 
     # --- NEW_ENTRANT ---
