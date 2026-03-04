@@ -29,7 +29,7 @@ CREATE TABLE IF NOT EXISTS upcoming_earnings (
 
 CREATE TABLE IF NOT EXISTS watchlists (
     ID              varchar(255) PRIMARY KEY,
-    tickers         varchar(255),
+    tickers         TEXT,
     systemgenerated boolean
 );
 
