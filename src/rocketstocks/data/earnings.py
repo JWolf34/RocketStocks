@@ -94,7 +94,7 @@ class Earnings:
                             where_conditions=[('date', '<', datetime.date.today())])
         logger.info("Previous upcoming earnings removed from database")
 
-    def update_historical_earnings(self):
+    async def update_historical_earnings(self):
         """Update database with historical earnings records from the NASDAQ"""
         logger.info("Updating historical earnings in database...")
         column_map = {'date':'date',
@@ -154,7 +154,7 @@ class Earnings:
                 else: # No earnings recorded on target date
                     logger.info(f"No earnings reported on date {date_string}")
             else: # Market is not open on target date
-                logger.info(f"Market is not open on {date_string} - no earning to pull")
+                logger.info(f"Market is not open on {date} - no earning to pull")
 
     def get_historical_earnings(self, ticker):
         """Return earnings reports for input ticker"""
