@@ -40,7 +40,7 @@ def _surge(
 # ---------------------------------------------------------------------------
 
 def test_mention_surge_3x_triggers():
-    """mentions = 300, mentions_24h = 100 → MENTION_SURGE detected."""
+    """mentions = 300, mentions_24h = 100 (>= min_base 15) → MENTION_SURGE detected."""
     result = _surge(mentions=300, mentions_24h_ago=100, current_rank=50, rank_24h_ago=60)
     assert SurgeType.MENTION_SURGE in result.surge_types
     assert result.is_surging is True
@@ -61,7 +61,7 @@ def test_mention_surge_below_threshold_no_trigger():
 
 
 def test_mention_surge_custom_threshold():
-    """Custom threshold of 2.0 → 2.5x ratio triggers."""
+    """Custom threshold of 2.0 → 2.5x ratio triggers (base=100 >= min_base 15)."""
     result = evaluate_popularity_surge(
         ticker='GME', current_rank=50, rank_24h_ago=60,
         mentions=250, mentions_24h_ago=100,
@@ -70,26 +70,62 @@ def test_mention_surge_custom_threshold():
     assert SurgeType.MENTION_SURGE in result.surge_types
 
 
+def test_mention_surge_requires_base_volume():
+    """6 → 36 (6x ratio): base=6 < min_base 15 → no MENTION_SURGE despite high ratio."""
+    result = evaluate_popularity_surge(
+        ticker='GME', current_rank=50, rank_24h_ago=60,
+        mentions=36, mentions_24h_ago=6,
+    )
+    assert SurgeType.MENTION_SURGE not in result.surge_types
+    assert result.mention_ratio == pytest.approx(6.0)
+
+
+def test_mention_surge_base_volume_met_triggers():
+    """15 → 50 (3.33x ratio): base=15 meets min_base → MENTION_SURGE."""
+    result = evaluate_popularity_surge(
+        ticker='GME', current_rank=50, rank_24h_ago=60,
+        mentions=50, mentions_24h_ago=15,
+    )
+    assert SurgeType.MENTION_SURGE in result.surge_types
+
+
+def test_mention_surge_custom_min_base():
+    """Custom mention_surge_min_base=30: base=20 blocked, base=30 triggers."""
+    blocked = evaluate_popularity_surge(
+        ticker='GME', current_rank=50, rank_24h_ago=60,
+        mentions=100, mentions_24h_ago=20,
+        mention_surge_min_base=30,
+    )
+    assert SurgeType.MENTION_SURGE not in blocked.surge_types
+
+    passes = evaluate_popularity_surge(
+        ticker='GME', current_rank=50, rank_24h_ago=60,
+        mentions=100, mentions_24h_ago=30,
+        mention_surge_min_base=30,
+    )
+    assert SurgeType.MENTION_SURGE in passes.surge_types
+
+
 # ---------------------------------------------------------------------------
 # RANK_JUMP
 # ---------------------------------------------------------------------------
 
 def test_rank_jump_100_spots_triggers():
-    """Rank improved from 200 → 50: gain = 150 → RANK_JUMP."""
+    """Rank improved from 200 → 50: gain=150, ratio=3.0 → RANK_JUMP."""
     result = _surge(current_rank=50, rank_24h_ago=200, mentions=100, mentions_24h_ago=100)
     assert SurgeType.RANK_JUMP in result.surge_types
     assert result.rank_change == 150
 
 
 def test_rank_jump_exact_threshold_triggers():
-    """Gain of exactly 100 spots → RANK_JUMP (>= threshold)."""
+    """200 → 100: gain=100, ratio=1.0 — below ratio threshold of 1.5 → no RANK_JUMP."""
     result = _surge(current_rank=100, rank_24h_ago=200, mentions=100, mentions_24h_ago=100)
-    assert SurgeType.RANK_JUMP in result.surge_types
+    assert SurgeType.RANK_JUMP not in result.surge_types
     assert result.rank_change == 100
 
 
 def test_rank_jump_below_threshold_no_trigger():
-    """Gain of 90 spots is below 100 → no RANK_JUMP."""
+    """200 → 110: gain=90, below min_spots of 50 AND ratio=0.82 → no RANK_JUMP."""
     result = _surge(current_rank=110, rank_24h_ago=200, mentions=100, mentions_24h_ago=100)
     assert SurgeType.RANK_JUMP not in result.surge_types
     assert result.rank_change == 90
@@ -100,6 +136,34 @@ def test_rank_drop_does_not_trigger():
     result = _surge(current_rank=300, rank_24h_ago=100, mentions=100, mentions_24h_ago=100)
     assert SurgeType.RANK_JUMP not in result.surge_types
     assert result.rank_change == -200
+
+
+def test_rank_jump_relative_750_to_120_triggers():
+    """750 → 120: gain=630, ratio=5.25 → RANK_JUMP."""
+    result = _surge(current_rank=120, rank_24h_ago=750, mentions=100, mentions_24h_ago=100)
+    assert SurgeType.RANK_JUMP in result.surge_types
+    assert result.rank_change == 630
+
+
+def test_rank_jump_relative_230_to_120_no_trigger():
+    """230 → 120: gain=110, ratio=0.92 — ratio below 1.5 → no RANK_JUMP."""
+    result = _surge(current_rank=120, rank_24h_ago=230, mentions=100, mentions_24h_ago=100)
+    assert SurgeType.RANK_JUMP not in result.surge_types
+    assert result.rank_change == 110
+
+
+def test_rank_jump_relative_120_to_40_triggers():
+    """120 → 40: gain=80, ratio=2.0 → RANK_JUMP."""
+    result = _surge(current_rank=40, rank_24h_ago=120, mentions=100, mentions_24h_ago=100)
+    assert SurgeType.RANK_JUMP in result.surge_types
+    assert result.rank_change == 80
+
+
+def test_rank_jump_below_min_spots_no_trigger():
+    """gain=40 even with high ratio → blocked by min_spots=50."""
+    result = _surge(current_rank=10, rank_24h_ago=50, mentions=100, mentions_24h_ago=100)
+    assert SurgeType.RANK_JUMP not in result.surge_types
+    assert result.rank_change == 40
 
 
 # ---------------------------------------------------------------------------
@@ -366,13 +430,15 @@ def test_min_mentions_filter_none_mentions():
 
 
 def test_min_mentions_exactly_five_passes():
-    """5 mentions passes filter; surge detection proceeds normally."""
+    """5 mentions passes the min_mentions filter; RANK_JUMP can still fire."""
     result = evaluate_popularity_surge(
         ticker='GME', current_rank=50, rank_24h_ago=200,
-        mentions=5, mentions_24h_ago=1,         # 5x ratio → MENTION_SURGE
+        mentions=5, mentions_24h_ago=1,         # passes min_mentions; base=1 < 15 blocks MENTION_SURGE
     )
+    # min_mentions filter passed; RANK_JUMP fires (gain=150, ratio=3.0)
     assert result.is_surging is True
-    assert SurgeType.MENTION_SURGE in result.surge_types
+    assert SurgeType.RANK_JUMP in result.surge_types
+    assert SurgeType.MENTION_SURGE not in result.surge_types  # base too low
 
 
 def test_min_mentions_four_blocked():

@@ -3,6 +3,13 @@ import logging
 
 logger = logging.getLogger(__name__)
 
+_GITHUB_DOCS_BASE = "https://github.com/JWolf34/RocketStocks/blob/main/docs/alerts"
+POPULARITY_SURGE_DOC_URL = f"{_GITHUB_DOCS_BASE}/popularity_surge.md"
+MOMENTUM_CONFIRMATION_DOC_URL = f"{_GITHUB_DOCS_BASE}/momentum_confirmation.md"
+MARKET_ALERT_DOC_URL = f"{_GITHUB_DOCS_BASE}/market_alert.md"
+WATCHLIST_MOVER_DOC_URL = f"{_GITHUB_DOCS_BASE}/watchlist_mover.md"
+EARNINGS_MOVER_DOC_URL = f"{_GITHUB_DOCS_BASE}/earnings_mover.md"
+
 
 class WatchlistSelect(discord.ui.View):
     """Ephemeral dropdown for adding a ticker to a watchlist."""
@@ -47,7 +54,7 @@ class WatchlistSelect(discord.ui.View):
 class AlertButtons(discord.ui.View):
     """Standard URL buttons shown on most alert messages."""
 
-    def __init__(self, ticker: str):
+    def __init__(self, ticker: str, doc_url: str | None = None):
         super().__init__(timeout=None)
         self.ticker = ticker
         self.add_item(discord.ui.Button(
@@ -65,6 +72,12 @@ class AlertButtons(discord.ui.View):
             style=discord.ButtonStyle.url,
             url=f"https://finance.yahoo.com/quote/{ticker}",
         ))
+        if doc_url:
+            self.add_item(discord.ui.Button(
+                label="What does this mean?",
+                style=discord.ButtonStyle.url,
+                url=doc_url,
+            ))
 
     @discord.ui.button(label="Add to Watchlist", style=discord.ButtonStyle.success)
     async def add_to_watchlist(self, interaction: discord.Interaction, button: discord.ui.Button):
@@ -97,6 +110,18 @@ class AlertButtons(discord.ui.View):
             await interaction.followup.send(
                 "An error occurred while generating the report.", ephemeral=True
             )
+
+
+class PopularitySurgeAlertButtons(AlertButtons):
+    """AlertButtons with an added ApeWisdom link for popularity surge alerts."""
+
+    def __init__(self, ticker: str, doc_url: str | None = None):
+        super().__init__(ticker, doc_url)
+        self.add_item(discord.ui.Button(
+            label="ApeWisdom",
+            style=discord.ButtonStyle.url,
+            url=f"https://apewisdom.io/stocks/{ticker}",
+        ))
 
 
 class PoliticianTradeButtons(discord.ui.View):
