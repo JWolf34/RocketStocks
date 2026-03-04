@@ -87,7 +87,7 @@ class PopularitySurgeAlert(Alert):
         fields.append(EmbedField(name="Change", value=f"{sign}{pct_change:.2f}%", inline=True))
 
         return EmbedSpec(
-            title=f"📡 Popularity Surge: {self.data.ticker}",
+            title=f"🔥 Popularity Surge: {self.data.ticker}",
             description=description,
             color=COLOR_PURPLE,
             fields=fields,
