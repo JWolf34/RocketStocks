@@ -87,7 +87,7 @@ class Earnings:
         else:
             return {field:value for field, value in zip(columns, result)}
 
-    def remove_past_earnings(self):
+    async def remove_past_earnings(self):
         """Remove previous earnigs from database"""
         logger.info("Removing upcoming earnings that have past")
         self.db.delete(table='upcoming_earnings',
