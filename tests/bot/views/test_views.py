@@ -259,11 +259,11 @@ class TestAlertButtonsGenerateReport:
 
 
 class TestPopularitySurgeAlertButtons:
-    async def test_has_apewisdom_url(self):
+    async def test_has_apewisdom_url_with_ticker(self):
         from rocketstocks.bot.views.alert_views import PopularitySurgeAlertButtons
         v = PopularitySurgeAlertButtons("GME")
         urls = _get_button_urls(v)
-        assert any("apewisdom.io" in u for u in urls)
+        assert any("apewisdom.io" in u and "GME" in u for u in urls)
 
     async def test_inherits_standard_alert_buttons(self):
         from rocketstocks.bot.views.alert_views import PopularitySurgeAlertButtons
