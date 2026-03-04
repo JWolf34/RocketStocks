@@ -36,7 +36,7 @@ async def send_alert(
             f"https://discord.com/channels/{channel.guild.id}/"
             f"{channel.id}/{alert.data.surge_alert_message_id}"
         )
-        embed.description = (embed.description or "") + f"\n[📡 View original surge alert]({surge_link})"
+        embed.description = (embed.description or "") + f"\n\n[📡 View original surge alert]({surge_link})"
 
     today = datetime.datetime.now(tz=date_utils.timezone()).date()
     message_id = await dstate.get_alert_message_id(
@@ -61,7 +61,8 @@ async def send_alert(
             prev_message = await channel.fetch_message(message_id)
             prev_message_time = prev_message.created_at.astimezone(date_utils.timezone())
             update_link = (
-                f"[Updated from last alert at "
+                "\n"
+                f"[📡 Updated from last alert at "
                 f"{prev_message_time.strftime('%I:%M %p')} {prev_message_time.tzname()}]"
                 f"({prev_message.jump_url})"
             )
