@@ -48,7 +48,7 @@ def evaluate_popularity_surge(
     rank_jump_min_spots: int = 50,
     new_entrant_cutoff: int = 200,
     velocity_zscore_threshold: float = 2.5,
-    min_mentions: int = 5,
+    min_mentions: int = 15,
 ) -> PopularitySurgeResult:
     """Evaluate whether a ticker is experiencing a popularity surge.
 
