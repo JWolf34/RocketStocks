@@ -16,7 +16,7 @@ logger = logging.getLogger(__name__)
 class SurgeType(str, Enum):
     MENTION_SURGE = "mention_surge"    # mentions >= 3x vs 24h ago
     RANK_JUMP = "rank_jump"            # rank improved 100+ spots
-    NEW_ENTRANT = "new_entrant"        # newly entered top 500
+    NEW_ENTRANT = "new_entrant"        # newly entered top 200 with no prior rank
     VELOCITY_SPIKE = "velocity_spike"  # rank_velocity_zscore <= -2.5 (gaining popularity)
 
 
