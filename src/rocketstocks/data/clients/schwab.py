@@ -9,15 +9,34 @@ from rocketstocks.core.config.secrets import secrets
 logger = logging.getLogger(__name__)
 
 
+TOKEN_PATH = "data/schwab-token.json"
+
+
 class Schwab:
-    def __init__(self, client=None):
+    def __init__(self, client=None, token_path=TOKEN_PATH):
+        self.token_path = token_path
         self.client = client or schwab.auth.easy_client(
             api_key=secrets.schwab_api_key,
             app_secret=secrets.schwab_api_secret,
             callback_url="https://127.0.0.1:8182",
-            token_path="data/schwab-token.json",
+            token_path=self.token_path,
             asyncio=True,
         )
+
+    def get_token_expiry(self):
+        """Return the Schwab token expiry as a naive local datetime, or None if unavailable."""
+        import json
+        import os
+        try:
+            if not os.path.exists(self.token_path):
+                return None
+            with open(self.token_path, "r") as f:
+                data = json.load(f)
+            expires_at = data["token"]["expires_at"]
+            return datetime.datetime.fromtimestamp(expires_at)
+        except Exception as exc:
+            logger.warning(f"Could not read Schwab token expiry from {self.token_path}: {exc}")
+            return None
 
     async def get_daily_price_history(self, ticker, start_datetime=None, end_datetime=None):
         """Request daily price history from Schwab between start_datetime and end_datetime."""
