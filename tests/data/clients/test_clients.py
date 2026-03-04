@@ -52,6 +52,43 @@ class TestSchwab:
         assert isinstance(result, pd.DataFrame)
         assert result.empty
 
+    def _make_with_token_path(self, token_path):
+        """Build a Schwab instance with a custom token path."""
+        mock_inner_client = AsyncMock()
+        with patch('rocketstocks.data.clients.schwab.schwab') as mock_schwab_pkg, \
+             patch('rocketstocks.data.clients.schwab.secrets'):
+            mock_schwab_pkg.auth.easy_client.return_value = mock_inner_client
+            from rocketstocks.data.clients.schwab import Schwab
+            obj = Schwab(token_path=token_path)
+        obj.client = mock_inner_client
+        return obj
+
+    def test_get_token_expiry_returns_none_when_file_missing(self, tmp_path):
+        obj = self._make_with_token_path(str(tmp_path / "nonexistent.json"))
+        assert obj.get_token_expiry() is None
+
+    def test_get_token_expiry_returns_correct_datetime(self, tmp_path):
+        import json
+        token_file = tmp_path / "schwab-token.json"
+        expires_at = 1800000000  # arbitrary future Unix timestamp
+        token_file.write_text(json.dumps({"token": {"expires_at": expires_at}}))
+        obj = self._make_with_token_path(str(token_file))
+        result = obj.get_token_expiry()
+        assert result == datetime.datetime.fromtimestamp(expires_at)
+
+    def test_get_token_expiry_returns_none_on_malformed_json(self, tmp_path):
+        token_file = tmp_path / "schwab-token.json"
+        token_file.write_text("not valid json{{{")
+        obj = self._make_with_token_path(str(token_file))
+        assert obj.get_token_expiry() is None
+
+    def test_get_token_expiry_returns_none_when_expires_at_missing(self, tmp_path):
+        import json
+        token_file = tmp_path / "schwab-token.json"
+        token_file.write_text(json.dumps({"token": {"expires_in": 1800}}))
+        obj = self._make_with_token_path(str(token_file))
+        assert obj.get_token_expiry() is None
+
     def test_get_daily_price_history_resolves_end_datetime_in_method(self):
         """B3: end_datetime should be resolved to now() inside the method."""
         schwab_obj = self._make()
