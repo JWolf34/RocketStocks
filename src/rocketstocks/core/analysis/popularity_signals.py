@@ -17,7 +17,7 @@ class SurgeType(str, Enum):
     MENTION_SURGE = "mention_surge"    # mentions >= 3x vs 24h ago
     RANK_JUMP = "rank_jump"            # rank improved 100+ spots
     NEW_ENTRANT = "new_entrant"        # newly entered top 500
-    VELOCITY_SPIKE = "velocity_spike"  # rank_velocity_zscore >= 2.0
+    VELOCITY_SPIKE = "velocity_spike"  # rank_velocity_zscore <= -2.5 (gaining popularity)
 
 
 @dataclass
@@ -44,8 +44,9 @@ def evaluate_popularity_surge(
     popularity_history: pd.DataFrame | None = None,
     mention_surge_threshold: float = 3.0,
     rank_jump_threshold: int = 100,
-    new_entrant_cutoff: int = 500,
-    velocity_zscore_threshold: float = 2.0,
+    new_entrant_cutoff: int = 200,
+    velocity_zscore_threshold: float = 2.5,
+    min_mentions: int = 5,
 ) -> PopularitySurgeResult:
     """Evaluate whether a ticker is experiencing a popularity surge.
 
@@ -58,18 +59,35 @@ def evaluate_popularity_surge(
         popularity_history: DataFrame with 'rank' and 'datetime' columns.
         mention_surge_threshold: Ratio threshold for MENTION_SURGE (default 3.0x).
         rank_jump_threshold: Spots gained threshold for RANK_JUMP (default 100).
-        new_entrant_cutoff: Rank cutoff for NEW_ENTRANT detection (default 500).
-        velocity_zscore_threshold: Z-score threshold for VELOCITY_SPIKE (default 2.0).
+        new_entrant_cutoff: Rank cutoff for NEW_ENTRANT detection (default 200).
+        velocity_zscore_threshold: Z-score threshold for VELOCITY_SPIKE (default 2.5).
+        min_mentions: Minimum mention count required to trigger any surge (default 5).
 
     Returns:
         A PopularitySurgeResult describing whether and why a surge was detected.
     """
-    surge_types: list[SurgeType] = []
-
     # Rank change: positive means gained spots (rank number decreased = more popular)
     rank_change: int | None = None
     if current_rank is not None and rank_24h_ago is not None:
         rank_change = rank_24h_ago - current_rank
+
+    # Minimum mention filter — low-mention stocks produce noisy rank fluctuations
+    if mentions is None or mentions < min_mentions:
+        return PopularitySurgeResult(
+            ticker=ticker,
+            is_surging=False,
+            surge_types=[],
+            current_rank=current_rank,
+            rank_24h_ago=rank_24h_ago,
+            rank_change=rank_change,
+            mentions=mentions,
+            mentions_24h_ago=mentions_24h_ago,
+            mention_ratio=None,
+            rank_velocity=None,
+            rank_velocity_zscore=None,
+        )
+
+    surge_types: list[SurgeType] = []
 
     # Mention ratio
     mention_ratio: float | None = None
@@ -108,11 +126,11 @@ def evaluate_popularity_surge(
         surge_types.append(SurgeType.NEW_ENTRANT)
 
     # --- VELOCITY_SPIKE ---
-    # Negative velocity = gaining popularity (rank number dropping).
-    # We alert on abs(zscore) >= threshold, direction-agnostic.
+    # Negative z-score = rank number dropping = gaining popularity.
+    # Only alert on upward popularity movement (zscore <= -threshold).
     if (rank_velocity_zscore is not None
             and not math.isnan(rank_velocity_zscore)
-            and abs(rank_velocity_zscore) >= velocity_zscore_threshold):
+            and rank_velocity_zscore <= -velocity_zscore_threshold):
         surge_types.append(SurgeType.VELOCITY_SPIKE)
 
     is_surging = len(surge_types) > 0
