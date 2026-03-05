@@ -6,6 +6,7 @@ from rocketstocks.core.content.models import (
     COLOR_PURPLE,
     EmbedField, EmbedSpec,
 )
+from rocketstocks.core.utils.market import market_utils
 
 logger = logging.getLogger(__name__)
 
@@ -35,7 +36,7 @@ class PopularitySurgeAlert(Alert):
 
         surge_result = self.data.surge_result
         company_name = (self.data.ticker_info or {}).get('name', self.data.ticker)
-        price = self.data.quote['regular']['regularMarketLastPrice']
+        price = market_utils().get_current_price(self.data.quote)
         pct_change = self.alert_data['pct_change']
         sign = "+" if pct_change > 0 else ""
 
