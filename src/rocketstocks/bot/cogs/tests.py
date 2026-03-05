@@ -449,17 +449,6 @@ class Tests(commands.Cog):
         logger.info(f"Cog {__name__} loaded!")
 
     @app_commands.checks.has_permissions(administrator=True)
-    @app_commands.command(name="test-gainer-reports", description="Test posting premarket gainer reports",)
-    async def test_premarket_reports(self, interaction: discord.Interaction):
-        logger.info(f"/test-premarket-reports function called by user {interaction.user.name}")
-        await interaction.response.defer(ephemeral=True)
-        reports = self.bot.get_cog("Reports")
-        if market_utils().get_market_period() == "EOD":
-            await interaction.followup.send("Market is closed - cannot post gainer reports", ephemeral=True)
-        else:
-            await interaction.followup.send("Gainer reports test complete!", ephemeral=True)
-
-    @app_commands.checks.has_permissions(administrator=True)
     @app_commands.command(name='force-update-5m-data', description="Forcefully update the 5m price history db table")
     async def force_update_5m_data(self, interaction: discord.Interaction):
         await interaction.response.defer(ephemeral=True)
