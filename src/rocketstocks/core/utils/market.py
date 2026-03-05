@@ -81,3 +81,33 @@ class market_utils():
             return "aftermarket"
         else:
             return "EOD"
+
+    def get_current_price(self, quote: dict) -> float:
+        """Get the appropriate current price based on market period.
+
+        Args:
+            quote: Quote dict from Schwab API with keys like quote['extended']['lastPrice']
+
+        Returns:
+            The current price for the active market session, or last available price as fallback.
+        """
+        period = self.get_market_period()
+
+        if period in ["premarket", "aftermarket"]:
+            # Use extended hours price if available
+            extended_price = quote.get('extended', {}).get('lastPrice')
+            if extended_price and extended_price > 0:
+                return extended_price
+
+        # Use quote.lastPrice for intraday or as fallback
+        quote_price = quote.get('quote', {}).get('lastPrice')
+        if quote_price and quote_price > 0:
+            return quote_price
+
+        # Fall back to regular market price if available
+        regular_price = quote.get('regular', {}).get('regularMarketLastPrice')
+        if regular_price and regular_price > 0:
+            return regular_price
+
+        # Final fallback
+        return 0.0

@@ -187,7 +187,8 @@ class Alerts(commands.Cog):
                     )
                     quote = await self.stock_data.schwab.get_quote(ticker=ticker)
                     ticker_info = self.stock_data.tickers.get_ticker_info(ticker=ticker)
-                    price_at_flag = quote['regular']['regularMarketLastPrice']
+                    market = market_utils()
+                    price_at_flag = market.get_current_price(quote)
 
                     alert = PopularitySurgeAlert(data=PopularitySurgeData(
                         ticker=ticker,
@@ -333,7 +334,8 @@ class Alerts(commands.Cog):
 
                 if trigger_result.should_alert:
                     price_at_flag = surge.get('price_at_flag')
-                    current_price = quote['regular']['regularMarketLastPrice']
+                    market = market_utils()
+                    current_price = market.get_current_price(quote)
                     price_change_since_flag = None
                     if price_at_flag and price_at_flag != 0:
                         price_change_since_flag = ((current_price - price_at_flag) / price_at_flag) * 100
