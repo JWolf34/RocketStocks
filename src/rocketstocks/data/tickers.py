@@ -23,7 +23,6 @@ class TickerRepository:
             'ipoyear': 'ipoyear',
             'industry': 'industry',
             'sector': 'sector',
-            'url': 'nasdaqendpoint',
             'symbol': 'ticker',
         }
         drop_columns = ['lastsale', 'netchange', 'pctchange', 'volume']
