@@ -144,3 +144,76 @@ class TestSendAlertExistingWithOverride:
         sent_kwargs = channel.send.call_args.kwargs
         sent_embed = sent_kwargs["embed"]
         assert "https://discord.com/jump/to/prev" in sent_embed.description
+
+
+class TestSendAlertMomentumConfirmation:
+    async def test_surge_link_without_duration_when_no_flagged_at(self):
+        """Test that surge link is added without duration if surge_flagged_at is None."""
+        from rocketstocks.bot.senders.alert_sender import send_alert
+        channel, sent_msg = _make_channel()
+        
+        # Create a momentum alert without surge_flagged_at
+        alert = _make_alert(ticker="AAPL", alert_type="MOMENTUM_CONFIRMATION")
+        alert.data = MagicMock()
+        alert.data.surge_alert_message_id = 123456789
+        alert.data.surge_flagged_at = None
+        
+        dstate = _make_dstate(message_id=None)
+        channel.guild.id = 9999
+        channel.id = 8888
+
+        with _patch_date_utils():
+            await send_alert(alert, channel, dstate)
+
+        sent_kwargs = channel.send.call_args.kwargs
+        sent_embed = sent_kwargs["embed"]
+        assert "[📡 View original surge alert]" in sent_embed.description
+        assert "ago)" not in sent_embed.description  # No duration text
+
+    async def test_surge_link_with_duration_when_flagged_at_provided(self):
+        """Test that surge link includes duration when surge_flagged_at is provided."""
+        from rocketstocks.bot.senders.alert_sender import send_alert
+        channel, sent_msg = _make_channel()
+        
+        # Create a momentum alert with surge_flagged_at
+        alert = _make_alert(ticker="AAPL", alert_type="MOMENTUM_CONFIRMATION")
+        alert.data = MagicMock()
+        alert.data.surge_alert_message_id = 123456789
+        alert.data.surge_flagged_at = datetime.datetime.now(tz=datetime.timezone.utc) - datetime.timedelta(hours=2)
+        
+        dstate = _make_dstate(message_id=None)
+        channel.guild.id = 9999
+        channel.id = 8888
+
+        def mock_format_duration(dt):
+            return "2 hours ago"
+
+        with _patch_date_utils() as mock_du:
+            mock_du.format_duration_since = mock_format_duration
+            await send_alert(alert, channel, dstate)
+
+        sent_kwargs = channel.send.call_args.kwargs
+        sent_embed = sent_kwargs["embed"]
+        assert "[📡 View original surge alert (2 hours ago)]" in sent_embed.description
+
+    async def test_surge_link_without_message_id_not_added(self):
+        """Test that surge link is not added if surge_alert_message_id is None."""
+        from rocketstocks.bot.senders.alert_sender import send_alert
+        channel, sent_msg = _make_channel()
+        
+        # Create a momentum alert without surge message ID
+        alert = _make_alert(ticker="AAPL", alert_type="MOMENTUM_CONFIRMATION")
+        alert.data = MagicMock()
+        alert.data.surge_alert_message_id = None
+        alert.data.surge_flagged_at = datetime.datetime.now(tz=datetime.timezone.utc)
+        
+        dstate = _make_dstate(message_id=None)
+        channel.guild.id = 9999
+        channel.id = 8888
+
+        with _patch_date_utils():
+            await send_alert(alert, channel, dstate)
+
+        sent_kwargs = channel.send.call_args.kwargs
+        sent_embed = sent_kwargs["embed"]
+        assert "[📡 View original surge alert" not in sent_embed.description
