@@ -429,11 +429,11 @@ def test_min_mentions_filter_none_mentions():
     assert result.rank_velocity is None
 
 
-def test_min_mentions_exactly_five_passes():
-    """5 mentions passes the min_mentions filter; RANK_JUMP can still fire."""
+def test_min_mentions_exactly_fifteen_passes():
+    """15 mentions passes the min_mentions filter; RANK_JUMP can still fire."""
     result = evaluate_popularity_surge(
         ticker='GME', current_rank=50, rank_24h_ago=200,
-        mentions=5, mentions_24h_ago=1,         # passes min_mentions; base=1 < 15 blocks MENTION_SURGE
+        mentions=15, mentions_24h_ago=1,         # passes min_mentions; base=1 < 15 blocks MENTION_SURGE
     )
     # min_mentions filter passed; RANK_JUMP fires (gain=150, ratio=3.0)
     assert result.is_surging is True
