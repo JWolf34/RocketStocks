@@ -151,6 +151,40 @@ class TestCapitolTrades:
             result = CapitolTrades.trades('abc1234')
             assert isinstance(result, pd.DataFrame)
 
+    def test_update_politicians_calls_db_insert(self):
+        """update_politicians must call db.insert with politician data after parsing cards."""
+        import asyncio
+        db = MagicMock()
+        db.get_table_columns.return_value = ['politician_id', 'name', 'party', 'state']
+        ct = self._make(db=db)
+
+        with patch('requests.get') as mock_get, \
+             patch('rocketstocks.data.clients.capitol_trades.BeautifulSoup') as mock_bs_cls:
+            mock_resp = MagicMock()
+            mock_resp.raise_for_status.return_value = None
+            mock_get.return_value = mock_resp
+
+            # First page: one politician card
+            mock_card = MagicMock()
+            mock_card.__getitem__ = MagicMock(return_value='/politicians/abc1234')
+            mock_card.find.return_value = MagicMock(text='TestValue')
+
+            page1_soup = MagicMock()
+            page1_soup.find_all.return_value = [mock_card]
+
+            # Second page: no cards — triggers db.insert
+            page2_soup = MagicMock()
+            page2_soup.find_all.return_value = []
+
+            mock_bs_cls.side_effect = [page1_soup, page2_soup]
+
+            asyncio.get_event_loop().run_until_complete(ct.update_politicians())
+
+        db.insert.assert_called_once()
+        call_kwargs = db.insert.call_args[1]
+        assert call_kwargs['table'] == 'ct_politicians'
+        assert len(call_kwargs['values']) == 1
+
 
 # ---------------------------------------------------------------------------
 # Nasdaq

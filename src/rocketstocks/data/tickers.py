@@ -30,7 +30,7 @@ class TickerRepository:
         self._sec = sec
         self._tiingo = tiingo
 
-    def update_tickers(self):
+    async def update_tickers(self):
         """Update tickers table with the most up-to-date information from the NASDAQ."""
         import time
         logger.info("Updating tickers database table with up-to-date ticker data")

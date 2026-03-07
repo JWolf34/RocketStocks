@@ -14,7 +14,7 @@ class Earnings:
         self.db = db
         self.mutils = market_utils()
 
-    def update_upcoming_earnings(self):
+    async def update_upcoming_earnings(self):
         """Identify upcoming earnings dates for all tickers and add to database"""
         logger.info("Updating upcoming earnings in database")
 
@@ -101,8 +101,8 @@ class Earnings:
                         'symbol':'ticker',
                         'eps':'eps',
                         'surprise':'surprise',
-                        'epsForecast':'epsForecast',
-                        'fiscalQuarterEnding':'fiscalQuarterEnding'}
+                        'epsForecast':'epsforecast',
+                        'fiscalQuarterEnding':'fiscalquarterending'}
         today = datetime.date.today()
 
         # Get most recently inserted date in database
@@ -140,7 +140,7 @@ class Earnings:
                                                                             .replace('$', "")
                                                                             .replace(',',""))
                                                                             if (len(x) > 0 and x != "N/A") else None)
-                    earnings ['epsForecast'] = earnings['epsForecast'].apply(lambda x: float(x.replace('(', '-')
+                    earnings ['epsforecast'] = earnings['epsforecast'].apply(lambda x: float(x.replace('(', '-')
                                                                             .replace(")", "")
                                                                             .replace('$', "")
                                                                             .replace(',',""))

@@ -62,8 +62,8 @@ CREATE TABLE IF NOT EXISTS historical_earnings (
     ticker              varchar(8),
     eps                 float,
     surprise            float,
-    epsForecast         float,
-    fiscalQuarterEnding varchar(10),
+    epsforecast         float,
+    fiscalquarterending varchar(10),
     PRIMARY KEY (date, ticker)
 );
 

@@ -114,6 +114,57 @@ class TestTickerRepository:
         assert valid == ['AAPL']
         assert invalid == ['FAKE']
 
+    def test_update_tickers_calls_db_update(self):
+        """update_tickers must call db.update for each ticker that exists in DB."""
+        db = MagicMock()
+        nasdaq = MagicMock()
+        nasdaq.get_all_tickers.return_value = pd.DataFrame({
+            'symbol': ['AAPL'],
+            'name': ['Apple Inc.'],
+            'country': ['US'],
+            'ipoyear': ['1980'],
+            'industry': ['Technology Hardware'],
+            'sector': ['Technology'],
+            'lastsale': ['$150.00'],
+            'netchange': ['1.50'],
+            'pctchange': ['1.01%'],
+            'volume': ['1000000'],
+        })
+        db.select.return_value = [('AAPL',)]  # AAPL is already in DB
+        repo = self._make(db=db, nasdaq=nasdaq)
+        _run(repo.update_tickers())
+        db.update.assert_called_once()
+        call_kwargs = db.update.call_args[1]
+        assert call_kwargs['table'] == 'tickers'
+        assert call_kwargs['where_conditions'] == [('ticker', 'AAPL')]
+
+    def test_insert_tickers_merges_sec_and_nasdaq(self):
+        """insert_tickers must merge SEC + NASDAQ data and zero-pad CIK to 10 digits."""
+        db = MagicMock()
+        nasdaq = MagicMock()
+        sec = MagicMock()
+        sec.get_company_tickers.return_value = pd.DataFrame({
+            'ticker': ['AAPL'],
+            'cik_str': [320193],
+        })
+        nasdaq.get_all_tickers.return_value = pd.DataFrame({
+            'symbol': ['AAPL'],
+            'name': ['Apple Inc.'],
+            'country': ['US'],
+            'ipoyear': ['1980'],
+            'industry': ['Technology Hardware'],
+            'sector': ['Technology'],
+            'url': ['apple.com'],
+        })
+        repo = self._make(db=db, nasdaq=nasdaq, sec=sec)
+        _run(repo.insert_tickers())
+        db.insert.assert_called_once()
+        call_kwargs = db.insert.call_args[1]
+        assert call_kwargs['table'] == 'tickers'
+        assert 'cik' in call_kwargs['fields']
+        cik_idx = call_kwargs['fields'].index('cik')
+        assert call_kwargs['values'][0][cik_idx] == '0000320193'
+
     # --- Name suffix stripping ---
 
     def test_strip_name_suffix_removes_common_stock(self):
