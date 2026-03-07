@@ -129,6 +129,28 @@ class TestRegisterJobs:
             "scheduler() thread-entry function should have been removed"
         )
 
+    def test_all_wrapped_functions_are_coroutines(self):
+        """Every function registered with job_wrapper must be async def.
+
+        Uses the actual class methods (not mocks) since asyncio.iscoroutinefunction
+        returns False for MagicMock attributes.
+        """
+        import asyncio
+        from rocketstocks.data.tickers import TickerRepository
+        from rocketstocks.data.earnings import Earnings
+        from rocketstocks.data.clients.capitol_trades import CapitolTrades
+
+        assert asyncio.iscoroutinefunction(TickerRepository.update_tickers), \
+            "TickerRepository.update_tickers must be async def"
+        assert asyncio.iscoroutinefunction(TickerRepository.insert_tickers), \
+            "TickerRepository.insert_tickers must be async def"
+        assert asyncio.iscoroutinefunction(Earnings.update_upcoming_earnings), \
+            "Earnings.update_upcoming_earnings must be async def"
+        assert asyncio.iscoroutinefunction(Earnings.update_historical_earnings), \
+            "Earnings.update_historical_earnings must be async def"
+        assert asyncio.iscoroutinefunction(CapitolTrades.update_politicians), \
+            "CapitolTrades.update_politicians must be async def"
+
 
 class TestCheckSchwabTokenExpiry:
     @pytest.mark.asyncio
