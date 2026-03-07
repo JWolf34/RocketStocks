@@ -4,12 +4,31 @@ import pandas as pd
 
 logger = logging.getLogger(__name__)
 
+_NAME_SUFFIXES = [
+    " Common Stock",
+    " Class A Common Stock",
+    " Class B Common Stock",
+    " Class C Common Stock",
+    " Ordinary Shares",
+    " American Depositary Shares",
+    " American Depositary Receipt",
+]
+
+
+def _strip_name_suffix(name: str) -> str:
+    """Remove trailing boilerplate from a company name."""
+    for suffix in _NAME_SUFFIXES:
+        if name.endswith(suffix):
+            return name[: -len(suffix)].strip()
+    return name.strip()
+
 
 class TickerRepository:
-    def __init__(self, db, nasdaq, sec):
+    def __init__(self, db, nasdaq, sec, tiingo=None):
         self._db = db
         self._nasdaq = nasdaq
         self._sec = sec
+        self._tiingo = tiingo
 
     def update_tickers(self):
         """Update tickers table with the most up-to-date information from the NASDAQ."""
@@ -33,6 +52,7 @@ class TickerRepository:
         tickers_data = tickers_data.drop(columns=drop_columns)
         tickers_data = tickers_data.rename(columns=column_map)
         tickers_data = tickers_data[list(column_map.values())]
+        tickers_data['name'] = tickers_data['name'].apply(_strip_name_suffix)
 
         for _, row in tickers_data.iterrows():
             ticker = row['ticker']
@@ -49,9 +69,14 @@ class TickerRepository:
         logger.debug(f"Updating tickers completed in {elapsed:.2f} seconds")
 
     async def insert_tickers(self):
-        """Identify data on all tickers from the SEC and insert into the database."""
+        """Insert all NASDAQ-listed tickers into the database.
+
+        NASDAQ is the source of truth for the active ticker universe.
+        All NASDAQ-listed stocks, ETFs, ADRs are inserted regardless of SEC presence.
+        SEC CIK is merged in where available.
+        """
         import time
-        logger.info("Updating tickers database table with new tickers from SEC")
+        logger.info("Updating tickers database table with new tickers from NASDAQ")
         start_time = time.time()
 
         sec_tickers = self._sec.get_company_tickers()
@@ -68,13 +93,14 @@ class TickerRepository:
             'ipoyear': 'ipoyear',
             'industry': 'industry',
             'sector': 'sector',
-            'url': 'url',
         }
         nasdaq_tickers = nasdaq_tickers.filter(list(nasdaq_column_map.keys()))
         nasdaq_tickers = nasdaq_tickers.rename(columns=nasdaq_column_map)
+        nasdaq_tickers['name'] = nasdaq_tickers['name'].apply(_strip_name_suffix)
 
-        all_tickers = pd.merge(sec_tickers, nasdaq_tickers, on='ticker', how='left')
-        all_tickers.set_index('ticker')
+        # NASDAQ is primary; SEC CIK joined in where available
+        all_tickers = pd.merge(nasdaq_tickers, sec_tickers, on='ticker', how='left')
+        all_tickers['cik'] = all_tickers['cik'].where(all_tickers['cik'].notna(), None)
 
         values = [tuple(row) for row in all_tickers.values]
         self._db.insert(table='tickers', fields=all_tickers.columns.to_list(), values=values)
@@ -82,6 +108,116 @@ class TickerRepository:
         elapsed = time.time() - start_time
         logger.info("Tickers have been updated!")
         logger.debug(f"Insert new tickers completed in {elapsed:.2f} seconds")
+
+    def enrich_ticker(self, ticker: str) -> bool:
+        """Enrich a single ticker with Tiingo metadata and SEC SIC code.
+
+        Updates exchange, security_type, delist_date via Tiingo.
+        Updates sic_code via SEC submissions if CIK is available.
+        Returns True if at least one field was updated.
+        """
+        if self._tiingo is None:
+            logger.warning("Tiingo client not configured; skipping enrichment")
+            return False
+
+        updated = False
+        metadata = self._tiingo.get_ticker_metadata(ticker)
+        if metadata:
+            set_fields = [
+                ('exchange', metadata.get('exchange')),
+                ('security_type', metadata.get('security_type')),
+                ('delist_date', metadata.get('delist_date')),
+            ]
+            self._db.update(
+                table='tickers',
+                set_fields=set_fields,
+                where_conditions=[('ticker', ticker)],
+            )
+            updated = True
+            logger.debug(f"Enriched ticker '{ticker}' with Tiingo metadata: {metadata}")
+
+        # SIC code from SEC submissions (requires CIK)
+        cik = self.get_cik(ticker)
+        if cik:
+            try:
+                submissions = self._sec.get_submissions_data(ticker)
+                sic = submissions.get('sic')
+                if sic:
+                    self._db.update(
+                        table='tickers',
+                        set_fields=[('sic_code', str(sic))],
+                        where_conditions=[('ticker', ticker)],
+                    )
+                    updated = True
+                    logger.debug(f"Enriched ticker '{ticker}' with SIC code: {sic}")
+            except Exception as exc:
+                logger.warning(f"Failed to fetch SEC submissions for '{ticker}': {exc}")
+
+        return updated
+
+    def enrich_unenriched_batch(self, limit: int = 240) -> int:
+        """Enrich up to *limit* tickers that have no exchange set yet.
+
+        Returns count of tickers successfully enriched.
+        """
+        with self._db._cursor() as cur:
+            cur.execute(
+                "SELECT ticker FROM tickers WHERE exchange IS NULL ORDER BY ticker LIMIT %s;",
+                (limit,),
+            )
+            rows = cur.fetchall()
+
+        results = rows
+        if not results:
+            logger.info("No unenriched tickers found")
+            return 0
+
+        tickers = [r[0] for r in results]
+        enriched = 0
+        for ticker in tickers:
+            try:
+                if self.enrich_ticker(ticker):
+                    enriched += 1
+            except Exception as exc:
+                logger.warning(f"Failed to enrich ticker '{ticker}': {exc}")
+
+        logger.info(f"Enriched {enriched}/{len(tickers)} tickers in batch")
+        return enriched
+
+    def import_delisted_tickers(self) -> int:
+        """Import all delisted tickers from Tiingo into the database.
+
+        Runs as a full-refresh (ON CONFLICT DO NOTHING skips existing rows).
+        Returns count of newly inserted tickers.
+        """
+        if self._tiingo is None:
+            logger.warning("Tiingo client not configured; skipping delisted import")
+            return 0
+
+        all_tickers_df = self._tiingo.list_all_tickers()
+        delisted = all_tickers_df[all_tickers_df['delist_date'].notna()].copy()
+
+        if delisted.empty:
+            logger.info("No delisted tickers returned from Tiingo")
+            return 0
+
+        # Map to tickers table columns (no cik, country, ipoyear, industry, sector, sic_code)
+        insert_df = delisted[['ticker', 'name', 'exchange', 'security_type', 'delist_date']].copy()
+        # Add required NOT NULL name — already present; add placeholder for missing names
+        insert_df = insert_df[insert_df['name'].notna() & (insert_df['name'] != '')]
+        insert_df = insert_df.drop_duplicates(subset='ticker')
+
+        before_count = len(self._db.select(table='tickers', fields=['ticker'], fetchall=True) or [])
+        values = [tuple(row) for row in insert_df.values]
+        self._db.insert(
+            table='tickers',
+            fields=insert_df.columns.to_list(),
+            values=values,
+        )
+        after_count = len(self._db.select(table='tickers', fields=['ticker'], fetchall=True) or [])
+        inserted = after_count - before_count
+        logger.info(f"Imported {inserted} new delisted tickers from Tiingo")
+        return inserted
 
     def get_ticker_info(self, ticker: str) -> dict | None:
         """Return ticker row from database as a dict, or None if not found."""
