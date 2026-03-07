@@ -10,7 +10,7 @@ from discord import app_commands
 from discord.ext import commands, tasks
 
 from src.rocketstocks.data.stockdata import StockData
-from rocketstocks.data.channel_config import REPORTS, SCREENERS
+from rocketstocks.data.channel_config import REPORTS, SCREENERS, ALERTS, ChannelConfigRepository
 from rocketstocks.data.discord_state import DiscordState
 from rocketstocks.data.clients.news import News
 from rocketstocks.core.utils.market import market_utils
@@ -57,6 +57,7 @@ class Reports(commands.Cog):
         self.stock_data = stock_data
         self.mutils = market_utils()
         self.dstate = DiscordState()
+        self.channel_config = ChannelConfigRepository()
 
         self.post_popularity_screener.start()
         self.post_volume_screener.start()
@@ -331,7 +332,7 @@ class Reports(commands.Cog):
                 return
             message = None
             for ticker in tickers:
-                content = await self.build_stock_report(ticker=ticker)
+                content = await self.build_stock_report(ticker=ticker, guild_id=interaction.guild_id)
                 view = StockReportButtons(ticker=content.ticker)
                 message = await send_report(content, channel, interaction=interaction,
                                             visibility=visibility.value, view=view)
@@ -377,7 +378,7 @@ class Reports(commands.Cog):
             return
         message = None
         for ticker in tickers:
-            content = await self.build_stock_report(ticker=ticker)
+            content = await self.build_stock_report(ticker=ticker, guild_id=interaction.guild_id)
             view = StockReportButtons(ticker=content.ticker)
             message = await send_report(content, channel, interaction=interaction,
                                         visibility=visibility.value, view=view)
@@ -537,7 +538,7 @@ class Reports(commands.Cog):
             gainers = pd.DataFrame()
         return GainerScreener(data=GainerScreenerData(market_period=market_period, gainers=gainers))
 
-    async def build_stock_report(self, ticker: str, **kwargs) -> StockReport:
+    async def build_stock_report(self, ticker: str, guild_id: int | None = None, **kwargs) -> StockReport:
         ticker_info = kwargs.pop('ticker_info', self.stock_data.tickers.get_ticker_info(ticker=ticker))
         daily_price_history = kwargs.pop('daily_price_history', self.stock_data.price_history.fetch_daily_price_history(ticker=ticker))
         popularity = kwargs.pop('popularity', self.stock_data.popularity.fetch_popularity(ticker=ticker))
@@ -546,6 +547,17 @@ class Reports(commands.Cog):
         next_earnings_info = kwargs.pop('next_earnings_info', self.stock_data.earnings.get_next_earnings_info(ticker=ticker))
         quote = kwargs.pop('quote', await self.stock_data.schwab.get_quote(ticker=ticker))
         fundamentals = kwargs.pop('fundamentals', await self.stock_data.schwab.get_fundamentals(tickers=[ticker]))
+
+        raw_alerts = self.dstate.get_recent_alerts_for_ticker(ticker)
+        recent_alerts = []
+        if raw_alerts and guild_id is not None:
+            alerts_channel_id = self.channel_config.get_channel_id(guild_id, ALERTS)
+            for date, alert_type, messageid in raw_alerts:
+                url = None
+                if alerts_channel_id and messageid:
+                    url = f"https://discord.com/channels/{guild_id}/{alerts_channel_id}/{messageid}"
+                recent_alerts.append({'date': date, 'alert_type': alert_type, 'url': url})
+
         return StockReport(data=StockReportData(
             ticker=ticker,
             ticker_info=ticker_info,
@@ -556,6 +568,7 @@ class Reports(commands.Cog):
             next_earnings_info=next_earnings_info,
             quote=quote,
             fundamentals=fundamentals,
+            recent_alerts=recent_alerts,
         ))
 
     async def build_earnings_spotlight_report(self, ticker: str, **kwargs) -> EarningsSpotlightReport:

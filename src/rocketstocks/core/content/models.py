@@ -74,6 +74,7 @@ class StockReportData(TickerData):
     historical_earnings: pd.DataFrame
     next_earnings_info: dict
     recent_sec_filings: pd.DataFrame
+    recent_alerts: list = field(default_factory=list)  # list[dict] with keys date, alert_type, url
 
 
 @dataclass

@@ -7,7 +7,7 @@ from rocketstocks.core.content.models import (
 from rocketstocks.core.content.sections_card import (
     ohlcv_card, recent_earnings_card,
     performance_card, fundamentals_card, technical_signals_card,
-    popularity_card, sec_filings_card,
+    popularity_card, sec_filings_card, recent_alerts_card,
     ticker_info_card, todays_change_card,
 )
 
@@ -42,6 +42,7 @@ class StockReport:
             + popularity_card(self.data.popularity)
             + recent_earnings_card(self.data.historical_earnings)
             + sec_filings_card(self.data.recent_sec_filings)
+            + recent_alerts_card(self.data.recent_alerts)
         )
 
         description = compact_header + '\n\n' + body
