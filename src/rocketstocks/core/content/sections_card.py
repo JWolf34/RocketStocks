@@ -295,32 +295,83 @@ def technical_signals_card(daily_price_history: pd.DataFrame) -> str:
 
 
 def popularity_card(popularity: pd.DataFrame) -> str:
-    """Stock popularity ranking — header owns current rank, intervals on one dot-line."""
+    """Stock popularity — current rank, intraday point-in-time deltas, multi-day best-rank deltas, 24H mentions.
+
+    Line 1: current rank + mentions
+    Line 2: 2H / 4H / 8H point-in-time rank comparisons (±35 min tolerance)
+    Line 3: 1D / 3D / 7D daily-best rank comparisons
+    Line 4: 24H mention change (skipped when data is unavailable or zero)
+    """
     if popularity is None or popularity.empty:
         return "__**Popularity**__\nNo popularity data\n\n"
 
-    now = date_utils.round_down_nearest_minute(30)
-    today_pop = popularity[popularity['datetime'] == now]
-    current_rank = today_pop['rank'].iloc[0] if not today_pop.empty else None
-
-    if current_rank is None:
+    # Most recent row — fetch_popularity returns data ordered DESC by datetime
+    latest = popularity.iloc[0]
+    current_rank = latest.get('rank')
+    if current_rank is None or pd.isna(current_rank):
         return "__**Popularity**__\nNo popularity data\n\n"
+    current_rank = int(current_rank)
 
-    interval_map = {"1D Best": 1, "7D Best": 7, "1M Best": 30, "3M Best": 90, "6M Best": 180}
-    interval_parts = []
-    for label, interval in interval_map.items():
-        interval_date = now - datetime.timedelta(days=interval)
-        interval_pop = popularity[popularity['datetime'].between(interval_date, now)]
-        if not interval_pop.empty:
-            best = interval_pop['rank'].min()
-            interval_parts.append(f"{label} **#{best}**")
+    mentions = latest.get('mentions')
+    mentions_24h_ago = latest.get('mentions_24h_ago')
+    now = datetime.datetime.now()
+
+    def _rank_delta(past_rank) -> str:
+        """↑N = gained spots (more popular), ↓N = lost spots (less popular)."""
+        if past_rank is None or pd.isna(past_rank):
+            return "N/A"
+        delta = int(past_rank) - current_rank
+        if delta > 0:
+            return f"↑{delta}"
+        if delta < 0:
+            return f"↓{abs(delta)}"
+        return "→0"
+
+    # Intraday point-in-time lookups — find nearest row within ±35 min
+    tolerance = pd.Timedelta(minutes=35)
+    intraday_parts = []
+    for label, hours in [("2H", 2), ("4H", 4), ("8H", 8)]:
+        target_dt = now - datetime.timedelta(hours=hours)
+        diffs = (popularity['datetime'] - target_dt).abs()
+        idx = diffs.idxmin()
+        if diffs[idx] <= tolerance:
+            past_rank = int(popularity.loc[idx, 'rank'])
+            intraday_parts.append(f"{label}: **#{past_rank}** ({_rank_delta(past_rank)})")
         else:
-            interval_parts.append(f"{label} N/A")
+            intraday_parts.append(f"{label}: N/A")
+
+    # Multi-day daily-best rank (min rank number = best position that day)
+    daily_parts = []
+    for label, days in [("1D best", 1), ("3D best", 3), ("7D best", 7)]:
+        target_date = (now - datetime.timedelta(days=days)).date()
+        day_rows = popularity[popularity['datetime'].dt.date == target_date]
+        if not day_rows.empty:
+            best_rank = int(day_rows['rank'].min())
+            daily_parts.append(f"{label}: **#{best_rank}** ({_rank_delta(best_rank)})")
+        else:
+            daily_parts.append(f"{label}: N/A")
+
+    # 24H mention change — skipped on zero or missing data
+    mentions_line = ""
+    try:
+        m = int(mentions) if not pd.isna(mentions) else None
+        m24 = int(mentions_24h_ago) if not pd.isna(mentions_24h_ago) else None
+        if m is not None and m24 is not None and m24 != 0:
+            delta_m = m - m24
+            pct_m = (delta_m / m24) * 100
+            sign = "+" if delta_m >= 0 else ""
+            pct_sign = "+" if pct_m >= 0 else ""
+            mentions_line = f"\n24H Mentions: {sign}{delta_m} ({pct_sign}{pct_m:.0f}%)"
+    except (TypeError, ValueError):
+        pass
+
+    mentions_str = f" · **{mentions}** mentions" if mentions is not None and not pd.isna(mentions) else ""
 
     return (
-        f"__**Popularity**__ · Rank **#{current_rank}**\n"
-        + " · ".join(interval_parts[:3]) + "\n"
-        + " · ".join(interval_parts[3:]) + "\n\n"
+        f"__**Popularity**__ · Rank **#{current_rank}**{mentions_str}\n"
+        + " · ".join(intraday_parts) + "\n"
+        + " · ".join(daily_parts)
+        + mentions_line + "\n\n"
     )
 
 

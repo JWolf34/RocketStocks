@@ -106,17 +106,172 @@ class TestCardFunctions:
         result = technical_signals_card(pd.DataFrame())
         assert 'No price data' in result
 
-    def test_popularity_card_returns_nonempty(self):
+    def test_popularity_card_empty_df(self):
         result = popularity_card(pd.DataFrame())
         assert isinstance(result, str) and len(result) > 0
+        assert 'No popularity data' in result
+
+    def test_popularity_card_none(self):
+        result = popularity_card(None)
+        assert 'No popularity data' in result
 
     def test_popularity_card_no_hash_headers(self):
         result = popularity_card(pd.DataFrame())
         assert '##' not in result
 
-    def test_popularity_card_empty_df(self):
-        result = popularity_card(pd.DataFrame())
-        assert 'No popularity data' in result
+
+class TestPopularityCard:
+    """Tests for the rank-change delta popularity card."""
+
+    def _make_df(self, now: datetime.datetime) -> pd.DataFrame:
+        """Full DataFrame with data at every expected interval offset."""
+        rows = [
+            # Most recent (current)
+            {'datetime': now - datetime.timedelta(minutes=5),
+             'rank': 15, 'mentions': 127, 'mentions_24h_ago': 38},
+            # ~2H ago
+            {'datetime': now - datetime.timedelta(hours=2),
+             'rank': 28, 'mentions': 100, 'mentions_24h_ago': 30},
+            # ~4H ago
+            {'datetime': now - datetime.timedelta(hours=4),
+             'rank': 35, 'mentions': 90, 'mentions_24h_ago': 28},
+            # ~8H ago
+            {'datetime': now - datetime.timedelta(hours=8),
+             'rank': 50, 'mentions': 80, 'mentions_24h_ago': 25},
+            # 1D ago daily row
+            {'datetime': now - datetime.timedelta(days=1, hours=2),
+             'rank': 18, 'mentions': 70, 'mentions_24h_ago': 20},
+            # 3D ago daily row
+            {'datetime': now - datetime.timedelta(days=3, hours=2),
+             'rank': 42, 'mentions': 60, 'mentions_24h_ago': 15},
+            # 7D ago daily row
+            {'datetime': now - datetime.timedelta(days=7, hours=2),
+             'rank': 65, 'mentions': 50, 'mentions_24h_ago': 10},
+        ]
+        df = pd.DataFrame(rows)
+        return df.sort_values('datetime', ascending=False).reset_index(drop=True)
+
+    def test_normal_header_shows_rank_and_mentions(self):
+        now = datetime.datetime.now()
+        result = popularity_card(self._make_df(now))
+        assert 'Rank **#15**' in result
+        assert '127' in result
+
+    def test_normal_intraday_2h_delta(self):
+        now = datetime.datetime.now()
+        result = popularity_card(self._make_df(now))
+        # rank 28 vs current 15 → delta = 28-15 = 13 gained → ↑13
+        assert '2H' in result
+        assert '↑13' in result
+
+    def test_normal_intraday_4h_delta(self):
+        now = datetime.datetime.now()
+        result = popularity_card(self._make_df(now))
+        # rank 35 vs current 15 → delta = 20
+        assert '4H' in result
+        assert '↑20' in result
+
+    def test_normal_intraday_8h_delta(self):
+        now = datetime.datetime.now()
+        result = popularity_card(self._make_df(now))
+        # rank 50 vs current 15 → delta = 35
+        assert '8H' in result
+        assert '↑35' in result
+
+    def test_normal_daily_best_1d(self):
+        now = datetime.datetime.now()
+        result = popularity_card(self._make_df(now))
+        # best rank on 1D ago date = 18, current 15 → delta = 3
+        assert '1D best' in result
+        assert '↑3' in result
+
+    def test_normal_daily_best_3d(self):
+        now = datetime.datetime.now()
+        result = popularity_card(self._make_df(now))
+        # best rank on 3D ago date = 42, current 15 → delta = 27
+        assert '3D best' in result
+        assert '↑27' in result
+
+    def test_normal_daily_best_7d(self):
+        now = datetime.datetime.now()
+        result = popularity_card(self._make_df(now))
+        # best rank on 7D ago date = 65, current 15 → delta = 50
+        assert '7D best' in result
+        assert '↑50' in result
+
+    def test_normal_mentions_line(self):
+        now = datetime.datetime.now()
+        result = popularity_card(self._make_df(now))
+        # mentions=127, mentions_24h_ago=38, delta=89, pct=~234%
+        assert '24H Mentions' in result
+        assert '+89' in result
+
+    def test_rank_worse_shows_down_arrow(self):
+        now = datetime.datetime.now()
+        rows = [
+            {'datetime': now - datetime.timedelta(minutes=5),
+             'rank': 50, 'mentions': 80, 'mentions_24h_ago': 100},
+            {'datetime': now - datetime.timedelta(hours=2),
+             'rank': 20, 'mentions': 120, 'mentions_24h_ago': 80},
+        ]
+        df = pd.DataFrame(rows).sort_values('datetime', ascending=False).reset_index(drop=True)
+        result = popularity_card(df)
+        # past=20, current=50 → delta = 20-50 = -30 → ↓30
+        assert '↓30' in result
+
+    def test_missing_intraday_shows_na(self):
+        now = datetime.datetime.now()
+        # Only current row + 4H row — no row near 2H target
+        rows = [
+            {'datetime': now - datetime.timedelta(minutes=5),
+             'rank': 15, 'mentions': 127, 'mentions_24h_ago': 38},
+            {'datetime': now - datetime.timedelta(hours=4),
+             'rank': 35, 'mentions': 90, 'mentions_24h_ago': 28},
+        ]
+        df = pd.DataFrame(rows).sort_values('datetime', ascending=False).reset_index(drop=True)
+        result = popularity_card(df)
+        # Nearest to 2H target: 5min row (diff=115min) or 4H row (diff=120min) — both >35min
+        assert '2H: N/A' in result
+
+    def test_missing_daily_best_shows_na(self):
+        now = datetime.datetime.now()
+        rows = [
+            {'datetime': now - datetime.timedelta(minutes=5),
+             'rank': 15, 'mentions': 127, 'mentions_24h_ago': 38},
+            {'datetime': now - datetime.timedelta(days=1, hours=2),
+             'rank': 18, 'mentions': 70, 'mentions_24h_ago': 20},
+            # No 3D or 7D data
+        ]
+        df = pd.DataFrame(rows).sort_values('datetime', ascending=False).reset_index(drop=True)
+        result = popularity_card(df)
+        assert '3D best: N/A' in result
+        assert '7D best: N/A' in result
+
+    def test_zero_mentions_24h_ago_skips_mentions_line(self):
+        now = datetime.datetime.now()
+        rows = [{'datetime': now - datetime.timedelta(minutes=5),
+                 'rank': 15, 'mentions': 127, 'mentions_24h_ago': 0}]
+        df = pd.DataFrame(rows)
+        result = popularity_card(df)
+        assert '24H Mentions' not in result
+
+    def test_none_mentions_24h_ago_skips_mentions_line(self):
+        now = datetime.datetime.now()
+        rows = [{'datetime': now - datetime.timedelta(minutes=5),
+                 'rank': 15, 'mentions': 127, 'mentions_24h_ago': None}]
+        df = pd.DataFrame(rows)
+        result = popularity_card(df)
+        assert '24H Mentions' not in result
+
+    def test_returns_string(self):
+        now = datetime.datetime.now()
+        result = popularity_card(self._make_df(now))
+        assert isinstance(result, str)
+
+    def test_no_hash_headers(self):
+        now = datetime.datetime.now()
+        result = popularity_card(self._make_df(now))
+        assert '##' not in result
 
     def test_upcoming_earnings_card_returns_nonempty(self):
         info = {
