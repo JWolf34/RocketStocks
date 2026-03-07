@@ -113,7 +113,7 @@ class Postgres:
             direction = order_by[1].upper()
             if direction not in _ALLOWED_DIRECTIONS:
                 raise ValueError(f"Invalid ORDER BY direction: {order_by[1]!r}")
-            select_script += sql.SQL("ORDER BY {sql_field} {sql_order}").format(
+            select_script += sql.SQL(" ORDER BY {sql_field} {sql_order}").format(
                 sql_field=sql.Identifier(order_by[0]),
                 sql_order=sql.SQL(direction),
             )
