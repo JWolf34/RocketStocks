@@ -285,11 +285,11 @@ class TestEarningsReturnType:
 
 class TestTiingoClient:
     def _make(self, api_key='test-key'):
-        with patch('rocketstocks.data.clients.tiingo.secrets') as mock_secrets, \
-             patch('rocketstocks.data.clients.tiingo.TiingoClient') as mock_cls:
-            mock_secrets.tiingo_api_key = api_key
+        with patch('tiingo.TiingoClient') as mock_cls, \
+             patch('rocketstocks.data.clients.tiingo.secrets'):
             from rocketstocks.data.clients.tiingo import Tiingo
             obj = Tiingo(api_key=api_key)
+            # _client is set by __init__ to mock_cls.return_value; expose for configuration
             obj._client = mock_cls.return_value
             return obj
 
@@ -365,18 +365,34 @@ class TestTiingoClient:
 # ---------------------------------------------------------------------------
 
 class TestStooqClient:
+    def _make_pdr_mock(self):
+        """Return a mock pandas_datareader module injected into sys.modules."""
+        import sys
+        mock_pdr = MagicMock()
+        sys.modules.setdefault('pandas_datareader', mock_pdr)
+        sys.modules.setdefault('pandas_datareader.data', mock_pdr.data)
+        return mock_pdr
+
     def _make(self):
+        self._make_pdr_mock()  # ensure importable before importing Stooq
         from rocketstocks.data.clients.stooq import Stooq
         return Stooq()
 
     def test_get_daily_price_history_returns_dataframe(self):
-        stooq = self._make()
+        import sys
+        mock_pdr = MagicMock()
         mock_df = pd.DataFrame({
             'Open': [60.0], 'High': [65.0], 'Low': [59.0],
             'Close': [62.0], 'Volume': [5000000],
         }, index=pd.to_datetime(['2008-09-12']))
         mock_df.index.name = 'Date'
-        with patch('pandas_datareader.data.DataReader', return_value=mock_df):
+        mock_pdr.data.DataReader.return_value = mock_df
+        sys.modules['pandas_datareader'] = mock_pdr
+        sys.modules['pandas_datareader.data'] = mock_pdr.data
+
+        stooq = self._make()
+        # Override _client's import inside get_daily_price_history by pre-seeding sys.modules
+        with patch.dict(sys.modules, {'pandas_datareader.data': mock_pdr.data}):
             result = stooq.get_daily_price_history('LEH', '2008-01-01', '2008-09-15')
         assert isinstance(result, pd.DataFrame)
         assert not result.empty
@@ -384,8 +400,14 @@ class TestStooqClient:
         assert result['ticker'].iloc[0] == 'LEH'
 
     def test_get_daily_price_history_returns_empty_on_exception(self):
-        stooq = self._make()
-        with patch('pandas_datareader.data.DataReader', side_effect=Exception("no data")):
+        import sys
+        mock_pdr = MagicMock()
+        mock_pdr.data.DataReader.side_effect = Exception("no data")
+        with patch.dict(sys.modules, {
+            'pandas_datareader': mock_pdr,
+            'pandas_datareader.data': mock_pdr.data,
+        }):
+            stooq = self._make()
             result = stooq.get_daily_price_history('FAKE', '2000-01-01', '2000-12-31')
         assert isinstance(result, pd.DataFrame)
         assert result.empty

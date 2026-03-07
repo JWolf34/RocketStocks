@@ -5,10 +5,10 @@ import pandas as pd
 logger = logging.getLogger(__name__)
 
 _NAME_SUFFIXES = [
-    " Common Stock",
     " Class A Common Stock",
     " Class B Common Stock",
     " Class C Common Stock",
+    " Common Stock",
     " Ordinary Shares",
     " American Depositary Shares",
     " American Depositary Receipt",
