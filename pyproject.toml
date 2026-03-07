@@ -10,6 +10,7 @@ dependencies = [
     "APScheduler",
     "discord.py",
     "pandas-datareader",
+    "tiingo",
     "yfinance",
     "pandas-ta-classic",
     "mplfinance",
