@@ -130,6 +130,17 @@ class TestJobWrapper:
         result = asyncio.get_event_loop().run_until_complete(wrapped())
         assert result == 99
 
+    def test_job_wrapper_raises_on_sync_function(self):
+        """Wrapping a sync def and calling it raises TypeError (documents the async-only contract)."""
+        emitter = EventEmitter()
+
+        def sync_job():
+            return 42  # returns int, not a coroutine
+
+        wrapped = emitter.job_wrapper("sync_job", sync_job)
+        with pytest.raises(TypeError):
+            asyncio.get_event_loop().run_until_complete(wrapped())
+
 
 class TestTaskWrapper:
     def test_success_emits_success_event(self):
