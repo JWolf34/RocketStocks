@@ -8,6 +8,7 @@ from rocketstocks.core.content.sections_card import (
     performance_card, fundamentals_card, technical_signals_card,
     popularity_card, upcoming_earnings_card, politician_info_card, sec_filings_card,
     ticker_info_card, todays_change_card, earnings_date_card, news_card,
+    recent_alerts_card,
 )
 
 
@@ -383,3 +384,56 @@ class TestPopularityCard:
     def test_news_card_empty_articles(self):
         result = news_card({'articles': []})
         assert result == ''
+
+
+class TestRecentAlertsCard:
+    def test_empty_list_returns_empty_string(self):
+        assert recent_alerts_card([]) == ''
+
+    def test_with_url_includes_view_link(self):
+        alerts = [{'date': datetime.date(2026, 3, 5), 'alert_type': 'EARNINGS_MOVER',
+                   'url': 'https://discord.com/channels/1/2/3'}]
+        result = recent_alerts_card(alerts)
+        assert '[View](<https://discord.com/channels/1/2/3>)' in result
+
+    def test_without_url_no_link(self):
+        alerts = [{'date': datetime.date(2026, 3, 5), 'alert_type': 'EARNINGS_MOVER', 'url': None}]
+        result = recent_alerts_card(alerts)
+        assert '[View]' not in result
+        assert '🚨 Earnings Mover' in result
+        assert '03/05' in result
+
+    def test_header_present(self):
+        alerts = [{'date': datetime.date(2026, 3, 5), 'alert_type': 'WATCHLIST_MOVER', 'url': None}]
+        result = recent_alerts_card(alerts)
+        assert '__**Recent Alerts**__' in result
+
+    def test_all_alert_type_labels(self):
+        types = {
+            'EARNINGS_MOVER': '🚨 Earnings Mover',
+            'WATCHLIST_MOVER': '👀 Watchlist Mover',
+            'MARKET_ALERT': '📈 Market Alert',
+            'POPULARITY_SURGE': '🔥 Popularity Surge',
+            'MOMENTUM_CONFIRMATION': '⚡ Momentum Confirmation',
+        }
+        for alert_type, expected_label in types.items():
+            alerts = [{'date': datetime.date(2026, 3, 5), 'alert_type': alert_type, 'url': None}]
+            result = recent_alerts_card(alerts)
+            assert expected_label in result, f"Expected '{expected_label}' for alert_type '{alert_type}'"
+
+    def test_multiple_entries_all_rendered(self):
+        alerts = [
+            {'date': datetime.date(2026, 3, 5), 'alert_type': 'EARNINGS_MOVER',
+             'url': 'https://discord.com/channels/1/2/10'},
+            {'date': datetime.date(2026, 3, 4), 'alert_type': 'POPULARITY_SURGE', 'url': None},
+        ]
+        result = recent_alerts_card(alerts)
+        assert '🚨 Earnings Mover' in result
+        assert '🔥 Popularity Surge' in result
+        assert '03/05' in result
+        assert '03/04' in result
+
+    def test_unknown_alert_type_uses_raw_value(self):
+        alerts = [{'date': datetime.date(2026, 3, 5), 'alert_type': 'CUSTOM_ALERT', 'url': None}]
+        result = recent_alerts_card(alerts)
+        assert 'CUSTOM_ALERT' in result

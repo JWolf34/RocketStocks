@@ -1,4 +1,4 @@
-"""Tests for rocketstocks.bot.cogs.reports — post_earnings_spotlight."""
+"""Tests for rocketstocks.bot.cogs.reports — post_earnings_spotlight, build_stock_report."""
 import datetime
 import pytest
 import pandas as pd
@@ -29,9 +29,11 @@ def _make_cog():
         patch.object(Reports, "post_earnings_spotlight"),
         patch.object(Reports, "post_weekly_earnings"),
         patch("rocketstocks.bot.cogs.reports.DiscordState"),
+        patch("rocketstocks.bot.cogs.reports.ChannelConfigRepository"),
     ):
         cog = Reports(bot=bot, stock_data=sd)
     cog.dstate = MagicMock()
+    cog.channel_config = MagicMock()
     cog.mutils = MagicMock()
     return cog
 
@@ -130,6 +132,77 @@ class TestPostEarningsSpotlight:
 
         # build was called with the single valid ticker
         mock_build.assert_called_once_with(ticker="MSFT")
+
+
+def _make_stock_data_for_report(cog):
+    """Set up stock_data mocks needed by build_stock_report."""
+    cog.stock_data.tickers.get_ticker_info.return_value = {}
+    cog.stock_data.price_history.fetch_daily_price_history.return_value = pd.DataFrame()
+    cog.stock_data.popularity.fetch_popularity.return_value = pd.DataFrame()
+    cog.stock_data.sec.get_recent_filings.return_value = pd.DataFrame()
+    cog.stock_data.earnings.get_historical_earnings.return_value = pd.DataFrame()
+    cog.stock_data.earnings.get_next_earnings_info.return_value = {}
+    cog.stock_data.schwab.get_quote = AsyncMock(return_value={
+        'symbol': 'AAPL',
+        'quote': {'openPrice': 180, 'highPrice': 190, 'lowPrice': 175,
+                  'totalVolume': 50_000_000, 'netPercentChange': 1.5},
+        'regular': {'regularMarketLastPrice': 185.0},
+        'reference': {'exchangeName': 'NASDAQ', 'isShortable': True, 'isHardToBorrow': False},
+    })
+    cog.stock_data.schwab.get_fundamentals = AsyncMock(return_value={
+        'instruments': [{'fundamental': {
+            'marketCap': 3_000_000_000_000, 'eps': 6.5, 'epsTTM': 6.5,
+            'peRatio': 28.5, 'beta': 1.2, 'dividendAmount': 0.96,
+        }}]
+    })
+
+
+class TestBuildStockReport:
+    @pytest.mark.asyncio
+    async def test_no_guild_id_yields_empty_recent_alerts(self):
+        cog = _make_cog()
+        _make_stock_data_for_report(cog)
+        cog.dstate.get_recent_alerts_for_ticker.return_value = [
+            (datetime.date.today(), 'EARNINGS_MOVER', '111'),
+        ]
+        report = await cog.build_stock_report(ticker='AAPL', guild_id=None)
+        assert report.data.recent_alerts == []
+
+    @pytest.mark.asyncio
+    async def test_with_guild_id_and_alerts_builds_jump_urls(self):
+        cog = _make_cog()
+        _make_stock_data_for_report(cog)
+        today = datetime.date.today()
+        cog.dstate.get_recent_alerts_for_ticker.return_value = [
+            (today, 'EARNINGS_MOVER', '111'),
+        ]
+        cog.channel_config.get_channel_id.return_value = 999
+        report = await cog.build_stock_report(ticker='AAPL', guild_id=12345)
+        assert len(report.data.recent_alerts) == 1
+        entry = report.data.recent_alerts[0]
+        assert entry['alert_type'] == 'EARNINGS_MOVER'
+        assert '12345/999/111' in entry['url']
+
+    @pytest.mark.asyncio
+    async def test_alerts_channel_not_configured_url_is_none(self):
+        cog = _make_cog()
+        _make_stock_data_for_report(cog)
+        today = datetime.date.today()
+        cog.dstate.get_recent_alerts_for_ticker.return_value = [
+            (today, 'WATCHLIST_MOVER', '222'),
+        ]
+        cog.channel_config.get_channel_id.return_value = None
+        report = await cog.build_stock_report(ticker='AAPL', guild_id=12345)
+        assert len(report.data.recent_alerts) == 1
+        assert report.data.recent_alerts[0]['url'] is None
+
+    @pytest.mark.asyncio
+    async def test_no_alerts_returns_empty_list(self):
+        cog = _make_cog()
+        _make_stock_data_for_report(cog)
+        cog.dstate.get_recent_alerts_for_ticker.return_value = []
+        report = await cog.build_stock_report(ticker='AAPL', guild_id=12345)
+        assert report.data.recent_alerts == []
 
 
 class TestRunTask:

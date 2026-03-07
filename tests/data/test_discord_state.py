@@ -104,6 +104,59 @@ class TestAlertMessageId:
         assert call_kwargs["table"] == "alerts"
 
 
+class TestGetRecentAlertsForTicker:
+    def test_returns_empty_list_when_no_rows(self):
+        db = MagicMock()
+        db.select.return_value = []
+        ds = _make(db)
+        result = ds.get_recent_alerts_for_ticker("AAPL")
+        assert result == []
+
+    def test_returns_empty_list_when_db_returns_none(self):
+        db = MagicMock()
+        db.select.return_value = None
+        ds = _make(db)
+        result = ds.get_recent_alerts_for_ticker("AAPL")
+        assert result == []
+
+    def test_returns_rows_for_ticker_today(self):
+        import datetime
+        today = datetime.date.today()
+        db = MagicMock()
+        db.select.return_value = [
+            (today, 'EARNINGS_MOVER', '111'),
+            (today, 'WATCHLIST_MOVER', '222'),
+        ]
+        ds = _make(db)
+        result = ds.get_recent_alerts_for_ticker("AAPL")
+        assert len(result) == 2
+        assert result[0] == (today, 'EARNINGS_MOVER', '111')
+
+    def test_queries_correct_table_and_fields(self):
+        db = MagicMock()
+        db.select.return_value = []
+        ds = _make(db)
+        ds.get_recent_alerts_for_ticker("TSLA")
+        call_kwargs = db.select.call_args[1]
+        assert call_kwargs['table'] == 'alerts'
+        assert 'date' in call_kwargs['fields']
+        assert 'alert_type' in call_kwargs['fields']
+        assert 'messageid' in call_kwargs['fields']
+
+    def test_where_conditions_include_ticker_and_today(self):
+        import datetime
+        db = MagicMock()
+        db.select.return_value = []
+        ds = _make(db)
+        ds.get_recent_alerts_for_ticker("TSLA")
+        call_kwargs = db.select.call_args[1]
+        where = call_kwargs['where_conditions']
+        tickers_in_where = [v for _, v in where if v == 'TSLA']
+        dates_in_where = [v for _, v in where if v == datetime.date.today()]
+        assert tickers_in_where, "ticker not found in where_conditions"
+        assert dates_in_where, "today's date not found in where_conditions"
+
+
 class TestVolumeMessageId:
     def test_get_returns_id(self):
         db = MagicMock()
