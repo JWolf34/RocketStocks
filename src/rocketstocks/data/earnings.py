@@ -14,7 +14,7 @@ class Earnings:
         self.db = db
         self.mutils = market_utils()
 
-    def update_upcoming_earnings(self):
+    async def update_upcoming_earnings(self):
         """Identify upcoming earnings dates for all tickers and add to database"""
         logger.info("Updating upcoming earnings in database")
 
