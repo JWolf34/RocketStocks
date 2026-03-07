@@ -108,3 +108,115 @@ class TestRemovePastEarnings:
         db.delete.assert_called_once()
         call_kwargs = db.delete.call_args[1]
         assert call_kwargs["table"] == "upcoming_earnings"
+
+
+class TestUpdateHistoricalEarnings:
+    def _run(self, coro):
+        import asyncio
+        return asyncio.get_event_loop().run_until_complete(coro)
+
+    def _make_nasdaq_df(self, eps='$2.30', eps_forecast='$2.10', surprise='0.20'):
+        """Return a DataFrame shaped like the NASDAQ API response."""
+        return pd.DataFrame({
+            'symbol': ['AAPL'],
+            'eps': [eps],
+            'surprise': [surprise],
+            'epsForecast': [eps_forecast],
+            'fiscalQuarterEnding': ['Dec 2024'],
+        })
+
+    def test_column_names_are_lowercase(self):
+        """db.insert must be called with lowercase 'epsforecast' and 'fiscalquarterending'."""
+        earnings, db, nasdaq = _make_earnings()
+        # Return a date 2 days ago so the loop runs once
+        start_date = datetime.date.today() - datetime.timedelta(days=2)
+        db.select.return_value = (start_date,)
+        earnings.mutils.market_open_on_date.return_value = True
+        nasdaq.get_earnings_by_date.return_value = self._make_nasdaq_df()
+
+        self._run(earnings.update_historical_earnings())
+
+        assert db.insert.called
+        call_kwargs = db.insert.call_args[1]
+        fields = call_kwargs['fields']
+        assert 'epsforecast' in fields, f"Expected 'epsforecast' in fields, got: {fields}"
+        assert 'fiscalquarterending' in fields, f"Expected 'fiscalquarterending' in fields, got: {fields}"
+        assert 'epsForecast' not in fields
+        assert 'fiscalQuarterEnding' not in fields
+
+    def test_eps_parsing_handles_parentheses_and_dollar_signs(self):
+        """EPS values like '($1.50)' → -1.5, '$2.30' → 2.3, 'N/A' → None."""
+        earnings, db, nasdaq = _make_earnings()
+        start_date = datetime.date.today() - datetime.timedelta(days=2)
+        db.select.return_value = (start_date,)
+        earnings.mutils.market_open_on_date.return_value = True
+
+        nasdaq.get_earnings_by_date.return_value = pd.DataFrame({
+            'symbol': ['AAPL', 'MSFT', 'GOOG'],
+            'eps': ['($1.50)', '$2.30', 'N/A'],
+            'surprise': ['N/A', 'N/A', 'N/A'],
+            'epsForecast': ['$2.10', '$2.00', 'N/A'],
+            'fiscalQuarterEnding': ['Dec 2024', 'Dec 2024', 'Dec 2024'],
+        })
+
+        self._run(earnings.update_historical_earnings())
+
+        assert db.insert.called
+        values = db.insert.call_args[1]['values']
+        fields = db.insert.call_args[1]['fields']
+        eps_idx = fields.index('eps')
+        assert values[0][eps_idx] == -1.5
+        assert values[1][eps_idx] == 2.3
+        assert pd.isna(values[2][eps_idx])  # None → NaN when stored in a float DataFrame column
+
+    def test_skips_empty_earnings(self):
+        """When NASDAQ returns empty DataFrame, db.insert must not be called."""
+        earnings, db, nasdaq = _make_earnings()
+        start_date = datetime.date.today() - datetime.timedelta(days=2)
+        db.select.return_value = (start_date,)
+        earnings.mutils.market_open_on_date.return_value = True
+        nasdaq.get_earnings_by_date.return_value = pd.DataFrame()
+
+        self._run(earnings.update_historical_earnings())
+
+        db.insert.assert_not_called()
+
+
+class TestUpdateUpcomingEarnings:
+    def _run(self, coro):
+        import asyncio
+        return asyncio.get_event_loop().run_until_complete(coro)
+
+    def test_column_names_match_schema(self):
+        """db.insert must be called with snake_case 'eps_forecast' and 'fiscal_quarter_ending'."""
+        earnings, db, nasdaq = _make_earnings()
+        nasdaq.get_earnings_by_date.return_value = pd.DataFrame({
+            'symbol': ['AAPL'],
+            'date': ['2024-03-15'],
+            'time': ['BMO'],
+            'fiscalQuarterEnding': ['Q1 2024'],
+            'epsForecast': ['2.10'],
+            'noOfEsts': ['30'],
+            'lastYearEPS': ['1.80'],
+            'lastYearRptDt': ['2023-03-15'],
+        })
+
+        self._run(earnings.update_upcoming_earnings())
+
+        assert db.insert.called
+        call_kwargs = db.insert.call_args[1]
+        fields = call_kwargs['fields']
+        assert 'eps_forecast' in fields, f"Expected 'eps_forecast' in fields, got: {fields}"
+        assert 'fiscal_quarter_ending' in fields, f"Expected 'fiscal_quarter_ending' in fields, got: {fields}"
+
+    def test_skips_weekends(self):
+        """get_earnings_by_date must never be called for a Saturday or Sunday."""
+        earnings, db, nasdaq = _make_earnings()
+        nasdaq.get_earnings_by_date.return_value = pd.DataFrame()
+
+        self._run(earnings.update_upcoming_earnings())
+
+        for call in nasdaq.get_earnings_by_date.call_args_list:
+            date_str = call[0][0]
+            date = datetime.datetime.strptime(date_str, '%Y-%m-%d').date()
+            assert date.weekday() < 5, f"API called for weekend date: {date_str}"
