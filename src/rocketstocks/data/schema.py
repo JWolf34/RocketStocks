@@ -4,16 +4,28 @@ from psycopg2 import sql
 
 logger = logging.getLogger(__name__)
 
+_MIGRATION_SCRIPT = """
+ALTER TABLE tickers DROP COLUMN IF EXISTS url;
+ALTER TABLE tickers ADD COLUMN IF NOT EXISTS exchange varchar(16);
+ALTER TABLE tickers ADD COLUMN IF NOT EXISTS security_type varchar(8);
+ALTER TABLE tickers ADD COLUMN IF NOT EXISTS sic_code varchar(8);
+ALTER TABLE tickers ADD COLUMN IF NOT EXISTS delist_date date;
+ALTER TABLE tickers ALTER COLUMN cik DROP NOT NULL;
+"""
+
 _CREATE_SCRIPT = """
 CREATE TABLE IF NOT EXISTS tickers (
-    ticker      varchar(8) PRIMARY KEY,
-    cik         char(10) NOT NULL,
-    name        varchar(255) NOT NULL,
-    country     varchar(40),
-    ipoyear     char(4),
-    industry    varchar(64),
-    sector      varchar(64),
-    url         varchar(64)
+    ticker        varchar(8) PRIMARY KEY,
+    cik           char(10),
+    name          varchar(255) NOT NULL,
+    country       varchar(40),
+    ipoyear       char(4),
+    industry      varchar(64),
+    sector        varchar(64),
+    exchange      varchar(16),
+    security_type varchar(8),
+    sic_code      varchar(8),
+    delist_date   date
 );
 
 CREATE TABLE IF NOT EXISTS upcoming_earnings (
@@ -155,11 +167,20 @@ DROP TABLE IF EXISTS popularity_surges;
 """
 
 
+def migrate_tickers_schema(db) -> None:
+    """Apply schema migrations to existing tickers table (idempotent)."""
+    logger.debug("Running tickers schema migration...")
+    with db._cursor() as cur:
+        cur.execute(_MIGRATION_SCRIPT)
+    logger.debug("Tickers schema migration completed successfully!")
+
+
 def create_tables(db) -> None:
     """Create all application tables (idempotent)."""
     logger.debug("Running script to create tables in database...")
     with db._cursor() as cur:
         cur.execute(_CREATE_SCRIPT)
+    migrate_tickers_schema(db)
     logger.debug("Create script completed successfully!")
 
 
