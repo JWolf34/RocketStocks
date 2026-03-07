@@ -13,6 +13,9 @@ class secrets:
     schwab_api_key = get_env('SCHWAB_API_KEY')
     schwab_api_secret = get_env('SCHWAB_API_SECRET')
 
+    # Tiingo
+    tiingo_api_key = get_env('TIINGO_API_KEY')
+
     # Postgres
     db_user = get_env('POSTGRES_USER')
     db_password = get_env('POSTGRES_PASSWORD')
