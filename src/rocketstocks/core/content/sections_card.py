@@ -490,6 +490,38 @@ def todays_change_card(quote: dict) -> str:
     return f"{symbol} **{sign}{pct:.2f}%** — **${price:.2f}**"
 
 
+_ALERT_TYPE_LABELS = {
+    'EARNINGS_MOVER': '🚨 Earnings Mover',
+    'WATCHLIST_MOVER': '👀 Watchlist Mover',
+    'MARKET_ALERT': '📈 Market Alert',
+    'POPULARITY_SURGE': '🔥 Popularity Surge',
+    'MOMENTUM_CONFIRMATION': '⚡ Momentum Confirmation',
+}
+
+
+def recent_alerts_card(recent_alerts: list) -> str:
+    """Today's alerts for the ticker with Discord jump URLs. Returns '' when empty."""
+    if not recent_alerts:
+        return ''
+
+    lines = ['__**Recent Alerts**__']
+    for alert in recent_alerts:
+        date_obj = alert['date']
+        alert_type = alert['alert_type']
+        url = alert.get('url')
+        label = _ALERT_TYPE_LABELS.get(alert_type, alert_type)
+        try:
+            date_str = date_obj.strftime('%m/%d') if hasattr(date_obj, 'strftime') else str(date_obj)
+        except Exception:
+            date_str = str(date_obj)
+        if url:
+            lines.append(f"{label} · {date_str} · [View](<{url}>)")
+        else:
+            lines.append(f"{label} · {date_str}")
+
+    return '\n'.join(lines) + '\n\n'
+
+
 def weekly_earnings_cards(data: pd.DataFrame, watchlist_tickers: list[str]) -> str:
     """Upcoming earnings grouped by day as stacked cards."""
     import datetime as dt
