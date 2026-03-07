@@ -101,8 +101,8 @@ class Earnings:
                         'symbol':'ticker',
                         'eps':'eps',
                         'surprise':'surprise',
-                        'epsForecast':'epsForecast',
-                        'fiscalQuarterEnding':'fiscalQuarterEnding'}
+                        'epsForecast':'epsforecast',
+                        'fiscalQuarterEnding':'fiscalquarterending'}
         today = datetime.date.today()
 
         # Get most recently inserted date in database
@@ -140,7 +140,7 @@ class Earnings:
                                                                             .replace('$', "")
                                                                             .replace(',',""))
                                                                             if (len(x) > 0 and x != "N/A") else None)
-                    earnings ['epsForecast'] = earnings['epsForecast'].apply(lambda x: float(x.replace('(', '-')
+                    earnings ['epsforecast'] = earnings['epsforecast'].apply(lambda x: float(x.replace('(', '-')
                                                                             .replace(")", "")
                                                                             .replace('$', "")
                                                                             .replace(',',""))
