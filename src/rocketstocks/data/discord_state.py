@@ -1,4 +1,5 @@
 import asyncio
+import datetime
 import json
 import logging
 from rocketstocks.data.db import Postgres
@@ -86,3 +87,14 @@ class DiscordState:
         fields = await asyncio.to_thread(self.db.get_table_columns, 'alerts')
         values = [(date, ticker, alert_type, message_id, json.dumps(alert_data))]
         await asyncio.to_thread(self.db.insert, table='alerts', fields=fields, values=values)
+
+    def get_recent_alerts_for_ticker(self, ticker: str) -> list[tuple]:
+        """Return [(date, alert_type, messageid)] for today for a ticker."""
+        today = datetime.date.today()
+        return self.db.select(
+            table='alerts',
+            fields=['date', 'alert_type', 'messageid'],
+            where_conditions=[('ticker', ticker), ('date', today)],
+            order_by=('alert_type', 'ASC'),
+            fetchall=True,
+        ) or []
