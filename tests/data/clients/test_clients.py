@@ -277,3 +277,115 @@ class TestEarningsReturnType:
         result = earnings.get_earnings_on_date(datetime.date(2024, 1, 2))
         assert isinstance(result, pd.DataFrame)
         assert len(result) == 1
+
+
+# ---------------------------------------------------------------------------
+# Tiingo client
+# ---------------------------------------------------------------------------
+
+class TestTiingoClient:
+    def _make(self, api_key='test-key'):
+        with patch('rocketstocks.data.clients.tiingo.secrets') as mock_secrets, \
+             patch('rocketstocks.data.clients.tiingo.TiingoClient') as mock_cls:
+            mock_secrets.tiingo_api_key = api_key
+            from rocketstocks.data.clients.tiingo import Tiingo
+            obj = Tiingo(api_key=api_key)
+            obj._client = mock_cls.return_value
+            return obj
+
+    def test_list_all_tickers_returns_dataframe(self):
+        tiingo = self._make()
+        tiingo._client.list_tickers.return_value = [
+            {'ticker': 'aapl', 'name': 'Apple Inc.', 'exchangeCode': 'NASDAQ',
+             'assetType': 'Stock', 'startDate': '1980-12-12', 'endDate': None},
+            {'ticker': 'spy', 'name': 'SPDR ETF', 'exchangeCode': 'NYSE',
+             'assetType': 'ETF', 'startDate': '1993-01-22', 'endDate': None},
+        ]
+        result = tiingo.list_all_tickers()
+        assert isinstance(result, pd.DataFrame)
+        assert len(result) == 2
+        assert 'ticker' in result.columns
+        assert 'exchange' in result.columns
+
+    def test_list_all_tickers_maps_asset_type_correctly(self):
+        tiingo = self._make()
+        tiingo._client.list_tickers.return_value = [
+            {'ticker': 'aapl', 'name': 'Apple', 'exchangeCode': 'NASDAQ',
+             'assetType': 'Stock', 'startDate': '1980-01-01', 'endDate': None},
+            {'ticker': 'spy', 'name': 'SPDR', 'exchangeCode': 'NYSE',
+             'assetType': 'ETF', 'startDate': '1993-01-01', 'endDate': None},
+        ]
+        result = tiingo.list_all_tickers()
+        assert result.loc[result['ticker'] == 'AAPL', 'security_type'].iloc[0] == 'CS'
+        assert result.loc[result['ticker'] == 'SPY', 'security_type'].iloc[0] == 'ETF'
+
+    def test_get_ticker_metadata_returns_dict(self):
+        tiingo = self._make()
+        tiingo._client.get_ticker_metadata.return_value = {
+            'ticker': 'AAPL', 'name': 'Apple Inc.', 'exchangeCode': 'NASDAQ',
+            'assetType': 'Stock', 'endDate': None,
+        }
+        result = tiingo.get_ticker_metadata('AAPL')
+        assert result is not None
+        assert result['exchange'] == 'NASDAQ'
+        assert result['security_type'] == 'CS'
+        assert result['delist_date'] is None
+
+    def test_get_ticker_metadata_returns_none_on_error(self):
+        tiingo = self._make()
+        tiingo._client.get_ticker_metadata.side_effect = Exception("Not found")
+        result = tiingo.get_ticker_metadata('FAKE')
+        assert result is None
+
+    def test_get_daily_price_history_returns_dataframe(self):
+        tiingo = self._make()
+        import pandas as pd
+        df = pd.DataFrame({
+            'adjOpen': [60.0], 'adjHigh': [65.0], 'adjLow': [59.0],
+            'adjClose': [62.0], 'adjVolume': [5000000.0],
+        }, index=pd.to_datetime(['2008-09-12']))
+        df.index.name = 'date'
+        tiingo._client.get_dataframe.return_value = df
+        result = tiingo.get_daily_price_history('LEH', '2008-01-01', '2008-09-15')
+        assert isinstance(result, pd.DataFrame)
+        assert not result.empty
+        assert 'ticker' in result.columns
+        assert result['ticker'].iloc[0] == 'LEH'
+
+    def test_get_daily_price_history_returns_empty_on_error(self):
+        tiingo = self._make()
+        tiingo._client.get_dataframe.side_effect = Exception("ticker not found")
+        result = tiingo.get_daily_price_history('FAKE', '2000-01-01', '2000-12-31')
+        assert isinstance(result, pd.DataFrame)
+        assert result.empty
+
+
+# ---------------------------------------------------------------------------
+# Stooq client
+# ---------------------------------------------------------------------------
+
+class TestStooqClient:
+    def _make(self):
+        from rocketstocks.data.clients.stooq import Stooq
+        return Stooq()
+
+    def test_get_daily_price_history_returns_dataframe(self):
+        stooq = self._make()
+        mock_df = pd.DataFrame({
+            'Open': [60.0], 'High': [65.0], 'Low': [59.0],
+            'Close': [62.0], 'Volume': [5000000],
+        }, index=pd.to_datetime(['2008-09-12']))
+        mock_df.index.name = 'Date'
+        with patch('pandas_datareader.data.DataReader', return_value=mock_df):
+            result = stooq.get_daily_price_history('LEH', '2008-01-01', '2008-09-15')
+        assert isinstance(result, pd.DataFrame)
+        assert not result.empty
+        assert 'ticker' in result.columns
+        assert result['ticker'].iloc[0] == 'LEH'
+
+    def test_get_daily_price_history_returns_empty_on_exception(self):
+        stooq = self._make()
+        with patch('pandas_datareader.data.DataReader', side_effect=Exception("no data")):
+            result = stooq.get_daily_price_history('FAKE', '2000-01-01', '2000-12-31')
+        assert isinstance(result, pd.DataFrame)
+        assert result.empty
