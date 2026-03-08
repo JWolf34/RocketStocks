@@ -30,7 +30,7 @@ class TickerRepository:
         self._sec = sec
         self._tiingo = tiingo
 
-    async def update_tickers(self):
+    def update_tickers(self):
         """Update tickers table with the most up-to-date information from the NASDAQ."""
         import time
         logger.info("Updating tickers database table with up-to-date ticker data")
@@ -68,7 +68,7 @@ class TickerRepository:
         logger.info("Tickers have been updated!")
         logger.debug(f"Updating tickers completed in {elapsed:.2f} seconds")
 
-    async def insert_tickers(self):
+    def insert_tickers(self):
         """Insert all NASDAQ-listed tickers into the database.
 
         NASDAQ is the source of truth for the active ticker universe.

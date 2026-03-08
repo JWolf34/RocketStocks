@@ -53,7 +53,7 @@ class CapitolTrades:
         logger.info(f"Found data on {len(politicians)} politicians")
         return politicians
 
-    async def update_politicians(self):
+    def update_politicians(self):
         """Update rows in ct_politicians table with latest information."""
         logger.info("Updating politicians in the database")
         politicians = []

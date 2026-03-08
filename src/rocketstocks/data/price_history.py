@@ -92,7 +92,7 @@ class PriceHistoryRepository:
         else:
             logger.warning(f"No 5m price history found for ticker {ticker}")
 
-    async def load_delisted_price_history(self, ticker: str) -> int:
+    def load_delisted_price_history(self, ticker: str) -> int:
         """Fetch full historical OHLCV for a delisted ticker and store in daily_price_history.
 
         Tries Tiingo first; falls back to Stooq if Tiingo returns empty.
@@ -129,7 +129,7 @@ class PriceHistoryRepository:
         logger.info(f"Inserted {len(df)} rows of price history for delisted ticker '{ticker}'")
         return len(df)
 
-    async def load_delisted_price_history_batch(self, limit: int = 50) -> int:
+    def load_delisted_price_history_batch(self, limit: int = 50) -> int:
         """Load price history for up to *limit* delisted tickers with no existing data."""
         with self._db._cursor() as cur:
             cur.execute(
@@ -150,7 +150,7 @@ class PriceHistoryRepository:
         total = 0
         for (ticker,) in rows:
             try:
-                total += await self.load_delisted_price_history(ticker)
+                total += self.load_delisted_price_history(ticker)
             except Exception as exc:
                 logger.warning(f"Failed to load price history for delisted ticker '{ticker}': {exc}")
 

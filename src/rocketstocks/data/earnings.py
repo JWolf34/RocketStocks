@@ -14,7 +14,7 @@ class Earnings:
         self.db = db
         self.mutils = market_utils()
 
-    async def update_upcoming_earnings(self):
+    def update_upcoming_earnings(self):
         """Identify upcoming earnings dates for all tickers and add to database"""
         logger.info("Updating upcoming earnings in database")
 
@@ -94,7 +94,7 @@ class Earnings:
                             where_conditions=[('date', '<', datetime.date.today())])
         logger.info("Previous upcoming earnings removed from database")
 
-    async def update_historical_earnings(self):
+    def update_historical_earnings(self):
         """Update database with historical earnings records from the NASDAQ"""
         logger.info("Updating historical earnings in database...")
         column_map = {'date':'date',
