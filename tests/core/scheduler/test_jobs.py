@@ -132,27 +132,29 @@ class TestRegisterJobs:
             "scheduler() thread-entry function should have been removed"
         )
 
-    def test_all_wrapped_functions_are_coroutines(self):
-        """Every function registered with job_wrapper must be async def.
-
-        Uses the actual class methods (not mocks) since asyncio.iscoroutinefunction
-        returns False for MagicMock attributes.
-        """
+    def test_wrapped_functions_sync_async_classification(self):
+        """Verify which job functions are sync and which are genuinely async."""
         import asyncio
         from rocketstocks.data.tickers import TickerRepository
         from rocketstocks.data.earnings import Earnings
         from rocketstocks.data.clients.capitol_trades import CapitolTrades
+        from rocketstocks.data.price_history import PriceHistoryRepository
 
-        assert asyncio.iscoroutinefunction(TickerRepository.update_tickers), \
-            "TickerRepository.update_tickers must be async def"
-        assert asyncio.iscoroutinefunction(TickerRepository.insert_tickers), \
-            "TickerRepository.insert_tickers must be async def"
-        assert asyncio.iscoroutinefunction(Earnings.update_upcoming_earnings), \
-            "Earnings.update_upcoming_earnings must be async def"
-        assert asyncio.iscoroutinefunction(Earnings.update_historical_earnings), \
-            "Earnings.update_historical_earnings must be async def"
-        assert asyncio.iscoroutinefunction(CapitolTrades.update_politicians), \
-            "CapitolTrades.update_politicians must be async def"
+        # Genuinely async (use await on Schwab httpx client)
+        assert asyncio.iscoroutinefunction(PriceHistoryRepository.update_daily_price_history)
+        assert asyncio.iscoroutinefunction(PriceHistoryRepository.update_5m_price_history)
+
+        # Sync (blocking I/O — run in thread pool via asyncio.to_thread)
+        assert not asyncio.iscoroutinefunction(TickerRepository.update_tickers)
+        assert not asyncio.iscoroutinefunction(TickerRepository.insert_tickers)
+        assert not asyncio.iscoroutinefunction(TickerRepository.enrich_unenriched_batch)
+        assert not asyncio.iscoroutinefunction(TickerRepository.import_delisted_tickers)
+        assert not asyncio.iscoroutinefunction(Earnings.update_upcoming_earnings)
+        assert not asyncio.iscoroutinefunction(Earnings.update_historical_earnings)
+        assert not asyncio.iscoroutinefunction(Earnings.remove_past_earnings)
+        assert not asyncio.iscoroutinefunction(CapitolTrades.update_politicians)
+        assert not asyncio.iscoroutinefunction(PriceHistoryRepository.load_delisted_price_history_batch)
+        assert not asyncio.iscoroutinefunction(PriceHistoryRepository.load_delisted_price_history)
 
 
 class TestCheckSchwabTokenExpiry:
@@ -293,3 +295,59 @@ class TestCheckSchwabTokenExpiry:
         event = emitter.emit.call_args[0][0]
         assert event.level == NotificationLevel.FAILURE
         assert "Error checking token expiry" in event.message
+
+
+class TestJobWrapperIntegration:
+    """Integration tests using a real EventEmitter + real job_wrapper."""
+
+    @pytest.mark.asyncio
+    async def test_real_wrapper_with_sync_job(self):
+        """Real EventEmitter wrapping a sync function emits SUCCESS."""
+        from rocketstocks.core.notifications.emitter import EventEmitter
+        from rocketstocks.core.notifications.config import NotificationLevel
+
+        emitter = EventEmitter()
+
+        def my_sync_job():
+            return "done"
+
+        wrapped = emitter.job_wrapper("sync_test", my_sync_job)
+        result = await wrapped()
+        assert result == "done"
+        events = emitter.drain()
+        assert len(events) == 1
+        assert events[0].level == NotificationLevel.SUCCESS
+
+    @pytest.mark.asyncio
+    async def test_real_wrapper_with_async_job(self):
+        """Real EventEmitter wrapping an async function emits SUCCESS."""
+        from rocketstocks.core.notifications.emitter import EventEmitter
+        from rocketstocks.core.notifications.config import NotificationLevel
+
+        emitter = EventEmitter()
+
+        async def my_async_job():
+            return "async done"
+
+        wrapped = emitter.job_wrapper("async_test", my_async_job)
+        result = await wrapped()
+        assert result == "async done"
+        events = emitter.drain()
+        assert len(events) == 1
+        assert events[0].level == NotificationLevel.SUCCESS
+
+    def test_all_wrapped_jobs_are_coroutine_functions(self):
+        """job_wrapper always returns a coroutine function regardless of sync/async input."""
+        import asyncio
+        from rocketstocks.core.notifications.emitter import EventEmitter
+
+        emitter = EventEmitter()
+
+        def sync_fn():
+            pass
+
+        async def async_fn():
+            pass
+
+        assert asyncio.iscoroutinefunction(emitter.job_wrapper("s", sync_fn))
+        assert asyncio.iscoroutinefunction(emitter.job_wrapper("a", async_fn))

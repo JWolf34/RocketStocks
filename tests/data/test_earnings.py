@@ -111,10 +111,6 @@ class TestRemovePastEarnings:
 
 
 class TestUpdateHistoricalEarnings:
-    def _run(self, coro):
-        import asyncio
-        return asyncio.get_event_loop().run_until_complete(coro)
-
     def _make_nasdaq_df(self, eps='$2.30', eps_forecast='$2.10', surprise='0.20'):
         """Return a DataFrame shaped like the NASDAQ API response."""
         return pd.DataFrame({
@@ -134,7 +130,7 @@ class TestUpdateHistoricalEarnings:
         earnings.mutils.market_open_on_date.return_value = True
         nasdaq.get_earnings_by_date.return_value = self._make_nasdaq_df()
 
-        self._run(earnings.update_historical_earnings())
+        earnings.update_historical_earnings()
 
         assert db.insert.called
         call_kwargs = db.insert.call_args[1]
@@ -159,7 +155,7 @@ class TestUpdateHistoricalEarnings:
             'fiscalQuarterEnding': ['Dec 2024', 'Dec 2024', 'Dec 2024'],
         })
 
-        self._run(earnings.update_historical_earnings())
+        earnings.update_historical_earnings()
 
         assert db.insert.called
         values = db.insert.call_args[1]['values']
@@ -177,16 +173,12 @@ class TestUpdateHistoricalEarnings:
         earnings.mutils.market_open_on_date.return_value = True
         nasdaq.get_earnings_by_date.return_value = pd.DataFrame()
 
-        self._run(earnings.update_historical_earnings())
+        earnings.update_historical_earnings()
 
         db.insert.assert_not_called()
 
 
 class TestUpdateUpcomingEarnings:
-    def _run(self, coro):
-        import asyncio
-        return asyncio.get_event_loop().run_until_complete(coro)
-
     def test_column_names_match_schema(self):
         """db.insert must be called with snake_case 'eps_forecast' and 'fiscal_quarter_ending'."""
         earnings, db, nasdaq = _make_earnings()
@@ -201,7 +193,7 @@ class TestUpdateUpcomingEarnings:
             'lastYearRptDt': ['2023-03-15'],
         })
 
-        self._run(earnings.update_upcoming_earnings())
+        earnings.update_upcoming_earnings()
 
         assert db.insert.called
         call_kwargs = db.insert.call_args[1]
@@ -214,7 +206,7 @@ class TestUpdateUpcomingEarnings:
         earnings, db, nasdaq = _make_earnings()
         nasdaq.get_earnings_by_date.return_value = pd.DataFrame()
 
-        self._run(earnings.update_upcoming_earnings())
+        earnings.update_upcoming_earnings()
 
         for call in nasdaq.get_earnings_by_date.call_args_list:
             date_str = call[0][0]

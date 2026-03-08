@@ -132,7 +132,7 @@ class TestTickerRepository:
         })
         db.select.return_value = [('AAPL',)]  # AAPL is already in DB
         repo = self._make(db=db, nasdaq=nasdaq)
-        _run(repo.update_tickers())
+        repo.update_tickers()
         db.update.assert_called_once()
         call_kwargs = db.update.call_args[1]
         assert call_kwargs['table'] == 'tickers'
@@ -157,7 +157,7 @@ class TestTickerRepository:
             'url': ['apple.com'],
         })
         repo = self._make(db=db, nasdaq=nasdaq, sec=sec)
-        _run(repo.insert_tickers())
+        repo.insert_tickers()
         db.insert.assert_called_once()
         call_kwargs = db.insert.call_args[1]
         assert call_kwargs['table'] == 'tickers'
@@ -197,7 +197,7 @@ class TestTickerRepository:
         ])
         db = MagicMock()
         repo = self._make(db=db, nasdaq=nasdaq, sec=sec)
-        _run(repo.insert_tickers())
+        repo.insert_tickers()
 
         db.insert.assert_called_once()
         call_kwargs = db.insert.call_args[1]
@@ -390,7 +390,7 @@ class TestPriceHistoryRepository:
         tiingo.get_daily_price_history.return_value = self._make_ohlcv_df()
         stooq = MagicMock()
         repo = self._make(db=db, tiingo=tiingo, stooq=stooq)
-        result = _run(repo.load_delisted_price_history('LEH'))
+        result = repo.load_delisted_price_history('LEH')
         assert result == 1
         tiingo.get_daily_price_history.assert_called_once()
         stooq.get_daily_price_history.assert_not_called()
@@ -405,7 +405,7 @@ class TestPriceHistoryRepository:
         stooq = MagicMock()
         stooq.get_daily_price_history.return_value = self._make_ohlcv_df()
         repo = self._make(db=db, tiingo=tiingo, stooq=stooq)
-        result = _run(repo.load_delisted_price_history('LEH'))
+        result = repo.load_delisted_price_history('LEH')
         assert result == 1
         stooq.get_daily_price_history.assert_called_once()
         db.insert.assert_called_once()
@@ -417,7 +417,7 @@ class TestPriceHistoryRepository:
         tiingo = MagicMock()
         stooq = MagicMock()
         repo = self._make(db=db, tiingo=tiingo, stooq=stooq)
-        result = _run(repo.load_delisted_price_history('LEH'))
+        result = repo.load_delisted_price_history('LEH')
         assert result == 0
         tiingo.get_daily_price_history.assert_not_called()
         stooq.get_daily_price_history.assert_not_called()
@@ -435,7 +435,7 @@ class TestPriceHistoryRepository:
         tiingo = MagicMock()
         tiingo.get_daily_price_history.return_value = self._make_ohlcv_df()
         repo = self._make(db=db, tiingo=tiingo)
-        result = _run(repo.load_delisted_price_history_batch(limit=2))
+        result = repo.load_delisted_price_history_batch(limit=2)
         assert result == 2
 
 

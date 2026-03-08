@@ -178,7 +178,7 @@ class TestCapitolTrades:
 
             mock_bs_cls.side_effect = [page1_soup, page2_soup]
 
-            asyncio.get_event_loop().run_until_complete(ct.update_politicians())
+            ct.update_politicians()
 
         db.insert.assert_called_once()
         call_kwargs = db.insert.call_args[1]

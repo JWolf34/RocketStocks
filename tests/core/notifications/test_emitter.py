@@ -130,16 +130,50 @@ class TestJobWrapper:
         result = asyncio.get_event_loop().run_until_complete(wrapped())
         assert result == 99
 
-    def test_job_wrapper_raises_on_sync_function(self):
-        """Wrapping a sync def and calling it raises TypeError (documents the async-only contract)."""
+    def test_job_wrapper_handles_sync_function(self):
+        """Wrapping a sync def runs it via asyncio.to_thread and emits SUCCESS."""
         emitter = EventEmitter()
 
         def sync_job():
-            return 42  # returns int, not a coroutine
+            return 42
 
         wrapped = emitter.job_wrapper("sync_job", sync_job)
-        with pytest.raises(TypeError):
+        result = asyncio.get_event_loop().run_until_complete(wrapped())
+        assert result == 42
+        events = emitter.drain()
+        assert len(events) == 1
+        assert events[0].level == NotificationLevel.SUCCESS
+        assert events[0].job_name == "sync_job"
+
+    def test_job_wrapper_handles_sync_function_failure(self):
+        """Sync function that raises emits FAILURE and re-raises."""
+        emitter = EventEmitter()
+
+        def sync_job():
+            raise ValueError("sync boom")
+
+        wrapped = emitter.job_wrapper("sync_fail_job", sync_job)
+        with pytest.raises(ValueError, match="sync boom"):
             asyncio.get_event_loop().run_until_complete(wrapped())
+
+        events = emitter.drain()
+        assert len(events) == 1
+        assert events[0].level == NotificationLevel.FAILURE
+        assert events[0].job_name == "sync_fail_job"
+        assert "sync boom" in events[0].message
+
+    def test_sync_function_runs_in_thread(self):
+        """Sync function wrapped by job_wrapper executes on a non-main thread."""
+        import threading
+        emitter = EventEmitter()
+        thread_ids = []
+
+        def sync_job():
+            thread_ids.append(threading.current_thread().ident)
+
+        wrapped = emitter.job_wrapper("thread_job", sync_job)
+        asyncio.get_event_loop().run_until_complete(wrapped())
+        assert thread_ids[0] != threading.main_thread().ident
 
 
 class TestTaskWrapper:
