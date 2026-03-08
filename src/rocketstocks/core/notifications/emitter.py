@@ -1,3 +1,4 @@
+import asyncio
 import logging
 import queue
 import time
@@ -35,17 +36,22 @@ class EventEmitter:
 
     def job_wrapper(self, job_name: str, func):
         """
-        Wrap an async callable with try/except.
+        Wrap a sync or async callable with try/except.
+        Sync functions are run in a thread pool via asyncio.to_thread.
         Emits SUCCESS on normal return, FAILURE on exception (re-raises).
         Records elapsed time via time.monotonic().
         """
         source = func.__module__ if hasattr(func, '__module__') else "scheduler"
+        is_async = asyncio.iscoroutinefunction(func)
 
         @wraps(func)
         async def wrapped(*args, **kwargs):
             start = time.monotonic()
             try:
-                result = await func(*args, **kwargs)
+                if is_async:
+                    result = await func(*args, **kwargs)
+                else:
+                    result = await asyncio.to_thread(func, *args, **kwargs)
                 elapsed = time.monotonic() - start
                 self.emit(NotificationEvent(
                     level=NotificationLevel.SUCCESS,
