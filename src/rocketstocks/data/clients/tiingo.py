@@ -1,6 +1,7 @@
 """Tiingo API client — ticker metadata and delisted price history."""
 import logging
 import pandas as pd
+from tiingo import TiingoClient
 
 from rocketstocks.core.config.secrets import secrets
 
@@ -16,7 +17,6 @@ _ASSET_TYPE_MAP = {
 
 class Tiingo:
     def __init__(self, api_key=None):
-        from tiingo import TiingoClient
         key = api_key or secrets.tiingo_api_key
         self._client = TiingoClient({'api_key': key, 'session': True})
 

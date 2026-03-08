@@ -318,14 +318,15 @@ class TestEarningsReturnType:
 # ---------------------------------------------------------------------------
 
 class TestTiingoClient:
-    def _make(self, api_key='test-key'):
-        with patch('tiingo.TiingoClient') as mock_cls, \
+    def _make(self):
+        mock_client_instance = MagicMock()
+        with patch('rocketstocks.data.clients.tiingo.TiingoClient') as mock_cls, \
              patch('rocketstocks.data.clients.tiingo.secrets'):
+            mock_cls.return_value = mock_client_instance
             from rocketstocks.data.clients.tiingo import Tiingo
-            obj = Tiingo(api_key=api_key)
-            # _client is set by __init__ to mock_cls.return_value; expose for configuration
-            obj._client = mock_cls.return_value
-            return obj
+            obj = Tiingo(api_key='test-key')
+        obj._client = mock_client_instance
+        return obj
 
     def test_list_all_tickers_returns_dataframe(self):
         tiingo = self._make()
