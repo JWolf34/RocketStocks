@@ -1,4 +1,5 @@
 """Tiingo API client — ticker metadata and delisted price history."""
+import datetime
 import logging
 import pandas as pd
 from tiingo import TiingoClient
@@ -6,6 +7,8 @@ from tiingo import TiingoClient
 from rocketstocks.core.config.secrets import secrets
 
 logger = logging.getLogger(__name__)
+
+_DELIST_GRACE_DAYS = 30
 
 _ASSET_TYPE_MAP = {
     'Stock': 'CS',
@@ -36,7 +39,9 @@ class Tiingo:
             end_date = item.get('endDate')
             if end_date:
                 try:
-                    delist_date = pd.to_datetime(end_date).date()
+                    parsed = pd.to_datetime(end_date).date()
+                    days_ago = (datetime.date.today() - parsed).days
+                    delist_date = parsed if days_ago > _DELIST_GRACE_DAYS else None
                 except Exception:
                     delist_date = None
             else:
@@ -61,12 +66,15 @@ class Tiingo:
                 return None
             asset_type = data.get('assetType', '')
             end_date = data.get('endDate')
-            delist_date = None
             if end_date:
                 try:
-                    delist_date = pd.to_datetime(end_date).date()
+                    parsed = pd.to_datetime(end_date).date()
+                    days_ago = (datetime.date.today() - parsed).days
+                    delist_date = parsed if days_ago > _DELIST_GRACE_DAYS else None
                 except Exception:
-                    pass
+                    delist_date = None
+            else:
+                delist_date = None
             return {
                 'ticker': ticker.upper(),
                 'name': data.get('name', ''),
