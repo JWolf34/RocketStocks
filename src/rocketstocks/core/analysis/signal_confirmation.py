@@ -18,7 +18,7 @@ logger = logging.getLogger(__name__)
 _MIN_OBSERVATIONS_SUSTAINED = 2
 _MIN_OBSERVATIONS_ACCEL = 3
 _ACCEL_ZSCORE_THRESHOLD = 1.5
-_VOL_EXTREME_THRESHOLD = 3.0
+_VOL_EXTREME_THRESHOLD = 4.0
 
 
 def _compute_velocities(series: list[float]) -> list[float]:

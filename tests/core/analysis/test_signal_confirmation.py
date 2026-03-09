@@ -114,13 +114,13 @@ def test_extreme_volume_at_threshold():
 
 
 def test_extreme_volume_below_threshold_no_immediate():
-    """vol_z < 3.0 → does not trigger volume_extreme alone."""
+    """vol_z < 4.0 → does not trigger volume_extreme alone."""
     signal = _make_signal(pct_change=0.5)
     confirmed, reason = should_confirm_signal(
         signal=signal,
         observations=[],
         current_pct_change=0.5,
-        current_vol_z=2.9,
+        current_vol_z=3.9,
     )
     assert confirmed is False
 

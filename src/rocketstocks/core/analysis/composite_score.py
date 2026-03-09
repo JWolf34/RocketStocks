@@ -24,12 +24,12 @@ _W_VOLUME = 0.50
 _W_PRICE = 0.35
 _W_CROSS_SIGNAL = 0.15
 
-DEFAULT_COMPOSITE_THRESHOLD = 1.5  # lowered for testing (was 2.5)
+DEFAULT_COMPOSITE_THRESHOLD = 2.5  # ~15-25 market movers/day
 
 # Dual-gate thresholds
 _GATE_PRICE_MIN = 1.5
 _GATE_VOL_MIN = 1.5
-_GATE_VOL_EXTREME = 3.0
+_GATE_VOL_EXTREME = 4.0
 
 
 @dataclass
