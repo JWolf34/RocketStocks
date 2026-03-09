@@ -159,6 +159,20 @@ class MarketAlertData(TickerData):
 
 
 @dataclass
+class MarketMoverData(TickerData):
+    composite_result: object   # CompositeScoreResult
+    signal_detected_at: object  # datetime
+    confirmation_reason: str   # 'sustained', 'price_accelerating', 'volume_accelerating', 'volume_extreme'
+    signal_observations: int
+    price_velocity: float | None = None
+    price_acceleration: float | None = None
+    volume_velocity: float | None = None
+    volume_acceleration: float | None = None
+    daily_price_history: pd.DataFrame = field(default_factory=pd.DataFrame)
+    rvol: float | None = None
+
+
+@dataclass
 class EarningsMoverData(TickerData):
     next_earnings_info: dict
     historical_earnings: pd.DataFrame
