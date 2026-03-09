@@ -125,45 +125,63 @@ def register_jobs(aio_sched: AsyncIOScheduler, stock_data: StockData, emitter: E
 
     async def _check_schwab_token_expiry():
         """Check Schwab token expiry and emit notifications if needed."""
+        from rocketstocks.core.auth.token_manager import TokenStatus
+        _JOB = "Check Schwab token expiry"
+        _SRC = "rocketstocks.core.scheduler.jobs"
         try:
-            expiry_time = stock_data.schwab.get_token_expiry()
+            info = stock_data.schwab.get_token_info()
 
-            if expiry_time is None:
-                emitter.emit(NotificationEvent(
-                    level=NotificationLevel.FAILURE,
-                    source="rocketstocks.core.scheduler.jobs",
-                    job_name="Check Schwab token expiry",
-                    message="Schwab token is not initialized. User authentication may be required.",
-                ))
-                return
+            if info.status == TokenStatus.HEALTHY:
+                return  # No notification needed
 
-            now = datetime.datetime.now()
-            time_until_expiry = expiry_time - now
-            one_day = datetime.timedelta(days=1)
-
-            if time_until_expiry <= datetime.timedelta(0):
-                # Token is expired
-                emitter.emit(NotificationEvent(
-                    level=NotificationLevel.FAILURE,
-                    source="rocketstocks.core.scheduler.jobs",
-                    job_name="Check Schwab token expiry",
-                    message="Schwab token has expired. Please refresh the token.",
-                ))
-            elif time_until_expiry <= one_day:
-                # Token expires within 1 day
-                hours_until_expiry = time_until_expiry.total_seconds() / 3600
+            elif info.status == TokenStatus.EXPIRING_SOON:
+                hours = info.time_remaining.total_seconds() / 3600
                 emitter.emit(NotificationEvent(
                     level=NotificationLevel.WARNING,
-                    source="rocketstocks.core.scheduler.jobs",
-                    job_name="Check Schwab token expiry",
-                    message=f"Schwab token will expire in {hours_until_expiry:.1f} hours. Plan to refresh soon.",
+                    source=_SRC,
+                    job_name=_JOB,
+                    message=(
+                        f"Schwab token expires in {hours:.1f} hours. "
+                        "Run `/schwab-auth` to refresh before it expires."
+                    ),
                 ))
+
+            elif info.status == TokenStatus.EXPIRED:
+                emitter.emit(NotificationEvent(
+                    level=NotificationLevel.FAILURE,
+                    source=_SRC,
+                    job_name=_JOB,
+                    message="Schwab token has expired. Run `/schwab-auth` to re-authenticate.",
+                ))
+
+            elif info.status == TokenStatus.INVALID:
+                emitter.emit(NotificationEvent(
+                    level=NotificationLevel.FAILURE,
+                    source=_SRC,
+                    job_name=_JOB,
+                    message=(
+                        "Schwab token was rejected by Schwab (revoked or invalid). "
+                        "Run `/schwab-auth` to re-authenticate."
+                    ),
+                ))
+
+            elif info.status == TokenStatus.MISSING:
+                emitter.emit(NotificationEvent(
+                    level=NotificationLevel.FAILURE,
+                    source=_SRC,
+                    job_name=_JOB,
+                    message=(
+                        "Schwab token file is missing. "
+                        "Run `/schwab-auth` to authenticate."
+                    ),
+                ))
+
         except Exception as exc:
             logger.error(f"Error checking Schwab token expiry: {exc}")
             emitter.emit(NotificationEvent(
                 level=NotificationLevel.FAILURE,
-                source="rocketstocks.core.scheduler.jobs",
-                job_name="Check Schwab token expiry",
+                source=_SRC,
+                job_name=_JOB,
                 message=f"Error checking token expiry: {str(exc)}",
             ))
 
