@@ -5,6 +5,7 @@ import asyncio
 import time
 import traceback as tb
 import pandas as pd
+import pandas_market_calendars as mcal
 import discord
 from discord import app_commands
 from discord.ext import commands, tasks
@@ -19,6 +20,7 @@ from rocketstocks.core.notifications.config import NotificationLevel
 from rocketstocks.core.notifications.event import NotificationEvent
 
 from rocketstocks.core.content.models import (
+    AlertSummaryData,
     StockReportData,
     NewsReportData,
     PopularityReportData,
@@ -29,6 +31,7 @@ from rocketstocks.core.content.models import (
     WeeklyEarningsData,
     PoliticianReportData,
 )
+from rocketstocks.core.content.reports.alert_summary import AlertSummary
 from rocketstocks.core.content.reports.stock_report import StockReport
 from rocketstocks.core.content.reports.news_report import NewsReport
 from rocketstocks.core.content.reports.popularity_report import PopularityReport
@@ -47,6 +50,29 @@ from rocketstocks.bot.senders.report_sender import send_report, send_screener
 from rocketstocks.bot.senders.embed_utils import spec_to_embed
 
 logger = logging.getLogger(__name__)
+
+
+def _resolve_since_dt(value: str) -> tuple[datetime.datetime, str]:
+    """Map choice value → (since_datetime, human_label)."""
+    calendar = mcal.get_calendar('NYSE')
+    today = datetime.date.today()
+
+    if value == 'market_open_today':
+        # 9:30 AM ET = 14:30 UTC
+        market_open = datetime.datetime.combine(today, datetime.time(14, 30))
+        return market_open, 'since market open today'
+
+    if value == 'last_3_days':
+        return datetime.datetime.combine(today - datetime.timedelta(days=3), datetime.time.min), 'last 3 days'
+
+    if value == 'last_7_days':
+        return datetime.datetime.combine(today - datetime.timedelta(days=7), datetime.time.min), 'last 7 days'
+
+    # Default: 'last_close' → previous trading day at 4 PM ET (21:00 UTC)
+    valid = calendar.valid_days(start_date=today - datetime.timedelta(days=10), end_date=today)
+    prev_day = [d.date() for d in valid if d.date() < today][-1]
+    prev_close = datetime.datetime.combine(prev_day, datetime.time(21, 0))  # 4 PM ET in UTC
+    return prev_close, f'since last close ({prev_day.strftime("%b %d")})'
 
 
 class Reports(commands.Cog):
@@ -606,6 +632,43 @@ class Reports(commands.Cog):
             trades=trades,
             politician_facts=politician_facts,
         ))
+
+    def build_alert_summary(self, since_dt: datetime.datetime, label: str) -> AlertSummary:
+        alerts = self.dstate.get_alerts_since(since_dt)
+        return AlertSummary(data=AlertSummaryData(since_dt=since_dt, label=label, alerts=alerts))
+
+    @app_commands.command(name="alert-summary", description="Summarize alerts since a selected time period")
+    @app_commands.describe(
+        since_when="Time period to summarize (defaults to since last close)",
+        visibility="public posts to the alerts channel; private sends only to you",
+    )
+    @app_commands.choices(
+        since_when=[
+            app_commands.Choice(name="Since last close (default)", value="last_close"),
+            app_commands.Choice(name="Since market open today",    value="market_open_today"),
+            app_commands.Choice(name="Last 3 days",                value="last_3_days"),
+            app_commands.Choice(name="Last 7 days",                value="last_7_days"),
+        ],
+        visibility=[
+            app_commands.Choice(name="public",  value="public"),
+            app_commands.Choice(name="private", value="private"),
+        ],
+    )
+    async def alert_summary(
+        self,
+        interaction: discord.Interaction,
+        since_when: app_commands.Choice[str] = None,
+        visibility: app_commands.Choice[str] = None,
+    ):
+        """Summarize recent alerts grouped by type."""
+        await interaction.response.defer(ephemeral=True)
+        logger.info(f"/alert-summary called by user '{interaction.user.name}'")
+        since_dt, label = _resolve_since_dt(since_when.value if since_when else 'last_close')
+        content = self.build_alert_summary(since_dt, label)
+        channel = self.bot.get_channel_for_guild(interaction.guild_id, ALERTS)
+        vis = visibility.value if visibility else "private"
+        message = await send_report(content, channel, interaction=interaction, visibility=vis)
+        await interaction.followup.send(f"[Alert summary posted]({message.jump_url})", ephemeral=True)
 
 
 async def setup(bot):
