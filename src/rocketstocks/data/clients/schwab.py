@@ -3,8 +3,10 @@ import datetime
 
 import httpx
 import schwab
+from authlib.integrations.base_client.errors import OAuthError
 
 from rocketstocks.core.config.secrets import secrets
+from rocketstocks.core.auth.token_manager import get_token_info, TokenInfo, TokenStatus
 
 logger = logging.getLogger(__name__)
 
@@ -12,34 +14,97 @@ logger = logging.getLogger(__name__)
 TOKEN_PATH = "data/schwab-token.json"
 
 
+class SchwabTokenError(Exception):
+    """Raised when the Schwab client is unavailable due to a token problem."""
+
+
 class Schwab:
     def __init__(self, client=None, token_path=TOKEN_PATH):
         self.token_path = token_path
-        self.client = client or schwab.auth.easy_client(
-            api_key=secrets.schwab_api_key,
-            app_secret=secrets.schwab_api_secret,
-            callback_url="https://127.0.0.1:8182",
-            token_path=self.token_path,
-            asyncio=True,
-        )
+        self._token_invalid: bool = False
+
+        if client is not None:
+            self.client = client
+        else:
+            self._load_client()
+
+    def _load_client(self) -> None:
+        """Load the Schwab client from the token file.
+
+        Sets ``self.client = None`` if the token is missing or invalid rather
+        than raising, so the bot can start without a valid token.
+        """
+        try:
+            self.client = schwab.auth.client_from_token_file(
+                self.token_path,
+                api_key=secrets.schwab_api_key,
+                app_secret=secrets.schwab_api_secret,
+                asyncio=True,
+            )
+            logger.info("Schwab client loaded from token file")
+        except FileNotFoundError:
+            logger.warning(
+                f"Schwab token file not found at {self.token_path!r}. "
+                "Run /schwab-auth to authenticate."
+            )
+            self.client = None
+        except Exception as exc:
+            logger.error(f"Failed to load Schwab client from token file: {exc}")
+            self.client = None
+
+    def reload_client(self) -> None:
+        """Re-read the token file and reinitialise the Schwab client.
+
+        Call this after a successful OAuth flow to activate the new token.
+        """
+        self._token_invalid = False
+        self._load_client()
+
+    def get_token_info(self) -> TokenInfo:
+        """Return the current token status, including runtime invalidity."""
+        if self._token_invalid:
+            return TokenInfo(status=TokenStatus.INVALID, expires_at=None, time_remaining=None)
+        return get_token_info(self.token_path)
+
+    # ------------------------------------------------------------------
+    # Legacy helper kept for backward compatibility
+    # ------------------------------------------------------------------
 
     def get_token_expiry(self):
-        """Return the Schwab token expiry as a naive local datetime, or None if unavailable."""
-        import json
-        import os
-        try:
-            if not os.path.exists(self.token_path):
-                return None
-            with open(self.token_path, "r") as f:
-                data = json.load(f)
-            expires_at = data["token"]["expires_at"]
-            return datetime.datetime.fromtimestamp(expires_at)
-        except Exception as exc:
-            logger.warning(f"Could not read Schwab token expiry from {self.token_path}: {exc}")
-            return None
+        """Return the Schwab token expiry as a naive local datetime, or None."""
+        info = get_token_info(self.token_path)
+        return info.expires_at
+
+    # ------------------------------------------------------------------
+    # Internal helpers
+    # ------------------------------------------------------------------
+
+    def _require_client(self):
+        """Raise SchwabTokenError if the client is unavailable."""
+        if self.client is None:
+            raise SchwabTokenError(
+                "Schwab client is not available. Run /schwab-auth to authenticate."
+            )
+
+    def _handle_oauth_error(self, exc: OAuthError) -> None:
+        """Mark token as invalid and re-raise as SchwabTokenError."""
+        logger.error(
+            f"Schwab OAuth error — token is invalid or has been revoked: {exc}. "
+            "Run /schwab-auth to re-authenticate."
+        )
+        self._token_invalid = True
+        self.client = None
+        raise SchwabTokenError(
+            f"Schwab token was rejected: {exc}. Run /schwab-auth to re-authenticate."
+        ) from exc
+
+    # ------------------------------------------------------------------
+    # API methods
+    # ------------------------------------------------------------------
 
     async def get_daily_price_history(self, ticker, start_datetime=None, end_datetime=None):
         """Request daily price history from Schwab between start_datetime and end_datetime."""
+        self._require_client()
         # B3 fix: resolve end_datetime here, not at import/class-definition time
         if end_datetime is None:
             end_datetime = datetime.datetime.now(datetime.timezone.utc)
@@ -50,11 +115,15 @@ class Schwab:
             f"Requesting daily price history from Schwab for ticker: '{ticker}' "
             f"- start: {start_datetime}, end: {end_datetime}"
         )
-        resp = await self.client.get_price_history_every_day(
-            symbol=ticker,
-            start_datetime=start_datetime,
-            end_datetime=end_datetime,
-        )
+        try:
+            resp = await self.client.get_price_history_every_day(
+                symbol=ticker,
+                start_datetime=start_datetime,
+                end_datetime=end_datetime,
+            )
+        except OAuthError as exc:
+            self._handle_oauth_error(exc)
+
         logger.debug(f"Response status code is {resp.status_code}")
         try:
             resp.raise_for_status()
@@ -80,15 +149,20 @@ class Schwab:
 
     async def get_5m_price_history(self, ticker, start_datetime=None, end_datetime=None):
         """Request 5-minute price history from Schwab between start_datetime and end_datetime."""
+        self._require_client()
         logger.debug(
             f"Requesting 5m price history from Schwab for ticker: '{ticker}' "
             f"- start: {start_datetime}, end: {end_datetime}"
         )
-        resp = await self.client.get_price_history_every_five_minutes(
-            symbol=ticker,
-            start_datetime=start_datetime,
-            end_datetime=end_datetime,
-        )
+        try:
+            resp = await self.client.get_price_history_every_five_minutes(
+                symbol=ticker,
+                start_datetime=start_datetime,
+                end_datetime=end_datetime,
+            )
+        except OAuthError as exc:
+            self._handle_oauth_error(exc)
+
         logger.debug(f"Response status code is {resp.status_code}")
         try:
             resp.raise_for_status()
@@ -110,8 +184,12 @@ class Schwab:
 
     async def get_quote(self, ticker):
         """Get latest quote for ticker from Schwab."""
+        self._require_client()
         logger.debug(f"Retrieving quote for ticker '{ticker}' from Schwab")
-        resp = await self.client.get_quote(symbol=ticker)
+        try:
+            resp = await self.client.get_quote(symbol=ticker)
+        except OAuthError as exc:
+            self._handle_oauth_error(exc)
         logger.debug(f"Response status code is {resp.status_code}")
         resp.raise_for_status()
         data = resp.json()
@@ -119,38 +197,54 @@ class Schwab:
 
     async def get_quotes(self, tickers):
         """Get quotes for multiple tickers from Schwab."""
+        self._require_client()
         logger.debug(f"Retrieving quotes for tickers {tickers} from Schwab")
-        resp = await self.client.get_quotes(symbols=tickers)
+        try:
+            resp = await self.client.get_quotes(symbols=tickers)
+        except OAuthError as exc:
+            self._handle_oauth_error(exc)
         logger.debug(f"Response status code is {resp.status_code}")
         resp.raise_for_status()
         return resp.json()
 
     async def get_fundamentals(self, tickers):
         """Get latest fundamental data from Schwab."""
+        self._require_client()
         logger.debug(f"Retrieving latest fundamental data for tickers {tickers}")
-        resp = await self.client.get_instruments(
-            symbols=tickers,
-            projection=self.client.Instrument.Projection.FUNDAMENTAL,
-        )
+        try:
+            resp = await self.client.get_instruments(
+                symbols=tickers,
+                projection=self.client.Instrument.Projection.FUNDAMENTAL,
+            )
+        except OAuthError as exc:
+            self._handle_oauth_error(exc)
         logger.debug(f"Response status code is {resp.status_code}")
         resp.raise_for_status()
         return resp.json()
 
     async def get_options_chain(self, ticker):
         """Get latest option chain for target ticker."""
+        self._require_client()
         logger.debug(f"Retrieving latest options chain for ticker '{ticker}'")
-        resp = await self.client.get_option_chain(ticker)
+        try:
+            resp = await self.client.get_option_chain(ticker)
+        except OAuthError as exc:
+            self._handle_oauth_error(exc)
         resp.raise_for_status()
         return resp.json()
 
     async def get_movers(self):
         """Get top 10 price movers for the day."""
+        self._require_client()
         logger.debug("Retrieving top 10 price movers from Schwab")
-        resp = await self.client.get_movers(
-            index=self.client.Movers.Index.EQUITY_ALL,
-            sort_order=self.client.Movers.SortOrder.PERCENT_CHANGE_UP,
-            frequency=self.client.Movers.Frequency.TEN,
-        )
+        try:
+            resp = await self.client.get_movers(
+                index=self.client.Movers.Index.EQUITY_ALL,
+                sort_order=self.client.Movers.SortOrder.PERCENT_CHANGE_UP,
+                frequency=self.client.Movers.Frequency.TEN,
+            )
+        except OAuthError as exc:
+            self._handle_oauth_error(exc)
         logger.debug(f"Response status code is {resp.status_code}")
         resp.raise_for_status()
         return resp.json()
