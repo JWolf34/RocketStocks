@@ -148,6 +148,22 @@ CREATE TABLE IF NOT EXISTS popularity_surges (
     expired         boolean DEFAULT FALSE,
     PRIMARY KEY (ticker, flagged_at)
 );
+
+CREATE TABLE IF NOT EXISTS market_signals (
+    ticker           varchar(8) NOT NULL,
+    detected_at      timestamp NOT NULL,
+    composite_score  float NOT NULL,
+    price_z          float,
+    vol_z            float,
+    pct_change       float,
+    dominant_signal  varchar(16),
+    rvol             float,
+    status           varchar(16) NOT NULL DEFAULT 'pending',
+    confirmed_at     timestamp,
+    alert_message_id bigint,
+    signal_data      json,
+    PRIMARY KEY (ticker, detected_at)
+);
 """
 
 _DROP_ALL_SCRIPT = """
@@ -164,6 +180,7 @@ DROP TABLE IF EXISTS ct_politicians;
 DROP TABLE IF EXISTS channel_config;
 DROP TABLE IF EXISTS ticker_stats;
 DROP TABLE IF EXISTS popularity_surges;
+DROP TABLE IF EXISTS market_signals;
 """
 
 
