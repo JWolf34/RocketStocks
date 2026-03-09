@@ -464,7 +464,7 @@ def ticker_info_card(ticker_info: dict, quote: dict) -> str:
     """One-line compact ticker info for embed description header."""
     parts = []
     name = (ticker_info or {}).get('name', '')
-    if name:
+    if name and name != 'NaN':
         parts.append(f"**{name}**")
     ticker = quote.get('symbol', '')
     if ticker:
@@ -475,9 +475,15 @@ def ticker_info_card(ticker_info: dict, quote: dict) -> str:
     industry = (ticker_info or {}).get('industry', '')
     if industry and industry != 'NaN':
         parts.append(industry)
+    country = (ticker_info or {}).get('country', '')
+    if country and country != 'NaN':
+        parts.append(country)
     exchange = quote.get('reference', {}).get('exchangeName', '')
-    if exchange:
+    if exchange and exchange != 'NaN':
         parts.append(exchange)
+    security_type = quote.get('quote', {}).get('securityType', '')
+    if security_type and security_type != 'NaN':
+        parts.append(security_type)
     return ' · '.join(parts)
 
 
