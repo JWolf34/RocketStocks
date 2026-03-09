@@ -11,6 +11,7 @@ ALTER TABLE tickers ADD COLUMN IF NOT EXISTS security_type varchar(8);
 ALTER TABLE tickers ADD COLUMN IF NOT EXISTS sic_code varchar(8);
 ALTER TABLE tickers ADD COLUMN IF NOT EXISTS delist_date date;
 ALTER TABLE tickers ALTER COLUMN cik DROP NOT NULL;
+ALTER TABLE alerts ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ DEFAULT NOW();
 """
 
 _CREATE_SCRIPT = """
@@ -78,6 +79,7 @@ CREATE TABLE IF NOT EXISTS alerts (
     alert_type  varchar(64),
     messageid   bigint,
     alert_data  json,
+    created_at  timestamptz DEFAULT NOW(),
     PRIMARY KEY (date, ticker, alert_type)
 );
 
