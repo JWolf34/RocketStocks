@@ -36,6 +36,11 @@ class MarketSignalRepository:
         signal_data: list | None = None,
     ) -> None:
         """Insert a new market signal record (ignores duplicates)."""
+        composite_score = float(composite_score) if composite_score is not None else None
+        price_z = float(price_z) if price_z is not None else None
+        vol_z = float(vol_z) if vol_z is not None else None
+        pct_change = float(pct_change) if pct_change is not None else None
+        rvol = float(rvol) if rvol is not None else None
         signal_data_json = json.dumps(signal_data or [])
         sql = (
             f"INSERT INTO {_TABLE} "
@@ -160,10 +165,10 @@ class MarketSignalRepository:
 
         observation = {
             'ts': datetime.datetime.utcnow().isoformat(),
-            'pct_change': pct_change,
-            'vol_z': vol_z,
-            'price_z': price_z,
-            'composite': composite_score,
+            'pct_change': float(pct_change) if pct_change is not None else None,
+            'vol_z': float(vol_z) if vol_z is not None else None,
+            'price_z': float(price_z) if price_z is not None else None,
+            'composite': float(composite_score) if composite_score is not None else None,
         }
         existing.append(observation)
         updated_json = json.dumps(existing)
@@ -175,8 +180,12 @@ class MarketSignalRepository:
         )
         with self._db._cursor() as cur:
             cur.execute(sql_update, [
-                updated_json, composite_score, pct_change,
-                vol_z, price_z, ticker, detected_at,
+                updated_json,
+                float(composite_score) if composite_score is not None else None,
+                float(pct_change) if pct_change is not None else None,
+                float(vol_z) if vol_z is not None else None,
+                float(price_z) if price_z is not None else None,
+                ticker, detected_at,
             ])
         logger.debug(f"Updated observation for '{ticker}' at {detected_at}")
 
