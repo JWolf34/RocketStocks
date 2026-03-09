@@ -254,6 +254,9 @@ class TestTickerRepository:
         result = repo.enrich_ticker('AAPL')
         assert result is True
         assert db.update.call_count >= 1
+        # delist_date must NOT be set during enrichment (active ticker enrichment path)
+        first_call_set_fields = db.update.call_args_list[0][1]['set_fields']
+        assert not any(k == 'delist_date' for k, _ in first_call_set_fields)
 
     def test_enrich_ticker_updates_sic_code_via_sec(self):
         tiingo = MagicMock()
@@ -307,14 +310,18 @@ class TestTickerRepository:
              'security_type': 'CS', 'delist_date': datetime.date(2001, 11, 28)},
         ])
         db = MagicMock()
-        # before: 10 tickers; after insert: 12
+        # before: 10 tickers; after upsert: 12
         db.select.side_effect = [
             [('T',)] * 10,  # before count
             [('T',)] * 12,  # after count
         ]
+        mock_cur = MagicMock()
+        db._cursor.return_value.__enter__ = lambda s: mock_cur
+        db._cursor.return_value.__exit__ = MagicMock(return_value=False)
         repo = self._make(db=db, tiingo=tiingo)
-        result = repo.import_delisted_tickers()
-        db.insert.assert_called_once()
+        with patch('rocketstocks.data.tickers.execute_values'):
+            result = repo.import_delisted_tickers()
+        db._cursor.assert_called()
         assert result == 2
 
     def test_import_delisted_tickers_cleans_names(self):
@@ -327,11 +334,17 @@ class TestTickerRepository:
         ])
         db = MagicMock()
         db.select.side_effect = [[('T',)] * 5, [('T',)] * 6]
+        mock_cur = MagicMock()
+        db._cursor.return_value.__enter__ = lambda s: mock_cur
+        db._cursor.return_value.__exit__ = MagicMock(return_value=False)
+        captured = {}
+        def fake_execute_values(cur, sql, values, **kwargs):
+            captured['values'] = values
         repo = self._make(db=db, tiingo=tiingo)
-        repo.import_delisted_tickers()
-        call_kwargs = db.insert.call_args[1]
-        name_idx = call_kwargs['fields'].index('name')
-        inserted_name = call_kwargs['values'][0][name_idx]
+        with patch('rocketstocks.data.tickers.execute_values', side_effect=fake_execute_values):
+            repo.import_delisted_tickers()
+        # name at index 1 in (ticker, name, exchange, security_type, delist_date)
+        inserted_name = captured['values'][0][1]
         assert inserted_name == 'Lehman Brothers Holdings'
 
     def test_enrich_ticker_updates_name_from_tiingo(self):
