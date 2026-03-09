@@ -1,5 +1,6 @@
 """Config cog — per-guild channel setup and status commands."""
 import logging
+import re
 import discord
 from discord import app_commands
 from discord.ext import commands
@@ -11,6 +12,120 @@ from rocketstocks.data.channel_config import (
 logger = logging.getLogger(__name__)
 
 _PRIORITY_CHANNEL_NAMES = ["bot-commands", "bot", "general", "welcome"]
+
+
+def _parse_channel(value: str, guild: discord.Guild) -> discord.TextChannel | None:
+    """Resolve a user-supplied string to a TextChannel in *guild*.
+
+    Accepts:
+    - ``<#CHANNEL_ID>`` mention format
+    - Raw numeric channel ID
+    - Channel name (with or without a leading ``#``)
+    """
+    value = value.strip()
+    if not value:
+        return None
+    # <#CHANNEL_ID> mention format
+    m = re.match(r"^<#(\d+)>$", value)
+    if m:
+        ch = guild.get_channel(int(m.group(1)))
+        return ch if isinstance(ch, discord.TextChannel) else None
+    # Raw numeric ID
+    if value.isdigit():
+        ch = guild.get_channel(int(value))
+        return ch if isinstance(ch, discord.TextChannel) else None
+    # Channel name (strip leading #)
+    name = value.lstrip("#")
+    return discord.utils.get(guild.text_channels, name=name)
+
+
+class SetupModal(discord.ui.Modal, title="Configure RocketStocks Channels"):
+    """Modal form for configuring the five channel types."""
+
+    reports = discord.ui.TextInput(
+        label="Reports Channel",
+        placeholder="<#ID>, channel ID, or name",
+        required=False,
+        max_length=100,
+    )
+    alerts = discord.ui.TextInput(
+        label="Alerts Channel",
+        placeholder="<#ID>, channel ID, or name",
+        required=False,
+        max_length=100,
+    )
+    screeners = discord.ui.TextInput(
+        label="Screeners Channel",
+        placeholder="<#ID>, channel ID, or name",
+        required=False,
+        max_length=100,
+    )
+    charts = discord.ui.TextInput(
+        label="Charts Channel",
+        placeholder="<#ID>, channel ID, or name",
+        required=False,
+        max_length=100,
+    )
+    notifications = discord.ui.TextInput(
+        label="Notifications Channel",
+        placeholder="<#ID>, channel ID, or name",
+        required=False,
+        max_length=100,
+    )
+
+    def __init__(self, cog: "Config"):
+        super().__init__()
+        self._cog = cog
+
+    async def on_submit(self, interaction: discord.Interaction):
+        await interaction.response.defer(ephemeral=True)
+        guild = interaction.guild
+        raw = {
+            REPORTS: self.reports.value,
+            ALERTS: self.alerts.value,
+            SCREENERS: self.screeners.value,
+            CHARTS: self.charts.value,
+            NOTIFICATIONS: self.notifications.value,
+        }
+        resolved = {k: _parse_channel(v, guild) for k, v in raw.items()}
+        resolved = {k: ch for k, ch in resolved.items() if ch is not None}
+        if not resolved:
+            await interaction.followup.send(
+                "No valid channels were provided. Use a channel mention, numeric ID, or channel name.",
+                ephemeral=True,
+            )
+            return
+        repo = self._cog.bot.stock_data.channel_config
+        lines = []
+        for config_type, channel in resolved.items():
+            repo.upsert_channel(interaction.guild_id, config_type, channel.id)
+            lines.append(f"**{config_type}**: {channel.mention}")
+            logger.info(f"/setup modal: guild={interaction.guild_id} {config_type}={channel.id}")
+        embed = discord.Embed(
+            title="Channel Configuration Updated",
+            description="\n".join(lines),
+            color=discord.Color.green(),
+        )
+        await interaction.followup.send(embed=embed, ephemeral=True)
+
+    async def on_error(self, interaction: discord.Interaction, error: Exception):
+        logger.error(f"SetupModal error: {error}")
+        await interaction.followup.send(
+            "An unexpected error occurred during setup. Please try `/setup` again.",
+            ephemeral=True,
+        )
+
+
+class SetupView(discord.ui.View):
+    """Persistent view attached to the setup prompt embed."""
+
+    def __init__(self, cog: "Config"):
+        super().__init__(timeout=None)
+        self._cog = cog
+
+    @discord.ui.button(label="Configure Channels", style=discord.ButtonStyle.primary)
+    async def configure_channels(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.send_modal(SetupModal(self._cog))
 
 
 class Config(commands.Cog):
@@ -66,21 +181,20 @@ class Config(commands.Cog):
             return None
 
     async def _send_setup_prompt(self, target, guild: discord.Guild):
-        """Send an orange setup-instructions embed to target (channel or DM)."""
+        """Send an orange setup-instructions embed with a Configure Channels button."""
         embed = discord.Embed(
             title="RocketStocks Setup Required",
             description=(
                 f"Thanks for adding RocketStocks to **{guild.name}**!\n\n"
-                "Use `/setup` to configure the channels for reports, alerts, screeners, "
-                "charts, and notifications.\n\n"
-                "**Example:**\n"
-                "`/setup reports:#reports alerts:#alerts screeners:#screeners "
-                "charts:#charts notifications:#bot-log`"
+                "Click **Configure Channels** below to set up which channels receive "
+                "reports, alerts, screeners, charts, and notifications.\n\n"
+                "You can also run `/setup` at any time to update the configuration."
             ),
             color=discord.Color.orange(),
         )
+        view = SetupView(self)
         try:
-            await target.send(embed=embed)
+            await target.send(embed=embed, view=view)
         except Exception as exc:
             logger.warning(f"Could not send setup prompt to {target}: {exc}")
 
@@ -90,52 +204,9 @@ class Config(commands.Cog):
 
     @app_commands.command(name="setup", description="Configure RocketStocks channels for this server")
     @app_commands.default_permissions(administrator=True)
-    @app_commands.describe(
-        reports="Channel for stock reports",
-        alerts="Channel for stock alerts",
-        screeners="Channel for screeners",
-        charts="Channel for charts",
-        notifications="Channel for bot notifications",
-    )
-    async def setup(
-        self,
-        interaction: discord.Interaction,
-        reports: discord.TextChannel = None,
-        alerts: discord.TextChannel = None,
-        screeners: discord.TextChannel = None,
-        charts: discord.TextChannel = None,
-        notifications: discord.TextChannel = None,
-    ):
-        """Upsert channel configuration for the calling guild."""
-        params = {
-            REPORTS: reports,
-            ALERTS: alerts,
-            SCREENERS: screeners,
-            CHARTS: charts,
-            NOTIFICATIONS: notifications,
-        }
-        provided = {k: v for k, v in params.items() if v is not None}
-        if not provided:
-            await interaction.response.send_message(
-                "Please provide at least one channel. Example:\n"
-                "`/setup reports:#reports alerts:#alerts`",
-                ephemeral=True,
-            )
-            return
-
-        repo = self.bot.stock_data.channel_config
-        configured_lines = []
-        for config_type, channel in provided.items():
-            repo.upsert_channel(interaction.guild_id, config_type, channel.id)
-            configured_lines.append(f"**{config_type}**: {channel.mention}")
-            logger.info(f"/setup: guild={interaction.guild_id} {config_type}={channel.id}")
-
-        embed = discord.Embed(
-            title="Channel Configuration Updated",
-            description="\n".join(configured_lines),
-            color=discord.Color.green(),
-        )
-        await interaction.response.send_message(embed=embed, ephemeral=True)
+    async def setup(self, interaction: discord.Interaction):
+        """Open the channel configuration modal."""
+        await interaction.response.send_modal(SetupModal(self))
 
     @app_commands.command(name="setup-status", description="Show current channel configuration for this server")
     @app_commands.default_permissions(administrator=True)
