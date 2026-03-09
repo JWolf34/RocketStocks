@@ -207,6 +207,25 @@ class TestGetAlertsSince:
         assert "TSLA" in tickers
         assert "AAPL" not in tickers
 
+    def test_filters_correctly_with_timezone_aware_created_at(self):
+        """Chicago-aware created_at timestamps must be normalized to UTC before comparison."""
+        db = MagicMock()
+        chicago = datetime.timezone(datetime.timedelta(hours=-5))
+        cutoff = datetime.datetime(2026, 3, 8, 14, 30)  # naive UTC: 9:30 AM ET
+        # 9:30 AM Chicago == 14:30 UTC → exactly at cutoff, should be included
+        at_open = datetime.datetime(2026, 3, 8, 9, 30, tzinfo=chicago)
+        # 9:29 AM Chicago == 14:29 UTC → before cutoff, should be excluded
+        before_open = datetime.datetime(2026, 3, 8, 9, 29, tzinfo=chicago)
+        db.select.return_value = [
+            self._row("TSLA", "WATCHLIST_ALERT", {}, created_at=at_open),
+            self._row("AAPL", "WATCHLIST_ALERT", {}, created_at=before_open),
+        ]
+        ds = _make(db)
+        result = ds.get_alerts_since(cutoff)
+        tickers = [r['ticker'] for r in result]
+        assert "TSLA" in tickers
+        assert "AAPL" not in tickers
+
     def test_null_created_at_always_included_when_time_specified(self):
         db = MagicMock()
         cutoff = datetime.datetime(2026, 3, 8, 14, 30)
