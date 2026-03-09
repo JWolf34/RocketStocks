@@ -1,26 +1,61 @@
 """Repository for the `tickers` table."""
 import logging
+import re
 import pandas as pd
 
 logger = logging.getLogger(__name__)
 
-_NAME_SUFFIXES = [
-    " Class A Common Stock",
-    " Class B Common Stock",
-    " Class C Common Stock",
-    " Common Stock",
-    " Ordinary Shares",
-    " American Depositary Shares",
-    " American Depositary Receipt",
+# Phase 1 — regex patterns (applied in order, most specific first)
+_ADR_CLAUSE_RE = re.compile(
+    r'\s+American Depositary (?:Shares?|Receipts?)\b.*$', re.IGNORECASE
+)
+_SHARE_CLASS_DASH_RE = re.compile(
+    r'\s+-\s+(?:Class\s+[A-Z]|Ordinary Shares?|Common Stock)\b.*$', re.IGNORECASE
+)
+_SHARE_CLASS_SUFFIX_RE = re.compile(
+    r'\s+Class\s+[A-Z]\s+(?:Common Stock|Ordinary Shares?|Shares?)\b.*$', re.IGNORECASE
+)
+_COMMON_STOCK_RE = re.compile(
+    r'\s+(?:Common Stock|Ordinary Shares?)\b.*$', re.IGNORECASE
+)
+_SPECIAL_SECURITIES_RE = re.compile(
+    r'\s+(?:Warrants?|Units?|Rights?|Preferred Stock)\b.*$', re.IGNORECASE
+)
+_REGISTERED_SHARES_RE = re.compile(
+    r',?\s+Registered Shares?\b.*$', re.IGNORECASE
+)
+
+_PHASE1_PATTERNS = [
+    _ADR_CLAUSE_RE,
+    _SHARE_CLASS_DASH_RE,
+    _SHARE_CLASS_SUFFIX_RE,
+    _COMMON_STOCK_RE,
+    _SPECIAL_SECURITIES_RE,
+    _REGISTERED_SHARES_RE,
+]
+
+# Phase 2 — legal entity suffixes (conservative, endswith)
+_LEGAL_SUFFIXES = [
+    ", Inc.", " Inc.", " Inc", ", Corp.", " Corp.", ", Ltd.", " Ltd.",
+    " Limited", ", Co.", " Co.", ", LLC", ", PLC", ", SA", ", NV",
+    ", SE", " SE", ", L.P.", ", N.A.",
 ]
 
 
-def _strip_name_suffix(name: str) -> str:
-    """Remove trailing boilerplate from a company name."""
-    for suffix in _NAME_SUFFIXES:
-        if name.endswith(suffix):
-            return name[: -len(suffix)].strip()
-    return name.strip()
+def clean_company_name(name: str) -> str:
+    """Remove trailing boilerplate and legal suffixes from a company name."""
+    if not name:
+        return name
+    result = name.strip()
+    # Phase 1 — regex
+    for pattern in _PHASE1_PATTERNS:
+        result = pattern.sub('', result)
+    # Phase 2 — legal suffixes
+    for suffix in _LEGAL_SUFFIXES:
+        if result.endswith(suffix):
+            result = result[: -len(suffix)]
+            break
+    return result.rstrip('., ').strip()
 
 
 class TickerRepository:
@@ -52,7 +87,7 @@ class TickerRepository:
         tickers_data = tickers_data.drop(columns=drop_columns)
         tickers_data = tickers_data.rename(columns=column_map)
         tickers_data = tickers_data[list(column_map.values())]
-        tickers_data['name'] = tickers_data['name'].apply(_strip_name_suffix)
+        tickers_data['name'] = tickers_data['name'].apply(clean_company_name)
 
         for _, row in tickers_data.iterrows():
             ticker = row['ticker']
@@ -96,7 +131,7 @@ class TickerRepository:
         }
         nasdaq_tickers = nasdaq_tickers.filter(list(nasdaq_column_map.keys()))
         nasdaq_tickers = nasdaq_tickers.rename(columns=nasdaq_column_map)
-        nasdaq_tickers['name'] = nasdaq_tickers['name'].apply(_strip_name_suffix)
+        nasdaq_tickers['name'] = nasdaq_tickers['name'].apply(clean_company_name)
 
         # NASDAQ is primary; SEC CIK joined in where available
         all_tickers = pd.merge(nasdaq_tickers, sec_tickers, on='ticker', how='left')
@@ -128,6 +163,9 @@ class TickerRepository:
                 ('security_type', metadata.get('security_type')),
                 ('delist_date', metadata.get('delist_date')),
             ]
+            tiingo_name = metadata.get('name', '')
+            if tiingo_name:
+                set_fields.append(('name', clean_company_name(tiingo_name)))
             self._db.update(
                 table='tickers',
                 set_fields=set_fields,
@@ -205,6 +243,7 @@ class TickerRepository:
         insert_df = delisted[['ticker', 'name', 'exchange', 'security_type', 'delist_date']].copy()
         # Add required NOT NULL name — already present; add placeholder for missing names
         insert_df = insert_df[insert_df['name'].notna() & (insert_df['name'] != '')]
+        insert_df['name'] = insert_df['name'].apply(clean_company_name)
         insert_df = insert_df.drop_duplicates(subset='ticker')
 
         before_count = len(self._db.select(table='tickers', fields=['ticker'], fetchall=True) or [])
