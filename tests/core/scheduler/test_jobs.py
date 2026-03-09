@@ -158,86 +158,80 @@ class TestRegisterJobs:
 
 
 class TestCheckSchwabTokenExpiry:
-    @pytest.mark.asyncio
-    async def test_emits_failure_when_token_is_none(self):
-        """Test that FAILURE notification is emitted when token is None."""
+    def _get_check_job(self, sd, emitter):
         from rocketstocks.core.scheduler.jobs import register_jobs
-        from rocketstocks.core.notifications.config import NotificationLevel
-
         mock_sched = MagicMock()
-        sd = _make_stock_data()
-        sd.schwab.get_token_expiry.return_value = None
-        emitter = _make_emitter()
-
         register_jobs(mock_sched, sd, emitter)
-
-        # Get the check_schwab_token_expiry job
-        check_job = None
         for call in mock_sched.add_job.call_args_list:
             if call.kwargs.get("name") == "Check Schwab token expiry":
-                check_job = call[0][0]
-                break
+                return call[0][0]
+        return None
 
+    def _make_token_info(self, status, hours=None):
+        from rocketstocks.core.auth.token_manager import TokenInfo, TokenStatus
+        remaining = datetime.timedelta(hours=hours) if hours is not None else None
+        expires_at = datetime.datetime.now() + remaining if remaining else None
+        return TokenInfo(status=status, expires_at=expires_at, time_remaining=remaining)
+
+    @pytest.mark.asyncio
+    async def test_emits_failure_when_token_is_missing(self):
+        """FAILURE notification emitted when token file is missing."""
+        from rocketstocks.core.notifications.config import NotificationLevel
+        from rocketstocks.core.auth.token_manager import TokenStatus
+        sd = _make_stock_data()
+        emitter = _make_emitter()
+        sd.schwab.get_token_info.return_value = self._make_token_info(TokenStatus.MISSING)
+        check_job = self._get_check_job(sd, emitter)
         assert check_job is not None
         await check_job()
-
-        # Verify emit was called with FAILURE level
         emitter.emit.assert_called_once()
         event = emitter.emit.call_args[0][0]
         assert event.level == NotificationLevel.FAILURE
-        assert "not initialized" in event.message
+        assert "missing" in event.message.lower() or "schwab-auth" in event.message.lower()
 
     @pytest.mark.asyncio
     async def test_emits_failure_when_token_is_expired(self):
-        """Test that FAILURE notification is emitted when token is expired."""
-        from rocketstocks.core.scheduler.jobs import register_jobs
+        """FAILURE notification emitted when token is expired."""
         from rocketstocks.core.notifications.config import NotificationLevel
-
-        mock_sched = MagicMock()
+        from rocketstocks.core.auth.token_manager import TokenStatus
         sd = _make_stock_data()
-        # Token expired 1 hour ago
-        sd.schwab.get_token_expiry.return_value = datetime.datetime.now() - datetime.timedelta(hours=1)
         emitter = _make_emitter()
-
-        register_jobs(mock_sched, sd, emitter)
-
-        check_job = None
-        for call in mock_sched.add_job.call_args_list:
-            if call.kwargs.get("name") == "Check Schwab token expiry":
-                check_job = call[0][0]
-                break
-
+        sd.schwab.get_token_info.return_value = self._make_token_info(TokenStatus.EXPIRED)
+        check_job = self._get_check_job(sd, emitter)
         assert check_job is not None
         await check_job()
-
         emitter.emit.assert_called_once()
         event = emitter.emit.call_args[0][0]
         assert event.level == NotificationLevel.FAILURE
-        assert "expired" in event.message
+        assert "expired" in event.message.lower()
 
     @pytest.mark.asyncio
-    async def test_emits_warning_when_token_expires_within_one_day(self):
-        """Test that WARNING notification is emitted when token expires within 1 day."""
-        from rocketstocks.core.scheduler.jobs import register_jobs
+    async def test_emits_failure_when_token_is_invalid(self):
+        """FAILURE notification emitted when token has been revoked."""
         from rocketstocks.core.notifications.config import NotificationLevel
-
-        mock_sched = MagicMock()
+        from rocketstocks.core.auth.token_manager import TokenStatus
         sd = _make_stock_data()
-        # Token expires in 6 hours
-        sd.schwab.get_token_expiry.return_value = datetime.datetime.now() + datetime.timedelta(hours=6)
         emitter = _make_emitter()
-
-        register_jobs(mock_sched, sd, emitter)
-
-        check_job = None
-        for call in mock_sched.add_job.call_args_list:
-            if call.kwargs.get("name") == "Check Schwab token expiry":
-                check_job = call[0][0]
-                break
-
+        sd.schwab.get_token_info.return_value = self._make_token_info(TokenStatus.INVALID)
+        check_job = self._get_check_job(sd, emitter)
         assert check_job is not None
         await check_job()
+        emitter.emit.assert_called_once()
+        event = emitter.emit.call_args[0][0]
+        assert event.level == NotificationLevel.FAILURE
+        assert "rejected" in event.message.lower() or "invalid" in event.message.lower()
 
+    @pytest.mark.asyncio
+    async def test_emits_warning_when_token_expires_soon(self):
+        """WARNING notification emitted when token expires within 2 days."""
+        from rocketstocks.core.notifications.config import NotificationLevel
+        from rocketstocks.core.auth.token_manager import TokenStatus
+        sd = _make_stock_data()
+        emitter = _make_emitter()
+        sd.schwab.get_token_info.return_value = self._make_token_info(TokenStatus.EXPIRING_SOON, hours=6)
+        check_job = self._get_check_job(sd, emitter)
+        assert check_job is not None
+        await check_job()
         emitter.emit.assert_called_once()
         event = emitter.emit.call_args[0][0]
         assert event.level == NotificationLevel.WARNING
@@ -245,52 +239,27 @@ class TestCheckSchwabTokenExpiry:
         assert "hours" in event.message
 
     @pytest.mark.asyncio
-    async def test_does_not_emit_when_token_expires_after_one_day(self):
-        """Test that no notification is emitted when token expires after 1 day."""
-        from rocketstocks.core.scheduler.jobs import register_jobs
-
-        mock_sched = MagicMock()
+    async def test_does_not_emit_when_token_is_healthy(self):
+        """No notification emitted when token is healthy."""
+        from rocketstocks.core.auth.token_manager import TokenStatus
         sd = _make_stock_data()
-        # Token expires in 2 days
-        sd.schwab.get_token_expiry.return_value = datetime.datetime.now() + datetime.timedelta(days=2)
         emitter = _make_emitter()
-
-        register_jobs(mock_sched, sd, emitter)
-
-        check_job = None
-        for call in mock_sched.add_job.call_args_list:
-            if call.kwargs.get("name") == "Check Schwab token expiry":
-                check_job = call[0][0]
-                break
-
+        sd.schwab.get_token_info.return_value = self._make_token_info(TokenStatus.HEALTHY, hours=96)
+        check_job = self._get_check_job(sd, emitter)
         assert check_job is not None
         await check_job()
-
-        # No emit should be called
         emitter.emit.assert_not_called()
 
     @pytest.mark.asyncio
     async def test_emits_failure_on_exception(self):
-        """Test that FAILURE notification is emitted on any exception."""
-        from rocketstocks.core.scheduler.jobs import register_jobs
+        """FAILURE notification emitted on unexpected exception."""
         from rocketstocks.core.notifications.config import NotificationLevel
-
-        mock_sched = MagicMock()
         sd = _make_stock_data()
-        sd.schwab.get_token_expiry.side_effect = Exception("Test error")
         emitter = _make_emitter()
-
-        register_jobs(mock_sched, sd, emitter)
-
-        check_job = None
-        for call in mock_sched.add_job.call_args_list:
-            if call.kwargs.get("name") == "Check Schwab token expiry":
-                check_job = call[0][0]
-                break
-
+        sd.schwab.get_token_info.side_effect = Exception("Test error")
+        check_job = self._get_check_job(sd, emitter)
         assert check_job is not None
         await check_job()
-
         emitter.emit.assert_called_once()
         event = emitter.emit.call_args[0][0]
         assert event.level == NotificationLevel.FAILURE

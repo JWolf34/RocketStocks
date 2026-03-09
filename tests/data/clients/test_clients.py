@@ -20,12 +20,68 @@ class TestSchwab:
         mock_inner_client = AsyncMock()
         with patch('rocketstocks.data.clients.schwab.schwab') as mock_schwab_pkg, \
              patch('rocketstocks.data.clients.schwab.secrets'):
-            mock_schwab_pkg.auth.easy_client.return_value = mock_inner_client
+            mock_schwab_pkg.auth.client_from_token_file.return_value = mock_inner_client
             from rocketstocks.data.clients.schwab import Schwab
             obj = Schwab()
         # Replace the client attr so we can configure returns
         obj.client = mock_inner_client
         return obj
+
+    def test_uses_client_from_token_file_not_easy_client(self):
+        """Schwab.__init__ must use client_from_token_file to avoid browser prompts."""
+        mock_inner_client = AsyncMock()
+        with patch('rocketstocks.data.clients.schwab.schwab') as mock_schwab_pkg, \
+             patch('rocketstocks.data.clients.schwab.secrets'):
+            mock_schwab_pkg.auth.client_from_token_file.return_value = mock_inner_client
+            from rocketstocks.data.clients.schwab import Schwab
+            Schwab()
+            mock_schwab_pkg.auth.client_from_token_file.assert_called_once()
+            mock_schwab_pkg.auth.easy_client.assert_not_called()
+
+    def test_client_is_none_when_token_file_missing(self):
+        """Schwab must set client=None gracefully when token file is absent."""
+        with patch('rocketstocks.data.clients.schwab.schwab') as mock_schwab_pkg, \
+             patch('rocketstocks.data.clients.schwab.secrets'):
+            mock_schwab_pkg.auth.client_from_token_file.side_effect = FileNotFoundError
+            from rocketstocks.data.clients.schwab import Schwab
+            obj = Schwab()
+        assert obj.client is None
+
+    def test_reload_client_resets_invalid_flag(self):
+        """reload_client must clear _token_invalid and attempt to reload."""
+        mock_inner_client = AsyncMock()
+        with patch('rocketstocks.data.clients.schwab.schwab') as mock_schwab_pkg, \
+             patch('rocketstocks.data.clients.schwab.secrets'):
+            mock_schwab_pkg.auth.client_from_token_file.return_value = mock_inner_client
+            from rocketstocks.data.clients.schwab import Schwab
+            obj = Schwab()
+            obj._token_invalid = True
+            obj.reload_client()
+        assert obj._token_invalid is False
+
+    def test_api_method_raises_when_client_is_none(self):
+        """All API methods should raise SchwabTokenError when client is None."""
+        with patch('rocketstocks.data.clients.schwab.schwab') as mock_schwab_pkg, \
+             patch('rocketstocks.data.clients.schwab.secrets'):
+            mock_schwab_pkg.auth.client_from_token_file.side_effect = FileNotFoundError
+            from rocketstocks.data.clients.schwab import Schwab, SchwabTokenError
+            obj = Schwab()
+        assert obj.client is None
+        import asyncio
+        with pytest.raises(SchwabTokenError):
+            asyncio.get_event_loop().run_until_complete(obj.get_quote('AAPL'))
+
+    def test_oauth_error_disables_client(self):
+        """OAuthError during an API call should set client=None and raise SchwabTokenError."""
+        from authlib.integrations.base_client.errors import OAuthError
+        from rocketstocks.data.clients.schwab import SchwabTokenError
+        obj = self._make()
+        obj.client.get_quote = AsyncMock(side_effect=OAuthError(error='invalid_token'))
+        import asyncio
+        with pytest.raises(SchwabTokenError):
+            asyncio.get_event_loop().run_until_complete(obj.get_quote('AAPL'))
+        assert obj.client is None
+        assert obj._token_invalid is True
 
     def test_no_import_time_datetime_default(self):
         """B3: end_datetime default must NOT be evaluated at import/class time."""
@@ -57,7 +113,7 @@ class TestSchwab:
         mock_inner_client = AsyncMock()
         with patch('rocketstocks.data.clients.schwab.schwab') as mock_schwab_pkg, \
              patch('rocketstocks.data.clients.schwab.secrets'):
-            mock_schwab_pkg.auth.easy_client.return_value = mock_inner_client
+            mock_schwab_pkg.auth.client_from_token_file.return_value = mock_inner_client
             from rocketstocks.data.clients.schwab import Schwab
             obj = Schwab(token_path=token_path)
         obj.client = mock_inner_client
