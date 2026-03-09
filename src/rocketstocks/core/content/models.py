@@ -5,6 +5,7 @@ This replaces the ~13 optional kwargs on Report.__init__ with explicit, type-che
 """
 from __future__ import annotations
 
+import datetime
 from dataclasses import dataclass, field
 
 import pandas as pd
@@ -102,6 +103,13 @@ class PoliticianReportData:
     politician: dict
     trades: pd.DataFrame
     politician_facts: dict
+
+
+@dataclass
+class AlertSummaryData:
+    since_dt: datetime.datetime   # resolved boundary datetime
+    label: str                    # human-readable label for the embed title/footer
+    alerts: list                  # each dict: {date, ticker, alert_type, messageid, alert_data}
 
 
 # ---------------------------------------------------------------------------
