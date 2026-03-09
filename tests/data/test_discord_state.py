@@ -1,4 +1,5 @@
 """Tests for rocketstocks.data.discord_state.DiscordState."""
+import datetime
 import json
 from unittest.mock import MagicMock
 
@@ -155,6 +156,111 @@ class TestGetRecentAlertsForTicker:
         dates_in_where = [v for _, v in where if v == datetime.date.today()]
         assert tickers_in_where, "ticker not found in where_conditions"
         assert dates_in_where, "today's date not found in where_conditions"
+
+
+class TestInsertAlertMessageIdFields:
+    @pytest.mark.asyncio
+    async def test_uses_explicit_fields_not_db_columns(self):
+        """insert_alert_message_id must NOT call get_table_columns (created_at should use DB DEFAULT)."""
+        db = MagicMock()
+        ds = _make(db)
+        await ds.insert_alert_message_id("2024-01-01", "AAPL", "WATCHLIST_ALERT", "888", {"pct_change": 5.0})
+        db.get_table_columns.assert_not_called()
+        call_kwargs = db.insert.call_args[1]
+        assert call_kwargs['fields'] == ['date', 'ticker', 'alert_type', 'messageid', 'alert_data']
+
+
+class TestGetAlertsSince:
+    def _row(self, ticker, alert_type, alert_data, created_at=None):
+        return (
+            datetime.date.today(),
+            ticker,
+            alert_type,
+            111,
+            json.dumps(alert_data),
+            created_at,
+        )
+
+    def test_returns_all_rows_when_midnight_time(self):
+        db = MagicMock()
+        db.select.return_value = [
+            self._row("AAPL", "WATCHLIST_ALERT", {"pct_change": 1.0}),
+            self._row("TSLA", "MARKET_MOVER", {"pct_change": 2.0}),
+        ]
+        ds = _make(db)
+        since = datetime.datetime.combine(datetime.date.today(), datetime.time.min)
+        result = ds.get_alerts_since(since)
+        assert len(result) == 2
+
+    def test_filters_by_created_at_when_time_specified(self):
+        db = MagicMock()
+        cutoff = datetime.datetime(2026, 3, 8, 14, 30)
+        early = datetime.datetime(2026, 3, 8, 13, 0)
+        late = datetime.datetime(2026, 3, 8, 15, 0)
+        db.select.return_value = [
+            self._row("AAPL", "WATCHLIST_ALERT", {}, created_at=early),
+            self._row("TSLA", "WATCHLIST_ALERT", {}, created_at=late),
+        ]
+        ds = _make(db)
+        result = ds.get_alerts_since(cutoff)
+        tickers = [r['ticker'] for r in result]
+        assert "TSLA" in tickers
+        assert "AAPL" not in tickers
+
+    def test_null_created_at_always_included_when_time_specified(self):
+        db = MagicMock()
+        cutoff = datetime.datetime(2026, 3, 8, 14, 30)
+        db.select.return_value = [
+            self._row("AAPL", "WATCHLIST_ALERT", {}, created_at=None),
+        ]
+        ds = _make(db)
+        result = ds.get_alerts_since(cutoff)
+        assert len(result) == 1
+        assert result[0]['ticker'] == "AAPL"
+
+    def test_deserializes_alert_data_from_string(self):
+        db = MagicMock()
+        db.select.return_value = [
+            self._row("AAPL", "WATCHLIST_ALERT", {"pct_change": 3.5}),
+        ]
+        ds = _make(db)
+        since = datetime.datetime.combine(datetime.date.today(), datetime.time.min)
+        result = ds.get_alerts_since(since)
+        assert result[0]['alert_data'] == {"pct_change": 3.5}
+
+    def test_returns_empty_list_when_no_rows(self):
+        db = MagicMock()
+        db.select.return_value = []
+        ds = _make(db)
+        result = ds.get_alerts_since(datetime.datetime(2026, 3, 8))
+        assert result == []
+
+    def test_returns_empty_list_when_db_returns_none(self):
+        db = MagicMock()
+        db.select.return_value = None
+        ds = _make(db)
+        result = ds.get_alerts_since(datetime.datetime(2026, 3, 8))
+        assert result == []
+
+    def test_queries_correct_table_with_date_filter(self):
+        db = MagicMock()
+        db.select.return_value = []
+        ds = _make(db)
+        since = datetime.datetime(2026, 3, 5)
+        ds.get_alerts_since(since)
+        call_kwargs = db.select.call_args[1]
+        assert call_kwargs['table'] == 'alerts'
+        where = call_kwargs['where_conditions']
+        assert any(v == since.date() for _, op, v in where)
+
+    def test_result_dict_has_expected_keys(self):
+        db = MagicMock()
+        db.select.return_value = [
+            self._row("AAPL", "WATCHLIST_ALERT", {"pct_change": 1.0}),
+        ]
+        ds = _make(db)
+        result = ds.get_alerts_since(datetime.datetime(2026, 3, 8))
+        assert set(result[0].keys()) == {'date', 'ticker', 'alert_type', 'messageid', 'alert_data'}
 
 
 class TestVolumeMessageId:

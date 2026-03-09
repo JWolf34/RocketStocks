@@ -250,3 +250,143 @@ class TestRunTask:
             await cog._run_task("job", failing())
         except RuntimeError:
             pytest.fail("_run_task must not re-raise exceptions")
+
+
+class TestResolveSinceDt:
+    """Unit tests for the _resolve_since_dt module-level helper."""
+
+    def test_market_open_today(self):
+        from rocketstocks.bot.cogs.reports import _resolve_since_dt
+        dt, label = _resolve_since_dt('market_open_today')
+        assert dt.time() == datetime.time(14, 30)
+        assert "market open" in label
+
+    def test_last_3_days(self):
+        from rocketstocks.bot.cogs.reports import _resolve_since_dt
+        dt, label = _resolve_since_dt('last_3_days')
+        expected = datetime.date.today() - datetime.timedelta(days=3)
+        assert dt.date() == expected
+        assert dt.time() == datetime.time.min
+        assert "3 days" in label
+
+    def test_last_7_days(self):
+        from rocketstocks.bot.cogs.reports import _resolve_since_dt
+        dt, label = _resolve_since_dt('last_7_days')
+        expected = datetime.date.today() - datetime.timedelta(days=7)
+        assert dt.date() == expected
+        assert "7 days" in label
+
+    def test_last_close_returns_previous_trading_day(self):
+        from rocketstocks.bot.cogs.reports import _resolve_since_dt
+        dt, label = _resolve_since_dt('last_close')
+        assert dt.time() == datetime.time(21, 0)
+        assert dt.date() < datetime.date.today()
+        assert "last close" in label
+
+    def test_unknown_value_defaults_to_last_close(self):
+        from rocketstocks.bot.cogs.reports import _resolve_since_dt
+        dt, label = _resolve_since_dt('unknown_value')
+        assert dt.time() == datetime.time(21, 0)
+
+
+class TestAlertSummaryCommand:
+    def _make_interaction(self):
+        interaction = MagicMock()
+        interaction.response = AsyncMock()
+        interaction.followup = AsyncMock()
+        interaction.user.name = "testuser"
+        interaction.guild_id = 12345
+        return interaction
+
+    @pytest.mark.asyncio
+    async def test_defaults_to_last_close_when_no_args(self):
+        cog = _make_cog()
+        interaction = self._make_interaction()
+        mock_content = MagicMock()
+        mock_message = MagicMock()
+        mock_message.jump_url = "https://discord.com/channels/1/2/3"
+
+        with (
+            patch.object(cog, 'build_alert_summary', return_value=mock_content) as mock_build,
+            patch("rocketstocks.bot.cogs.reports.send_report", new_callable=AsyncMock, return_value=mock_message),
+            patch("rocketstocks.bot.cogs.reports._resolve_since_dt", return_value=(
+                datetime.datetime(2026, 3, 7, 21, 0), "since last close (Mar 07)"
+            )) as mock_resolve,
+        ):
+            await cog.alert_summary.callback(cog, interaction, since_when=None, visibility=None)
+
+        mock_resolve.assert_called_with('last_close')
+
+    @pytest.mark.asyncio
+    async def test_uses_since_when_value(self):
+        cog = _make_cog()
+        interaction = self._make_interaction()
+        mock_content = MagicMock()
+        mock_message = MagicMock()
+        mock_message.jump_url = "https://discord.com/channels/1/2/3"
+
+        since_when = MagicMock()
+        since_when.value = 'last_3_days'
+
+        with (
+            patch.object(cog, 'build_alert_summary', return_value=mock_content),
+            patch("rocketstocks.bot.cogs.reports.send_report", new_callable=AsyncMock, return_value=mock_message),
+            patch("rocketstocks.bot.cogs.reports._resolve_since_dt", return_value=(
+                datetime.datetime(2026, 3, 5), "last 3 days"
+            )) as mock_resolve,
+        ):
+            await cog.alert_summary.callback(cog, interaction, since_when=since_when, visibility=None)
+
+        mock_resolve.assert_called_with('last_3_days')
+
+    @pytest.mark.asyncio
+    async def test_private_by_default(self):
+        cog = _make_cog()
+        interaction = self._make_interaction()
+        mock_content = MagicMock()
+        mock_message = MagicMock()
+        mock_message.jump_url = "https://discord.com/channels/1/2/3"
+
+        with (
+            patch.object(cog, 'build_alert_summary', return_value=mock_content),
+            patch("rocketstocks.bot.cogs.reports.send_report", new_callable=AsyncMock, return_value=mock_message) as mock_send,
+            patch("rocketstocks.bot.cogs.reports._resolve_since_dt", return_value=(
+                datetime.datetime(2026, 3, 7, 21, 0), "since last close (Mar 07)"
+            )),
+        ):
+            await cog.alert_summary.callback(cog, interaction, since_when=None, visibility=None)
+
+        call_kwargs = mock_send.call_args[1]
+        assert call_kwargs.get('visibility') == 'private'
+
+    @pytest.mark.asyncio
+    async def test_public_visibility_passes_through(self):
+        cog = _make_cog()
+        interaction = self._make_interaction()
+        mock_content = MagicMock()
+        mock_message = MagicMock()
+        mock_message.jump_url = "https://discord.com/channels/1/2/3"
+
+        visibility = MagicMock()
+        visibility.value = 'public'
+
+        with (
+            patch.object(cog, 'build_alert_summary', return_value=mock_content),
+            patch("rocketstocks.bot.cogs.reports.send_report", new_callable=AsyncMock, return_value=mock_message) as mock_send,
+            patch("rocketstocks.bot.cogs.reports._resolve_since_dt", return_value=(
+                datetime.datetime(2026, 3, 7, 21, 0), "since last close (Mar 07)"
+            )),
+        ):
+            await cog.alert_summary.callback(cog, interaction, since_when=None, visibility=visibility)
+
+        call_kwargs = mock_send.call_args[1]
+        assert call_kwargs.get('visibility') == 'public'
+
+    def test_build_alert_summary_calls_dstate(self):
+        cog = _make_cog()
+        since_dt = datetime.datetime(2026, 3, 7, 21, 0)
+        cog.dstate.get_alerts_since.return_value = []
+        result = cog.build_alert_summary(since_dt, "test label")
+        cog.dstate.get_alerts_since.assert_called_once_with(since_dt)
+        from rocketstocks.core.content.reports.alert_summary import AlertSummary
+        assert isinstance(result, AlertSummary)
