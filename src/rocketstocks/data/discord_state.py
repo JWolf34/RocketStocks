@@ -104,7 +104,8 @@ class DiscordState:
         for row in rows:
             created_at = row[5]
             if since_has_time and created_at is not None:
-                if created_at.replace(tzinfo=None) < since_dt:
+                naive_utc = created_at.astimezone(datetime.timezone.utc).replace(tzinfo=None) if created_at.tzinfo else created_at
+                if naive_utc < since_dt:
                     continue
             result.append({
                 'date': row[0],
