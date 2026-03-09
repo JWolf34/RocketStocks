@@ -1,7 +1,13 @@
 """Composite activity scoring module — pure analysis, no discord or data imports.
 
-Combines volume, price, cross-signal, and classification factors into a
-single score to determine whether to fire a Market alert.
+Combines volume, price, and cross-signal factors into a single score to
+determine whether to record a Market Signal.
+
+Changes vs. original:
+- Classification bonus removed (set to 0.0; field kept for backward compat).
+- Weights redistributed: volume 50%, price 35%, cross-signal 15%.
+- Dual-gate pre-check added: at least (|price_z|>=1.5 AND |vol_z|>=1.5) OR
+  |vol_z|>=4.0 must hold or should_alert=False immediately.
 """
 from __future__ import annotations
 
@@ -10,25 +16,20 @@ import math
 from dataclasses import dataclass
 
 from rocketstocks.core.analysis.alert_strategy import AlertTriggerResult
-from rocketstocks.core.analysis.classification import StockClass
 
 logger = logging.getLogger(__name__)
 
 # Component weights (must sum to 1.0)
-_W_VOLUME = 0.40
-_W_PRICE = 0.30
+_W_VOLUME = 0.50
+_W_PRICE = 0.35
 _W_CROSS_SIGNAL = 0.15
-_W_CLASSIFICATION = 0.15
 
-DEFAULT_COMPOSITE_THRESHOLD = 2.5  # ~10-20 market alerts/day
+DEFAULT_COMPOSITE_THRESHOLD = 2.5  # ~15-25 market movers/day
 
-# Classification bonus scores
-_CLASS_SCORE: dict[StockClass, float] = {
-    StockClass.VOLATILE: 2.0,
-    StockClass.MEME: 2.5,
-    StockClass.STANDARD: 1.0,
-    StockClass.BLUE_CHIP: 1.5,
-}
+# Dual-gate thresholds
+_GATE_PRICE_MIN = 1.5
+_GATE_VOL_MIN = 1.5
+_GATE_VOL_EXTREME = 4.0
 
 
 @dataclass
@@ -38,7 +39,7 @@ class CompositeScoreResult:
     volume_component: float        # abs(volume_zscore)
     price_component: float         # abs(price_zscore)
     cross_signal_component: float  # (confluence_count / total) * 4.0
-    classification_component: float
+    classification_component: float  # always 0.0 (preserved for backward compat)
     trigger_result: AlertTriggerResult
     dominant_signal: str           # 'volume', 'price', or 'mixed'
 
@@ -47,11 +48,11 @@ def compute_composite_score(
     trigger_result: AlertTriggerResult,
     threshold: float = DEFAULT_COMPOSITE_THRESHOLD,
 ) -> CompositeScoreResult:
-    """Compute a weighted composite score for market alert detection.
+    """Compute a weighted composite score for market signal detection.
 
     Args:
         trigger_result: AlertTriggerResult from evaluate_price_alert().
-        threshold: Score threshold to fire an alert (default 2.5).
+        threshold: Score threshold to consider alerting (default 2.5).
 
     Returns:
         CompositeScoreResult with weighted breakdown and alert decision.
@@ -60,15 +61,39 @@ def compute_composite_score(
     vol_z = trigger_result.volume_zscore
     if vol_z is None or (isinstance(vol_z, float) and math.isnan(vol_z)):
         volume_component = 0.0
+        vol_z_abs = 0.0
     else:
-        volume_component = abs(float(vol_z))
+        vol_z_abs = abs(float(vol_z))
+        volume_component = vol_z_abs
 
     # Price component: abs(price_zscore)
     price_z = trigger_result.zscore
     if price_z is None or (isinstance(price_z, float) and math.isnan(price_z)):
         price_component = 0.0
+        price_z_abs = 0.0
     else:
-        price_component = abs(float(price_z))
+        price_z_abs = abs(float(price_z))
+        price_component = price_z_abs
+
+    # Dual-gate pre-check: fail fast if neither condition met
+    gate_passes = (
+        (price_z_abs >= _GATE_PRICE_MIN and vol_z_abs >= _GATE_VOL_MIN)
+        or vol_z_abs >= _GATE_VOL_EXTREME
+    )
+    if not gate_passes:
+        logger.debug(
+            f"Composite dual-gate failed: price_z={price_z_abs:.2f}, vol_z={vol_z_abs:.2f}"
+        )
+        return CompositeScoreResult(
+            composite_score=0.0,
+            should_alert=False,
+            volume_component=volume_component,
+            price_component=price_component,
+            cross_signal_component=0.0,
+            classification_component=0.0,
+            trigger_result=trigger_result,
+            dominant_signal='mixed',
+        )
 
     # Cross-signal component: (confluence_count / total) * 4.0
     c_count = trigger_result.confluence_count
@@ -78,21 +103,11 @@ def compute_composite_score(
     else:
         cross_signal_component = 0.0
 
-    # Classification component
-    classification = trigger_result.classification
-    if not isinstance(classification, StockClass):
-        try:
-            classification = StockClass(classification)
-        except (ValueError, KeyError):
-            classification = StockClass.STANDARD
-    classification_component = _CLASS_SCORE.get(classification, 1.0)
-
-    # Weighted composite score
+    # Weighted composite score (no classification bonus)
     composite_score = (
         _W_VOLUME * volume_component
         + _W_PRICE * price_component
         + _W_CROSS_SIGNAL * cross_signal_component
-        + _W_CLASSIFICATION * classification_component
     )
 
     should_alert = composite_score >= threshold
@@ -117,7 +132,7 @@ def compute_composite_score(
     logger.debug(
         f"Composite score: {composite_score:.2f} "
         f"(vol={volume_component:.2f}, price={price_component:.2f}, "
-        f"cross={cross_signal_component:.2f}, class={classification_component:.2f}) "
+        f"cross={cross_signal_component:.2f}) "
         f"→ should_alert={should_alert}, dominant={dominant_signal}"
     )
 
@@ -127,7 +142,7 @@ def compute_composite_score(
         volume_component=volume_component,
         price_component=price_component,
         cross_signal_component=cross_signal_component,
-        classification_component=classification_component,
+        classification_component=0.0,
         trigger_result=trigger_result,
         dominant_signal=dominant_signal,
     )
