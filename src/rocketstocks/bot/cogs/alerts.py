@@ -19,6 +19,7 @@ import rocketstocks.core.analysis.indicators as an
 from rocketstocks.core.analysis.alert_strategy import evaluate_price_alert
 from rocketstocks.core.analysis.popularity_signals import evaluate_popularity_surge
 from rocketstocks.core.analysis.composite_score import compute_composite_score
+from rocketstocks.core.analysis.signal_confirmation import should_confirm_signal
 
 from rocketstocks.core.content.models import (
     EarningsMoverData,
@@ -26,12 +27,14 @@ from rocketstocks.core.content.models import (
     PopularitySurgeData,
     MomentumConfirmationData,
     MarketAlertData,
+    MarketMoverData,
 )
 from rocketstocks.core.content.alerts.earnings_alert import EarningsMoverAlert
 from rocketstocks.core.content.alerts.watchlist_alert import WatchlistMoverAlert
 from rocketstocks.core.content.alerts.popularity_surge_alert import PopularitySurgeAlert
 from rocketstocks.core.content.alerts.momentum_confirmation_alert import MomentumConfirmationAlert
 from rocketstocks.core.content.alerts.market_alert import MarketAlert
+from rocketstocks.core.content.alerts.market_mover_alert import MarketMoverAlert
 
 from rocketstocks.bot.views.alert_views import (
     AlertButtons,
@@ -39,6 +42,7 @@ from rocketstocks.bot.views.alert_views import (
     POPULARITY_SURGE_DOC_URL,
     MOMENTUM_CONFIRMATION_DOC_URL,
     MARKET_ALERT_DOC_URL,
+    MARKET_MOVER_DOC_URL,
     WATCHLIST_MOVER_DOC_URL,
     EARNINGS_MOVER_DOC_URL,
 )
@@ -253,7 +257,13 @@ class Alerts(commands.Cog):
         )
         surge_tickers = [s['ticker'] for s in active_surges]
 
-        all_tickers = list(set(screener_tickers + surge_tickers))
+        # Gather active market signal tickers for confirmation pipeline
+        active_signals = await asyncio.to_thread(
+            self.stock_data.market_signal_store.get_active_signals
+        )
+        signal_tickers = [s['ticker'] for s in active_signals]
+
+        all_tickers = list(set(screener_tickers + surge_tickers + signal_tickers))
 
         # Bulk Schwab quote fetch
         quotes = {}
@@ -277,16 +287,18 @@ class Alerts(commands.Cog):
 
         labels = [
             "_confirmation_pipeline",
-            "_market_pipeline",
+            "_market_signal_pipeline",
+            "_market_confirmation_pipeline",
             "_watchlist_pipeline",
             "_earnings_pipeline",
         ]
         results = await asyncio.gather(
             self._confirmation_pipeline(active_surges, quotes, classifications, alert_channels),
-            self._market_pipeline(
-                quotes, classifications, alert_channels,
+            self._market_signal_pipeline(
+                quotes, classifications,
                 exclude=surge_ticker_set | watchlist_tickers | earnings_tickers,
             ),
+            self._market_confirmation_pipeline(active_signals, quotes, alert_channels),
             self._watchlist_pipeline(quotes, classifications, alert_channels, watchlist_tickers),
             self._earnings_pipeline(quotes, classifications, alert_channels, earnings_tickers),
             return_exceptions=True,
@@ -295,8 +307,9 @@ class Alerts(commands.Cog):
             if isinstance(result, Exception):
                 logger.error(f"[process_alerts] {label} failed: {result}", exc_info=result)
 
-        # Expire old surges
+        # Expire old surges and signals
         await asyncio.to_thread(self.stock_data.surge_store.expire_old_surges)
+        await asyncio.to_thread(self.stock_data.market_signal_store.expire_old_signals)
         logger.info("Alerts posted")
 
     # -------------------------------------------------------------------------
@@ -368,15 +381,14 @@ class Alerts(commands.Cog):
             except Exception:
                 logger.error(f"[_confirmation_pipeline] Failed for '{ticker}'", exc_info=True)
 
-    async def _market_pipeline(
+    async def _market_signal_pipeline(
         self,
         quotes: dict,
         classifications: dict,
-        channels: list,
         exclude: set,
     ):
-        """Fire Market alerts for statistically unusual activity outside other pipelines."""
-        logger.info("Processing market pipeline")
+        """Silently record market signals — no alerts sent here."""
+        logger.info("Processing market signal pipeline")
         for ticker, quote in quotes.items():
             if ticker in exclude:
                 continue
@@ -398,6 +410,9 @@ class Alerts(commands.Cog):
                 composite_result = compute_composite_score(trigger_result)
 
                 if composite_result.should_alert:
+                    vol_z = trigger_result.volume_zscore
+                    price_z = trigger_result.zscore
+
                     rvol = None
                     if not daily_price_history.empty and current_volume is not None:
                         try:
@@ -409,23 +424,137 @@ class Alerts(commands.Cog):
                         except Exception:
                             pass
 
-                    logger.debug(
-                        f"[_market_pipeline] Market alert for '{ticker}' "
-                        f"composite={composite_result.composite_score:.2f}, "
-                        f"dominant={composite_result.dominant_signal}"
+                    already_signaled = await asyncio.to_thread(
+                        self.stock_data.market_signal_store.is_already_signaled, ticker
                     )
-                    alert = await self.build_market_alert(
+
+                    if already_signaled:
+                        # Get the latest signal to update with new observation
+                        latest_signal = await asyncio.to_thread(
+                            self.stock_data.market_signal_store.get_latest_signal, ticker
+                        )
+                        if latest_signal is not None:
+                            await asyncio.to_thread(
+                                self.stock_data.market_signal_store.update_observation,
+                                ticker,
+                                latest_signal['detected_at'],
+                                pct_change,
+                                composite_result.composite_score,
+                                vol_z,
+                                price_z,
+                            )
+                            logger.debug(
+                                f"[_market_signal_pipeline] Updated observation for '{ticker}' "
+                                f"composite={composite_result.composite_score:.2f}"
+                            )
+                    else:
+                        detected_at = datetime.datetime.utcnow()
+                        initial_obs = [{
+                            'ts': detected_at.isoformat(),
+                            'pct_change': pct_change,
+                            'vol_z': vol_z,
+                            'price_z': price_z,
+                            'composite': composite_result.composite_score,
+                        }]
+                        await asyncio.to_thread(
+                            self.stock_data.market_signal_store.insert_signal,
+                            ticker=ticker,
+                            detected_at=detected_at,
+                            composite_score=composite_result.composite_score,
+                            price_z=price_z,
+                            vol_z=vol_z,
+                            pct_change=pct_change,
+                            dominant_signal=composite_result.dominant_signal,
+                            rvol=rvol,
+                            signal_data=initial_obs,
+                        )
+                        logger.debug(
+                            f"[_market_signal_pipeline] Recorded new signal for '{ticker}' "
+                            f"composite={composite_result.composite_score:.2f}"
+                        )
+            except Exception:
+                logger.error(f"[_market_signal_pipeline] Failed for '{ticker}'", exc_info=True)
+
+    async def _market_confirmation_pipeline(
+        self,
+        active_signals: list[dict],
+        quotes: dict,
+        channels: list,
+    ):
+        """Post Market Mover alerts for signals that have sustained or accelerated."""
+        logger.info("Processing market confirmation pipeline")
+        for signal in active_signals:
+            ticker = signal['ticker']
+            if ticker not in quotes:
+                continue
+            try:
+                quote = quotes[ticker]
+                pct_change = quote['quote']['netPercentChange']
+                current_volume = quote['quote'].get('totalVolume')
+
+                daily_price_history = await asyncio.to_thread(
+                    self.stock_data.price_history.fetch_daily_price_history, ticker=ticker
+                )
+
+                trigger_result = evaluate_price_alert(
+                    classification='standard',
+                    pct_change=pct_change,
+                    daily_prices=daily_price_history,
+                    current_volume=current_volume,
+                )
+                vol_z = trigger_result.volume_zscore
+
+                observations = await asyncio.to_thread(
+                    self.stock_data.market_signal_store.get_signal_history, ticker
+                )
+
+                confirmed, reason = should_confirm_signal(
+                    signal=signal,
+                    observations=observations,
+                    current_pct_change=pct_change,
+                    current_vol_z=vol_z,
+                )
+
+                if confirmed:
+                    classification = signal.get('dominant_signal', 'standard')
+                    composite_result = compute_composite_score(trigger_result)
+
+                    rvol = signal.get('rvol')
+                    if not daily_price_history.empty and current_volume is not None:
+                        try:
+                            rvol = an.indicators.volume.rvol(
+                                data=daily_price_history,
+                                periods=10,
+                                curr_volume=current_volume,
+                            )
+                        except Exception:
+                            pass
+
+                    logger.info(
+                        f"[_market_confirmation_pipeline] Confirming '{ticker}' "
+                        f"reason={reason}, observations={len(observations)}"
+                    )
+
+                    alert = await self.build_market_mover(
                         ticker=ticker,
                         quote=quote,
                         composite_result=composite_result,
+                        signal_detected_at=signal['detected_at'],
+                        confirmation_reason=reason,
+                        signal_observations=len(observations),
                         daily_price_history=daily_price_history,
                         rvol=rvol,
                     )
-                    view = AlertButtons(ticker=ticker, doc_url=MARKET_ALERT_DOC_URL)
+                    view = AlertButtons(ticker=ticker, doc_url=MARKET_MOVER_DOC_URL)
                     for channel in channels:
                         await send_alert(alert, channel, self.dstate, view=view)
+
+                    await asyncio.to_thread(
+                        self.stock_data.market_signal_store.mark_confirmed,
+                        ticker, signal['detected_at'],
+                    )
             except Exception:
-                logger.error(f"[_market_pipeline] Failed for '{ticker}'", exc_info=True)
+                logger.error(f"[_market_confirmation_pipeline] Failed for '{ticker}'", exc_info=True)
 
     async def _watchlist_pipeline(
         self,
@@ -586,6 +715,35 @@ class Alerts(commands.Cog):
             composite_result=composite_result,
             daily_price_history=daily_price_history,
             rvol=rvol,
+        ))
+
+    async def build_market_mover(self, ticker: str, **kwargs) -> MarketMoverAlert:
+        """Build a MarketMoverAlert for the given ticker."""
+        quote = kwargs.pop('quote', await self.stock_data.schwab.get_quote(ticker=ticker))
+        composite_result = kwargs.pop('composite_result')
+        signal_detected_at = kwargs.pop('signal_detected_at', None)
+        confirmation_reason = kwargs.pop('confirmation_reason', '')
+        signal_observations = kwargs.pop('signal_observations', 0)
+        daily_price_history = kwargs.pop('daily_price_history', pd.DataFrame())
+        rvol = kwargs.pop('rvol', None)
+        price_velocity = kwargs.pop('price_velocity', None)
+        price_acceleration = kwargs.pop('price_acceleration', None)
+        volume_velocity = kwargs.pop('volume_velocity', None)
+        volume_acceleration = kwargs.pop('volume_acceleration', None)
+        return MarketMoverAlert(data=MarketMoverData(
+            ticker=ticker,
+            ticker_info=self.stock_data.tickers.get_ticker_info(ticker=ticker),
+            quote=quote,
+            composite_result=composite_result,
+            signal_detected_at=signal_detected_at,
+            confirmation_reason=confirmation_reason,
+            signal_observations=signal_observations,
+            daily_price_history=daily_price_history,
+            rvol=rvol,
+            price_velocity=price_velocity,
+            price_acceleration=price_acceleration,
+            volume_velocity=volume_velocity,
+            volume_acceleration=volume_acceleration,
         ))
 
     async def build_momentum_confirmation(self, ticker: str, **kwargs) -> MomentumConfirmationAlert:

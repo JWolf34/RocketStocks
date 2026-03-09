@@ -7,6 +7,7 @@ _GITHUB_DOCS_BASE = "https://github.com/JWolf34/RocketStocks/blob/main/docs/aler
 POPULARITY_SURGE_DOC_URL = f"{_GITHUB_DOCS_BASE}/popularity_surge.md"
 MOMENTUM_CONFIRMATION_DOC_URL = f"{_GITHUB_DOCS_BASE}/momentum_confirmation.md"
 MARKET_ALERT_DOC_URL = f"{_GITHUB_DOCS_BASE}/market_alert.md"
+MARKET_MOVER_DOC_URL = f"{_GITHUB_DOCS_BASE}/market_mover.md"
 WATCHLIST_MOVER_DOC_URL = f"{_GITHUB_DOCS_BASE}/watchlist_mover.md"
 EARNINGS_MOVER_DOC_URL = f"{_GITHUB_DOCS_BASE}/earnings_mover.md"
 
