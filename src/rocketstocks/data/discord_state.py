@@ -84,9 +84,36 @@ class DiscordState:
         return result[0] if result else None
 
     async def insert_alert_message_id(self, date, ticker, alert_type, message_id, alert_data):
-        fields = await asyncio.to_thread(self.db.get_table_columns, 'alerts')
+        fields = ['date', 'ticker', 'alert_type', 'messageid', 'alert_data']
         values = [(date, ticker, alert_type, message_id, json.dumps(alert_data))]
         await asyncio.to_thread(self.db.insert, table='alerts', fields=fields, values=values)
+
+    def get_alerts_since(self, since_dt: datetime.datetime) -> list[dict]:
+        """Return alerts with date >= since_dt.date(). If since_dt has a non-midnight time,
+        also filter by created_at (rows with NULL created_at are always included)."""
+        rows = self.db.select(
+            table='alerts',
+            fields=['date', 'ticker', 'alert_type', 'messageid', 'alert_data', 'created_at'],
+            where_conditions=[('date', '>=', since_dt.date())],
+            order_by=('date', 'ASC'),
+            fetchall=True,
+        ) or []
+        since_has_time = since_dt.time() != datetime.time.min
+
+        result = []
+        for row in rows:
+            created_at = row[5]
+            if since_has_time and created_at is not None:
+                if created_at.replace(tzinfo=None) < since_dt:
+                    continue
+            result.append({
+                'date': row[0],
+                'ticker': row[1],
+                'alert_type': row[2],
+                'messageid': row[3],
+                'alert_data': json.loads(row[4]) if isinstance(row[4], str) else (row[4] or {}),
+            })
+        return result
 
     def get_recent_alerts_for_ticker(self, ticker: str) -> list[tuple]:
         """Return [(date, alert_type, messageid)] for today for a ticker."""
