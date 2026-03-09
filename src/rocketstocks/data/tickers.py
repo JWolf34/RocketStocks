@@ -2,6 +2,7 @@
 import logging
 import re
 import pandas as pd
+from psycopg2.extras import execute_values
 
 logger = logging.getLogger(__name__)
 
@@ -147,7 +148,7 @@ class TickerRepository:
     def enrich_ticker(self, ticker: str) -> bool:
         """Enrich a single ticker with Tiingo metadata and SEC SIC code.
 
-        Updates exchange, security_type, delist_date via Tiingo.
+        Updates exchange, security_type, name via Tiingo.
         Updates sic_code via SEC submissions if CIK is available.
         Returns True if at least one field was updated.
         """
@@ -161,7 +162,6 @@ class TickerRepository:
             set_fields = [
                 ('exchange', metadata.get('exchange')),
                 ('security_type', metadata.get('security_type')),
-                ('delist_date', metadata.get('delist_date')),
             ]
             tiingo_name = metadata.get('name', '')
             if tiingo_name:
@@ -248,11 +248,24 @@ class TickerRepository:
 
         before_count = len(self._db.select(table='tickers', fields=['ticker'], fetchall=True) or [])
         values = [tuple(row) for row in insert_df.values]
-        self._db.insert(
-            table='tickers',
-            fields=insert_df.columns.to_list(),
-            values=values,
-        )
+        with self._db._cursor() as cur:
+            execute_values(
+                cur,
+                """
+                INSERT INTO tickers (ticker, name, exchange, security_type, delist_date)
+                VALUES %s
+                ON CONFLICT (ticker) DO UPDATE SET
+                    delist_date = CASE
+                        WHEN EXCLUDED.delist_date IS NOT NULL THEN EXCLUDED.delist_date
+                        ELSE tickers.delist_date
+                    END,
+                    name = CASE
+                        WHEN tickers.name IS NULL OR tickers.name = '' THEN EXCLUDED.name
+                        ELSE tickers.name
+                    END
+                """,
+                values,
+            )
         after_count = len(self._db.select(table='tickers', fields=['ticker'], fetchall=True) or [])
         inserted = after_count - before_count
         logger.info(f"Imported {inserted} new delisted tickers from Tiingo")
