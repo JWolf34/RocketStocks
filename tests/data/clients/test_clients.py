@@ -428,6 +428,54 @@ class TestTiingoClient:
         result = tiingo.get_ticker_metadata('FAKE')
         assert result is None
 
+    def test_list_all_tickers_active_ticker_no_delist_date(self):
+        """endDate within 30 days → delist_date is None (active ticker)."""
+        import datetime
+        tiingo = self._make()
+        recent = (datetime.date.today() - datetime.timedelta(days=5)).isoformat()
+        tiingo._client.list_tickers.return_value = [
+            {'ticker': 'AMZN', 'name': 'Amazon', 'exchangeCode': 'NASDAQ',
+             'assetType': 'Stock', 'startDate': '1997-05-15', 'endDate': recent},
+        ]
+        result = tiingo.list_all_tickers()
+        assert result.loc[result['ticker'] == 'AMZN', 'delist_date'].iloc[0] is None
+
+    def test_list_all_tickers_delisted_ticker_has_delist_date(self):
+        """endDate > 30 days ago → delist_date is set."""
+        import datetime
+        tiingo = self._make()
+        old_date = datetime.date(2008, 9, 15)
+        tiingo._client.list_tickers.return_value = [
+            {'ticker': 'LEH', 'name': 'Lehman Brothers', 'exchangeCode': 'NYSE',
+             'assetType': 'Stock', 'startDate': '1994-01-01', 'endDate': old_date.isoformat()},
+        ]
+        result = tiingo.list_all_tickers()
+        assert result.loc[result['ticker'] == 'LEH', 'delist_date'].iloc[0] == old_date
+
+    def test_get_ticker_metadata_active_ignores_end_date(self):
+        """Recent endDate → delist_date is None."""
+        import datetime
+        tiingo = self._make()
+        recent = (datetime.date.today() - datetime.timedelta(days=1)).isoformat()
+        tiingo._client.get_ticker_metadata.return_value = {
+            'ticker': 'AMZN', 'name': 'Amazon', 'exchangeCode': 'NASDAQ',
+            'assetType': 'Stock', 'endDate': recent,
+        }
+        result = tiingo.get_ticker_metadata('AMZN')
+        assert result['delist_date'] is None
+
+    def test_get_ticker_metadata_delisted_sets_delist_date(self):
+        """Old endDate → correct delist_date is returned."""
+        import datetime
+        tiingo = self._make()
+        old_date = datetime.date(2001, 11, 28)
+        tiingo._client.get_ticker_metadata.return_value = {
+            'ticker': 'ENRN', 'name': 'Enron Corp', 'exchangeCode': 'NYSE',
+            'assetType': 'Stock', 'endDate': old_date.isoformat(),
+        }
+        result = tiingo.get_ticker_metadata('ENRN')
+        assert result['delist_date'] == old_date
+
     def test_get_daily_price_history_returns_dataframe(self):
         tiingo = self._make()
         import pandas as pd

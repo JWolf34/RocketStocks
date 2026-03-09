@@ -165,19 +165,51 @@ class TestTickerRepository:
         cik_idx = call_kwargs['fields'].index('cik')
         assert call_kwargs['values'][0][cik_idx] == '0000320193'
 
-    # --- Name suffix stripping ---
+    # --- clean_company_name ---
 
-    def test_strip_name_suffix_removes_common_stock(self):
-        from rocketstocks.data.tickers import _strip_name_suffix
-        assert _strip_name_suffix('Apple Inc. Common Stock') == 'Apple Inc.'
+    def test_clean_company_name_removes_common_stock(self):
+        from rocketstocks.data.tickers import clean_company_name
+        assert clean_company_name('Apple Inc. Common Stock') == 'Apple'
 
-    def test_strip_name_suffix_removes_class_a(self):
-        from rocketstocks.data.tickers import _strip_name_suffix
-        assert _strip_name_suffix('Alphabet Inc. Class A Common Stock') == 'Alphabet Inc.'
+    def test_clean_company_name_removes_class_a(self):
+        from rocketstocks.data.tickers import clean_company_name
+        assert clean_company_name('Alphabet Inc. Class A Common Stock') == 'Alphabet'
 
-    def test_strip_name_suffix_leaves_etf_name_unchanged(self):
-        from rocketstocks.data.tickers import _strip_name_suffix
-        assert _strip_name_suffix('SPDR S&P 500 ETF Trust') == 'SPDR S&P 500 ETF Trust'
+    def test_clean_company_name_leaves_etf_name_unchanged(self):
+        from rocketstocks.data.tickers import clean_company_name
+        assert clean_company_name('SPDR S&P 500 ETF Trust') == 'SPDR S&P 500 ETF Trust'
+
+    def test_clean_company_name_adr_clause(self):
+        from rocketstocks.data.tickers import clean_company_name
+        result = clean_company_name(
+            'Alibaba Group Holding Limited American Depositary Shares'
+            ' each representing eight Ordinary shares'
+        )
+        assert result == 'Alibaba Group Holding'
+
+    def test_clean_company_name_dash_class(self):
+        from rocketstocks.data.tickers import clean_company_name
+        assert clean_company_name('Rivian Automotive - Class A') == 'Rivian Automotive'
+
+    def test_clean_company_name_registered_shares(self):
+        from rocketstocks.data.tickers import clean_company_name
+        assert clean_company_name('SAP SE, Registered Shares') == 'SAP'
+
+    def test_clean_company_name_warrants(self):
+        from rocketstocks.data.tickers import clean_company_name
+        assert clean_company_name('ACME Corp. Warrants') == 'ACME'
+
+    def test_clean_company_name_legal_suffix_only(self):
+        from rocketstocks.data.tickers import clean_company_name
+        assert clean_company_name('Microsoft Corp.') == 'Microsoft'
+
+    def test_clean_company_name_novabay(self):
+        from rocketstocks.data.tickers import clean_company_name
+        assert clean_company_name('NovaBay Pharmaceuticals, Inc. Common Stock') == 'NovaBay Pharmaceuticals'
+
+    def test_clean_company_name_empty_string(self):
+        from rocketstocks.data.tickers import clean_company_name
+        assert clean_company_name('') == ''
 
     # --- insert_tickers NASDAQ-first ---
 
@@ -222,6 +254,9 @@ class TestTickerRepository:
         result = repo.enrich_ticker('AAPL')
         assert result is True
         assert db.update.call_count >= 1
+        # delist_date must NOT be set during enrichment (active ticker enrichment path)
+        first_call_set_fields = db.update.call_args_list[0][1]['set_fields']
+        assert not any(k == 'delist_date' for k, _ in first_call_set_fields)
 
     def test_enrich_ticker_updates_sic_code_via_sec(self):
         tiingo = MagicMock()
@@ -275,15 +310,59 @@ class TestTickerRepository:
              'security_type': 'CS', 'delist_date': datetime.date(2001, 11, 28)},
         ])
         db = MagicMock()
-        # before: 10 tickers; after insert: 12
+        # before: 10 tickers; after upsert: 12
         db.select.side_effect = [
             [('T',)] * 10,  # before count
             [('T',)] * 12,  # after count
         ]
+        mock_cur = MagicMock()
+        db._cursor.return_value.__enter__ = lambda s: mock_cur
+        db._cursor.return_value.__exit__ = MagicMock(return_value=False)
         repo = self._make(db=db, tiingo=tiingo)
-        result = repo.import_delisted_tickers()
-        db.insert.assert_called_once()
+        with patch('rocketstocks.data.tickers.execute_values'):
+            result = repo.import_delisted_tickers()
+        db._cursor.assert_called()
         assert result == 2
+
+    def test_import_delisted_tickers_cleans_names(self):
+        """import_delisted_tickers must apply clean_company_name to names."""
+        tiingo = MagicMock()
+        tiingo.list_all_tickers.return_value = pd.DataFrame([
+            {'ticker': 'LEH', 'name': 'Lehman Brothers Holdings Inc. Common Stock',
+             'exchange': 'NYSE', 'security_type': 'CS',
+             'delist_date': datetime.date(2008, 9, 15)},
+        ])
+        db = MagicMock()
+        db.select.side_effect = [[('T',)] * 5, [('T',)] * 6]
+        mock_cur = MagicMock()
+        db._cursor.return_value.__enter__ = lambda s: mock_cur
+        db._cursor.return_value.__exit__ = MagicMock(return_value=False)
+        captured = {}
+        def fake_execute_values(cur, sql, values, **kwargs):
+            captured['values'] = values
+        repo = self._make(db=db, tiingo=tiingo)
+        with patch('rocketstocks.data.tickers.execute_values', side_effect=fake_execute_values):
+            repo.import_delisted_tickers()
+        # name at index 1 in (ticker, name, exchange, security_type, delist_date)
+        inserted_name = captured['values'][0][1]
+        assert inserted_name == 'Lehman Brothers Holdings'
+
+    def test_enrich_ticker_updates_name_from_tiingo(self):
+        """enrich_ticker must include ('name', ...) in set_fields when Tiingo returns a name."""
+        tiingo = MagicMock()
+        tiingo.get_ticker_metadata.return_value = {
+            'ticker': 'AAPL', 'exchange': 'NASDAQ', 'security_type': 'CS',
+            'delist_date': None, 'name': 'Apple Inc. Common Stock',
+        }
+        db = MagicMock()
+        db.select.return_value = None  # no CIK
+        repo = self._make(db=db, tiingo=tiingo)
+        repo.enrich_ticker('AAPL')
+        set_fields = db.update.call_args[1]['set_fields']
+        names = [f[0] for f in set_fields]
+        assert 'name' in names
+        name_val = next(v for k, v in set_fields if k == 'name')
+        assert name_val == 'Apple'
 
 
 # ---------------------------------------------------------------------------

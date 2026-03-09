@@ -12,6 +12,9 @@ ALTER TABLE tickers ADD COLUMN IF NOT EXISTS sic_code varchar(8);
 ALTER TABLE tickers ADD COLUMN IF NOT EXISTS delist_date date;
 ALTER TABLE tickers ALTER COLUMN cik DROP NOT NULL;
 ALTER TABLE alerts ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ DEFAULT NOW();
+UPDATE tickers SET delist_date = NULL
+WHERE delist_date IS NOT NULL
+  AND delist_date > CURRENT_DATE - INTERVAL '30 days';
 """
 
 _CREATE_SCRIPT = """
