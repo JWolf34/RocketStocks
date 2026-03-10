@@ -11,7 +11,7 @@ from discord import app_commands
 from discord.ext import commands, tasks
 
 from src.rocketstocks.data.stockdata import StockData
-from rocketstocks.data.channel_config import REPORTS, SCREENERS, ALERTS, ChannelConfigRepository
+from rocketstocks.data.channel_config import REPORTS, SCREENERS, ALERTS
 from rocketstocks.data.discord_state import DiscordState
 from rocketstocks.data.clients.news import News
 from rocketstocks.core.utils.market import market_utils
@@ -82,8 +82,7 @@ class Reports(commands.Cog):
         self.bot = bot
         self.stock_data = stock_data
         self.mutils = market_utils()
-        self.dstate = DiscordState()
-        self.channel_config = ChannelConfigRepository()
+        self.dstate = DiscordState(db=self.stock_data.db)
 
         self.post_popularity_screener.start()
         self.post_volume_screener.start()
@@ -143,15 +142,15 @@ class Reports(commands.Cog):
                                   column='datetime',
                                   value=pd.Series([date_utils.round_down_nearest_minute(30)] * popular_stocks.shape[0]).values)
 
-            self.stock_data.popularity.insert_popularity(popular_stocks=popular_stocks)
+            await self.stock_data.popularity.insert_popularity(popular_stocks=popular_stocks)
 
             content = self.build_popularity_screener(popular_stocks=popular_stocks)
-            self._update_screener_watchlist(content)
+            await self._update_screener_watchlist(content)
             await self.stock_data.update_alert_tickers(tickers=content.get_tickers()[:250], source='popularity')
 
             logger.info("Posting popularity screener")
             view = PopularityScreenerButtons()
-            for _, channel in self.bot.iter_channels(SCREENERS):
+            for _, channel in await self.bot.iter_channels(SCREENERS):
                 await send_screener(content, channel, self.dstate, view=view)
         else:
             logger.error("No popular stocks found when attempting to update screener")
@@ -166,12 +165,12 @@ class Reports(commands.Cog):
         if self.mutils.market_open_today() and market_period != 'EOD':
             unusual_volume = self.stock_data.trading_view.get_unusual_volume_movers()
             content = self.build_volume_screener(unusual_volume=unusual_volume)
-            self._update_screener_watchlist(content)
+            await self._update_screener_watchlist(content)
             await self.stock_data.update_alert_tickers(tickers=content.get_tickers(), source='unusual-volume')
 
             logger.info("Posting unusual volume screener")
             view = VolumeScreenerButtons()
-            for _, channel in self.bot.iter_channels(SCREENERS):
+            for _, channel in await self.bot.iter_channels(SCREENERS):
                 await send_screener(content, channel, self.dstate, view=view)
 
     @tasks.loop(minutes=5)
@@ -194,12 +193,12 @@ class Reports(commands.Cog):
         market_period = self.mutils.get_market_period()
         if self.mutils.market_open_today() and market_period != 'EOD':
             content = self.build_gainer_screener(market_period=market_period)
-            self._update_screener_watchlist(content)
+            await self._update_screener_watchlist(content)
             await self.stock_data.update_alert_tickers(tickers=content.get_tickers(), source='gainers')
 
             logger.info(f"Sending {content.market_period} gainers screener")
             view = GainerScreenerButtons(market_period=market_period)
-            for _, channel in self.bot.iter_channels(SCREENERS):
+            for _, channel in await self.bot.iter_channels(SCREENERS):
                 await send_screener(content, channel, self.dstate, view=view)
 
     @post_gainer_screener.before_loop
@@ -244,7 +243,7 @@ class Reports(commands.Cog):
         content = await self.build_earnings_spotlight_report(ticker=valid_ticker)
         logger.info(f"Posting today's earnings spotlight: '{content.ticker}'")
         view = StockReportButtons(ticker=content.ticker)
-        for _, channel in self.bot.iter_channels(REPORTS):
+        for _, channel in await self.bot.iter_channels(REPORTS):
             await send_report(content, channel, view=view)
 
     @tasks.loop(time=datetime.time(hour=12, minute=0, second=0))
@@ -255,10 +254,10 @@ class Reports(commands.Cog):
     async def _post_weekly_earnings_impl(self):
         today = datetime.datetime.now(tz=date_utils.timezone()).date()
         if today.weekday() == 0:
-            content = self.build_weekly_earnings_screener()
+            content = await self.build_weekly_earnings_screener()
             logger.info("Posting weekly earnings screener...")
             files = [discord.File(content.filepath)]
-            for _, channel in self.bot.iter_channels(SCREENERS):
+            for _, channel in await self.bot.iter_channels(SCREENERS):
                 await send_screener(content, channel, self.dstate, files=files)
 
     @tasks.loop(time=datetime.time(hour=6, minute=0, second=0))
@@ -268,7 +267,7 @@ class Reports(commands.Cog):
 
     async def _update_earnings_calendar_impl(self):
         logger.info("Creating calendar events for upcoming earnings dates")
-        tickers = self.stock_data.watchlists.get_all_watchlist_tickers(no_personal=False, no_systemGenerated=True)
+        tickers = await self.stock_data.watchlists.get_all_watchlist_tickers(no_personal=False, no_systemGenerated=True)
         logger.debug(f"Identified {len(tickers)} watchlist tickers to create earnings events for")
 
         for gld in self.bot.guilds:
@@ -276,7 +275,7 @@ class Reports(commands.Cog):
             logger.debug(f"Guild '{gld.name}': {len(curr_events)} events already in the calendar")
 
             for ticker in tickers:
-                earnings_info = self.stock_data.earnings.get_next_earnings_info(ticker)
+                earnings_info = await self.stock_data.earnings.get_next_earnings_info(ticker)
                 if earnings_info:
                     event_exists = False
                     name = f"{ticker} Earnings"
@@ -342,17 +341,17 @@ class Reports(commands.Cog):
         if watchlist == 'personal':
             watchlist_id = str(interaction.user.id)
 
-        if watchlist_id not in self.stock_data.watchlists.get_watchlists():
+        if watchlist_id not in await self.stock_data.watchlists.get_watchlists():
             await interaction.followup.send(f"Watchlist '{watchlist_id}' does not exist")
             return
 
-        tickers = self.stock_data.watchlists.get_watchlist_tickers(watchlist_id)
+        tickers = await self.stock_data.watchlists.get_watchlist_tickers(watchlist_id)
         logger.info(f"Reports requested for watchlist '{watchlist}' with tickers {tickers}")
 
         if not tickers:
             await interaction.followup.send("No tickers on the watchlist. Use /addticker to build a watchlist.", ephemeral=True)
         else:
-            channel = self.bot.get_channel_for_guild(interaction.guild_id, REPORTS)
+            channel = await self.bot.get_channel_for_guild(interaction.guild_id, REPORTS)
             if channel is None:
                 await interaction.followup.send("Use `/setup` to configure the reports channel.", ephemeral=True)
                 return
@@ -376,7 +375,7 @@ class Reports(commands.Cog):
         else:
             prefix_tokens = tokens
             partial = ""
-        all_tickers = self.stock_data.tickers.get_all_tickers()
+        all_tickers = await self.stock_data.tickers.get_all_tickers()
         prefix_str = (" ".join(prefix_tokens) + " ") if prefix_tokens else ""
         return [
             app_commands.Choice(name=f"{prefix_str}{ticker}", value=f"{prefix_str}{ticker}")
@@ -398,7 +397,7 @@ class Reports(commands.Cog):
 
         tickers, invalid_tickers = await self.stock_data.tickers.parse_valid_tickers(tickers.upper())
         logger.info(f"Reports requested for tickers {tickers}. Invalid tickers: {invalid_tickers}")
-        channel = self.bot.get_channel_for_guild(interaction.guild_id, REPORTS)
+        channel = await self.bot.get_channel_for_guild(interaction.guild_id, REPORTS)
         if channel is None and visibility.value == 'public':
             await interaction.followup.send("Use `/setup` to configure the reports channel.", ephemeral=True)
             return
@@ -467,7 +466,7 @@ class Reports(commands.Cog):
         filter_val = self.stock_data.popularity.get_filter(source)
 
         if not popular_stocks.empty:
-            channel = self.bot.get_channel_for_guild(interaction.guild_id, REPORTS)
+            channel = await self.bot.get_channel_for_guild(interaction.guild_id, REPORTS)
             if channel is None and visibility.value == 'public':
                 await interaction.followup.send("Use `/setup` to configure the reports channel.", ephemeral=True)
                 return
@@ -484,7 +483,7 @@ class Reports(commands.Cog):
             await interaction.followup.send(f"No popular stocks found with filter '{source}'", ephemeral=True)
 
     async def politician_options(self, interaction: discord.Interaction, current: str):
-        politicians = self.stock_data.capitol_trades.all_politicians()
+        politicians = await self.stock_data.capitol_trades.all_politicians()
         names = [politician['name'] for politician in politicians]
         return [
             app_commands.Choice(name=p_name, value=p_name)
@@ -504,10 +503,10 @@ class Reports(commands.Cog):
         await interaction.response.defer(ephemeral=True)
         logger.info(f"/politician function called by user {interaction.user.name}")
 
-        politician = self.stock_data.capitol_trades.politician(name=politician_name)
+        politician = await self.stock_data.capitol_trades.politician(name=politician_name)
 
         if politician:
-            channel = self.bot.get_channel_for_guild(interaction.guild_id, REPORTS)
+            channel = await self.bot.get_channel_for_guild(interaction.guild_id, REPORTS)
             if channel is None and visibility.value == 'public':
                 await interaction.followup.send("Use `/setup` to configure the reports channel.", ephemeral=True)
                 return
@@ -527,19 +526,19 @@ class Reports(commands.Cog):
     # Builders #
     ###########
 
-    def _update_screener_watchlist(self, screener) -> None:
+    async def _update_screener_watchlist(self, screener) -> None:
         """Update the system-generated watchlist for the given screener (moved from Screener.__init__)."""
         watchlist_id = screener.screener_type
         watchlist_tickers = screener.get_tickers()[:20]
 
-        if not self.stock_data.watchlists.validate_watchlist(watchlist_id):
-            self.stock_data.watchlists.create_watchlist(
+        if not await self.stock_data.watchlists.validate_watchlist(watchlist_id):
+            await self.stock_data.watchlists.create_watchlist(
                 watchlist_id=watchlist_id, tickers=watchlist_tickers, systemGenerated=True
             )
             logger.info(f"Created new watchlist from '{screener.screener_type}' screener")
             logger.debug(f"Watchlist created with {len(watchlist_tickers)} tickers: {watchlist_tickers}")
         else:
-            self.stock_data.watchlists.update_watchlist(
+            await self.stock_data.watchlists.update_watchlist(
                 watchlist_id=watchlist_id, tickers=watchlist_tickers
             )
             logger.info(f"Updated watchlist '{screener.screener_type}'")
@@ -565,19 +564,19 @@ class Reports(commands.Cog):
         return GainerScreener(data=GainerScreenerData(market_period=market_period, gainers=gainers))
 
     async def build_stock_report(self, ticker: str, guild_id: int | None = None, **kwargs) -> StockReport:
-        ticker_info = kwargs.pop('ticker_info', self.stock_data.tickers.get_ticker_info(ticker=ticker))
-        daily_price_history = kwargs.pop('daily_price_history', self.stock_data.price_history.fetch_daily_price_history(ticker=ticker))
-        popularity = kwargs.pop('popularity', self.stock_data.popularity.fetch_popularity(ticker=ticker))
+        ticker_info = kwargs.pop('ticker_info', await self.stock_data.tickers.get_ticker_info(ticker=ticker))
+        daily_price_history = kwargs.pop('daily_price_history', await self.stock_data.price_history.fetch_daily_price_history(ticker=ticker))
+        popularity = kwargs.pop('popularity', await self.stock_data.popularity.fetch_popularity(ticker=ticker))
         recent_sec_filings = kwargs.pop('recent_sec_filings', self.stock_data.sec.get_recent_filings(ticker=ticker))
-        historical_earnings = kwargs.pop('historical_earnings', self.stock_data.earnings.get_historical_earnings(ticker=ticker))
-        next_earnings_info = kwargs.pop('next_earnings_info', self.stock_data.earnings.get_next_earnings_info(ticker=ticker))
+        historical_earnings = kwargs.pop('historical_earnings', await self.stock_data.earnings.get_historical_earnings(ticker=ticker))
+        next_earnings_info = kwargs.pop('next_earnings_info', await self.stock_data.earnings.get_next_earnings_info(ticker=ticker))
         quote = kwargs.pop('quote', await self.stock_data.schwab.get_quote(ticker=ticker))
         fundamentals = kwargs.pop('fundamentals', await self.stock_data.schwab.get_fundamentals(tickers=[ticker]))
 
-        raw_alerts = self.dstate.get_recent_alerts_for_ticker(ticker)
+        raw_alerts = await self.dstate.get_recent_alerts_for_ticker(ticker)
         recent_alerts = []
         if raw_alerts and guild_id is not None:
-            alerts_channel_id = self.channel_config.get_channel_id(guild_id, ALERTS)
+            alerts_channel_id = await self.stock_data.channel_config.get_channel_id(guild_id, ALERTS)
             for date, alert_type, messageid in raw_alerts:
                 url = None
                 if alerts_channel_id and messageid:
@@ -598,10 +597,10 @@ class Reports(commands.Cog):
         ))
 
     async def build_earnings_spotlight_report(self, ticker: str, **kwargs) -> EarningsSpotlightReport:
-        ticker_info = self.stock_data.tickers.get_ticker_info(ticker=ticker)
-        daily_price_history = self.stock_data.price_history.fetch_daily_price_history(ticker=ticker)
-        next_earnings_info = self.stock_data.earnings.get_next_earnings_info(ticker=ticker)
-        historical_earnings = self.stock_data.earnings.get_historical_earnings(ticker=ticker)
+        ticker_info = await self.stock_data.tickers.get_ticker_info(ticker=ticker)
+        daily_price_history = await self.stock_data.price_history.fetch_daily_price_history(ticker=ticker)
+        next_earnings_info = await self.stock_data.earnings.get_next_earnings_info(ticker=ticker)
+        historical_earnings = await self.stock_data.earnings.get_historical_earnings(ticker=ticker)
         quote = await self.stock_data.schwab.get_quote(ticker=ticker)
         fundamentals = await self.stock_data.schwab.get_fundamentals(tickers=[ticker])
         return EarningsSpotlightReport(data=EarningsSpotlightData(
@@ -614,17 +613,17 @@ class Reports(commands.Cog):
             fundamentals=fundamentals,
         ))
 
-    def build_weekly_earnings_screener(self, **kwargs) -> WeeklyEarningsScreener:
-        upcoming_earnings = kwargs.pop('upcoming_earnings', self.stock_data.earnings.fetch_upcoming_earnings())
+    async def build_weekly_earnings_screener(self, **kwargs) -> WeeklyEarningsScreener:
+        upcoming_earnings = kwargs.pop('upcoming_earnings', await self.stock_data.earnings.fetch_upcoming_earnings())
         watchlist_tickers = kwargs.pop('watchlist_tickers',
-                                       self.stock_data.watchlists.get_all_watchlist_tickers(no_personal=True, no_systemGenerated=True))
+                                       await self.stock_data.watchlists.get_all_watchlist_tickers(no_personal=True, no_systemGenerated=True))
         return WeeklyEarningsScreener(data=WeeklyEarningsData(
             upcoming_earnings=upcoming_earnings,
             watchlist_tickers=watchlist_tickers,
         ))
 
     def build_politician_report(self, politician_name: str = None, **kwargs) -> PoliticianReport:
-        politician = kwargs.pop('politician', self.stock_data.capitol_trades.politician(name=politician_name))
+        politician = kwargs.pop('politician', None)
         trades = kwargs.pop('trades', self.stock_data.capitol_trades.trades(pid=politician['politician_id']))
         politician_facts = kwargs.pop('politician_facts', self.stock_data.capitol_trades.politician_facts(pid=politician['politician_id']))
         return PoliticianReport(data=PoliticianReportData(
@@ -633,8 +632,8 @@ class Reports(commands.Cog):
             politician_facts=politician_facts,
         ))
 
-    def build_alert_summary(self, since_dt: datetime.datetime, label: str) -> AlertSummary:
-        alerts = self.dstate.get_alerts_since(since_dt)
+    async def build_alert_summary(self, since_dt: datetime.datetime, label: str) -> AlertSummary:
+        alerts = await self.dstate.get_alerts_since(since_dt)
         return AlertSummary(data=AlertSummaryData(since_dt=since_dt, label=label, alerts=alerts))
 
     @app_commands.command(name="alert-summary", description="Summarize alerts since a selected time period")
@@ -664,8 +663,8 @@ class Reports(commands.Cog):
         await interaction.response.defer(ephemeral=True)
         logger.info(f"/alert-summary called by user '{interaction.user.name}'")
         since_dt, label = _resolve_since_dt(since_when.value if since_when else 'last_close')
-        content = self.build_alert_summary(since_dt, label)
-        channel = self.bot.get_channel_for_guild(interaction.guild_id, ALERTS)
+        content = await self.build_alert_summary(since_dt, label)
+        channel = await self.bot.get_channel_for_guild(interaction.guild_id, ALERTS)
         vis = visibility.value if visibility else "private"
         message = await send_report(content, channel, interaction=interaction, visibility=vis)
         await interaction.followup.send(f"[Alert summary posted]({message.jump_url})", ephemeral=True)
