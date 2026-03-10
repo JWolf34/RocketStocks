@@ -17,17 +17,17 @@ def register_jobs(aio_sched: AsyncIOScheduler, stock_data: StockData, emitter: E
     timezone = 'UTC'
 
     async def _update_daily():
-        tickers = stock_data.tickers.get_all_tickers()
+        tickers = await stock_data.tickers.get_all_tickers()
         await stock_data.price_history.update_daily_price_history(tickers)
 
     async def _update_5m():
-        tickers = stock_data.tickers.get_all_tickers()
+        tickers = await stock_data.tickers.get_all_tickers()
         await stock_data.price_history.update_5m_price_history(tickers)
 
     async def _classify_tickers():
         """Classify all tickers and update ticker_stats table."""
         logger.info("Running daily ticker classification job")
-        tickers = stock_data.tickers.get_all_tickers()
+        tickers = await stock_data.tickers.get_all_tickers()
 
         # Batch fetch quotes for market cap data (25 at a time)
         all_quotes: dict = {}
@@ -42,7 +42,7 @@ def register_jobs(aio_sched: AsyncIOScheduler, stock_data: StockData, emitter: E
                 logger.warning(f"Failed to fetch quotes for chunk {chunk}: {exc}")
 
         # Get classification overrides from watchlists
-        overrides = stock_data.watchlists.get_classification_overrides()
+        overrides = await stock_data.watchlists.get_classification_overrides()
 
         # Get popularity data for meme detection (top-100 popular tickers)
         try:
@@ -54,7 +54,7 @@ def register_jobs(aio_sched: AsyncIOScheduler, stock_data: StockData, emitter: E
 
         for ticker in tickers:
             try:
-                daily_prices = stock_data.price_history.fetch_daily_price_history(ticker=ticker)
+                daily_prices = await stock_data.price_history.fetch_daily_price_history(ticker=ticker)
                 if daily_prices.empty:
                     continue
 
@@ -62,7 +62,6 @@ def register_jobs(aio_sched: AsyncIOScheduler, stock_data: StockData, emitter: E
                 mean_20d, std_20d = compute_return_stats(daily_prices, period=20)
                 mean_60d, std_60d = compute_return_stats(daily_prices, period=60)
 
-                # Market cap from Schwab quote
                 quote_data = all_quotes.get(ticker, {})
                 market_cap = (
                     quote_data.get('fundamental', {}).get('marketCapFloat')
@@ -85,7 +84,6 @@ def register_jobs(aio_sched: AsyncIOScheduler, stock_data: StockData, emitter: E
                     watchlist_override=watchlist_override,
                 )
 
-                # Bollinger Band values for blue chips
                 bb_upper = bb_lower = bb_mid = None
                 if str(stock_class.value) == 'blue_chip':
                     try:
@@ -117,7 +115,7 @@ def register_jobs(aio_sched: AsyncIOScheduler, stock_data: StockData, emitter: E
                     'bb_lower': bb_lower,
                     'bb_mid': bb_mid,
                 }
-                stock_data.ticker_stats.upsert_stats(ticker=ticker, stats_dict=stats)
+                await stock_data.ticker_stats.upsert_stats(ticker=ticker, stats_dict=stats)
             except Exception as exc:
                 logger.warning(f"Failed to classify ticker '{ticker}': {exc}")
 
@@ -132,7 +130,7 @@ def register_jobs(aio_sched: AsyncIOScheduler, stock_data: StockData, emitter: E
             info = stock_data.schwab.get_token_info()
 
             if info.status == TokenStatus.HEALTHY:
-                return  # No notification needed
+                return
 
             elif info.status == TokenStatus.EXPIRING_SOON:
                 hours = info.time_remaining.total_seconds() / 3600
@@ -185,6 +183,15 @@ def register_jobs(aio_sched: AsyncIOScheduler, stock_data: StockData, emitter: E
                 message=f"Error checking token expiry: {str(exc)}",
             ))
 
+    async def _enrich_tickers():
+        await stock_data.tickers.enrich_unenriched_batch(limit=240)
+
+    async def _import_delisted():
+        await stock_data.tickers.import_delisted_tickers()
+
+    async def _load_delisted_prices():
+        await stock_data.price_history.load_delisted_price_history_batch()
+
     # Triggers
     classify_tickers_trigger = CronTrigger(day_of_week="tue-sat", hour=5, minute=30, timezone=timezone)
     update_tickers_trigger = CronTrigger(day_of_week="mon-sun", hour=5, minute=0, timezone=timezone)
@@ -211,6 +218,6 @@ def register_jobs(aio_sched: AsyncIOScheduler, stock_data: StockData, emitter: E
     aio_sched.add_job(emitter.job_wrapper("Update politicians", stock_data.capitol_trades.update_politicians), trigger=update_politicians_trigger, name="Update politicians", timezone=timezone, replace_existing=True, misfire_grace_time=600)
     aio_sched.add_job(_check_schwab_token_expiry, trigger=check_schwab_token_expiry_trigger, name="Check Schwab token expiry", timezone=timezone, replace_existing=True, misfire_grace_time=60)
     aio_sched.add_job(emitter.job_wrapper("Classify tickers", _classify_tickers), trigger=classify_tickers_trigger, name="Classify tickers", timezone=timezone, replace_existing=True, misfire_grace_time=600)
-    aio_sched.add_job(emitter.job_wrapper("Enrich tickers", lambda: stock_data.tickers.enrich_unenriched_batch(limit=240)), trigger=enrich_tickers_trigger, name="Enrich tickers", timezone=timezone, replace_existing=True, misfire_grace_time=600)
-    aio_sched.add_job(emitter.job_wrapper("Import delisted tickers", stock_data.tickers.import_delisted_tickers), trigger=import_delisted_trigger, name="Import delisted tickers", timezone=timezone, replace_existing=True, misfire_grace_time=600)
-    aio_sched.add_job(emitter.job_wrapper("Load delisted price history", stock_data.price_history.load_delisted_price_history_batch), trigger=load_delisted_prices_trigger, name="Load delisted price history", timezone=timezone, replace_existing=True, misfire_grace_time=600)
+    aio_sched.add_job(emitter.job_wrapper("Enrich tickers", _enrich_tickers), trigger=enrich_tickers_trigger, name="Enrich tickers", timezone=timezone, replace_existing=True, misfire_grace_time=600)
+    aio_sched.add_job(emitter.job_wrapper("Import delisted tickers", _import_delisted), trigger=import_delisted_trigger, name="Import delisted tickers", timezone=timezone, replace_existing=True, misfire_grace_time=600)
+    aio_sched.add_job(emitter.job_wrapper("Load delisted price history", _load_delisted_prices), trigger=load_delisted_prices_trigger, name="Load delisted price history", timezone=timezone, replace_existing=True, misfire_grace_time=600)
