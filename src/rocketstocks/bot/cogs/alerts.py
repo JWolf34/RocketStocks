@@ -58,7 +58,7 @@ class Alerts(commands.Cog):
         self.bot = bot
         self.stock_data = stock_data
         self.mutils = market_utils()
-        self.dstate = DiscordState()
+        self.dstate = DiscordState(db=bot.stock_data.db)
 
         self.post_alerts_date.start()
         self.detect_popularity_surges.start()
@@ -159,9 +159,7 @@ class Alerts(commands.Cog):
                 continue
 
             try:
-                already_flagged = await asyncio.to_thread(
-                    self.stock_data.surge_store.is_already_flagged, ticker
-                )
+                already_flagged = await self.stock_data.surge_store.is_already_flagged(ticker)
                 if already_flagged:
                     await asyncio.sleep(0)
                     continue
@@ -171,9 +169,7 @@ class Alerts(commands.Cog):
                 mentions = row.get('mentions')
                 mentions_24h_ago = row.get('mentions_24h_ago')
 
-                popularity_history = await asyncio.to_thread(
-                    self.stock_data.popularity.fetch_popularity, ticker=ticker
-                )
+                popularity_history = await self.stock_data.popularity.fetch_popularity(ticker=ticker)
 
                 surge_result = evaluate_popularity_surge(
                     ticker=ticker,
@@ -190,7 +186,7 @@ class Alerts(commands.Cog):
                         f"{[st.value for st in surge_result.surge_types]}"
                     )
                     quote = await self.stock_data.schwab.get_quote(ticker=ticker)
-                    ticker_info = self.stock_data.tickers.get_ticker_info(ticker=ticker)
+                    ticker_info = await self.stock_data.tickers.get_ticker_info(ticker=ticker)
                     market = market_utils()
                     price_at_flag = market.get_current_price(quote)
 
@@ -213,8 +209,7 @@ class Alerts(commands.Cog):
                             first_message = sent
 
                     message_id = first_message.id if first_message else None
-                    await asyncio.to_thread(
-                        self.stock_data.surge_store.insert_surge,
+                    await self.stock_data.surge_store.insert_surge(
                         ticker=ticker,
                         flagged_at=flagged_at,
                         surge_types=surge_types_str,
@@ -252,15 +247,11 @@ class Alerts(commands.Cog):
         )
 
         # Gather active surge tickers
-        active_surges = await asyncio.to_thread(
-            self.stock_data.surge_store.get_active_surges
-        )
+        active_surges = await self.stock_data.surge_store.get_active_surges()
         surge_tickers = [s['ticker'] for s in active_surges]
 
         # Gather active market signal tickers for confirmation pipeline
-        active_signals = await asyncio.to_thread(
-            self.stock_data.market_signal_store.get_active_signals
-        )
+        active_signals = await self.stock_data.market_signal_store.get_active_signals()
         signal_tickers = [s['ticker'] for s in active_signals]
 
         all_tickers = list(set(screener_tickers + surge_tickers + signal_tickers))
@@ -274,15 +265,13 @@ class Alerts(commands.Cog):
         quotes.pop('errors', None)
 
         # Fetch all classifications once
-        classifications = await asyncio.to_thread(
-            self.stock_data.ticker_stats.get_all_classifications
-        )
+        classifications = await self.stock_data.ticker_stats.get_all_classifications()
 
         # Compute ticker partitions
         today = datetime.date.today()
-        earnings_today = self.stock_data.earnings.get_earnings_on_date(date=today)
+        earnings_today = await self.stock_data.earnings.get_earnings_on_date(date=today)
         earnings_tickers = set(earnings_today['ticker'].tolist()) if not earnings_today.empty else set()
-        watchlist_tickers = set(self.stock_data.watchlists.get_all_watchlist_tickers())
+        watchlist_tickers = set(await self.stock_data.watchlists.get_all_watchlist_tickers())
         surge_ticker_set = set(surge_tickers)
 
         labels = [
@@ -308,8 +297,8 @@ class Alerts(commands.Cog):
                 logger.error(f"[process_alerts] {label} failed: {result}", exc_info=result)
 
         # Expire old surges and signals
-        await asyncio.to_thread(self.stock_data.surge_store.expire_old_surges)
-        await asyncio.to_thread(self.stock_data.market_signal_store.expire_old_signals)
+        await self.stock_data.surge_store.expire_old_surges()
+        await self.stock_data.market_signal_store.expire_old_signals()
         logger.info("Alerts posted")
 
     # -------------------------------------------------------------------------
@@ -333,9 +322,7 @@ class Alerts(commands.Cog):
                 quote = quotes[ticker]
                 pct_change = quote['quote']['netPercentChange']
                 classification = classifications.get(ticker, 'standard')
-                daily_price_history = await asyncio.to_thread(
-                    self.stock_data.price_history.fetch_daily_price_history, ticker=ticker
-                )
+                daily_price_history = await self.stock_data.price_history.fetch_daily_price_history(ticker=ticker)
                 current_volume = quote['quote'].get('totalVolume')
 
                 trigger_result = evaluate_price_alert(
@@ -374,10 +361,7 @@ class Alerts(commands.Cog):
                     for channel in channels:
                         await send_alert(alert, channel, self.dstate, view=view)
 
-                    await asyncio.to_thread(
-                        self.stock_data.surge_store.mark_confirmed,
-                        ticker, surge['flagged_at'],
-                    )
+                    await self.stock_data.surge_store.mark_confirmed(ticker, surge['flagged_at'])
             except Exception:
                 logger.error(f"[_confirmation_pipeline] Failed for '{ticker}'", exc_info=True)
 
@@ -395,9 +379,7 @@ class Alerts(commands.Cog):
             try:
                 pct_change = quote['quote']['netPercentChange']
                 classification = classifications.get(ticker, 'standard')
-                daily_price_history = await asyncio.to_thread(
-                    self.stock_data.price_history.fetch_daily_price_history, ticker=ticker
-                )
+                daily_price_history = await self.stock_data.price_history.fetch_daily_price_history(ticker=ticker)
                 current_volume = quote['quote'].get('totalVolume')
 
                 trigger_result = evaluate_price_alert(
@@ -424,18 +406,13 @@ class Alerts(commands.Cog):
                         except Exception:
                             pass
 
-                    already_signaled = await asyncio.to_thread(
-                        self.stock_data.market_signal_store.is_already_signaled, ticker
-                    )
+                    already_signaled = await self.stock_data.market_signal_store.is_already_signaled(ticker)
 
                     if already_signaled:
                         # Get the latest signal to update with new observation
-                        latest_signal = await asyncio.to_thread(
-                            self.stock_data.market_signal_store.get_latest_signal, ticker
-                        )
+                        latest_signal = await self.stock_data.market_signal_store.get_latest_signal(ticker)
                         if latest_signal is not None:
-                            await asyncio.to_thread(
-                                self.stock_data.market_signal_store.update_observation,
+                            await self.stock_data.market_signal_store.update_observation(
                                 ticker,
                                 latest_signal['detected_at'],
                                 pct_change,
@@ -456,8 +433,7 @@ class Alerts(commands.Cog):
                             'price_z': price_z,
                             'composite': composite_result.composite_score,
                         }]
-                        await asyncio.to_thread(
-                            self.stock_data.market_signal_store.insert_signal,
+                        await self.stock_data.market_signal_store.insert_signal(
                             ticker=ticker,
                             detected_at=detected_at,
                             composite_score=composite_result.composite_score,
@@ -492,9 +468,7 @@ class Alerts(commands.Cog):
                 pct_change = quote['quote']['netPercentChange']
                 current_volume = quote['quote'].get('totalVolume')
 
-                daily_price_history = await asyncio.to_thread(
-                    self.stock_data.price_history.fetch_daily_price_history, ticker=ticker
-                )
+                daily_price_history = await self.stock_data.price_history.fetch_daily_price_history(ticker=ticker)
 
                 trigger_result = evaluate_price_alert(
                     classification='standard',
@@ -504,9 +478,7 @@ class Alerts(commands.Cog):
                 )
                 vol_z = trigger_result.volume_zscore
 
-                observations = await asyncio.to_thread(
-                    self.stock_data.market_signal_store.get_signal_history, ticker
-                )
+                observations = await self.stock_data.market_signal_store.get_signal_history(ticker)
 
                 confirmed, reason = should_confirm_signal(
                     signal=signal,
@@ -549,10 +521,7 @@ class Alerts(commands.Cog):
                     for channel in channels:
                         await send_alert(alert, channel, self.dstate, view=view)
 
-                    await asyncio.to_thread(
-                        self.stock_data.market_signal_store.mark_confirmed,
-                        ticker, signal['detected_at'],
-                    )
+                    await self.stock_data.market_signal_store.mark_confirmed(ticker, signal['detected_at'])
             except Exception:
                 logger.error(f"[_market_confirmation_pipeline] Failed for '{ticker}'", exc_info=True)
 
@@ -571,9 +540,7 @@ class Alerts(commands.Cog):
             try:
                 pct_change = quote['quote']['netPercentChange']
                 classification = classifications.get(ticker, 'standard')
-                daily_price_history = await asyncio.to_thread(
-                    self.stock_data.price_history.fetch_daily_price_history, ticker=ticker
-                )
+                daily_price_history = await self.stock_data.price_history.fetch_daily_price_history(ticker=ticker)
                 current_volume = quote['quote'].get('totalVolume')
 
                 trigger_result = evaluate_price_alert(
@@ -610,7 +577,7 @@ class Alerts(commands.Cog):
         """Send earnings alerts when a reporting stock moves significantly."""
         logger.info("Processing earnings pipeline")
         today = datetime.date.today()
-        earnings_today = self.stock_data.earnings.get_earnings_on_date(date=today)
+        earnings_today = await self.stock_data.earnings.get_earnings_on_date(date=today)
 
         if earnings_today.empty:
             return
@@ -621,9 +588,7 @@ class Alerts(commands.Cog):
             try:
                 pct_change = quote['quote']['netPercentChange']
                 classification = classifications.get(ticker, 'standard')
-                daily_price_history = await asyncio.to_thread(
-                    self.stock_data.price_history.fetch_daily_price_history, ticker=ticker
-                )
+                daily_price_history = await self.stock_data.price_history.fetch_daily_price_history(ticker=ticker)
                 current_volume = quote['quote'].get('totalVolume')
 
                 trigger_result = evaluate_price_alert(
@@ -661,16 +626,16 @@ class Alerts(commands.Cog):
         """Build an EarningsMoverAlert for the given ticker."""
         quote = kwargs.pop('quote', await self.stock_data.schwab.get_quote(ticker=ticker))
         next_earnings_info = kwargs.pop(
-            'next_earnings_info', self.stock_data.earnings.get_next_earnings_info(ticker=ticker)
+            'next_earnings_info', await self.stock_data.earnings.get_next_earnings_info(ticker=ticker)
         )
         historical_earnings = kwargs.pop(
-            'historical_earnings', self.stock_data.earnings.get_historical_earnings(ticker=ticker)
+            'historical_earnings', await self.stock_data.earnings.get_historical_earnings(ticker=ticker)
         )
         daily_price_history = kwargs.pop('daily_price_history', None)
         trigger_result = kwargs.pop('trigger_result', None)
         return EarningsMoverAlert(data=EarningsMoverData(
             ticker=ticker,
-            ticker_info=self.stock_data.tickers.get_ticker_info(ticker=ticker),
+            ticker_info=await self.stock_data.tickers.get_ticker_info(ticker=ticker),
             quote=quote,
             next_earnings_info=next_earnings_info,
             historical_earnings=historical_earnings,
@@ -680,22 +645,22 @@ class Alerts(commands.Cog):
 
     async def build_watchlist_mover(self, ticker: str, **kwargs) -> WatchlistMoverAlert:
         """Build a WatchlistMoverAlert for the given ticker."""
-        def get_ticker_watchlist(ticker: str):
-            watchlists = self.stock_data.watchlists.get_watchlists()
+        async def get_ticker_watchlist(ticker: str):
+            watchlists = await self.stock_data.watchlists.get_watchlists()
             for watchlist_id in watchlists:
-                watchlist_tickers = self.stock_data.watchlists.get_watchlist_tickers(
+                watchlist_tickers = await self.stock_data.watchlists.get_watchlist_tickers(
                     watchlist_id=watchlist_id
                 )
                 if ticker in watchlist_tickers:
                     return watchlist_id
 
         quote = kwargs.pop('quote', await self.stock_data.schwab.get_quote(ticker=ticker))
-        watchlist = kwargs.pop('watchlist', get_ticker_watchlist(ticker=ticker))
+        watchlist = kwargs.pop('watchlist', await get_ticker_watchlist(ticker=ticker))
         daily_price_history = kwargs.pop('daily_price_history', None)
         trigger_result = kwargs.pop('trigger_result', None)
         return WatchlistMoverAlert(data=WatchlistMoverData(
             ticker=ticker,
-            ticker_info=self.stock_data.tickers.get_ticker_info(ticker=ticker),
+            ticker_info=await self.stock_data.tickers.get_ticker_info(ticker=ticker),
             quote=quote,
             watchlist=watchlist,
             daily_price_history=daily_price_history if daily_price_history is not None else pd.DataFrame(),
@@ -710,7 +675,7 @@ class Alerts(commands.Cog):
         rvol = kwargs.pop('rvol', None)
         return MarketAlert(data=MarketAlertData(
             ticker=ticker,
-            ticker_info=self.stock_data.tickers.get_ticker_info(ticker=ticker),
+            ticker_info=await self.stock_data.tickers.get_ticker_info(ticker=ticker),
             quote=quote,
             composite_result=composite_result,
             daily_price_history=daily_price_history,
@@ -732,7 +697,7 @@ class Alerts(commands.Cog):
         volume_acceleration = kwargs.pop('volume_acceleration', None)
         return MarketMoverAlert(data=MarketMoverData(
             ticker=ticker,
-            ticker_info=self.stock_data.tickers.get_ticker_info(ticker=ticker),
+            ticker_info=await self.stock_data.tickers.get_ticker_info(ticker=ticker),
             quote=quote,
             composite_result=composite_result,
             signal_detected_at=signal_detected_at,
@@ -758,7 +723,7 @@ class Alerts(commands.Cog):
         trigger_result = kwargs.pop('trigger_result', None)
         return MomentumConfirmationAlert(data=MomentumConfirmationData(
             ticker=ticker,
-            ticker_info=self.stock_data.tickers.get_ticker_info(ticker=ticker),
+            ticker_info=await self.stock_data.tickers.get_ticker_info(ticker=ticker),
             quote=quote,
             surge_flagged_at=surge_flagged_at,
             surge_types=surge_types,
