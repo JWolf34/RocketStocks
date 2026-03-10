@@ -1,39 +1,33 @@
 import logging
 
-# Logging configuration
 logger = logging.getLogger(__name__)
 
 
 class Watchlists(object):
 
     def __init__(self, db):
-        self.db = db # Postgres
+        self.db = db
         self.db_table = 'watchlists'
         self.db_fields = ['id', 'tickers', 'systemgenerated']
 
-    # Return tickers from watchlist - global by default, personal if chosen by user
-    def get_watchlist_tickers(self, watchlist_id):
+    async def get_watchlist_tickers(self, watchlist_id):
         logger.debug(f"Fetching tickers from watchlist with ID '{watchlist_id}'")
+        row = await self.db.execute(
+            "SELECT tickers FROM watchlists WHERE id = %s",
+            [watchlist_id],
+            fetchone=True,
+        )
+        if row is None:
+            return None
+        return sorted(row[0].split())
 
-        tickers = self.db.select(table='watchlists',
-                                        fields=['tickers'],
-                                        where_conditions=[('id', watchlist_id)],
-                                        fetchall=False)
-        if tickers is None:
-            return tickers
-        else:
-            return sorted(tickers[0].split())
-
-
-    # Return tickers from all available watchlists
-    def get_all_watchlist_tickers(self, no_personal=True, no_systemGenerated=True):
+    async def get_all_watchlist_tickers(self, no_personal=True, no_systemGenerated=True):
         logger.debug("Fetching tickers from all available watchlists (besides personal)")
-
-        watchlists = self.db.select(table='watchlists',
-                                       fields=['id', 'tickers', 'systemgenerated'],
-                                       fetchall=True)
+        watchlists = await self.db.execute(
+            "SELECT id, tickers, systemgenerated FROM watchlists"
+        )
         tickers = []
-        for watchlist in watchlists:
+        for watchlist in (watchlists or []):
             watchlist_id, watchlist_tickers, is_systemGenerated = watchlist[0], watchlist[1].split(), watchlist[2]
             if watchlist_id.isdigit() and no_personal:
                 pass
@@ -41,18 +35,15 @@ class Watchlists(object):
                 pass
             else:
                 tickers += watchlist_tickers
-
         return sorted(set(tickers))
 
-    # Return list of existing watchlists
-    def get_watchlists(self, no_personal=True, no_systemGenerated=True):
+    async def get_watchlists(self, no_personal=True, no_systemGenerated=True):
         logger.debug("Fetching all watchlists")
         filtered_watchlists = []
-        watchlists = self.db.select(table='watchlists',
-                                       fields = ['id', 'tickers', 'systemgenerated'],
-                                       fetchall=True)
-        for i in range(len(watchlists)):
-            watchlist = watchlists[i]
+        watchlists = await self.db.execute(
+            "SELECT id, tickers, systemgenerated FROM watchlists"
+        )
+        for watchlist in (watchlists or []):
             watchlist_id = watchlist[0]
             is_systemGenerated = watchlist[2]
             if watchlist_id.isdigit() and no_personal:
@@ -65,69 +56,70 @@ class Watchlists(object):
             filtered_watchlists.append("personal")
         return sorted(filtered_watchlists)
 
-    # Set content of watchlist to provided tickers
-    def update_watchlist(self, watchlist_id, tickers):
+    async def update_watchlist(self, watchlist_id, tickers):
         logger.debug(f"Updating watchlist '{watchlist_id}': {tickers}")
+        await self.db.execute(
+            "UPDATE watchlists SET tickers = %s WHERE id = %s",
+            [' '.join(tickers), watchlist_id],
+        )
 
-        self.db.update(table='watchlists',
-                          set_fields=[('tickers', ' '.join(tickers))],
-                          where_conditions=[('id', watchlist_id)])
-
-    # Create a new watchlist with id 'watchlist_id'
-    def create_watchlist(self, watchlist_id, tickers, systemGenerated):
+    async def create_watchlist(self, watchlist_id, tickers, systemGenerated):
         logger.debug(f"Creating watchlist with ID '{watchlist_id}' and tickers {tickers}")
-        self.db.insert(table=self.db_table, fields=self.db_fields, values=[(watchlist_id, " ".join(tickers), systemGenerated)])
+        await self.db.execute(
+            "INSERT INTO watchlists (id, tickers, systemgenerated) VALUES (%s, %s, %s) "
+            "ON CONFLICT DO NOTHING",
+            [watchlist_id, " ".join(tickers), systemGenerated],
+        )
 
-    # Delete watchlist with id 'watchlist_id'
-    def delete_watchlist(self, watchlist_id):
+    async def delete_watchlist(self, watchlist_id):
         logger.debug(f"Deleting watchlist '{watchlist_id}'...")
-        self.db.delete(table=self.db_table, where_conditions=[('id', watchlist_id)])
+        await self.db.execute(
+            "DELETE FROM watchlists WHERE id = %s",
+            [watchlist_id],
+        )
 
-    # Rename watchlist from old_id to new_id
-    def rename_watchlist(self, old_id: str, new_id: str) -> bool:
-        """Rename a watchlist. Returns False if old_id doesn't exist or new_id already exists."""
+    async def rename_watchlist(self, old_id: str, new_id: str) -> bool:
+        """Rename a watchlist atomically. Returns False if old_id doesn't exist or new_id already exists."""
         logger.debug(f"Renaming watchlist '{old_id}' to '{new_id}'")
-        if not self.validate_watchlist(old_id):
+        if not await self.validate_watchlist(old_id):
             logger.warning(f"Cannot rename: watchlist '{old_id}' does not exist")
             return False
-        if self.validate_watchlist(new_id):
+        if await self.validate_watchlist(new_id):
             logger.warning(f"Cannot rename: watchlist '{new_id}' already exists")
             return False
-        row = self.db.select(table=self.db_table, fields=['tickers', 'systemgenerated'],
-                             where_conditions=[('id', old_id)], fetchall=False)
-        tickers_str, system_generated = row[0], row[1]
-        self.db.insert(table=self.db_table, fields=self.db_fields,
-                       values=[(new_id, tickers_str, system_generated)])
-        self.db.delete(table=self.db_table, where_conditions=[('id', old_id)])
+        async with self.db.transaction() as conn:
+            cur = await conn.execute(
+                "SELECT tickers, systemgenerated FROM watchlists WHERE id = %s",
+                [old_id],
+            )
+            row = cur.fetchone()
+            tickers_str, system_generated = row[0], row[1]
+            await conn.execute(
+                "INSERT INTO watchlists (id, tickers, systemgenerated) VALUES (%s, %s, %s)",
+                [new_id, tickers_str, system_generated],
+            )
+            await conn.execute(
+                "DELETE FROM watchlists WHERE id = %s",
+                [old_id],
+            )
         return True
 
-    # Validate watchlist exists in the database
-    def validate_watchlist(self, watchlist_id):
+    async def validate_watchlist(self, watchlist_id):
         logger.debug(f"Validating watchlist '{watchlist_id}' exists")
-
-        result = self.db.select(table='watchlists',
-                                       fields=['id'],
-                                       where_conditions=[('id', watchlist_id)],
-                                       fetchall=False)
-        if result is None:
+        row = await self.db.execute(
+            "SELECT id FROM watchlists WHERE id = %s",
+            [watchlist_id],
+            fetchone=True,
+        )
+        if row is None:
             logger.warning(f"Watchlist '{watchlist_id}' does not exist")
             return False
-        else:
-            return True
+        return True
 
-    def get_classification_overrides(self) -> dict[str, str]:
-        """Return {ticker: classification} from watchlists named ``class:<category>``.
-
-        Watchlists with IDs of the form ``class:volatile``, ``class:meme``,
-        ``class:blue_chip``, or ``class:standard`` are treated as explicit
-        classification overrides for their member tickers.
-        """
+    async def get_classification_overrides(self) -> dict[str, str]:
+        """Return {ticker: classification} from watchlists named ``class:<category>``."""
         logger.debug("Fetching classification overrides from watchlists")
-        watchlists = self.db.select(
-            table='watchlists',
-            fields=['id', 'tickers'],
-            fetchall=True,
-        )
+        watchlists = await self.db.execute("SELECT id, tickers FROM watchlists")
         overrides: dict[str, str] = {}
         for row in (watchlists or []):
             watchlist_id, tickers_str = row[0], row[1]
