@@ -29,7 +29,9 @@ def _make_content(screener_type="GAINER"):
 
 def _make_dstate(message_id=None):
     dstate = MagicMock()
-    dstate.get_screener_message_id.return_value = message_id
+    dstate.get_screener_message_id = AsyncMock(return_value=message_id)
+    dstate.insert_screener_message_id = AsyncMock()
+    dstate.update_screener_message_id = AsyncMock()
     return dstate
 
 

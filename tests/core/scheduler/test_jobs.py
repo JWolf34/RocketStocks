@@ -144,17 +144,17 @@ class TestRegisterJobs:
         assert asyncio.iscoroutinefunction(PriceHistoryRepository.update_daily_price_history)
         assert asyncio.iscoroutinefunction(PriceHistoryRepository.update_5m_price_history)
 
-        # Sync (blocking I/O — run in thread pool via asyncio.to_thread)
-        assert not asyncio.iscoroutinefunction(TickerRepository.update_tickers)
-        assert not asyncio.iscoroutinefunction(TickerRepository.insert_tickers)
-        assert not asyncio.iscoroutinefunction(TickerRepository.enrich_unenriched_batch)
-        assert not asyncio.iscoroutinefunction(TickerRepository.import_delisted_tickers)
-        assert not asyncio.iscoroutinefunction(Earnings.update_upcoming_earnings)
-        assert not asyncio.iscoroutinefunction(Earnings.update_historical_earnings)
-        assert not asyncio.iscoroutinefunction(Earnings.remove_past_earnings)
-        assert not asyncio.iscoroutinefunction(CapitolTrades.update_politicians)
-        assert not asyncio.iscoroutinefunction(PriceHistoryRepository.load_delisted_price_history_batch)
-        assert not asyncio.iscoroutinefunction(PriceHistoryRepository.load_delisted_price_history)
+        # Also genuinely async (native db async support)
+        assert asyncio.iscoroutinefunction(TickerRepository.update_tickers)
+        assert asyncio.iscoroutinefunction(TickerRepository.insert_tickers)
+        assert asyncio.iscoroutinefunction(TickerRepository.enrich_unenriched_batch)
+        assert asyncio.iscoroutinefunction(TickerRepository.import_delisted_tickers)
+        assert asyncio.iscoroutinefunction(Earnings.update_upcoming_earnings)
+        assert asyncio.iscoroutinefunction(Earnings.update_historical_earnings)
+        assert asyncio.iscoroutinefunction(Earnings.remove_past_earnings)
+        assert asyncio.iscoroutinefunction(CapitolTrades.update_politicians)
+        assert asyncio.iscoroutinefunction(PriceHistoryRepository.load_delisted_price_history_batch)
+        assert asyncio.iscoroutinefunction(PriceHistoryRepository.load_delisted_price_history)
 
 
 class TestCheckSchwabTokenExpiry:

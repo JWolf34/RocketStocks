@@ -171,26 +171,27 @@ class TestCapitolTrades:
         from rocketstocks.data.clients.capitol_trades import CapitolTrades
         return CapitolTrades(db=db or MagicMock())
 
-    def test_politician_returns_none_on_empty_db_result(self):
+    @pytest.mark.asyncio
+    async def test_politician_returns_none_on_empty_db_result(self):
         """B9: should not crash when DB returns None."""
         db = MagicMock()
-        db.get_table_columns.return_value = ['politician_id', 'name', 'party', 'state']
-        db.select.return_value = None  # DB returned no row
+        db.execute = AsyncMock(return_value=None)
         ct = self._make(db=db)
-        result = ct.politician(politician_id='abc1234')
+        result = await ct.politician(politician_id='abc1234')
         assert result is None
 
-    def test_politician_returns_dict_when_found(self):
+    @pytest.mark.asyncio
+    async def test_politician_returns_dict_when_found(self):
         db = MagicMock()
-        db.get_table_columns.return_value = ['politician_id', 'name', 'party', 'state']
-        db.select.return_value = ('abc1234', 'John Doe', 'D', 'CA')
+        db.execute = AsyncMock(return_value=('abc1234', 'John Doe', 'D', 'CA'))
         ct = self._make(db=db)
-        result = ct.politician(politician_id='abc1234')
+        result = await ct.politician(politician_id='abc1234')
         assert result == {'politician_id': 'abc1234', 'name': 'John Doe', 'party': 'D', 'state': 'CA'}
 
-    def test_politician_returns_none_with_no_args(self):
+    @pytest.mark.asyncio
+    async def test_politician_returns_none_with_no_args(self):
         ct = self._make()
-        result = ct.politician()
+        result = await ct.politician()
         assert result is None
 
     def test_trades_handles_missing_table(self):
@@ -207,11 +208,11 @@ class TestCapitolTrades:
             result = CapitolTrades.trades('abc1234')
             assert isinstance(result, pd.DataFrame)
 
-    def test_update_politicians_calls_db_insert(self):
-        """update_politicians must call db.insert with politician data after parsing cards."""
-        import asyncio
+    @pytest.mark.asyncio
+    async def test_update_politicians_calls_db_insert(self):
+        """update_politicians must call db.execute_batch with politician data after parsing cards."""
         db = MagicMock()
-        db.get_table_columns.return_value = ['politician_id', 'name', 'party', 'state']
+        db.execute_batch = AsyncMock()
         ct = self._make(db=db)
 
         with patch('requests.get') as mock_get, \
@@ -228,18 +229,17 @@ class TestCapitolTrades:
             page1_soup = MagicMock()
             page1_soup.find_all.return_value = [mock_card]
 
-            # Second page: no cards — triggers db.insert
+            # Second page: no cards — triggers db.execute_batch
             page2_soup = MagicMock()
             page2_soup.find_all.return_value = []
 
             mock_bs_cls.side_effect = [page1_soup, page2_soup]
 
-            ct.update_politicians()
+            await ct.update_politicians()
 
-        db.insert.assert_called_once()
-        call_kwargs = db.insert.call_args[1]
-        assert call_kwargs['table'] == 'ct_politicians'
-        assert len(call_kwargs['values']) == 1
+        db.execute_batch.assert_called_once()
+        call_args = db.execute_batch.call_args[0]
+        assert len(call_args[1]) == 1
 
 
 # ---------------------------------------------------------------------------
@@ -345,26 +345,24 @@ class TestEarningsReturnType:
             from rocketstocks.data.earnings import Earnings
             mock_nasdaq = MagicMock()
             mock_db = MagicMock()
-            mock_db.get_table_columns.return_value = ['date', 'ticker', 'time',
-                                                       'fiscal_quarter_ending', 'eps_forecast',
-                                                       'no_of_ests', 'last_year_eps',
-                                                       'last_year_rpt_dt']
             return Earnings(nasdaq=mock_nasdaq, db=mock_db), mock_db
 
-    def test_get_earnings_on_date_returns_dataframe_when_empty(self):
+    @pytest.mark.asyncio
+    async def test_get_earnings_on_date_returns_dataframe_when_empty(self):
         """B14: should always return DataFrame, not raw list."""
         earnings, db = self._make_earnings()
-        db.select.return_value = []
+        db.execute = AsyncMock(return_value=None)
 
-        result = earnings.get_earnings_on_date(datetime.date(2024, 1, 2))
+        result = await earnings.get_earnings_on_date(datetime.date(2024, 1, 2))
         assert isinstance(result, pd.DataFrame)
 
-    def test_get_earnings_on_date_returns_dataframe_when_has_data(self):
+    @pytest.mark.asyncio
+    async def test_get_earnings_on_date_returns_dataframe_when_has_data(self):
         earnings, db = self._make_earnings()
-        db.select.return_value = [
+        db.execute = AsyncMock(return_value=[
             (datetime.date(2024, 1, 2), 'AAPL', 'AMC', '2024Q1', '2.00', '10', '1.50', '2023-01-01')
-        ]
-        result = earnings.get_earnings_on_date(datetime.date(2024, 1, 2))
+        ])
+        result = await earnings.get_earnings_on_date(datetime.date(2024, 1, 2))
         assert isinstance(result, pd.DataFrame)
         assert len(result) == 1
 

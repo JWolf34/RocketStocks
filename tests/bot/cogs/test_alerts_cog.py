@@ -19,17 +19,23 @@ def _make_bot():
 
 def _make_stock_data(earnings_df: pd.DataFrame):
     sd = MagicMock(name="StockData")
-    sd.earnings.get_earnings_on_date.return_value = earnings_df
+    sd.earnings.get_earnings_on_date = AsyncMock(return_value=earnings_df)
     sd.alert_tickers = {}
-    sd.ticker_stats.get_all_classifications.return_value = {}
-    sd.price_history.fetch_daily_price_history.return_value = pd.DataFrame()
-    sd.surge_store.get_active_surges.return_value = []
-    sd.surge_store.expire_old_surges.return_value = None
-    sd.market_signal_store.get_active_signals.return_value = []
-    sd.market_signal_store.expire_old_signals.return_value = None
-    sd.market_signal_store.is_already_signaled.return_value = False
-    sd.market_signal_store.get_latest_signal.return_value = None
-    sd.watchlists.get_all_watchlist_tickers.return_value = []
+    sd.ticker_stats.get_all_classifications = AsyncMock(return_value={})
+    sd.price_history.fetch_daily_price_history = AsyncMock(return_value=pd.DataFrame())
+    sd.surge_store.get_active_surges = AsyncMock(return_value=[])
+    sd.surge_store.expire_old_surges = AsyncMock(return_value=None)
+    sd.surge_store.is_already_flagged = AsyncMock(return_value=False)
+    sd.surge_store.insert_surge = AsyncMock()
+    sd.market_signal_store.get_active_signals = AsyncMock(return_value=[])
+    sd.market_signal_store.expire_old_signals = AsyncMock(return_value=None)
+    sd.market_signal_store.is_already_signaled = AsyncMock(return_value=False)
+    sd.market_signal_store.get_latest_signal = AsyncMock(return_value=None)
+    sd.market_signal_store.get_signal_history = AsyncMock(return_value=[])
+    sd.watchlists.get_all_watchlist_tickers = AsyncMock(return_value=[])
+    sd.watchlists.get_watchlists = AsyncMock(return_value=[])
+    sd.tickers.get_ticker_info = AsyncMock(return_value={})
+    sd.popularity.fetch_popularity = AsyncMock(return_value=pd.DataFrame())
     return sd
 
 
@@ -678,7 +684,7 @@ class TestProcessAlertsImpl:
         cog.bot.iter_channels.return_value = [(1, MagicMock())]
         cog.stock_data.schwab.get_quotes = AsyncMock(return_value={})
         expected_classifications = {'AAPL': 'blue_chip', 'GME': 'meme'}
-        cog.stock_data.ticker_stats.get_all_classifications = MagicMock(
+        cog.stock_data.ticker_stats.get_all_classifications = AsyncMock(
             return_value=expected_classifications
         )
 
@@ -735,7 +741,7 @@ class TestProcessAlertsImpl:
         cog.mutils.get_market_period.return_value = "intraday"
         cog.bot.iter_channels.return_value = [(1, MagicMock())]
         cog.stock_data.schwab.get_quotes = AsyncMock(return_value={})
-        cog.stock_data.ticker_stats.get_all_classifications = MagicMock(return_value={})
+        cog.stock_data.ticker_stats.get_all_classifications = AsyncMock(return_value={})
 
         with (
             patch.object(cog, "_confirmation_pipeline", new_callable=AsyncMock) as mock_conf,
@@ -760,7 +766,7 @@ class TestProcessAlertsImpl:
         cog.mutils.get_market_period.return_value = "intraday"
         cog.bot.iter_channels.return_value = [(1, MagicMock())]
         cog.stock_data.schwab.get_quotes = AsyncMock(return_value={})
-        cog.stock_data.ticker_stats.get_all_classifications = MagicMock(return_value={})
+        cog.stock_data.ticker_stats.get_all_classifications = AsyncMock(return_value={})
 
         with (
             patch.object(cog, "_confirmation_pipeline", new_callable=AsyncMock, side_effect=RuntimeError("boom")),
@@ -780,7 +786,7 @@ class TestProcessAlertsImpl:
         cog.mutils.get_market_period.return_value = "intraday"
         cog.bot.iter_channels.return_value = [(1, MagicMock())]
         cog.stock_data.schwab.get_quotes = AsyncMock(return_value={})
-        cog.stock_data.ticker_stats.get_all_classifications = MagicMock(return_value={})
+        cog.stock_data.ticker_stats.get_all_classifications = AsyncMock(return_value={})
 
         with (
             patch.object(cog, "_confirmation_pipeline", new_callable=AsyncMock),

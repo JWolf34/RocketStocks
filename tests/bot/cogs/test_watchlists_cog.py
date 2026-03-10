@@ -24,13 +24,13 @@ def _make_interaction(user_id: int = 99) -> MagicMock:
 
 def _make_watchlists_data(validate_result: bool = True, tickers: list | None = None):
     wl = MagicMock()
-    wl.validate_watchlist.return_value = validate_result
-    wl.get_watchlist_tickers.return_value = tickers or []
-    wl.get_watchlists.return_value = ["alpha", "beta", "personal"]
-    wl.update_watchlist.return_value = None
-    wl.create_watchlist.return_value = None
-    wl.delete_watchlist.return_value = None
-    wl.rename_watchlist.return_value = True
+    wl.validate_watchlist = AsyncMock(return_value=validate_result)
+    wl.get_watchlist_tickers = AsyncMock(return_value=tickers or [])
+    wl.get_watchlists = AsyncMock(return_value=["alpha", "beta", "personal"])
+    wl.update_watchlist = AsyncMock(return_value=None)
+    wl.create_watchlist = AsyncMock(return_value=None)
+    wl.delete_watchlist = AsyncMock(return_value=None)
+    wl.rename_watchlist = AsyncMock(return_value=True)
     return wl
 
 

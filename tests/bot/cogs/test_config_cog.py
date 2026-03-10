@@ -11,6 +11,9 @@ def _make_bot(guild_id=123456):
     bot = MagicMock(name="Bot")
     bot.stock_data = MagicMock(name="StockData")
     bot.stock_data.channel_config = MagicMock(name="ChannelConfigRepository")
+    bot.stock_data.channel_config.get_all_for_guild = AsyncMock(return_value={})
+    bot.stock_data.channel_config.get_unconfigured_guilds = AsyncMock(return_value=[])
+    bot.stock_data.channel_config.upsert_channel = AsyncMock()
     guild = MagicMock(name="Guild")
     guild.id = guild_id
     guild.name = "Test Guild"

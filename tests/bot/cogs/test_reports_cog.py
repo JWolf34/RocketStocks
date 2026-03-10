@@ -10,7 +10,8 @@ from rocketstocks.bot.cogs.reports import Reports
 def _make_bot():
     bot = MagicMock(name="Bot")
     bot.emitter = MagicMock()
-    bot.iter_channels.return_value = []
+    bot.iter_channels = AsyncMock(return_value=[])
+    bot.get_channel_for_guild = AsyncMock(return_value=MagicMock())
     return bot
 
 
@@ -29,11 +30,9 @@ def _make_cog():
         patch.object(Reports, "post_earnings_spotlight"),
         patch.object(Reports, "post_weekly_earnings"),
         patch("rocketstocks.bot.cogs.reports.DiscordState"),
-        patch("rocketstocks.bot.cogs.reports.ChannelConfigRepository"),
     ):
         cog = Reports(bot=bot, stock_data=sd)
     cog.dstate = MagicMock()
-    cog.channel_config = MagicMock()
     cog.mutils = MagicMock()
     return cog
 
@@ -136,12 +135,12 @@ class TestPostEarningsSpotlight:
 
 def _make_stock_data_for_report(cog):
     """Set up stock_data mocks needed by build_stock_report."""
-    cog.stock_data.tickers.get_ticker_info.return_value = {}
-    cog.stock_data.price_history.fetch_daily_price_history.return_value = pd.DataFrame()
-    cog.stock_data.popularity.fetch_popularity.return_value = pd.DataFrame()
-    cog.stock_data.sec.get_recent_filings.return_value = pd.DataFrame()
-    cog.stock_data.earnings.get_historical_earnings.return_value = pd.DataFrame()
-    cog.stock_data.earnings.get_next_earnings_info.return_value = {}
+    cog.stock_data.tickers.get_ticker_info = AsyncMock(return_value={})
+    cog.stock_data.price_history.fetch_daily_price_history = AsyncMock(return_value=pd.DataFrame())
+    cog.stock_data.popularity.fetch_popularity = AsyncMock(return_value=pd.DataFrame())
+    cog.stock_data.sec.get_recent_filings = AsyncMock(return_value=pd.DataFrame())
+    cog.stock_data.earnings.get_historical_earnings = AsyncMock(return_value=pd.DataFrame())
+    cog.stock_data.earnings.get_next_earnings_info = AsyncMock(return_value={})
     cog.stock_data.schwab.get_quote = AsyncMock(return_value={
         'symbol': 'AAPL',
         'quote': {'openPrice': 180, 'highPrice': 190, 'lowPrice': 175,
@@ -162,9 +161,9 @@ class TestBuildStockReport:
     async def test_no_guild_id_yields_empty_recent_alerts(self):
         cog = _make_cog()
         _make_stock_data_for_report(cog)
-        cog.dstate.get_recent_alerts_for_ticker.return_value = [
+        cog.dstate.get_recent_alerts_for_ticker = AsyncMock(return_value=[
             (datetime.date.today(), 'EARNINGS_MOVER', '111'),
-        ]
+        ])
         report = await cog.build_stock_report(ticker='AAPL', guild_id=None)
         assert report.data.recent_alerts == []
 
@@ -173,10 +172,10 @@ class TestBuildStockReport:
         cog = _make_cog()
         _make_stock_data_for_report(cog)
         today = datetime.date.today()
-        cog.dstate.get_recent_alerts_for_ticker.return_value = [
+        cog.dstate.get_recent_alerts_for_ticker = AsyncMock(return_value=[
             (today, 'EARNINGS_MOVER', '111'),
-        ]
-        cog.channel_config.get_channel_id.return_value = 999
+        ])
+        cog.stock_data.channel_config.get_channel_id = AsyncMock(return_value=999)
         report = await cog.build_stock_report(ticker='AAPL', guild_id=12345)
         assert len(report.data.recent_alerts) == 1
         entry = report.data.recent_alerts[0]
@@ -188,10 +187,10 @@ class TestBuildStockReport:
         cog = _make_cog()
         _make_stock_data_for_report(cog)
         today = datetime.date.today()
-        cog.dstate.get_recent_alerts_for_ticker.return_value = [
+        cog.dstate.get_recent_alerts_for_ticker = AsyncMock(return_value=[
             (today, 'WATCHLIST_MOVER', '222'),
-        ]
-        cog.channel_config.get_channel_id.return_value = None
+        ])
+        cog.stock_data.channel_config.get_channel_id = AsyncMock(return_value=None)
         report = await cog.build_stock_report(ticker='AAPL', guild_id=12345)
         assert len(report.data.recent_alerts) == 1
         assert report.data.recent_alerts[0]['url'] is None
@@ -200,7 +199,7 @@ class TestBuildStockReport:
     async def test_no_alerts_returns_empty_list(self):
         cog = _make_cog()
         _make_stock_data_for_report(cog)
-        cog.dstate.get_recent_alerts_for_ticker.return_value = []
+        cog.dstate.get_recent_alerts_for_ticker = AsyncMock(return_value=[])
         report = await cog.build_stock_report(ticker='AAPL', guild_id=12345)
         assert report.data.recent_alerts == []
 
@@ -307,7 +306,7 @@ class TestAlertSummaryCommand:
         mock_message.jump_url = "https://discord.com/channels/1/2/3"
 
         with (
-            patch.object(cog, 'build_alert_summary', return_value=mock_content) as mock_build,
+            patch.object(cog, 'build_alert_summary', new_callable=AsyncMock, return_value=mock_content) as mock_build,
             patch("rocketstocks.bot.cogs.reports.send_report", new_callable=AsyncMock, return_value=mock_message),
             patch("rocketstocks.bot.cogs.reports._resolve_since_dt", return_value=(
                 datetime.datetime(2026, 3, 7, 21, 0), "since last close (Mar 07)"
@@ -329,7 +328,7 @@ class TestAlertSummaryCommand:
         since_when.value = 'last_3_days'
 
         with (
-            patch.object(cog, 'build_alert_summary', return_value=mock_content),
+            patch.object(cog, 'build_alert_summary', new_callable=AsyncMock, return_value=mock_content),
             patch("rocketstocks.bot.cogs.reports.send_report", new_callable=AsyncMock, return_value=mock_message),
             patch("rocketstocks.bot.cogs.reports._resolve_since_dt", return_value=(
                 datetime.datetime(2026, 3, 5), "last 3 days"
@@ -348,7 +347,7 @@ class TestAlertSummaryCommand:
         mock_message.jump_url = "https://discord.com/channels/1/2/3"
 
         with (
-            patch.object(cog, 'build_alert_summary', return_value=mock_content),
+            patch.object(cog, 'build_alert_summary', new_callable=AsyncMock, return_value=mock_content),
             patch("rocketstocks.bot.cogs.reports.send_report", new_callable=AsyncMock, return_value=mock_message) as mock_send,
             patch("rocketstocks.bot.cogs.reports._resolve_since_dt", return_value=(
                 datetime.datetime(2026, 3, 7, 21, 0), "since last close (Mar 07)"
@@ -371,7 +370,7 @@ class TestAlertSummaryCommand:
         visibility.value = 'public'
 
         with (
-            patch.object(cog, 'build_alert_summary', return_value=mock_content),
+            patch.object(cog, 'build_alert_summary', new_callable=AsyncMock, return_value=mock_content),
             patch("rocketstocks.bot.cogs.reports.send_report", new_callable=AsyncMock, return_value=mock_message) as mock_send,
             patch("rocketstocks.bot.cogs.reports._resolve_since_dt", return_value=(
                 datetime.datetime(2026, 3, 7, 21, 0), "since last close (Mar 07)"
@@ -382,11 +381,12 @@ class TestAlertSummaryCommand:
         call_kwargs = mock_send.call_args[1]
         assert call_kwargs.get('visibility') == 'public'
 
-    def test_build_alert_summary_calls_dstate(self):
+    @pytest.mark.asyncio
+    async def test_build_alert_summary_calls_dstate(self):
         cog = _make_cog()
         since_dt = datetime.datetime(2026, 3, 7, 21, 0)
-        cog.dstate.get_alerts_since.return_value = []
-        result = cog.build_alert_summary(since_dt, "test label")
+        cog.dstate.get_alerts_since = AsyncMock(return_value=[])
+        result = await cog.build_alert_summary(since_dt, "test label")
         cog.dstate.get_alerts_since.assert_called_once_with(since_dt)
         from rocketstocks.core.content.reports.alert_summary import AlertSummary
         assert isinstance(result, AlertSummary)
