@@ -98,7 +98,7 @@ class SetupModal(discord.ui.Modal, title="Configure RocketStocks Channels"):
         repo = self._cog.bot.stock_data.channel_config
         lines = []
         for config_type, channel in resolved.items():
-            repo.upsert_channel(interaction.guild_id, config_type, channel.id)
+            await repo.upsert_channel(interaction.guild_id, config_type, channel.id)
             lines.append(f"**{config_type}**: {channel.mention}")
             logger.info(f"/setup modal: guild={interaction.guild_id} {config_type}={channel.id}")
         embed = discord.Embed(
@@ -140,7 +140,7 @@ class Config(commands.Cog):
         # Prompt any guild that isn't fully configured yet
         repo = self.bot.stock_data.channel_config
         guild_ids = [g.id for g in self.bot.guilds]
-        unconfigured = repo.get_unconfigured_guilds(guild_ids)
+        unconfigured = await repo.get_unconfigured_guilds(guild_ids)
         for guild_id in unconfigured:
             guild = self.bot.get_guild(guild_id)
             if guild:
@@ -213,7 +213,7 @@ class Config(commands.Cog):
     async def setup_status(self, interaction: discord.Interaction):
         """Display all 5 channel types and their current mentions or 'Not configured'."""
         repo = self.bot.stock_data.channel_config
-        configured = repo.get_all_for_guild(interaction.guild_id)
+        configured = await repo.get_all_for_guild(interaction.guild_id)
 
         lines = []
         all_set = True
