@@ -42,7 +42,7 @@ class Watchlists(commands.Cog):
 
     async def watchlist_options(self, interaction: discord.Interaction, current: str):
         """Autocomplete helper - return all watchlist names that match input 'current' """
-        watchlists = self.watchlists.get_watchlists(no_systemGenerated=False)
+        watchlists = await self.watchlists.get_watchlists(no_systemGenerated=False)
         return [
             app_commands.Choice(name=watchlist, value=watchlist)
             for watchlist in watchlists if current.lower() in watchlist.lower()
@@ -57,7 +57,7 @@ class Watchlists(commands.Cog):
         else:
             prefix_tokens = tokens
             partial = ""
-        all_tickers = self.stock_data.tickers.get_all_tickers()
+        all_tickers = await self.stock_data.tickers.get_all_tickers()
         prefix_str = (" ".join(prefix_tokens) + " ") if prefix_tokens else ""
         return [
             app_commands.Choice(name=f"{prefix_str}{ticker}", value=f"{prefix_str}{ticker}")
@@ -78,14 +78,14 @@ class Watchlists(commands.Cog):
 
         watchlist_id = watchlist if watchlist != 'personal' else str(interaction.user.id)
 
-        if not self.watchlists.validate_watchlist(watchlist_id=watchlist_id):
-            self.watchlists.create_watchlist(watchlist_id=watchlist_id, tickers=[], systemGenerated=False)
+        if not await self.watchlists.validate_watchlist(watchlist_id=watchlist_id):
+            await self.watchlists.create_watchlist(watchlist_id=watchlist_id, tickers=[], systemGenerated=False)
 
-        symbols = self.watchlists.get_watchlist_tickers(watchlist_id)
+        symbols = await self.watchlists.get_watchlist_tickers(watchlist_id)
         duplicate_tickers = [x for x in new_tickers if x in symbols]
         added_tickers = [x for x in new_tickers if x not in symbols]
         merged = list(set(symbols + new_tickers))
-        self.watchlists.update_watchlist(watchlist_id=watchlist_id, tickers=merged)
+        await self.watchlists.update_watchlist(watchlist_id=watchlist_id, tickers=merged)
         logger.info(f"Added tickers {added_tickers} to watchlist '{watchlist}'")
         logger.info(f"Watchlist '{watchlist}' has tickers {merged}")
 
@@ -114,16 +114,16 @@ class Watchlists(commands.Cog):
 
         watchlist_id = watchlist if watchlist != 'personal' else str(interaction.user.id)
 
-        if not self.watchlists.validate_watchlist(watchlist_id=watchlist_id):
+        if not await self.watchlists.validate_watchlist(watchlist_id=watchlist_id):
             message = f"Watchlist *{watchlist}* does not exist. Use `/add-tickers`, `/remove-tickers` or `/set-watchlist` to update this watchlist."
             await interaction.followup.send(message, ephemeral=True)
             return
 
-        symbols = self.watchlists.get_watchlist_tickers(watchlist_id)
+        symbols = await self.watchlists.get_watchlist_tickers(watchlist_id)
         removed_tickers = [x for x in tickers if x in symbols]
         excess_tickers = [x for x in tickers if x not in symbols]
         remaining = [x for x in symbols if x not in tickers]
-        self.watchlists.update_watchlist(watchlist_id=watchlist_id, tickers=remaining)
+        await self.watchlists.update_watchlist(watchlist_id=watchlist_id, tickers=remaining)
         logger.info(f"Removed tickers {removed_tickers} from watchlist '{watchlist}'")
         logger.info(f"Watchlist '{watchlist}' has tickers {remaining}")
 
@@ -148,8 +148,8 @@ class Watchlists(commands.Cog):
 
         watchlist_id = watchlist if watchlist != 'personal' else str(interaction.user.id)
 
-        if self.watchlists.validate_watchlist(watchlist_id=watchlist_id):
-            tickers = self.watchlists.get_watchlist_tickers(watchlist_id)
+        if await self.watchlists.validate_watchlist(watchlist_id=watchlist_id):
+            tickers = await self.watchlists.get_watchlist_tickers(watchlist_id)
             if tickers:
                 await interaction.followup.send(f"*{watchlist}* ({len(tickers)} tickers): {ticker_string(tickers)}", ephemeral=True if watchlist_id.isdigit() else False)
                 logger.info(f"Watchlist '{watchlist}' has tickers {tickers}")
@@ -174,10 +174,10 @@ class Watchlists(commands.Cog):
 
         watchlist_id = watchlist if watchlist != 'personal' else str(interaction.user.id)
 
-        if not self.watchlists.validate_watchlist(watchlist_id=watchlist_id):
-            self.watchlists.create_watchlist(watchlist_id=watchlist_id, tickers=[], systemGenerated=False)
+        if not await self.watchlists.validate_watchlist(watchlist_id=watchlist_id):
+            await self.watchlists.create_watchlist(watchlist_id=watchlist_id, tickers=[], systemGenerated=False)
 
-        self.watchlists.update_watchlist(watchlist_id=watchlist_id, tickers=tickers)
+        await self.watchlists.update_watchlist(watchlist_id=watchlist_id, tickers=tickers)
         logger.info(f"Watchlist '{watchlist}' set to {tickers}")
 
         if tickers:
@@ -200,9 +200,9 @@ class Watchlists(commands.Cog):
 
         watchlist_id = watchlist if watchlist != 'personal' else str(interaction.user.id)
 
-        if not self.watchlists.validate_watchlist(watchlist_id=watchlist_id):
+        if not await self.watchlists.validate_watchlist(watchlist_id=watchlist_id):
             tickers, invalid_tickers = await self.stock_data.tickers.parse_valid_tickers(tickers.upper())
-            self.watchlists.create_watchlist(watchlist_id=watchlist_id, tickers=tickers, systemGenerated=False)
+            await self.watchlists.create_watchlist(watchlist_id=watchlist_id, tickers=tickers, systemGenerated=False)
             logger.info(f"Watchlist '{watchlist}' set to {tickers}")
 
             if tickers:
@@ -232,7 +232,7 @@ class Watchlists(commands.Cog):
 
         watchlist_id = watchlist
 
-        if not self.watchlists.validate_watchlist(watchlist_id=watchlist_id):
+        if not await self.watchlists.validate_watchlist(watchlist_id=watchlist_id):
             await interaction.followup.send(f"Watchlist *{watchlist}* does not exist.", ephemeral=True)
             logger.info(f"Delete attempted on non-existent watchlist '{watchlist}'")
             return
@@ -246,7 +246,7 @@ class Watchlists(commands.Cog):
         await view.wait()
 
         if view.confirmed:
-            self.watchlists.delete_watchlist(watchlist_id=watchlist_id)
+            await self.watchlists.delete_watchlist(watchlist_id=watchlist_id)
             await interaction.followup.send(f"Deleted watchlist *{watchlist}*.", ephemeral=True)
             logger.info(f"Watchlist '{watchlist}' deleted")
         else:
@@ -259,7 +259,7 @@ class Watchlists(commands.Cog):
         await interaction.response.defer(ephemeral=True)
         logger.info(f"/list-watchlists function called by user {interaction.user.name}")
 
-        watchlists = self.watchlists.get_watchlists(no_personal=True, no_systemGenerated=True)
+        watchlists = await self.watchlists.get_watchlists(no_personal=True, no_systemGenerated=True)
         if not watchlists or watchlists == ["personal"]:
             await interaction.followup.send("No watchlists found. Use `/create-watchlist` to create one.", ephemeral=True)
             return
@@ -268,7 +268,7 @@ class Watchlists(commands.Cog):
         for wl_id in watchlists:
             if wl_id == "personal":
                 continue
-            tickers = self.watchlists.get_watchlist_tickers(wl_id)
+            tickers = await self.watchlists.get_watchlist_tickers(wl_id)
             count = len(tickers) if tickers else 0
             lines.append(f"**{wl_id}** — {count} ticker{'s' if count != 1 else ''}")
 
@@ -292,12 +292,12 @@ class Watchlists(commands.Cog):
             await interaction.followup.send("Cannot rename a personal watchlist.", ephemeral=True)
             return
 
-        success = self.watchlists.rename_watchlist(old_id=watchlist, new_id=new_name)
+        success = await self.watchlists.rename_watchlist(old_id=watchlist, new_id=new_name)
         if success:
             await interaction.followup.send(f"Renamed watchlist *{watchlist}* to *{new_name}*.", ephemeral=False)
             logger.info(f"Watchlist '{watchlist}' renamed to '{new_name}'")
         else:
-            if not self.watchlists.validate_watchlist(watchlist):
+            if not await self.watchlists.validate_watchlist(watchlist):
                 await interaction.followup.send(f"Watchlist *{watchlist}* does not exist.", ephemeral=True)
             else:
                 await interaction.followup.send(f"Watchlist *{new_name}* already exists. Choose a different name.", ephemeral=True)
