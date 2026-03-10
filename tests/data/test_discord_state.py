@@ -1,173 +1,249 @@
 """Tests for rocketstocks.data.discord_state.DiscordState."""
 import datetime
 import json
-from unittest.mock import MagicMock
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
-import pytest_asyncio
 
 from rocketstocks.data.discord_state import DiscordState
 
 
 def _make(db=None):
-    return DiscordState(db=db or MagicMock())
+    if db is None:
+        db = MagicMock()
+        db.execute = AsyncMock(return_value=None)
+    return DiscordState(db=db)
 
 
 class TestGetScreenerMessageId:
-    def test_returns_id_when_found(self):
+    async def test_returns_id_when_found(self):
         db = MagicMock()
-        db.select.return_value = ("123456",)
+        db.execute = AsyncMock(return_value=("123456",))
         ds = _make(db)
-        result = ds.get_screener_message_id("GAINER")
+        result = await ds.get_screener_message_id("GAINER")
         assert result == "123456"
 
-    def test_returns_none_when_not_found(self):
+    async def test_returns_none_when_not_found(self):
         db = MagicMock()
-        db.select.return_value = None
+        db.execute = AsyncMock(return_value=None)
         ds = _make(db)
-        result = ds.get_screener_message_id("GAINER")
+        result = await ds.get_screener_message_id("GAINER")
         assert result is None
 
-    def test_uses_report_suffix_in_where(self):
+    async def test_uses_report_suffix_in_query(self):
         db = MagicMock()
-        db.select.return_value = None
+        db.execute = AsyncMock(return_value=None)
         ds = _make(db)
-        ds.get_screener_message_id("GAINER")
-        call_kwargs = db.select.call_args[1]
-        where = call_kwargs["where_conditions"]
-        assert any("GAINER_REPORT" in str(v) for _, v in where)
+        await ds.get_screener_message_id("GAINER")
+        db.execute.assert_called_once()
+        call_args = db.execute.call_args
+        # Second positional arg is the params list
+        params = call_args[0][1] if len(call_args[0]) > 1 else call_args[1].get('params', call_args[0][1])
+        assert any("GAINER_REPORT" in str(p) for p in params)
 
 
 class TestUpdateScreenerMessageId:
-    def test_calls_db_update(self):
+    async def test_calls_db_execute(self):
         db = MagicMock()
+        db.execute = AsyncMock(return_value=None)
         ds = _make(db)
-        ds.update_screener_message_id("999", "GAINER")
-        db.update.assert_called_once()
-        call_kwargs = db.update.call_args[1]
-        assert call_kwargs["table"] == "reports"
+        await ds.update_screener_message_id("999", "GAINER")
+        db.execute.assert_called_once()
+
+    async def test_sql_targets_reports_table(self):
+        db = MagicMock()
+        db.execute = AsyncMock(return_value=None)
+        ds = _make(db)
+        await ds.update_screener_message_id("999", "GAINER")
+        sql = db.execute.call_args[0][0]
+        assert "reports" in sql.lower()
+
+    async def test_passes_message_id_and_type_in_params(self):
+        db = MagicMock()
+        db.execute = AsyncMock(return_value=None)
+        ds = _make(db)
+        await ds.update_screener_message_id("999", "GAINER")
+        params = db.execute.call_args[0][1]
+        assert "999" in params
+        assert "GAINER_REPORT" in params
 
 
 class TestInsertScreenerMessageId:
-    def test_calls_db_insert(self):
+    async def test_calls_db_execute(self):
         db = MagicMock()
-        db.get_table_columns.return_value = ["type", "messageid"]
+        db.execute = AsyncMock(return_value=None)
         ds = _make(db)
-        ds.insert_screener_message_id("999", "GAINER")
-        db.insert.assert_called_once()
-        call_kwargs = db.insert.call_args[1]
-        assert call_kwargs["table"] == "reports"
+        await ds.insert_screener_message_id("999", "GAINER")
+        db.execute.assert_called_once()
+
+    async def test_sql_contains_insert_into_reports(self):
+        db = MagicMock()
+        db.execute = AsyncMock(return_value=None)
+        ds = _make(db)
+        await ds.insert_screener_message_id("999", "GAINER")
+        sql = db.execute.call_args[0][0]
+        assert "INSERT INTO reports" in sql
+
+    async def test_passes_type_and_message_id_in_params(self):
+        db = MagicMock()
+        db.execute = AsyncMock(return_value=None)
+        ds = _make(db)
+        await ds.insert_screener_message_id("999", "GAINER")
+        params = db.execute.call_args[0][1]
+        assert "999" in params
+        assert "GAINER_REPORT" in params
+
+    async def test_no_get_table_columns_call(self):
+        db = MagicMock()
+        db.execute = AsyncMock(return_value=None)
+        ds = _make(db)
+        await ds.insert_screener_message_id("999", "GAINER")
+        db.get_table_columns.assert_not_called()
 
 
 class TestAlertMessageId:
-    @pytest.mark.asyncio
     async def test_get_alert_message_id_returns_id(self):
         db = MagicMock()
-        db.select.return_value = ("777",)
+        db.execute = AsyncMock(return_value=("777",))
         ds = _make(db)
         result = await ds.get_alert_message_id("2024-01-01", "AAPL", "VOLUME_MOVER")
         assert result == "777"
 
-    @pytest.mark.asyncio
     async def test_get_alert_message_id_returns_none_when_missing(self):
         db = MagicMock()
-        db.select.return_value = None
+        db.execute = AsyncMock(return_value=None)
         ds = _make(db)
         assert await ds.get_alert_message_id("2024-01-01", "AAPL", "VOLUME_MOVER") is None
 
-    @pytest.mark.asyncio
-    async def test_get_alert_message_data_deserializes_string(self):
+    async def test_get_alert_message_data_returns_dict_directly(self):
         db = MagicMock()
         payload = {"pct_change": 5.0}
-        db.select.return_value = (json.dumps(payload),)
+        db.execute = AsyncMock(return_value=(payload,))
         ds = _make(db)
         result = await ds.get_alert_message_data("2024-01-01", "AAPL", "VOLUME_MOVER")
-        # Returns the raw stored value (caller deserializes)
-        assert json.dumps(payload) in result or result == json.dumps(payload)
+        assert result == {"pct_change": 5.0}
 
-    @pytest.mark.asyncio
-    async def test_insert_alert_message_id_calls_db_insert(self):
+    async def test_get_alert_message_data_returns_none_when_missing(self):
         db = MagicMock()
-        db.get_table_columns.return_value = ["date", "ticker", "alert_type", "messageid", "alert_data"]
+        db.execute = AsyncMock(return_value=None)
+        ds = _make(db)
+        result = await ds.get_alert_message_data("2024-01-01", "AAPL", "VOLUME_MOVER")
+        assert result is None
+
+    async def test_insert_alert_message_id_calls_db_execute(self):
+        db = MagicMock()
+        db.execute = AsyncMock(return_value=None)
         ds = _make(db)
         await ds.insert_alert_message_id("2024-01-01", "AAPL", "VOLUME_MOVER", "888", {"pct_change": 5.0})
-        db.insert.assert_called_once()
-        call_kwargs = db.insert.call_args[1]
-        assert call_kwargs["table"] == "alerts"
+        db.execute.assert_called_once()
 
-    @pytest.mark.asyncio
-    async def test_update_alert_message_data_calls_db_update(self):
+    async def test_insert_alert_message_id_sql_targets_alerts(self):
         db = MagicMock()
+        db.execute = AsyncMock(return_value=None)
+        ds = _make(db)
+        await ds.insert_alert_message_id("2024-01-01", "AAPL", "VOLUME_MOVER", "888", {"pct_change": 5.0})
+        sql = db.execute.call_args[0][0]
+        assert "alerts" in sql.lower()
+
+    async def test_update_alert_message_data_calls_db_execute(self):
+        db = MagicMock()
+        db.execute = AsyncMock(return_value=None)
         ds = _make(db)
         await ds.update_alert_message_data("2024-01-01", "AAPL", "VOLUME_MOVER", "888", {"pct_change": 6.0})
-        db.update.assert_called_once()
-        call_kwargs = db.update.call_args[1]
-        assert call_kwargs["table"] == "alerts"
+        db.execute.assert_called_once()
+
+    async def test_update_alert_message_data_sql_targets_alerts(self):
+        db = MagicMock()
+        db.execute = AsyncMock(return_value=None)
+        ds = _make(db)
+        await ds.update_alert_message_data("2024-01-01", "AAPL", "VOLUME_MOVER", "888", {"pct_change": 6.0})
+        sql = db.execute.call_args[0][0]
+        assert "alerts" in sql.lower()
+
+    async def test_update_alert_message_data_passes_alert_data_as_is(self):
+        db = MagicMock()
+        db.execute = AsyncMock(return_value=None)
+        ds = _make(db)
+        payload = {"pct_change": 6.0}
+        await ds.update_alert_message_data("2024-01-01", "AAPL", "VOLUME_MOVER", "888", payload)
+        params = db.execute.call_args[0][1]
+        # alert_data is passed as-is (JSONB native), not json.dumps'd
+        assert payload in params
 
 
 class TestGetRecentAlertsForTicker:
-    def test_returns_empty_list_when_no_rows(self):
+    async def test_returns_empty_list_when_no_rows(self):
         db = MagicMock()
-        db.select.return_value = []
+        db.execute = AsyncMock(return_value=[])
         ds = _make(db)
-        result = ds.get_recent_alerts_for_ticker("AAPL")
+        result = await ds.get_recent_alerts_for_ticker("AAPL")
         assert result == []
 
-    def test_returns_empty_list_when_db_returns_none(self):
+    async def test_returns_empty_list_when_db_returns_none(self):
         db = MagicMock()
-        db.select.return_value = None
+        db.execute = AsyncMock(return_value=None)
         ds = _make(db)
-        result = ds.get_recent_alerts_for_ticker("AAPL")
+        result = await ds.get_recent_alerts_for_ticker("AAPL")
         assert result == []
 
-    def test_returns_rows_for_ticker_today(self):
-        import datetime
+    async def test_returns_rows_for_ticker_today(self):
         today = datetime.date.today()
         db = MagicMock()
-        db.select.return_value = [
+        db.execute = AsyncMock(return_value=[
             (today, 'EARNINGS_MOVER', '111'),
             (today, 'WATCHLIST_MOVER', '222'),
-        ]
+        ])
         ds = _make(db)
-        result = ds.get_recent_alerts_for_ticker("AAPL")
+        result = await ds.get_recent_alerts_for_ticker("AAPL")
         assert len(result) == 2
         assert result[0] == (today, 'EARNINGS_MOVER', '111')
 
-    def test_queries_correct_table_and_fields(self):
+    async def test_queries_alerts_table_with_ticker_and_today(self):
         db = MagicMock()
-        db.select.return_value = []
+        db.execute = AsyncMock(return_value=[])
         ds = _make(db)
-        ds.get_recent_alerts_for_ticker("TSLA")
-        call_kwargs = db.select.call_args[1]
-        assert call_kwargs['table'] == 'alerts'
-        assert 'date' in call_kwargs['fields']
-        assert 'alert_type' in call_kwargs['fields']
-        assert 'messageid' in call_kwargs['fields']
-
-    def test_where_conditions_include_ticker_and_today(self):
-        import datetime
-        db = MagicMock()
-        db.select.return_value = []
-        ds = _make(db)
-        ds.get_recent_alerts_for_ticker("TSLA")
-        call_kwargs = db.select.call_args[1]
-        where = call_kwargs['where_conditions']
-        tickers_in_where = [v for _, v in where if v == 'TSLA']
-        dates_in_where = [v for _, v in where if v == datetime.date.today()]
-        assert tickers_in_where, "ticker not found in where_conditions"
-        assert dates_in_where, "today's date not found in where_conditions"
+        await ds.get_recent_alerts_for_ticker("TSLA")
+        db.execute.assert_called_once()
+        sql = db.execute.call_args[0][0]
+        params = db.execute.call_args[0][1]
+        assert "alerts" in sql.lower()
+        assert "TSLA" in params
+        assert datetime.date.today() in params
 
 
 class TestInsertAlertMessageIdFields:
-    @pytest.mark.asyncio
-    async def test_uses_explicit_fields_not_db_columns(self):
-        """insert_alert_message_id must NOT call get_table_columns (created_at should use DB DEFAULT)."""
+    async def test_sql_contains_all_required_columns(self):
+        """insert_alert_message_id must INSERT all five fields."""
         db = MagicMock()
+        db.execute = AsyncMock(return_value=None)
+        ds = _make(db)
+        await ds.insert_alert_message_id("2024-01-01", "AAPL", "WATCHLIST_ALERT", "888", {"pct_change": 5.0})
+        sql = db.execute.call_args[0][0]
+        assert "date" in sql
+        assert "ticker" in sql
+        assert "alert_type" in sql
+        assert "messageid" in sql
+        assert "alert_data" in sql
+
+    async def test_no_get_table_columns_call(self):
+        """insert_alert_message_id must NOT call get_table_columns."""
+        db = MagicMock()
+        db.execute = AsyncMock(return_value=None)
         ds = _make(db)
         await ds.insert_alert_message_id("2024-01-01", "AAPL", "WATCHLIST_ALERT", "888", {"pct_change": 5.0})
         db.get_table_columns.assert_not_called()
-        call_kwargs = db.insert.call_args[1]
-        assert call_kwargs['fields'] == ['date', 'ticker', 'alert_type', 'messageid', 'alert_data']
+
+    async def test_alert_data_passed_as_dict_not_json_string(self):
+        """alert_data must be passed as-is (JSONB native), not serialized via json.dumps."""
+        db = MagicMock()
+        db.execute = AsyncMock(return_value=None)
+        ds = _make(db)
+        payload = {"pct_change": 5.0}
+        await ds.insert_alert_message_id("2024-01-01", "AAPL", "WATCHLIST_ALERT", "888", payload)
+        params = db.execute.call_args[0][1]
+        assert payload in params
+        # Confirm no JSON string was smuggled in
+        assert not any(isinstance(p, str) and '"pct_change"' in p for p in params)
 
 
 class TestGetAlertsSince:
@@ -177,37 +253,37 @@ class TestGetAlertsSince:
             ticker,
             alert_type,
             111,
-            json.dumps(alert_data),
+            alert_data,  # dict (JSONB native) — no json.dumps
             created_at,
         )
 
-    def test_returns_all_rows_when_midnight_time(self):
+    async def test_returns_all_rows_when_midnight_time(self):
         db = MagicMock()
-        db.select.return_value = [
+        db.execute = AsyncMock(return_value=[
             self._row("AAPL", "WATCHLIST_ALERT", {"pct_change": 1.0}),
             self._row("TSLA", "MARKET_MOVER", {"pct_change": 2.0}),
-        ]
+        ])
         ds = _make(db)
         since = datetime.datetime.combine(datetime.date.today(), datetime.time.min)
-        result = ds.get_alerts_since(since)
+        result = await ds.get_alerts_since(since)
         assert len(result) == 2
 
-    def test_filters_by_created_at_when_time_specified(self):
+    async def test_filters_by_created_at_when_time_specified(self):
         db = MagicMock()
         cutoff = datetime.datetime(2026, 3, 8, 14, 30)
         early = datetime.datetime(2026, 3, 8, 13, 0)
         late = datetime.datetime(2026, 3, 8, 15, 0)
-        db.select.return_value = [
+        db.execute = AsyncMock(return_value=[
             self._row("AAPL", "WATCHLIST_ALERT", {}, created_at=early),
             self._row("TSLA", "WATCHLIST_ALERT", {}, created_at=late),
-        ]
+        ])
         ds = _make(db)
-        result = ds.get_alerts_since(cutoff)
+        result = await ds.get_alerts_since(cutoff)
         tickers = [r['ticker'] for r in result]
         assert "TSLA" in tickers
         assert "AAPL" not in tickers
 
-    def test_filters_correctly_with_timezone_aware_created_at(self):
+    async def test_filters_correctly_with_timezone_aware_created_at(self):
         """Chicago-aware created_at timestamps must be normalized to UTC before comparison."""
         db = MagicMock()
         chicago = datetime.timezone(datetime.timedelta(hours=-5))
@@ -216,87 +292,118 @@ class TestGetAlertsSince:
         at_open = datetime.datetime(2026, 3, 8, 9, 30, tzinfo=chicago)
         # 9:29 AM Chicago == 14:29 UTC → before cutoff, should be excluded
         before_open = datetime.datetime(2026, 3, 8, 9, 29, tzinfo=chicago)
-        db.select.return_value = [
+        db.execute = AsyncMock(return_value=[
             self._row("TSLA", "WATCHLIST_ALERT", {}, created_at=at_open),
             self._row("AAPL", "WATCHLIST_ALERT", {}, created_at=before_open),
-        ]
+        ])
         ds = _make(db)
-        result = ds.get_alerts_since(cutoff)
+        result = await ds.get_alerts_since(cutoff)
         tickers = [r['ticker'] for r in result]
         assert "TSLA" in tickers
         assert "AAPL" not in tickers
 
-    def test_null_created_at_always_included_when_time_specified(self):
+    async def test_null_created_at_always_included_when_time_specified(self):
         db = MagicMock()
         cutoff = datetime.datetime(2026, 3, 8, 14, 30)
-        db.select.return_value = [
+        db.execute = AsyncMock(return_value=[
             self._row("AAPL", "WATCHLIST_ALERT", {}, created_at=None),
-        ]
+        ])
         ds = _make(db)
-        result = ds.get_alerts_since(cutoff)
+        result = await ds.get_alerts_since(cutoff)
         assert len(result) == 1
         assert result[0]['ticker'] == "AAPL"
 
-    def test_deserializes_alert_data_from_string(self):
+    async def test_alert_data_dict_passed_through_as_is(self):
+        """JSONB alert_data (dict) must be returned directly without json.loads."""
         db = MagicMock()
-        db.select.return_value = [
+        db.execute = AsyncMock(return_value=[
             self._row("AAPL", "WATCHLIST_ALERT", {"pct_change": 3.5}),
-        ]
+        ])
         ds = _make(db)
         since = datetime.datetime.combine(datetime.date.today(), datetime.time.min)
-        result = ds.get_alerts_since(since)
+        result = await ds.get_alerts_since(since)
         assert result[0]['alert_data'] == {"pct_change": 3.5}
 
-    def test_returns_empty_list_when_no_rows(self):
+    async def test_alert_data_string_fallback_deserialized(self):
+        """alert_data that arrives as a JSON string should still be deserialized."""
         db = MagicMock()
-        db.select.return_value = []
+        payload = {"pct_change": 3.5}
+        db.execute = AsyncMock(return_value=[
+            (
+                datetime.date.today(),
+                "AAPL",
+                "WATCHLIST_ALERT",
+                111,
+                json.dumps(payload),  # string fallback
+                None,
+            )
+        ])
         ds = _make(db)
-        result = ds.get_alerts_since(datetime.datetime(2026, 3, 8))
+        since = datetime.datetime.combine(datetime.date.today(), datetime.time.min)
+        result = await ds.get_alerts_since(since)
+        assert result[0]['alert_data'] == {"pct_change": 3.5}
+
+    async def test_returns_empty_list_when_no_rows(self):
+        db = MagicMock()
+        db.execute = AsyncMock(return_value=[])
+        ds = _make(db)
+        result = await ds.get_alerts_since(datetime.datetime(2026, 3, 8))
         assert result == []
 
-    def test_returns_empty_list_when_db_returns_none(self):
+    async def test_returns_empty_list_when_db_returns_none(self):
         db = MagicMock()
-        db.select.return_value = None
+        db.execute = AsyncMock(return_value=None)
         ds = _make(db)
-        result = ds.get_alerts_since(datetime.datetime(2026, 3, 8))
+        result = await ds.get_alerts_since(datetime.datetime(2026, 3, 8))
         assert result == []
 
-    def test_queries_correct_table_with_date_filter(self):
+    async def test_queries_with_date_filter(self):
         db = MagicMock()
-        db.select.return_value = []
+        db.execute = AsyncMock(return_value=[])
         ds = _make(db)
         since = datetime.datetime(2026, 3, 5)
-        ds.get_alerts_since(since)
-        call_kwargs = db.select.call_args[1]
-        assert call_kwargs['table'] == 'alerts'
-        where = call_kwargs['where_conditions']
-        assert any(v == since.date() for _, op, v in where)
+        await ds.get_alerts_since(since)
+        db.execute.assert_called_once()
+        sql = db.execute.call_args[0][0]
+        params = db.execute.call_args[0][1]
+        assert "alerts" in sql.lower()
+        assert since.date() in params
 
-    def test_result_dict_has_expected_keys(self):
+    async def test_result_dict_has_expected_keys(self):
         db = MagicMock()
-        db.select.return_value = [
+        db.execute = AsyncMock(return_value=[
             self._row("AAPL", "WATCHLIST_ALERT", {"pct_change": 1.0}),
-        ]
+        ])
         ds = _make(db)
-        result = ds.get_alerts_since(datetime.datetime(2026, 3, 8))
+        result = await ds.get_alerts_since(datetime.datetime(2026, 3, 8))
         assert set(result[0].keys()) == {'date', 'ticker', 'alert_type', 'messageid', 'alert_data'}
 
 
 class TestVolumeMessageId:
-    def test_get_returns_id(self):
+    async def test_get_returns_id(self):
         db = MagicMock()
-        db.select.return_value = ("555",)
+        db.execute = AsyncMock(return_value=("555",))
         ds = _make(db)
-        assert ds.get_volume_message_id() == "555"
+        assert await ds.get_volume_message_id() == "555"
 
-    def test_get_returns_none_when_missing(self):
+    async def test_get_returns_none_when_missing(self):
         db = MagicMock()
-        db.select.return_value = None
+        db.execute = AsyncMock(return_value=None)
         ds = _make(db)
-        assert ds.get_volume_message_id() is None
+        assert await ds.get_volume_message_id() is None
 
-    def test_update_calls_db_update(self):
+    async def test_update_calls_db_execute(self):
         db = MagicMock()
+        db.execute = AsyncMock(return_value=None)
         ds = _make(db)
-        ds.update_volume_message_id("444")
-        db.update.assert_called_once()
+        await ds.update_volume_message_id("444")
+        db.execute.assert_called_once()
+
+    async def test_update_sql_targets_unusual_volume_report(self):
+        db = MagicMock()
+        db.execute = AsyncMock(return_value=None)
+        ds = _make(db)
+        await ds.update_volume_message_id("444")
+        params = db.execute.call_args[0][1]
+        assert "UNUSUAL_VOLUME_REPORT" in params
+        assert "444" in params
