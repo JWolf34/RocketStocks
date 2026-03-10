@@ -43,9 +43,9 @@ class Data(commands.Cog):
 
         for ticker in tickers:
             if frequency == 'daily':
-                data = self.stock_data.price_history.fetch_daily_price_history(ticker=ticker)
+                data = await self.stock_data.price_history.fetch_daily_price_history(ticker=ticker)
             else:
-                data = self.stock_data.price_history.fetch_5m_price_history(ticker=ticker)
+                data = await self.stock_data.price_history.fetch_5m_price_history(ticker=ticker)
             message = ""
             file = None
             if not data.empty:
@@ -121,7 +121,7 @@ class Data(commands.Cog):
     async def all_tickers_csv(self, interaction: discord.Interaction):
         """Return CSV file with contents of 'tickers' table in database"""
         logger.info(f"/all-tickers-into function called by user {interaction.user.name}")
-        data = self.stock_data.tickers.get_all_ticker_info()
+        data = await self.stock_data.tickers.get_all_ticker_info()
         filepath = f"{datapaths.attachments_path}/all-tickers-info.csv"
         data.to_csv(filepath)
         csv_file = discord.File(filepath)
@@ -151,7 +151,7 @@ class Data(commands.Cog):
                       'fiscalquarterending': 'Quarter'}
 
         for ticker in tickers:
-            eps = self.stock_data.earnings.get_historical_earnings(ticker)
+            eps = await self.stock_data.earnings.get_historical_earnings(ticker)
             if not eps.empty:
                 filepath = f"{datapaths.attachments_path}/{ticker}_eps.csv"
                 eps.to_csv(filepath, index=False)
@@ -294,7 +294,7 @@ class Data(commands.Cog):
         logger.info(f"Historical popularity requested for tickers {tickers}")
 
         for ticker in tickers:
-            data = self.stock_data.popularity.fetch_popularity(ticker=ticker)
+            data = await self.stock_data.popularity.fetch_popularity(ticker=ticker)
             if not data.empty:
                 message = f"Popularity for `{ticker}`"
                 filepath = f"{datapaths.attachments_path}/{ticker}_popularity.csv"
