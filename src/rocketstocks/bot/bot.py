@@ -31,9 +31,9 @@ class RocketStocksBot(commands.Bot):
     notification_config: NotificationConfig
     aio_sched: AsyncIOScheduler
 
-    def get_channel_for_guild(self, guild_id: int, config_type: str) -> discord.TextChannel | None:
+    async def get_channel_for_guild(self, guild_id: int, config_type: str) -> discord.TextChannel | None:
         """Return the configured TextChannel for (guild_id, config_type), or None."""
-        channel_id = self.stock_data.channel_config.get_channel_id(guild_id, config_type)
+        channel_id = await self.stock_data.channel_config.get_channel_id(guild_id, config_type)
         if channel_id is None:
             return None
         channel = self.get_channel(channel_id)
@@ -41,21 +41,33 @@ class RocketStocksBot(commands.Bot):
             logger.warning(f"Channel {channel_id} for guild={guild_id} type={config_type} not in cache")
         return channel
 
-    def iter_channels(self, config_type: str):
-        """Yield (guild_id, TextChannel) for every guild that has config_type configured."""
-        for guild_id, channel_id in self.stock_data.channel_config.get_all_guilds_for_type(config_type):
+    async def iter_channels(self, config_type: str) -> list[tuple[int, discord.TextChannel]]:
+        """Return [(guild_id, TextChannel)] for every guild that has config_type configured."""
+        result = []
+        for guild_id, channel_id in await self.stock_data.channel_config.get_all_guilds_for_type(config_type):
             channel = self.get_channel(channel_id)
             if channel is not None:
-                yield guild_id, channel
+                result.append((guild_id, channel))
             else:
                 logger.warning(f"Skipping guild={guild_id} type={config_type}: channel {channel_id} not in cache")
+        return result
 
     async def setup_hook(self) -> None:
-        """Start APScheduler in the bot's event loop (called once before connecting)."""
+        """Open the DB pool, start APScheduler (called once before connecting)."""
+        await self.stock_data.db.open()
+        logger.info("Database connection pool opened")
         self.aio_sched = AsyncIOScheduler()
         register_jobs(self.aio_sched, self.stock_data, self.emitter)
         self.aio_sched.start()
         logger.info("APScheduler started via setup_hook")
+
+    async def close(self) -> None:
+        """Shut down scheduler and close the DB pool on exit."""
+        if hasattr(self, 'aio_sched') and self.aio_sched.running:
+            self.aio_sched.shutdown(wait=False)
+        await self.stock_data.db.close()
+        logger.info("Database connection pool closed")
+        await super().close()
 
 
 def create_bot() -> RocketStocksBot:
@@ -84,23 +96,17 @@ async def load(bot: commands.Bot):
 
 
 async def _migrate_legacy_channel_config(bot: RocketStocksBot) -> None:
-    """One-time migration: seed channel_config from legacy env vars.
-
-    For every guild the bot is currently in that has no channel config at all,
-    reads the 5 old channel env vars from os.getenv() and inserts them.
-    Safe to call on every startup — guilds that already have config are skipped.
-    """
+    """One-time migration: seed channel_config from legacy env vars."""
     channel_map = {
         config_type: os.getenv(env_var)
         for config_type, env_var in _LEGACY_ENV_MAP.items()
     }
 
-    # If none of the legacy vars are set, skip entirely
     if not any(channel_map.values()):
         return
 
     for guild in bot.guilds:
-        existing = bot.stock_data.channel_config.get_all_for_guild(guild.id)
+        existing = await bot.stock_data.channel_config.get_all_for_guild(guild.id)
         if existing:
             logger.debug(f"Migration: guild={guild.id} already has config, skipping")
             continue
@@ -108,7 +114,7 @@ async def _migrate_legacy_channel_config(bot: RocketStocksBot) -> None:
         for config_type, channel_id_str in channel_map.items():
             if channel_id_str and channel_id_str != '0':
                 channel_id = int(channel_id_str)
-                bot.stock_data.channel_config.upsert_channel(guild.id, config_type, channel_id)
+                await bot.stock_data.channel_config.upsert_channel(guild.id, config_type, channel_id)
                 logger.info(f"Migration: seeded {config_type}={channel_id} for guild={guild.id} ({guild.name})")
 
 
@@ -120,12 +126,9 @@ def run_bot(stock_data: StockData, emitter: EventEmitter, notification_config: N
     async def on_ready():
         logger.info("RocketStocks bot ready!")
         await load(bot)
-        # Create database tables that do not exist
-        create_tables(bot.stock_data.db)
+        await create_tables(bot.stock_data.db)
         validate_path(datapaths.attachments_path)
-        # Seed channel config from legacy env vars (no-op once migrated)
         await _migrate_legacy_channel_config(bot)
-        # Sync slash commands to all guilds
         await bot.tree.sync()
 
     bot.stock_data = stock_data
