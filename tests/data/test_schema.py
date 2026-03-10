@@ -1,20 +1,26 @@
 """Tests for data/schema.py DDL functions."""
-from unittest.mock import MagicMock
+from unittest.mock import AsyncMock, MagicMock
 
 
 class TestCreateTables:
-    def test_create_tables_executes_create_script(self):
+    async def test_create_tables_calls_execute_twice(self):
+        """create_tables calls execute for CREATE script + migration script."""
         from rocketstocks.data.schema import create_tables
         mock_db = MagicMock()
-        mock_cur = MagicMock()
-        mock_db._cursor.return_value.__enter__ = lambda s: mock_cur
-        mock_db._cursor.return_value.__exit__ = MagicMock(return_value=False)
+        mock_db.execute = AsyncMock(return_value=None)
 
-        create_tables(mock_db)
+        await create_tables(mock_db)
 
-        # create_tables calls execute twice: CREATE script + MIGRATION script
-        assert mock_cur.execute.call_count == 2
-        create_script = mock_cur.execute.call_args_list[0][0][0]
+        assert mock_db.execute.call_count == 2
+
+    async def test_create_tables_executes_create_script(self):
+        from rocketstocks.data.schema import create_tables
+        mock_db = MagicMock()
+        mock_db.execute = AsyncMock(return_value=None)
+
+        await create_tables(mock_db)
+
+        create_script = mock_db.execute.call_args_list[0][0][0]
         assert 'CREATE TABLE IF NOT EXISTS tickers' in create_script
         assert 'CREATE TABLE IF NOT EXISTS popularity' in create_script
         assert 'CREATE TABLE IF NOT EXISTS alerts' in create_script
@@ -36,9 +42,7 @@ class TestCreateTables:
 
     def test_tickers_schema_no_url_column(self):
         from rocketstocks.data.schema import _CREATE_SCRIPT
-        # url column should NOT be in the CREATE TABLE (dropped via migration)
         import re
-        # extract tickers table block
         match = re.search(r'CREATE TABLE IF NOT EXISTS tickers \((.+?)\);', _CREATE_SCRIPT, re.DOTALL)
         assert match, "Tickers table not found in CREATE script"
         assert 'url' not in match.group(1)
@@ -49,30 +53,46 @@ class TestCreateTables:
         for col in ('exchange', 'security_type', 'sic_code', 'delist_date'):
             assert col in _MIGRATION_SCRIPT
 
+    def test_alerts_table_uses_jsonb(self):
+        from rocketstocks.data.schema import _CREATE_SCRIPT
+        import re
+        match = re.search(r'CREATE TABLE IF NOT EXISTS alerts \((.+?)\);', _CREATE_SCRIPT, re.DOTALL)
+        assert match
+        assert 'jsonb' in match.group(1).lower()
+
+    def test_market_signals_table_uses_jsonb(self):
+        from rocketstocks.data.schema import _CREATE_SCRIPT
+        import re
+        match = re.search(r'CREATE TABLE IF NOT EXISTS market_signals \((.+?)\);', _CREATE_SCRIPT, re.DOTALL)
+        assert match
+        assert 'jsonb' in match.group(1).lower()
+
+    def test_migration_script_alters_jsonb_columns(self):
+        from rocketstocks.data.schema import _MIGRATION_SCRIPT
+        assert 'alert_data' in _MIGRATION_SCRIPT
+        assert 'signal_data' in _MIGRATION_SCRIPT
+        assert 'jsonb' in _MIGRATION_SCRIPT.lower()
+
 
 class TestDropAllTables:
-    def test_drop_all_tables_executes_drop_script(self):
+    async def test_drop_all_tables_calls_execute(self):
         from rocketstocks.data.schema import drop_all_tables
         mock_db = MagicMock()
-        mock_cur = MagicMock()
-        mock_db._cursor.return_value.__enter__ = lambda s: mock_cur
-        mock_db._cursor.return_value.__exit__ = MagicMock(return_value=False)
+        mock_db.execute = AsyncMock(return_value=None)
 
-        drop_all_tables(mock_db)
+        await drop_all_tables(mock_db)
 
-        mock_cur.execute.assert_called_once()
-        script = mock_cur.execute.call_args[0][0]
+        mock_db.execute.assert_called_once()
+        script = mock_db.execute.call_args[0][0]
         assert 'DROP TABLE' in script
 
 
 class TestDropTable:
-    def test_drop_table_uses_identifier(self):
+    async def test_drop_table_calls_execute(self):
         from rocketstocks.data.schema import drop_table
         mock_db = MagicMock()
-        mock_cur = MagicMock()
-        mock_db._cursor.return_value.__enter__ = lambda s: mock_cur
-        mock_db._cursor.return_value.__exit__ = MagicMock(return_value=False)
+        mock_db.execute = AsyncMock(return_value=None)
 
-        drop_table(mock_db, 'alerts')
+        await drop_table(mock_db, 'alerts')
 
-        mock_cur.execute.assert_called_once()
+        mock_db.execute.assert_called_once()
