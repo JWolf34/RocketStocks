@@ -46,7 +46,7 @@ class StockData:
         self.watchlists = watchlists or Watchlists(self.db)
         self.trading_view = trading_view or TradingView()
         self.popularity_client = popularity_client or ApeWisdom()
-        self.sec = sec or SEC(get_cik_fn=self.get_cik)
+        self.sec = sec or SEC(db=self.db)
         self.tiingo = tiingo or Tiingo()
         self.stooq = stooq or Stooq()
 
@@ -72,13 +72,6 @@ class StockData:
     async def update_alert_tickers(self, tickers: list, source: str):
         """Update list of tickers to monitor for alerts."""
         self._alert_tickers[source] = tickers
-
-    # ------------------------------------------------------------------
-    # CIK lookup — bound method reference used by SEC client at init time
-    # ------------------------------------------------------------------
-
-    def get_cik(self, ticker: str):
-        return self.tickers.get_cik(ticker)
 
     # ------------------------------------------------------------------
     # Financials (standalone function wrapper)

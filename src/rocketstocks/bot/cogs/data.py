@@ -198,7 +198,7 @@ class Data(commands.Cog):
 
         message = ""
         for ticker in tickers:
-            recent_filings = self.stock_data.sec.get_recent_filings(ticker=ticker, latest=250)
+            recent_filings = await self.stock_data.sec.get_recent_filings(ticker=ticker, latest=250)
             target_filing = None
             for index, filing in recent_filings.iterrows():
                 if filing['form'] == form:

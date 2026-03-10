@@ -567,7 +567,7 @@ class Reports(commands.Cog):
         ticker_info = kwargs.pop('ticker_info', await self.stock_data.tickers.get_ticker_info(ticker=ticker))
         daily_price_history = kwargs.pop('daily_price_history', await self.stock_data.price_history.fetch_daily_price_history(ticker=ticker))
         popularity = kwargs.pop('popularity', await self.stock_data.popularity.fetch_popularity(ticker=ticker))
-        recent_sec_filings = kwargs.pop('recent_sec_filings', self.stock_data.sec.get_recent_filings(ticker=ticker))
+        recent_sec_filings = kwargs.pop('recent_sec_filings', await self.stock_data.sec.get_recent_filings(ticker=ticker))
         historical_earnings = kwargs.pop('historical_earnings', await self.stock_data.earnings.get_historical_earnings(ticker=ticker))
         next_earnings_info = kwargs.pop('next_earnings_info', await self.stock_data.earnings.get_next_earnings_info(ticker=ticker))
         quote = kwargs.pop('quote', await self.stock_data.schwab.get_quote(ticker=ticker))
