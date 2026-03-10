@@ -1,8 +1,5 @@
-import asyncio
 import datetime
-import json
 import logging
-from rocketstocks.data.db import Postgres
 
 logger = logging.getLogger(__name__)
 
@@ -11,92 +8,83 @@ class DiscordState:
     """Database-backed state tracker for Discord message IDs (screeners and alerts)."""
 
     def __init__(self, db=None):
-        self.db = db or Postgres()
+        self.db = db
 
     # Screener message IDs #
 
-    def get_screener_message_id(self, screener_type: str):
-        where_conditions = [('type', f'{screener_type}_REPORT')]
-        result = self.db.select(table='reports',
-                                fields=['messageid'],
-                                where_conditions=where_conditions,
-                                fetchall=False)
-        if not result:
-            return result
-        else:
-            return result[0]
+    async def get_screener_message_id(self, screener_type: str):
+        row = await self.db.execute(
+            "SELECT messageid FROM reports WHERE type = %s",
+            [f'{screener_type}_REPORT'],
+            fetchone=True,
+        )
+        return row[0] if row else None
 
-    def update_screener_message_id(self, message_id: str, screener_type: str):
-        where_conditions = [('type', f'{screener_type}_REPORT')]
-        self.db.update(table='reports',
-                       set_fields=[('messageid', message_id)],
-                       where_conditions=where_conditions)
+    async def update_screener_message_id(self, message_id: str, screener_type: str):
+        await self.db.execute(
+            "UPDATE reports SET messageid = %s WHERE type = %s",
+            [message_id, f'{screener_type}_REPORT'],
+        )
 
-    def insert_screener_message_id(self, message_id: str, screener_type: str):
-        values = [(f'{screener_type}_REPORT', message_id)]
-        self.db.insert(table='reports',
-                       fields=self.db.get_table_columns(table='reports'),
-                       values=values)
+    async def insert_screener_message_id(self, message_id: str, screener_type: str):
+        await self.db.execute(
+            "INSERT INTO reports (type, messageid) VALUES (%s, %s) ON CONFLICT DO NOTHING",
+            [f'{screener_type}_REPORT', message_id],
+        )
 
-    def update_volume_message_id(self, message_id):
-        self.db.update(table='reports',
-                       set_fields=[('messageid', message_id)],
-                       where_conditions=[('type', 'UNUSUAL_VOLUME_REPORT')])
+    async def update_volume_message_id(self, message_id):
+        await self.db.execute(
+            "UPDATE reports SET messageid = %s WHERE type = %s",
+            [message_id, 'UNUSUAL_VOLUME_REPORT'],
+        )
 
-    def get_volume_message_id(self):
-        result = self.db.select(table='reports',
-                                fields=['messageid'],
-                                where_conditions=[('type', 'UNUSUAL_VOLUME_REPORT')],
-                                fetchall=False)
-        if result is None:
-            return result
-        else:
-            return result[0]
+    async def get_volume_message_id(self):
+        row = await self.db.execute(
+            "SELECT messageid FROM reports WHERE type = %s",
+            ['UNUSUAL_VOLUME_REPORT'],
+            fetchone=True,
+        )
+        return row[0] if row else None
 
     # Alert message IDs #
 
     async def update_alert_message_data(self, date, ticker, alert_type, messageid, alert_data):
-        await asyncio.to_thread(
-            self.db.update,
-            table='alerts',
-            set_fields=[('messageid', messageid), ('alert_data', json.dumps(alert_data))],
-            where_conditions=[('date', date), ('ticker', ticker), ('alert_type', alert_type)],
+        await self.db.execute(
+            "UPDATE alerts SET messageid = %s, alert_data = %s "
+            "WHERE date = %s AND ticker = %s AND alert_type = %s",
+            [messageid, alert_data, date, ticker, alert_type],
         )
 
     async def get_alert_message_id(self, date, ticker, alert_type):
-        result = await asyncio.to_thread(
-            self.db.select,
-            table='alerts',
-            fields=['messageid'],
-            where_conditions=[('date', date), ('ticker', ticker), ('alert_type', alert_type)],
-            fetchall=False,
+        row = await self.db.execute(
+            "SELECT messageid FROM alerts WHERE date = %s AND ticker = %s AND alert_type = %s",
+            [date, ticker, alert_type],
+            fetchone=True,
         )
-        return result[0] if result else None
+        return row[0] if row else None
 
     async def get_alert_message_data(self, date, ticker, alert_type):
-        result = await asyncio.to_thread(
-            self.db.select,
-            table='alerts',
-            fields=['alert_data'],
-            where_conditions=[('date', date), ('ticker', ticker), ('alert_type', alert_type)],
-            fetchall=False,
+        row = await self.db.execute(
+            "SELECT alert_data FROM alerts WHERE date = %s AND ticker = %s AND alert_type = %s",
+            [date, ticker, alert_type],
+            fetchone=True,
         )
-        return result[0] if result else None
+        return row[0] if row else None
 
     async def insert_alert_message_id(self, date, ticker, alert_type, message_id, alert_data):
-        fields = ['date', 'ticker', 'alert_type', 'messageid', 'alert_data']
-        values = [(date, ticker, alert_type, message_id, json.dumps(alert_data))]
-        await asyncio.to_thread(self.db.insert, table='alerts', fields=fields, values=values)
+        await self.db.execute(
+            "INSERT INTO alerts (date, ticker, alert_type, messageid, alert_data) "
+            "VALUES (%s, %s, %s, %s, %s) ON CONFLICT DO NOTHING",
+            [date, ticker, alert_type, message_id, alert_data],
+        )
 
-    def get_alerts_since(self, since_dt: datetime.datetime) -> list[dict]:
+    async def get_alerts_since(self, since_dt: datetime.datetime) -> list[dict]:
         """Return alerts with date >= since_dt.date(). If since_dt has a non-midnight time,
         also filter by created_at (rows with NULL created_at are always included)."""
-        rows = self.db.select(
-            table='alerts',
-            fields=['date', 'ticker', 'alert_type', 'messageid', 'alert_data', 'created_at'],
-            where_conditions=[('date', '>=', since_dt.date())],
-            order_by=('date', 'ASC'),
-            fetchall=True,
+        rows = await self.db.execute(
+            "SELECT date, ticker, alert_type, messageid, alert_data, created_at "
+            "FROM alerts WHERE date >= %s ORDER BY date ASC",
+            [since_dt.date()],
         ) or []
         since_has_time = since_dt.time() != datetime.time.min
 
@@ -104,25 +92,35 @@ class DiscordState:
         for row in rows:
             created_at = row[5]
             if since_has_time and created_at is not None:
-                naive_utc = created_at.astimezone(datetime.timezone.utc).replace(tzinfo=None) if created_at.tzinfo else created_at
+                naive_utc = (
+                    created_at.astimezone(datetime.timezone.utc).replace(tzinfo=None)
+                    if created_at.tzinfo else created_at
+                )
                 if naive_utc < since_dt:
                     continue
+            alert_data = row[4]
+            # alert_data is JSONB — psycopg3 returns a dict directly; handle string fallback
+            if isinstance(alert_data, str):
+                import json
+                try:
+                    alert_data = json.loads(alert_data)
+                except (ValueError, TypeError):
+                    alert_data = {}
             result.append({
                 'date': row[0],
                 'ticker': row[1],
                 'alert_type': row[2],
                 'messageid': row[3],
-                'alert_data': json.loads(row[4]) if isinstance(row[4], str) else (row[4] or {}),
+                'alert_data': alert_data or {},
             })
         return result
 
-    def get_recent_alerts_for_ticker(self, ticker: str) -> list[tuple]:
+    async def get_recent_alerts_for_ticker(self, ticker: str) -> list[tuple]:
         """Return [(date, alert_type, messageid)] for today for a ticker."""
         today = datetime.date.today()
-        return self.db.select(
-            table='alerts',
-            fields=['date', 'alert_type', 'messageid'],
-            where_conditions=[('ticker', ticker), ('date', today)],
-            order_by=('alert_type', 'ASC'),
-            fetchall=True,
-        ) or []
+        rows = await self.db.execute(
+            "SELECT date, alert_type, messageid FROM alerts "
+            "WHERE ticker = %s AND date = %s ORDER BY alert_type ASC",
+            [ticker, today],
+        )
+        return rows or []
