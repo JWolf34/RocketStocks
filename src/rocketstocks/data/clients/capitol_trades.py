@@ -9,51 +9,50 @@ from rocketstocks.core.utils.dates import date_utils
 
 logger = logging.getLogger(__name__)
 
+_CT_POLITICIAN_COLS = ['politician_id', 'name', 'party', 'state']
+
 
 class CapitolTrades:
 
     def __init__(self, db):
         self.db = db  # Postgres
 
-    def politician(self, name: str = None, politician_id: str = None) -> dict | None:
+    async def politician(self, name: str = None, politician_id: str = None) -> dict | None:
         """Return information on politician with given name and/or ID."""
         logger.info(f"Fetching politician with id '{politician_id}' and name '{name}'")
         if not name and not politician_id:
             logger.info("No politician found with provided criteria")
             return None
 
-        fields = self.db.get_table_columns('ct_politicians')
-        where_conditions = []
+        query = f"SELECT {', '.join(_CT_POLITICIAN_COLS)} FROM ct_politicians WHERE TRUE"
+        params = []
         if name:
-            where_conditions.append(('name', name))
+            query += " AND name = %s"
+            params.append(name)
         if politician_id:
-            where_conditions.append(('politician_id', politician_id))
+            query += " AND politician_id = %s"
+            params.append(politician_id)
 
-        data = self.db.select(
-            table='ct_politicians',
-            fields=fields,
-            where_conditions=where_conditions,
-            fetchall=False,
-        )
-        # B9 fix: guard against None DB result
-        if data is None:
+        row = await self.db.execute(query, params, fetchone=True)
+        if row is None:
             logger.warning(f"No politician found with id='{politician_id}', name='{name}'")
             return None
 
-        politician = dict(zip(fields, data))
+        politician = dict(zip(_CT_POLITICIAN_COLS, row))
         logger.debug(f"Identified politician: \n{politician}")
         return politician
 
-    def all_politicians(self) -> list:
+    async def all_politicians(self) -> list:
         """Return list of dicts with information on all politicians in database."""
         logger.info("Retrieving all politicians from database")
-        fields = self.db.get_table_columns('ct_politicians')
-        data = self.db.select(table='ct_politicians', fields=fields, fetchall=True)
-        politicians = [dict(zip(fields, row)) for row in data]
+        rows = await self.db.execute(
+            f"SELECT {', '.join(_CT_POLITICIAN_COLS)} FROM ct_politicians"
+        )
+        politicians = [dict(zip(_CT_POLITICIAN_COLS, row)) for row in (rows or [])]
         logger.info(f"Found data on {len(politicians)} politicians")
         return politicians
 
-    def update_politicians(self):
+    async def update_politicians(self):
         """Update rows in ct_politicians table with latest information."""
         logger.info("Updating politicians in the database")
         politicians = []
@@ -82,9 +81,12 @@ class CapitolTrades:
                     politicians.append((politician_id, name, party, state))
                 page_num += 1
             else:
-                columns = self.db.get_table_columns(table='ct_politicians')
                 logger.debug("Inserting politicians into database")
-                self.db.insert(table='ct_politicians', fields=columns, values=politicians)
+                await self.db.execute_batch(
+                    "INSERT INTO ct_politicians (politician_id, name, party, state) "
+                    "VALUES (%s, %s, %s, %s) ON CONFLICT DO NOTHING",
+                    politicians,
+                )
                 break
         logger.info("Updating politicians complete!")
 
@@ -132,7 +134,6 @@ class CapitolTrades:
             html = trades_r.content
             trades_soup = BeautifulSoup(html, 'html.parser')
             table = trades_soup.find('tbody')
-            # B8 fix: guard against None table
             if table is None:
                 logger.warning(f"No trades table found on page {page_num} for politician {pid}")
                 break
