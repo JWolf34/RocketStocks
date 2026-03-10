@@ -1,6 +1,5 @@
 """DDL helpers — create/drop tables using a Postgres instance."""
 import logging
-from psycopg2 import sql
 
 logger = logging.getLogger(__name__)
 
@@ -191,34 +190,30 @@ DROP TABLE IF EXISTS market_signals;
 """
 
 
-def migrate_tickers_schema(db) -> None:
-    """Apply schema migrations to existing tickers table (idempotent)."""
-    logger.debug("Running tickers schema migration...")
-    with db._cursor() as cur:
-        cur.execute(_MIGRATION_SCRIPT)
-    logger.debug("Tickers schema migration completed successfully!")
+async def migrate_tickers_schema(db) -> None:
+    """Apply schema migrations to existing tables (idempotent)."""
+    logger.debug("Running schema migrations...")
+    await db.execute(_MIGRATION_SCRIPT)
+    logger.debug("Schema migrations completed successfully!")
 
 
-def create_tables(db) -> None:
+async def create_tables(db) -> None:
     """Create all application tables (idempotent)."""
     logger.debug("Running script to create tables in database...")
-    with db._cursor() as cur:
-        cur.execute(_CREATE_SCRIPT)
-    migrate_tickers_schema(db)
+    await db.execute(_CREATE_SCRIPT)
+    await migrate_tickers_schema(db)
     logger.debug("Create script completed successfully!")
 
 
-def drop_all_tables(db) -> None:
+async def drop_all_tables(db) -> None:
     """Drop all application tables."""
-    with db._cursor() as cur:
-        cur.execute(_DROP_ALL_SCRIPT)
+    await db.execute(_DROP_ALL_SCRIPT)
     logger.debug("All database tables dropped")
 
 
-def drop_table(db, table: str) -> None:
+async def drop_table(db, table: str) -> None:
     """Drop a single table by name."""
-    from psycopg2 import sql as _sql
+    from psycopg import sql as _sql
     drop_script = _sql.SQL("DROP TABLE IF EXISTS {t};").format(t=_sql.Identifier(table))
-    with db._cursor() as cur:
-        cur.execute(drop_script)
+    await db.execute(drop_script)
     logger.debug(f"Dropped table '{table}' from database")
