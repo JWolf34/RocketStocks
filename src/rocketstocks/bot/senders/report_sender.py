@@ -69,7 +69,7 @@ async def send_screener(content, channel: discord.TextChannel,
     logger.info(f"Sending '{screener_type}' screener...")
 
     today = datetime.datetime.now(tz=date_utils.timezone()).date()
-    message_id = dstate.get_screener_message_id(screener_type=screener_type)
+    message_id = await dstate.get_screener_message_id(screener_type=screener_type)
 
     if message_id:
         logger.debug(f"Existing screener '{screener_type}' found with ID {message_id}")
@@ -80,7 +80,7 @@ async def send_screener(content, channel: discord.TextChannel,
             # Old message — create new one for today
             message = await channel.send(embed=embed, view=view, files=files)
             logger.info(f"Posted new '{screener_type}' screener for today")
-            dstate.update_screener_message_id(message_id=message.id, screener_type=screener_type)
+            await dstate.update_screener_message_id(message_id=message.id, screener_type=screener_type)
             return message
         else:
             # Same-day — edit in-place
@@ -91,5 +91,5 @@ async def send_screener(content, channel: discord.TextChannel,
         logger.debug(f"No existing message for '{screener_type}' screener")
         message = await channel.send(embed=embed, view=view)
         logger.info(f"Posted new '{screener_type}' screener for today")
-        dstate.insert_screener_message_id(message_id=message.id, screener_type=screener_type)
+        await dstate.insert_screener_message_id(message_id=message.id, screener_type=screener_type)
         return message
