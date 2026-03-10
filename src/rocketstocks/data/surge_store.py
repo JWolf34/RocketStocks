@@ -14,15 +14,12 @@ _ACTIVE_CUTOFF_HOURS = 24  # Surges older than 24 hours are eligible to expire
 
 
 class SurgeRepository:
-    """Synchronous repository for tracking popularity surge events.
-
-    All methods are synchronous. The cog wraps calls with asyncio.to_thread().
-    """
+    """Async repository for tracking popularity surge events."""
 
     def __init__(self, db=None):
         self._db = db
 
-    def insert_surge(
+    async def insert_surge(
         self,
         ticker: str,
         flagged_at: datetime.datetime,
@@ -34,77 +31,70 @@ class SurgeRepository:
         alert_message_id: int | None = None,
     ) -> None:
         """Insert a new popularity surge record (ignores duplicates)."""
-        sql = (
-            f"INSERT INTO {_TABLE} "
-            f"(ticker, flagged_at, surge_types, current_rank, mention_ratio, "
-            f"rank_change, price_at_flag, alert_message_id) "
-            f"VALUES (%s, %s, %s, %s, %s, %s, %s, %s) "
-            f"ON CONFLICT (ticker, flagged_at) DO NOTHING;"
+        await self._db.execute(
+            """
+            INSERT INTO popularity_surges
+            (ticker, flagged_at, surge_types, current_rank, mention_ratio,
+             rank_change, price_at_flag, alert_message_id)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+            ON CONFLICT (ticker, flagged_at) DO NOTHING
+            """,
+            [ticker, flagged_at, surge_types, current_rank,
+             mention_ratio, rank_change, price_at_flag, alert_message_id],
         )
-        with self._db._cursor() as cur:
-            cur.execute(sql, [
-                ticker, flagged_at, surge_types, current_rank,
-                mention_ratio, rank_change, price_at_flag, alert_message_id,
-            ])
         logger.debug(f"Inserted surge for '{ticker}' at {flagged_at}")
 
-    def get_active_surges(self) -> list[dict]:
+    async def get_active_surges(self) -> list[dict]:
         """Return active (unconfirmed, unexpired, within cutoff) surges."""
         cutoff = datetime.datetime.utcnow() - datetime.timedelta(hours=_ACTIVE_CUTOFF_HOURS)
-        sql = (
+        rows = await self._db.execute(
             f"SELECT {', '.join(_FIELDS)} FROM {_TABLE} "
-            f"WHERE confirmed = FALSE AND expired = FALSE AND flagged_at >= %s;"
+            "WHERE confirmed = FALSE AND expired = FALSE AND flagged_at >= %s",
+            [cutoff],
         )
-        with self._db._cursor() as cur:
-            cur.execute(sql, [cutoff])
-            rows = cur.fetchall()
-        return [dict(zip(_FIELDS, row)) for row in rows]
+        return [dict(zip(_FIELDS, row)) for row in (rows or [])]
 
-    def mark_confirmed(self, ticker: str, flagged_at: datetime.datetime) -> None:
+    async def mark_confirmed(self, ticker: str, flagged_at: datetime.datetime) -> None:
         """Mark a surge as confirmed (price/volume followed)."""
-        sql = (
-            f"UPDATE {_TABLE} SET confirmed = TRUE, confirmed_at = CURRENT_TIMESTAMP "
-            f"WHERE ticker = %s AND flagged_at = %s;"
+        await self._db.execute(
+            "UPDATE popularity_surges SET confirmed = TRUE, confirmed_at = CURRENT_TIMESTAMP "
+            "WHERE ticker = %s AND flagged_at = %s",
+            [ticker, flagged_at],
         )
-        with self._db._cursor() as cur:
-            cur.execute(sql, [ticker, flagged_at])
         logger.debug(f"Marked surge confirmed for '{ticker}' at {flagged_at}")
 
-    def expire_old_surges(self) -> None:
+    async def expire_old_surges(self) -> None:
         """Mark unconfirmed surges older than the cutoff window as expired."""
         cutoff = datetime.datetime.utcnow() - datetime.timedelta(hours=_ACTIVE_CUTOFF_HOURS)
-        sql = (
-            f"UPDATE {_TABLE} SET expired = TRUE "
-            f"WHERE confirmed = FALSE AND expired = FALSE AND flagged_at < %s;"
+        await self._db.execute(
+            "UPDATE popularity_surges SET expired = TRUE "
+            "WHERE confirmed = FALSE AND expired = FALSE AND flagged_at < %s",
+            [cutoff],
         )
-        with self._db._cursor() as cur:
-            cur.execute(sql, [cutoff])
         logger.debug(f"Expired old surges before {cutoff}")
 
-    def is_already_flagged(self, ticker: str) -> bool:
+    async def is_already_flagged(self, ticker: str) -> bool:
         """Return True if ticker has an active unconfirmed surge."""
         cutoff = datetime.datetime.utcnow() - datetime.timedelta(hours=_ACTIVE_CUTOFF_HOURS)
-        sql = (
-            f"SELECT COUNT(*) FROM {_TABLE} "
-            f"WHERE ticker = %s AND confirmed = FALSE AND expired = FALSE "
-            f"AND flagged_at >= %s;"
+        row = await self._db.execute(
+            "SELECT COUNT(*) FROM popularity_surges "
+            "WHERE ticker = %s AND confirmed = FALSE AND expired = FALSE "
+            "AND flagged_at >= %s",
+            [ticker, cutoff],
+            fetchone=True,
         )
-        with self._db._cursor() as cur:
-            cur.execute(sql, [ticker, cutoff])
-            count = cur.fetchone()[0]
-        return count > 0
+        return (row[0] > 0) if row else False
 
-    def update_alert_message_id(
+    async def update_alert_message_id(
         self,
         ticker: str,
         flagged_at: datetime.datetime,
         message_id: int,
     ) -> None:
         """Update the Discord message ID after a surge alert has been sent."""
-        sql = (
-            f"UPDATE {_TABLE} SET alert_message_id = %s "
-            f"WHERE ticker = %s AND flagged_at = %s;"
+        await self._db.execute(
+            "UPDATE popularity_surges SET alert_message_id = %s "
+            "WHERE ticker = %s AND flagged_at = %s",
+            [message_id, ticker, flagged_at],
         )
-        with self._db._cursor() as cur:
-            cur.execute(sql, [message_id, ticker, flagged_at])
         logger.debug(f"Updated alert_message_id={message_id} for '{ticker}' at {flagged_at}")
