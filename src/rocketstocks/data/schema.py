@@ -15,6 +15,8 @@ ALTER TABLE alerts ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ DEFAULT NOW()
 UPDATE tickers SET delist_date = NULL
 WHERE delist_date IS NOT NULL
   AND delist_date > CURRENT_DATE - INTERVAL '30 days';
+ALTER TABLE alerts ALTER COLUMN alert_data TYPE jsonb USING alert_data::jsonb;
+ALTER TABLE market_signals ALTER COLUMN signal_data TYPE jsonb USING signal_data::jsonb;
 """
 
 _CREATE_SCRIPT = """
@@ -81,7 +83,7 @@ CREATE TABLE IF NOT EXISTS alerts (
     ticker      varchar(8),
     alert_type  varchar(64),
     messageid   bigint,
-    alert_data  json,
+    alert_data  jsonb DEFAULT '{}'::jsonb,
     created_at  timestamptz DEFAULT NOW(),
     PRIMARY KEY (date, ticker, alert_type)
 );
@@ -166,7 +168,7 @@ CREATE TABLE IF NOT EXISTS market_signals (
     status           varchar(16) NOT NULL DEFAULT 'pending',
     confirmed_at     timestamp,
     alert_message_id bigint,
-    signal_data      json,
+    signal_data      jsonb DEFAULT '[]'::jsonb,
     PRIMARY KEY (ticker, detected_at)
 );
 """
