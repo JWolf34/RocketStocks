@@ -417,3 +417,74 @@ class TestWeeklyEarningsScreenerEmbedSpec:
     def test_title_contains_week(self):
         spec = self._make_screener().build()
         assert "Earnings" in spec.title
+
+
+# ---------------------------------------------------------------------------
+# ohlcv_card premarket fallback
+# ---------------------------------------------------------------------------
+
+class TestOhlcvCard:
+    """Unit tests for the ohlcv_card() fallback behaviour."""
+
+    def _quote_with_zeros(self, close: float = 150.0) -> dict:
+        return {
+            'quote': {'openPrice': 0, 'highPrice': 0, 'lowPrice': 0, 'totalVolume': 0},
+            'regular': {'regularMarketLastPrice': close},
+        }
+
+    def _quote_normal(self, price: float = 188.9) -> dict:
+        return {
+            'quote': {
+                'openPrice': price - 2,
+                'highPrice': price + 2,
+                'lowPrice': price - 3,
+                'totalVolume': 52_000_000,
+            },
+            'regular': {'regularMarketLastPrice': price},
+        }
+
+    def _price_history(self) -> pd.DataFrame:
+        return pd.DataFrame({
+            'date': [datetime.date(2026, 3, 7), datetime.date(2026, 3, 8)],
+            'open': [170.0, 172.0],
+            'high': [180.0, 182.0],
+            'low': [165.0, 168.0],
+            'close': [175.0, 177.0],
+            'volume': [30_000_000, 35_000_000],
+        })
+
+    def test_normal_quote_shows_todays_summary(self):
+        from rocketstocks.core.content.sections_card import ohlcv_card
+        result = ohlcv_card(self._quote_normal())
+        assert "Today's Summary" in result
+
+    def test_normal_quote_shows_live_ohlc(self):
+        from rocketstocks.core.content.sections_card import ohlcv_card
+        result = ohlcv_card(self._quote_normal(price=188.9))
+        assert "$186.90" in result  # openPrice = price - 2
+        assert "$190.90" in result  # highPrice = price + 2
+
+    def test_zero_open_with_history_shows_previous_session(self):
+        from rocketstocks.core.content.sections_card import ohlcv_card
+        result = ohlcv_card(self._quote_with_zeros(), self._price_history())
+        assert "Previous Session" in result
+        assert "Today's Summary" not in result
+
+    def test_zero_open_with_history_uses_last_row(self):
+        from rocketstocks.core.content.sections_card import ohlcv_card
+        result = ohlcv_card(self._quote_with_zeros(), self._price_history())
+        # Last row: open=172, high=182, low=168, close=177
+        assert "$172.00" in result
+        assert "$182.00" in result
+        assert "$168.00" in result
+        assert "$177.00" in result
+
+    def test_zero_open_without_history_shows_todays_summary(self):
+        from rocketstocks.core.content.sections_card import ohlcv_card
+        result = ohlcv_card(self._quote_with_zeros())
+        assert "Today's Summary" in result
+
+    def test_zero_open_with_empty_history_shows_todays_summary(self):
+        from rocketstocks.core.content.sections_card import ohlcv_card
+        result = ohlcv_card(self._quote_with_zeros(), pd.DataFrame())
+        assert "Today's Summary" in result
