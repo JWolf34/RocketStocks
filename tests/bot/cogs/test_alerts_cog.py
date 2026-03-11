@@ -13,7 +13,7 @@ from rocketstocks.core.analysis.composite_score import CompositeScoreResult
 def _make_bot():
     bot = MagicMock(name="Bot")
     bot.emitter = MagicMock()
-    bot.iter_channels.return_value = []
+    bot.iter_channels = AsyncMock(return_value=[])
     return bot
 
 
@@ -681,7 +681,7 @@ class TestProcessAlertsImpl:
         cog = _make_cog(earnings_df=pd.DataFrame())
         cog.mutils.market_open_today.return_value = True
         cog.mutils.get_market_period.return_value = "intraday"
-        cog.bot.iter_channels.return_value = [(1, MagicMock())]
+        cog.bot.iter_channels = AsyncMock(return_value=[(1, MagicMock())])
         cog.stock_data.schwab.get_quotes = AsyncMock(return_value={})
         expected_classifications = {'AAPL': 'blue_chip', 'GME': 'meme'}
         cog.stock_data.ticker_stats.get_all_classifications = AsyncMock(
@@ -710,7 +710,7 @@ class TestProcessAlertsImpl:
         cog = _make_cog(earnings_df=pd.DataFrame())
         cog.mutils.market_open_today.return_value = True
         cog.mutils.get_market_period.return_value = "intraday"
-        cog.bot.iter_channels.return_value = [(1, MagicMock())]
+        cog.bot.iter_channels = AsyncMock(return_value=[(1, MagicMock())])
         cog.stock_data.schwab.get_quotes = AsyncMock(return_value={})
         cog.stock_data.surge_store.get_active_surges.return_value = [
             {"ticker": "GME", "flagged_at": datetime.datetime.utcnow(), "surge_types": "mention_surge",
@@ -739,7 +739,7 @@ class TestProcessAlertsImpl:
         cog = _make_cog(earnings_df=pd.DataFrame())
         cog.mutils.market_open_today.return_value = True
         cog.mutils.get_market_period.return_value = "intraday"
-        cog.bot.iter_channels.return_value = [(1, MagicMock())]
+        cog.bot.iter_channels = AsyncMock(return_value=[(1, MagicMock())])
         cog.stock_data.schwab.get_quotes = AsyncMock(return_value={})
         cog.stock_data.ticker_stats.get_all_classifications = AsyncMock(return_value={})
 
@@ -764,7 +764,7 @@ class TestProcessAlertsImpl:
         cog = _make_cog(earnings_df=pd.DataFrame())
         cog.mutils.market_open_today.return_value = True
         cog.mutils.get_market_period.return_value = "intraday"
-        cog.bot.iter_channels.return_value = [(1, MagicMock())]
+        cog.bot.iter_channels = AsyncMock(return_value=[(1, MagicMock())])
         cog.stock_data.schwab.get_quotes = AsyncMock(return_value={})
         cog.stock_data.ticker_stats.get_all_classifications = AsyncMock(return_value={})
 
@@ -784,7 +784,7 @@ class TestProcessAlertsImpl:
         cog = _make_cog(earnings_df=pd.DataFrame())
         cog.mutils.market_open_today.return_value = True
         cog.mutils.get_market_period.return_value = "intraday"
-        cog.bot.iter_channels.return_value = [(1, MagicMock())]
+        cog.bot.iter_channels = AsyncMock(return_value=[(1, MagicMock())])
         cog.stock_data.schwab.get_quotes = AsyncMock(return_value={})
         cog.stock_data.ticker_stats.get_all_classifications = AsyncMock(return_value={})
 
@@ -872,7 +872,7 @@ class TestDetectPopularitySurges:
         """Tickers already flagged in surge_store are skipped."""
         cog = _make_cog(earnings_df=pd.DataFrame())
         cog.mutils.market_open_today.return_value = True
-        cog.bot.iter_channels.return_value = [(1, MagicMock())]
+        cog.bot.iter_channels = AsyncMock(return_value=[(1, MagicMock())])
 
         pop_df = pd.DataFrame({
             "ticker": ["GME"],
@@ -894,7 +894,7 @@ class TestDetectPopularitySurges:
         from rocketstocks.core.analysis.popularity_signals import PopularitySurgeResult, SurgeType
         cog = _make_cog(earnings_df=pd.DataFrame())
         cog.mutils.market_open_today.return_value = True
-        cog.bot.iter_channels.return_value = [(1, MagicMock())]
+        cog.bot.iter_channels = AsyncMock(return_value=[(1, MagicMock())])
 
         pop_df = pd.DataFrame({
             "ticker": ["GME"],
@@ -942,7 +942,7 @@ class TestDetectPopularitySurges:
         from rocketstocks.core.analysis.popularity_signals import PopularitySurgeResult
         cog = _make_cog(earnings_df=pd.DataFrame())
         cog.mutils.market_open_today.return_value = True
-        cog.bot.iter_channels.return_value = [(1, MagicMock())]
+        cog.bot.iter_channels = AsyncMock(return_value=[(1, MagicMock())])
 
         pop_df = pd.DataFrame({
             "ticker": ["GME"],

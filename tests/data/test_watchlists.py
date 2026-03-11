@@ -237,7 +237,7 @@ class TestRenameWatchlist:
             ("new-list",) if new_exists else None,
         ]
         mock_cur = MagicMock()
-        mock_cur.fetchone.return_value = ("AAPL MSFT", False)
+        mock_cur.fetchone = AsyncMock(return_value=("AAPL MSFT", False))
         mock_conn = MagicMock()
         mock_conn.execute = AsyncMock(return_value=mock_cur)
 
@@ -286,7 +286,7 @@ class TestRenameWatchlist:
     async def test_preserves_tickers_and_systemgenerated(self):
         db, mock_conn = self._make_rename_db(old_exists=True, new_exists=False)
         # Override fetchone to return custom data
-        mock_conn.execute.return_value.fetchone.return_value = ("AAPL MSFT", True)
+        mock_conn.execute.return_value.fetchone = AsyncMock(return_value=("AAPL MSFT", True))
         wl = _make(db)
         await wl.rename_watchlist("old-list", "new-list")
         calls = mock_conn.execute.call_args_list

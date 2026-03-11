@@ -87,7 +87,7 @@ class TestPostEarningsSpotlight:
             "ticker": ["AAPL", "MSFT"],
         })
         cog.stock_data.tickers.validate_ticker = AsyncMock(return_value=True)
-        cog.bot.iter_channels.return_value = [(1, AsyncMock())]
+        cog.bot.iter_channels = AsyncMock(return_value=[(1, AsyncMock())])
 
         mock_report = MagicMock()
         mock_report.ticker = "AAPL"
@@ -117,7 +117,7 @@ class TestPostEarningsSpotlight:
             return ticker == "MSFT"  # Only MSFT is valid
 
         cog.stock_data.tickers.validate_ticker = AsyncMock(side_effect=validate_side_effect)
-        cog.bot.iter_channels.return_value = [(1, AsyncMock())]
+        cog.bot.iter_channels = AsyncMock(return_value=[(1, AsyncMock())])
 
         mock_report = MagicMock()
         mock_report.ticker = "MSFT"

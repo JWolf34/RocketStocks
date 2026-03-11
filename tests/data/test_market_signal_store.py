@@ -192,7 +192,7 @@ async def test_update_observation_appends_to_signal_data(repo, mock_db):
     existing = [{'ts': 'first', 'pct_change': 2.0}]
 
     mock_cur = MagicMock()
-    mock_cur.fetchone.return_value = (existing,)  # JSONB — list directly
+    mock_cur.fetchone = AsyncMock(return_value=(existing,))  # JSONB — list directly
     mock_conn = MagicMock()
     mock_conn.execute = AsyncMock(return_value=mock_cur)
     mock_db.transaction.return_value.__aenter__ = AsyncMock(return_value=mock_conn)
@@ -223,7 +223,7 @@ async def test_update_observation_no_op_when_no_row(repo, mock_db):
     ts = datetime.datetime(2026, 3, 8, 10, 0)
 
     mock_cur = MagicMock()
-    mock_cur.fetchone.return_value = None
+    mock_cur.fetchone = AsyncMock(return_value=None)
     mock_conn = MagicMock()
     mock_conn.execute = AsyncMock(return_value=mock_cur)
     mock_db.transaction.return_value.__aenter__ = AsyncMock(return_value=mock_conn)

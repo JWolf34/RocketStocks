@@ -17,7 +17,7 @@ def _make_bot(channel_id=999):
     bot.get_channel.return_value = channel
     bot.wait_until_ready = AsyncMock()
     # iter_channels yields (guild_id, channel) tuples
-    bot.iter_channels.return_value = [(channel_id, channel)]
+    bot.iter_channels = AsyncMock(return_value=[(channel_id, channel)])
     return bot, channel
 
 
@@ -118,7 +118,7 @@ class TestDrainNotifications:
     async def test_no_send_when_no_channels_configured(self):
         from rocketstocks.bot.cogs.notifications import Notifications
         bot, channel = _make_bot()
-        bot.iter_channels.return_value = []  # no channels configured
+        bot.iter_channels = AsyncMock(return_value=[])  # no channels configured
         emitter = EventEmitter()
         config = NotificationConfig(filter=NotificationFilter.ALL)
 

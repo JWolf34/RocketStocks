@@ -70,7 +70,7 @@ class TestExecuteSelect:
         pg = _make_postgres()
         mock_cur = MagicMock()
         mock_cur.description = [('col',)]
-        mock_cur.fetchall.return_value = [('AAPL',), ('TSLA',)]
+        mock_cur.fetchall = AsyncMock(return_value=[('AAPL',), ('TSLA',)])
         mock_conn = MagicMock()
         mock_conn.execute = AsyncMock(return_value=mock_cur)
         pg._pool.connection.return_value.__aenter__ = AsyncMock(return_value=mock_conn)
@@ -83,7 +83,7 @@ class TestExecuteSelect:
         pg = _make_postgres()
         mock_cur = MagicMock()
         mock_cur.description = [('col',)]
-        mock_cur.fetchone.return_value = ('AAPL',)
+        mock_cur.fetchone = AsyncMock(return_value=('AAPL',))
         mock_conn = MagicMock()
         mock_conn.execute = AsyncMock(return_value=mock_cur)
         pg._pool.connection.return_value.__aenter__ = AsyncMock(return_value=mock_conn)
