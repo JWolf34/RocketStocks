@@ -2,6 +2,8 @@
 import datetime
 import logging
 
+from psycopg.types.json import Json
+
 logger = logging.getLogger(__name__)
 
 _TABLE = 'market_signals'
@@ -48,7 +50,7 @@ class MarketSignalRepository:
                 float(pct_change) if pct_change is not None else None,
                 dominant_signal,
                 float(rvol) if rvol is not None else None,
-                signal_data or [],
+                Json(signal_data or []),
             ],
         )
         logger.debug(f"Inserted market signal for '{ticker}' at {detected_at}")
@@ -147,7 +149,7 @@ class MarketSignalRepository:
                 "pct_change = %s, vol_z = %s, price_z = %s "
                 "WHERE ticker = %s AND detected_at = %s",
                 [
-                    existing,
+                    Json(existing),
                     float(composite_score) if composite_score is not None else None,
                     float(pct_change) if pct_change is not None else None,
                     float(vol_z) if vol_z is not None else None,
