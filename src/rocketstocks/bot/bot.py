@@ -11,6 +11,7 @@ from rocketstocks.core.config.secrets import secrets
 from rocketstocks.core.config.paths import validate_path, datapaths
 from rocketstocks.core.notifications import EventEmitter, NotificationConfig
 from rocketstocks.core.scheduler.jobs import register_jobs
+from rocketstocks.data.seed import seed_boilerplate_watchlists
 
 logger = logging.getLogger(__name__)
 
@@ -127,6 +128,7 @@ def run_bot(stock_data: StockData, emitter: EventEmitter, notification_config: N
         logger.info("RocketStocks bot ready!")
         await load(bot)
         await create_tables(bot.stock_data.db)
+        await seed_boilerplate_watchlists(bot.stock_data.watchlists)
         validate_path(datapaths.attachments_path)
         await _migrate_legacy_channel_config(bot)
         await bot.tree.sync()
