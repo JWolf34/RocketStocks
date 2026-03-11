@@ -19,7 +19,7 @@ class SEC():
         if not self._db:
             return None
         row = await self._db.execute(
-            "SELECT cik FROM tickers WHERE ticker = $1", [ticker], fetchone=True
+            "SELECT cik FROM tickers WHERE ticker = %s", [ticker], fetchone=True
         )
         return row[0] if row else None
 
