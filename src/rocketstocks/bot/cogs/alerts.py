@@ -574,7 +574,12 @@ class Alerts(commands.Cog):
         channels: list,
         earnings_tickers: set,
     ):
-        """Send earnings alerts when a reporting stock moves significantly."""
+        """Send earnings alerts when a reporting stock moves significantly.
+
+        Optimization: Skip re-evaluation for tickers that already have alerts posted today.
+        Only check initial trigger for new tickers; let momentum acceleration logic in
+        send_alert() handle subsequent updates via override_and_edit.
+        """
         logger.info("Processing earnings pipeline")
         today = datetime.date.today()
         earnings_today = await self.stock_data.earnings.get_earnings_on_date(date=today)
@@ -583,11 +588,40 @@ class Alerts(commands.Cog):
             return
 
         earnings_quotes = {t: q for t, q in quotes.items() if t in earnings_tickers}
+        
+        # Fetch tickers that already have alerts posted today to skip re-evaluation
+        posted_tickers = await self.dstate.get_alerts_by_type_today('EARNINGS_MOVER')
+        posted_set = set(posted_tickers)
 
         for ticker, quote in earnings_quotes.items():
             try:
                 pct_change = quote['quote']['netPercentChange']
                 classification = classifications.get(ticker, 'standard')
+                
+                # Skip expensive re-evaluation for tickers with existing alerts
+                # Let override_and_edit momentum logic decide on updates
+                if ticker in posted_set:
+                    logger.debug(
+                        f"[_earnings_pipeline] Alert for '{ticker}' already posted; "
+                        f"skipping re-evaluation (momentum logic will handle updates)"
+                    )
+                    # Fetch current data for potential update (without re-evaluating trigger)
+                    next_earnings_info = earnings_today[
+                        earnings_today['ticker'] == ticker
+                    ].to_dict(orient='records')[0]
+                    alert = await self.build_earnings_mover(
+                        ticker=ticker,
+                        quote=quote,
+                        next_earnings_info=next_earnings_info,
+                        daily_price_history=None,  # Skip fetch; not needed for override_and_edit
+                        trigger_result=None,  # Don't re-evaluate; let override_and_edit decide
+                    )
+                    view = AlertButtons(ticker=ticker, doc_url=EARNINGS_MOVER_DOC_URL)
+                    for channel in channels:
+                        await send_alert(alert, channel, self.dstate, view=view)
+                    continue
+
+                # First-time check: evaluate if movement warrants initial alert
                 daily_price_history = await self.stock_data.price_history.fetch_daily_price_history(ticker=ticker)
                 current_volume = quote['quote'].get('totalVolume')
 
