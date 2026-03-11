@@ -94,6 +94,71 @@ class TestGetHistoricalEarnings:
         assert result.empty
 
 
+class TestUpdateHistoricalEarnings:
+    def _make_nasdaq_rows(self, **overrides):
+        """Return a DataFrame simulating NASDAQ API response."""
+        row = {
+            'symbol': 'AAPL',
+            'eps': '$1.50',
+            'surprise': '5',
+            'epsForecast': '$1.40',
+            'fiscalQuarterEnding': 'Q1 2024',
+        }
+        row.update(overrides)
+        return pd.DataFrame([row])
+
+    async def test_normal_case_inserts_rows(self):
+        earnings, db, nasdaq = _make_earnings()
+        db.execute.return_value = None  # no prior date → use default
+        nasdaq.get_earnings_by_date.return_value = self._make_nasdaq_rows()
+        db.execute_batch = AsyncMock()
+        with patch("rocketstocks.data.earnings.market_utils") as mu:
+            mu.return_value.market_open_on_date.return_value = True
+            with patch("rocketstocks.data.earnings.datetime") as mock_dt:
+                mock_dt.date.today.return_value = datetime.date(2008, 1, 5)
+                mock_dt.date.side_effect = lambda **kw: datetime.date(**kw)
+                mock_dt.timedelta = datetime.timedelta
+                earnings.mutils = mu.return_value
+                await earnings.update_historical_earnings()
+        db.execute_batch.assert_called()
+
+    async def test_missing_eps_and_surprise_columns(self):
+        """API response missing eps/surprise should fill with None, not raise KeyError."""
+        earnings, db, nasdaq = _make_earnings()
+        db.execute.return_value = None
+        nasdaq.get_earnings_by_date.return_value = pd.DataFrame([{
+            'symbol': 'AAPL',
+            'epsForecast': '$1.40',
+            'fiscalQuarterEnding': 'Q1 2024',
+            # 'eps' and 'surprise' intentionally absent
+        }])
+        db.execute_batch = AsyncMock()
+        with patch("rocketstocks.data.earnings.market_utils") as mu:
+            mu.return_value.market_open_on_date.return_value = True
+            with patch("rocketstocks.data.earnings.datetime") as mock_dt:
+                mock_dt.date.today.return_value = datetime.date(2008, 1, 5)
+                mock_dt.date.side_effect = lambda **kw: datetime.date(**kw)
+                mock_dt.timedelta = datetime.timedelta
+                earnings.mutils = mu.return_value
+                await earnings.update_historical_earnings()  # must not raise
+        db.execute_batch.assert_called()
+
+    async def test_empty_api_response_skips_insert(self):
+        earnings, db, nasdaq = _make_earnings()
+        db.execute.return_value = None
+        nasdaq.get_earnings_by_date.return_value = pd.DataFrame()
+        db.execute_batch = AsyncMock()
+        with patch("rocketstocks.data.earnings.market_utils") as mu:
+            mu.return_value.market_open_on_date.return_value = True
+            with patch("rocketstocks.data.earnings.datetime") as mock_dt:
+                mock_dt.date.today.return_value = datetime.date(2008, 1, 5)
+                mock_dt.date.side_effect = lambda **kw: datetime.date(**kw)
+                mock_dt.timedelta = datetime.timedelta
+                earnings.mutils = mu.return_value
+                await earnings.update_historical_earnings()
+        db.execute_batch.assert_not_called()
+
+
 class TestGetEarningsOnDate:
     async def test_returns_dataframe_for_date(self):
         earnings, db, _ = _make_earnings()

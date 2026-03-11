@@ -132,18 +132,21 @@ class Earnings:
                         columns=[x for x in earnings.columns.to_list() if x not in column_map.values()]
                     )
                     earnings['date'] = date
-                    earnings = earnings[column_map.values()]
+                    for col in column_map.values():
+                        if col not in earnings.columns:
+                            earnings[col] = None
+                    earnings = earnings[list(column_map.values())]
 
                     earnings['eps'] = earnings['eps'].apply(
                         lambda x: float(x.replace('(', '-').replace(")", "").replace('$', "").replace(',', ""))
-                        if (len(x) > 0 and x != "N/A") else None
+                        if (x is not None and len(x) > 0 and x != "N/A") else None
                     )
                     earnings['epsforecast'] = earnings['epsforecast'].apply(
                         lambda x: float(x.replace('(', '-').replace(")", "").replace('$', "").replace(',', ""))
-                        if (len(x) > 0 and x != "N/A") else None
+                        if (x is not None and len(x) > 0 and x != "N/A") else None
                     )
                     earnings['surprise'] = earnings['surprise'].apply(
-                        lambda x: float(x) if x != 'N/A' else None
+                        lambda x: float(x) if (x is not None and x != 'N/A') else None
                     )
 
                     values = [tuple(row) for row in earnings.values]
