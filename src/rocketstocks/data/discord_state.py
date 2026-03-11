@@ -1,6 +1,8 @@
 import datetime
 import logging
 
+from psycopg.types.json import Json
+
 logger = logging.getLogger(__name__)
 
 
@@ -28,7 +30,7 @@ class DiscordState:
 
     async def insert_screener_message_id(self, message_id: str, screener_type: str):
         await self.db.execute(
-            "INSERT INTO reports (type, messageid) VALUES (%s, %s) ON CONFLICT DO NOTHING",
+            "INSERT INTO reports (type, messageid) VALUES (%s, %s) ON CONFLICT (type) DO NOTHING",
             [f'{screener_type}_REPORT', message_id],
         )
 
@@ -52,7 +54,7 @@ class DiscordState:
         await self.db.execute(
             "UPDATE alerts SET messageid = %s, alert_data = %s "
             "WHERE date = %s AND ticker = %s AND alert_type = %s",
-            [messageid, alert_data, date, ticker, alert_type],
+            [messageid, Json(alert_data), date, ticker, alert_type],
         )
 
     async def get_alert_message_id(self, date, ticker, alert_type):
@@ -74,8 +76,8 @@ class DiscordState:
     async def insert_alert_message_id(self, date, ticker, alert_type, message_id, alert_data):
         await self.db.execute(
             "INSERT INTO alerts (date, ticker, alert_type, messageid, alert_data) "
-            "VALUES (%s, %s, %s, %s, %s) ON CONFLICT DO NOTHING",
-            [date, ticker, alert_type, message_id, alert_data],
+            "VALUES (%s, %s, %s, %s, %s) ON CONFLICT (date, ticker, alert_type) DO NOTHING",
+            [date, ticker, alert_type, message_id, Json(alert_data)],
         )
 
     async def get_alerts_since(self, since_dt: datetime.datetime) -> list[dict]:
