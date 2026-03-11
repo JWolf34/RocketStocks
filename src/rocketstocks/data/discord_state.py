@@ -124,3 +124,12 @@ class DiscordState:
             [ticker, today],
         )
         return rows or []
+
+    async def get_alerts_by_type_today(self, alert_type: str) -> list[str]:
+        """Return list of tickers that have the given alert_type posted today."""
+        today = datetime.date.today()
+        rows = await self.db.execute(
+            "SELECT DISTINCT ticker FROM alerts WHERE alert_type = %s AND date = %s",
+            [alert_type, today],
+        ) or []
+        return [row[0] for row in rows]
