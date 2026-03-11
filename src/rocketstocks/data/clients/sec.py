@@ -54,6 +54,8 @@ class SEC():
 
     async def get_link_to_filing(self, ticker, filing):
         cik = await self._get_cik(ticker)
+        if not cik:
+            return None
         return f"https://sec.gov/Archives/edgar/data/{cik.lstrip('0')}/{filing['accessionNumber'].replace('-','')}/{filing['primaryDocument']}"
 
     async def get_accounts_payable(self, ticker):

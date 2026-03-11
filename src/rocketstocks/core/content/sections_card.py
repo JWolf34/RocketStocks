@@ -158,7 +158,14 @@ def popularity_screener_cards(data: pd.DataFrame, limit: int = 20) -> str:
         ticker = row.get('Ticker', 'N/A')
         mentions = row.get('Mentions', 'N/A')
         rank_24h = row.get('Rank 24H Ago', 'N/A')
-        mentions_24h = int(row.get('Mentions 24H Ago', 'N/A'))
+        mentions_24h_val = row.get('Mentions 24H Ago')
+        if mentions_24h_val is not None:
+            try:
+                mentions_24h = int(mentions_24h_val)
+            except (TypeError, ValueError):
+                mentions_24h = 'N/A'
+        else:
+            mentions_24h = 'N/A'
         lines.append(f"**#{rank} {ticker}** · {mentions} mentions")
         lines.append(f"24H ago: #{rank_24h} · {mentions_24h} mentions")
         lines.append("")
