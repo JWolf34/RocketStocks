@@ -106,7 +106,7 @@ class Alerts(commands.Cog):
     async def _post_alerts_date_impl(self):
         if self.mutils.market_open_today():
             date_string = date_utils.format_date_mdy(datetime.datetime.today())
-            for _, channel in self.bot.iter_channels(ALERTS):
+            for _, channel in await self.bot.iter_channels(ALERTS):
                 await channel.send(f"# :rotating_light: Alerts for {date_string} :rotating_light:")
 
     @tasks.loop(minutes=30)
@@ -139,7 +139,7 @@ class Alerts(commands.Cog):
             return
         logger.info("Processing popularity surge detection")
 
-        alert_channels = [ch for _, ch in self.bot.iter_channels(ALERTS)]
+        alert_channels = [ch for _, ch in await self.bot.iter_channels(ALERTS)]
         if not alert_channels:
             logger.warning("No alerts channels configured — skipping surge detection")
             return
@@ -236,7 +236,7 @@ class Alerts(commands.Cog):
 
         logger.info("Processing alerts")
 
-        alert_channels = [ch for _, ch in self.bot.iter_channels(ALERTS)]
+        alert_channels = [ch for _, ch in await self.bot.iter_channels(ALERTS)]
         if not alert_channels:
             logger.warning("No alerts channels configured — skipping alert processing")
             return

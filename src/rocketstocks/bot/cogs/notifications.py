@@ -60,7 +60,7 @@ class Notifications(commands.Cog):
         for event in events:
             self._recent_events.append(event)
 
-        for _, channel in self.bot.iter_channels(NOTIFICATIONS):
+        for _, channel in await self.bot.iter_channels(NOTIFICATIONS):
             for event in events:
                 if self.config.should_notify(event):
                     embed = format_notification(event)
