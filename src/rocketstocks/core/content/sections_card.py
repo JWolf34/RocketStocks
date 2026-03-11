@@ -71,7 +71,12 @@ def recent_earnings_card(historical_earnings: pd.DataFrame, *, show_header: bool
     if surprises:
         last = surprises[-1]
         is_beat = last > 0
-        streak = sum(1 for s in reversed(surprises) if (s > 0) == is_beat)
+        streak = 0
+        for s in reversed(surprises):
+            if (s > 0) == is_beat:
+                streak += 1
+            else:
+                break
         emoji = "📈" if is_beat else "📉"
         word = "Beat" if is_beat else "Missed"
         lines.append(f"\n{emoji} {word} estimates **{streak}** straight quarter{'s' if streak != 1 else ''}")
