@@ -9,6 +9,7 @@ from enum import Enum
 logger = logging.getLogger(__name__)
 
 EXPIRING_SOON_THRESHOLD = datetime.timedelta(days=2)
+REFRESH_TOKEN_LIFETIME = datetime.timedelta(days=7)
 
 
 class TokenStatus(Enum):
@@ -34,8 +35,8 @@ def get_token_info(token_path: str) -> TokenInfo:
     try:
         with open(token_path, "r") as f:
             data = json.load(f)
-        expires_at_ts = data["token"]["expires_at"]
-        expires_at = datetime.datetime.fromtimestamp(expires_at_ts)
+        creation_ts = data["creation_timestamp"]
+        expires_at = datetime.datetime.fromtimestamp(creation_ts) + REFRESH_TOKEN_LIFETIME
     except Exception as exc:
         logger.warning(f"Could not read Schwab token file at {token_path!r}: {exc}")
         return TokenInfo(status=TokenStatus.MISSING, expires_at=None, time_remaining=None)

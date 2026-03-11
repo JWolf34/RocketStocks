@@ -229,10 +229,12 @@ class TestSchwabGetTokenInfo:
 
     def test_delegates_to_token_manager_when_valid(self, tmp_path):
         import json, datetime
+        from rocketstocks.core.auth.token_manager import REFRESH_TOKEN_LIFETIME
         from rocketstocks.data.clients.schwab import Schwab
         token_file = tmp_path / "token.json"
-        future = datetime.datetime.now() + datetime.timedelta(days=5)
-        token_file.write_text(json.dumps({"token": {"expires_at": future.timestamp()}}))
+        # creation 2 days ago → refresh token expires in 5 days (HEALTHY)
+        creation = datetime.datetime.now() - datetime.timedelta(days=2)
+        token_file.write_text(json.dumps({"creation_timestamp": creation.timestamp(), "token": {}}))
 
         with patch("rocketstocks.data.clients.schwab.schwab") as mock_s, \
              patch("rocketstocks.data.clients.schwab.secrets"):

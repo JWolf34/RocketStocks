@@ -125,12 +125,14 @@ class TestSchwab:
 
     def test_get_token_expiry_returns_correct_datetime(self, tmp_path):
         import json
+        from rocketstocks.core.auth.token_manager import REFRESH_TOKEN_LIFETIME
         token_file = tmp_path / "schwab-token.json"
-        expires_at = 1800000000  # arbitrary future Unix timestamp
-        token_file.write_text(json.dumps({"token": {"expires_at": expires_at}}))
+        creation_ts = 1800000000  # arbitrary Unix timestamp
+        token_file.write_text(json.dumps({"creation_timestamp": creation_ts, "token": {}}))
         obj = self._make_with_token_path(str(token_file))
         result = obj.get_token_expiry()
-        assert result == datetime.datetime.fromtimestamp(expires_at)
+        expected = datetime.datetime.fromtimestamp(creation_ts) + REFRESH_TOKEN_LIFETIME
+        assert result == expected
 
     def test_get_token_expiry_returns_none_on_malformed_json(self, tmp_path):
         token_file = tmp_path / "schwab-token.json"
@@ -138,7 +140,7 @@ class TestSchwab:
         obj = self._make_with_token_path(str(token_file))
         assert obj.get_token_expiry() is None
 
-    def test_get_token_expiry_returns_none_when_expires_at_missing(self, tmp_path):
+    def test_get_token_expiry_returns_none_when_creation_timestamp_missing(self, tmp_path):
         import json
         token_file = tmp_path / "schwab-token.json"
         token_file.write_text(json.dumps({"token": {"expires_in": 1800}}))
