@@ -192,7 +192,14 @@ def performance_card(daily_price_history: pd.DataFrame, quote: dict) -> str:
         while interval_date.weekday() > 4:
             interval_date -= datetime.timedelta(days=1)
 
+        # First try exact match; if not found, look for most recent row before interval_date
         row = daily_price_history[daily_price_history['date'] == interval_date]['close']
+        if row.empty:
+            # Find the most recent row with date <= interval_date
+            earlier = daily_price_history[daily_price_history['date'] <= interval_date]
+            if not earlier.empty:
+                row = earlier.sort_values('date', ascending=False).iloc[0:1]['close']
+        
         if not row.empty:
             prev_close = row.iloc[0]
             change = ((close - prev_close) / prev_close) * 100.0
