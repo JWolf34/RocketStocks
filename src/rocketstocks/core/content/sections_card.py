@@ -56,7 +56,7 @@ def recent_earnings_card(historical_earnings: pd.DataFrame, *, show_header: bool
         return (header + "\n" if show_header else "") + "No historical earnings found\n\n"
 
     lines = [header] if show_header else []
-    for _, row in historical_earnings.tail(4).iterrows():
+    for _, row in historical_earnings.tail(4).iloc[::-1].iterrows():
         date_str = date_utils.format_date_mdy(row['date'])
         eps = row['eps']
         surprise = row['surprise']
