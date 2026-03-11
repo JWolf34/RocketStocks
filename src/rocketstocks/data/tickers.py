@@ -177,7 +177,7 @@ class TickerRepository:
         cik = await self.get_cik(ticker)
         if cik:
             try:
-                submissions = self._sec.get_submissions_data(ticker)
+                submissions = await self._sec.get_submissions_data(ticker)
                 sic = submissions.get('sic')
                 if sic:
                     await self._db.execute(
