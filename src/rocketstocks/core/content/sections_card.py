@@ -20,15 +20,30 @@ from rocketstocks.core.utils.dates import date_utils
 logger = logging.getLogger(__name__)
 
 
-def ohlcv_card(quote: dict) -> str:
-    """OHLCV — OHLC grouped on one line, Vol on a second line."""
+def ohlcv_card(quote: dict, daily_price_history: pd.DataFrame = None) -> str:
+    """OHLCV — OHLC grouped on one line, Vol on a second line.
+
+    Falls back to the most recent row of *daily_price_history* when the
+    quote's open/high/low are zero (e.g. premarket before the session opens).
+    """
     open_ = quote['quote']['openPrice']
     high = quote['quote']['highPrice']
     low = quote['quote']['lowPrice']
     close = quote['regular']['regularMarketLastPrice']
     vol = format_large_num(quote['quote']['totalVolume'])
+    heading = "Today's Summary"
+
+    if not open_ and daily_price_history is not None and not daily_price_history.empty:
+        row = daily_price_history.iloc[-1]
+        open_ = row['open']
+        high = row['high']
+        low = row['low']
+        close = row['close']
+        vol = format_large_num(row['volume'])
+        heading = "Previous Session"
+
     return (
-        "__**Today's Summary**__\n"
+        f"__**{heading}**__\n"
         f"Open **${open_:.2f}** · High **${high:.2f}** · Low **${low:.2f}** · Close **${close:.2f}**\n"
         f"Vol **{vol}**\n\n"
     )

@@ -33,7 +33,7 @@ class EarningsSpotlightReport:
         # Build body section by section — card format throughout
         body = (
             earnings_date_card(self.data.ticker, self.data.next_earnings_info)
-            + ohlcv_card(self.data.quote)
+            + ohlcv_card(self.data.quote, self.data.daily_price_history)
             + performance_card(self.data.daily_price_history, self.data.quote)
             + fundamentals_card(
                 self.data.fundamentals, self.data.quote,

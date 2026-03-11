@@ -32,7 +32,7 @@ class StockReport:
 
         # Build body section by section — card format throughout
         body = (
-            ohlcv_card(self.data.quote)
+            ohlcv_card(self.data.quote, self.data.daily_price_history)
             + performance_card(self.data.daily_price_history, self.data.quote)
             + fundamentals_card(
                 self.data.fundamentals, self.data.quote,
