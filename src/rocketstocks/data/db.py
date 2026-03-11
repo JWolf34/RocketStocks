@@ -50,7 +50,7 @@ class Postgres:
         async with self._pool.connection() as conn:
             cur = await conn.execute(query, params)
             if cur.description is not None:
-                return cur.fetchone() if fetchone else cur.fetchall()
+                return await cur.fetchone() if fetchone else await cur.fetchall()
             return None
 
     async def execute_batch(self, query: str, values) -> None:

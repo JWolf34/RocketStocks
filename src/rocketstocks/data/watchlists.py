@@ -92,7 +92,7 @@ class Watchlists(object):
                 "SELECT tickers, systemgenerated FROM watchlists WHERE id = %s",
                 [old_id],
             )
-            row = cur.fetchone()
+            row = await cur.fetchone()
             tickers_str, system_generated = row[0], row[1]
             await conn.execute(
                 "INSERT INTO watchlists (id, tickers, systemgenerated) VALUES (%s, %s, %s)",

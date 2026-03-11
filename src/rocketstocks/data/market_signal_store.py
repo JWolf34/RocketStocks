@@ -137,7 +137,7 @@ class MarketSignalRepository:
                 "SELECT signal_data FROM market_signals WHERE ticker = %s AND detected_at = %s",
                 [ticker, detected_at],
             )
-            row = cur.fetchone()
+            row = await cur.fetchone()
             if row is None:
                 return
             existing = row[0] if isinstance(row[0], list) else []
