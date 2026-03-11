@@ -224,7 +224,7 @@ class Reports(commands.Cog):
         if not self.mutils.market_open_today():
             return
 
-        earnings_today = self.stock_data.earnings.get_earnings_on_date(date=datetime.date.today())
+        earnings_today = await self.stock_data.earnings.get_earnings_on_date(date=datetime.date.today())
         if earnings_today.empty:
             logger.warning("No earnings today — skipping spotlight")
             return
