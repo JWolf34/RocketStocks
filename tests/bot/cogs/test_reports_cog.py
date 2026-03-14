@@ -19,6 +19,7 @@ def _make_cog():
     bot = _make_bot()
     sd = MagicMock(name="StockData")
     sd.earnings = MagicMock()
+    sd.earnings.get_earnings_on_date = AsyncMock(return_value=pd.DataFrame())
     sd.tickers = MagicMock()
     sd.alert_tickers = {}
     with (
