@@ -8,6 +8,7 @@ from discord.ext import commands
 from rocketstocks.data.channel_config import (
     REPORTS, ALERTS, SCREENERS, CHARTS, NOTIFICATIONS, ALL_CONFIG_TYPES,
 )
+from rocketstocks.bot.cogs.subscriptions import setup_alert_subscriptions
 
 logger = logging.getLogger(__name__)
 
@@ -107,6 +108,8 @@ class SetupModal(discord.ui.Modal, title="Configure RocketStocks Channels"):
             color=discord.Color.green(),
         )
         await interaction.followup.send(embed=embed, ephemeral=True)
+
+        await setup_alert_subscriptions(self._cog.bot, guild)
 
     async def on_error(self, interaction: discord.Interaction, error: Exception):
         logger.error(f"SetupModal error: {error}")
