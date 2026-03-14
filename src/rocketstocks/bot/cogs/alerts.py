@@ -69,6 +69,20 @@ class Alerts(commands.Cog):
         logger.info(f"Cog {__name__} loaded!")
 
     # -------------------------------------------------------------------------
+    # Role mention helper
+    # -------------------------------------------------------------------------
+
+    async def _build_role_mention(self, alert, channel) -> str | None:
+        """Build a role mention string for the given alert and channel."""
+        role_key = getattr(alert, 'role_key', None)
+        if not role_key or not hasattr(channel, 'guild') or channel.guild is None:
+            return None
+        ids = await self.bot.stock_data.alert_roles.get_role_ids(
+            channel.guild.id, [role_key, 'all_alerts']
+        )
+        return " ".join(f"<@&{rid}>" for rid in ids) or None
+
+    # -------------------------------------------------------------------------
     # Task runner helper
     # -------------------------------------------------------------------------
 
@@ -204,7 +218,8 @@ class Alerts(commands.Cog):
 
                     first_message = None
                     for channel in alert_channels:
-                        sent = await send_alert(alert, channel, self.dstate, view=view)
+                        role_mention = await self._build_role_mention(alert, channel)
+                        sent = await send_alert(alert, channel, self.dstate, view=view, role_mention=role_mention)
                         if sent is not None and first_message is None:
                             first_message = sent
 
@@ -359,7 +374,8 @@ class Alerts(commands.Cog):
                     )
                     view = PopularitySurgeAlertButtons(ticker=ticker, doc_url=MOMENTUM_CONFIRMATION_DOC_URL)
                     for channel in channels:
-                        await send_alert(alert, channel, self.dstate, view=view)
+                        role_mention = await self._build_role_mention(alert, channel)
+                        await send_alert(alert, channel, self.dstate, view=view, role_mention=role_mention)
 
                     await self.stock_data.surge_store.mark_confirmed(ticker, surge['flagged_at'])
             except Exception:
@@ -519,7 +535,8 @@ class Alerts(commands.Cog):
                     )
                     view = AlertButtons(ticker=ticker, doc_url=MARKET_MOVER_DOC_URL)
                     for channel in channels:
-                        await send_alert(alert, channel, self.dstate, view=view)
+                        role_mention = await self._build_role_mention(alert, channel)
+                        await send_alert(alert, channel, self.dstate, view=view, role_mention=role_mention)
 
                     await self.stock_data.market_signal_store.mark_confirmed(ticker, signal['detected_at'])
             except Exception:
@@ -563,7 +580,8 @@ class Alerts(commands.Cog):
                     )
                     view = AlertButtons(ticker=ticker, doc_url=WATCHLIST_MOVER_DOC_URL)
                     for channel in channels:
-                        await send_alert(alert, channel, self.dstate, view=view)
+                        role_mention = await self._build_role_mention(alert, channel)
+                        await send_alert(alert, channel, self.dstate, view=view, role_mention=role_mention)
             except Exception:
                 logger.error(f"[_watchlist_pipeline] Failed for '{ticker}'", exc_info=True)
 
@@ -618,7 +636,8 @@ class Alerts(commands.Cog):
                     )
                     view = AlertButtons(ticker=ticker, doc_url=EARNINGS_MOVER_DOC_URL)
                     for channel in channels:
-                        await send_alert(alert, channel, self.dstate, view=view)
+                        role_mention = await self._build_role_mention(alert, channel)
+                        await send_alert(alert, channel, self.dstate, view=view, role_mention=role_mention)
                     continue
 
                 # First-time check: evaluate if movement warrants initial alert
@@ -648,7 +667,8 @@ class Alerts(commands.Cog):
                     )
                     view = AlertButtons(ticker=ticker, doc_url=EARNINGS_MOVER_DOC_URL)
                     for channel in channels:
-                        await send_alert(alert, channel, self.dstate, view=view)
+                        role_mention = await self._build_role_mention(alert, channel)
+                        await send_alert(alert, channel, self.dstate, view=view, role_mention=role_mention)
             except Exception:
                 logger.error(f"[_earnings_pipeline] Failed for '{ticker}'", exc_info=True)
 

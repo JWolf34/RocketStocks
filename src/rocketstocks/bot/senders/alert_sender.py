@@ -14,6 +14,7 @@ async def send_alert(
     channel: discord.TextChannel,
     dstate: DiscordState,
     view: discord.ui.View = None,
+    role_mention: str | None = None,
 ) -> discord.Message | None:
     """Send an alert to a Discord channel, with edit-in-place support.
 
@@ -74,7 +75,7 @@ async def send_alert(
             )
 
             embed.description = (embed.description or "") + f"\n{update_link}"
-            sent = await channel.send(embed=embed, view=view)
+            sent = await channel.send(content=role_mention, embed=embed, view=view)
 
             # Record momentum snapshot before persisting
             alert.record_momentum(prev_alert_data=prev_alert_data)
@@ -93,7 +94,7 @@ async def send_alert(
             )
             return None
     else:
-        sent = await channel.send(embed=embed, view=view)
+        sent = await channel.send(content=role_mention, embed=embed, view=view)
         await dstate.insert_alert_message_id(
             date=today,
             ticker=alert.ticker,
