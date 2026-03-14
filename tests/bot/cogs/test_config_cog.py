@@ -318,7 +318,8 @@ class TestSetupModal:
         modal.charts._value = "<#444>"
         modal.notifications._value = "<#555>"
 
-        await modal.on_submit(interaction)
+        with patch("rocketstocks.bot.cogs.config.setup_alert_subscriptions", new_callable=AsyncMock):
+            await modal.on_submit(interaction)
 
         assert bot.stock_data.channel_config.upsert_channel.call_count == 5
         interaction.followup.send.assert_awaited_once()
@@ -347,7 +348,8 @@ class TestSetupModal:
         modal.charts._value = ""
         modal.notifications._value = ""
 
-        await modal.on_submit(interaction)
+        with patch("rocketstocks.bot.cogs.config.setup_alert_subscriptions", new_callable=AsyncMock):
+            await modal.on_submit(interaction)
 
         assert bot.stock_data.channel_config.upsert_channel.call_count == 2
 

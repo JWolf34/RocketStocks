@@ -14,6 +14,7 @@ def _make_bot():
     bot = MagicMock(name="Bot")
     bot.emitter = MagicMock()
     bot.iter_channels = AsyncMock(return_value=[])
+    bot.stock_data.alert_roles.get_role_ids = AsyncMock(return_value=[])
     return bot
 
 
@@ -78,6 +79,7 @@ def _make_cog(earnings_df: pd.DataFrame):
     ):
         cog = Alerts(bot=bot, stock_data=sd)
     cog.dstate = MagicMock()
+    cog.dstate.get_alerts_by_type_today = AsyncMock(return_value=[])
     cog.mutils = MagicMock()
     return cog
 
