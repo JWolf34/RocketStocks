@@ -170,6 +170,13 @@ CREATE TABLE IF NOT EXISTS market_signals (
     signal_data      jsonb DEFAULT '[]'::jsonb,
     PRIMARY KEY (ticker, detected_at)
 );
+
+CREATE TABLE IF NOT EXISTS alert_roles (
+    guild_id   BIGINT      NOT NULL,
+    role_key   VARCHAR(64) NOT NULL,
+    role_id    BIGINT      NOT NULL,
+    PRIMARY KEY (guild_id, role_key)
+);
 """
 
 _DROP_ALL_SCRIPT = """
@@ -187,6 +194,7 @@ DROP TABLE IF EXISTS channel_config;
 DROP TABLE IF EXISTS ticker_stats;
 DROP TABLE IF EXISTS popularity_surges;
 DROP TABLE IF EXISTS market_signals;
+DROP TABLE IF EXISTS alert_roles;
 """
 
 
