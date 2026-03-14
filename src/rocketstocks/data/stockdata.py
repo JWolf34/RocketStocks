@@ -13,6 +13,7 @@ from rocketstocks.data.price_history import PriceHistoryRepository
 from rocketstocks.data.ticker_stats import TickerStatsRepository
 from rocketstocks.data.surge_store import SurgeRepository
 from rocketstocks.data.market_signal_store import MarketSignalRepository
+from rocketstocks.data.alert_roles import AlertRolesRepository
 from rocketstocks.data.tickers import TickerRepository
 from rocketstocks.data.watchlists import Watchlists
 from rocketstocks.data.clients.nasdaq import Nasdaq
@@ -34,7 +35,7 @@ class StockData:
                  popularity_client=None, sec=None, tickers=None,
                  price_history=None, popularity=None, channel_config=None,
                  ticker_stats=None, surge_store=None, market_signal_store=None,
-                 tiingo=None, stooq=None):
+                 alert_roles=None, tiingo=None, stooq=None):
 
         # Clients
         self.db = db or Postgres()
@@ -58,6 +59,7 @@ class StockData:
         self.ticker_stats = ticker_stats or TickerStatsRepository(db=self.db)
         self.surge_store = surge_store or SurgeRepository(db=self.db)
         self.market_signal_store = market_signal_store or MarketSignalRepository(db=self.db)
+        self.alert_roles = alert_roles or AlertRolesRepository(db=self.db)
 
         self._alert_tickers: dict = {}
 
