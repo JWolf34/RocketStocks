@@ -13,6 +13,7 @@ logger = logging.getLogger(__name__)
 
 class PopularitySurgeAlert(Alert):
     alert_type = "POPULARITY_SURGE"
+    role_key = "popularity_surge"
 
     def __init__(self, data):  # data: PopularitySurgeData
         super().__init__()

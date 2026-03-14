@@ -29,6 +29,11 @@ _DOMINANT_LABELS = {
 class MarketMoverAlert(Alert):
     alert_type = "MARKET_MOVER"
 
+    @property
+    def role_key(self) -> str | None:
+        reason = self.alert_data.get('confirmation_reason', '')
+        return f"market_mover_{reason}" if reason else None
+
     def __init__(self, data: MarketMoverData):
         super().__init__()
         self.data = data

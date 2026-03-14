@@ -14,6 +14,7 @@ logger = logging.getLogger(__name__)
 
 class MarketAlert(Alert):
     alert_type = "MARKET_ALERT"
+    role_key = None
 
     def __init__(self, data):  # data: MarketAlertData
         super().__init__()

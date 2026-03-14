@@ -12,6 +12,7 @@ logger = logging.getLogger(__name__)
 
 class WatchlistMoverAlert(Alert):
     alert_type = "WATCHLIST_MOVER"
+    role_key = "watchlist_mover"
 
     def __init__(self, data: WatchlistMoverData):
         super().__init__()

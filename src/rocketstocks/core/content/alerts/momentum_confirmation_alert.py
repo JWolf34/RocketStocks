@@ -21,6 +21,7 @@ _SURGE_TYPE_LABELS = {
 
 class MomentumConfirmationAlert(Alert):
     alert_type = "MOMENTUM_CONFIRMATION"
+    role_key = "momentum_confirmed"
 
     def __init__(self, data):  # data: MomentumConfirmationData
         super().__init__()

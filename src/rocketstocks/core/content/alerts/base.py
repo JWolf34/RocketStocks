@@ -17,6 +17,7 @@ class Alert:
     """
 
     alert_type: str = "ALERT"
+    role_key: str | None = None
 
     def __init__(self):
         self.alert_data: dict = {}

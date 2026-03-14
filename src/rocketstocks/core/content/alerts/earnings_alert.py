@@ -53,6 +53,7 @@ def _stat_fields_from_trigger(trigger_result) -> list[EmbedField]:
 
 class EarningsMoverAlert(Alert):
     alert_type = "EARNINGS_MOVER"
+    role_key = "earnings_mover"
 
     def __init__(self, data: EarningsMoverData):
         super().__init__()
