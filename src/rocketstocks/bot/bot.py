@@ -11,6 +11,7 @@ from rocketstocks.core.config.secrets import secrets
 from rocketstocks.core.config.paths import validate_path, datapaths
 from rocketstocks.core.notifications import EventEmitter, NotificationConfig
 from rocketstocks.core.scheduler.jobs import register_jobs
+from rocketstocks.bot.views.subscription_views import SubscriptionEntryView
 from rocketstocks.data.seed import seed_boilerplate_watchlists
 
 logger = logging.getLogger(__name__)
@@ -61,6 +62,7 @@ class RocketStocksBot(commands.Bot):
         register_jobs(self.aio_sched, self.stock_data, self.emitter)
         self.aio_sched.start()
         logger.info("APScheduler started via setup_hook")
+        self.add_view(SubscriptionEntryView())
 
     async def close(self) -> None:
         """Shut down scheduler and close the DB pool on exit."""
