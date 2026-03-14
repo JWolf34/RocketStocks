@@ -159,5 +159,4 @@ class Subscriptions(commands.Cog):
 
 async def setup(bot: commands.Bot):
     cog = Subscriptions(bot)
-    bot.tree.add_command(cog.subscriptions_group)
     await bot.add_cog(cog)
