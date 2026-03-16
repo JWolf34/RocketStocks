@@ -8,6 +8,8 @@ from rocketstocks.data.stockdata import StockData
 from rocketstocks.data.channel_config import REPORTS, ALERTS, SCREENERS, CHARTS, NOTIFICATIONS
 from rocketstocks.data.schema import create_tables
 from rocketstocks.core.config.settings import settings
+from rocketstocks.core.utils.dates import configure_tz
+from rocketstocks.core.notifications.config import NotificationFilter
 from rocketstocks.core.config.paths import validate_path, datapaths
 from rocketstocks.core.notifications import EventEmitter, NotificationConfig
 from rocketstocks.core.scheduler.jobs import register_jobs
@@ -60,6 +62,27 @@ class RocketStocksBot(commands.Bot):
         logger.info("Database connection pool opened")
         await create_tables(self.stock_data.db)
         logger.info("Tables created/verified")
+
+        # Resolve timezone: ENV takes precedence; fall back to DB, then settings default
+        if "TZ" not in os.environ:
+            db_tz = await self.stock_data.bot_settings.get("tz")
+            if db_tz:
+                configure_tz(db_tz)
+                logger.info(f"Timezone set from DB: {db_tz}")
+
+        # Resolve notification_filter: ENV takes precedence; fall back to DB
+        if "NOTIFICATION_FILTER" not in os.environ:
+            db_filter = await self.stock_data.bot_settings.get("notification_filter")
+            if db_filter:
+                _filter_map = {
+                    "all": NotificationFilter.ALL,
+                    "failures_only": NotificationFilter.FAILURES_ONLY,
+                    "off": NotificationFilter.OFF,
+                }
+                if db_filter in _filter_map:
+                    self.notification_config.filter = _filter_map[db_filter]
+                    logger.info(f"Notification filter set from DB: {db_filter}")
+
         await self.stock_data.init_schwab()
         logger.info("Schwab client initialized")
         self.aio_sched = AsyncIOScheduler()

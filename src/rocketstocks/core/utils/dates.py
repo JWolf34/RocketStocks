@@ -5,6 +5,14 @@ from rocketstocks.core.config.settings import settings
 
 logger = logging.getLogger(__name__)
 
+_runtime_tz: str | None = None
+
+
+def configure_tz(tz: str) -> None:
+    """Override the runtime timezone (e.g. loaded from DB at startup)."""
+    global _runtime_tz
+    _runtime_tz = tz
+
 
 class date_utils:
 
@@ -101,4 +109,4 @@ class date_utils:
 
     @staticmethod
     def timezone():
-        return ZoneInfo(settings.tz)
+        return ZoneInfo(_runtime_tz or settings.tz)
