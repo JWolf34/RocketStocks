@@ -9,6 +9,7 @@ from rocketstocks.data.channel_config import (
     REPORTS, ALERTS, SCREENERS, CHARTS, NOTIFICATIONS, ALL_CONFIG_TYPES,
 )
 from rocketstocks.bot.cogs.subscriptions import setup_alert_subscriptions
+from rocketstocks.bot.views.subscription_views import ALERT_ROLE_DEFS
 
 logger = logging.getLogger(__name__)
 
@@ -101,7 +102,7 @@ class SetupModal(discord.ui.Modal, title="Configure RocketStocks Channels"):
         for config_type, channel in resolved.items():
             await repo.upsert_channel(interaction.guild_id, config_type, channel.id)
             lines.append(f"**{config_type}**: {channel.mention}")
-            logger.info(f"/setup modal: guild={interaction.guild_id} {config_type}={channel.id}")
+            logger.info(f"/server setup modal: guild={interaction.guild_id} {config_type}={channel.id}")
         embed = discord.Embed(
             title="Channel Configuration Updated",
             description="\n".join(lines),
@@ -114,7 +115,7 @@ class SetupModal(discord.ui.Modal, title="Configure RocketStocks Channels"):
     async def on_error(self, interaction: discord.Interaction, error: Exception):
         logger.error(f"SetupModal error: {error}")
         await interaction.followup.send(
-            "An unexpected error occurred during setup. Please try `/setup` again.",
+            "An unexpected error occurred during setup. Please try `/server setup` again.",
             ephemeral=True,
         )
 
@@ -153,7 +154,7 @@ class Config(commands.Cog):
 
     @commands.Cog.listener()
     async def on_guild_join(self, guild: discord.Guild):
-        """Immediately prompt a newly joined guild to run /setup."""
+        """Immediately prompt a newly joined guild to run /server setup."""
         target = await self._discover_fallback_channel(guild)
         if target:
             await self._send_setup_prompt(target, guild)
@@ -191,7 +192,7 @@ class Config(commands.Cog):
                 f"Thanks for adding RocketStocks to **{guild.name}**!\n\n"
                 "Click **Configure Channels** below to set up which channels receive "
                 "reports, alerts, screeners, charts, and notifications.\n\n"
-                "You can also run `/setup` at any time to update the configuration."
+                "You can also run `/server setup` at any time to update the configuration."
             ),
             color=discord.Color.orange(),
         )
@@ -205,37 +206,67 @@ class Config(commands.Cog):
     # Slash commands
     # -------------------------------------------------------------------------
 
-    @app_commands.command(name="setup", description="Configure RocketStocks channels for this server")
-    @app_commands.default_permissions(administrator=True)
-    async def setup(self, interaction: discord.Interaction):
+    server_group = app_commands.Group(
+        name="server",
+        description="Configure RocketStocks for this server",
+        default_permissions=discord.Permissions(administrator=True),
+    )
+
+    @server_group.command(name="setup", description="Configure RocketStocks channels for this server")
+    async def server_setup(self, interaction: discord.Interaction):
         """Open the channel configuration modal."""
         await interaction.response.send_modal(SetupModal(self))
 
-    @app_commands.command(name="setup-status", description="Show current channel configuration for this server")
-    @app_commands.default_permissions(administrator=True)
-    async def setup_status(self, interaction: discord.Interaction):
-        """Display all 5 channel types and their current mentions or 'Not configured'."""
+    @server_group.command(name="status", description="Show current channel and subscription role configuration")
+    async def server_status(self, interaction: discord.Interaction):
+        """Display all 5 channel types and all 9 alert subscription roles."""
         repo = self.bot.stock_data.channel_config
         configured = await repo.get_all_for_guild(interaction.guild_id)
 
-        lines = []
-        all_set = True
+        # Channel configuration section
+        channel_lines = []
+        channels_all_set = True
         for config_type in ALL_CONFIG_TYPES:
             channel_id = configured.get(config_type)
             if channel_id:
                 channel = self.bot.get_channel(channel_id)
                 mention = channel.mention if channel else f"<#{channel_id}>"
-                lines.append(f"**{config_type}**: {mention}")
+                channel_lines.append(f"**{config_type}**: {mention}")
             else:
-                lines.append(f"**{config_type}**: Not configured")
-                all_set = False
+                channel_lines.append(f"**{config_type}**: Not configured")
+                channels_all_set = False
 
+        # Alert subscription roles section
+        guild_roles = await self.bot.stock_data.alert_roles.get_all_for_guild(interaction.guild_id)
+        role_lines = []
+        roles_all_set = True
+        for role_key, label in ALERT_ROLE_DEFS:
+            role_id = guild_roles.get(role_key)
+            if role_id:
+                role = interaction.guild.get_role(role_id)
+                mention = role.mention if role else f"<@&{role_id}>"
+                role_lines.append(f"✅ {label}: {mention}")
+            else:
+                role_lines.append(f"❌ {label}: Not configured")
+                roles_all_set = False
+
+        all_set = channels_all_set and roles_all_set
         color = discord.Color.green() if all_set else discord.Color.orange()
+
+        description = (
+            "**Channel Configuration**\n"
+            + "\n".join(channel_lines)
+            + "\n\n**Alert Subscription Roles**\n"
+            + "\n".join(role_lines)
+        )
+
         embed = discord.Embed(
-            title="Channel Configuration Status",
-            description="\n".join(lines),
+            title="Server Configuration",
+            description=description,
             color=color,
         )
+        if not all_set:
+            embed.set_footer(text="Run /server setup to configure automatically.")
         await interaction.response.send_message(embed=embed, ephemeral=True)
 
 
