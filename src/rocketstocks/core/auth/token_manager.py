@@ -1,8 +1,6 @@
 """Token status inspection — pure business logic, no discord/data imports."""
 import datetime
-import json
 import logging
-import os
 from dataclasses import dataclass
 from enum import Enum
 
@@ -17,7 +15,7 @@ class TokenStatus(Enum):
     EXPIRING_SOON = "expiring_soon"  # <=2 days remaining
     EXPIRED = "expired"          # refresh token expired by time
     INVALID = "invalid"          # refresh token rejected by Schwab (revoked, etc.)
-    MISSING = "missing"          # no token file or unreadable
+    MISSING = "missing"          # no token in DB
 
 
 @dataclass
@@ -27,18 +25,16 @@ class TokenInfo:
     time_remaining: datetime.timedelta | None
 
 
-def get_token_info(token_path: str) -> TokenInfo:
-    """Read the Schwab token file and return its status."""
-    if not os.path.exists(token_path):
+def get_token_info(token_dict: dict | None) -> TokenInfo:
+    """Inspect a Schwab token dict and return its status."""
+    if token_dict is None:
         return TokenInfo(status=TokenStatus.MISSING, expires_at=None, time_remaining=None)
 
     try:
-        with open(token_path, "r") as f:
-            data = json.load(f)
-        creation_ts = data["creation_timestamp"]
+        creation_ts = token_dict["creation_timestamp"]
         expires_at = datetime.datetime.fromtimestamp(creation_ts) + REFRESH_TOKEN_LIFETIME
     except Exception as exc:
-        logger.warning(f"Could not read Schwab token file at {token_path!r}: {exc}")
+        logger.warning(f"Could not read Schwab token data: {exc}")
         return TokenInfo(status=TokenStatus.MISSING, expires_at=None, time_remaining=None)
 
     now = datetime.datetime.now()

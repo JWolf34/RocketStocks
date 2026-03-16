@@ -11,68 +11,63 @@ from rocketstocks.core.auth.token_manager import get_token_info, TokenInfo, Toke
 logger = logging.getLogger(__name__)
 
 
-TOKEN_PATH = "data/schwab-token.json"
-
-
 class SchwabTokenError(Exception):
     """Raised when the Schwab client is unavailable due to a token problem."""
 
 
 class Schwab:
-    def __init__(self, client=None, token_path=TOKEN_PATH):
-        self.token_path = token_path
+    def __init__(self, client=None, token_store=None):
+        self._token_store = token_store
         self._token_invalid: bool = False
 
         if client is not None:
             self.client = client
         else:
-            self._load_client()
+            self.client = None
 
-    def _load_client(self) -> None:
-        """Load the Schwab client from the token file.
+    async def init_client(self) -> None:
+        """Load the Schwab client from the token stored in the database.
 
         Sets ``self.client = None`` if the token is missing or invalid rather
         than raising, so the bot can start without a valid token.
         """
+        self._token_invalid = False
+        token_dict = await self._token_store.load_token()
+        if token_dict is None:
+            logger.warning("No Schwab token in DB. Run /schwab auth to authenticate.")
+            self.client = None
+            return
         try:
-            self.client = schwab.auth.client_from_token_file(
-                self.token_path,
+            self.client = schwab.auth.client_from_access_functions(
                 api_key=secrets.schwab_api_key,
                 app_secret=secrets.schwab_api_secret,
+                token_read_func=lambda: token_dict,
+                token_write_func=self._token_store.schedule_save,
                 asyncio=True,
             )
-            logger.info("Schwab client loaded from token file")
-        except FileNotFoundError:
-            logger.warning(
-                f"Schwab token file not found at {self.token_path!r}. "
-                "Run /schwab-auth to authenticate."
-            )
-            self.client = None
+            logger.info("Schwab client loaded from database token")
         except Exception as exc:
-            logger.error(f"Failed to load Schwab client from token file: {exc}")
+            logger.error(f"Failed to load Schwab client: {exc}")
             self.client = None
 
-    def reload_client(self) -> None:
-        """Re-read the token file and reinitialise the Schwab client.
+    async def reload_client(self) -> None:
+        """Re-load the Schwab client from the database token.
 
         Call this after a successful OAuth flow to activate the new token.
         """
-        self._token_invalid = False
-        self._load_client()
+        await self.init_client()
 
-    def get_token_info(self) -> TokenInfo:
+    async def get_token_info(self) -> TokenInfo:
         """Return the current token status, including runtime invalidity."""
         if self._token_invalid:
             return TokenInfo(status=TokenStatus.INVALID, expires_at=None, time_remaining=None)
-        return get_token_info(self.token_path)
+        token_dict = await self._token_store.load_token()
+        return get_token_info(token_dict)
 
-    # ------------------------------------------------------------------
-    # Legacy helper kept for backward compatibility
-    # ------------------------------------------------------------------
-
-    def get_token_expiry(self):
+    async def get_token_expiry(self):
         """Return the Schwab token expiry as a naive local datetime, or None."""
-        info = get_token_info(self.token_path)
+        token_dict = await self._token_store.load_token()
+        info = get_token_info(token_dict)
         return info.expires_at
 
     # ------------------------------------------------------------------

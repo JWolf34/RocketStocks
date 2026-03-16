@@ -77,15 +77,15 @@ class SchwabCallbackModal(discord.ui.Modal, title="Paste Schwab Redirect URL"):
         received_url = self.redirect_url.value.strip()
 
         try:
-            new_client = await asyncio.to_thread(
+            new_client, token_dict = await asyncio.to_thread(
                 exchange_code_for_token,
                 secrets.schwab_api_key,
                 secrets.schwab_api_secret,
                 self._auth_context,
                 received_url,
-                self._cog.bot.stock_data.schwab.token_path,
                 True,  # asyncio=True
             )
+            await self._cog.bot.stock_data.schwab_token_store.save_token(token_dict)
             # Inject new client and clear invalid flag
             self._cog.bot.stock_data.schwab.client = new_client
             self._cog.bot.stock_data.schwab._token_invalid = False
@@ -175,7 +175,7 @@ class SchwabAuth(commands.Cog):
     @schwab_group.command(name="status", description="Show Schwab API token status")
     async def schwab_status(self, interaction: discord.Interaction):
         """Display colour-coded token health."""
-        info = self.bot.stock_data.schwab.get_token_info()
+        info = await self.bot.stock_data.schwab.get_token_info()
         label = _STATUS_LABELS.get(info.status, info.status.value)
         color = _STATUS_COLORS.get(info.status, discord.Color.greyple())
 
