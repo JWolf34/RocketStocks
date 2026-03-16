@@ -324,7 +324,10 @@ class Reports(commands.Cog):
     # Slash commands    #
     #####################
 
-    @app_commands.command(name="report-watchlist", description="Post stock reports on all tickers on a watchlist",)
+    report_group = app_commands.Group(name="report", description="Generate reports for tickers, watchlists, and more")
+    alert_group = app_commands.Group(name="alert", description="Summarize and manage alerts")
+
+    @report_group.command(name="watchlist", description="Post stock reports on all tickers on a watchlist")
     @app_commands.describe(watchlist="Which watchlist to fetch reports for")
     @app_commands.autocomplete(watchlist=get_watchlist_options)
     @app_commands.describe(visibility="'private' to send to DMs, 'public' to send to the channel")
@@ -335,7 +338,7 @@ class Reports(commands.Cog):
     async def report_watchlist(self, interaction: discord.Interaction, watchlist: str, visibility: app_commands.Choice[str]):
         """Generate and send Stock Reports for all tickers on the input watchlist"""
         await interaction.response.defer(ephemeral=True)
-        logger.info(f"/report-watchlist function called by user '{interaction.user.name}'")
+        logger.info(f"/report watchlist function called by user '{interaction.user.name}'")
 
         watchlist_id = watchlist
         if watchlist == 'personal':
@@ -349,11 +352,11 @@ class Reports(commands.Cog):
         logger.info(f"Reports requested for watchlist '{watchlist}' with tickers {tickers}")
 
         if not tickers:
-            await interaction.followup.send("No tickers on the watchlist. Use /addticker to build a watchlist.", ephemeral=True)
+            await interaction.followup.send("No tickers on the watchlist. Use /watchlist add to build a watchlist.", ephemeral=True)
         else:
             channel = await self.bot.get_channel_for_guild(interaction.guild_id, REPORTS)
             if channel is None:
-                await interaction.followup.send("Use `/setup` to configure the reports channel.", ephemeral=True)
+                await interaction.followup.send("Use `/server setup` to configure the reports channel.", ephemeral=True)
                 return
             message = None
             for ticker in tickers:
@@ -382,7 +385,7 @@ class Reports(commands.Cog):
             for ticker in all_tickers if ticker.startswith(partial)
         ][:25]
 
-    @app_commands.command(name="report", description="Fetch stock reports of the specified tickers",)
+    @report_group.command(name="ticker", description="Fetch stock reports of the specified tickers")
     @app_commands.describe(tickers="Tickers to post reports for (separated by spaces)")
     @app_commands.describe(visibility="'private' to send to DMs, 'public' to send to the channel")
     @app_commands.choices(visibility=[
@@ -390,16 +393,16 @@ class Reports(commands.Cog):
         app_commands.Choice(name="public", value='public'),
     ])
     @app_commands.autocomplete(tickers=ticker_autocomplete)
-    async def report(self, interaction: discord.interactions, tickers: str, visibility: app_commands.Choice[str]):
+    async def report_ticker(self, interaction: discord.interactions, tickers: str, visibility: app_commands.Choice[str]):
         """Generate and send Stock Reports for all valid tickers input by the user"""
         await interaction.response.defer(ephemeral=True)
-        logger.info(f"/report function called by user {interaction.user.name}")
+        logger.info(f"/report ticker function called by user {interaction.user.name}")
 
         tickers, invalid_tickers = await self.stock_data.tickers.parse_valid_tickers(tickers.upper())
         logger.info(f"Reports requested for tickers {tickers}. Invalid tickers: {invalid_tickers}")
         channel = await self.bot.get_channel_for_guild(interaction.guild_id, REPORTS)
         if channel is None and visibility.value == 'public':
-            await interaction.followup.send("Use `/setup` to configure the reports channel.", ephemeral=True)
+            await interaction.followup.send("Use `/server setup` to configure the reports channel.", ephemeral=True)
             return
         message = None
         for ticker in tickers:
@@ -449,7 +452,7 @@ class Reports(commands.Cog):
             for name in self.stock_data.popularity.filters_map.keys() if current.lower() in name.lower()
         ]
 
-    @app_commands.command(name="popular-stocks", description="Fetch a report on the most popular stocks from the source provided")
+    @report_group.command(name="popularity", description="Fetch a report on the most popular stocks from the source provided")
     @app_commands.describe(source="The source to pull popular stocks from")
     @app_commands.autocomplete(source=autocomplete_filter,)
     @app_commands.describe(visibility="'private' to send to DMs, 'public' to send to the channel")
@@ -457,10 +460,10 @@ class Reports(commands.Cog):
         app_commands.Choice(name="private", value='private'),
         app_commands.Choice(name="public", value='public'),
     ])
-    async def popular_stocks(self, interaction: discord.Interaction, source: str, visibility: app_commands.Choice[str]):
+    async def report_popularity(self, interaction: discord.Interaction, source: str, visibility: app_commands.Choice[str]):
         """Generate and send Popularity Report for tickers from the input source"""
         await interaction.response.defer(ephemeral=True)
-        logger.info(f"/popular-stocks function called by user {interaction.user.name}")
+        logger.info(f"/report popularity function called by user {interaction.user.name}")
 
         popular_stocks = self.stock_data.popularity.get_popular_stocks(filter_name=source)
         filter_val = self.stock_data.popularity.get_filter(source)
@@ -468,7 +471,7 @@ class Reports(commands.Cog):
         if not popular_stocks.empty:
             channel = await self.bot.get_channel_for_guild(interaction.guild_id, REPORTS)
             if channel is None and visibility.value == 'public':
-                await interaction.followup.send("Use `/setup` to configure the reports channel.", ephemeral=True)
+                await interaction.followup.send("Use `/server setup` to configure the reports channel.", ephemeral=True)
                 return
             content = PopularityReport(data=PopularityReportData(popular_stocks=popular_stocks, filter=filter_val))
             view = PopularityReportButtons()
@@ -490,7 +493,7 @@ class Reports(commands.Cog):
             for p_name in names if current.lower() in p_name.lower()
         ][:25]
 
-    @app_commands.command(name="politician", description="Fetch a report on the latest stocks traded by a politician")
+    @report_group.command(name="politician", description="Fetch a report on the latest stocks traded by a politician")
     @app_commands.describe(politician_name="Politician to return trades for")
     @app_commands.autocomplete(politician_name=politician_options,)
     @app_commands.describe(visibility="'private' to send to DMs, 'public' to send to the channel")
@@ -498,17 +501,17 @@ class Reports(commands.Cog):
         app_commands.Choice(name="private", value='private'),
         app_commands.Choice(name="public", value='public'),
     ])
-    async def politician(self, interaction: discord.Interaction, politician_name: str, visibility: app_commands.Choice[str]):
+    async def report_politician(self, interaction: discord.Interaction, politician_name: str, visibility: app_commands.Choice[str]):
         """Generate and send Politician Report for input politician"""
         await interaction.response.defer(ephemeral=True)
-        logger.info(f"/politician function called by user {interaction.user.name}")
+        logger.info(f"/report politician function called by user {interaction.user.name}")
 
         politician = await self.stock_data.capitol_trades.politician(name=politician_name)
 
         if politician:
             channel = await self.bot.get_channel_for_guild(interaction.guild_id, REPORTS)
             if channel is None and visibility.value == 'public':
-                await interaction.followup.send("Use `/setup` to configure the reports channel.", ephemeral=True)
+                await interaction.followup.send("Use `/server setup` to configure the reports channel.", ephemeral=True)
                 return
             content = self.build_politician_report(politician=politician)
             view = PoliticianReportButtons(pid=politician['politician_id'])
@@ -636,7 +639,7 @@ class Reports(commands.Cog):
         alerts = await self.dstate.get_alerts_since(since_dt)
         return AlertSummary(data=AlertSummaryData(since_dt=since_dt, label=label, alerts=alerts))
 
-    @app_commands.command(name="alert-summary", description="Summarize alerts since a selected time period")
+    @alert_group.command(name="summary", description="Summarize alerts since a selected time period")
     @app_commands.describe(
         since_when="Time period to summarize (defaults to since last close)",
         visibility="public posts to the alerts channel; private sends only to you",
@@ -661,13 +664,24 @@ class Reports(commands.Cog):
     ):
         """Summarize recent alerts grouped by type."""
         await interaction.response.defer(ephemeral=True)
-        logger.info(f"/alert-summary called by user '{interaction.user.name}'")
+        logger.info(f"/alert summary called by user '{interaction.user.name}'")
         since_dt, label = _resolve_since_dt(since_when.value if since_when else 'last_close')
         content = await self.build_alert_summary(since_dt, label)
         channel = await self.bot.get_channel_for_guild(interaction.guild_id, ALERTS)
         vis = visibility.value if visibility else "private"
         message = await send_report(content, channel, interaction=interaction, visibility=vis)
         await interaction.followup.send(f"[Alert summary posted]({message.jump_url})", ephemeral=True)
+
+    @alert_group.command(name="subscribe", description="Manage your alert notification subscriptions")
+    async def alert_subscribe(self, interaction: discord.Interaction):
+        """Open the subscription selector for the interacting user."""
+        subscriptions_cog = self.bot.get_cog("Subscriptions")
+        if subscriptions_cog is not None:
+            await subscriptions_cog._send_subscription_select(interaction)
+        else:
+            await interaction.response.send_message(
+                "Subscription management is unavailable right now.", ephemeral=True
+            )
 
 
 async def setup(bot):
