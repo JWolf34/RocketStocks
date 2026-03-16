@@ -177,6 +177,13 @@ CREATE TABLE IF NOT EXISTS alert_roles (
     role_id    BIGINT      NOT NULL,
     PRIMARY KEY (guild_id, role_key)
 );
+
+CREATE TABLE IF NOT EXISTS schwab_tokens (
+    id          INTEGER PRIMARY KEY DEFAULT 1,
+    token_data  JSONB NOT NULL,
+    updated_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    CONSTRAINT  schwab_tokens_singleton CHECK (id = 1)
+);
 """
 
 _DROP_ALL_SCRIPT = """
@@ -195,6 +202,7 @@ DROP TABLE IF EXISTS ticker_stats;
 DROP TABLE IF EXISTS popularity_surges;
 DROP TABLE IF EXISTS market_signals;
 DROP TABLE IF EXISTS alert_roles;
+DROP TABLE IF EXISTS schwab_tokens;
 """
 
 
