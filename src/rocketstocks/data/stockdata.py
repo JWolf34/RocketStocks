@@ -4,6 +4,7 @@ Access pattern: ``stock_data.{client_or_repo}.{method}()``
 """
 import logging
 
+from rocketstocks.data.bot_settings import BotSettingsRepository
 from rocketstocks.data.channel_config import ChannelConfigRepository
 from rocketstocks.data.db import Postgres
 from rocketstocks.data.earnings import Earnings
@@ -36,7 +37,7 @@ class StockData:
                  popularity_client=None, sec=None, tickers=None,
                  price_history=None, popularity=None, channel_config=None,
                  ticker_stats=None, surge_store=None, market_signal_store=None,
-                 alert_roles=None, tiingo=None, stooq=None):
+                 alert_roles=None, tiingo=None, stooq=None, bot_settings=None):
 
         # Clients
         self.db = db or Postgres()
@@ -62,6 +63,7 @@ class StockData:
         self.surge_store = surge_store or SurgeRepository(db=self.db)
         self.market_signal_store = market_signal_store or MarketSignalRepository(db=self.db)
         self.alert_roles = alert_roles or AlertRolesRepository(db=self.db)
+        self.bot_settings = bot_settings or BotSettingsRepository(db=self.db)
 
         self._alert_tickers: dict = {}
 
