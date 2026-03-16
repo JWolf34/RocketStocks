@@ -3,6 +3,8 @@ import datetime
 import json
 from unittest.mock import AsyncMock, MagicMock
 
+from psycopg.types.json import Json
+
 import pytest
 
 from rocketstocks.data.discord_state import DiscordState
@@ -167,8 +169,8 @@ class TestAlertMessageId:
         payload = {"pct_change": 6.0}
         await ds.update_alert_message_data("2024-01-01", "AAPL", "VOLUME_MOVER", "888", payload)
         params = db.execute.call_args[0][1]
-        # alert_data is passed as-is (JSONB native), not json.dumps'd
-        assert payload in params
+        # alert_data is wrapped in Json() for JSONB native handling, not json.dumps'd
+        assert any(isinstance(p, Json) and p.obj == payload for p in params)
 
 
 class TestGetRecentAlertsForTicker:
@@ -241,7 +243,8 @@ class TestInsertAlertMessageIdFields:
         payload = {"pct_change": 5.0}
         await ds.insert_alert_message_id("2024-01-01", "AAPL", "WATCHLIST_ALERT", "888", payload)
         params = db.execute.call_args[0][1]
-        assert payload in params
+        # alert_data is wrapped in Json() for JSONB native handling, not json.dumps'd
+        assert any(isinstance(p, Json) and p.obj == payload for p in params)
         # Confirm no JSON string was smuggled in
         assert not any(isinstance(p, str) and '"pct_change"' in p for p in params)
 

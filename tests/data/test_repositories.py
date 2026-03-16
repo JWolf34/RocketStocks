@@ -257,7 +257,7 @@ class TestTickerRepository:
         db.execute = AsyncMock(side_effect=[None, ('0000320193',), None])
         db.execute_batch = AsyncMock()
         sec = MagicMock()
-        sec.get_submissions_data.return_value = {'sic': '7372'}
+        sec.get_submissions_data = AsyncMock(return_value={'sic': '7372'})
         repo = self._make(db=db, sec=sec, tiingo=tiingo)
         await repo.enrich_ticker('AAPL')
         # The last execute call should be the sic_code UPDATE

@@ -2,6 +2,8 @@
 import datetime
 from unittest.mock import AsyncMock, MagicMock, patch
 
+from psycopg.types.json import Json
+
 import pytest
 
 from rocketstocks.data.market_signal_store import MarketSignalRepository, _ACTIVE_CUTOFF_HOURS
@@ -62,8 +64,8 @@ async def test_insert_signal_default_empty_signal_data(repo, mock_db):
         rvol=None,
     )
     _, params = mock_db.execute.call_args[0]
-    # signal_data is a native Python list (JSONB), not a JSON string
-    assert params[-1] == []
+    # signal_data is wrapped in Json() for JSONB native handling, not a JSON string
+    assert isinstance(params[-1], Json) and params[-1].obj == []
 
 
 # ---------------------------------------------------------------------------
@@ -213,9 +215,9 @@ async def test_update_observation_appends_to_signal_data(repo, mock_db):
     sql, params = update_call[0]
     assert 'UPDATE market_signals' in sql
     updated_data = params[0]
-    assert isinstance(updated_data, list)
-    assert len(updated_data) == 2
-    assert updated_data[-1]['pct_change'] == pytest.approx(3.0)
+    assert isinstance(updated_data, Json)
+    assert len(updated_data.obj) == 2
+    assert updated_data.obj[-1]['pct_change'] == pytest.approx(3.0)
 
 
 async def test_update_observation_no_op_when_no_row(repo, mock_db):
