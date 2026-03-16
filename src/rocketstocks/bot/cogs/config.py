@@ -8,10 +8,75 @@ from discord.ext import commands
 from rocketstocks.data.channel_config import (
     REPORTS, ALERTS, SCREENERS, CHARTS, NOTIFICATIONS, ALL_CONFIG_TYPES,
 )
-from rocketstocks.bot.cogs.subscriptions import setup_alert_subscriptions
-from rocketstocks.bot.views.subscription_views import ALERT_ROLE_DEFS
+from rocketstocks.bot.views.subscription_views import ALERT_ROLE_DEFS, SubscriptionEntryView
 
 logger = logging.getLogger(__name__)
+
+# Colour assigned to each alert role (matches alert embed colours roughly)
+_ROLE_COLOURS: dict[str, discord.Colour] = {
+    "earnings_mover": discord.Colour.red(),
+    "watchlist_mover": discord.Colour.blue(),
+    "popularity_surge": discord.Colour.purple(),
+    "momentum_confirmed": discord.Colour.gold(),
+    "market_mover_sustained": discord.Colour.teal(),
+    "market_mover_price_accelerating": discord.Colour.green(),
+    "market_mover_volume_accelerating": discord.Colour.dark_green(),
+    "market_mover_volume_extreme": discord.Colour.dark_blue(),
+    "all_alerts": discord.Colour.orange(),
+}
+
+
+async def setup_alert_subscriptions(bot: commands.Bot, guild: discord.Guild) -> None:
+    """Create Discord roles for each alert type and post the subscription panel.
+
+    Called after /server setup completes for a guild. Idempotent — reuses existing roles.
+    """
+    alert_roles_repo = bot.stock_data.alert_roles
+
+    for role_key, label in ALERT_ROLE_DEFS:
+        # Find existing role by name or create it
+        existing = discord.utils.get(guild.roles, name=label)
+        if existing is None:
+            colour = _ROLE_COLOURS.get(role_key, discord.Colour.default())
+            try:
+                existing = await guild.create_role(
+                    name=label,
+                    colour=colour,
+                    mentionable=True,
+                    reason="RocketStocks alert subscription role",
+                )
+                logger.info(f"Created role '{label}' (id={existing.id}) in guild={guild.id}")
+            except discord.Forbidden:
+                logger.warning(f"Missing permissions to create role '{label}' in guild={guild.id}")
+                continue
+
+        await alert_roles_repo.upsert(guild.id, role_key, existing.id)
+
+    # Post the subscription panel to the configured ALERTS channel
+    alerts_channel_id = await bot.stock_data.channel_config.get_channel_id(guild.id, ALERTS)
+    if alerts_channel_id is None:
+        logger.warning(f"No ALERTS channel configured for guild={guild.id} — skipping panel post")
+        return
+
+    channel = bot.get_channel(alerts_channel_id)
+    if channel is None:
+        logger.warning(f"ALERTS channel {alerts_channel_id} not in cache for guild={guild.id}")
+        return
+
+    embed = discord.Embed(
+        title="Alert Subscriptions",
+        description=(
+            "Get notified when specific alerts fire.\n\n"
+            "Click **Manage My Subscriptions** to choose which alerts you want to receive."
+        ),
+        colour=discord.Colour.blurple(),
+    )
+    try:
+        await channel.send(embed=embed, view=SubscriptionEntryView())
+        logger.info(f"Posted subscription panel to channel={alerts_channel_id} guild={guild.id}")
+    except discord.Forbidden:
+        logger.warning(f"Missing permissions to post to alerts channel in guild={guild.id}")
+
 
 _PRIORITY_CHANNEL_NAMES = ["bot-commands", "bot", "general", "welcome"]
 

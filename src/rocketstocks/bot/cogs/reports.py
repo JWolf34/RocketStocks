@@ -46,6 +46,7 @@ from rocketstocks.bot.views.report_views import (
     StockReportButtons, GainerScreenerButtons, VolumeScreenerButtons,
     PopularityScreenerButtons, PopularityReportButtons, PoliticianReportButtons,
 )
+from rocketstocks.bot.views.subscription_views import AlertSubscriptionSelect, AlertSubscriptionView
 from rocketstocks.bot.senders.report_sender import send_report, send_screener
 from rocketstocks.bot.senders.embed_utils import spec_to_embed
 
@@ -672,16 +673,22 @@ class Reports(commands.Cog):
         message = await send_report(content, channel, interaction=interaction, visibility=vis)
         await interaction.followup.send(f"[Alert summary posted]({message.jump_url})", ephemeral=True)
 
+    async def _send_subscription_select(self, interaction: discord.Interaction) -> None:
+        """Send an ephemeral subscription dropdown to the interacting user."""
+        guild_roles = await self.bot.stock_data.alert_roles.get_all_for_guild(interaction.guild_id)
+        member_role_ids = {r.id for r in interaction.user.roles}
+        select = AlertSubscriptionSelect(guild_roles, member_role_ids)
+        view = AlertSubscriptionView(select)
+        await interaction.response.send_message(
+            "Select the alerts you want to be notified about:",
+            view=view,
+            ephemeral=True,
+        )
+
     @alert_group.command(name="subscribe", description="Manage your alert notification subscriptions")
     async def alert_subscribe(self, interaction: discord.Interaction):
         """Open the subscription selector for the interacting user."""
-        subscriptions_cog = self.bot.get_cog("Subscriptions")
-        if subscriptions_cog is not None:
-            await subscriptions_cog._send_subscription_select(interaction)
-        else:
-            await interaction.response.send_message(
-                "Subscription management is unavailable right now.", ephemeral=True
-            )
+        await self._send_subscription_select(interaction)
 
 
 async def setup(bot):
