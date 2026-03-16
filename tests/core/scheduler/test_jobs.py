@@ -180,7 +180,7 @@ class TestCheckSchwabTokenExpiry:
         from rocketstocks.core.auth.token_manager import TokenStatus
         sd = _make_stock_data()
         emitter = _make_emitter()
-        sd.schwab.get_token_info.return_value = self._make_token_info(TokenStatus.MISSING)
+        sd.schwab.get_token_info = AsyncMock(return_value=self._make_token_info(TokenStatus.MISSING))
         check_job = self._get_check_job(sd, emitter)
         assert check_job is not None
         await check_job()
@@ -196,7 +196,7 @@ class TestCheckSchwabTokenExpiry:
         from rocketstocks.core.auth.token_manager import TokenStatus
         sd = _make_stock_data()
         emitter = _make_emitter()
-        sd.schwab.get_token_info.return_value = self._make_token_info(TokenStatus.EXPIRED)
+        sd.schwab.get_token_info = AsyncMock(return_value=self._make_token_info(TokenStatus.EXPIRED))
         check_job = self._get_check_job(sd, emitter)
         assert check_job is not None
         await check_job()
@@ -212,7 +212,7 @@ class TestCheckSchwabTokenExpiry:
         from rocketstocks.core.auth.token_manager import TokenStatus
         sd = _make_stock_data()
         emitter = _make_emitter()
-        sd.schwab.get_token_info.return_value = self._make_token_info(TokenStatus.INVALID)
+        sd.schwab.get_token_info = AsyncMock(return_value=self._make_token_info(TokenStatus.INVALID))
         check_job = self._get_check_job(sd, emitter)
         assert check_job is not None
         await check_job()
@@ -228,7 +228,7 @@ class TestCheckSchwabTokenExpiry:
         from rocketstocks.core.auth.token_manager import TokenStatus
         sd = _make_stock_data()
         emitter = _make_emitter()
-        sd.schwab.get_token_info.return_value = self._make_token_info(TokenStatus.EXPIRING_SOON, hours=6)
+        sd.schwab.get_token_info = AsyncMock(return_value=self._make_token_info(TokenStatus.EXPIRING_SOON, hours=6))
         check_job = self._get_check_job(sd, emitter)
         assert check_job is not None
         await check_job()
@@ -244,7 +244,7 @@ class TestCheckSchwabTokenExpiry:
         from rocketstocks.core.auth.token_manager import TokenStatus
         sd = _make_stock_data()
         emitter = _make_emitter()
-        sd.schwab.get_token_info.return_value = self._make_token_info(TokenStatus.HEALTHY, hours=96)
+        sd.schwab.get_token_info = AsyncMock(return_value=self._make_token_info(TokenStatus.HEALTHY, hours=96))
         check_job = self._get_check_job(sd, emitter)
         assert check_job is not None
         await check_job()

@@ -127,7 +127,7 @@ def register_jobs(aio_sched: AsyncIOScheduler, stock_data: StockData, emitter: E
         _JOB = "Check Schwab token expiry"
         _SRC = "rocketstocks.core.scheduler.jobs"
         try:
-            info = stock_data.schwab.get_token_info()
+            info = await stock_data.schwab.get_token_info()
 
             if info.status == TokenStatus.HEALTHY:
                 return
