@@ -17,46 +17,48 @@ def _run(coro):
 class TestSchwab:
     def _make(self):
         """Build a Schwab instance with a fully mocked underlying client."""
+        from rocketstocks.data.clients.schwab import Schwab
         mock_inner_client = AsyncMock()
-        with patch('rocketstocks.data.clients.schwab.schwab') as mock_schwab_pkg, \
-             patch('rocketstocks.data.clients.schwab.secrets'):
-            mock_schwab_pkg.auth.client_from_token_file.return_value = mock_inner_client
-            from rocketstocks.data.clients.schwab import Schwab
-            obj = Schwab()
-        # Replace the client attr so we can configure returns
+        token_store = AsyncMock()
+        obj = Schwab(token_store=token_store)
         obj.client = mock_inner_client
         return obj
 
-    def test_uses_client_from_token_file_not_easy_client(self):
-        """Schwab.__init__ must use client_from_token_file to avoid browser prompts."""
+    def test_init_client_uses_client_from_access_functions(self):
+        """init_client must use client_from_access_functions (not token file)."""
         mock_inner_client = AsyncMock()
         with patch('rocketstocks.data.clients.schwab.schwab') as mock_schwab_pkg, \
              patch('rocketstocks.data.clients.schwab.secrets'):
-            mock_schwab_pkg.auth.client_from_token_file.return_value = mock_inner_client
+            mock_schwab_pkg.auth.client_from_access_functions.return_value = mock_inner_client
             from rocketstocks.data.clients.schwab import Schwab
-            Schwab()
-            mock_schwab_pkg.auth.client_from_token_file.assert_called_once()
+            token_store = AsyncMock()
+            token_store.load_token.return_value = {"creation_timestamp": 1234567890, "token": {}}
+            obj = Schwab(token_store=token_store)
+            asyncio.get_event_loop().run_until_complete(obj.init_client())
+            mock_schwab_pkg.auth.client_from_access_functions.assert_called_once()
             mock_schwab_pkg.auth.easy_client.assert_not_called()
 
-    def test_client_is_none_when_token_file_missing(self):
-        """Schwab must set client=None gracefully when token file is absent."""
-        with patch('rocketstocks.data.clients.schwab.schwab') as mock_schwab_pkg, \
-             patch('rocketstocks.data.clients.schwab.secrets'):
-            mock_schwab_pkg.auth.client_from_token_file.side_effect = FileNotFoundError
-            from rocketstocks.data.clients.schwab import Schwab
-            obj = Schwab()
+    def test_client_is_none_when_no_token_in_db(self):
+        """Schwab must set client=None gracefully when no token exists in DB."""
+        from rocketstocks.data.clients.schwab import Schwab
+        token_store = AsyncMock()
+        token_store.load_token.return_value = None
+        obj = Schwab(token_store=token_store)
+        asyncio.get_event_loop().run_until_complete(obj.init_client())
         assert obj.client is None
 
-    def test_reload_client_resets_invalid_flag(self):
+    @pytest.mark.asyncio
+    async def test_reload_client_resets_invalid_flag(self):
         """reload_client must clear _token_invalid and attempt to reload."""
-        mock_inner_client = AsyncMock()
         with patch('rocketstocks.data.clients.schwab.schwab') as mock_schwab_pkg, \
              patch('rocketstocks.data.clients.schwab.secrets'):
-            mock_schwab_pkg.auth.client_from_token_file.return_value = mock_inner_client
+            mock_schwab_pkg.auth.client_from_access_functions.return_value = AsyncMock()
             from rocketstocks.data.clients.schwab import Schwab
-            obj = Schwab()
+            token_store = AsyncMock()
+            token_store.load_token.return_value = {"creation_timestamp": 1234567890, "token": {}}
+            obj = Schwab(token_store=token_store)
             obj._token_invalid = True
-            obj.reload_client()
+            await obj.reload_client()
         assert obj._token_invalid is False
 
     def test_api_method_raises_when_client_is_none(self):
@@ -108,44 +110,33 @@ class TestSchwab:
         assert isinstance(result, pd.DataFrame)
         assert result.empty
 
-    def _make_with_token_path(self, token_path):
-        """Build a Schwab instance with a custom token path."""
-        mock_inner_client = AsyncMock()
-        with patch('rocketstocks.data.clients.schwab.schwab') as mock_schwab_pkg, \
-             patch('rocketstocks.data.clients.schwab.secrets'):
-            mock_schwab_pkg.auth.client_from_token_file.return_value = mock_inner_client
-            from rocketstocks.data.clients.schwab import Schwab
-            obj = Schwab(token_path=token_path)
-        obj.client = mock_inner_client
+    def _make_with_token_dict(self, token_dict):
+        """Build a Schwab instance backed by a token_store returning token_dict."""
+        from rocketstocks.data.clients.schwab import Schwab
+        token_store = AsyncMock()
+        token_store.load_token.return_value = token_dict
+        obj = Schwab(token_store=token_store)
         return obj
 
-    def test_get_token_expiry_returns_none_when_file_missing(self, tmp_path):
-        obj = self._make_with_token_path(str(tmp_path / "nonexistent.json"))
-        assert obj.get_token_expiry() is None
+    @pytest.mark.asyncio
+    async def test_get_token_expiry_returns_none_when_no_token(self):
+        obj = self._make_with_token_dict(None)
+        assert await obj.get_token_expiry() is None
 
-    def test_get_token_expiry_returns_correct_datetime(self, tmp_path):
-        import json
+    @pytest.mark.asyncio
+    async def test_get_token_expiry_returns_correct_datetime(self):
         from rocketstocks.core.auth.token_manager import REFRESH_TOKEN_LIFETIME
-        token_file = tmp_path / "schwab-token.json"
         creation_ts = 1800000000  # arbitrary Unix timestamp
-        token_file.write_text(json.dumps({"creation_timestamp": creation_ts, "token": {}}))
-        obj = self._make_with_token_path(str(token_file))
-        result = obj.get_token_expiry()
+        token_dict = {"creation_timestamp": creation_ts, "token": {}}
+        obj = self._make_with_token_dict(token_dict)
+        result = await obj.get_token_expiry()
         expected = datetime.datetime.fromtimestamp(creation_ts) + REFRESH_TOKEN_LIFETIME
         assert result == expected
 
-    def test_get_token_expiry_returns_none_on_malformed_json(self, tmp_path):
-        token_file = tmp_path / "schwab-token.json"
-        token_file.write_text("not valid json{{{")
-        obj = self._make_with_token_path(str(token_file))
-        assert obj.get_token_expiry() is None
-
-    def test_get_token_expiry_returns_none_when_creation_timestamp_missing(self, tmp_path):
-        import json
-        token_file = tmp_path / "schwab-token.json"
-        token_file.write_text(json.dumps({"token": {"expires_in": 1800}}))
-        obj = self._make_with_token_path(str(token_file))
-        assert obj.get_token_expiry() is None
+    @pytest.mark.asyncio
+    async def test_get_token_expiry_returns_none_when_creation_timestamp_missing(self):
+        obj = self._make_with_token_dict({"token": {"expires_in": 1800}})
+        assert await obj.get_token_expiry() is None
 
     def test_get_daily_price_history_resolves_end_datetime_in_method(self):
         """B3: end_datetime should be resolved to now() inside the method."""

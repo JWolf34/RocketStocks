@@ -12,6 +12,7 @@ class TestSetupHook:
         mock_bot = MagicMock()
         mock_bot.stock_data = MagicMock()
         mock_bot.stock_data.db.open = AsyncMock()
+        mock_bot.stock_data.init_schwab = AsyncMock()
         mock_bot.emitter = MagicMock()
 
         mock_sched = MagicMock()
@@ -34,6 +35,7 @@ class TestSetupHook:
         mock_bot = MagicMock()
         mock_bot.stock_data = MagicMock()
         mock_bot.stock_data.db.open = AsyncMock()
+        mock_bot.stock_data.init_schwab = AsyncMock()
         mock_bot.emitter = MagicMock()
 
         mock_sched = MagicMock()

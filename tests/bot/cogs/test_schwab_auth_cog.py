@@ -10,8 +10,8 @@ def _make_bot():
     bot = MagicMock(name="Bot")
     bot.stock_data = MagicMock(name="StockData")
     bot.stock_data.schwab = MagicMock(name="Schwab")
-    bot.stock_data.schwab.token_path = "data/schwab-token.json"
     bot.stock_data.schwab._token_invalid = False
+    bot.stock_data.schwab_token_store = AsyncMock(name="SchwabTokenRepository")
     return bot
 
 
@@ -49,8 +49,8 @@ class TestSchwabStatusCommand:
     @pytest.mark.asyncio
     async def test_healthy_token_shows_green(self):
         cog, bot = _make_cog()
-        bot.stock_data.schwab.get_token_info.return_value = _make_token_info(
-            TokenStatus.HEALTHY, hours_remaining=96
+        bot.stock_data.schwab.get_token_info = AsyncMock(
+            return_value=_make_token_info(TokenStatus.HEALTHY, hours_remaining=96)
         )
         interaction = _make_interaction()
         await cog.schwab_status.callback(cog, interaction)
@@ -63,8 +63,8 @@ class TestSchwabStatusCommand:
     @pytest.mark.asyncio
     async def test_expiring_soon_shows_hours_remaining(self):
         cog, bot = _make_cog()
-        bot.stock_data.schwab.get_token_info.return_value = _make_token_info(
-            TokenStatus.EXPIRING_SOON, hours_remaining=18
+        bot.stock_data.schwab.get_token_info = AsyncMock(
+            return_value=_make_token_info(TokenStatus.EXPIRING_SOON, hours_remaining=18)
         )
         interaction = _make_interaction()
         await cog.schwab_status.callback(cog, interaction)
@@ -75,7 +75,9 @@ class TestSchwabStatusCommand:
     @pytest.mark.asyncio
     async def test_expired_token_shows_reauth_prompt(self):
         cog, bot = _make_cog()
-        bot.stock_data.schwab.get_token_info.return_value = _make_token_info(TokenStatus.EXPIRED)
+        bot.stock_data.schwab.get_token_info = AsyncMock(
+            return_value=_make_token_info(TokenStatus.EXPIRED)
+        )
         interaction = _make_interaction()
         await cog.schwab_status.callback(cog, interaction)
         embed = interaction.response.send_message.call_args.kwargs["embed"]
@@ -84,7 +86,9 @@ class TestSchwabStatusCommand:
     @pytest.mark.asyncio
     async def test_invalid_token_shows_reauth_prompt(self):
         cog, bot = _make_cog()
-        bot.stock_data.schwab.get_token_info.return_value = _make_token_info(TokenStatus.INVALID)
+        bot.stock_data.schwab.get_token_info = AsyncMock(
+            return_value=_make_token_info(TokenStatus.INVALID)
+        )
         interaction = _make_interaction()
         await cog.schwab_status.callback(cog, interaction)
         embed = interaction.response.send_message.call_args.kwargs["embed"]
@@ -93,7 +97,9 @@ class TestSchwabStatusCommand:
     @pytest.mark.asyncio
     async def test_missing_token_shows_reauth_prompt(self):
         cog, bot = _make_cog()
-        bot.stock_data.schwab.get_token_info.return_value = _make_token_info(TokenStatus.MISSING)
+        bot.stock_data.schwab.get_token_info = AsyncMock(
+            return_value=_make_token_info(TokenStatus.MISSING)
+        )
         interaction = _make_interaction()
         await cog.schwab_status.callback(cog, interaction)
         embed = interaction.response.send_message.call_args.kwargs["embed"]
@@ -164,12 +170,13 @@ class TestSchwabCallbackModal:
         cog, bot = _make_cog()
         auth_context = MagicMock()
         new_client = MagicMock(name="NewSchwabClient")
+        token_dict = {"creation_timestamp": 1234567890, "token": {}}
         cog._active_auth = auth_context
 
         with patch("rocketstocks.bot.cogs.schwab_auth.secrets"), \
              patch("rocketstocks.bot.cogs.schwab_auth.asyncio") as mock_asyncio, \
              patch("rocketstocks.bot.cogs.schwab_auth.exchange_code_for_token"):
-            mock_asyncio.to_thread = AsyncMock(return_value=new_client)
+            mock_asyncio.to_thread = AsyncMock(return_value=(new_client, token_dict))
 
             from rocketstocks.bot.cogs.schwab_auth import SchwabCallbackModal
             modal = SchwabCallbackModal(cog, auth_context)
@@ -179,6 +186,8 @@ class TestSchwabCallbackModal:
             interaction = _make_interaction()
             await modal.on_submit(interaction)
 
+        # Token should be saved to DB
+        bot.stock_data.schwab_token_store.save_token.assert_awaited_once_with(token_dict)
         # Client should be updated and flow cleared
         assert bot.stock_data.schwab.client is new_client
         assert bot.stock_data.schwab._token_invalid is False
@@ -217,29 +226,27 @@ class TestSchwabCallbackModal:
 # ---------------------------------------------------------------------------
 
 class TestSchwabGetTokenInfo:
-    def test_returns_invalid_when_flag_set(self):
+    @pytest.mark.asyncio
+    async def test_returns_invalid_when_flag_set(self):
         from rocketstocks.data.clients.schwab import Schwab
-        with patch("rocketstocks.data.clients.schwab.schwab") as mock_s, \
-             patch("rocketstocks.data.clients.schwab.secrets"):
-            mock_s.auth.client_from_token_file.side_effect = FileNotFoundError
-            schwab_client = Schwab()
+        token_store = AsyncMock()
+        schwab_client = Schwab(token_store=token_store)
         schwab_client._token_invalid = True
-        info = schwab_client.get_token_info()
+        info = await schwab_client.get_token_info()
         assert info.status == TokenStatus.INVALID
 
-    def test_delegates_to_token_manager_when_valid(self, tmp_path):
-        import json, datetime
+    @pytest.mark.asyncio
+    async def test_delegates_to_token_manager_when_valid(self):
+        import datetime
         from rocketstocks.core.auth.token_manager import REFRESH_TOKEN_LIFETIME
         from rocketstocks.data.clients.schwab import Schwab
-        token_file = tmp_path / "token.json"
         # creation 2 days ago → refresh token expires in 5 days (HEALTHY)
         creation = datetime.datetime.now() - datetime.timedelta(days=2)
-        token_file.write_text(json.dumps({"creation_timestamp": creation.timestamp(), "token": {}}))
+        token_dict = {"creation_timestamp": creation.timestamp(), "token": {}}
 
-        with patch("rocketstocks.data.clients.schwab.schwab") as mock_s, \
-             patch("rocketstocks.data.clients.schwab.secrets"):
-            mock_s.auth.client_from_token_file.side_effect = FileNotFoundError
-            schwab_client = Schwab(token_path=str(token_file))
+        token_store = AsyncMock()
+        token_store.load_token.return_value = token_dict
+        schwab_client = Schwab(token_store=token_store)
         schwab_client._token_invalid = False
-        info = schwab_client.get_token_info()
+        info = await schwab_client.get_token_info()
         assert info.status == TokenStatus.HEALTHY
