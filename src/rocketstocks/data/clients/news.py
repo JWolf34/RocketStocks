@@ -3,14 +3,14 @@ import datetime
 
 from newsapi import NewsApiClient
 
-from rocketstocks.core.config.secrets import secrets
+from rocketstocks.core.config.settings import settings
 
 logger = logging.getLogger(__name__)
 
 
 class News:
     def __init__(self):
-        self.token = secrets.news_api_token
+        self.token = settings.news_api_key
         self.news = NewsApiClient(api_key=self.token)
         # B15 fix: 'eeneral' → 'general'
         self.categories = {

@@ -7,7 +7,7 @@ from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from rocketstocks.data.stockdata import StockData
 from rocketstocks.data.channel_config import REPORTS, ALERTS, SCREENERS, CHARTS, NOTIFICATIONS
 from rocketstocks.data.schema import create_tables
-from rocketstocks.core.config.secrets import secrets
+from rocketstocks.core.config.settings import settings
 from rocketstocks.core.config.paths import validate_path, datapaths
 from rocketstocks.core.notifications import EventEmitter, NotificationConfig
 from rocketstocks.core.scheduler.jobs import register_jobs
@@ -140,4 +140,4 @@ def run_bot(stock_data: StockData, emitter: EventEmitter, notification_config: N
     bot.stock_data = stock_data
     bot.emitter = emitter
     bot.notification_config = notification_config
-    bot.run(secrets.discord_token)
+    bot.run(settings.discord_token)

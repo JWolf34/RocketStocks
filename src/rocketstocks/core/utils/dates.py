@@ -1,7 +1,7 @@
 import datetime
 import logging
 from zoneinfo import ZoneInfo
-from rocketstocks.core.config.environment import get_env
+from rocketstocks.core.config.settings import settings
 
 logger = logging.getLogger(__name__)
 
@@ -101,5 +101,4 @@ class date_utils:
 
     @staticmethod
     def timezone():
-        tz = get_env("TZ")
-        return ZoneInfo(tz if tz else "America/Chicago")
+        return ZoneInfo(settings.tz)

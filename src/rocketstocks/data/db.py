@@ -4,19 +4,18 @@ from contextlib import asynccontextmanager
 
 from psycopg_pool import AsyncConnectionPool
 
-from rocketstocks.core.config.secrets import secrets
+from rocketstocks.core.config.settings import settings
 
 logger = logging.getLogger(__name__)
 
 
 def _build_conninfo() -> str:
-    port = secrets.db_port or 5432
     return (
-        f"host={secrets.db_host} "
-        f"dbname={secrets.db_name} "
-        f"user={secrets.db_user} "
-        f"password={secrets.db_password} "
-        f"port={port}"
+        f"host={settings.postgres_host} "
+        f"dbname={settings.postgres_db} "
+        f"user={settings.postgres_user} "
+        f"password={settings.postgres_password} "
+        f"port={settings.postgres_port}"
     )
 
 

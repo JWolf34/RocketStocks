@@ -4,7 +4,7 @@ import logging
 import pandas as pd
 from tiingo import TiingoClient
 
-from rocketstocks.core.config.secrets import secrets
+from rocketstocks.core.config.settings import settings
 
 logger = logging.getLogger(__name__)
 
@@ -20,7 +20,7 @@ _ASSET_TYPE_MAP = {
 
 class Tiingo:
     def __init__(self, api_key=None):
-        key = api_key or secrets.tiingo_api_key
+        key = api_key or settings.tiingo_api_key
         self._client = TiingoClient({'api_key': key, 'session': True})
 
     def list_all_tickers(self) -> pd.DataFrame:

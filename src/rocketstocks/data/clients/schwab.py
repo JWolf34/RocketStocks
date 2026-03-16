@@ -5,7 +5,7 @@ import httpx
 import schwab
 from authlib.integrations.base_client.errors import OAuthError
 
-from rocketstocks.core.config.secrets import secrets
+from rocketstocks.core.config.settings import settings
 from rocketstocks.core.auth.token_manager import get_token_info, TokenInfo, TokenStatus
 
 logger = logging.getLogger(__name__)
@@ -39,8 +39,8 @@ class Schwab:
             return
         try:
             self.client = schwab.auth.client_from_access_functions(
-                api_key=secrets.schwab_api_key,
-                app_secret=secrets.schwab_api_secret,
+                api_key=settings.schwab_api_key,
+                app_secret=settings.schwab_api_secret,
                 token_read_func=lambda: token_dict,
                 token_write_func=self._token_store.schedule_save,
                 asyncio=True,

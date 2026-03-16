@@ -1,7 +1,8 @@
 import logging
-import os
 from dataclasses import dataclass
 from enum import Enum
+
+from rocketstocks.core.config.settings import settings
 
 logger = logging.getLogger(__name__)
 
@@ -34,7 +35,7 @@ class NotificationConfig:
 
     @classmethod
     def from_env(cls) -> "NotificationConfig":
-        raw = os.getenv("NOTIFICATION_FILTER", "all").lower().strip()
+        raw = settings.notification_filter.lower().strip()
         filter_map = {
             "all": NotificationFilter.ALL,
             "failures_only": NotificationFilter.FAILURES_ONLY,

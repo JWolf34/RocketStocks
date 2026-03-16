@@ -22,7 +22,7 @@ from discord import app_commands
 from discord.ext import commands
 
 from rocketstocks.core.auth.token_manager import TokenStatus
-from rocketstocks.core.config.secrets import secrets
+from rocketstocks.core.config.settings import settings
 from rocketstocks.data.auth.token_exchange import exchange_code_for_token
 
 logger = logging.getLogger(__name__)
@@ -79,8 +79,8 @@ class SchwabCallbackModal(discord.ui.Modal, title="Paste Schwab Redirect URL"):
         try:
             new_client, token_dict = await asyncio.to_thread(
                 exchange_code_for_token,
-                secrets.schwab_api_key,
-                secrets.schwab_api_secret,
+                settings.schwab_api_key,
+                settings.schwab_api_secret,
                 self._auth_context,
                 received_url,
                 True,  # asyncio=True
@@ -215,7 +215,7 @@ class SchwabAuth(commands.Cog):
 
         try:
             auth_context = schwab_pkg.auth.get_auth_context(
-                api_key=secrets.schwab_api_key,
+                api_key=settings.schwab_api_key,
                 callback_url=_CALLBACK_URL,
             )
         except Exception as exc:
