@@ -1,16 +1,16 @@
+import asyncio
 import discord
 from discord import app_commands
 from discord.ext import commands
 from src.rocketstocks.data.stockdata import StockData
 from rocketstocks.data.channel_config import REPORTS
+from rocketstocks.data.clients.schwab import SchwabTokenError
 from rocketstocks.core.config.paths import datapaths
 from rocketstocks.core.utils.formatting import ticker_string
 from rocketstocks.core.utils.dates import date_utils
 import logging
 import json
-from table2ascii import table2ascii, Alignment, PresetStyle
-import zipfile
-import os
+from table2ascii import table2ascii, PresetStyle
 
 logger = logging.getLogger(__name__)
 
@@ -134,6 +134,7 @@ class Data(commands.Cog):
 
         for ticker in tickers:
             eps = await self.stock_data.earnings.get_historical_earnings(ticker)
+            file = None
             if not eps.empty:
                 filepath = f"{datapaths.attachments_path}/{ticker}_eps.csv"
                 eps.to_csv(filepath, index=False)
@@ -151,13 +152,13 @@ class Data(commands.Cog):
             else:
                 message = f"Could not retrieve EPS data for ticker `{ticker}`"
             if visibility.value == "private":
-                message = await interaction.user.send(message, files=[file])
+                message = await interaction.user.send(message, files=[file] if file else [])
             else:
                 channel = self.bot.get_channel_for_guild(interaction.guild_id, REPORTS)
                 if channel is None:
                     await interaction.followup.send("Use `/server setup` to configure the reports channel.", ephemeral=True)
                     return
-                message = await channel.send(message, files=[file])
+                message = await channel.send(message, files=[file] if file else [])
 
         if tickers:
             message = f"Fetched EPS data for tickers [{ticker_string(tickers)}]({message.jump_url})."
@@ -213,7 +214,8 @@ class Data(commands.Cog):
         logger.info(f"Fundamentals requested for tickers {tickers}")
 
         for ticker in tickers:
-            fundamentals = await self.stock_data.schwab.get_fundamentals(tickers=tickers)
+            file = None
+            fundamentals = await self.stock_data.schwab.get_fundamentals(tickers=[ticker])
 
             if fundamentals:
                 filepath = f"{datapaths.attachments_path}/{ticker}_fundamentals.json"
@@ -245,6 +247,7 @@ class Data(commands.Cog):
         logger.info(f"Options chain(s) requested for tickers {tickers}")
 
         for ticker in tickers:
+            file = None
             options = await self.stock_data.schwab.get_options_chain(ticker)
 
             if options:
@@ -276,6 +279,7 @@ class Data(commands.Cog):
         logger.info(f"Historical popularity requested for tickers {tickers}")
 
         for ticker in tickers:
+            file = None
             data = await self.stock_data.popularity.fetch_popularity(ticker=ticker)
             if not data.empty:
                 message = f"Popularity for `{ticker}`"
