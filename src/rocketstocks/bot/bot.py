@@ -58,6 +58,8 @@ class RocketStocksBot(commands.Bot):
         """Open the DB pool, start APScheduler (called once before connecting)."""
         await self.stock_data.db.open()
         logger.info("Database connection pool opened")
+        await self.stock_data.init_schwab()
+        logger.info("Schwab client initialized")
         self.aio_sched = AsyncIOScheduler()
         register_jobs(self.aio_sched, self.stock_data, self.emitter)
         self.aio_sched.start()
