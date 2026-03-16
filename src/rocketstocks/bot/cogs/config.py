@@ -1,16 +1,48 @@
 """Config cog — per-guild channel setup and status commands."""
 import logging
-import re
+import os
 import discord
 from discord import app_commands
 from discord.ext import commands
 
+from rocketstocks.core.config.settings import settings
+from rocketstocks.core.utils.dates import configure_tz
+from rocketstocks.core.notifications.config import NotificationFilter
 from rocketstocks.data.channel_config import (
     REPORTS, ALERTS, SCREENERS, CHARTS, NOTIFICATIONS, ALL_CONFIG_TYPES,
 )
 from rocketstocks.bot.views.subscription_views import ALERT_ROLE_DEFS, SubscriptionEntryView
 
 logger = logging.getLogger(__name__)
+
+_CHANNEL_TYPES = [
+    (REPORTS, "Reports Channel"),
+    (ALERTS, "Alerts Channel"),
+    (SCREENERS, "Screeners Channel"),
+    (CHARTS, "Charts Channel"),
+    (NOTIFICATIONS, "Notifications Channel"),
+]
+
+_TIMEZONES = [
+    "America/New_York", "America/Chicago", "America/Denver", "America/Los_Angeles",
+    "America/Phoenix", "America/Anchorage", "Pacific/Honolulu", "America/Toronto",
+    "America/Vancouver", "Europe/London", "Europe/Paris", "Europe/Berlin",
+    "Europe/Amsterdam", "Europe/Rome", "Europe/Stockholm", "Asia/Tokyo",
+    "Asia/Shanghai", "Asia/Hong_Kong", "Asia/Kolkata", "Asia/Dubai",
+    "Asia/Singapore", "Australia/Sydney", "Australia/Melbourne", "UTC",
+]
+
+_NOTIFICATION_FILTER_OPTIONS = [
+    ("All Events", "all"),
+    ("Failures Only", "failures_only"),
+    ("Off", "off"),
+]
+
+_FILTER_MAP = {
+    "all": NotificationFilter.ALL,
+    "failures_only": NotificationFilter.FAILURES_ONLY,
+    "off": NotificationFilter.OFF,
+}
 
 # Colour assigned to each alert role (matches alert embed colours roughly)
 _ROLE_COLOURS: dict[str, discord.Colour] = {
@@ -81,120 +113,175 @@ async def setup_alert_subscriptions(bot: commands.Bot, guild: discord.Guild) -> 
 _PRIORITY_CHANNEL_NAMES = ["bot-commands", "bot", "general", "welcome"]
 
 
-def _parse_channel(value: str, guild: discord.Guild) -> discord.TextChannel | None:
-    """Resolve a user-supplied string to a TextChannel in *guild*.
-
-    Accepts:
-    - ``<#CHANNEL_ID>`` mention format
-    - Raw numeric channel ID
-    - Channel name (with or without a leading ``#``)
-    """
-    value = value.strip()
-    if not value:
-        return None
-    # <#CHANNEL_ID> mention format
-    m = re.match(r"^<#(\d+)>$", value)
-    if m:
-        ch = guild.get_channel(int(m.group(1)))
-        return ch if isinstance(ch, discord.TextChannel) else None
-    # Raw numeric ID
-    if value.isdigit():
-        ch = guild.get_channel(int(value))
-        return ch if isinstance(ch, discord.TextChannel) else None
-    # Channel name (strip leading #)
-    name = value.lstrip("#")
-    return discord.utils.get(guild.text_channels, name=name)
-
-
-class SetupModal(discord.ui.Modal, title="Configure RocketStocks Channels"):
-    """Modal form for configuring the five channel types."""
-
-    reports = discord.ui.TextInput(
-        label="Reports Channel",
-        placeholder="<#ID>, channel ID, or name",
-        required=False,
-        max_length=100,
-    )
-    alerts = discord.ui.TextInput(
-        label="Alerts Channel",
-        placeholder="<#ID>, channel ID, or name",
-        required=False,
-        max_length=100,
-    )
-    screeners = discord.ui.TextInput(
-        label="Screeners Channel",
-        placeholder="<#ID>, channel ID, or name",
-        required=False,
-        max_length=100,
-    )
-    charts = discord.ui.TextInput(
-        label="Charts Channel",
-        placeholder="<#ID>, channel ID, or name",
-        required=False,
-        max_length=100,
-    )
-    notifications = discord.ui.TextInput(
-        label="Notifications Channel",
-        placeholder="<#ID>, channel ID, or name",
-        required=False,
-        max_length=100,
+def _build_channel_embed(current: dict) -> discord.Embed:
+    """Build an embed showing the current channel configuration."""
+    lines = []
+    for config_type, _ in _CHANNEL_TYPES:
+        channel_id = current.get(config_type)
+        if channel_id:
+            lines.append(f"**{config_type}**: <#{channel_id}>")
+        else:
+            lines.append(f"**{config_type}**: Not set")
+    return discord.Embed(
+        title="Channel Configuration",
+        description="\n".join(lines),
+        color=discord.Color.blurple(),
     )
 
-    def __init__(self, cog: "Config"):
-        super().__init__()
-        self._cog = cog
 
-    async def on_submit(self, interaction: discord.Interaction):
-        await interaction.response.defer(ephemeral=True)
-        guild = interaction.guild
-        raw = {
-            REPORTS: self.reports.value,
-            ALERTS: self.alerts.value,
-            SCREENERS: self.screeners.value,
-            CHARTS: self.charts.value,
-            NOTIFICATIONS: self.notifications.value,
-        }
-        resolved = {k: _parse_channel(v, guild) for k, v in raw.items()}
-        resolved = {k: ch for k, ch in resolved.items() if ch is not None}
-        if not resolved:
-            await interaction.followup.send(
-                "No valid channels were provided. Use a channel mention, numeric ID, or channel name.",
-                ephemeral=True,
+def _build_settings_embed(current_tz: str, current_filter: str) -> discord.Embed:
+    """Build an embed showing the current bot settings."""
+    lines = []
+    if "TZ" in os.environ:
+        lines.append(f"**Timezone**: {current_tz} *[ENV override]*")
+    else:
+        lines.append(f"**Timezone**: {current_tz}")
+    if "NOTIFICATION_FILTER" in os.environ:
+        lines.append(f"**Notification Filter**: {current_filter} *[ENV override]*")
+    else:
+        lines.append(f"**Notification Filter**: {current_filter}")
+    return discord.Embed(
+        title="Bot Settings",
+        description="\n".join(lines),
+        color=discord.Color.blurple(),
+    )
+
+
+class _ChannelTypeSelect(discord.ui.ChannelSelect):
+    """A ChannelSelect that auto-saves the selection for one channel type."""
+
+    def __init__(self, config_type: str, placeholder: str, default_values: list, row: int):
+        super().__init__(
+            placeholder=placeholder,
+            channel_types=[discord.ChannelType.text],
+            min_values=0,
+            max_values=1,
+            default_values=default_values,
+            row=row,
+        )
+        self.config_type = config_type
+
+    async def callback(self, interaction: discord.Interaction):
+        view: ChannelSetupView = self.view
+        if self.values:
+            channel_id = int(self.values[0].id)
+            await view._bot.stock_data.channel_config.upsert_channel(
+                interaction.guild_id, self.config_type, channel_id
             )
-            return
-        repo = self._cog.bot.stock_data.channel_config
-        lines = []
-        for config_type, channel in resolved.items():
-            await repo.upsert_channel(interaction.guild_id, config_type, channel.id)
-            lines.append(f"**{config_type}**: {channel.mention}")
-            logger.info(f"/server setup modal: guild={interaction.guild_id} {config_type}={channel.id}")
-        embed = discord.Embed(
-            title="Channel Configuration Updated",
-            description="\n".join(lines),
-            color=discord.Color.green(),
-        )
-        await interaction.followup.send(embed=embed, ephemeral=True)
-
-        await setup_alert_subscriptions(self._cog.bot, guild)
-
-    async def on_error(self, interaction: discord.Interaction, error: Exception):
-        logger.error(f"SetupModal error: {error}")
-        await interaction.followup.send(
-            "An unexpected error occurred during setup. Please try `/server setup` again.",
-            ephemeral=True,
-        )
+            view._current[self.config_type] = channel_id
+            logger.info(f"Channel setup: guild={interaction.guild_id} {self.config_type}={channel_id}")
+        embed = _build_channel_embed(view._current)
+        await interaction.response.edit_message(embed=embed)
 
 
-class SetupView(discord.ui.View):
-    """Persistent view attached to the setup prompt embed."""
+class ChannelSetupView(discord.ui.View):
+    """Five ChannelSelect rows, one per channel type. Each auto-saves on selection."""
 
-    def __init__(self, cog: "Config"):
+    def __init__(self, bot: commands.Bot, guild_id: int, current_config: dict):
         super().__init__(timeout=None)
-        self._cog = cog
+        self._bot = bot
+        self._guild_id = guild_id
+        self._current = dict(current_config)
 
-    @discord.ui.button(label="Configure Channels", style=discord.ButtonStyle.primary)
-    async def configure_channels(self, interaction: discord.Interaction, button: discord.ui.Button):
-        await interaction.response.send_modal(SetupModal(self._cog))
+        for i, (config_type, placeholder) in enumerate(_CHANNEL_TYPES):
+            channel_id = current_config.get(config_type)
+            default_vals = []
+            if channel_id:
+                default_vals = [discord.SelectDefaultValue(
+                    id=channel_id,
+                    type=discord.SelectDefaultValueType.channel,
+                )]
+            self.add_item(_ChannelTypeSelect(
+                config_type=config_type,
+                placeholder=placeholder,
+                default_values=default_vals,
+                row=i,
+            ))
+
+
+class BotSettingsView(discord.ui.View):
+    """Timezone and notification filter selects with a Save Settings button."""
+
+    def __init__(self, bot: commands.Bot, guild_id: int, current_tz: str, current_filter: str):
+        super().__init__(timeout=None)
+        self._bot = bot
+        self._guild_id = guild_id
+        self._tz = current_tz
+        self._filter = current_filter
+
+        tz_disabled = "TZ" in os.environ
+        tz_placeholder = "Timezone" + (" [ENV override — read only]" if tz_disabled else "")
+        tz_options = [
+            discord.SelectOption(label=tz, value=tz, default=(tz == current_tz))
+            for tz in _TIMEZONES
+        ]
+        self._tz_select = discord.ui.Select(
+            placeholder=tz_placeholder,
+            options=tz_options,
+            disabled=tz_disabled,
+            row=0,
+        )
+        self._tz_select.callback = self._on_tz_select
+        self.add_item(self._tz_select)
+
+        filter_disabled = "NOTIFICATION_FILTER" in os.environ
+        filter_placeholder = "Notification Filter" + (" [ENV override — read only]" if filter_disabled else "")
+        filter_options = [
+            discord.SelectOption(label=label, value=value, default=(value == current_filter))
+            for label, value in _NOTIFICATION_FILTER_OPTIONS
+        ]
+        self._filter_select = discord.ui.Select(
+            placeholder=filter_placeholder,
+            options=filter_options,
+            disabled=filter_disabled,
+            row=1,
+        )
+        self._filter_select.callback = self._on_filter_select
+        self.add_item(self._filter_select)
+
+        save_button = discord.ui.Button(
+            label="Save Settings",
+            style=discord.ButtonStyle.primary,
+            row=2,
+        )
+        save_button.callback = self._on_save
+        self.add_item(save_button)
+
+    async def _on_tz_select(self, interaction: discord.Interaction):
+        if self._tz_select.values:
+            self._tz = self._tz_select.values[0]
+        await interaction.response.defer()
+
+    async def _on_filter_select(self, interaction: discord.Interaction):
+        if self._filter_select.values:
+            self._filter = self._filter_select.values[0]
+        await interaction.response.defer()
+
+    async def _on_save(self, interaction: discord.Interaction):
+        settings_repo = self._bot.stock_data.bot_settings
+
+        if "TZ" not in os.environ:
+            await settings_repo.set("tz", self._tz)
+            configure_tz(self._tz)
+            logger.info(f"Bot settings: tz={self._tz} saved for guild={interaction.guild_id}")
+
+        if "NOTIFICATION_FILTER" not in os.environ:
+            await settings_repo.set("notification_filter", self._filter)
+            if self._filter in _FILTER_MAP:
+                self._bot.notification_config.filter = _FILTER_MAP[self._filter]
+            logger.info(f"Bot settings: notification_filter={self._filter} saved for guild={interaction.guild_id}")
+
+        embed = _build_settings_embed(self._tz, self._filter)
+        embed.color = discord.Color.green()
+        embed.set_footer(text="Settings saved!")
+        await interaction.response.edit_message(embed=embed)
+
+        # Trigger subscriptions if all channels are now configured
+        guild = interaction.guild
+        if guild:
+            config = await self._bot.stock_data.channel_config.get_all_for_guild(guild.id)
+            if all(ct in config for ct in ALL_CONFIG_TYPES):
+                await setup_alert_subscriptions(self._bot, guild)
 
 
 class Config(commands.Cog):
@@ -250,20 +337,30 @@ class Config(commands.Cog):
             return None
 
     async def _send_setup_prompt(self, target, guild: discord.Guild):
-        """Send an orange setup-instructions embed with a Configure Channels button."""
-        embed = discord.Embed(
-            title="RocketStocks Setup Required",
-            description=(
-                f"Thanks for adding RocketStocks to **{guild.name}**!\n\n"
-                "Click **Configure Channels** below to set up which channels receive "
-                "reports, alerts, screeners, charts, and notifications.\n\n"
-                "You can also run `/server setup` at any time to update the configuration."
-            ),
-            color=discord.Color.orange(),
+        """Send channel setup and bot settings embeds with Select UI to the target channel."""
+        guild_id = guild.id
+        current_config = await self.bot.stock_data.channel_config.get_all_for_guild(guild_id)
+        db_tz = await self.bot.stock_data.bot_settings.get("tz")
+        current_tz = db_tz or settings.tz
+        db_filter = await self.bot.stock_data.bot_settings.get("notification_filter")
+        current_filter = db_filter or settings.notification_filter
+
+        channels_embed = _build_channel_embed(current_config)
+        channels_embed.description = (
+            f"Thanks for adding RocketStocks to **{guild.name}**!\n\n"
+            "Select channels below to configure where each type of content is posted.\n\n"
+            + (channels_embed.description or "")
         )
-        view = SetupView(self)
         try:
-            await target.send(embed=embed, view=view)
+            await target.send(
+                embed=channels_embed,
+                view=ChannelSetupView(self.bot, guild_id, current_config),
+            )
+            settings_embed = _build_settings_embed(current_tz, current_filter)
+            await target.send(
+                embed=settings_embed,
+                view=BotSettingsView(self.bot, guild_id, current_tz, current_filter),
+            )
         except Exception as exc:
             logger.warning(f"Could not send setup prompt to {target}: {exc}")
 
@@ -279,12 +376,39 @@ class Config(commands.Cog):
 
     @server_group.command(name="setup", description="Configure RocketStocks channels for this server")
     async def server_setup(self, interaction: discord.Interaction):
-        """Open the channel configuration modal."""
-        await interaction.response.send_modal(SetupModal(self))
+        """Send channel setup and bot settings views as ephemeral messages."""
+        guild_id = interaction.guild_id
+        current_config = await self.bot.stock_data.channel_config.get_all_for_guild(guild_id)
+
+        if "TZ" in os.environ:
+            current_tz = os.environ["TZ"]
+        else:
+            db_tz = await self.bot.stock_data.bot_settings.get("tz")
+            current_tz = db_tz or settings.tz
+
+        if "NOTIFICATION_FILTER" in os.environ:
+            current_filter = os.environ["NOTIFICATION_FILTER"].lower()
+        else:
+            db_filter = await self.bot.stock_data.bot_settings.get("notification_filter")
+            current_filter = db_filter or settings.notification_filter
+
+        channels_embed = _build_channel_embed(current_config)
+        await interaction.response.send_message(
+            embed=channels_embed,
+            view=ChannelSetupView(self.bot, guild_id, current_config),
+            ephemeral=True,
+        )
+
+        settings_embed = _build_settings_embed(current_tz, current_filter)
+        await interaction.followup.send(
+            embed=settings_embed,
+            view=BotSettingsView(self.bot, guild_id, current_tz, current_filter),
+            ephemeral=True,
+        )
 
     @server_group.command(name="status", description="Show current channel and subscription role configuration")
     async def server_status(self, interaction: discord.Interaction):
-        """Display all 5 channel types and all 9 alert subscription roles."""
+        """Display channel config, alert roles, and bot settings."""
         repo = self.bot.stock_data.channel_config
         configured = await repo.get_all_for_guild(interaction.guild_id)
 
@@ -315,6 +439,22 @@ class Config(commands.Cog):
                 role_lines.append(f"❌ {label}: Not configured")
                 roles_all_set = False
 
+        # Bot settings section
+        settings_lines = []
+        if "TZ" in os.environ:
+            settings_lines.append(f"**Timezone**: {os.environ['TZ']} *[ENV override]*")
+        else:
+            db_tz = await self.bot.stock_data.bot_settings.get("tz")
+            tz_val = db_tz or settings.tz
+            settings_lines.append(f"**Timezone**: {tz_val}")
+
+        if "NOTIFICATION_FILTER" in os.environ:
+            settings_lines.append(f"**Notification Filter**: {os.environ['NOTIFICATION_FILTER']} *[ENV override]*")
+        else:
+            db_filter = await self.bot.stock_data.bot_settings.get("notification_filter")
+            filter_val = db_filter or settings.notification_filter
+            settings_lines.append(f"**Notification Filter**: {filter_val}")
+
         all_set = channels_all_set and roles_all_set
         color = discord.Color.green() if all_set else discord.Color.orange()
 
@@ -323,6 +463,8 @@ class Config(commands.Cog):
             + "\n".join(channel_lines)
             + "\n\n**Alert Subscription Roles**\n"
             + "\n".join(role_lines)
+            + "\n\n**Bot Settings**\n"
+            + "\n".join(settings_lines)
         )
 
         embed = discord.Embed(
