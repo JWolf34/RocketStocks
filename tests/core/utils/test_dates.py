@@ -80,15 +80,17 @@ class TestSecondsUntilMinuteInterval:
 class TestTimezone:
     def test_returns_zoneinfo(self):
         from zoneinfo import ZoneInfo
-        with patch("rocketstocks.core.utils.dates.get_env", return_value="America/Chicago"):
+        with patch("rocketstocks.core.utils.dates.settings") as mock_settings:
+            mock_settings.tz = "America/Chicago"
             tz = date_utils.timezone()
         assert isinstance(tz, ZoneInfo)
 
-    def test_defaults_to_chicago_on_none(self):
+    def test_uses_configured_tz(self):
         from zoneinfo import ZoneInfo
-        with patch("rocketstocks.core.utils.dates.get_env", return_value=None):
+        with patch("rocketstocks.core.utils.dates.settings") as mock_settings:
+            mock_settings.tz = "America/New_York"
             tz = date_utils.timezone()
-        assert tz == ZoneInfo("America/Chicago")
+        assert tz == ZoneInfo("America/New_York")
 
 
 class TestFormatDurationSince:

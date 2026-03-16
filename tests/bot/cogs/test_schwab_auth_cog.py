@@ -18,7 +18,7 @@ def _make_bot():
 def _make_cog(bot=None):
     if bot is None:
         bot = _make_bot()
-    with patch("rocketstocks.bot.cogs.schwab_auth.secrets"):
+    with patch("rocketstocks.bot.cogs.schwab_auth.settings"):
         from rocketstocks.bot.cogs.schwab_auth import SchwabAuth
         cog = SchwabAuth(bot=bot)
     return cog, bot
@@ -173,7 +173,7 @@ class TestSchwabCallbackModal:
         token_dict = {"creation_timestamp": 1234567890, "token": {}}
         cog._active_auth = auth_context
 
-        with patch("rocketstocks.bot.cogs.schwab_auth.secrets"), \
+        with patch("rocketstocks.bot.cogs.schwab_auth.settings"), \
              patch("rocketstocks.bot.cogs.schwab_auth.asyncio") as mock_asyncio, \
              patch("rocketstocks.bot.cogs.schwab_auth.exchange_code_for_token"):
             mock_asyncio.to_thread = AsyncMock(return_value=(new_client, token_dict))
@@ -202,7 +202,7 @@ class TestSchwabCallbackModal:
         auth_context = MagicMock()
         cog._active_auth = auth_context
 
-        with patch("rocketstocks.bot.cogs.schwab_auth.secrets"), \
+        with patch("rocketstocks.bot.cogs.schwab_auth.settings"), \
              patch("rocketstocks.bot.cogs.schwab_auth.asyncio") as mock_asyncio, \
              patch("rocketstocks.bot.cogs.schwab_auth.exchange_code_for_token"):
             mock_asyncio.to_thread = AsyncMock(side_effect=ValueError("invalid code"))

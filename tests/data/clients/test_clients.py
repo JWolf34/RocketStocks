@@ -28,7 +28,7 @@ class TestSchwab:
         """init_client must use client_from_access_functions (not token file)."""
         mock_inner_client = AsyncMock()
         with patch('rocketstocks.data.clients.schwab.schwab') as mock_schwab_pkg, \
-             patch('rocketstocks.data.clients.schwab.secrets'):
+             patch('rocketstocks.data.clients.schwab.settings'):
             mock_schwab_pkg.auth.client_from_access_functions.return_value = mock_inner_client
             from rocketstocks.data.clients.schwab import Schwab
             token_store = AsyncMock()
@@ -51,7 +51,7 @@ class TestSchwab:
     async def test_reload_client_resets_invalid_flag(self):
         """reload_client must clear _token_invalid and attempt to reload."""
         with patch('rocketstocks.data.clients.schwab.schwab') as mock_schwab_pkg, \
-             patch('rocketstocks.data.clients.schwab.secrets'):
+             patch('rocketstocks.data.clients.schwab.settings'):
             mock_schwab_pkg.auth.client_from_access_functions.return_value = AsyncMock()
             from rocketstocks.data.clients.schwab import Schwab
             token_store = AsyncMock()
@@ -64,7 +64,7 @@ class TestSchwab:
     def test_api_method_raises_when_client_is_none(self):
         """All API methods should raise SchwabTokenError when client is None."""
         with patch('rocketstocks.data.clients.schwab.schwab') as mock_schwab_pkg, \
-             patch('rocketstocks.data.clients.schwab.secrets'):
+             patch('rocketstocks.data.clients.schwab.settings'):
             mock_schwab_pkg.auth.client_from_token_file.side_effect = FileNotFoundError
             from rocketstocks.data.clients.schwab import Schwab, SchwabTokenError
             obj = Schwab()
@@ -278,7 +278,7 @@ class TestNews:
     def test_general_category_is_correct(self):
         """B15: 'eeneral' should be 'general'."""
         with patch('rocketstocks.data.clients.news.NewsApiClient'), \
-             patch('rocketstocks.data.clients.news.secrets'):
+             patch('rocketstocks.data.clients.news.settings'):
             from rocketstocks.data.clients.news import News
             news = News()
             assert news.categories['General'] == 'general'
@@ -368,7 +368,7 @@ class TestTiingoClient:
     def _make(self):
         mock_client_instance = MagicMock()
         with patch('rocketstocks.data.clients.tiingo.TiingoClient') as mock_cls, \
-             patch('rocketstocks.data.clients.tiingo.secrets'):
+             patch('rocketstocks.data.clients.tiingo.settings'):
             mock_cls.return_value = mock_client_instance
             from rocketstocks.data.clients.tiingo import Tiingo
             obj = Tiingo(api_key='test-key')

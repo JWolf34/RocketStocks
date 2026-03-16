@@ -1,5 +1,6 @@
 """Tests for rocketstocks.core.notifications.config."""
 import pytest
+from unittest.mock import patch
 from rocketstocks.core.notifications.config import (
     NotificationConfig,
     NotificationFilter,
@@ -65,34 +66,33 @@ class TestNotificationConfigShouldNotify:
 
 
 class TestNotificationConfigFromEnv:
-    def test_from_env_defaults_to_all(self, monkeypatch):
-        monkeypatch.delenv("NOTIFICATION_FILTER", raising=False)
-        cfg = NotificationConfig.from_env()
+    def _from_env_with(self, value):
+        with patch("rocketstocks.core.notifications.config.settings") as mock_settings:
+            mock_settings.notification_filter = value
+            return NotificationConfig.from_env()
+
+    def test_from_env_defaults_to_all(self):
+        cfg = self._from_env_with("all")
         assert cfg.filter == NotificationFilter.ALL
 
-    def test_from_env_reads_all(self, monkeypatch):
-        monkeypatch.setenv("NOTIFICATION_FILTER", "all")
-        cfg = NotificationConfig.from_env()
+    def test_from_env_reads_all(self):
+        cfg = self._from_env_with("all")
         assert cfg.filter == NotificationFilter.ALL
 
-    def test_from_env_reads_failures_only(self, monkeypatch):
-        monkeypatch.setenv("NOTIFICATION_FILTER", "failures_only")
-        cfg = NotificationConfig.from_env()
+    def test_from_env_reads_failures_only(self):
+        cfg = self._from_env_with("failures_only")
         assert cfg.filter == NotificationFilter.FAILURES_ONLY
 
-    def test_from_env_reads_off(self, monkeypatch):
-        monkeypatch.setenv("NOTIFICATION_FILTER", "off")
-        cfg = NotificationConfig.from_env()
+    def test_from_env_reads_off(self):
+        cfg = self._from_env_with("off")
         assert cfg.filter == NotificationFilter.OFF
 
-    def test_from_env_unknown_value_defaults_to_all(self, monkeypatch):
-        monkeypatch.setenv("NOTIFICATION_FILTER", "garbage")
-        cfg = NotificationConfig.from_env()
+    def test_from_env_unknown_value_defaults_to_all(self):
+        cfg = self._from_env_with("garbage")
         assert cfg.filter == NotificationFilter.ALL
 
-    def test_from_env_case_insensitive(self, monkeypatch):
-        monkeypatch.setenv("NOTIFICATION_FILTER", "FAILURES_ONLY")
-        cfg = NotificationConfig.from_env()
+    def test_from_env_case_insensitive(self):
+        cfg = self._from_env_with("FAILURES_ONLY")
         assert cfg.filter == NotificationFilter.FAILURES_ONLY
 
     def test_default_heartbeat_enabled(self):

@@ -6,12 +6,12 @@ from unittest.mock import AsyncMock, MagicMock, patch
 def _make_postgres():
     """Return a Postgres instance with a mocked pool."""
     with patch('rocketstocks.data.db.AsyncConnectionPool') as mock_pool_cls, \
-         patch('rocketstocks.data.db.secrets') as mock_secrets:
-        mock_secrets.db_host = 'h'
-        mock_secrets.db_name = 'db'
-        mock_secrets.db_user = 'u'
-        mock_secrets.db_password = 'pw'
-        mock_secrets.db_port = 5432
+         patch('rocketstocks.data.db.settings') as mock_settings:
+        mock_settings.postgres_host = 'h'
+        mock_settings.postgres_db = 'db'
+        mock_settings.postgres_user = 'u'
+        mock_settings.postgres_password = 'pw'
+        mock_settings.postgres_port = 5432
 
         from rocketstocks.data.db import Postgres
         pg = Postgres(minconn=1, maxconn=2)
@@ -26,12 +26,12 @@ def _make_postgres():
 class TestPostgresInit:
     def test_pool_created_with_open_false(self):
         with patch('rocketstocks.data.db.AsyncConnectionPool') as mock_cls, \
-             patch('rocketstocks.data.db.secrets') as mock_secrets:
-            mock_secrets.db_host = 'h'
-            mock_secrets.db_name = 'db'
-            mock_secrets.db_user = 'u'
-            mock_secrets.db_password = 'pw'
-            mock_secrets.db_port = 5432
+             patch('rocketstocks.data.db.settings') as mock_settings:
+            mock_settings.postgres_host = 'h'
+            mock_settings.postgres_db = 'db'
+            mock_settings.postgres_user = 'u'
+            mock_settings.postgres_password = 'pw'
+            mock_settings.postgres_port = 5432
 
             from rocketstocks.data.db import Postgres
             Postgres(minconn=3, maxconn=8)
