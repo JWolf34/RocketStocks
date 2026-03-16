@@ -184,6 +184,11 @@ CREATE TABLE IF NOT EXISTS schwab_tokens (
     updated_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     CONSTRAINT  schwab_tokens_singleton CHECK (id = 1)
 );
+
+CREATE TABLE IF NOT EXISTS bot_settings (
+    key   VARCHAR(64) PRIMARY KEY,
+    value TEXT NOT NULL
+);
 """
 
 _DROP_ALL_SCRIPT = """
@@ -203,6 +208,7 @@ DROP TABLE IF EXISTS popularity_surges;
 DROP TABLE IF EXISTS market_signals;
 DROP TABLE IF EXISTS alert_roles;
 DROP TABLE IF EXISTS schwab_tokens;
+DROP TABLE IF EXISTS bot_settings;
 """
 
 
