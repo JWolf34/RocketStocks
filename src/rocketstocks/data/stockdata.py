@@ -23,6 +23,7 @@ from rocketstocks.data.clients.tradingview import TradingView
 from rocketstocks.data.clients.ape_wisdom import ApeWisdom
 from rocketstocks.data.clients.sec import SEC
 from rocketstocks.data.clients.schwab import Schwab
+from rocketstocks.data.schwab_token_store import SchwabTokenRepository
 from rocketstocks.data.clients.tiingo import Tiingo
 from rocketstocks.data.clients.stooq import Stooq
 
@@ -30,7 +31,7 @@ logger = logging.getLogger(__name__)
 
 
 class StockData:
-    def __init__(self, db=None, schwab=None, nasdaq=None, news=None,
+    def __init__(self, db=None, schwab=None, schwab_token_store=None, nasdaq=None, news=None,
                  capitol_trades=None, watchlists=None, trading_view=None,
                  popularity_client=None, sec=None, tickers=None,
                  price_history=None, popularity=None, channel_config=None,
@@ -39,7 +40,8 @@ class StockData:
 
         # Clients
         self.db = db or Postgres()
-        self.schwab = schwab or Schwab()
+        self.schwab_token_store = schwab_token_store or SchwabTokenRepository(db=self.db)
+        self.schwab = schwab or Schwab(token_store=self.schwab_token_store)
         self.nasdaq = nasdaq or Nasdaq()
         self.news = news or News()
         self.earnings = Earnings(nasdaq=self.nasdaq, db=self.db)
@@ -66,6 +68,9 @@ class StockData:
     # ------------------------------------------------------------------
     # Alert ticker tracking
     # ------------------------------------------------------------------
+
+    async def init_schwab(self) -> None:
+        await self.schwab.init_client()
 
     @property
     def alert_tickers(self) -> dict:
