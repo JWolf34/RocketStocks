@@ -58,6 +58,8 @@ class RocketStocksBot(commands.Bot):
         """Open the DB pool, start APScheduler (called once before connecting)."""
         await self.stock_data.db.open()
         logger.info("Database connection pool opened")
+        await create_tables(self.stock_data.db)
+        logger.info("Tables created/verified")
         await self.stock_data.init_schwab()
         logger.info("Schwab client initialized")
         self.aio_sched = AsyncIOScheduler()
@@ -131,7 +133,6 @@ def run_bot(stock_data: StockData, emitter: EventEmitter, notification_config: N
     async def on_ready():
         logger.info("RocketStocks bot ready!")
         await load(bot)
-        await create_tables(bot.stock_data.db)
         await seed_boilerplate_watchlists(bot.stock_data.watchlists)
         validate_path(datapaths.attachments_path)
         await _migrate_legacy_channel_config(bot)
