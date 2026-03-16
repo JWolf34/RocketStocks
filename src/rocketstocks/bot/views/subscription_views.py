@@ -114,7 +114,7 @@ class ManageSubscriptionsButton(discord.ui.Button):
         )
 
     async def callback(self, interaction: discord.Interaction):
-        subscriptions_cog = interaction.client.get_cog("Subscriptions")
+        subscriptions_cog = interaction.client.get_cog("Reports")
         if subscriptions_cog is None:
             await interaction.response.send_message(
                 "Subscriptions are not available right now.", ephemeral=True
