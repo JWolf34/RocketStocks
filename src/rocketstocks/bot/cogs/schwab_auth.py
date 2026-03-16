@@ -120,7 +120,7 @@ class SchwabCallbackModal(discord.ui.Modal, title="Paste Schwab Redirect URL"):
         self._cog._active_auth = None
         logger.error(f"SchwabCallbackModal error: {error}")
         await interaction.response.send_message(
-            "An unexpected error occurred. Please try `/schwab-auth` again.",
+            "An unexpected error occurred. Please try `/schwab auth` again.",
             ephemeral=True,
         )
 
@@ -162,12 +162,17 @@ class SchwabAuth(commands.Cog):
     async def on_ready(self):
         logger.info(f"{__name__} loaded")
 
+    schwab_group = app_commands.Group(
+        name="schwab",
+        description="Manage Schwab API connection and authentication",
+        default_permissions=discord.Permissions(administrator=True),
+    )
+
     # ------------------------------------------------------------------
-    # /schwab-status
+    # /schwab status
     # ------------------------------------------------------------------
 
-    @app_commands.command(name="schwab-status", description="Show Schwab API token status")
-    @app_commands.default_permissions(administrator=True)
+    @schwab_group.command(name="status", description="Show Schwab API token status")
     async def schwab_status(self, interaction: discord.Interaction):
         """Display colour-coded token health."""
         info = self.bot.stock_data.schwab.get_token_info()
@@ -184,7 +189,7 @@ class SchwabAuth(commands.Cog):
             lines.append(f"**Time remaining:** {total_hours:.1f} hours")
 
         if info.status in (TokenStatus.EXPIRING_SOON, TokenStatus.EXPIRED, TokenStatus.INVALID, TokenStatus.MISSING):
-            lines.append("\nRun `/schwab-auth` to re-authenticate.")
+            lines.append("\nRun `/schwab auth` to re-authenticate.")
 
         embed = discord.Embed(
             title="Schwab Token Status",
@@ -194,11 +199,10 @@ class SchwabAuth(commands.Cog):
         await interaction.response.send_message(embed=embed, ephemeral=True)
 
     # ------------------------------------------------------------------
-    # /schwab-auth
+    # /schwab auth
     # ------------------------------------------------------------------
 
-    @app_commands.command(name="schwab-auth", description="Re-authenticate with Schwab via OAuth")
-    @app_commands.default_permissions(administrator=True)
+    @schwab_group.command(name="auth", description="Re-authenticate with Schwab via OAuth")
     async def schwab_auth(self, interaction: discord.Interaction):
         """Start the browser-based Schwab OAuth flow."""
         if self._active_auth is not None:
