@@ -1,10 +1,36 @@
 """Shared fixtures for the RocketStocks test suite."""
 import datetime
+import os
 from contextlib import contextmanager
 from unittest.mock import MagicMock, patch
 
 import pandas as pd
 import pytest
+
+# ---------------------------------------------------------------------------
+# Bootstrap required env vars before any module is imported.
+#
+# pydantic-settings calls Settings() at module import time, and pytest imports
+# test modules during collection — before any fixture can run.  Setting these
+# at conftest module level (which loads before test files) is the correct way
+# to satisfy that constraint without adding proxy machinery to production code.
+# ---------------------------------------------------------------------------
+
+_TEST_ENV = {
+    "DISCORD_TOKEN": "test-token",
+    "SCHWAB_API_KEY": "test-schwab-key",
+    "SCHWAB_API_SECRET": "test-schwab-secret",
+    "TIINGO_API_KEY": "test-tiingo-key",
+    "NEWS_API_KEY": "test-news-key",
+    "POSTGRES_USER": "testuser",
+    "POSTGRES_PASSWORD": "testpass",
+    "POSTGRES_DB": "testdb",
+    "POSTGRES_HOST": "localhost",
+    "POSTGRES_PORT": "5432",
+}
+
+for _key, _val in _TEST_ENV.items():
+    os.environ.setdefault(_key, _val)
 
 
 # ---------------------------------------------------------------------------
