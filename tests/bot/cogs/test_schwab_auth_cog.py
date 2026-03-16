@@ -70,7 +70,7 @@ class TestSchwabStatusCommand:
         await cog.schwab_status.callback(cog, interaction)
         embed = interaction.response.send_message.call_args.kwargs["embed"]
         assert "Expiring" in embed.description
-        assert "18.0" in embed.description or "schwab-auth" in embed.description.lower()
+        assert "18.0" in embed.description or "schwab auth" in embed.description.lower()
 
     @pytest.mark.asyncio
     async def test_expired_token_shows_reauth_prompt(self):
@@ -79,7 +79,7 @@ class TestSchwabStatusCommand:
         interaction = _make_interaction()
         await cog.schwab_status.callback(cog, interaction)
         embed = interaction.response.send_message.call_args.kwargs["embed"]
-        assert "schwab-auth" in embed.description.lower()
+        assert "schwab auth" in embed.description.lower()
 
     @pytest.mark.asyncio
     async def test_invalid_token_shows_reauth_prompt(self):
@@ -88,7 +88,7 @@ class TestSchwabStatusCommand:
         interaction = _make_interaction()
         await cog.schwab_status.callback(cog, interaction)
         embed = interaction.response.send_message.call_args.kwargs["embed"]
-        assert "schwab-auth" in embed.description.lower()
+        assert "schwab auth" in embed.description.lower()
 
     @pytest.mark.asyncio
     async def test_missing_token_shows_reauth_prompt(self):
@@ -97,7 +97,7 @@ class TestSchwabStatusCommand:
         interaction = _make_interaction()
         await cog.schwab_status.callback(cog, interaction)
         embed = interaction.response.send_message.call_args.kwargs["embed"]
-        assert "schwab-auth" in embed.description.lower()
+        assert "schwab auth" in embed.description.lower()
 
 
 # ---------------------------------------------------------------------------

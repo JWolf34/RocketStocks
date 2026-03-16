@@ -4,6 +4,8 @@ import pytest
 import pandas as pd
 from unittest.mock import AsyncMock, MagicMock, patch
 
+import discord
+
 from rocketstocks.bot.cogs.reports import Reports
 
 
@@ -287,6 +289,60 @@ class TestResolveSinceDt:
         from rocketstocks.bot.cogs.reports import _resolve_since_dt
         dt, label = _resolve_since_dt('unknown_value')
         assert dt.time() == datetime.time(21, 0)
+
+
+class TestSendSubscriptionSelect:
+    def _make_cog_with_roles(self, guild_roles=None):
+        cog = _make_cog()
+        cog.bot.stock_data.alert_roles = MagicMock()
+        cog.bot.stock_data.alert_roles.get_all_for_guild = AsyncMock(return_value=guild_roles or {})
+        return cog
+
+    def _make_interaction(self, guild_id=123, user_role_ids=None):
+        interaction = MagicMock(spec=discord.Interaction)
+        interaction.guild_id = guild_id
+        roles = []
+        for rid in (user_role_ids or []):
+            role = MagicMock(spec=discord.Role)
+            role.id = rid
+            roles.append(role)
+        interaction.user = MagicMock(spec=discord.Member)
+        interaction.user.roles = roles
+        interaction.response.send_message = AsyncMock()
+        return interaction
+
+    @pytest.mark.asyncio
+    async def test_send_subscription_select_sends_ephemeral_message(self):
+        cog = self._make_cog_with_roles()
+        interaction = self._make_interaction()
+        with patch("rocketstocks.bot.cogs.reports.AlertSubscriptionSelect"), \
+             patch("rocketstocks.bot.cogs.reports.AlertSubscriptionView"):
+            await cog._send_subscription_select(interaction)
+        interaction.response.send_message.assert_called_once()
+        assert interaction.response.send_message.call_args.kwargs.get("ephemeral") is True
+
+    @pytest.mark.asyncio
+    async def test_send_subscription_select_fetches_guild_roles(self):
+        guild_roles = {"earnings_mover": 100}
+        cog = self._make_cog_with_roles(guild_roles)
+        interaction = self._make_interaction(guild_id=999)
+        with patch("rocketstocks.bot.cogs.reports.AlertSubscriptionSelect"), \
+             patch("rocketstocks.bot.cogs.reports.AlertSubscriptionView"):
+            await cog._send_subscription_select(interaction)
+        cog.bot.stock_data.alert_roles.get_all_for_guild.assert_called_once_with(999)
+
+
+class TestAlertSubscribe:
+    @pytest.mark.asyncio
+    async def test_alert_subscribe_delegates_to_send_subscription_select(self):
+        cog = _make_cog()
+        interaction = MagicMock()
+        interaction.response = AsyncMock()
+
+        with patch.object(cog, "_send_subscription_select", new_callable=AsyncMock) as mock_send:
+            await cog.alert_subscribe.callback(cog, interaction)
+
+        mock_send.assert_called_once_with(interaction)
 
 
 class TestAlertSummaryCommand:

@@ -47,13 +47,13 @@ def _make_guild(guild_id=123456):
     return guild
 
 
-class TestSetupCommand:
+class TestServerSetupCommand:
     @pytest.mark.asyncio
     async def test_setup_opens_modal(self):
         cog, _ = _make_cog()
         interaction = _make_interaction()
 
-        await cog.setup.callback(cog, interaction)
+        await cog.server_setup.callback(cog, interaction)
 
         from rocketstocks.bot.cogs.config import SetupModal
         interaction.response.send_modal.assert_awaited_once()
@@ -61,11 +61,19 @@ class TestSetupCommand:
         assert isinstance(modal, SetupModal)
 
 
-class TestSetupStatusCommand:
+class TestServerStatusCommand:
+    def _make_bot_with_roles(self, guild_id=123456):
+        bot, guild = _make_bot(guild_id)
+        bot.stock_data.alert_roles = MagicMock()
+        bot.stock_data.alert_roles.get_all_for_guild = AsyncMock(return_value={})
+        return bot, guild
+
     @pytest.mark.asyncio
     async def test_shows_mentions_for_configured_channels(self):
-        cog, bot = _make_cog()
+        bot, guild = self._make_bot_with_roles()
+        cog, _ = _make_cog(bot)
         interaction = _make_interaction()
+        interaction.guild = guild
 
         bot.stock_data.channel_config.get_all_for_guild.return_value = {
             ct: 100 + i for i, ct in enumerate(ALL_CONFIG_TYPES)
@@ -74,7 +82,7 @@ class TestSetupStatusCommand:
         mock_channel.mention = "#test"
         bot.get_channel.return_value = mock_channel
 
-        await cog.setup_status.callback(cog, interaction)
+        await cog.server_status.callback(cog, interaction)
 
         interaction.response.send_message.assert_awaited_once()
         kwargs = interaction.response.send_message.call_args.kwargs
@@ -83,8 +91,10 @@ class TestSetupStatusCommand:
 
     @pytest.mark.asyncio
     async def test_shows_not_configured_for_missing_channels(self):
-        cog, bot = _make_cog()
+        bot, guild = self._make_bot_with_roles()
+        cog, _ = _make_cog(bot)
         interaction = _make_interaction()
+        interaction.guild = guild
 
         # Only reports configured
         bot.stock_data.channel_config.get_all_for_guild.return_value = {REPORTS: 111}
@@ -92,11 +102,55 @@ class TestSetupStatusCommand:
         mock_channel.mention = "#reports"
         bot.get_channel.return_value = mock_channel
 
-        await cog.setup_status.callback(cog, interaction)
+        await cog.server_status.callback(cog, interaction)
 
         kwargs = interaction.response.send_message.call_args.kwargs
         embed = kwargs.get("embed")
         assert "Not configured" in embed.description
+
+    @pytest.mark.asyncio
+    async def test_shows_channel_and_role_sections(self):
+        """server status embed includes both Channel Configuration and Alert Subscription Roles."""
+        bot, guild = self._make_bot_with_roles()
+        cog, _ = _make_cog(bot)
+        interaction = _make_interaction()
+        interaction.guild = guild
+
+        bot.stock_data.channel_config.get_all_for_guild.return_value = {}
+
+        await cog.server_status.callback(cog, interaction)
+
+        kwargs = interaction.response.send_message.call_args.kwargs
+        embed = kwargs.get("embed")
+        assert "Channel Configuration" in embed.description
+        assert "Alert Subscription Roles" in embed.description
+
+    @pytest.mark.asyncio
+    async def test_green_when_all_configured(self):
+        """Color is green only when all channels AND all roles are configured."""
+        from rocketstocks.bot.views.subscription_views import ALERT_ROLE_DEFS
+        bot, guild = self._make_bot_with_roles()
+        all_role_keys = [k for k, _ in ALERT_ROLE_DEFS]
+        bot.stock_data.alert_roles.get_all_for_guild.return_value = {
+            k: i + 100 for i, k in enumerate(all_role_keys)
+        }
+        cog, _ = _make_cog(bot)
+        interaction = _make_interaction()
+        interaction.guild = guild
+        interaction.guild.get_role = MagicMock(side_effect=lambda rid: MagicMock(mention=f"<@&{rid}>"))
+
+        bot.stock_data.channel_config.get_all_for_guild.return_value = {
+            ct: 100 + i for i, ct in enumerate(ALL_CONFIG_TYPES)
+        }
+        mock_channel = MagicMock()
+        mock_channel.mention = "#test"
+        bot.get_channel.return_value = mock_channel
+
+        await cog.server_status.callback(cog, interaction)
+
+        kwargs = interaction.response.send_message.call_args.kwargs
+        embed = kwargs.get("embed")
+        assert embed.color == discord.Color.green()
 
 
 class TestOnGuildJoin:
@@ -384,6 +438,77 @@ class TestSetupModal:
         interaction.followup.send.assert_awaited_once()
         args = interaction.followup.send.call_args.args
         assert "unexpected error" in args[0].lower()
+
+
+class TestSetupAlertSubscriptions:
+    def _make_bot(self):
+        bot = MagicMock(name="Bot")
+        bot.stock_data.alert_roles.upsert = AsyncMock()
+        bot.stock_data.channel_config.get_channel_id = AsyncMock(return_value=None)
+        bot.get_channel = MagicMock(return_value=None)
+        return bot
+
+    @pytest.mark.asyncio
+    async def test_setup_alert_subscriptions_creates_roles_and_posts_panel(self):
+        from rocketstocks.bot.cogs.config import setup_alert_subscriptions
+        from rocketstocks.bot.views.subscription_views import ALERT_ROLE_DEFS
+
+        bot = self._make_bot()
+        guild = MagicMock(spec=discord.Guild)
+        guild.id = 123
+        guild.roles = []
+        mock_role = MagicMock(spec=discord.Role)
+        mock_role.id = 500
+        guild.create_role = AsyncMock(return_value=mock_role)
+
+        mock_channel = AsyncMock(spec=discord.TextChannel)
+        mock_channel.send = AsyncMock()
+        bot.stock_data.channel_config.get_channel_id = AsyncMock(return_value=999)
+        bot.get_channel = MagicMock(return_value=mock_channel)
+
+        with patch("rocketstocks.bot.cogs.config.discord.utils.get", return_value=None):
+            await setup_alert_subscriptions(bot, guild)
+
+        assert guild.create_role.call_count == len(ALERT_ROLE_DEFS)
+        assert bot.stock_data.alert_roles.upsert.call_count == len(ALERT_ROLE_DEFS)
+        mock_channel.send.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_setup_alert_subscriptions_reuses_existing_roles(self):
+        from rocketstocks.bot.cogs.config import setup_alert_subscriptions
+        from rocketstocks.bot.views.subscription_views import ALERT_ROLE_DEFS
+
+        bot = self._make_bot()
+        guild = MagicMock(spec=discord.Guild)
+        guild.id = 123
+        existing_role = MagicMock(spec=discord.Role)
+        existing_role.id = 42
+        guild.create_role = AsyncMock()
+
+        mock_channel = AsyncMock(spec=discord.TextChannel)
+        mock_channel.send = AsyncMock()
+        bot.stock_data.channel_config.get_channel_id = AsyncMock(return_value=1)
+        bot.get_channel = MagicMock(return_value=mock_channel)
+
+        with patch("rocketstocks.bot.cogs.config.discord.utils.get", return_value=existing_role):
+            await setup_alert_subscriptions(bot, guild)
+
+        guild.create_role.assert_not_called()
+        assert bot.stock_data.alert_roles.upsert.call_count == len(ALERT_ROLE_DEFS)
+
+    @pytest.mark.asyncio
+    async def test_setup_alert_subscriptions_skips_panel_when_no_alerts_channel(self):
+        from rocketstocks.bot.cogs.config import setup_alert_subscriptions
+
+        bot = self._make_bot()
+        guild = MagicMock(spec=discord.Guild)
+        guild.id = 123
+        guild.create_role = AsyncMock(return_value=MagicMock(id=1))
+
+        with patch("rocketstocks.bot.cogs.config.discord.utils.get", return_value=None):
+            await setup_alert_subscriptions(bot, guild)
+
+        bot.get_channel.assert_not_called()
 
 
 class TestSetupView:
