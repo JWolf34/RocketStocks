@@ -27,17 +27,17 @@ class Data(commands.Cog):
 
     data_group = app_commands.Group(name="data", description="Fetch financial data for tickers")
 
-    @data_group.command(name="csv", description="Returns data file for input ticker. Default: 1 year period.")
+    @data_group.command(name="price", description="Returns data file for input ticker. Default: 1 year period.")
     @app_commands.describe(tickers="Tickers to return data for (separated by spaces)")
     @app_commands.describe(frequency="Type of data file to return - daily data or minute-by-minute data")
     @app_commands.choices(frequency=[
         app_commands.Choice(name='daily', value='daily'),
         app_commands.Choice(name='5m', value='5m')
     ])
-    async def data_csv(self, interaction: discord.Interaction, tickers: str, frequency: app_commands.Choice[str]):
+    async def data_price(self, interaction: discord.Interaction, tickers: str, frequency: app_commands.Choice[str]):
         """Return CSV file of requested frequency of the requested ticker"""
         await interaction.response.defer(ephemeral=True)
-        logger.info(f"/data csv function called by user {interaction.user.name}")
+        logger.info(f"/data price function called by user {interaction.user.name}")
 
         frequency = frequency.value
         tickers, invalid_tickers = await self.stock_data.tickers.parse_valid_tickers(tickers)
@@ -102,13 +102,14 @@ class Data(commands.Cog):
     @data_group.command(name="tickers", description="Return CSV with data on all tickers the bot runs analysis on")
     async def data_tickers(self, interaction: discord.Interaction):
         """Return CSV file with contents of 'tickers' table in database"""
+        await interaction.response.defer(ephemeral=True)
         logger.info(f"/data tickers function called by user {interaction.user.name}")
         data = await self.stock_data.tickers.get_all_ticker_info()
         filepath = f"{datapaths.attachments_path}/all-tickers-info.csv"
         data.to_csv(filepath)
         csv_file = discord.File(filepath)
         await interaction.user.send(content="All tickers", file=csv_file)
-        await interaction.response.send_message("CSV file has been sent", ephemeral=True)
+        await interaction.followup.send("CSV file has been sent", ephemeral=True)
         logger.info(f"Provided data file for all {len(data)} tickers")
 
     @data_group.command(name="earnings", description="Returns recent earnings data for the input tickers")
@@ -169,13 +170,13 @@ class Data(commands.Cog):
 
         await interaction.followup.send(message, ephemeral=True)
 
-    @data_group.command(name="form", description="Returns link to latest SEC form of requested type")
+    @data_group.command(name="sec-filing", description="Returns link to latest SEC form of requested type")
     @app_commands.describe(tickers="Tickers to return SEC forms for (separated by spaces)")
     @app_commands.describe(form="The form type to get a link to (10-K, 10-Q, 8-K, etc)")
-    async def data_form(self, interaction: discord.Interaction, tickers: str, form: str):
+    async def data_sec_filing(self, interaction: discord.Interaction, tickers: str, form: str):
         """Return links to latest SEC forms of given type for input tickers"""
         await interaction.response.defer()
-        logger.info(f"/data form function called by user {interaction.user.name}")
+        logger.info(f"/data sec-filing function called by user {interaction.user.name}")
 
         tickers, invalid_tickers = await self.stock_data.tickers.parse_valid_tickers(tickers)
 
