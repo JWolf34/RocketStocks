@@ -101,7 +101,6 @@ def env_override(monkeypatch):
         "SCHWAB_API_SECRET": "test-schwab-secret",
         "NEWS_API_KEY": "test-news-key",
         "TZ": "America/Chicago",
-        "CONFIG_PATH": "/tmp/test_config.json",
     }
     monkeypatch.setattr("os.getenv", lambda key, *args: env_values.get(key, args[0] if args else None))
     return env_values
