@@ -25,17 +25,19 @@ class Data(commands.Cog):
     async def on_ready(self):
         logger.info(f"Cog {__name__} loaded!")
 
-    @app_commands.command(name="csv", description="Returns data file for input ticker. Default: 1 year period.",)
+    data_group = app_commands.Group(name="data", description="Fetch financial data for tickers")
+
+    @data_group.command(name="csv", description="Returns data file for input ticker. Default: 1 year period.")
     @app_commands.describe(tickers="Tickers to return data for (separated by spaces)")
     @app_commands.describe(frequency="Type of data file to return - daily data or minute-by-minute data")
     @app_commands.choices(frequency=[
         app_commands.Choice(name='daily', value='daily'),
         app_commands.Choice(name='5m', value='5m')
     ])
-    async def csv(self, interaction: discord.Interaction, tickers: str, frequency: app_commands.Choice[str]):
+    async def data_csv(self, interaction: discord.Interaction, tickers: str, frequency: app_commands.Choice[str]):
         """Return CSV file of requested frequency of the requested ticker"""
         await interaction.response.defer(ephemeral=True)
-        logger.info(f"/csv function called by user {interaction.user.name}")
+        logger.info(f"/data csv function called by user {interaction.user.name}")
 
         frequency = frequency.value
         tickers, invalid_tickers = await self.stock_data.tickers.parse_valid_tickers(tickers)
@@ -67,12 +69,12 @@ class Data(commands.Cog):
 
         await interaction.followup.send(message, ephemeral=True)
 
-    @app_commands.command(name="financials", description="Fetch financial reports of the specified tickers",)
+    @data_group.command(name="financials", description="Fetch financial reports of the specified tickers")
     @app_commands.describe(tickers="Tickers to return financials for (separated by spaces)")
-    async def financials(self, interaction: discord.interactions, tickers: str):
+    async def data_financials(self, interaction: discord.interactions, tickers: str):
         """Return latest financials on input tickers in JSON format"""
         await interaction.response.defer(ephemeral=True)
-        logger.info(f"/financials function called by user {interaction.user.name}")
+        logger.info(f"/data financials function called by user {interaction.user.name}")
 
         tickers, invalid_tickers = await self.stock_data.tickers.parse_valid_tickers(tickers)
         logger.info(f"Financials requested for {tickers}")
@@ -97,30 +99,10 @@ class Data(commands.Cog):
 
         await interaction.followup.send(message, ephemeral=True)
 
-    @app_commands.command(name="logs", description="Return the log file for the bot",)
-    async def logs(self, interaction: discord.Interaction):
-        """Return latest log file and ZIP file of all log files for the bot"""
-        logger.info(f"/logs function called by user {interaction.user.name}")
-
-        files = []
-
-        log_file = discord.File("logs/rocketstocks.log")
-        files.append(log_file)
-
-        logs_zip = zipfile.ZipFile(f"{datapaths.attachments_path}/logs.zip", 'w', zipfile.ZIP_DEFLATED)
-        for log in os.listdir("logs"):
-            logs_zip.write(f"logs/{log}")
-        logs_zip.close()
-        files.append(discord.File(f"{datapaths.attachments_path}/logs.zip"))
-
-        await interaction.user.send(content="Log file for RocketStocks :rocket:", files=files)
-        await interaction.response.send_message("Log file has been sent", ephemeral=True)
-        logger.info("Log file sent successfully")
-
-    @app_commands.command(name="all-tickers-info", description="Return CSV with data on all tickers the bot runs analysis on",)
-    async def all_tickers_csv(self, interaction: discord.Interaction):
+    @data_group.command(name="tickers", description="Return CSV with data on all tickers the bot runs analysis on")
+    async def data_tickers(self, interaction: discord.Interaction):
         """Return CSV file with contents of 'tickers' table in database"""
-        logger.info(f"/all-tickers-into function called by user {interaction.user.name}")
+        logger.info(f"/data tickers function called by user {interaction.user.name}")
         data = await self.stock_data.tickers.get_all_ticker_info()
         filepath = f"{datapaths.attachments_path}/all-tickers-info.csv"
         data.to_csv(filepath)
@@ -129,17 +111,17 @@ class Data(commands.Cog):
         await interaction.response.send_message("CSV file has been sent", ephemeral=True)
         logger.info(f"Provided data file for all {len(data)} tickers")
 
-    @app_commands.command(name="earnings", description="Returns recent earnings data for the input tickers",)
+    @data_group.command(name="earnings", description="Returns recent earnings data for the input tickers")
     @app_commands.describe(tickers="Tickers to return EPS data for (separated by spaces)")
     @app_commands.describe(visibility="'private' to send to DMs, 'public' to send to the channel")
     @app_commands.choices(visibility=[
         app_commands.Choice(name="private", value='private'),
         app_commands.Choice(name="public", value='public')
     ])
-    async def earnings(self, interaction: discord.Interaction, tickers: str, visibility: app_commands.Choice[str]):
-        """Return hisorical earnings data in CSV formats for input tickers and post recent earnings data in message"""
+    async def data_earnings(self, interaction: discord.Interaction, tickers: str, visibility: app_commands.Choice[str]):
+        """Return historical earnings data in CSV formats for input tickers and post recent earnings data in message"""
         await interaction.response.defer(ephemeral=True)
-        logger.info(f"/earnings function called by user {interaction.user.name}")
+        logger.info(f"/data earnings function called by user {interaction.user.name}")
 
         tickers, invalid_tickers = await self.stock_data.tickers.parse_valid_tickers(tickers)
         logger.info(f"Earnings requested for {tickers}")
@@ -173,7 +155,7 @@ class Data(commands.Cog):
             else:
                 channel = self.bot.get_channel_for_guild(interaction.guild_id, REPORTS)
                 if channel is None:
-                    await interaction.followup.send("Use `/setup` to configure the reports channel.", ephemeral=True)
+                    await interaction.followup.send("Use `/server setup` to configure the reports channel.", ephemeral=True)
                     return
                 message = await channel.send(message, files=[file])
 
@@ -186,13 +168,13 @@ class Data(commands.Cog):
 
         await interaction.followup.send(message, ephemeral=True)
 
-    @app_commands.command(name="form", description="Returns link to latest SEC form of requested type",)
+    @data_group.command(name="form", description="Returns link to latest SEC form of requested type")
     @app_commands.describe(tickers="Tickers to return SEC forms for (separated by spaces)")
     @app_commands.describe(form="The form type to get a link to (10-K, 10-Q, 8-K, etc)")
-    async def form(self, interaction: discord.Interaction, tickers: str, form: str):
+    async def data_form(self, interaction: discord.Interaction, tickers: str, form: str):
         """Return links to latest SEC forms of given type for input tickers"""
         await interaction.response.defer()
-        logger.info(f"/form function called by user {interaction.user.name}")
+        logger.info(f"/data form function called by user {interaction.user.name}")
 
         tickers, invalid_tickers = await self.stock_data.tickers.parse_valid_tickers(tickers)
 
@@ -220,12 +202,12 @@ class Data(commands.Cog):
         await interaction.followup.send(message)
         logger.info(f"Form {form} provided for tickers {tickers}")
 
-    @app_commands.command(name="fundamentals", description="Return fundamental data for desired tickers in JSON format")
+    @data_group.command(name="fundamentals", description="Return fundamental data for desired tickers in JSON format")
     @app_commands.describe(tickers="Tickers to return fundamentals for (separated by spaces)")
-    async def fundamentals(self, interaction: discord.Interaction, tickers: str):
+    async def data_fundamentals(self, interaction: discord.Interaction, tickers: str):
         """Return fundamentals in JSON format for input tickers"""
         await interaction.response.defer(ephemeral=True)
-        logger.info(f"/fundamentals function called by user {interaction.user.name}")
+        logger.info(f"/data fundamentals function called by user {interaction.user.name}")
 
         tickers, invalid_tickers = await self.stock_data.tickers.parse_valid_tickers(tickers)
         logger.info(f"Fundamentals requested for tickers {tickers}")
@@ -252,12 +234,12 @@ class Data(commands.Cog):
 
         await interaction.followup.send(message, ephemeral=True)
 
-    @app_commands.command(name="options", description="Return options chains for desired tickers in JSON format")
+    @data_group.command(name="options", description="Return options chains for desired tickers in JSON format")
     @app_commands.describe(tickers="Tickers to return options chains for (separated by spaces)")
-    async def options(self, interaction: discord.Interaction, tickers: str):
+    async def data_options(self, interaction: discord.Interaction, tickers: str):
         """Return options chains in JSON format for input tickers"""
         await interaction.response.defer(ephemeral=True)
-        logger.info(f"/options function called by user {interaction.user.name}")
+        logger.info(f"/data options function called by user {interaction.user.name}")
 
         tickers, invalid_tickers = await self.stock_data.tickers.parse_valid_tickers(tickers)
         logger.info(f"Options chain(s) requested for tickers {tickers}")
@@ -284,11 +266,11 @@ class Data(commands.Cog):
 
         await interaction.followup.send(message, ephemeral=True)
 
-    @app_commands.command(name="popularity", description="Return historical popularity of desired tickers in CSV format")
+    @data_group.command(name="popularity", description="Return historical popularity of desired tickers in CSV format")
     @app_commands.describe(tickers="Tickers to return popularity for (separated by spaces)")
-    async def popularity(self, interaction: discord.Interaction, tickers: str):
+    async def data_popularity(self, interaction: discord.Interaction, tickers: str):
         await interaction.response.defer(ephemeral=True)
-        logger.info(f"/popularity function called by user {interaction.user.name}")
+        logger.info(f"/data popularity function called by user {interaction.user.name}")
 
         tickers, invalid_tickers = await self.stock_data.tickers.parse_valid_tickers(tickers)
         logger.info(f"Historical popularity requested for tickers {tickers}")
