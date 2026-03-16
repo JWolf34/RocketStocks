@@ -1,4 +1,5 @@
 """Tests for rocketstocks.bot.cogs.config."""
+import os
 import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -14,6 +15,10 @@ def _make_bot(guild_id=123456):
     bot.stock_data.channel_config.get_all_for_guild = AsyncMock(return_value={})
     bot.stock_data.channel_config.get_unconfigured_guilds = AsyncMock(return_value=[])
     bot.stock_data.channel_config.upsert_channel = AsyncMock()
+    bot.stock_data.bot_settings = MagicMock(name="BotSettingsRepository")
+    bot.stock_data.bot_settings.get = AsyncMock(return_value=None)
+    bot.stock_data.bot_settings.set = AsyncMock()
+    bot.notification_config = MagicMock(name="NotificationConfig")
     guild = MagicMock(name="Guild")
     guild.id = guild_id
     guild.name = "Test Guild"
@@ -49,16 +54,30 @@ def _make_guild(guild_id=123456):
 
 class TestServerSetupCommand:
     @pytest.mark.asyncio
-    async def test_setup_opens_modal(self):
+    async def test_setup_sends_channel_view(self):
+        from rocketstocks.bot.cogs.config import ChannelSetupView
         cog, _ = _make_cog()
         interaction = _make_interaction()
 
         await cog.server_setup.callback(cog, interaction)
 
-        from rocketstocks.bot.cogs.config import SetupModal
-        interaction.response.send_modal.assert_awaited_once()
-        modal = interaction.response.send_modal.call_args.args[0]
-        assert isinstance(modal, SetupModal)
+        interaction.response.send_message.assert_awaited_once()
+        kwargs = interaction.response.send_message.call_args.kwargs
+        assert isinstance(kwargs.get("view"), ChannelSetupView)
+        assert kwargs.get("ephemeral") is True
+
+    @pytest.mark.asyncio
+    async def test_setup_sends_bot_settings_view_as_followup(self):
+        from rocketstocks.bot.cogs.config import BotSettingsView
+        cog, _ = _make_cog()
+        interaction = _make_interaction()
+
+        await cog.server_setup.callback(cog, interaction)
+
+        interaction.followup.send.assert_awaited_once()
+        kwargs = interaction.followup.send.call_args.kwargs
+        assert isinstance(kwargs.get("view"), BotSettingsView)
+        assert kwargs.get("ephemeral") is True
 
 
 class TestServerStatusCommand:
@@ -110,7 +129,7 @@ class TestServerStatusCommand:
 
     @pytest.mark.asyncio
     async def test_shows_channel_and_role_sections(self):
-        """server status embed includes both Channel Configuration and Alert Subscription Roles."""
+        """server status embed includes Channel Configuration, Alert Subscription Roles, Bot Settings."""
         bot, guild = self._make_bot_with_roles()
         cog, _ = _make_cog(bot)
         interaction = _make_interaction()
@@ -124,6 +143,45 @@ class TestServerStatusCommand:
         embed = kwargs.get("embed")
         assert "Channel Configuration" in embed.description
         assert "Alert Subscription Roles" in embed.description
+        assert "Bot Settings" in embed.description
+
+    @pytest.mark.asyncio
+    async def test_shows_bot_settings_env_override_badge(self, monkeypatch):
+        """When TZ and NOTIFICATION_FILTER are in env, status shows [ENV override]."""
+        bot, guild = self._make_bot_with_roles()
+        cog, _ = _make_cog(bot)
+        interaction = _make_interaction()
+        interaction.guild = guild
+
+        monkeypatch.setenv("TZ", "UTC")
+        monkeypatch.setenv("NOTIFICATION_FILTER", "off")
+
+        await cog.server_status.callback(cog, interaction)
+
+        kwargs = interaction.response.send_message.call_args.kwargs
+        embed = kwargs.get("embed")
+        assert "[ENV override]" in embed.description
+
+    @pytest.mark.asyncio
+    async def test_shows_bot_settings_from_db(self, monkeypatch):
+        """When no ENV override, status reads tz/filter from DB."""
+        bot, guild = self._make_bot_with_roles()
+        bot.stock_data.bot_settings.get = AsyncMock(side_effect=lambda key: {
+            "tz": "Europe/London",
+            "notification_filter": "failures_only",
+        }.get(key))
+        cog, _ = _make_cog(bot)
+        interaction = _make_interaction()
+        interaction.guild = guild
+
+        monkeypatch.delenv("TZ", raising=False)
+        monkeypatch.delenv("NOTIFICATION_FILTER", raising=False)
+
+        await cog.server_status.callback(cog, interaction)
+
+        kwargs = interaction.response.send_message.call_args.kwargs
+        embed = kwargs.get("embed")
+        assert "Europe/London" in embed.description
 
     @pytest.mark.asyncio
     async def test_green_when_all_configured(self):
@@ -156,7 +214,7 @@ class TestServerStatusCommand:
 class TestOnGuildJoin:
     @pytest.mark.asyncio
     async def test_sends_setup_prompt_to_priority_channel(self):
-        from rocketstocks.bot.cogs.config import Config, SetupView
+        from rocketstocks.bot.cogs.config import Config, ChannelSetupView, BotSettingsView
 
         bot, guild = _make_bot()
         cog = Config(bot=bot)
@@ -174,15 +232,15 @@ class TestOnGuildJoin:
 
         await cog.on_guild_join(guild)
 
-        ch.send.assert_awaited_once()
-        embed = ch.send.call_args.kwargs.get("embed")
-        assert embed is not None
-        view = ch.send.call_args.kwargs.get("view")
-        assert isinstance(view, SetupView)
+        assert ch.send.await_count == 2
+        first_view = ch.send.call_args_list[0].kwargs.get("view")
+        assert isinstance(first_view, ChannelSetupView)
+        second_view = ch.send.call_args_list[1].kwargs.get("view")
+        assert isinstance(second_view, BotSettingsView)
 
     @pytest.mark.asyncio
     async def test_falls_back_to_first_writable_channel(self):
-        from rocketstocks.bot.cogs.config import Config, SetupView
+        from rocketstocks.bot.cogs.config import Config, ChannelSetupView
 
         bot, guild = _make_bot()
         cog = Config(bot=bot)
@@ -199,13 +257,13 @@ class TestOnGuildJoin:
 
         await cog.on_guild_join(guild)
 
-        ch.send.assert_awaited_once()
-        view = ch.send.call_args.kwargs.get("view")
-        assert isinstance(view, SetupView)
+        assert ch.send.await_count >= 1
+        first_view = ch.send.call_args_list[0].kwargs.get("view")
+        assert isinstance(first_view, ChannelSetupView)
 
     @pytest.mark.asyncio
     async def test_dms_owner_when_no_writable_channels(self):
-        from rocketstocks.bot.cogs.config import Config, SetupView
+        from rocketstocks.bot.cogs.config import Config, ChannelSetupView
 
         bot, guild = _make_bot()
         cog = Config(bot=bot)
@@ -219,15 +277,15 @@ class TestOnGuildJoin:
 
         await cog.on_guild_join(guild)
 
-        dm_channel.send.assert_awaited_once()
-        view = dm_channel.send.call_args.kwargs.get("view")
-        assert isinstance(view, SetupView)
+        assert dm_channel.send.await_count >= 1
+        first_view = dm_channel.send.call_args_list[0].kwargs.get("view")
+        assert isinstance(first_view, ChannelSetupView)
 
 
 class TestOnReady:
     @pytest.mark.asyncio
     async def test_prompts_unconfigured_guilds(self):
-        from rocketstocks.bot.cogs.config import Config, SetupView
+        from rocketstocks.bot.cogs.config import Config, ChannelSetupView
 
         bot, guild = _make_bot()
         cog = Config(bot=bot)
@@ -245,9 +303,9 @@ class TestOnReady:
 
         await cog.on_ready()
 
-        ch.send.assert_awaited_once()
-        view = ch.send.call_args.kwargs.get("view")
-        assert isinstance(view, SetupView)
+        assert ch.send.await_count >= 1
+        first_view = ch.send.call_args_list[0].kwargs.get("view")
+        assert isinstance(first_view, ChannelSetupView)
 
     @pytest.mark.asyncio
     async def test_skips_fully_configured_guilds(self):
@@ -268,176 +326,193 @@ class TestOnReady:
         ch.send.assert_not_called()
 
 
-class TestParseChannel:
-    def setup_method(self):
-        from rocketstocks.bot.cogs.config import _parse_channel
-        self._parse_channel = _parse_channel
-        self.guild = _make_guild()
+class TestChannelSetupView:
+    @pytest.mark.asyncio
+    async def test_has_five_select_items(self):
+        from rocketstocks.bot.cogs.config import ChannelSetupView, _ChannelTypeSelect
+        bot, guild = _make_bot()
+        view = ChannelSetupView(bot, guild.id, {})
 
-    def _make_text_channel(self, channel_id, name="test"):
-        ch = MagicMock(spec=discord.TextChannel)
-        ch.id = channel_id
-        ch.name = name
-        return ch
-
-    def test_empty_string_returns_none(self):
-        assert self._parse_channel("", self.guild) is None
-
-    def test_whitespace_returns_none(self):
-        assert self._parse_channel("   ", self.guild) is None
-
-    def test_mention_format_returns_text_channel(self):
-        ch = self._make_text_channel(111)
-        self.guild.get_channel.return_value = ch
-        result = self._parse_channel("<#111>", self.guild)
-        assert result is ch
-        self.guild.get_channel.assert_called_once_with(111)
-
-    def test_mention_format_unknown_id_returns_none(self):
-        self.guild.get_channel.return_value = None
-        assert self._parse_channel("<#999>", self.guild) is None
-
-    def test_mention_format_non_text_channel_returns_none(self):
-        # Returns a VoiceChannel instead of TextChannel
-        ch = MagicMock(spec=discord.VoiceChannel)
-        self.guild.get_channel.return_value = ch
-        assert self._parse_channel("<#111>", self.guild) is None
-
-    def test_raw_digit_id_returns_text_channel(self):
-        ch = self._make_text_channel(222)
-        self.guild.get_channel.return_value = ch
-        result = self._parse_channel("222", self.guild)
-        assert result is ch
-
-    def test_raw_digit_id_non_text_channel_returns_none(self):
-        ch = MagicMock(spec=discord.VoiceChannel)
-        self.guild.get_channel.return_value = ch
-        assert self._parse_channel("333", self.guild) is None
-
-    def test_channel_name_without_hash_matches(self):
-        ch = self._make_text_channel(444, name="reports")
-        self.guild.text_channels = [ch]
-        result = self._parse_channel("reports", self.guild)
-        assert result is ch
-
-    def test_channel_name_with_hash_prefix_matches(self):
-        ch = self._make_text_channel(555, name="alerts")
-        self.guild.text_channels = [ch]
-        result = self._parse_channel("#alerts", self.guild)
-        assert result is ch
-
-    def test_channel_name_not_found_returns_none(self):
-        self.guild.text_channels = []
-        assert self._parse_channel("nonexistent", self.guild) is None
-
-
-class TestSetupModal:
-    def _make_modal(self):
-        cog, bot = _make_cog()
-        from rocketstocks.bot.cogs.config import SetupModal
-        modal = SetupModal(cog)
-        return modal, cog, bot
-
-    def _make_text_channel(self, channel_id, name="ch"):
-        ch = MagicMock(spec=discord.TextChannel)
-        ch.id = channel_id
-        ch.name = name
-        ch.mention = f"<#{channel_id}>"
-        return ch
+        selects = [c for c in view.children if isinstance(c, _ChannelTypeSelect)]
+        assert len(selects) == 5
 
     @pytest.mark.asyncio
-    async def test_on_submit_valid_channels_upserts_and_confirms(self):
-        modal, cog, bot = self._make_modal()
-        interaction = _make_interaction()
+    async def test_pre_populates_default_values_from_current_config(self):
+        from rocketstocks.bot.cogs.config import ChannelSetupView, _ChannelTypeSelect
+        bot, guild = _make_bot()
+        current_config = {REPORTS: 111, ALERTS: 222}
+        view = ChannelSetupView(bot, guild.id, current_config)
 
-        channels = {
-            REPORTS:       self._make_text_channel(111, "reports"),
-            ALERTS:        self._make_text_channel(222, "alerts"),
-            SCREENERS:     self._make_text_channel(333, "screeners"),
-            CHARTS:        self._make_text_channel(444, "charts"),
-            NOTIFICATIONS: self._make_text_channel(555, "notifications"),
-        }
-        interaction.guild = _make_guild()
-        interaction.guild.get_channel.side_effect = lambda cid: {
-            111: channels[REPORTS],
-            222: channels[ALERTS],
-            333: channels[SCREENERS],
-            444: channels[CHARTS],
-            555: channels[NOTIFICATIONS],
-        }.get(cid)
-
-        modal.reports._value = "<#111>"
-        modal.alerts._value = "<#222>"
-        modal.screeners._value = "<#333>"
-        modal.charts._value = "<#444>"
-        modal.notifications._value = "<#555>"
-
-        with patch("rocketstocks.bot.cogs.config.setup_alert_subscriptions", new_callable=AsyncMock):
-            await modal.on_submit(interaction)
-
-        assert bot.stock_data.channel_config.upsert_channel.call_count == 5
-        interaction.followup.send.assert_awaited_once()
-        kwargs = interaction.followup.send.call_args.kwargs
-        embed = kwargs.get("embed")
-        assert embed is not None
-        assert embed.color == discord.Color.green()
+        reports_select = next(c for c in view.children
+                               if isinstance(c, _ChannelTypeSelect) and c.config_type == REPORTS)
+        # Should have a default value set
+        assert len(reports_select.default_values) == 1
+        assert reports_select.default_values[0].id == 111
 
     @pytest.mark.asyncio
-    async def test_on_submit_partial_channels_upserts_only_resolved(self):
-        modal, cog, bot = self._make_modal()
-        interaction = _make_interaction()
+    async def test_callback_saves_channel_and_edits_message(self):
+        from rocketstocks.bot.cogs.config import ChannelSetupView, _ChannelTypeSelect
+        bot, guild = _make_bot()
+        view = ChannelSetupView(bot, guild.id, {})
 
-        ch_reports = self._make_text_channel(111, "reports")
-        ch_alerts = self._make_text_channel(222, "alerts")
-        interaction.guild = _make_guild()
-        interaction.guild.get_channel.side_effect = lambda cid: {
-            111: ch_reports,
-            222: ch_alerts,
-        }.get(cid)
-        interaction.guild.text_channels = []
+        reports_select = next(c for c in view.children
+                               if isinstance(c, _ChannelTypeSelect) and c.config_type == REPORTS)
 
-        modal.reports._value = "<#111>"
-        modal.alerts._value = "<#222>"
-        modal.screeners._value = ""
-        modal.charts._value = ""
-        modal.notifications._value = ""
+        mock_channel = MagicMock()
+        mock_channel.id = 999
+        reports_select._values = [mock_channel]
 
-        with patch("rocketstocks.bot.cogs.config.setup_alert_subscriptions", new_callable=AsyncMock):
-            await modal.on_submit(interaction)
+        interaction = _make_interaction(guild.id)
+        interaction.response = AsyncMock()
 
-        assert bot.stock_data.channel_config.upsert_channel.call_count == 2
+        await reports_select.callback(interaction)
+
+        bot.stock_data.channel_config.upsert_channel.assert_awaited_once_with(
+            guild.id, REPORTS, 999
+        )
+        interaction.response.edit_message.assert_awaited_once()
 
     @pytest.mark.asyncio
-    async def test_on_submit_no_valid_channels_sends_error(self):
-        modal, cog, bot = self._make_modal()
+    async def test_callback_updates_current_state(self):
+        from rocketstocks.bot.cogs.config import ChannelSetupView, _ChannelTypeSelect
+        bot, guild = _make_bot()
+        view = ChannelSetupView(bot, guild.id, {})
+
+        alerts_select = next(c for c in view.children
+                              if isinstance(c, _ChannelTypeSelect) and c.config_type == ALERTS)
+
+        mock_channel = MagicMock()
+        mock_channel.id = 777
+        alerts_select._values = [mock_channel]
+
+        interaction = _make_interaction(guild.id)
+        interaction.response = AsyncMock()
+
+        await alerts_select.callback(interaction)
+
+        assert view._current[ALERTS] == 777
+
+
+class TestBotSettingsView:
+    @pytest.mark.asyncio
+    async def test_tz_select_updates_internal_state(self):
+        from rocketstocks.bot.cogs.config import BotSettingsView
+        bot, guild = _make_bot()
+        view = BotSettingsView(bot, guild.id, "America/Chicago", "all")
+        view._tz_select._values = ["UTC"]
+
         interaction = _make_interaction()
-        interaction.guild = _make_guild()
-        interaction.guild.get_channel.return_value = None
-        interaction.guild.text_channels = []
+        interaction.response = AsyncMock()
 
-        modal.reports._value = ""
-        modal.alerts._value = ""
-        modal.screeners._value = ""
-        modal.charts._value = ""
-        modal.notifications._value = ""
+        await view._on_tz_select(interaction)
 
-        await modal.on_submit(interaction)
-
-        bot.stock_data.channel_config.upsert_channel.assert_not_called()
-        interaction.followup.send.assert_awaited_once()
-        args = interaction.followup.send.call_args.args
-        assert "No valid channels" in args[0]
+        assert view._tz == "UTC"
+        interaction.response.defer.assert_awaited_once()
 
     @pytest.mark.asyncio
-    async def test_on_error_sends_followup_message(self):
-        modal, _, _ = self._make_modal()
+    async def test_filter_select_updates_internal_state(self):
+        from rocketstocks.bot.cogs.config import BotSettingsView
+        bot, guild = _make_bot()
+        view = BotSettingsView(bot, guild.id, "America/Chicago", "all")
+        view._filter_select._values = ["failures_only"]
+
         interaction = _make_interaction()
+        interaction.response = AsyncMock()
 
-        await modal.on_error(interaction, ValueError("boom"))
+        await view._on_filter_select(interaction)
 
-        interaction.followup.send.assert_awaited_once()
-        args = interaction.followup.send.call_args.args
-        assert "unexpected error" in args[0].lower()
+        assert view._filter == "failures_only"
+
+    @pytest.mark.asyncio
+    async def test_save_persists_to_db_and_configures_runtime(self, monkeypatch):
+        from rocketstocks.bot.cogs.config import BotSettingsView
+        from rocketstocks.core.notifications.config import NotificationFilter
+        bot, guild = _make_bot()
+        bot.stock_data.channel_config.get_all_for_guild = AsyncMock(return_value={})
+
+        monkeypatch.delenv("TZ", raising=False)
+        monkeypatch.delenv("NOTIFICATION_FILTER", raising=False)
+
+        view = BotSettingsView(bot, guild.id, "America/Chicago", "all")
+        view._tz = "UTC"
+        view._filter = "failures_only"
+
+        interaction = _make_interaction(guild.id)
+        interaction.guild = guild
+        interaction.response = AsyncMock()
+
+        with patch("rocketstocks.bot.cogs.config.configure_tz") as mock_configure_tz:
+            await view._on_save(interaction)
+
+        bot.stock_data.bot_settings.set.assert_any_await("tz", "UTC")
+        bot.stock_data.bot_settings.set.assert_any_await("notification_filter", "failures_only")
+        mock_configure_tz.assert_called_once_with("UTC")
+        assert bot.notification_config.filter == NotificationFilter.FAILURES_ONLY
+        interaction.response.edit_message.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_save_skips_db_when_env_overrides_present(self, monkeypatch):
+        from rocketstocks.bot.cogs.config import BotSettingsView
+        bot, guild = _make_bot()
+
+        monkeypatch.setenv("TZ", "America/Chicago")
+        monkeypatch.setenv("NOTIFICATION_FILTER", "all")
+
+        view = BotSettingsView(bot, guild.id, "America/Chicago", "all")
+
+        interaction = _make_interaction(guild.id)
+        interaction.guild = guild
+        interaction.response = AsyncMock()
+        bot.stock_data.channel_config.get_all_for_guild = AsyncMock(return_value={})
+
+        with patch("rocketstocks.bot.cogs.config.configure_tz") as mock_configure_tz:
+            await view._on_save(interaction)
+
+        bot.stock_data.bot_settings.set.assert_not_awaited()
+        mock_configure_tz.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_tz_select_disabled_when_env_override(self, monkeypatch):
+        from rocketstocks.bot.cogs.config import BotSettingsView
+        bot, guild = _make_bot()
+        monkeypatch.setenv("TZ", "America/Chicago")
+
+        view = BotSettingsView(bot, guild.id, "America/Chicago", "all")
+
+        assert view._tz_select.disabled is True
+
+    @pytest.mark.asyncio
+    async def test_filter_select_disabled_when_env_override(self, monkeypatch):
+        from rocketstocks.bot.cogs.config import BotSettingsView
+        bot, guild = _make_bot()
+        monkeypatch.setenv("NOTIFICATION_FILTER", "all")
+
+        view = BotSettingsView(bot, guild.id, "America/Chicago", "all")
+
+        assert view._filter_select.disabled is True
+
+    @pytest.mark.asyncio
+    async def test_save_triggers_subscriptions_when_channels_fully_configured(self, monkeypatch):
+        from rocketstocks.bot.cogs.config import BotSettingsView
+        bot, guild = _make_bot()
+        bot.stock_data.channel_config.get_all_for_guild = AsyncMock(
+            return_value={ct: 100 + i for i, ct in enumerate(ALL_CONFIG_TYPES)}
+        )
+
+        monkeypatch.delenv("TZ", raising=False)
+        monkeypatch.delenv("NOTIFICATION_FILTER", raising=False)
+
+        view = BotSettingsView(bot, guild.id, "America/Chicago", "all")
+
+        interaction = _make_interaction(guild.id)
+        interaction.guild = guild
+        interaction.response = AsyncMock()
+
+        with patch("rocketstocks.bot.cogs.config.configure_tz"):
+            with patch("rocketstocks.bot.cogs.config.setup_alert_subscriptions", new_callable=AsyncMock) as mock_subs:
+                await view._on_save(interaction)
+
+        mock_subs.assert_awaited_once_with(bot, guild)
 
 
 class TestSetupAlertSubscriptions:
@@ -509,28 +584,3 @@ class TestSetupAlertSubscriptions:
             await setup_alert_subscriptions(bot, guild)
 
         bot.get_channel.assert_not_called()
-
-
-class TestSetupView:
-    # View.__init__ calls asyncio.get_running_loop(), so all tests must be async.
-
-    @pytest.mark.asyncio
-    async def test_view_timeout_is_none(self):
-        cog, _ = _make_cog()
-        from rocketstocks.bot.cogs.config import SetupView
-        view = SetupView(cog)
-        assert view.timeout is None
-
-    @pytest.mark.asyncio
-    async def test_button_opens_setup_modal(self):
-        from rocketstocks.bot.cogs.config import SetupModal, SetupView
-        cog, _ = _make_cog()
-        view = SetupView(cog)
-        interaction = _make_interaction()
-
-        # button.callback is a _ViewCallback — call it with just the interaction
-        await view.configure_channels.callback(interaction)
-
-        interaction.response.send_modal.assert_awaited_once()
-        modal = interaction.response.send_modal.call_args.args[0]
-        assert isinstance(modal, SetupModal)

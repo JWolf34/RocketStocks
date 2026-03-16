@@ -5,6 +5,7 @@ from unittest.mock import patch
 import pytest
 
 from rocketstocks.core.utils.dates import date_utils
+import rocketstocks.core.utils.dates as dates_module
 
 
 class TestFormatDateYmd:
@@ -91,6 +92,44 @@ class TestTimezone:
             mock_settings.tz = "America/New_York"
             tz = date_utils.timezone()
         assert tz == ZoneInfo("America/New_York")
+
+
+class TestConfigureTz:
+    def setup_method(self):
+        """Reset runtime tz before each test."""
+        dates_module._runtime_tz = None
+
+    def teardown_method(self):
+        """Reset runtime tz after each test."""
+        dates_module._runtime_tz = None
+
+    def test_configure_tz_sets_runtime_tz(self):
+        from rocketstocks.core.utils.dates import configure_tz
+        configure_tz("UTC")
+        assert dates_module._runtime_tz == "UTC"
+
+    def test_timezone_uses_runtime_tz_when_set(self):
+        from zoneinfo import ZoneInfo
+        from rocketstocks.core.utils.dates import configure_tz
+        configure_tz("Europe/London")
+        with patch("rocketstocks.core.utils.dates.settings") as mock_settings:
+            mock_settings.tz = "America/Chicago"
+            tz = date_utils.timezone()
+        assert tz == ZoneInfo("Europe/London")
+
+    def test_timezone_falls_back_to_settings_when_runtime_not_set(self):
+        from zoneinfo import ZoneInfo
+        assert dates_module._runtime_tz is None
+        with patch("rocketstocks.core.utils.dates.settings") as mock_settings:
+            mock_settings.tz = "America/Chicago"
+            tz = date_utils.timezone()
+        assert tz == ZoneInfo("America/Chicago")
+
+    def test_configure_tz_overrides_previous_value(self):
+        from rocketstocks.core.utils.dates import configure_tz
+        configure_tz("UTC")
+        configure_tz("Asia/Tokyo")
+        assert dates_module._runtime_tz == "Asia/Tokyo"
 
 
 class TestFormatDurationSince:
