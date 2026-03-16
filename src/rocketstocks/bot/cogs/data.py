@@ -81,7 +81,7 @@ class Data(commands.Cog):
 
         for ticker in tickers:
             files = []
-            financials = self.stock_data.fetch_financials(ticker)
+            financials = await asyncio.to_thread(self.stock_data.fetch_financials, ticker)
             for statement, data in financials.items():
                 filepath = f"{datapaths.attachments_path}/{ticker}_{statement}.csv"
                 data.to_csv(filepath)
