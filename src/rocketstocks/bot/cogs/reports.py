@@ -579,11 +579,15 @@ class Reports(commands.Cog):
             logger.debug(f"Watchlist updated with {len(watchlist_tickers)} tickers: {watchlist_tickers}")
 
     def build_popularity_screener(self, **kwargs) -> PopularityScreener:
-        popular_stocks = kwargs.pop('popular_stocks', self.stock_data.popularity.get_popular_stocks())
+        popular_stocks = kwargs.pop('popular_stocks', None)
+        if popular_stocks is None:
+            popular_stocks = self.stock_data.popularity.get_popular_stocks()
         return PopularityScreener(data=PopularityScreenerData(popular_stocks=popular_stocks))
 
     def build_volume_screener(self, **kwargs) -> VolumeScreener:
-        unusual_volume = kwargs.pop('unusual_volume', self.stock_data.trading_view.get_unusual_volume_movers())
+        unusual_volume = kwargs.pop('unusual_volume', None)
+        if unusual_volume is None:
+            unusual_volume = self.stock_data.trading_view.get_unusual_volume_movers()
         return VolumeScreener(data=VolumeScreenerData(unusual_volume=unusual_volume))
 
     def build_gainer_screener(self, market_period: str, **kwargs) -> GainerScreener:
