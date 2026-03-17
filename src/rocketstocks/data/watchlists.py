@@ -21,6 +21,23 @@ class Watchlists(object):
             return None
         return sorted(row[0].split())
 
+    async def get_watchlist_counts(self, no_personal=True, no_systemGenerated=True) -> dict:
+        """Return {watchlist_id: ticker_count} in a single query (no N+1)."""
+        logger.debug("Fetching watchlist counts")
+        watchlists = await self.db.execute(
+            "SELECT id, tickers, systemgenerated FROM watchlists"
+        )
+        result = {}
+        for row in (watchlists or []):
+            wl_id, tickers_str, is_system = row[0], row[1], row[2]
+            if wl_id.isdigit() and no_personal:
+                continue
+            if is_system and no_systemGenerated:
+                continue
+            count = len(tickers_str.split()) if tickers_str and tickers_str.strip() else 0
+            result[wl_id] = count
+        return result
+
     async def get_all_watchlist_tickers(self, no_personal=True, no_systemGenerated=True):
         logger.debug("Fetching tickers from all available watchlists (besides personal)")
         watchlists = await self.db.execute(
