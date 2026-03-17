@@ -447,3 +447,53 @@ class TestAlertSummaryCommand:
         cog.dstate.get_alerts_since.assert_called_once_with(since_dt)
         from rocketstocks.core.content.reports.alert_summary import AlertSummary
         assert isinstance(result, AlertSummary)
+
+
+# ---------------------------------------------------------------------------
+# TestNewsCommand
+# ---------------------------------------------------------------------------
+
+class TestNewsCommand:
+    def _make_interaction(self):
+        interaction = MagicMock(name="Interaction")
+        interaction.response = MagicMock()
+        interaction.response.defer = AsyncMock()
+        interaction.followup = MagicMock()
+        interaction.followup.send = AsyncMock()
+        interaction.user = MagicMock()
+        interaction.user.name = "TestUser"
+        return interaction
+
+    @pytest.mark.asyncio
+    async def test_news_error_sends_ephemeral_followup(self):
+        """When get_news raises, /news sends an ephemeral error followup."""
+        cog = _make_cog()
+        interaction = self._make_interaction()
+
+        with patch("rocketstocks.bot.cogs.reports.asyncio.to_thread", new_callable=AsyncMock, side_effect=Exception("API error")):
+            await cog.news.callback(cog, interaction, query="AAPL", sort_by="publishedAt")
+
+        interaction.response.defer.assert_called_once()
+        interaction.followup.send.assert_called_once()
+        call_kwargs = interaction.followup.send.call_args.kwargs
+        assert call_kwargs.get("ephemeral") is True
+
+    @pytest.mark.asyncio
+    async def test_news_success_sends_embed(self):
+        """When get_news succeeds, /news sends an embed in the followup."""
+        cog = _make_cog()
+        interaction = self._make_interaction()
+        fake_news = {'articles': []}
+        mock_embed = MagicMock()
+
+        with (
+            patch("rocketstocks.bot.cogs.reports.asyncio.to_thread", new_callable=AsyncMock, return_value=fake_news),
+            patch("rocketstocks.bot.cogs.reports.spec_to_embed", return_value=mock_embed),
+            patch("rocketstocks.bot.cogs.reports.NewsReport"),
+        ):
+            await cog.news.callback(cog, interaction, query="AAPL", sort_by="publishedAt")
+
+        interaction.response.defer.assert_called_once()
+        interaction.followup.send.assert_called_once()
+        call_kwargs = interaction.followup.send.call_args.kwargs
+        assert call_kwargs.get("embed") is mock_embed

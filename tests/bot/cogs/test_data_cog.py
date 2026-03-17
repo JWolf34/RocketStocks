@@ -58,11 +58,35 @@ class TestDataPrice:
         frequency = MagicMock()
         frequency.value = "daily"
 
-        with patch("rocketstocks.bot.cogs.data.discord.File", return_value=MagicMock()):
+        with patch("rocketstocks.bot.cogs.data.asyncio.to_thread", new=AsyncMock()), \
+             patch("rocketstocks.bot.cogs.data.discord.File", return_value=MagicMock()):
             await cog.data_price.callback(cog, interaction, tickers="AAPL", frequency=frequency)
 
         interaction.user.send.assert_called_once()
         interaction.followup.send.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_dm_forbidden_sends_ephemeral_fallback(self):
+        cog = _make_cog()
+        interaction = _make_interaction()
+
+        df = MagicMock()
+        df.empty = False
+        cog.stock_data.tickers.parse_valid_tickers = AsyncMock(return_value=(["AAPL"], []))
+        cog.stock_data.price_history.fetch_daily_price_history = AsyncMock(return_value=df)
+        interaction.user.send = AsyncMock(side_effect=discord.Forbidden(MagicMock(), "Cannot send DMs"))
+
+        frequency = MagicMock()
+        frequency.value = "daily"
+
+        with patch("rocketstocks.bot.cogs.data.asyncio.to_thread", new=AsyncMock()), \
+             patch("rocketstocks.bot.cogs.data.discord.File", return_value=MagicMock()):
+            await cog.data_price.callback(cog, interaction, tickers="AAPL", frequency=frequency)
+
+        interaction.followup.send.assert_called_once()
+        call_kwargs = interaction.followup.send.call_args.kwargs
+        assert call_kwargs.get("ephemeral") is True
+        assert "DM" in interaction.followup.send.call_args[0][0]
 
     @pytest.mark.asyncio
     async def test_invalid_ticker_skips_dm_and_sends_error_followup(self):
@@ -137,8 +161,8 @@ class TestDataFundamentals:
         cog.stock_data.tickers.parse_valid_tickers = AsyncMock(return_value=(["AAPL", "MSFT"], []))
         cog.stock_data.schwab.get_fundamentals = AsyncMock(return_value={"data": "test"})
 
-        with patch("builtins.open", MagicMock()), \
-             patch("rocketstocks.bot.cogs.data.json.dump"), \
+        with patch("rocketstocks.bot.cogs.data._write_json"), \
+             patch("rocketstocks.bot.cogs.data.asyncio.to_thread", new=AsyncMock()), \
              patch("rocketstocks.bot.cogs.data.discord.File", return_value=MagicMock()):
             await cog.data_fundamentals.callback(cog, interaction, tickers="AAPL MSFT")
 
@@ -158,8 +182,22 @@ class TestDataFundamentals:
         await cog.data_fundamentals.callback(cog, interaction, tickers="AAPL")
 
         interaction.user.send.assert_called_once()
+        # file kwarg should not be present when fundamentals is falsy
         call_kwargs = interaction.user.send.call_args.kwargs
-        assert call_kwargs.get("file") is None
+        assert "file" not in call_kwargs
+
+    @pytest.mark.asyncio
+    async def test_schwab_token_error_returns_auth_message(self):
+        cog = _make_cog()
+        interaction = _make_interaction()
+        cog.stock_data.tickers.parse_valid_tickers = AsyncMock(return_value=(["AAPL"], []))
+        cog.stock_data.schwab.get_fundamentals = AsyncMock(side_effect=SchwabTokenError("token invalid"))
+
+        await cog.data_fundamentals.callback(cog, interaction, tickers="AAPL")
+
+        interaction.followup.send.assert_called_once()
+        message = interaction.followup.send.call_args[0][0]
+        assert "schwab" in message.lower() or "auth" in message.lower()
 
 
 # ---------------------------------------------------------------------------
@@ -188,14 +226,27 @@ class TestDataOptions:
         cog.stock_data.tickers.parse_valid_tickers = AsyncMock(return_value=(["AAPL"], []))
         cog.stock_data.schwab.get_options_chain = AsyncMock(return_value={"option": "data"})
 
-        with patch("builtins.open", MagicMock()), \
-             patch("rocketstocks.bot.cogs.data.json.dump"), \
+        with patch("rocketstocks.bot.cogs.data._write_json"), \
+             patch("rocketstocks.bot.cogs.data.asyncio.to_thread", new=AsyncMock()), \
              patch("rocketstocks.bot.cogs.data.discord.File", return_value=MagicMock()) as mock_file:
             await cog.data_options.callback(cog, interaction, tickers="AAPL")
 
         interaction.user.send.assert_called_once()
         call_kwargs = interaction.user.send.call_args.kwargs
         assert call_kwargs.get("file") is mock_file.return_value
+
+    @pytest.mark.asyncio
+    async def test_schwab_token_error_returns_auth_message(self):
+        cog = _make_cog()
+        interaction = _make_interaction()
+        cog.stock_data.tickers.parse_valid_tickers = AsyncMock(return_value=(["AAPL"], []))
+        cog.stock_data.schwab.get_options_chain = AsyncMock(side_effect=SchwabTokenError("token invalid"))
+
+        await cog.data_options.callback(cog, interaction, tickers="AAPL")
+
+        interaction.followup.send.assert_called_once()
+        message = interaction.followup.send.call_args[0][0]
+        assert "schwab" in message.lower() or "auth" in message.lower()
 
 
 # ---------------------------------------------------------------------------

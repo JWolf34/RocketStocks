@@ -167,3 +167,36 @@ class TestAdminTestReport:
         assert report is not None
         spec = report.build()
         assert spec is not None
+
+
+# ---------------------------------------------------------------------------
+# TestAdminPermissionGate
+# ---------------------------------------------------------------------------
+
+from discord import app_commands as _app_commands
+
+
+class TestAdminPermissionGate:
+    @pytest.mark.asyncio
+    async def test_non_admin_gets_ephemeral_error(self):
+        """cog_app_command_error sends ephemeral message for MissingPermissions."""
+        cog = _make_cog()
+        interaction = _make_interaction()
+        error = _app_commands.errors.MissingPermissions(["administrator"])
+
+        await cog.cog_app_command_error(interaction, error)
+
+        interaction.response.send_message.assert_called_once()
+        call_kwargs = interaction.response.send_message.call_args
+        assert call_kwargs.kwargs.get("ephemeral") is True
+        assert "Administrator" in call_kwargs.args[0]
+
+    @pytest.mark.asyncio
+    async def test_other_errors_are_reraised(self):
+        """cog_app_command_error re-raises non-permission errors."""
+        cog = _make_cog()
+        interaction = _make_interaction()
+        error = _app_commands.errors.CommandInvokeError(MagicMock(), Exception("unexpected"))
+
+        with pytest.raises(_app_commands.errors.CommandInvokeError):
+            await cog.cog_app_command_error(interaction, error)
