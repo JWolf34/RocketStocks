@@ -136,7 +136,7 @@ class Reports(commands.Cog):
         await self._run_task("post_popularity_screener", self._post_popularity_screener_impl())
 
     async def _post_popularity_screener_impl(self):
-        popular_stocks = self.stock_data.popularity.get_popular_stocks()
+        popular_stocks = await asyncio.to_thread(self.stock_data.popularity.get_popular_stocks)
 
         if not popular_stocks.empty:
             popular_stocks.insert(loc=0,
@@ -164,7 +164,7 @@ class Reports(commands.Cog):
     async def _post_volume_screener_impl(self):
         market_period = self.mutils.get_market_period()
         if self.mutils.market_open_today() and market_period != 'EOD':
-            unusual_volume = self.stock_data.trading_view.get_unusual_volume_movers()
+            unusual_volume = await asyncio.to_thread(self.stock_data.trading_view.get_unusual_volume_movers)
             content = self.build_volume_screener(unusual_volume=unusual_volume)
             await self._update_screener_watchlist(content)
             await self.stock_data.update_alert_tickers(tickers=content.get_tickers(), source='unusual-volume')
@@ -182,7 +182,7 @@ class Reports(commands.Cog):
     async def _post_volume_at_time_screener_impl(self):
         market_period = self.mutils.get_market_period()
         if self.mutils.market_open_today() and market_period != 'EOD':
-            volume_spike = self.stock_data.trading_view.get_unusual_volume_at_time_movers()
+            volume_spike = await asyncio.to_thread(self.stock_data.trading_view.get_unusual_volume_at_time_movers)
             await self.stock_data.update_alert_tickers(tickers=volume_spike['name'].to_list(), source='volume-spike')
 
     @tasks.loop(minutes=5)
@@ -193,7 +193,15 @@ class Reports(commands.Cog):
     async def _post_gainer_screener_impl(self):
         market_period = self.mutils.get_market_period()
         if self.mutils.market_open_today() and market_period != 'EOD':
-            content = self.build_gainer_screener(market_period=market_period)
+            if market_period == 'premarket':
+                gainers = await asyncio.to_thread(self.stock_data.trading_view.get_premarket_gainers)
+            elif market_period == 'intraday':
+                gainers = await asyncio.to_thread(self.stock_data.trading_view.get_intraday_gainers)
+            elif market_period == 'aftermarket':
+                gainers = await asyncio.to_thread(self.stock_data.trading_view.get_postmarket_gainers)
+            else:
+                gainers = pd.DataFrame()
+            content = self.build_gainer_screener(market_period=market_period, gainers=gainers)
             await self._update_screener_watchlist(content)
             await self.stock_data.update_alert_tickers(tickers=content.get_tickers(), source='gainers')
 
@@ -439,12 +447,17 @@ class Reports(commands.Cog):
     @app_commands.describe(sort_by="Field by which to sort returned articles")
     @app_commands.autocomplete(sort_by=autocomplete_sortby,)
     async def news(self, interaction: discord.Interaction, query: str, sort_by: str = 'publishedAt'):
-        """Generate and send News Report for the input query"""
+        await interaction.response.defer()
         logger.info(f"/news function called by user {interaction.user.name}")
-        news_data = News().get_news(query=query, sort_by=sort_by)
+        try:
+            news_data = await asyncio.to_thread(News().get_news, query=query, sort_by=sort_by)
+        except Exception:
+            logger.exception(f"Failed to fetch news for query '{query}'")
+            await interaction.followup.send("Failed to fetch news — please try again.", ephemeral=True)
+            return
         content = NewsReport(data=NewsReportData(query=query, news=news_data))
         embed = spec_to_embed(content.build())
-        await interaction.response.send_message(embed=embed)
+        await interaction.followup.send(embed=embed)
         logger.info(f"Posted news for query '{query}'")
 
     async def autocomplete_filter(self, interaction: discord.Interaction, current: str):
@@ -466,7 +479,7 @@ class Reports(commands.Cog):
         await interaction.response.defer(ephemeral=True)
         logger.info(f"/report popularity function called by user {interaction.user.name}")
 
-        popular_stocks = self.stock_data.popularity.get_popular_stocks(filter_name=source)
+        popular_stocks = await asyncio.to_thread(self.stock_data.popularity.get_popular_stocks, filter_name=source)
         filter_val = self.stock_data.popularity.get_filter(source)
 
         if not popular_stocks.empty:
@@ -514,7 +527,7 @@ class Reports(commands.Cog):
             if channel is None and visibility.value == 'public':
                 await interaction.followup.send("Use `/server setup` to configure the reports channel.", ephemeral=True)
                 return
-            content = self.build_politician_report(politician=politician)
+            content = await self.build_politician_report(politician=politician)
             view = PoliticianReportButtons(pid=politician['politician_id'])
             files = [discord.File(content.filepath)]
             message = await send_report(content, channel, interaction=interaction,
@@ -556,8 +569,10 @@ class Reports(commands.Cog):
         unusual_volume = kwargs.pop('unusual_volume', self.stock_data.trading_view.get_unusual_volume_movers())
         return VolumeScreener(data=VolumeScreenerData(unusual_volume=unusual_volume))
 
-    def build_gainer_screener(self, market_period: str) -> GainerScreener:
-        if market_period == 'premarket':
+    def build_gainer_screener(self, market_period: str, **kwargs) -> GainerScreener:
+        if 'gainers' in kwargs:
+            gainers = kwargs['gainers']
+        elif market_period == 'premarket':
             gainers = self.stock_data.trading_view.get_premarket_gainers()
         elif market_period == 'intraday':
             gainers = self.stock_data.trading_view.get_intraday_gainers()
@@ -626,10 +641,10 @@ class Reports(commands.Cog):
             watchlist_tickers=watchlist_tickers,
         ))
 
-    def build_politician_report(self, politician_name: str = None, **kwargs) -> PoliticianReport:
+    async def build_politician_report(self, politician_name: str = None, **kwargs) -> PoliticianReport:
         politician = kwargs.pop('politician', None)
-        trades = kwargs.pop('trades', self.stock_data.capitol_trades.trades(pid=politician['politician_id']))
-        politician_facts = kwargs.pop('politician_facts', self.stock_data.capitol_trades.politician_facts(pid=politician['politician_id']))
+        trades = kwargs.pop('trades', await asyncio.to_thread(self.stock_data.capitol_trades.trades, pid=politician['politician_id']))
+        politician_facts = kwargs.pop('politician_facts', await asyncio.to_thread(self.stock_data.capitol_trades.politician_facts, pid=politician['politician_id']))
         return PoliticianReport(data=PoliticianReportData(
             politician=politician,
             trades=trades,
