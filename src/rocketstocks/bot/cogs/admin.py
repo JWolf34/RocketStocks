@@ -460,6 +460,7 @@ class Admin(commands.Cog):
     )
 
     @admin_group.command(name="logs", description="Return the log file for the bot")
+    @app_commands.checks.has_permissions(administrator=True)
     async def admin_logs(self, interaction: discord.Interaction):
         """Return latest log file and ZIP file of all log files for the bot"""
         logger.info(f"/admin logs function called by user {interaction.user.name}")
@@ -480,6 +481,7 @@ class Admin(commands.Cog):
         logger.info("Log file sent successfully")
 
     @admin_group.command(name="update-5m", description="Forcefully update the 5m price history db table")
+    @app_commands.checks.has_permissions(administrator=True)
     async def admin_update_5m(self, interaction: discord.Interaction):
         await interaction.response.defer(ephemeral=True)
         logger.info(f"/admin update-5m function called by user {interaction.user.name}")
@@ -488,6 +490,7 @@ class Admin(commands.Cog):
         await interaction.followup.send("5m price history table updated")
 
     @admin_group.command(name="update-daily", description="Forcefully update the daily price history db table")
+    @app_commands.checks.has_permissions(administrator=True)
     async def admin_update_daily(self, interaction: discord.Interaction):
         await interaction.response.defer(ephemeral=True)
         logger.info(f"/admin update-daily function called by user {interaction.user.name}")
@@ -496,6 +499,7 @@ class Admin(commands.Cog):
         await interaction.followup.send("Daily price history table updated")
 
     @admin_group.command(name="test-alert", description="Send a test alert embed with dummy data")
+    @app_commands.checks.has_permissions(administrator=True)
     @app_commands.describe(alert_type="The type of alert to preview")
     @app_commands.choices(alert_type=[
         app_commands.Choice(name="Earnings Mover",         value="earnings_mover"),
@@ -524,6 +528,7 @@ class Admin(commands.Cog):
             return
 
     @admin_group.command(name="test-screener", description="Preview a screener embed with dummy data (ephemeral)")
+    @app_commands.checks.has_permissions(administrator=True)
     @app_commands.describe(screener="The type of screener to preview")
     @app_commands.choices(screener=[
         app_commands.Choice(name="gainers",         value="gainers"),
@@ -550,6 +555,7 @@ class Admin(commands.Cog):
             await interaction.followup.send(f"Error sending screener: {exc}", ephemeral=True)
 
     @admin_group.command(name="test-report", description="Preview a report embed with dummy data (ephemeral)")
+    @app_commands.checks.has_permissions(administrator=True)
     @app_commands.describe(report="The type of report to preview")
     @app_commands.choices(report=[
         app_commands.Choice(name="stock",              value="stock"),
@@ -575,6 +581,15 @@ class Admin(commands.Cog):
         except Exception as exc:
             logger.exception(f"Failed to send test report to {interaction.user.name}")
             await interaction.followup.send(f"Error sending report: {exc}", ephemeral=True)
+
+
+    async def cog_app_command_error(self, interaction: discord.Interaction, error: app_commands.AppCommandError):
+        if isinstance(error, app_commands.errors.MissingPermissions):
+            await interaction.response.send_message(
+                "You need Administrator permissions to use this command.", ephemeral=True
+            )
+        else:
+            raise error
 
 
 async def setup(bot):
