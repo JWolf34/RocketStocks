@@ -216,24 +216,28 @@ class Watchlists(commands.Cog):
         await interaction.response.defer(ephemeral=True)
         logger.info(f"/watchlist create function called by user {interaction.user.name}")
 
-        watchlist_id = watchlist if watchlist != 'personal' else str(interaction.user.id)
+        try:
+            watchlist_id = watchlist if watchlist != 'personal' else str(interaction.user.id)
 
-        if not await self.watchlists.validate_watchlist(watchlist_id=watchlist_id):
-            tickers, invalid_tickers = await self.stock_data.tickers.parse_valid_tickers(tickers.upper())
-            await self.watchlists.create_watchlist(watchlist_id=watchlist_id, tickers=tickers, systemGenerated=False)
-            logger.info(f"Watchlist '{watchlist}' set to {tickers}")
+            if not await self.watchlists.validate_watchlist(watchlist_id=watchlist_id):
+                tickers, invalid_tickers = await self.stock_data.tickers.parse_valid_tickers(tickers.upper())
+                await self.watchlists.create_watchlist(watchlist_id=watchlist_id, tickers=tickers, systemGenerated=False)
+                logger.info(f"Watchlist '{watchlist}' set to {tickers}")
 
-            if tickers:
-                message = f"Created watchlist *{watchlist}* with {ticker_string(tickers)}. ({len(tickers)} tickers total)"
+                if tickers:
+                    message = f"Created watchlist *{watchlist}* with {ticker_string(tickers)}. ({len(tickers)} tickers total)"
+                else:
+                    message = f"Created empty watchlist *{watchlist}*."
+                if invalid_tickers:
+                    message += f" Invalid tickers: {ticker_string(invalid_tickers)}."
+
+                await interaction.followup.send(message, ephemeral=True if watchlist_id.isdigit() else False)
             else:
-                message = f"Created empty watchlist *{watchlist}*."
-            if invalid_tickers:
-                message += f" Invalid tickers: {ticker_string(invalid_tickers)}."
-
-            await interaction.followup.send(message, ephemeral=True if watchlist_id.isdigit() else False)
-        else:
-            message = f"Watchlist *{watchlist}* already exists. Use `/watchlist add`, `/watchlist remove` or `/watchlist set` to update this watchlist."
-            await interaction.followup.send(message, ephemeral=True)
+                message = f"Watchlist *{watchlist}* already exists. Use `/watchlist add`, `/watchlist remove` or `/watchlist set` to update this watchlist."
+                await interaction.followup.send(message, ephemeral=True)
+        except Exception:
+            logger.error(f"watchlist_create failed for user {interaction.user.name}", exc_info=True)
+            await interaction.followup.send("An error occurred — please try again.", ephemeral=True)
 
     @watchlist_group.command(name="delete", description="Delete a watchlist")
     @app_commands.describe(watchlist="Watchlist to delete")
@@ -243,33 +247,37 @@ class Watchlists(commands.Cog):
         await interaction.response.defer(ephemeral=True)
         logger.info(f"/watchlist delete function called by user {interaction.user.name}")
 
-        if watchlist == "personal":
-            await interaction.followup.send("Cannot delete a personal watchlist. Use /watchlist set to clear its contents if you wish", ephemeral=True)
-            logger.info("Selected watchlist is 'personal' - cannot delete a personal watchlist")
-            return
+        try:
+            if watchlist == "personal":
+                await interaction.followup.send("Cannot delete a personal watchlist. Use /watchlist set to clear its contents if you wish", ephemeral=True)
+                logger.info("Selected watchlist is 'personal' - cannot delete a personal watchlist")
+                return
 
-        watchlist_id = watchlist
+            watchlist_id = watchlist
 
-        if not await self.watchlists.validate_watchlist(watchlist_id=watchlist_id):
-            await interaction.followup.send(f"Watchlist *{watchlist}* does not exist.", ephemeral=True)
-            logger.info(f"Delete attempted on non-existent watchlist '{watchlist}'")
-            return
+            if not await self.watchlists.validate_watchlist(watchlist_id=watchlist_id):
+                await interaction.followup.send(f"Watchlist *{watchlist}* does not exist.", ephemeral=True)
+                logger.info(f"Delete attempted on non-existent watchlist '{watchlist}'")
+                return
 
-        view = ConfirmDeleteView(watchlist)
-        await interaction.followup.send(
-            f"Are you sure you want to delete watchlist *{watchlist}*? This cannot be undone.",
-            view=view,
-            ephemeral=True,
-        )
-        await view.wait()
+            view = ConfirmDeleteView(watchlist)
+            await interaction.followup.send(
+                f"Are you sure you want to delete watchlist *{watchlist}*? This cannot be undone.",
+                view=view,
+                ephemeral=True,
+            )
+            await view.wait()
 
-        if view.confirmed:
-            await self.watchlists.delete_watchlist(watchlist_id=watchlist_id)
-            await interaction.followup.send(f"Deleted watchlist *{watchlist}*.", ephemeral=True)
-            logger.info(f"Watchlist '{watchlist}' deleted")
-        else:
-            await interaction.followup.send("Deletion cancelled.", ephemeral=True)
-            logger.info(f"Deletion of watchlist '{watchlist}' cancelled by user")
+            if view.confirmed:
+                await self.watchlists.delete_watchlist(watchlist_id=watchlist_id)
+                await interaction.followup.send(f"Deleted watchlist *{watchlist}*.", ephemeral=True)
+                logger.info(f"Watchlist '{watchlist}' deleted")
+            else:
+                await interaction.followup.send("Deletion cancelled.", ephemeral=True)
+                logger.info(f"Deletion of watchlist '{watchlist}' cancelled by user")
+        except Exception:
+            logger.error(f"watchlist_delete failed for user {interaction.user.name}", exc_info=True)
+            await interaction.followup.send("An error occurred — please try again.", ephemeral=True)
 
     @watchlist_group.command(name="list", description="List all available watchlists with their ticker counts")
     async def watchlist_list(self, interaction: discord.Interaction):
@@ -277,25 +285,23 @@ class Watchlists(commands.Cog):
         await interaction.response.defer(ephemeral=True)
         logger.info(f"/watchlist list function called by user {interaction.user.name}")
 
-        watchlists = await self.watchlists.get_watchlists(no_personal=True, no_systemGenerated=True)
-        if not watchlists or watchlists == ["personal"]:
-            await interaction.followup.send("No watchlists found. Use `/watchlist create` to create one.", ephemeral=True)
-            return
+        try:
+            counts = await self.watchlists.get_watchlist_counts(no_personal=True, no_systemGenerated=True)
+            public_counts = {wl_id: cnt for wl_id, cnt in counts.items() if wl_id != "personal"}
 
-        lines = []
-        for wl_id in watchlists:
-            if wl_id == "personal":
-                continue
-            tickers = await self.watchlists.get_watchlist_tickers(wl_id)
-            count = len(tickers) if tickers else 0
-            lines.append(f"**{wl_id}** — {count} ticker{'s' if count != 1 else ''}")
+            if not public_counts:
+                await interaction.followup.send("No watchlists found. Use `/watchlist create` to create one.", ephemeral=True)
+                return
 
-        if not lines:
-            await interaction.followup.send("No public watchlists found.", ephemeral=True)
-            return
-
-        message = "**Available watchlists:**\n" + "\n".join(lines)
-        await interaction.followup.send(message, ephemeral=False)
+            lines = [
+                f"**{wl_id}** — {cnt} ticker{'s' if cnt != 1 else ''}"
+                for wl_id, cnt in sorted(public_counts.items())
+            ]
+            message = "**Available watchlists:**\n" + "\n".join(lines)
+            await interaction.followup.send(message, ephemeral=False)
+        except Exception:
+            logger.error(f"watchlist_list failed for user {interaction.user.name}", exc_info=True)
+            await interaction.followup.send("An error occurred — please try again.", ephemeral=True)
 
     @watchlist_group.command(name="rename", description="Rename an existing watchlist")
     @app_commands.describe(watchlist="Watchlist to rename")
@@ -306,19 +312,23 @@ class Watchlists(commands.Cog):
         await interaction.response.defer(ephemeral=True)
         logger.info(f"/watchlist rename function called by user {interaction.user.name}")
 
-        if watchlist == "personal":
-            await interaction.followup.send("Cannot rename a personal watchlist.", ephemeral=True)
-            return
+        try:
+            if watchlist == "personal":
+                await interaction.followup.send("Cannot rename a personal watchlist.", ephemeral=True)
+                return
 
-        success = await self.watchlists.rename_watchlist(old_id=watchlist, new_id=new_name)
-        if success:
-            await interaction.followup.send(f"Renamed watchlist *{watchlist}* to *{new_name}*.", ephemeral=False)
-            logger.info(f"Watchlist '{watchlist}' renamed to '{new_name}'")
-        else:
-            if not await self.watchlists.validate_watchlist(watchlist):
-                await interaction.followup.send(f"Watchlist *{watchlist}* does not exist.", ephemeral=True)
+            success = await self.watchlists.rename_watchlist(old_id=watchlist, new_id=new_name)
+            if success:
+                await interaction.followup.send(f"Renamed watchlist *{watchlist}* to *{new_name}*.", ephemeral=False)
+                logger.info(f"Watchlist '{watchlist}' renamed to '{new_name}'")
             else:
-                await interaction.followup.send(f"Watchlist *{new_name}* already exists. Choose a different name.", ephemeral=True)
+                if not await self.watchlists.validate_watchlist(watchlist):
+                    await interaction.followup.send(f"Watchlist *{watchlist}* does not exist.", ephemeral=True)
+                else:
+                    await interaction.followup.send(f"Watchlist *{new_name}* already exists. Choose a different name.", ephemeral=True)
+        except Exception:
+            logger.error(f"watchlist_rename failed for user {interaction.user.name}", exc_info=True)
+            await interaction.followup.send("An error occurred — please try again.", ephemeral=True)
 
 
 async def setup(bot):
