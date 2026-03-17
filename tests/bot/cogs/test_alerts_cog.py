@@ -985,6 +985,35 @@ class TestDetectPopularitySurges:
 # Before-loop timing
 # ---------------------------------------------------------------------------
 
+# ---------------------------------------------------------------------------
+# Date header task
+# ---------------------------------------------------------------------------
+
+class TestPostAlertsDate:
+    @pytest.mark.asyncio
+    async def test_channel_send_failure_does_not_abort_remaining_channels(self):
+        """One failing channel.send should not stop the header being sent to other channels."""
+        cog = _make_cog(earnings_df=pd.DataFrame())
+
+        bad_channel = AsyncMock()
+        bad_channel.id = 1
+        bad_channel.send = AsyncMock(side_effect=Exception("Network error"))
+
+        good_channel = AsyncMock()
+        good_channel.id = 2
+        good_channel.send = AsyncMock()
+
+        cog.bot.iter_channels = AsyncMock(return_value=[(None, bad_channel), (None, good_channel)])
+        cog.mutils.market_open_today.return_value = True
+
+        with patch("rocketstocks.bot.cogs.alerts.date_utils") as mock_du:
+            mock_du.format_date_mdy.return_value = "Mon 03/16"
+            await cog._post_alerts_date_impl()
+
+        bad_channel.send.assert_called_once()
+        good_channel.send.assert_called_once()
+
+
 class TestBeforeLoops:
     @pytest.mark.asyncio
     async def test_detect_surges_before_loop_calls_sleep(self):

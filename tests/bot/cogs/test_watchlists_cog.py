@@ -27,6 +27,7 @@ def _make_watchlists_data(validate_result: bool = True, tickers: list | None = N
     wl.validate_watchlist = AsyncMock(return_value=validate_result)
     wl.get_watchlist_tickers = AsyncMock(return_value=tickers or [])
     wl.get_watchlists = AsyncMock(return_value=["alpha", "beta", "personal"])
+    wl.get_watchlist_counts = AsyncMock(return_value={"alpha": 2, "beta": 1})
     wl.update_watchlist = AsyncMock(return_value=None)
     wl.create_watchlist = AsyncMock(return_value=None)
     wl.delete_watchlist = AsyncMock(return_value=None)
@@ -359,10 +360,7 @@ class TestWatchlistList:
     @pytest.mark.asyncio
     async def test_lists_all_public_watchlists(self):
         cog = _make_cog(validate=True)
-        cog.watchlists.get_watchlists.return_value = ["alpha", "beta"]
-        cog.watchlists.get_watchlist_tickers.side_effect = lambda wl_id: (
-            ["AAPL", "MSFT"] if wl_id == "alpha" else ["GOOG"]
-        )
+        cog.watchlists.get_watchlist_counts = AsyncMock(return_value={"alpha": 2, "beta": 1})
         interaction = _make_interaction()
 
         await cog.watchlist_list.callback(cog, interaction)
@@ -376,13 +374,25 @@ class TestWatchlistList:
     @pytest.mark.asyncio
     async def test_empty_watchlists_sends_message(self):
         cog = _make_cog(validate=True)
-        cog.watchlists.get_watchlists.return_value = ["personal"]
+        cog.watchlists.get_watchlist_counts = AsyncMock(return_value={})
         interaction = _make_interaction()
 
         await cog.watchlist_list.callback(cog, interaction)
 
         sent = interaction.followup.send.call_args[0][0]
         assert "No" in sent
+
+    @pytest.mark.asyncio
+    async def test_db_error_sends_ephemeral_fallback(self):
+        cog = _make_cog(validate=True)
+        cog.watchlists.get_watchlist_counts = AsyncMock(side_effect=Exception("DB down"))
+        interaction = _make_interaction()
+
+        await cog.watchlist_list.callback(cog, interaction)
+
+        sent = interaction.followup.send.call_args
+        assert sent[1]["ephemeral"] is True
+        assert "error" in sent[0][0].lower()
 
 
 # ---------------------------------------------------------------------------

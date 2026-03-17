@@ -497,3 +497,104 @@ class TestNewsCommand:
         interaction.followup.send.assert_called_once()
         call_kwargs = interaction.followup.send.call_args.kwargs
         assert call_kwargs.get("embed") is mock_embed
+
+
+# ---------------------------------------------------------------------------
+# Plan F — _post_weekly_earnings_impl discord.File guard
+# ---------------------------------------------------------------------------
+
+class TestPostWeeklyEarningsImpl:
+    @pytest.mark.asyncio
+    async def test_oserror_on_file_sends_screener_without_file(self):
+        """If discord.File(content.filepath) raises OSError, screener is still sent (files=[])."""
+        cog = _make_cog()
+        cog.mutils.market_open_today.return_value = True
+        cog.bot.iter_channels = AsyncMock(return_value=[(None, AsyncMock())])
+
+        mock_content = MagicMock()
+        mock_content.filepath = "/tmp/nonexistent.csv"
+
+        with (
+            patch.object(cog, "build_weekly_earnings_screener", new_callable=AsyncMock, return_value=mock_content),
+            patch("rocketstocks.bot.cogs.reports.discord.File", side_effect=OSError("file not found")),
+            patch("rocketstocks.bot.cogs.reports.send_screener", new_callable=AsyncMock) as mock_send,
+        ):
+            # Monday = weekday 0
+            fixed_date = datetime.datetime(2026, 3, 16)  # a Monday
+            with patch("rocketstocks.bot.cogs.reports.datetime") as mock_dt:
+                mock_dt.datetime.now.return_value = fixed_date
+                mock_dt.datetime.combine = datetime.datetime.combine
+                mock_dt.datetime.strptime = datetime.datetime.strptime
+                mock_dt.time = datetime.time
+                mock_dt.date = datetime.date
+                mock_dt.timedelta = datetime.timedelta
+                await cog._post_weekly_earnings_impl()
+
+        mock_send.assert_called_once()
+        _, call_kwargs = mock_send.call_args
+        assert call_kwargs.get("files") == []
+
+
+# ---------------------------------------------------------------------------
+# Plan F — _update_earnings_calendar_impl: missing time field + per-ticker guard
+# ---------------------------------------------------------------------------
+
+class TestUpdateEarningsCalendarImpl:
+    @pytest.mark.asyncio
+    async def test_missing_time_field_does_not_raise(self):
+        """earnings_info with no 'time' key should default to 'unspecified' release time."""
+        cog = _make_cog()
+        cog.stock_data.watchlists.get_all_watchlist_tickers = AsyncMock(return_value=["AAPL"])
+
+        earnings_info = {
+            'date': datetime.date(2026, 4, 1),
+            'time': [],   # empty list — no [0] element
+            'fiscal_quarter_ending': 'Q1 2026',
+            'eps_forecast': '1.50',
+            'last_year_eps': '1.30',
+            'last_year_rpt_dt': '2025-04-01',
+        }
+        cog.stock_data.earnings.get_next_earnings_info = AsyncMock(return_value=earnings_info)
+
+        mock_guild = AsyncMock()
+        mock_guild.name = "TestGuild"
+        mock_guild.fetch_scheduled_events = AsyncMock(return_value=[])
+        mock_guild.create_scheduled_event = AsyncMock()
+        cog.bot.guilds = [mock_guild]
+
+        await cog._update_earnings_calendar_impl()
+
+        mock_guild.create_scheduled_event.assert_called_once()
+        call_kwargs = mock_guild.create_scheduled_event.call_args.kwargs
+        assert call_kwargs["name"] == "AAPL Earnings"
+
+    @pytest.mark.asyncio
+    async def test_per_ticker_error_does_not_abort_remaining_tickers(self):
+        """An exception for one ticker should not prevent processing subsequent tickers."""
+        cog = _make_cog()
+        cog.stock_data.watchlists.get_all_watchlist_tickers = AsyncMock(return_value=["AAPL", "MSFT"])
+
+        good_earnings = {
+            'date': datetime.date(2026, 4, 1),
+            'time': [],
+            'fiscal_quarter_ending': 'Q1 2026',
+            'eps_forecast': '2.00',
+            'last_year_eps': '1.80',
+            'last_year_rpt_dt': '2025-04-01',
+        }
+        cog.stock_data.earnings.get_next_earnings_info = AsyncMock(
+            side_effect=[Exception("DB error"), good_earnings]
+        )
+
+        mock_guild = AsyncMock()
+        mock_guild.name = "TestGuild"
+        mock_guild.fetch_scheduled_events = AsyncMock(return_value=[])
+        mock_guild.create_scheduled_event = AsyncMock()
+        cog.bot.guilds = [mock_guild]
+
+        await cog._update_earnings_calendar_impl()
+
+        # MSFT should still be processed despite AAPL failing
+        mock_guild.create_scheduled_event.assert_called_once()
+        call_kwargs = mock_guild.create_scheduled_event.call_args.kwargs
+        assert call_kwargs["name"] == "MSFT Earnings"

@@ -392,6 +392,31 @@ class TestChannelSetupView:
 
         assert view._current[ALERTS] == 777
 
+    @pytest.mark.asyncio
+    async def test_callback_db_error_sends_ephemeral_and_returns(self):
+        """If upsert_channel raises, an ephemeral error is sent and edit_message is NOT called."""
+        from rocketstocks.bot.cogs.config import ChannelSetupView, _ChannelTypeSelect
+        bot, guild = _make_bot()
+        bot.stock_data.channel_config.upsert_channel = AsyncMock(side_effect=Exception("DB down"))
+        view = ChannelSetupView(bot, guild.id, {})
+
+        reports_select = next(c for c in view.children
+                               if isinstance(c, _ChannelTypeSelect) and c.config_type == REPORTS)
+
+        mock_channel = MagicMock()
+        mock_channel.id = 999
+        reports_select._values = [mock_channel]
+
+        interaction = _make_interaction(guild.id)
+        interaction.response = AsyncMock()
+
+        await reports_select.callback(interaction)
+
+        interaction.response.send_message.assert_awaited_once()
+        kwargs = interaction.response.send_message.call_args.kwargs
+        assert kwargs.get("ephemeral") is True
+        interaction.response.edit_message.assert_not_awaited()
+
 
 class TestBotSettingsView:
     @pytest.mark.asyncio
