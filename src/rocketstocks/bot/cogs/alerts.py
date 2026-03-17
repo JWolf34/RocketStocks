@@ -121,7 +121,10 @@ class Alerts(commands.Cog):
         if self.mutils.market_open_today():
             date_string = date_utils.format_date_mdy(datetime.datetime.today())
             for _, channel in await self.bot.iter_channels(ALERTS):
-                await channel.send(f"# :rotating_light: Alerts for {date_string} :rotating_light:")
+                try:
+                    await channel.send(f"# :rotating_light: Alerts for {date_string} :rotating_light:")
+                except Exception:
+                    logger.error(f"Failed to send date header to channel {channel.id}", exc_info=True)
 
     @tasks.loop(minutes=30)
     async def detect_popularity_surges(self):
