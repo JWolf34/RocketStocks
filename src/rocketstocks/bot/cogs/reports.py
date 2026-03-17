@@ -265,7 +265,11 @@ class Reports(commands.Cog):
         if today.weekday() == 0:
             content = await self.build_weekly_earnings_screener()
             logger.info("Posting weekly earnings screener...")
-            files = [discord.File(content.filepath)]
+            try:
+                files = [discord.File(content.filepath)]
+            except OSError:
+                logger.error(f"Weekly earnings file not found: {content.filepath}", exc_info=True)
+                files = []
             for _, channel in await self.bot.iter_channels(SCREENERS):
                 await send_screener(content, channel, self.dstate, files=files)
 
@@ -284,49 +288,54 @@ class Reports(commands.Cog):
             logger.debug(f"Guild '{gld.name}': {len(curr_events)} events already in the calendar")
 
             for ticker in tickers:
-                earnings_info = await self.stock_data.earnings.get_next_earnings_info(ticker)
-                if earnings_info:
-                    event_exists = False
-                    name = f"{ticker} Earnings"
+                try:
+                    earnings_info = await self.stock_data.earnings.get_next_earnings_info(ticker)
+                    if earnings_info:
+                        event_exists = False
+                        name = f"{ticker} Earnings"
 
-                    if curr_events:
-                        for event in curr_events:
-                            if event.name == name:
-                                event_exists = True
-                                break
+                        if curr_events:
+                            for event in curr_events:
+                                if event.name == name:
+                                    event_exists = True
+                                    break
 
-                    if not event_exists:
-                        release_time = "unspecified"
-                        start_time = datetime.datetime.combine(earnings_info['date'], datetime.datetime.strptime('1230', '%H%M').time()).astimezone()
-                        if "pre-market" in earnings_info['time'][0]:
-                            start_time = start_time.replace(hour=8, minute=30)
-                            release_time = "pre-market"
-                        elif "after-hours" in earnings_info['time'][0]:
-                            release_time = "after hours"
-                            start_time = start_time.replace(hour=15, minute=0)
+                        if not event_exists:
+                            release_time = "unspecified"
+                            start_time = datetime.datetime.combine(earnings_info['date'], datetime.datetime.strptime('1230', '%H%M').time()).astimezone()
+                            time_list = earnings_info.get('time') or []
+                            time_str = time_list[0] if time_list else None
+                            if time_str and "pre-market" in time_str:
+                                start_time = start_time.replace(hour=8, minute=30)
+                                release_time = "pre-market"
+                            elif time_str and "after-hours" in time_str:
+                                release_time = "after hours"
+                                start_time = start_time.replace(hour=15, minute=0)
 
-                        now = datetime.datetime.now().astimezone()
-                        if start_time > now:
-                            description = f"**Quarter:** {earnings_info['fiscal_quarter_ending']}\n"
-                            description += f"**Release Time:** {release_time}\n"
-                            description += f"**EPS Forecast:** {earnings_info['eps_forecast']}\n"
-                            description += f"**Last Year's EPS:** {earnings_info['last_year_eps']}\n"
-                            description += f"**Last Year's Report Date:** {earnings_info['last_year_rpt_dt']}\n"
+                            now = datetime.datetime.now().astimezone()
+                            if start_time > now:
+                                description = f"**Quarter:** {earnings_info['fiscal_quarter_ending']}\n"
+                                description += f"**Release Time:** {release_time}\n"
+                                description += f"**EPS Forecast:** {earnings_info['eps_forecast']}\n"
+                                description += f"**Last Year's EPS:** {earnings_info['last_year_eps']}\n"
+                                description += f"**Last Year's Report Date:** {earnings_info['last_year_rpt_dt']}\n"
 
-                            await gld.create_scheduled_event(
-                                name=name,
-                                description=description,
-                                start_time=start_time,
-                                end_time=start_time + datetime.timedelta(minutes=30),
-                                entity_type=discord.EntityType.external,
-                                privacy_level=discord.PrivacyLevel.guild_only,
-                                location="Wall Street",
-                            )
-                            logger.info(f"Earnings report '{name}' created at {start_time} for guild '{gld.name}'")
+                                await gld.create_scheduled_event(
+                                    name=name,
+                                    description=description,
+                                    start_time=start_time,
+                                    end_time=start_time + datetime.timedelta(minutes=30),
+                                    entity_type=discord.EntityType.external,
+                                    privacy_level=discord.PrivacyLevel.guild_only,
+                                    location="Wall Street",
+                                )
+                                logger.info(f"Earnings report '{name}' created at {start_time} for guild '{gld.name}'")
+                            else:
+                                logger.info(f"Start time {start_time} for event '{name}' is in the past - skipping...")
                         else:
-                            logger.info(f"Start time {start_time} for event '{name}' is in the past - skipping...")
-                    else:
-                        logger.info(f"Event '{name}' already exists in the calendar. Skipping...")
+                            logger.info(f"Event '{name}' already exists in the calendar. Skipping...")
+                except Exception:
+                    logger.error(f"Failed to create calendar event for '{ticker}' in guild '{gld.name}'", exc_info=True)
         logger.info("Completed updating earnings calendar")
 
     #####################
@@ -489,7 +498,11 @@ class Reports(commands.Cog):
                 return
             content = PopularityReport(data=PopularityReportData(popular_stocks=popular_stocks, filter=filter_val))
             view = PopularityReportButtons()
-            files = [discord.File(content.filepath)]
+            try:
+                files = [discord.File(content.filepath)]
+            except OSError:
+                logger.error(f"Popularity report file not found: {content.filepath}", exc_info=True)
+                files = []
             message = await send_report(content, channel, interaction=interaction,
                                         visibility=visibility.value, view=view, files=files)
             follow_up = f"[Posted popularity reports!]({message.jump_url})"
@@ -529,7 +542,11 @@ class Reports(commands.Cog):
                 return
             content = await self.build_politician_report(politician=politician)
             view = PoliticianReportButtons(pid=politician['politician_id'])
-            files = [discord.File(content.filepath)]
+            try:
+                files = [discord.File(content.filepath)]
+            except OSError:
+                logger.error(f"Politician report file not found: {content.filepath}", exc_info=True)
+                files = []
             message = await send_report(content, channel, interaction=interaction,
                                         visibility=visibility.value, view=view, files=files)
             follow_up = f"Posted report on [{politician['name']}]({message.jump_url})"
