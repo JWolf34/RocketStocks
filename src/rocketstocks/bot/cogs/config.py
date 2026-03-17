@@ -165,9 +165,20 @@ class _ChannelTypeSelect(discord.ui.ChannelSelect):
         view: ChannelSetupView = self.view
         if self.values:
             channel_id = int(self.values[0].id)
-            await view._bot.stock_data.channel_config.upsert_channel(
-                interaction.guild_id, self.config_type, channel_id
-            )
+            try:
+                await view._bot.stock_data.channel_config.upsert_channel(
+                    interaction.guild_id, self.config_type, channel_id
+                )
+            except Exception:
+                logger.error(
+                    f"Failed to save channel config: guild={interaction.guild_id} "
+                    f"{self.config_type}={channel_id}",
+                    exc_info=True,
+                )
+                await interaction.response.send_message(
+                    "Failed to save channel setting — please try again.", ephemeral=True
+                )
+                return
             view._current[self.config_type] = channel_id
             logger.info(f"Channel setup: guild={interaction.guild_id} {self.config_type}={channel_id}")
         embed = _build_channel_embed(view._current)
