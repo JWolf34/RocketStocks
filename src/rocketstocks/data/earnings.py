@@ -1,8 +1,8 @@
 import datetime
 import logging
 import pandas as pd
-from rocketstocks.core.utils.dates import date_utils
-from rocketstocks.core.utils.market import market_utils
+from rocketstocks.core.utils.dates import format_date_ymd, format_date_mdy
+from rocketstocks.core.utils.market import MarketUtils
 
 logger = logging.getLogger(__name__)
 
@@ -17,7 +17,7 @@ class Earnings:
     def __init__(self, nasdaq, db):
         self.nasdaq = nasdaq
         self.db = db
-        self.mutils = market_utils()
+        self.mutils = MarketUtils()
 
     async def update_upcoming_earnings(self):
         """Identify upcoming earnings dates for all tickers and add to database"""
@@ -37,7 +37,7 @@ class Earnings:
         for i in range(0, 50):
             date = datetime.datetime.today() + datetime.timedelta(days=i)
             if date.weekday() < 5:
-                date_string = date_utils.format_date_ymd(date=date)
+                date_string = format_date_ymd(date=date)
                 earnings_data = self.nasdaq.get_earnings_by_date(date_string)
                 logger.debug(f"Identified {len(earnings_data)} earnings on date {date_string}")
 
@@ -117,13 +117,13 @@ class Earnings:
             start_date = datetime.date(year=2008, month=1, day=3)
         else:
             start_date = row[0]
-            logger.info(f"Last earnings date recorded is {date_utils.format_date_mdy(start_date)}")
+            logger.info(f"Last earnings date recorded is {format_date_mdy(start_date)}")
 
         num_days = (today - start_date).days
         for i in range(1, num_days):
             date = start_date + datetime.timedelta(days=i)
             if self.mutils.market_open_on_date(date):
-                date_string = date_utils.format_date_ymd(date)
+                date_string = format_date_ymd(date)
                 earnings = self.nasdaq.get_earnings_by_date(date_string)
 
                 if earnings.size > 0:

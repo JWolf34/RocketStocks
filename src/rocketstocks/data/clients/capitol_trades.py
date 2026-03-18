@@ -5,7 +5,7 @@ import requests
 from bs4 import BeautifulSoup
 import pandas as pd
 
-from rocketstocks.core.utils.dates import date_utils
+from rocketstocks.core.utils.dates import format_date_mdy
 
 logger = logging.getLogger(__name__)
 
@@ -168,8 +168,8 @@ class CapitolTrades:
 
                     trade = (
                         ticker,
-                        date_utils.format_date_mdy(published_date),
-                        date_utils.format_date_mdy(filed_date),
+                        format_date_mdy(published_date),
+                        format_date_mdy(filed_date),
                         filed_after,
                         order_type,
                         order_size,
