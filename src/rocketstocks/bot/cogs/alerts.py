@@ -204,46 +204,67 @@ class Alerts(commands.Cog):
                         f"[detect_popularity_surges] Surge detected for '{ticker}': "
                         f"{[st.value for st in surge_result.surge_types]}"
                     )
-                    quote = await self.stock_data.schwab.get_quote(ticker=ticker)
-                    ticker_info = await self.stock_data.tickers.get_ticker_info(ticker=ticker)
-                    market = market_utils()
-                    price_at_flag = market.get_current_price(quote)
-
-                    alert = PopularitySurgeAlert(data=PopularitySurgeData(
-                        ticker=ticker,
-                        ticker_info=ticker_info,
-                        quote=quote,
-                        surge_result=surge_result,
-                        popularity_history=popularity_history,
-                    ))
-                    view = PopularitySurgeAlertButtons(ticker=ticker, doc_url=POPULARITY_SURGE_DOC_URL)
-
-                    flagged_at = datetime.datetime.utcnow()
-                    surge_types_str = ",".join(st.value for st in surge_result.surge_types)
-
-                    first_message = None
-                    for channel in alert_channels:
-                        role_mention = await self._build_role_mention(alert, channel)
-                        sent = await send_alert(alert, channel, self.dstate, view=view, role_mention=role_mention)
-                        if sent is not None and first_message is None:
-                            first_message = sent
-
-                    message_id = first_message.id if first_message else None
-                    await self.stock_data.surge_store.insert_surge(
-                        ticker=ticker,
-                        flagged_at=flagged_at,
-                        surge_types=surge_types_str,
-                        current_rank=surge_result.current_rank,
-                        mention_ratio=surge_result.mention_ratio,
-                        rank_change=surge_result.rank_change,
-                        price_at_flag=price_at_flag,
-                        alert_message_id=message_id,
-                    )
+                    surging[ticker] = (surge_result, popularity_history)
 
             except Exception:
                 logger.error(f"[detect_popularity_surges] Failed for '{ticker}'", exc_info=True)
 
             await asyncio.sleep(0)
+
+        if not surging:
+            return
+
+        # Batch fetch quotes for all surging tickers in one API call
+        surging_list = list(surging.keys())
+        batch_quotes: dict = {}
+        chunk_size = 25
+        for i in range(0, len(surging_list), chunk_size):
+            chunk = surging_list[i:i + chunk_size]
+            batch = await self.stock_data.schwab.get_quotes(tickers=chunk)
+            batch_quotes.update(batch)
+        batch_quotes.pop('errors', None)
+
+        # Second pass: build and send alerts for surging tickers
+        for ticker, (surge_result, popularity_history) in surging.items():
+            try:
+                quote = batch_quotes.get(ticker, {})
+                ticker_info = await self.stock_data.tickers.get_ticker_info(ticker=ticker)
+                market = market_utils()
+                price_at_flag = market.get_current_price(quote) if quote else None
+
+                alert = PopularitySurgeAlert(data=PopularitySurgeData(
+                    ticker=ticker,
+                    ticker_info=ticker_info,
+                    quote=quote,
+                    surge_result=surge_result,
+                    popularity_history=popularity_history,
+                ))
+                view = PopularitySurgeAlertButtons(ticker=ticker, doc_url=POPULARITY_SURGE_DOC_URL)
+
+                flagged_at = datetime.datetime.utcnow()
+                surge_types_str = ",".join(st.value for st in surge_result.surge_types)
+
+                first_message = None
+                for channel in alert_channels:
+                    role_mention = await self._build_role_mention(alert, channel)
+                    sent = await send_alert(alert, channel, self.dstate, view=view, role_mention=role_mention)
+                    if sent is not None and first_message is None:
+                        first_message = sent
+
+                message_id = first_message.id if first_message else None
+                await self.stock_data.surge_store.insert_surge(
+                    ticker=ticker,
+                    flagged_at=flagged_at,
+                    surge_types=surge_types_str,
+                    current_rank=surge_result.current_rank,
+                    mention_ratio=surge_result.mention_ratio,
+                    rank_change=surge_result.rank_change,
+                    price_at_flag=price_at_flag,
+                    alert_message_id=message_id,
+                )
+
+            except Exception:
+                logger.error(f"[detect_popularity_surges] Failed to send alert for '{ticker}'", exc_info=True)
 
     # -------------------------------------------------------------------------
     # Tier 2: Main alert processing loop
