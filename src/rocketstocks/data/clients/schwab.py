@@ -3,6 +3,7 @@ import datetime
 
 import httpx
 import schwab
+from aiolimiter import AsyncLimiter
 from authlib.integrations.base_client.errors import OAuthError
 
 from rocketstocks.core.config.settings import settings
@@ -16,9 +17,10 @@ class SchwabTokenError(Exception):
 
 
 class Schwab:
-    def __init__(self, client=None, token_store=None):
+    def __init__(self, client=None, token_store=None, limiter=None):
         self._token_store = token_store
         self._token_invalid: bool = False
+        self._limiter = limiter or AsyncLimiter(120, 60)  # 120 req/min
 
         if client is not None:
             self.client = client
@@ -110,14 +112,15 @@ class Schwab:
             f"Requesting daily price history from Schwab for ticker: '{ticker}' "
             f"- start: {start_datetime}, end: {end_datetime}"
         )
-        try:
-            resp = await self.client.get_price_history_every_day(
-                symbol=ticker,
-                start_datetime=start_datetime,
-                end_datetime=end_datetime,
-            )
-        except OAuthError as exc:
-            self._handle_oauth_error(exc)
+        async with self._limiter:
+            try:
+                resp = await self.client.get_price_history_every_day(
+                    symbol=ticker,
+                    start_datetime=start_datetime,
+                    end_datetime=end_datetime,
+                )
+            except OAuthError as exc:
+                self._handle_oauth_error(exc)
 
         logger.debug(f"Response status code is {resp.status_code}")
         try:
@@ -149,14 +152,15 @@ class Schwab:
             f"Requesting 5m price history from Schwab for ticker: '{ticker}' "
             f"- start: {start_datetime}, end: {end_datetime}"
         )
-        try:
-            resp = await self.client.get_price_history_every_five_minutes(
-                symbol=ticker,
-                start_datetime=start_datetime,
-                end_datetime=end_datetime,
-            )
-        except OAuthError as exc:
-            self._handle_oauth_error(exc)
+        async with self._limiter:
+            try:
+                resp = await self.client.get_price_history_every_five_minutes(
+                    symbol=ticker,
+                    start_datetime=start_datetime,
+                    end_datetime=end_datetime,
+                )
+            except OAuthError as exc:
+                self._handle_oauth_error(exc)
 
         logger.debug(f"Response status code is {resp.status_code}")
         try:
@@ -181,10 +185,11 @@ class Schwab:
         """Get latest quote for ticker from Schwab."""
         self._require_client()
         logger.debug(f"Retrieving quote for ticker '{ticker}' from Schwab")
-        try:
-            resp = await self.client.get_quote(symbol=ticker)
-        except OAuthError as exc:
-            self._handle_oauth_error(exc)
+        async with self._limiter:
+            try:
+                resp = await self.client.get_quote(symbol=ticker)
+            except OAuthError as exc:
+                self._handle_oauth_error(exc)
         logger.debug(f"Response status code is {resp.status_code}")
         resp.raise_for_status()
         data = resp.json()
@@ -194,10 +199,11 @@ class Schwab:
         """Get quotes for multiple tickers from Schwab."""
         self._require_client()
         logger.debug(f"Retrieving quotes for tickers {tickers} from Schwab")
-        try:
-            resp = await self.client.get_quotes(symbols=tickers)
-        except OAuthError as exc:
-            self._handle_oauth_error(exc)
+        async with self._limiter:
+            try:
+                resp = await self.client.get_quotes(symbols=tickers)
+            except OAuthError as exc:
+                self._handle_oauth_error(exc)
         logger.debug(f"Response status code is {resp.status_code}")
         resp.raise_for_status()
         return resp.json()
@@ -206,13 +212,14 @@ class Schwab:
         """Get latest fundamental data from Schwab."""
         self._require_client()
         logger.debug(f"Retrieving latest fundamental data for tickers {tickers}")
-        try:
-            resp = await self.client.get_instruments(
-                symbols=tickers,
-                projection=self.client.Instrument.Projection.FUNDAMENTAL,
-            )
-        except OAuthError as exc:
-            self._handle_oauth_error(exc)
+        async with self._limiter:
+            try:
+                resp = await self.client.get_instruments(
+                    symbols=tickers,
+                    projection=self.client.Instrument.Projection.FUNDAMENTAL,
+                )
+            except OAuthError as exc:
+                self._handle_oauth_error(exc)
         logger.debug(f"Response status code is {resp.status_code}")
         resp.raise_for_status()
         return resp.json()
@@ -221,10 +228,11 @@ class Schwab:
         """Get latest option chain for target ticker."""
         self._require_client()
         logger.debug(f"Retrieving latest options chain for ticker '{ticker}'")
-        try:
-            resp = await self.client.get_option_chain(ticker)
-        except OAuthError as exc:
-            self._handle_oauth_error(exc)
+        async with self._limiter:
+            try:
+                resp = await self.client.get_option_chain(ticker)
+            except OAuthError as exc:
+                self._handle_oauth_error(exc)
         resp.raise_for_status()
         return resp.json()
 
@@ -232,14 +240,15 @@ class Schwab:
         """Get top 10 price movers for the day."""
         self._require_client()
         logger.debug("Retrieving top 10 price movers from Schwab")
-        try:
-            resp = await self.client.get_movers(
-                index=self.client.Movers.Index.EQUITY_ALL,
-                sort_order=self.client.Movers.SortOrder.PERCENT_CHANGE_UP,
-                frequency=self.client.Movers.Frequency.TEN,
-            )
-        except OAuthError as exc:
-            self._handle_oauth_error(exc)
+        async with self._limiter:
+            try:
+                resp = await self.client.get_movers(
+                    index=self.client.Movers.Index.EQUITY_ALL,
+                    sort_order=self.client.Movers.SortOrder.PERCENT_CHANGE_UP,
+                    frequency=self.client.Movers.Frequency.TEN,
+                )
+            except OAuthError as exc:
+                self._handle_oauth_error(exc)
         logger.debug(f"Response status code is {resp.status_code}")
         resp.raise_for_status()
         return resp.json()
