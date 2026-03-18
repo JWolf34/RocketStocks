@@ -113,16 +113,3 @@ def format_duration_since(dt: datetime.datetime | None) -> str:
 def today() -> datetime.date:
     """Return today's date in the configured timezone."""
     return datetime.datetime.now(tz=timezone()).date()
-
-"""
-# Backward-compat alias — remove once all callers updated
-class date_utils:
-    format_date_ymd = staticmethod(format_date_ymd)
-    format_date_mdy = staticmethod(format_date_mdy)
-    format_date_from_iso = staticmethod(format_date_from_iso)
-    dt_round_down = staticmethod(dt_round_down)
-    seconds_until_minute_interval = staticmethod(seconds_until_minute_interval)
-    round_down_nearest_minute = staticmethod(round_down_nearest_minute)
-    format_duration_since = staticmethod(format_duration_since)
-    timezone = staticmethod(timezone)
-    """

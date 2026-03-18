@@ -105,8 +105,3 @@ class MarketUtils:
 
         logger.debug(f"get_current_price: no valid price found in quote, returning 0.0")
         return 0.0
-
-"""
-# Backward-compat alias
-market_utils = MarketUtils
-"""
