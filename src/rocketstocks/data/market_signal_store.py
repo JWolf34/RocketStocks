@@ -104,6 +104,19 @@ class MarketSignalRepository:
         )
         logger.debug(f"Expired old market signals before {cutoff}")
 
+    async def get_signaled_tickers_today(self) -> dict[str, dict]:
+        """Return {ticker: signal_dict} for all pending signals today, latest per ticker."""
+        now = datetime.datetime.utcnow()
+        day_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+        day_end = day_start + datetime.timedelta(days=1)
+        rows = await self._db.execute(
+            f"SELECT DISTINCT ON (ticker) {', '.join(_FIELDS)} FROM {_TABLE} "
+            "WHERE status = 'pending' AND detected_at >= %s AND detected_at < %s "
+            "ORDER BY ticker, detected_at DESC",
+            [day_start, day_end],
+        )
+        return {row[0]: dict(zip(_FIELDS, row)) for row in (rows or [])}
+
     async def is_already_signaled(self, ticker: str) -> bool:
         """Return True if ticker has an active pending signal today."""
         now = datetime.datetime.utcnow()
