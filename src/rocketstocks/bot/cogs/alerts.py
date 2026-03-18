@@ -10,8 +10,8 @@ from discord.ext import commands, tasks
 from rocketstocks.data.stockdata import StockData
 from rocketstocks.data.channel_config import ALERTS
 from rocketstocks.data.discord_state import DiscordState
-from rocketstocks.core.utils.market import market_utils
-from rocketstocks.core.utils.dates import date_utils
+from rocketstocks.core.utils.market import MarketUtils
+from rocketstocks.core.utils.dates import format_date_mdy, seconds_until_minute_interval
 from rocketstocks.core.notifications.config import NotificationLevel
 from rocketstocks.core.notifications.event import NotificationEvent
 import rocketstocks.core.analysis.indicators as an
@@ -56,7 +56,7 @@ class Alerts(commands.Cog):
     def __init__(self, bot: commands.Bot, stock_data: StockData):
         self.bot = bot
         self.stock_data = stock_data
-        self.mutils = market_utils()
+        self.mutils = MarketUtils()
         self.dstate = DiscordState(db=bot.stock_data.db)
 
         self.post_alerts_date.start()
@@ -118,7 +118,7 @@ class Alerts(commands.Cog):
 
     async def _post_alerts_date_impl(self):
         if self.mutils.market_open_today():
-            date_string = date_utils.format_date_mdy(datetime.datetime.today())
+            date_string = format_date_mdy(datetime.datetime.today())
             for _, channel in await self.bot.iter_channels(ALERTS):
                 try:
                     await channel.send(f"# :rotating_light: Alerts for {date_string} :rotating_light:")
@@ -133,7 +133,7 @@ class Alerts(commands.Cog):
     @detect_popularity_surges.before_loop
     async def detect_popularity_surges_before_loop(self):
         """Wait until the next 30-minute boundary before starting the surge loop."""
-        await asyncio.sleep(date_utils.seconds_until_minute_interval(30))
+        await asyncio.sleep(seconds_until_minute_interval(30))
 
     @tasks.loop(minutes=5)
     async def process_alerts(self):
@@ -144,7 +144,7 @@ class Alerts(commands.Cog):
     async def process_alerts_before_loop(self):
         """Wait until the next 0- or 5-minute boundary before starting the alerts loop."""
         DELTA = 30
-        await asyncio.sleep(date_utils.seconds_until_minute_interval(5) + DELTA)
+        await asyncio.sleep(seconds_until_minute_interval(5) + DELTA)
 
     # -------------------------------------------------------------------------
     # Tier 1: Popularity surge detection
@@ -228,7 +228,7 @@ class Alerts(commands.Cog):
             try:
                 quote = batch_quotes.get(ticker, {})
                 ticker_info = await self.stock_data.tickers.get_ticker_info(ticker=ticker)
-                market = market_utils()
+                market = MarketUtils()
                 price_at_flag = market.get_current_price(quote) if quote else None
 
                 alert = PopularitySurgeAlert(data=PopularitySurgeData(
@@ -396,7 +396,7 @@ class Alerts(commands.Cog):
 
                 if trigger_result.should_alert:
                     price_at_flag = surge.get('price_at_flag')
-                    market = market_utils()
+                    market = MarketUtils()
                     current_price = market.get_current_price(quote)
                     price_change_since_flag = None
                     if price_at_flag and price_at_flag != 0:

@@ -41,8 +41,7 @@ from rocketstocks.core.content.screeners.earnings_screener import WeeklyEarnings
 from rocketstocks.core.content.screeners.gainer_screener import GainerScreener
 from rocketstocks.core.content.screeners.popularity_screener import PopularityScreener
 from rocketstocks.core.content.screeners.volume_screener import VolumeScreener
-from rocketstocks.core.utils.dates import date_utils
-from rocketstocks.core.utils.market import market_utils
+from rocketstocks.core.utils.dates import round_down_nearest_minute
 from src.rocketstocks.data.stockdata import StockData
 
 logger = logging.getLogger(__name__)
@@ -129,7 +128,7 @@ def _dummy_next_earnings_info() -> dict:
 
 def _dummy_popularity() -> pd.DataFrame:
     """Create popularity rows spanning the past 6 days for surge detection."""
-    now = date_utils.round_down_nearest_minute(30)
+    now = round_down_nearest_minute(30)
     rows = []
     for day_offset in range(6):
         dt = now - datetime.timedelta(days=day_offset)

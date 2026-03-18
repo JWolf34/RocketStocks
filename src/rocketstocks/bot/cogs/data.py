@@ -7,7 +7,7 @@ from rocketstocks.data.channel_config import REPORTS
 from rocketstocks.data.clients.schwab import SchwabTokenError
 from rocketstocks.core.config.paths import datapaths
 from rocketstocks.core.utils.formatting import ticker_string
-from rocketstocks.core.utils.dates import date_utils
+from rocketstocks.core.utils.dates import format_date_mdy
 import logging
 import json
 from table2ascii import table2ascii, PresetStyle
@@ -230,7 +230,7 @@ class Data(commands.Cog):
             if target_filing is None:
                 message += f"No form {form} found for ticker `{ticker}`\n"
             else:
-                filing_date = date_utils.format_date_mdy(target_filing['filingDate'])
+                filing_date = format_date_mdy(target_filing['filingDate'])
                 sec_link = target_filing['link']
                 message += f"[{ticker} Form {form} - Filed {filing_date}]({sec_link})\n"
 

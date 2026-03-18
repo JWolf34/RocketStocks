@@ -14,8 +14,8 @@ from src.rocketstocks.data.stockdata import StockData
 from rocketstocks.data.channel_config import REPORTS, SCREENERS, ALERTS
 from rocketstocks.data.discord_state import DiscordState
 from rocketstocks.data.clients.news import News
-from rocketstocks.core.utils.market import market_utils
-from rocketstocks.core.utils.dates import date_utils
+from rocketstocks.core.utils.market import MarketUtils
+from rocketstocks.core.utils.dates import round_down_nearest_minute, seconds_until_minute_interval, timezone
 from rocketstocks.core.notifications.config import NotificationLevel
 from rocketstocks.core.notifications.event import NotificationEvent
 
@@ -82,7 +82,7 @@ class Reports(commands.Cog):
     def __init__(self, bot: commands.Bot, stock_data: StockData):
         self.bot = bot
         self.stock_data = stock_data
-        self.mutils = market_utils()
+        self.mutils = MarketUtils()
         self.dstate = DiscordState(db=self.stock_data.db)
 
         self.post_popularity_screener.start()
@@ -141,7 +141,7 @@ class Reports(commands.Cog):
         if not popular_stocks.empty:
             popular_stocks.insert(loc=0,
                                   column='datetime',
-                                  value=pd.Series([date_utils.round_down_nearest_minute(30)] * popular_stocks.shape[0]).values)
+                                  value=pd.Series([round_down_nearest_minute(30)] * popular_stocks.shape[0]).values)
 
             await self.stock_data.popularity.insert_popularity(popular_stocks=popular_stocks)
 
@@ -214,13 +214,13 @@ class Reports(commands.Cog):
     @post_volume_screener.before_loop
     @post_volume_at_time_screener.before_loop
     async def sleep_until_5m(self):
-        sleep_time = date_utils.seconds_until_minute_interval(minute=5)
+        sleep_time = seconds_until_minute_interval(minute=5)
         logger.info(f"5m reports will begin posting in {sleep_time} seconds")
         await asyncio.sleep(sleep_time)
 
     @post_popularity_screener.before_loop
     async def sleep_until_30m(self):
-        sleep_time = date_utils.seconds_until_minute_interval(minute=30)
+        sleep_time = seconds_until_minute_interval(minute=30)
         logger.info(f"30m reports will begin posting in {sleep_time} seconds")
         await asyncio.sleep(sleep_time)
 
@@ -261,7 +261,7 @@ class Reports(commands.Cog):
         await self._run_task("post_weekly_earnings", self._post_weekly_earnings_impl())
 
     async def _post_weekly_earnings_impl(self):
-        today = datetime.datetime.now(tz=date_utils.timezone()).date()
+        today = datetime.datetime.now(tz=timezone()).date()
         if today.weekday() == 0:
             content = await self.build_weekly_earnings_screener()
             logger.info("Posting weekly earnings screener...")
