@@ -18,7 +18,7 @@ class Watchlists(object):
             fetchone=True,
         )
         if row is None:
-            return None
+            return []
         return sorted(row[0].split())
 
     async def get_watchlist_counts(self, no_personal=True, no_systemGenerated=True) -> dict:

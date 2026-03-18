@@ -21,11 +21,11 @@ class TestGetWatchlistTickers:
         result = await wl.get_watchlist_tickers("my-list")
         assert result == ["AAPL", "MSFT", "TSLA"]
 
-    async def test_returns_none_when_not_found(self):
+    async def test_returns_empty_list_when_not_found(self):
         db = MagicMock()
         db.execute = AsyncMock(return_value=None)
         wl = _make(db)
-        assert await wl.get_watchlist_tickers("nonexistent") is None
+        assert await wl.get_watchlist_tickers("nonexistent") == []
 
     async def test_calls_execute_with_watchlist_id(self):
         db = MagicMock()
