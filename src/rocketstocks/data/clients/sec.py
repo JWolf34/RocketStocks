@@ -1,3 +1,4 @@
+import asyncio
 import logging
 from ratelimit import limits, sleep_and_retry
 import requests
@@ -35,8 +36,11 @@ class SEC():
 
     async def get_submissions_data(self, ticker):
         logger.debug(f"Fetching  SEC submissions for ticker {ticker}")
-        submissions_json = requests.get(f"https://data.sec.gov/submissions/CIK{await self._get_cik(ticker)}.json", headers=self.headers).json()
-        return submissions_json
+        cik = await self._get_cik(ticker)
+        resp = await asyncio.to_thread(
+            requests.get, f"https://data.sec.gov/submissions/CIK{cik}.json", headers=self.headers
+        )
+        return resp.json()
 
     async def get_recent_filings(self, ticker, latest=10):
         submissions = await self.get_submissions_data(ticker)
@@ -61,8 +65,13 @@ class SEC():
     async def get_accounts_payable(self, ticker):
         logger.debug(f"Fetching accounts payable from SEC for ticker {ticker}")
         try:
-            json = requests.get(f"https://data.sec.gov/api/xbrl/companyconcept/CIK{await self._get_cik(ticker)}/us-gaap/AccountsPayableCurrent.json", headers=self.headers).json()
-            return pd.DataFrame.from_dict(json)
+            cik = await self._get_cik(ticker)
+            resp = await asyncio.to_thread(
+                requests.get,
+                f"https://data.sec.gov/api/xbrl/companyconcept/CIK{cik}/us-gaap/AccountsPayableCurrent.json",
+                headers=self.headers,
+            )
+            return pd.DataFrame.from_dict(resp.json())
         except requests.exceptions.JSONDecodeError as e:
             logger.error(f"Encountered error when fetching accounts payable for ticker '{ticker}':\n{e}")
             return pd.DataFrame()
@@ -70,8 +79,13 @@ class SEC():
     async def get_company_facts(self, ticker):
         logger.debug(f"Fetching company facts from SEC for ticker {ticker}")
         try:
-            json = requests.get(f"https://data.sec.gov/api/xbrl/companyfacts/CIK{await self._get_cik(ticker)}.json", headers=self.headers).json()
-            return json
+            cik = await self._get_cik(ticker)
+            resp = await asyncio.to_thread(
+                requests.get,
+                f"https://data.sec.gov/api/xbrl/companyfacts/CIK{cik}.json",
+                headers=self.headers,
+            )
+            return resp.json()
         except requests.exceptions.JSONDecodeError as e:
             logger.error(f"Encountered error when fetching company facts for ticker '{ticker}':\n{e}")
             return {}
