@@ -1,7 +1,8 @@
 """Base Alert — standalone, no Report inheritance."""
 import logging
 
-from rocketstocks.core.content.models import EmbedSpec
+from rocketstocks.core.content.models import EmbedField, EmbedSpec
+from rocketstocks.core.utils.formatting import change_emoji, format_signed_pct
 
 logger = logging.getLogger(__name__)
 
@@ -28,6 +29,32 @@ class Alert:
         Subclasses must override this.
         """
         raise NotImplementedError
+
+    @staticmethod
+    def populate_trigger_data(alert_data: dict, trigger_result) -> None:
+        """Copy AlertTriggerResult fields into alert_data dict.
+
+        Safe to call when trigger_result is None — does nothing in that case.
+        """
+        if trigger_result is None:
+            return
+        alert_data['zscore'] = trigger_result.zscore
+        alert_data['percentile'] = trigger_result.percentile
+        alert_data['classification'] = getattr(
+            trigger_result.classification, 'value', str(trigger_result.classification)
+        )
+        alert_data['signal_type'] = trigger_result.signal_type
+        alert_data['bb_position'] = trigger_result.bb_position
+        alert_data['confluence_count'] = trigger_result.confluence_count
+        alert_data['volume_zscore'] = trigger_result.volume_zscore
+
+    @staticmethod
+    def price_change_fields(price: float, pct_change: float) -> list[EmbedField]:
+        """Return standard Price and Change embed fields."""
+        return [
+            EmbedField(name="Price", value=f"${price:.2f}", inline=True),
+            EmbedField(name="Change", value=format_signed_pct(pct_change), inline=True),
+        ]
 
     def override_and_edit(self, prev_alert_data: dict) -> bool:
         """Return True if the alert should be re-posted based on significant movement.
