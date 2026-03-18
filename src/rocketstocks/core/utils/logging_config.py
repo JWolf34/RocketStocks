@@ -47,7 +47,6 @@ def setup_logging(level: int = logging.DEBUG) -> None:
         file_handler.addFilter(module_filter)
         root.addHandler(file_handler)
     except OSError as e:
-        stdout_handler.setLevel(logging.DEBUG)
         logging.warning(f"Could not create log file handler: {e} — logging to stdout only")
 
 
