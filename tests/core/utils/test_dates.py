@@ -4,7 +4,12 @@ from unittest.mock import patch
 
 import pytest
 
-from rocketstocks.core.utils.dates import date_utils
+from rocketstocks.core.utils.dates import (
+    date_utils,
+    configure_tz, timezone, format_date_ymd, format_date_mdy,
+    format_date_from_iso, dt_round_down, seconds_until_minute_interval,
+    round_down_nearest_minute, format_duration_since, today,
+)
 import rocketstocks.core.utils.dates as dates_module
 
 
@@ -140,76 +145,76 @@ class TestFormatDurationSince:
     def test_seconds_ago(self):
         now = datetime.datetime.now(tz=datetime.timezone.utc)
         past = now - datetime.timedelta(seconds=30)
-        with patch("rocketstocks.core.utils.dates.date_utils.timezone", return_value=datetime.timezone.utc):
+        with patch("rocketstocks.core.utils.dates.timezone", return_value=datetime.timezone.utc):
             result = date_utils.format_duration_since(past)
         assert "seconds ago" in result
 
     def test_minutes_ago(self):
         now = datetime.datetime.now(tz=datetime.timezone.utc)
         past = now - datetime.timedelta(minutes=5)
-        with patch("rocketstocks.core.utils.dates.date_utils.timezone", return_value=datetime.timezone.utc):
+        with patch("rocketstocks.core.utils.dates.timezone", return_value=datetime.timezone.utc):
             result = date_utils.format_duration_since(past)
         assert "5 minute" in result and "ago" in result
 
     def test_minutes_and_seconds_ago(self):
         now = datetime.datetime.now(tz=datetime.timezone.utc)
         past = now - datetime.timedelta(minutes=2, seconds=30)
-        with patch("rocketstocks.core.utils.dates.date_utils.timezone", return_value=datetime.timezone.utc):
+        with patch("rocketstocks.core.utils.dates.timezone", return_value=datetime.timezone.utc):
             result = date_utils.format_duration_since(past)
         assert "2 minute" in result and "30 second" in result and "ago" in result
 
     def test_hours_ago(self):
         now = datetime.datetime.now(tz=datetime.timezone.utc)
         past = now - datetime.timedelta(hours=3)
-        with patch("rocketstocks.core.utils.dates.date_utils.timezone", return_value=datetime.timezone.utc):
+        with patch("rocketstocks.core.utils.dates.timezone", return_value=datetime.timezone.utc):
             result = date_utils.format_duration_since(past)
         assert "3 hour" in result and "ago" in result
 
     def test_hours_and_minutes_ago(self):
         now = datetime.datetime.now(tz=datetime.timezone.utc)
         past = now - datetime.timedelta(hours=2, minutes=15)
-        with patch("rocketstocks.core.utils.dates.date_utils.timezone", return_value=datetime.timezone.utc):
+        with patch("rocketstocks.core.utils.dates.timezone", return_value=datetime.timezone.utc):
             result = date_utils.format_duration_since(past)
         assert "2 hour" in result and "15 minute" in result and "ago" in result
 
     def test_days_ago(self):
         now = datetime.datetime.now(tz=datetime.timezone.utc)
         past = now - datetime.timedelta(days=5)
-        with patch("rocketstocks.core.utils.dates.date_utils.timezone", return_value=datetime.timezone.utc):
+        with patch("rocketstocks.core.utils.dates.timezone", return_value=datetime.timezone.utc):
             result = date_utils.format_duration_since(past)
         assert "5 day" in result and "ago" in result
 
     def test_days_and_hours_ago(self):
         now = datetime.datetime.now(tz=datetime.timezone.utc)
         past = now - datetime.timedelta(days=2, hours=6)
-        with patch("rocketstocks.core.utils.dates.date_utils.timezone", return_value=datetime.timezone.utc):
+        with patch("rocketstocks.core.utils.dates.timezone", return_value=datetime.timezone.utc):
             result = date_utils.format_duration_since(past)
         assert "2 day" in result and "6 hour" in result and "ago" in result
 
     def test_singular_hour(self):
         now = datetime.datetime.now(tz=datetime.timezone.utc)
         past = now - datetime.timedelta(hours=1)
-        with patch("rocketstocks.core.utils.dates.date_utils.timezone", return_value=datetime.timezone.utc):
+        with patch("rocketstocks.core.utils.dates.timezone", return_value=datetime.timezone.utc):
             result = date_utils.format_duration_since(past)
         assert "1 hour ago" in result  # singular form
 
     def test_singular_minute(self):
         now = datetime.datetime.now(tz=datetime.timezone.utc)
         past = now - datetime.timedelta(minutes=1)
-        with patch("rocketstocks.core.utils.dates.date_utils.timezone", return_value=datetime.timezone.utc):
+        with patch("rocketstocks.core.utils.dates.timezone", return_value=datetime.timezone.utc):
             result = date_utils.format_duration_since(past)
         assert "1 minute ago" in result  # singular form
 
     def test_singular_day(self):
         now = datetime.datetime.now(tz=datetime.timezone.utc)
         past = now - datetime.timedelta(days=1)
-        with patch("rocketstocks.core.utils.dates.date_utils.timezone", return_value=datetime.timezone.utc):
+        with patch("rocketstocks.core.utils.dates.timezone", return_value=datetime.timezone.utc):
             result = date_utils.format_duration_since(past)
         assert "1 day ago" in result  # singular form
 
     def test_naive_datetime_assumed_utc(self):
         # Create a naive datetime that's X minutes ago
         past_naive = datetime.datetime.utcnow() - datetime.timedelta(minutes=3)
-        with patch("rocketstocks.core.utils.dates.date_utils.timezone", return_value=datetime.timezone.utc):
+        with patch("rocketstocks.core.utils.dates.timezone", return_value=datetime.timezone.utc):
             result = date_utils.format_duration_since(past_naive)
         assert "minute" in result and "ago" in result

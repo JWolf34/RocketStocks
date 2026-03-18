@@ -1031,8 +1031,7 @@ class TestPostAlertsDate:
         cog.bot.iter_channels = AsyncMock(return_value=[(None, bad_channel), (None, good_channel)])
         cog.mutils.market_open_today.return_value = True
 
-        with patch("rocketstocks.bot.cogs.alerts.date_utils") as mock_du:
-            mock_du.format_date_mdy.return_value = "Mon 03/16"
+        with patch("rocketstocks.bot.cogs.alerts.format_date_mdy", return_value="Mon 03/16"):
             await cog._post_alerts_date_impl()
 
         bad_channel.send.assert_called_once()
@@ -1046,11 +1045,10 @@ class TestBeforeLoops:
         cog = _make_cog(earnings_df=pd.DataFrame())
 
         with (
-            patch("rocketstocks.bot.cogs.alerts.date_utils") as mock_du,
+            patch("rocketstocks.bot.cogs.alerts.seconds_until_minute_interval", return_value=42) as mock_sui,
             patch("rocketstocks.bot.cogs.alerts.asyncio.sleep", new_callable=AsyncMock) as mock_sleep,
         ):
-            mock_du.seconds_until_minute_interval.return_value = 42
             await cog.detect_popularity_surges_before_loop()
 
-        mock_du.seconds_until_minute_interval.assert_called_once_with(30)
+        mock_sui.assert_called_once_with(30)
         mock_sleep.assert_awaited_once_with(42)

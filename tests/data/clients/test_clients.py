@@ -334,7 +334,7 @@ class TestFinancials:
 
 class TestEarningsReturnType:
     def _make_earnings(self):
-        with patch('rocketstocks.data.earnings.market_utils'):
+        with patch('rocketstocks.data.earnings.MarketUtils'):
             from rocketstocks.data.earnings import Earnings
             mock_nasdaq = MagicMock()
             mock_db = MagicMock()

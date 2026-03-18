@@ -7,7 +7,7 @@ import pytest
 
 
 def _make_earnings(db=None, nasdaq=None):
-    with patch("rocketstocks.data.earnings.market_utils"):
+    with patch("rocketstocks.data.earnings.MarketUtils"):
         from rocketstocks.data.earnings import Earnings
         mock_db = db or MagicMock()
         if not hasattr(mock_db, 'execute') or not isinstance(mock_db.execute, AsyncMock):
@@ -112,7 +112,7 @@ class TestUpdateHistoricalEarnings:
         db.execute.return_value = None  # no prior date → use default
         nasdaq.get_earnings_by_date.return_value = self._make_nasdaq_rows()
         db.execute_batch = AsyncMock()
-        with patch("rocketstocks.data.earnings.market_utils") as mu:
+        with patch("rocketstocks.data.earnings.MarketUtils") as mu:
             mu.return_value.market_open_on_date.return_value = True
             with patch("rocketstocks.data.earnings.datetime") as mock_dt:
                 mock_dt.date.today.return_value = datetime.date(2008, 1, 5)
@@ -133,7 +133,7 @@ class TestUpdateHistoricalEarnings:
             # 'eps' and 'surprise' intentionally absent
         }])
         db.execute_batch = AsyncMock()
-        with patch("rocketstocks.data.earnings.market_utils") as mu:
+        with patch("rocketstocks.data.earnings.MarketUtils") as mu:
             mu.return_value.market_open_on_date.return_value = True
             with patch("rocketstocks.data.earnings.datetime") as mock_dt:
                 mock_dt.date.today.return_value = datetime.date(2008, 1, 5)
@@ -148,7 +148,7 @@ class TestUpdateHistoricalEarnings:
         db.execute.return_value = None
         nasdaq.get_earnings_by_date.return_value = pd.DataFrame()
         db.execute_batch = AsyncMock()
-        with patch("rocketstocks.data.earnings.market_utils") as mu:
+        with patch("rocketstocks.data.earnings.MarketUtils") as mu:
             mu.return_value.market_open_on_date.return_value = True
             with patch("rocketstocks.data.earnings.datetime") as mock_dt:
                 mock_dt.date.today.return_value = datetime.date(2008, 1, 5)

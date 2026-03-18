@@ -44,10 +44,8 @@ def _make_dstate(message_id=None, alert_data=None):
 
 
 def _patch_date_utils():
-    """Return a context manager that patches date_utils.timezone() with UTC."""
-    mock_du = MagicMock()
-    mock_du.timezone.return_value = _TZ
-    return patch("rocketstocks.bot.senders.alert_sender.date_utils", mock_du)
+    """Return a context manager that patches timezone() with UTC."""
+    return patch("rocketstocks.bot.senders.alert_sender.timezone", return_value=_TZ)
 
 
 class TestSendAlertNewAlert:
@@ -188,9 +186,9 @@ class TestSendAlertMomentumConfirmation:
         def mock_format_duration(dt):
             return "2 hours ago"
 
-        with _patch_date_utils() as mock_du:
-            mock_du.format_duration_since = mock_format_duration
-            await send_alert(alert, channel, dstate)
+        with _patch_date_utils():
+            with patch("rocketstocks.bot.senders.alert_sender.format_duration_since", side_effect=mock_format_duration):
+                await send_alert(alert, channel, dstate)
 
         sent_kwargs = channel.send.call_args.kwargs
         sent_embed = sent_kwargs["embed"]

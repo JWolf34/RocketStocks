@@ -7,13 +7,13 @@ import pytest
 
 
 def _make_market_utils(schedule=None):
-    """Build a market_utils instance with a mocked calendar."""
+    """Build a MarketUtils instance with a mocked calendar."""
     with patch("rocketstocks.core.utils.market.mcal") as mock_mcal:
         mock_cal = MagicMock()
         mock_mcal.get_calendar.return_value = mock_cal
         mock_cal.schedule.return_value = schedule if schedule is not None else pd.DataFrame()
-        from rocketstocks.core.utils.market import market_utils
-        mu = market_utils()
+        from rocketstocks.core.utils.market import MarketUtils
+        mu = MarketUtils()
         mu._calendar = mock_cal
         if schedule is not None:
             mu._schedule = schedule
@@ -113,7 +113,7 @@ class TestInAftermarket:
 
 class TestGetMarketPeriod:
     def _mu_with_period(self, period: str):
-        """Return a market_utils whose period methods return one True at most."""
+        """Return a MarketUtils whose period methods return one True at most."""
         mu, _ = _make_market_utils(pd.DataFrame())
         mu.in_premarket = MagicMock(return_value=(period == "premarket"))
         mu.in_intraday = MagicMock(return_value=(period == "intraday"))
@@ -136,3 +136,49 @@ class TestGetMarketPeriod:
     def test_eod(self):
         mu = self._mu_with_period("EOD")
         assert mu.get_market_period() == "EOD"
+
+
+class TestScheduleCaching:
+    def test_schedule_fetched_on_first_call(self):
+        """_refresh_schedule_if_needed fetches the schedule on first call."""
+        mu, mock_cal = _make_market_utils()
+        today = datetime.date.today()
+        new_schedule = pd.DataFrame({"pre": [1], "market_open": [2], "market_close": [3], "post": [4]})
+        mock_cal.schedule.return_value = new_schedule
+        mu.get_market_schedule = MagicMock(return_value=new_schedule)
+
+        with patch("rocketstocks.core.utils.market.datetime.datetime") as mock_dt:
+            mock_dt.now.return_value.date.return_value = today
+            mu._refresh_schedule_if_needed()
+
+        mu.get_market_schedule.assert_called_once_with(today)
+        assert mu._cached_date == today
+
+    def test_schedule_not_refetched_on_same_day(self):
+        """_refresh_schedule_if_needed skips the fetch when cached_date equals today."""
+        mu, mock_cal = _make_market_utils()
+        today = datetime.date.today()
+        mu._cached_date = today
+        mu.get_market_schedule = MagicMock()
+
+        with patch("rocketstocks.core.utils.market.datetime.datetime") as mock_dt:
+            mock_dt.now.return_value.date.return_value = today
+            mu._refresh_schedule_if_needed()
+
+        mu.get_market_schedule.assert_not_called()
+
+    def test_schedule_refetched_on_new_day(self):
+        """_refresh_schedule_if_needed re-fetches when the date has advanced."""
+        mu, mock_cal = _make_market_utils()
+        yesterday = datetime.date.today() - datetime.timedelta(days=1)
+        today = datetime.date.today()
+        mu._cached_date = yesterday
+        new_schedule = pd.DataFrame({"pre": [1], "market_open": [2], "market_close": [3], "post": [4]})
+        mu.get_market_schedule = MagicMock(return_value=new_schedule)
+
+        with patch("rocketstocks.core.utils.market.datetime.datetime") as mock_dt:
+            mock_dt.now.return_value.date.return_value = today
+            mu._refresh_schedule_if_needed()
+
+        mu.get_market_schedule.assert_called_once_with(today)
+        assert mu._cached_date == today

@@ -78,9 +78,7 @@ class TestSendScreener:
         content = _make_content(screener_type="gainer")
         dstate = _make_dstate(message_id=None)
 
-        mock_du = MagicMock()
-        mock_du.timezone.return_value = datetime.timezone.utc
-        with patch("rocketstocks.bot.senders.report_sender.date_utils", mock_du):
+        with patch("rocketstocks.bot.senders.report_sender.timezone", return_value=datetime.timezone.utc):
             result = await send_screener(content, channel, dstate)
 
         channel.send.assert_awaited_once()
@@ -102,11 +100,9 @@ class TestSendScreener:
         existing_msg.created_at.astimezone.return_value.date.return_value = today.date()
         channel.fetch_message.return_value = existing_msg
 
-        with patch("rocketstocks.bot.senders.report_sender.date_utils") as mock_du:
-            mock_du.timezone.return_value = datetime.timezone.utc
+        with patch("rocketstocks.bot.senders.report_sender.timezone", return_value=datetime.timezone.utc):
             mock_today = MagicMock()
             mock_today.date.return_value = today.date()
-            mock_du.timezone.return_value = datetime.timezone.utc
 
             with patch("rocketstocks.bot.senders.report_sender.datetime") as mock_dt:
                 mock_dt.datetime.now.return_value = mock_today
@@ -133,8 +129,7 @@ class TestSendScreener:
         existing_msg.created_at.astimezone.return_value.date.return_value = yesterday
         channel.fetch_message.return_value = existing_msg
 
-        with patch("rocketstocks.bot.senders.report_sender.date_utils") as mock_du:
-            mock_du.timezone.return_value = datetime.timezone.utc
+        with patch("rocketstocks.bot.senders.report_sender.timezone", return_value=datetime.timezone.utc):
             with patch("rocketstocks.bot.senders.report_sender.datetime") as mock_dt:
                 mock_dt.datetime.now.return_value.date.return_value = today
                 result = await send_screener(content, channel, dstate)
