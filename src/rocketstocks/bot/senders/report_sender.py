@@ -2,7 +2,7 @@ import datetime
 import logging
 import discord
 from rocketstocks.data.discord_state import DiscordState
-from rocketstocks.core.utils.dates import date_utils
+from rocketstocks.core.utils.dates import timezone
 from rocketstocks.bot.senders.embed_utils import spec_to_embed
 
 logger = logging.getLogger(__name__)
@@ -68,13 +68,13 @@ async def send_screener(content, channel: discord.TextChannel,
     screener_type = content.screener_type.upper().replace("-", "_")
     logger.info(f"Sending '{screener_type}' screener...")
 
-    today = datetime.datetime.now(tz=date_utils.timezone()).date()
+    today = datetime.datetime.now(tz=timezone()).date()
     message_id = await dstate.get_screener_message_id(screener_type=screener_type)
 
     if message_id:
         logger.debug(f"Existing screener '{screener_type}' found with ID {message_id}")
         curr_message = await channel.fetch_message(message_id)
-        message_create_date = curr_message.created_at.astimezone(date_utils.timezone()).date()
+        message_create_date = curr_message.created_at.astimezone(timezone()).date()
 
         if message_create_date < today:
             # Old message — create new one for today

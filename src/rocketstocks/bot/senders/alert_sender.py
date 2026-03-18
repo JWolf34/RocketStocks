@@ -2,7 +2,7 @@ import datetime
 import json
 import logging
 import discord
-from rocketstocks.core.utils.dates import date_utils
+from rocketstocks.core.utils.dates import timezone, format_duration_since
 from rocketstocks.data.discord_state import DiscordState
 from rocketstocks.bot.senders.embed_utils import spec_to_embed
 
@@ -40,12 +40,12 @@ async def send_alert(
         # Include duration since surge was flagged if available
         duration_text = ""
         if hasattr(alert.data, 'surge_flagged_at') and alert.data.surge_flagged_at:
-            duration = date_utils.format_duration_since(alert.data.surge_flagged_at)
+            duration = format_duration_since(alert.data.surge_flagged_at)
             if duration:
                 duration_text = f" ({duration})"
         embed.description = (embed.description or "") + f"\n\n[📡 View original surge alert{duration_text}]({surge_link})"
 
-    today = datetime.datetime.now(tz=date_utils.timezone()).date()
+    today = datetime.datetime.now(tz=timezone()).date()
     message_id = await dstate.get_alert_message_id(
         date=today, ticker=alert.ticker, alert_type=alert.alert_type
     )
@@ -66,7 +66,7 @@ async def send_alert(
                 f"Significant movements on ticker {alert.ticker} since alert last posted — updating..."
             )
             prev_message = await channel.fetch_message(message_id)
-            prev_message_time = prev_message.created_at.astimezone(date_utils.timezone())
+            prev_message_time = prev_message.created_at.astimezone(timezone())
             update_link = (
                 "\n"
                 f"[📡 Updated from last alert at "

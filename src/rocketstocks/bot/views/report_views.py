@@ -1,6 +1,8 @@
 import discord
 import logging
 
+from rocketstocks.core.utils.formatting import finviz_url
+
 logger = logging.getLogger(__name__)
 
 
@@ -21,7 +23,7 @@ class StockReportButtons(discord.ui.View):
         self.add_item(discord.ui.Button(label="StockInvest", style=discord.ButtonStyle.url,
                                         url=f"https://stockinvest.us/stock/{ticker}"))
         self.add_item(discord.ui.Button(label="FinViz", style=discord.ButtonStyle.url,
-                                        url=f"https://finviz.com/quote.ashx?t={ticker}"))
+                                        url=finviz_url(ticker)))
         self.add_item(discord.ui.Button(label="Yahoo! Finance", style=discord.ButtonStyle.url,
                                         url=f"https://finance.yahoo.com/quote/{ticker}"))
 

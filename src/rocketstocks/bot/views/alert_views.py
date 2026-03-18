@@ -1,6 +1,8 @@
 import discord
 import logging
 
+from rocketstocks.core.utils.formatting import finviz_url
+
 logger = logging.getLogger(__name__)
 
 _GITHUB_DOCS_BASE = "https://github.com/JWolf34/RocketStocks/blob/main/docs/alerts"
@@ -66,7 +68,7 @@ class AlertButtons(discord.ui.View):
         self.add_item(discord.ui.Button(
             label="FinViz",
             style=discord.ButtonStyle.url,
-            url=f"https://finviz.com/quote.ashx?t={ticker}",
+            url=finviz_url(ticker),
         ))
         self.add_item(discord.ui.Button(
             label="Yahoo! Finance",
