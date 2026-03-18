@@ -18,20 +18,31 @@ class PopularityRepository:
         self._db = db
         self._ape_wisdom = ape_wisdom or ApeWisdom()
 
-    async def fetch_popularity(self, ticker: str = None) -> pd.DataFrame:
+    async def fetch_popularity(self, ticker: str = None, limit: int = None) -> pd.DataFrame:
         """Return historical popularity for *ticker* (or all tickers) from database."""
         if ticker:
             logger.info(f"Retrieving historical popularity for {ticker} from database")
-            rows = await self._db.execute(
+            query = (
                 f"SELECT {', '.join(_POPULARITY_COLS)} FROM popularity "
-                "WHERE ticker = %s ORDER BY datetime DESC",
-                [ticker],
+                "WHERE ticker = %s ORDER BY datetime DESC"
             )
+            params: list = [ticker]
+            if limit is not None:
+                query += " LIMIT %s"
+                params.append(limit)
+            rows = await self._db.execute(query, params)
         else:
             logger.info("Retrieving all historical popularity from database")
-            rows = await self._db.execute(
-                f"SELECT {', '.join(_POPULARITY_COLS)} FROM popularity ORDER BY datetime DESC"
-            )
+            if limit is not None:
+                rows = await self._db.execute(
+                    f"SELECT {', '.join(_POPULARITY_COLS)} FROM popularity "
+                    "ORDER BY datetime DESC LIMIT %s",
+                    [limit],
+                )
+            else:
+                rows = await self._db.execute(
+                    f"SELECT {', '.join(_POPULARITY_COLS)} FROM popularity ORDER BY datetime DESC"
+                )
         return pd.DataFrame(rows or [], columns=_POPULARITY_COLS)
 
     async def insert_popularity(self, popular_stocks: pd.DataFrame) -> None:

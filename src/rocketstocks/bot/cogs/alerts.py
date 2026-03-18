@@ -169,24 +169,26 @@ class Alerts(commands.Cog):
             logger.warning("No popularity data returned from ApeWisdom")
             return
 
+        # Batch: fetch all already-flagged tickers in one query instead of per-ticker SELECTs
+        flagged_tickers = await self.stock_data.surge_store.get_flagged_tickers()
+
+        # First pass: evaluate surges for non-flagged tickers
+        surging: dict[str, tuple] = {}  # ticker → (surge_result, popularity_history)
         for _, row in pop_df.iterrows():
             ticker = row.get('ticker')
-            if not ticker:
+            if not ticker or ticker in flagged_tickers:
                 await asyncio.sleep(0)
                 continue
 
             try:
-                already_flagged = await self.stock_data.surge_store.is_already_flagged(ticker)
-                if already_flagged:
-                    await asyncio.sleep(0)
-                    continue
-
                 current_rank = row.get('rank')
                 rank_24h_ago = row.get('rank_24h_ago')
                 mentions = row.get('mentions')
                 mentions_24h_ago = row.get('mentions_24h_ago')
 
-                popularity_history = await self.stock_data.popularity.fetch_popularity(ticker=ticker)
+                popularity_history = await self.stock_data.popularity.fetch_popularity(
+                    ticker=ticker, limit=35
+                )
 
                 surge_result = evaluate_popularity_surge(
                     ticker=ticker,
