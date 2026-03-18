@@ -23,6 +23,7 @@ dependencies = [
     "ratelimit",
     "pandas_market_calendars",
     "schwab-py",
+    "aiolimiter>=1.1,<2",
     "beautifulsoup4",
     "numpy>=2.4.0",
     "python-dotenv",
