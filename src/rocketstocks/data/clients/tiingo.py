@@ -2,6 +2,7 @@
 import datetime
 import logging
 import pandas as pd
+from ratelimit import limits, sleep_and_retry
 from tiingo import TiingoClient
 
 from rocketstocks.core.config.settings import settings
@@ -58,6 +59,8 @@ class Tiingo:
 
         return pd.DataFrame(rows, columns=['ticker', 'name', 'exchange', 'security_type', 'delist_date'])
 
+    @sleep_and_retry
+    @limits(calls=10, period=1)
     def get_ticker_metadata(self, ticker: str) -> dict | None:
         """Return metadata dict for a single ticker. Returns None if not found."""
         try:
@@ -86,6 +89,8 @@ class Tiingo:
             logger.warning(f"Tiingo get_ticker_metadata({ticker}) failed: {exc}")
             return None
 
+    @sleep_and_retry
+    @limits(calls=10, period=1)
     def get_daily_price_history(self, ticker: str, start_date: str, end_date: str) -> pd.DataFrame:
         """Return daily OHLCV DataFrame for *ticker* (works for delisted tickers).
 
