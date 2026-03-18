@@ -7,7 +7,7 @@ import traceback as tb
 import pandas as pd
 from discord.ext import commands, tasks
 
-from src.rocketstocks.data.stockdata import StockData
+from rocketstocks.data.stockdata import StockData
 from rocketstocks.data.channel_config import ALERTS
 from rocketstocks.data.discord_state import DiscordState
 from rocketstocks.core.utils.market import market_utils
@@ -41,7 +41,6 @@ from rocketstocks.bot.views.alert_views import (
     PopularitySurgeAlertButtons,
     POPULARITY_SURGE_DOC_URL,
     MOMENTUM_CONFIRMATION_DOC_URL,
-    MARKET_ALERT_DOC_URL,
     MARKET_MOVER_DOC_URL,
     WATCHLIST_MOVER_DOC_URL,
     EARNINGS_MOVER_DOC_URL,
@@ -315,6 +314,24 @@ class Alerts(commands.Cog):
         watchlist_tickers = set(await self.stock_data.watchlists.get_all_watchlist_tickers())
         surge_ticker_set = set(surge_tickers)
 
+        # Build ticker → watchlist mapping to avoid N+1 queries in build_watchlist_mover
+        ticker_to_watchlist: dict = {}
+        all_watchlist_ids = await self.stock_data.watchlists.get_watchlists()
+        for wl_id in all_watchlist_ids:
+            wl_tickers = await self.stock_data.watchlists.get_watchlist_tickers(watchlist_id=wl_id)
+            for t in wl_tickers:
+                ticker_to_watchlist[t] = wl_id
+
+        # Pre-fetch price history for all relevant tickers in a single batch query
+        start_date = today - datetime.timedelta(days=90)
+        all_price_tickers = list(set(
+            surge_tickers + signal_tickers
+            + list(watchlist_tickers) + list(earnings_tickers) + list(quotes.keys())
+        ))
+        price_cache = await self.stock_data.price_history.fetch_daily_price_history_batch(
+            tickers=all_price_tickers, start_date=start_date,
+        )
+
         labels = [
             "_confirmation_pipeline",
             "_market_signal_pipeline",
@@ -323,14 +340,17 @@ class Alerts(commands.Cog):
             "_earnings_pipeline",
         ]
         results = await asyncio.gather(
-            self._confirmation_pipeline(active_surges, quotes, classifications, alert_channels),
+            self._confirmation_pipeline(active_surges, quotes, classifications, alert_channels, price_cache),
             self._market_signal_pipeline(
                 quotes, classifications,
                 exclude=surge_ticker_set | watchlist_tickers | earnings_tickers,
+                price_cache=price_cache,
             ),
-            self._market_confirmation_pipeline(active_signals, quotes, alert_channels),
-            self._watchlist_pipeline(quotes, classifications, alert_channels, watchlist_tickers),
-            self._earnings_pipeline(quotes, classifications, alert_channels, earnings_tickers),
+            self._market_confirmation_pipeline(active_signals, quotes, alert_channels, price_cache),
+            self._watchlist_pipeline(
+                quotes, classifications, alert_channels, watchlist_tickers, price_cache, ticker_to_watchlist,
+            ),
+            self._earnings_pipeline(quotes, classifications, alert_channels, earnings_today, price_cache),
             return_exceptions=True,
         )
         for label, result in zip(labels, results):
@@ -352,6 +372,7 @@ class Alerts(commands.Cog):
         quotes: dict,
         classifications: dict,
         channels: list,
+        price_cache: dict,
     ):
         """Confirm popularity surges when price/volume follows."""
         logger.info("Processing confirmation pipeline")
@@ -363,7 +384,7 @@ class Alerts(commands.Cog):
                 quote = quotes[ticker]
                 pct_change = quote['quote']['netPercentChange']
                 classification = classifications.get(ticker, 'standard')
-                daily_price_history = await self.stock_data.price_history.fetch_daily_price_history(ticker=ticker)
+                daily_price_history = price_cache.get(ticker, pd.DataFrame())
                 current_volume = quote['quote'].get('totalVolume')
 
                 trigger_result = evaluate_price_alert(
@@ -412,16 +433,21 @@ class Alerts(commands.Cog):
         quotes: dict,
         classifications: dict,
         exclude: set,
+        price_cache: dict,
     ):
         """Silently record market signals — no alerts sent here."""
         logger.info("Processing market signal pipeline")
+
+        # Batch: fetch all pending signals for today in one query
+        signaled_today = await self.stock_data.market_signal_store.get_signaled_tickers_today()
+
         for ticker, quote in quotes.items():
             if ticker in exclude:
                 continue
             try:
                 pct_change = quote['quote']['netPercentChange']
                 classification = classifications.get(ticker, 'standard')
-                daily_price_history = await self.stock_data.price_history.fetch_daily_price_history(ticker=ticker)
+                daily_price_history = price_cache.get(ticker, pd.DataFrame())
                 current_volume = quote['quote'].get('totalVolume')
 
                 trigger_result = evaluate_price_alert(
@@ -448,11 +474,8 @@ class Alerts(commands.Cog):
                         except Exception:
                             pass
 
-                    already_signaled = await self.stock_data.market_signal_store.is_already_signaled(ticker)
-
-                    if already_signaled:
-                        # Get the latest signal to update with new observation
-                        latest_signal = await self.stock_data.market_signal_store.get_latest_signal(ticker)
+                    if ticker in signaled_today:
+                        latest_signal = signaled_today[ticker]
                         if latest_signal is not None:
                             await self.stock_data.market_signal_store.update_observation(
                                 ticker,
@@ -498,6 +521,7 @@ class Alerts(commands.Cog):
         active_signals: list[dict],
         quotes: dict,
         channels: list,
+        price_cache: dict,
     ):
         """Post Market Mover alerts for signals that have sustained or accelerated."""
         logger.info("Processing market confirmation pipeline")
@@ -510,7 +534,7 @@ class Alerts(commands.Cog):
                 pct_change = quote['quote']['netPercentChange']
                 current_volume = quote['quote'].get('totalVolume')
 
-                daily_price_history = await self.stock_data.price_history.fetch_daily_price_history(ticker=ticker)
+                daily_price_history = price_cache.get(ticker, pd.DataFrame())
 
                 trigger_result = evaluate_price_alert(
                     classification='standard',
@@ -530,7 +554,6 @@ class Alerts(commands.Cog):
                 )
 
                 if confirmed:
-                    classification = signal.get('dominant_signal', 'standard')
                     composite_result = compute_composite_score(trigger_result)
 
                     rvol = signal.get('rvol')
@@ -574,6 +597,8 @@ class Alerts(commands.Cog):
         classifications: dict,
         channels: list,
         watchlist_tickers: set,
+        price_cache: dict,
+        ticker_to_watchlist: dict,
     ):
         """Send watchlist alerts when a watched stock moves significantly."""
         logger.info("Processing watchlist pipeline")
@@ -583,7 +608,7 @@ class Alerts(commands.Cog):
             try:
                 pct_change = quote['quote']['netPercentChange']
                 classification = classifications.get(ticker, 'standard')
-                daily_price_history = await self.stock_data.price_history.fetch_daily_price_history(ticker=ticker)
+                daily_price_history = price_cache.get(ticker, pd.DataFrame())
                 current_volume = quote['quote'].get('totalVolume')
 
                 trigger_result = evaluate_price_alert(
@@ -603,6 +628,7 @@ class Alerts(commands.Cog):
                         quote=quote,
                         daily_price_history=daily_price_history,
                         trigger_result=trigger_result,
+                        watchlist=ticker_to_watchlist.get(ticker),
                     )
                     view = AlertButtons(ticker=ticker, doc_url=WATCHLIST_MOVER_DOC_URL)
                     for channel in channels:
@@ -616,7 +642,8 @@ class Alerts(commands.Cog):
         quotes: dict,
         classifications: dict,
         channels: list,
-        earnings_tickers: set,
+        earnings_today: pd.DataFrame,
+        price_cache: dict,
     ):
         """Send earnings alerts when a reporting stock moves significantly.
 
@@ -625,14 +652,13 @@ class Alerts(commands.Cog):
         send_alert() handle subsequent updates via override_and_edit.
         """
         logger.info("Processing earnings pipeline")
-        today = datetime.date.today()
-        earnings_today = await self.stock_data.earnings.get_earnings_on_date(date=today)
 
         if earnings_today.empty:
             return
 
+        earnings_tickers = set(earnings_today['ticker'].tolist())
         earnings_quotes = {t: q for t, q in quotes.items() if t in earnings_tickers}
-        
+
         # Fetch tickers that already have alerts posted today to skip re-evaluation
         posted_tickers = await self.dstate.get_alerts_by_type_today('EARNINGS_MOVER')
         posted_set = set(posted_tickers)
@@ -641,7 +667,7 @@ class Alerts(commands.Cog):
             try:
                 pct_change = quote['quote']['netPercentChange']
                 classification = classifications.get(ticker, 'standard')
-                
+
                 # Skip expensive re-evaluation for tickers with existing alerts
                 # Let override_and_edit momentum logic decide on updates
                 if ticker in posted_set:
@@ -667,7 +693,7 @@ class Alerts(commands.Cog):
                     continue
 
                 # First-time check: evaluate if movement warrants initial alert
-                daily_price_history = await self.stock_data.price_history.fetch_daily_price_history(ticker=ticker)
+                daily_price_history = price_cache.get(ticker, pd.DataFrame())
                 current_volume = quote['quote'].get('totalVolume')
 
                 trigger_result = evaluate_price_alert(
