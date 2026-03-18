@@ -15,7 +15,7 @@ import pandas as pd
 import pandas_ta_classic as ta
 
 from rocketstocks.core.content.formatting import format_large_num
-from rocketstocks.core.utils.dates import date_utils
+from rocketstocks.core.utils.dates import format_date_mdy, format_date_from_iso, timezone, round_down_nearest_minute
 
 logger = logging.getLogger(__name__)
 
@@ -57,7 +57,7 @@ def recent_earnings_card(historical_earnings: pd.DataFrame, *, show_header: bool
 
     lines = [header] if show_header else []
     for _, row in historical_earnings.tail(4).iloc[::-1].iterrows():
-        date_str = date_utils.format_date_mdy(row['date'])
+        date_str = format_date_mdy(row['date'])
         eps = row['eps']
         surprise = row['surprise']
         estimate = row['epsforecast']
@@ -184,7 +184,7 @@ def performance_card(daily_price_history: pd.DataFrame, quote: dict) -> str:
 
     close = quote['regular']['regularMarketLastPrice']
     interval_map = {"1D": 1, "5D": 5, "1M": 30, "3M": 90, "6M": 180}
-    today = datetime.datetime.now(tz=date_utils.timezone()).date()
+    today = datetime.datetime.now(tz=timezone()).date()
 
     interval_parts = []
     for label, interval in interval_map.items():
@@ -415,7 +415,7 @@ def upcoming_earnings_card(next_earnings_info: dict) -> str:
     if not next_earnings_info:
         return header + "No upcoming earnings\n\n"
 
-    date_str = date_utils.format_date_mdy(next_earnings_info['date'])
+    date_str = format_date_mdy(next_earnings_info['date'])
     time_raw = next_earnings_info.get('time', '')
     if 'pre-market' in str(time_raw):
         time_label = "Pre-Market"
@@ -470,7 +470,7 @@ def earnings_date_card(ticker: str, next_earnings_info: dict) -> str:
     if not next_earnings_info:
         return ''
     message = f"`{ticker}` reports earnings on "
-    message += f"{date_utils.format_date_mdy(next_earnings_info['date'])}, "
+    message += f"{format_date_mdy(next_earnings_info['date'])}, "
     earnings_time = next_earnings_info['time']
     if "pre-market" in earnings_time:
         message += "before market open"
@@ -485,7 +485,7 @@ def news_card(news: dict) -> str:
     """Up to 10 recent news articles as hyperlinks."""
     report = ''
     for article in news['articles'][:10]:
-        article_date = date_utils.format_date_from_iso(date=article['publishedAt']).strftime("%m/%d/%y %H:%M:%S EST")
+        article_date = format_date_from_iso(date=article['publishedAt']).strftime("%m/%d/%y %H:%M:%S EST")
         article_line = f"[{article['title']} - {article['source']['name']} ({article_date})](<{article['url']}>)\n"
         if len(report + article_line) <= 1900:
             report += article_line
@@ -566,7 +566,7 @@ def weekly_earnings_cards(data: pd.DataFrame, watchlist_tickers: list[str]) -> s
     """Upcoming earnings grouped by day as stacked cards."""
     import datetime as dt
     lines = []
-    today = date_utils.round_down_nearest_minute(1).date()
+    today = round_down_nearest_minute(1).date()
 
     for i in range(7):
         day = today + dt.timedelta(days=i)

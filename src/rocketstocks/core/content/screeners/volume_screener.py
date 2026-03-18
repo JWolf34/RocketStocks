@@ -5,7 +5,7 @@ from rocketstocks.core.content.formatting import format_large_num
 from rocketstocks.core.content.models import COLOR_ORANGE, EmbedSpec, VolumeScreenerData
 from rocketstocks.core.content.screeners.base import Screener
 from rocketstocks.core.content.sections_card import volume_screener_cards
-from rocketstocks.core.utils.dates import date_utils
+from rocketstocks.core.utils.dates import timezone
 
 logger = logging.getLogger(__name__)
 
@@ -47,7 +47,7 @@ class VolumeScreener(Screener):
 
     def build(self) -> EmbedSpec:
         logger.debug(f"Building '{self.screener_type}' screener embed...")
-        now = datetime.datetime.now(tz=date_utils.timezone())
+        now = datetime.datetime.now(tz=timezone())
         count = len(self.data[:12])
         title = "🚨 Unusual Volume — {} stocks · {} (Updated {})".format(
             count,

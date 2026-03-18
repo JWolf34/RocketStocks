@@ -10,6 +10,7 @@ from rocketstocks.core.content.sections_card import (
     popularity_card, sec_filings_card, recent_alerts_card,
     ticker_info_card, todays_change_card,
 )
+from rocketstocks.core.utils.formatting import finviz_url
 
 logger = logging.getLogger(__name__)
 
@@ -57,5 +58,5 @@ class StockReport:
             color=color,
             footer="RocketStocks · stock-report",
             timestamp=True,
-            url=f"https://finviz.com/quote.ashx?t={self.data.ticker}",
+            url=finviz_url(self.data.ticker),
         )

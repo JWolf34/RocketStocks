@@ -4,7 +4,7 @@ import logging
 from rocketstocks.core.content.models import COLOR_CYAN, EmbedSpec, PopularityScreenerData
 from rocketstocks.core.content.screeners.base import Screener
 from rocketstocks.core.content.sections_card import popularity_screener_cards
-from rocketstocks.core.utils.dates import date_utils
+from rocketstocks.core.utils.dates import timezone, round_down_nearest_minute
 
 logger = logging.getLogger(__name__)
 
@@ -29,9 +29,9 @@ class PopularityScreener(Screener):
 
     def build(self) -> EmbedSpec:
         logger.debug(f"Building '{self.screener_type}' screener embed...")
-        now = datetime.datetime.now(tz=date_utils.timezone())
+        now = datetime.datetime.now(tz=timezone())
         count = len(self.data[:20])
-        updated_time = date_utils.round_down_nearest_minute(30).astimezone(date_utils.timezone()).strftime("%I:%M %p")
+        updated_time = round_down_nearest_minute(30).astimezone(timezone()).strftime("%I:%M %p")
         title = "🔥 Popular Stocks — {} stocks · {} (Updated {})".format(
             count,
             now.date().strftime("%m/%d/%Y"),

@@ -2,7 +2,7 @@ import datetime
 import logging
 import numpy as np
 import pandas as pd
-from rocketstocks.core.utils.dates import date_utils
+from rocketstocks.core.utils.dates import dt_round_down
 
 logger = logging.getLogger(__name__)
 
@@ -14,9 +14,9 @@ class indicators:
         def avg_vol_at_time(data: pd.DataFrame, periods: int = 10, dt: datetime.datetime = None):
             logger.debug(f"Calculating avg_vol_at_time {dt} over last {periods} periods")
             if dt is None:
-                dt = date_utils.dt_round_down(datetime.datetime.now() - datetime.timedelta(minutes=5))
+                dt = dt_round_down(datetime.datetime.now() - datetime.timedelta(minutes=5))
             else:
-                dt = date_utils.dt_round_down(dt)
+                dt = dt_round_down(dt)
             time = datetime.time(hour=dt.hour, minute=dt.minute)
 
             filtered_data = data[data['datetime'].apply(lambda x: x.time()) == time]

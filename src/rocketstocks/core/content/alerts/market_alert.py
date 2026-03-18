@@ -1,5 +1,4 @@
 import logging
-import math
 
 from rocketstocks.core.content.alerts.base import Alert
 from rocketstocks.core.content.alerts.earnings_alert import _stat_fields_from_trigger
@@ -7,7 +6,9 @@ from rocketstocks.core.content.models import (
     COLOR_CYAN, COLOR_RED,
     EmbedField, EmbedSpec,
 )
-from rocketstocks.core.content.formatting import format_large_num
+from rocketstocks.core.utils.formatting import (
+    change_emoji, finviz_url, format_signed_pct, get_company_name, is_valid_number,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -33,23 +34,14 @@ class MarketAlert(Alert):
         self.alert_data['classification_component'] = cr.classification_component
         self.alert_data['rvol'] = data.rvol
 
-        tr = cr.trigger_result
-        if tr is not None:
-            self.alert_data['zscore'] = tr.zscore
-            self.alert_data['percentile'] = tr.percentile
-            self.alert_data['classification'] = getattr(tr.classification, 'value', str(tr.classification))
-            self.alert_data['signal_type'] = tr.signal_type
-            self.alert_data['bb_position'] = tr.bb_position
-            self.alert_data['confluence_count'] = tr.confluence_count
-            self.alert_data['volume_zscore'] = tr.volume_zscore
+        self.populate_trigger_data(self.alert_data, cr.trigger_result)
 
     def build(self) -> EmbedSpec:
         logger.debug("Building Market Alert embed...")
 
         pct_change = self.alert_data['pct_change']
         price = self.data.quote['regular']['regularMarketLastPrice']
-        company_name = (self.data.ticker_info or {}).get('name', self.data.ticker)
-        sign = "+" if pct_change > 0 else ""
+        company_name = get_company_name(self.data.ticker_info, self.data.ticker)
 
         cr = self.data.composite_result
         dominant = cr.dominant_signal
@@ -64,12 +56,10 @@ class MarketAlert(Alert):
 
         description = (
             f"**{company_name}** · `{self.data.ticker}` is {narrative}\n"
-            f"{'🟢' if pct_change > 0 else '🔻'} **{sign}{pct_change:.2f}%** — **${price:.2f}**"
+            f"{change_emoji(pct_change)} **{format_signed_pct(pct_change)}** — **${price:.2f}**"
         )
 
-        fields = [
-            EmbedField(name="Price", value=f"${price:.2f}", inline=True),
-            EmbedField(name="Change", value=f"{sign}{pct_change:.2f}%", inline=True),
+        fields = self.price_change_fields(price, pct_change) + [
             EmbedField(name="Composite Score", value=f"{cr.composite_score:.2f}", inline=True),
         ]
 
@@ -87,7 +77,7 @@ class MarketAlert(Alert):
 
         # RVOL if available
         rvol = self.data.rvol
-        if rvol is not None and not (isinstance(rvol, float) and math.isnan(rvol)):
+        if is_valid_number(rvol):
             fields.append(EmbedField(name="RVOL", value=f"{rvol:.2f}x", inline=True))
 
         fields += _stat_fields_from_trigger(cr.trigger_result)
@@ -99,5 +89,5 @@ class MarketAlert(Alert):
             fields=fields,
             footer=f"RocketStocks · market-alert · {dominant}",
             timestamp=True,
-            url=f"https://finviz.com/quote.ashx?t={self.data.ticker}",
+            url=finviz_url(self.data.ticker),
         )

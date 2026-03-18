@@ -7,6 +7,9 @@ from rocketstocks.core.content.models import (
     EarningsMoverData, EmbedField, EmbedSpec,
 )
 from rocketstocks.core.content import sections_card
+from rocketstocks.core.utils.formatting import (
+    change_emoji, earnings_time_label, finviz_url, format_signed_pct, get_company_name,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -61,43 +64,24 @@ class EarningsMoverAlert(Alert):
         self.ticker = data.ticker
         self.alert_data['pct_change'] = data.quote['quote']['netPercentChange']
 
-        tr = data.trigger_result
-        if tr is not None:
-            self.alert_data['zscore'] = tr.zscore
-            self.alert_data['percentile'] = tr.percentile
-            self.alert_data['classification'] = getattr(tr.classification, 'value', str(tr.classification))
-            self.alert_data['signal_type'] = tr.signal_type
-            self.alert_data['bb_position'] = tr.bb_position
-            self.alert_data['confluence_count'] = tr.confluence_count
-            self.alert_data['volume_zscore'] = tr.volume_zscore
+        self.populate_trigger_data(self.alert_data, data.trigger_result)
 
     def build(self) -> EmbedSpec:
         logger.debug("Building Earnings Mover embed...")
         pct_change = self.alert_data['pct_change']
         price = self.data.quote['regular']['regularMarketLastPrice']
-        company_name = (self.data.ticker_info or {}).get('name', self.data.ticker)
-        sign = "+" if pct_change > 0 else ""
+        company_name = get_company_name(self.data.ticker_info, self.data.ticker)
 
         next_info = self.data.next_earnings_info or {}
         eps_forecast = next_info.get('eps_forecast', 'N/A') or 'N/A'
-        time_raw = next_info.get('time', '')
-        if isinstance(time_raw, list):
-            time_raw = time_raw[0] if time_raw else ''
-        if 'pre-market' in time_raw:
-            time_label = 'Pre-market'
-        elif 'after-hours' in time_raw:
-            time_label = 'After Hours'
-        else:
-            time_label = 'N/A'
+        time_label = earnings_time_label(next_info.get('time', ''))
 
         description = (
             f"**{company_name}** · `{self.data.ticker}` is reporting earnings today and is "
-            f"{'🟢' if pct_change > 0 else '🔻'} **{sign}{pct_change:.2f}%** — **${price:.2f}**"
+            f"{change_emoji(pct_change)} **{format_signed_pct(pct_change)}** — **${price:.2f}**"
         )
 
-        fields = [
-            EmbedField(name="Price", value=f"${price:.2f}", inline=True),
-            EmbedField(name="Change", value=f"{sign}{pct_change:.2f}%", inline=True),
+        fields = self.price_change_fields(price, pct_change) + [
             EmbedField(name="EPS Forecast", value=str(eps_forecast), inline=True),
             EmbedField(name="Time", value=time_label, inline=True),
         ]
@@ -118,5 +102,5 @@ class EarningsMoverAlert(Alert):
             fields=fields,
             footer="RocketStocks · earnings-mover",
             timestamp=True,
-            url=f"https://finviz.com/quote.ashx?t={self.data.ticker}",
+            url=finviz_url(self.data.ticker),
         )

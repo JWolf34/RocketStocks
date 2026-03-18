@@ -7,7 +7,10 @@ from rocketstocks.core.content.models import (
     COLOR_GOLD,
     EmbedField, EmbedSpec,
 )
-from rocketstocks.core.utils.market import market_utils
+from rocketstocks.core.utils.market import MarketUtils
+from rocketstocks.core.utils.formatting import (
+    change_emoji, finviz_url, format_signed_pct, get_company_name, is_valid_number,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -36,31 +39,20 @@ class MomentumConfirmationAlert(Alert):
         )
         self.alert_data['surge_types'] = data.surge_types
 
-        tr = data.trigger_result
-        if tr is not None:
-            self.alert_data['zscore'] = tr.zscore
-            self.alert_data['percentile'] = tr.percentile
-            self.alert_data['classification'] = getattr(tr.classification, 'value', str(tr.classification))
-            self.alert_data['signal_type'] = tr.signal_type
-            self.alert_data['bb_position'] = tr.bb_position
-            self.alert_data['confluence_count'] = tr.confluence_count
-            self.alert_data['volume_zscore'] = tr.volume_zscore
+        self.populate_trigger_data(self.alert_data, data.trigger_result)
 
     def build(self) -> EmbedSpec:
         logger.debug("Building Momentum Confirmation embed...")
 
         pct_change = self.alert_data['pct_change']
-        price = market_utils().get_current_price(self.data.quote)
-        company_name = (self.data.ticker_info or {}).get('name', self.data.ticker)
-        sign = "+" if pct_change > 0 else ""
+        price = MarketUtils().get_current_price(self.data.quote)
+        company_name = get_company_name(self.data.ticker_info, self.data.ticker)
 
         # Price change since surge was flagged
         price_since_flag = self.data.price_change_since_flag
         since_flag_str = ""
-        if (price_since_flag is not None
-                and not (isinstance(price_since_flag, float) and math.isnan(price_since_flag))):
-            flag_sign = "+" if price_since_flag > 0 else ""
-            since_flag_str = f" ({flag_sign}{price_since_flag:.2f}% since surge flagged)"
+        if is_valid_number(price_since_flag):
+            since_flag_str = f" ({format_signed_pct(price_since_flag)} since surge flagged)"
 
         surge_types_str = ", ".join(
             _SURGE_TYPE_LABELS.get(st, st) for st in (self.data.surge_types or [])
@@ -69,21 +61,16 @@ class MomentumConfirmationAlert(Alert):
         description = (
             f"**{company_name}** · `{self.data.ticker}` — price/volume confirming earlier "
             f"popularity surge ({surge_types_str})\n"
-            f"{'🟢' if pct_change > 0 else '🔻'} **{sign}{pct_change:.2f}%** — "
+            f"{change_emoji(pct_change)} **{format_signed_pct(pct_change)}** — "
             f"**${price:.2f}**{since_flag_str}"
         )
 
-        fields = [
-            EmbedField(name="Price", value=f"${price:.2f}", inline=True),
-            EmbedField(name="Change", value=f"{sign}{pct_change:.2f}%", inline=True),
-        ]
+        fields = self.price_change_fields(price, pct_change)
 
-        if (price_since_flag is not None
-                and not (isinstance(price_since_flag, float) and math.isnan(price_since_flag))):
-            flag_sign = "+" if price_since_flag > 0 else ""
+        if is_valid_number(price_since_flag):
             fields.append(EmbedField(
                 name="Change Since Flag",
-                value=f"{flag_sign}{price_since_flag:.2f}%",
+                value=format_signed_pct(price_since_flag),
                 inline=True,
             ))
 
@@ -102,5 +89,5 @@ class MomentumConfirmationAlert(Alert):
             fields=fields,
             footer="RocketStocks · momentum-confirmation",
             timestamp=True,
-            url=f"https://finviz.com/quote.ashx?t={self.data.ticker}",
+            url=finviz_url(self.data.ticker),
         )

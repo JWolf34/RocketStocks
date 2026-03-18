@@ -1,12 +1,14 @@
 import logging
-import math
 
 from rocketstocks.core.content.alerts.base import Alert
 from rocketstocks.core.content.models import (
     COLOR_PURPLE,
     EmbedField, EmbedSpec,
 )
-from rocketstocks.core.utils.market import market_utils
+from rocketstocks.core.utils.market import MarketUtils
+from rocketstocks.core.utils.formatting import (
+    change_emoji, finviz_url, format_signed_pct, get_company_name, is_valid_number,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -36,10 +38,9 @@ class PopularitySurgeAlert(Alert):
         logger.debug("Building Popularity Surge embed...")
 
         surge_result = self.data.surge_result
-        company_name = (self.data.ticker_info or {}).get('name', self.data.ticker)
-        price = market_utils().get_current_price(self.data.quote)
+        company_name = get_company_name(self.data.ticker_info, self.data.ticker)
+        price = MarketUtils().get_current_price(self.data.quote)
         pct_change = self.alert_data['pct_change']
-        sign = "+" if pct_change > 0 else ""
 
         # Build surge reason bullets
         reasons = []
@@ -58,7 +59,7 @@ class PopularitySurgeAlert(Alert):
         reason_text = "\n".join(reasons) if reasons else "Unusual popularity activity detected"
         description = (
             f"**{company_name}** · `{self.data.ticker}` is seeing unusual social traction "
-            f"({sign}{pct_change:.2f}% · ${price:.2f})\n\n{reason_text}"
+            f"({format_signed_pct(pct_change)} · ${price:.2f})\n\n{reason_text}"
         )
 
         fields = []
@@ -81,12 +82,10 @@ class PopularitySurgeAlert(Alert):
             fields.append(EmbedField(name="Mentions", value=str(surge_result.mentions), inline=True))
 
         mention_ratio = surge_result.mention_ratio
-        if (mention_ratio is not None
-                and not (isinstance(mention_ratio, float) and math.isnan(mention_ratio))):
+        if is_valid_number(mention_ratio):
             fields.append(EmbedField(name="Mention Surge", value=f"{mention_ratio:.1f}x", inline=True))
 
-        fields.append(EmbedField(name="Price", value=f"${price:.2f}", inline=True))
-        fields.append(EmbedField(name="Change", value=f"{sign}{pct_change:.2f}%", inline=True))
+        fields += self.price_change_fields(price, pct_change)
 
         history = self.data.popularity_history
         if (not history.empty
@@ -109,7 +108,7 @@ class PopularitySurgeAlert(Alert):
             fields=fields,
             footer="RocketStocks · popularity-surge",
             timestamp=True,
-            url=f"https://finviz.com/quote.ashx?t={self.data.ticker}",
+            url=finviz_url(self.data.ticker),
         )
 
     def override_and_edit(self, prev_alert_data: dict) -> bool:
