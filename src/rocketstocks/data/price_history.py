@@ -166,6 +166,38 @@ class PriceHistoryRepository:
         logger.info(f"Loaded price history for {total} delisted tickers in batch")
         return total
 
+    async def fetch_daily_price_history_batch(
+        self,
+        tickers: list[str],
+        start_date: datetime.date = None,
+    ) -> dict[str, pd.DataFrame]:
+        """Fetch daily price history for multiple tickers in a single query.
+
+        Returns a dict mapping ticker → DataFrame so callers can look up
+        each ticker's history without issuing individual queries.
+        """
+        if not tickers:
+            return {}
+        query = (
+            "SELECT ticker, open, high, low, close, volume, date "
+            "FROM daily_price_history WHERE ticker = ANY(%s)"
+        )
+        params: list = [tickers]
+        if start_date is not None:
+            query += " AND date > %s"
+            params.append(start_date)
+        query += " ORDER BY ticker, date"
+
+        rows = await self._db.execute(query, params)
+        if not rows:
+            return {}
+
+        df = pd.DataFrame(rows, columns=_DAILY_COLS)
+        return {
+            ticker: group.reset_index(drop=True)
+            for ticker, group in df.groupby('ticker')
+        }
+
     async def fetch_daily_price_history(
         self,
         ticker: str,
