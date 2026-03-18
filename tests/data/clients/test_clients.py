@@ -541,3 +541,190 @@ class TestStooqClient:
             result = stooq.get_daily_price_history('FAKE', '2000-01-01', '2000-12-31')
         assert isinstance(result, pd.DataFrame)
         assert result.empty
+
+
+# ---------------------------------------------------------------------------
+# Schwab — rate limiting
+# ---------------------------------------------------------------------------
+
+class _MockLimiter:
+    """Async context manager that records how many times it was acquired."""
+    def __init__(self):
+        self.acquired = 0
+
+    async def __aenter__(self):
+        self.acquired += 1
+
+    async def __aexit__(self, *args):
+        pass
+
+
+class TestSchwabRateLimiting:
+    def _make(self, limiter=None):
+        from rocketstocks.data.clients.schwab import Schwab
+        mock_inner = AsyncMock()
+        mock_inner.get_quote.return_value = MagicMock(status_code=200, json=lambda: {'AAPL': {}})
+        mock_inner.get_quotes.return_value = MagicMock(status_code=200, json=lambda: {})
+        mock_inner.get_price_history_every_day.return_value = MagicMock(
+            status_code=200,
+            raise_for_status=MagicMock(),
+            json=lambda: {'candles': []},
+        )
+        mock_inner.get_price_history_every_five_minutes.return_value = MagicMock(
+            status_code=200,
+            raise_for_status=MagicMock(),
+            json=lambda: {'candles': []},
+        )
+        mock_inner.get_instruments.return_value = MagicMock(status_code=200, json=lambda: {})
+        mock_inner.get_option_chain.return_value = MagicMock(status_code=200, json=lambda: {})
+        mock_inner.get_movers.return_value = MagicMock(status_code=200, json=lambda: {})
+        obj = Schwab(token_store=AsyncMock(), limiter=limiter or _MockLimiter())
+        obj.client = mock_inner
+        return obj
+
+    def test_default_limiter_is_async_limiter(self):
+        from aiolimiter import AsyncLimiter
+        from rocketstocks.data.clients.schwab import Schwab
+        obj = Schwab(token_store=AsyncMock())
+        assert isinstance(obj._limiter, AsyncLimiter)
+
+    def test_custom_limiter_is_stored(self):
+        limiter = _MockLimiter()
+        obj = self._make(limiter=limiter)
+        assert obj._limiter is limiter
+
+    @pytest.mark.asyncio
+    async def test_get_quote_acquires_limiter(self):
+        limiter = _MockLimiter()
+        obj = self._make(limiter=limiter)
+        await obj.get_quote('AAPL')
+        assert limiter.acquired == 1
+
+    @pytest.mark.asyncio
+    async def test_get_quotes_acquires_limiter(self):
+        limiter = _MockLimiter()
+        obj = self._make(limiter=limiter)
+        await obj.get_quotes(['AAPL', 'MSFT'])
+        assert limiter.acquired == 1
+
+    @pytest.mark.asyncio
+    async def test_get_daily_price_history_acquires_limiter(self):
+        limiter = _MockLimiter()
+        obj = self._make(limiter=limiter)
+        await obj.get_daily_price_history('AAPL')
+        assert limiter.acquired == 1
+
+    @pytest.mark.asyncio
+    async def test_get_5m_price_history_acquires_limiter(self):
+        limiter = _MockLimiter()
+        obj = self._make(limiter=limiter)
+        await obj.get_5m_price_history('AAPL')
+        assert limiter.acquired == 1
+
+    @pytest.mark.asyncio
+    async def test_get_fundamentals_acquires_limiter(self):
+        limiter = _MockLimiter()
+        obj = self._make(limiter=limiter)
+        await obj.get_fundamentals(['AAPL'])
+        assert limiter.acquired == 1
+
+    @pytest.mark.asyncio
+    async def test_get_options_chain_acquires_limiter(self):
+        limiter = _MockLimiter()
+        obj = self._make(limiter=limiter)
+        await obj.get_options_chain('AAPL')
+        assert limiter.acquired == 1
+
+    @pytest.mark.asyncio
+    async def test_get_movers_acquires_limiter(self):
+        limiter = _MockLimiter()
+        obj = self._make(limiter=limiter)
+        await obj.get_movers()
+        assert limiter.acquired == 1
+
+    @pytest.mark.asyncio
+    async def test_multiple_calls_each_acquire_limiter(self):
+        limiter = _MockLimiter()
+        obj = self._make(limiter=limiter)
+        await obj.get_quote('AAPL')
+        await obj.get_quote('AAPL')
+        assert limiter.acquired == 2
+
+
+# ---------------------------------------------------------------------------
+# Tiingo — rate limiting decorators
+# ---------------------------------------------------------------------------
+
+class TestTiingoRateLimiting:
+    def test_get_ticker_metadata_has_rate_limit_decorator(self):
+        """get_ticker_metadata must be wrapped by ratelimit decorators."""
+        from rocketstocks.data.clients.tiingo import Tiingo
+        assert hasattr(Tiingo.get_ticker_metadata, '__wrapped__')
+
+    def test_get_daily_price_history_has_rate_limit_decorator(self):
+        """get_daily_price_history must be wrapped by ratelimit decorators."""
+        from rocketstocks.data.clients.tiingo import Tiingo
+        assert hasattr(Tiingo.get_daily_price_history, '__wrapped__')
+
+    def test_list_all_tickers_has_no_rate_limit_decorator(self):
+        """list_all_tickers is a one-shot call and should not be rate-limited."""
+        from rocketstocks.data.clients.tiingo import Tiingo
+        assert not hasattr(Tiingo.list_all_tickers, '__wrapped__')
+
+
+# ---------------------------------------------------------------------------
+# SEC — asyncio.to_thread for blocking HTTP calls
+# ---------------------------------------------------------------------------
+
+class TestSECAsyncHTTP:
+    def _make(self, cik='0000320193'):
+        from rocketstocks.data.clients.sec import SEC
+        db = MagicMock()
+        db.execute = AsyncMock(return_value=(cik,))
+        return SEC(db=db)
+
+    @pytest.mark.asyncio
+    async def test_get_submissions_data_uses_to_thread(self):
+        """get_submissions_data must delegate requests.get to asyncio.to_thread."""
+        sec = self._make()
+        mock_resp = MagicMock()
+        mock_resp.json.return_value = {'sic': '7372', 'filings': {'recent': {}}}
+        with patch('rocketstocks.data.clients.sec.asyncio.to_thread', new_callable=AsyncMock, return_value=mock_resp) as mock_thread:
+            result = await sec.get_submissions_data('AAPL')
+        mock_thread.assert_called_once()
+        assert result['sic'] == '7372'
+
+    @pytest.mark.asyncio
+    async def test_get_accounts_payable_uses_to_thread(self):
+        """get_accounts_payable must delegate requests.get to asyncio.to_thread."""
+        sec = self._make()
+        mock_resp = MagicMock()
+        mock_resp.json.return_value = {'entityName': ['Apple Inc.'], 'cik': ['0000320193']}
+        with patch('rocketstocks.data.clients.sec.asyncio.to_thread', new_callable=AsyncMock, return_value=mock_resp):
+            result = await sec.get_accounts_payable('AAPL')
+        assert isinstance(result, pd.DataFrame)
+
+    @pytest.mark.asyncio
+    async def test_get_company_facts_uses_to_thread(self):
+        """get_company_facts must delegate requests.get to asyncio.to_thread."""
+        sec = self._make()
+        mock_resp = MagicMock()
+        mock_resp.json.return_value = {'entityName': 'Apple Inc.', 'facts': {}}
+        with patch('rocketstocks.data.clients.sec.asyncio.to_thread', new_callable=AsyncMock, return_value=mock_resp):
+            result = await sec.get_company_facts('AAPL')
+        assert result['entityName'] == 'Apple Inc.'
+
+    def test_get_submissions_data_is_async(self):
+        import inspect
+        from rocketstocks.data.clients.sec import SEC
+        assert inspect.iscoroutinefunction(SEC.get_submissions_data)
+
+    def test_get_accounts_payable_is_async(self):
+        import inspect
+        from rocketstocks.data.clients.sec import SEC
+        assert inspect.iscoroutinefunction(SEC.get_accounts_payable)
+
+    def test_get_company_facts_is_async(self):
+        import inspect
+        from rocketstocks.data.clients.sec import SEC
+        assert inspect.iscoroutinefunction(SEC.get_company_facts)
