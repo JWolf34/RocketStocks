@@ -24,14 +24,17 @@ def _make_stock_data(earnings_df: pd.DataFrame):
     sd.alert_tickers = {}
     sd.ticker_stats.get_all_classifications = AsyncMock(return_value={})
     sd.price_history.fetch_daily_price_history = AsyncMock(return_value=pd.DataFrame())
+    sd.price_history.fetch_daily_price_history_batch = AsyncMock(return_value={})
     sd.surge_store.get_active_surges = AsyncMock(return_value=[])
     sd.surge_store.expire_old_surges = AsyncMock(return_value=None)
     sd.surge_store.is_already_flagged = AsyncMock(return_value=False)
+    sd.surge_store.get_flagged_tickers = AsyncMock(return_value=set())
     sd.surge_store.insert_surge = AsyncMock()
     sd.market_signal_store.get_active_signals = AsyncMock(return_value=[])
     sd.market_signal_store.expire_old_signals = AsyncMock(return_value=None)
     sd.market_signal_store.is_already_signaled = AsyncMock(return_value=False)
     sd.market_signal_store.get_latest_signal = AsyncMock(return_value=None)
+    sd.market_signal_store.get_signaled_tickers_today = AsyncMock(return_value={})
     sd.market_signal_store.get_signal_history = AsyncMock(return_value=[])
     sd.watchlists.get_all_watchlist_tickers = AsyncMock(return_value=[])
     sd.watchlists.get_watchlists = AsyncMock(return_value=[])
@@ -97,19 +100,22 @@ class TestEarningsPipeline:
             quotes={"AAPL": {"quote": {"netPercentChange": 10.0, "totalVolume": 1_000_000}}},
             classifications={},
             channels=[],
-            earnings_tickers=set(),
+            earnings_today=pd.DataFrame(),
+            price_cache={},
         )
 
     @pytest.mark.asyncio
     async def test_no_matching_tickers_sends_no_alerts(self):
-        """Tickers in quotes not in earnings_tickers produce no alerts."""
-        cog = _make_cog(earnings_df=pd.DataFrame({"ticker": ["MSFT"], "date": [datetime.date.today()]}))
+        """Tickers in quotes not in earnings_today produce no alerts."""
+        df = pd.DataFrame({"ticker": ["MSFT"], "date": [datetime.date.today()]})
+        cog = _make_cog(earnings_df=df)
         channel = AsyncMock()
         await cog._earnings_pipeline(
             quotes={"AAPL": {"quote": {"netPercentChange": 10.0, "totalVolume": 1_000_000}}},
             classifications={},
             channels=[channel],
-            earnings_tickers={"MSFT"},
+            earnings_today=df,
+            price_cache={},
         )
         channel.send.assert_not_called()
 
@@ -127,7 +133,8 @@ class TestEarningsPipeline:
                 quotes={"AAPL": {"quote": {"netPercentChange": 3.0, "totalVolume": 1_000_000}}},
                 classifications={},
                 channels=[channel],
-                earnings_tickers={"AAPL"},
+                earnings_today=df,
+                price_cache={},
             )
             mock_eval.assert_called_once()
 
@@ -149,7 +156,8 @@ class TestEarningsPipeline:
                 quotes={"AAPL": {"quote": {"netPercentChange": 8.5, "totalVolume": 1_000_000}}},
                 classifications={},
                 channels=[channel],
-                earnings_tickers={"AAPL"},
+                earnings_today=df,
+                price_cache={},
             )
             mock_build.assert_called_once()
             mock_send.assert_called_once()
@@ -171,7 +179,8 @@ class TestEarningsPipeline:
                 quotes={"AAPL": {"quote": {"netPercentChange": 8.5, "totalVolume": 1_000_000}}},
                 classifications={},
                 channels=[channel],
-                earnings_tickers={"AAPL"},
+                earnings_today=df,
+                price_cache={},
             )
             mock_build.assert_not_called()
             mock_send.assert_not_called()
@@ -201,6 +210,8 @@ class TestWatchlistPipeline:
                 classifications={},
                 channels=[AsyncMock()],
                 watchlist_tickers={ticker},
+                price_cache={},
+                ticker_to_watchlist={},
             )
 
         mock_build.assert_called_once()
@@ -232,6 +243,7 @@ class TestMarketSignalPipeline:
                 quotes={ticker: quote},
                 classifications={},
                 exclude=set(),
+                price_cache={},
             )
             # Silent — no alert sent
             mock_send.assert_not_called()
@@ -253,8 +265,10 @@ class TestMarketSignalPipeline:
             'detected_at': datetime.datetime.utcnow(),
             'composite_score': 3.0,
         }
-        cog.stock_data.market_signal_store.is_already_signaled.return_value = True
-        cog.stock_data.market_signal_store.get_latest_signal.return_value = existing_signal
+        # Use batch method: get_signaled_tickers_today returns {ticker: signal_dict}
+        cog.stock_data.market_signal_store.get_signaled_tickers_today.return_value = {
+            ticker: existing_signal,
+        }
 
         with (
             patch("rocketstocks.bot.cogs.alerts.evaluate_price_alert", return_value=fake_trigger),
@@ -264,6 +278,7 @@ class TestMarketSignalPipeline:
                 quotes={ticker: quote},
                 classifications={},
                 exclude=set(),
+                price_cache={},
             )
 
         cog.stock_data.market_signal_store.insert_signal.assert_not_called()
@@ -281,6 +296,7 @@ class TestMarketSignalPipeline:
                 quotes={ticker: quote},
                 classifications={},
                 exclude={ticker},
+                price_cache={},
             )
             mock_eval.assert_not_called()
 
@@ -301,6 +317,7 @@ class TestMarketSignalPipeline:
                 quotes={ticker: quote},
                 classifications={},
                 exclude=set(),
+                price_cache={},
             )
 
         cog.stock_data.market_signal_store.insert_signal.assert_not_called()
@@ -346,6 +363,7 @@ class TestMarketConfirmationPipeline:
                 active_signals=[signal],
                 quotes={ticker: quote},
                 channels=[AsyncMock()],
+                price_cache={},
             )
             mock_build.assert_called_once()
             mock_send.assert_called_once()
@@ -379,6 +397,7 @@ class TestMarketConfirmationPipeline:
                 active_signals=[signal],
                 quotes={ticker: quote},
                 channels=[AsyncMock()],
+                price_cache={},
             )
             mock_send.assert_not_called()
 
@@ -399,6 +418,7 @@ class TestMarketConfirmationPipeline:
                 active_signals=[signal],
                 quotes={},
                 channels=[],
+                price_cache={},
             )
             mock_conf.assert_not_called()
 
@@ -437,6 +457,7 @@ class TestConfirmationPipeline:
                 quotes={ticker: quote},
                 classifications={},
                 channels=[AsyncMock()],
+                price_cache={},
             )
             mock_build.assert_called_once()
             mock_send.assert_called_once()
@@ -471,6 +492,7 @@ class TestConfirmationPipeline:
                 quotes={ticker: quote},
                 classifications={},
                 channels=[AsyncMock()],
+                price_cache={},
             )
 
         cog.stock_data.surge_store.mark_confirmed.assert_called_once_with(ticker, flagged_at)
@@ -502,6 +524,7 @@ class TestConfirmationPipeline:
                 quotes={ticker: quote},
                 classifications={},
                 channels=[AsyncMock()],
+                price_cache={},
             )
             mock_send.assert_not_called()
         cog.stock_data.surge_store.mark_confirmed.assert_not_called()
@@ -523,6 +546,7 @@ class TestConfirmationPipeline:
                 quotes={},  # GME not in quotes
                 classifications={},
                 channels=[],
+                price_cache={},
             )
             mock_eval.assert_not_called()
 
@@ -587,7 +611,7 @@ class TestPerTickerIsolation:
         ):
             await cog._earnings_pipeline(
                 quotes=quotes, classifications={}, channels=[AsyncMock()],
-                earnings_tickers={"AAPL", "MSFT"},
+                earnings_today=df, price_cache={},
             )
 
         assert "MSFT" in built
@@ -618,6 +642,7 @@ class TestPerTickerIsolation:
             await cog._watchlist_pipeline(
                 quotes=quotes, classifications={}, channels=[AsyncMock()],
                 watchlist_tickers={"AAPL", "MSFT"},
+                price_cache={}, ticker_to_watchlist={},
             )
 
         assert "MSFT" in built
@@ -631,21 +656,19 @@ class TestPerTickerIsolation:
             "AAPL": {"quote": {"netPercentChange": 15.0, "totalVolume": 1_000_000}},
             "MSFT": {"quote": {"netPercentChange": 15.0, "totalVolume": 1_000_000}},
         }
-        processed = []
+        fake_trigger = _make_trigger_result(should_alert=False)
 
-        def fetch_daily_side_effect(ticker):
-            if ticker == "AAPL":
-                raise RuntimeError("price history failed")
-            processed.append(ticker)
-            return pd.DataFrame()
+        # AAPL (first in dict) raises, MSFT succeeds — pipeline must not abort
+        with patch(
+            "rocketstocks.bot.cogs.alerts.evaluate_price_alert",
+            side_effect=[RuntimeError("eval failed"), fake_trigger],
+        ) as mock_eval:
+            await cog._market_signal_pipeline(
+                quotes=quotes, classifications={}, exclude=set(), price_cache={},
+            )
 
-        cog.stock_data.price_history.fetch_daily_price_history.side_effect = fetch_daily_side_effect
-
-        await cog._market_signal_pipeline(
-            quotes=quotes, classifications={}, exclude=set()
-        )
-
-        assert "MSFT" in processed
+        # Both tickers were attempted despite the first one failing
+        assert mock_eval.call_count == 2
 
 
 # ---------------------------------------------------------------------------
@@ -692,7 +715,7 @@ class TestProcessAlertsImpl:
 
         received = []
 
-        async def capture_classifications(quotes, classifications, exclude=None):
+        async def capture_classifications(quotes, classifications, exclude=None, **kwargs):
             received.append(classifications)
 
         with (
@@ -721,7 +744,7 @@ class TestProcessAlertsImpl:
 
         market_exclude = []
 
-        async def capture_market_exclude(quotes, classifications, exclude=None):
+        async def capture_market_exclude(quotes, classifications, exclude=None, **kwargs):
             market_exclude.append(exclude or set())
 
         with (
@@ -884,7 +907,7 @@ class TestDetectPopularitySurges:
             "mentions_24h_ago": [500],
         })
         cog.stock_data.popularity.get_popular_stocks.return_value = pop_df
-        cog.stock_data.surge_store.is_already_flagged.return_value = True
+        cog.stock_data.surge_store.get_flagged_tickers.return_value = {"GME"}
 
         with patch("rocketstocks.bot.cogs.alerts.evaluate_popularity_surge") as mock_surge:
             await cog._detect_popularity_surges_impl()
@@ -906,11 +929,13 @@ class TestDetectPopularitySurges:
             "mentions_24h_ago": [500],
         })
         cog.stock_data.popularity.get_popular_stocks.return_value = pop_df
-        cog.stock_data.surge_store.is_already_flagged.return_value = False
+        cog.stock_data.surge_store.get_flagged_tickers.return_value = set()
         cog.stock_data.popularity.fetch_popularity.return_value = pd.DataFrame()
-        cog.stock_data.schwab.get_quote = AsyncMock(return_value={
-            "quote": {"netPercentChange": 5.0},
-            "regular": {"regularMarketLastPrice": 25.0},
+        cog.stock_data.schwab.get_quotes = AsyncMock(return_value={
+            "GME": {
+                "quote": {"netPercentChange": 5.0},
+                "regular": {"regularMarketLastPrice": 25.0},
+            }
         })
         cog.stock_data.tickers.get_ticker_info.return_value = {"name": "GameStop"}
 
@@ -954,7 +979,7 @@ class TestDetectPopularitySurges:
             "mentions_24h_ago": [290],
         })
         cog.stock_data.popularity.get_popular_stocks.return_value = pop_df
-        cog.stock_data.surge_store.is_already_flagged.return_value = False
+        cog.stock_data.surge_store.get_flagged_tickers.return_value = set()
         cog.stock_data.popularity.fetch_popularity.return_value = pd.DataFrame()
 
         no_surge = PopularitySurgeResult(

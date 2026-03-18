@@ -207,6 +207,48 @@ async def test_update_alert_message_id_executes_update(repo, mock_db):
 
 
 # ---------------------------------------------------------------------------
+# get_flagged_tickers
+# ---------------------------------------------------------------------------
+
+async def test_get_flagged_tickers_returns_set(repo, mock_db):
+    """get_flagged_tickers returns a set of ticker strings."""
+    mock_db.execute.return_value = [('GME',), ('AMC',)]
+    result = await repo.get_flagged_tickers()
+    assert result == {'GME', 'AMC'}
+
+
+async def test_get_flagged_tickers_empty_result(repo, mock_db):
+    """get_flagged_tickers returns empty set when no active flagged tickers."""
+    mock_db.execute.return_value = []
+    result = await repo.get_flagged_tickers()
+    assert result == set()
+
+
+async def test_get_flagged_tickers_none_result(repo, mock_db):
+    """get_flagged_tickers handles None DB result gracefully."""
+    mock_db.execute.return_value = None
+    result = await repo.get_flagged_tickers()
+    assert result == set()
+
+
+async def test_get_flagged_tickers_query_structure(repo, mock_db):
+    """get_flagged_tickers queries with correct WHERE clause and cutoff param."""
+    mock_db.execute.return_value = []
+    with patch('rocketstocks.data.surge_store.datetime') as mock_dt:
+        now = datetime.datetime(2026, 3, 2, 12, 0)
+        mock_dt.datetime.utcnow.return_value = now
+        mock_dt.timedelta.side_effect = datetime.timedelta
+        await repo.get_flagged_tickers()
+    sql, params = mock_db.execute.call_args[0]
+    assert 'DISTINCT ticker' in sql
+    assert 'confirmed = FALSE' in sql
+    assert 'expired = FALSE' in sql
+    assert 'flagged_at >=' in sql
+    cutoff = now - datetime.timedelta(hours=_ACTIVE_CUTOFF_HOURS)
+    assert params[0] == cutoff
+
+
+# ---------------------------------------------------------------------------
 # Constructor
 # ---------------------------------------------------------------------------
 

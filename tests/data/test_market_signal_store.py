@@ -258,6 +258,56 @@ async def test_get_latest_signal_returns_none_when_empty(repo, mock_db):
 
 
 # ---------------------------------------------------------------------------
+# get_signaled_tickers_today
+# ---------------------------------------------------------------------------
+
+async def test_get_signaled_tickers_today_returns_dict(repo, mock_db):
+    """get_signaled_tickers_today returns {ticker: signal_dict} for pending signals."""
+    ts = datetime.datetime(2026, 3, 8, 10, 0)
+    signal_data = [{'ts': 'x', 'pct_change': 3.0}]
+    mock_db.execute.return_value = [
+        ('GME', ts, 3.2, 2.1, 3.5, 4.5, 'volume', 2.5, 'pending', None, None, signal_data),
+        ('AAPL', ts, 2.8, 1.5, 2.0, 2.1, 'price', 1.8, 'pending', None, None, []),
+    ]
+    result = await repo.get_signaled_tickers_today()
+    assert set(result.keys()) == {'GME', 'AAPL'}
+    assert result['GME']['ticker'] == 'GME'
+    assert result['GME']['composite_score'] == pytest.approx(3.2)
+    assert result['AAPL']['ticker'] == 'AAPL'
+
+
+async def test_get_signaled_tickers_today_empty(repo, mock_db):
+    """get_signaled_tickers_today returns empty dict when no pending signals."""
+    mock_db.execute.return_value = []
+    result = await repo.get_signaled_tickers_today()
+    assert result == {}
+
+
+async def test_get_signaled_tickers_today_none_result(repo, mock_db):
+    """get_signaled_tickers_today handles None DB result gracefully."""
+    mock_db.execute.return_value = None
+    result = await repo.get_signaled_tickers_today()
+    assert result == {}
+
+
+async def test_get_signaled_tickers_today_query_structure(repo, mock_db):
+    """get_signaled_tickers_today uses DISTINCT ON and today's day bounds."""
+    mock_db.execute.return_value = []
+    with patch('rocketstocks.data.market_signal_store.datetime') as mock_dt:
+        now = datetime.datetime(2026, 3, 8, 15, 0)
+        mock_dt.datetime.utcnow.return_value = now
+        mock_dt.timedelta.side_effect = datetime.timedelta
+        await repo.get_signaled_tickers_today()
+    sql, params = mock_db.execute.call_args[0]
+    assert 'DISTINCT ON (ticker)' in sql
+    assert "status = 'pending'" in sql
+    assert 'ORDER BY ticker' in sql
+    day_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+    day_end = day_start + datetime.timedelta(days=1)
+    assert params == [day_start, day_end]
+
+
+# ---------------------------------------------------------------------------
 # Constructor
 # ---------------------------------------------------------------------------
 

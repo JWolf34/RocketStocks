@@ -565,6 +565,64 @@ class TestPriceHistoryRepository:
         result = await repo.load_delisted_price_history_batch(limit=2)
         assert result == 2
 
+    @pytest.mark.asyncio
+    async def test_fetch_daily_batch_returns_dict_of_dataframes(self):
+        """fetch_daily_price_history_batch groups rows by ticker into a dict."""
+        d1 = datetime.date(2024, 1, 2)
+        d2 = datetime.date(2024, 1, 3)
+        rows = [
+            ('AAPL', 100.0, 110.0, 99.0, 105.0, 1_000_000, d1),
+            ('AAPL', 102.0, 112.0, 101.0, 107.0, 900_000, d2),
+            ('MSFT', 300.0, 310.0, 299.0, 305.0, 500_000, d1),
+        ]
+        db = self._make_db(return_value=rows)
+        repo = self._make(db=db)
+        result = await repo.fetch_daily_price_history_batch(['AAPL', 'MSFT'])
+        assert set(result.keys()) == {'AAPL', 'MSFT'}
+        assert len(result['AAPL']) == 2
+        assert len(result['MSFT']) == 1
+        assert list(result['AAPL'].columns) == ['ticker', 'open', 'high', 'low', 'close', 'volume', 'date']
+
+    @pytest.mark.asyncio
+    async def test_fetch_daily_batch_empty_tickers_returns_empty_dict(self):
+        """fetch_daily_price_history_batch returns {} immediately for empty ticker list."""
+        db = self._make_db()
+        repo = self._make(db=db)
+        result = await repo.fetch_daily_price_history_batch([])
+        assert result == {}
+        db.execute.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_fetch_daily_batch_no_rows_returns_empty_dict(self):
+        """fetch_daily_price_history_batch returns {} when DB returns no rows."""
+        db = self._make_db(return_value=None)
+        repo = self._make(db=db)
+        result = await repo.fetch_daily_price_history_batch(['FAKE'])
+        assert result == {}
+
+    @pytest.mark.asyncio
+    async def test_fetch_daily_batch_passes_start_date(self):
+        """fetch_daily_price_history_batch includes start_date in query params when given."""
+        db = self._make_db(return_value=None)
+        repo = self._make(db=db)
+        start = datetime.date(2024, 1, 1)
+        await repo.fetch_daily_price_history_batch(['AAPL'], start_date=start)
+        sql, params = db.execute.call_args[0]
+        assert 'ANY(%s)' in sql
+        assert 'date > %s' in sql
+        assert params[1] == start
+
+    @pytest.mark.asyncio
+    async def test_fetch_daily_batch_uses_any_operator(self):
+        """fetch_daily_price_history_batch uses WHERE ticker = ANY(%s) for the batch query."""
+        db = self._make_db(return_value=None)
+        repo = self._make(db=db)
+        tickers = ['AAPL', 'MSFT', 'GOOG']
+        await repo.fetch_daily_price_history_batch(tickers)
+        sql, params = db.execute.call_args[0]
+        assert 'ANY(%s)' in sql
+        assert params[0] == tickers
+
 
 # ---------------------------------------------------------------------------
 # PopularityRepository
@@ -643,6 +701,41 @@ class TestPopularityRepository:
         values = args[1]
         assert 'INSERT INTO popularity' in query
         assert len(values) == 1
+
+    @pytest.mark.asyncio
+    async def test_fetch_popularity_with_limit_adds_limit_clause(self):
+        """fetch_popularity(ticker, limit=N) appends LIMIT to the WHERE query."""
+        db = self._make_db(return_value=[])
+        repo = self._make(db=db)
+        await repo.fetch_popularity('AAPL', limit=35)
+        call_args = db.execute.call_args[0]
+        query = call_args[0]
+        params = call_args[1]
+        assert 'LIMIT %s' in query
+        assert 35 in params
+
+    @pytest.mark.asyncio
+    async def test_fetch_popularity_no_limit_omits_limit_clause(self):
+        """fetch_popularity(ticker) without limit does not include LIMIT."""
+        db = self._make_db(return_value=[])
+        repo = self._make(db=db)
+        await repo.fetch_popularity('AAPL')
+        call_args = db.execute.call_args[0]
+        query = call_args[0]
+        assert 'LIMIT' not in query
+
+    @pytest.mark.asyncio
+    async def test_fetch_popularity_no_ticker_with_limit(self):
+        """fetch_popularity(limit=N) without ticker applies LIMIT to the full-table query."""
+        db = self._make_db(return_value=[])
+        repo = self._make(db=db)
+        await repo.fetch_popularity(limit=10)
+        call_args = db.execute.call_args[0]
+        query = call_args[0]
+        params = call_args[1]
+        assert 'WHERE' not in query
+        assert 'LIMIT %s' in query
+        assert params == [10]
 
     def test_get_popular_stocks_calls_ape_wisdom(self):
         ape_wisdom = MagicMock()
