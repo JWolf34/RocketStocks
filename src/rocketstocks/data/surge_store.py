@@ -73,6 +73,16 @@ class SurgeRepository:
         )
         logger.debug(f"Expired old surges before {cutoff}")
 
+    async def get_flagged_tickers(self) -> set[str]:
+        """Return set of all actively flagged ticker symbols in one query."""
+        cutoff = datetime.datetime.utcnow() - datetime.timedelta(hours=_ACTIVE_CUTOFF_HOURS)
+        rows = await self._db.execute(
+            "SELECT DISTINCT ticker FROM popularity_surges "
+            "WHERE confirmed = FALSE AND expired = FALSE AND flagged_at >= %s",
+            [cutoff],
+        )
+        return {row[0] for row in (rows or [])}
+
     async def is_already_flagged(self, ticker: str) -> bool:
         """Return True if ticker has an active unconfirmed surge."""
         cutoff = datetime.datetime.utcnow() - datetime.timedelta(hours=_ACTIVE_CUTOFF_HOURS)
