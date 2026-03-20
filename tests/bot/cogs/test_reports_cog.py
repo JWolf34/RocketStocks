@@ -32,6 +32,7 @@ def _make_cog():
         patch.object(Reports, "update_earnings_calendar"),
         patch.object(Reports, "post_earnings_spotlight"),
         patch.object(Reports, "post_weekly_earnings"),
+        patch.object(Reports, "post_earnings_results"),
         patch("rocketstocks.bot.cogs.reports.DiscordState"),
     ):
         cog = Reports(bot=bot, stock_data=sd)
@@ -598,3 +599,105 @@ class TestUpdateEarningsCalendarImpl:
         mock_guild.create_scheduled_event.assert_called_once()
         call_kwargs = mock_guild.create_scheduled_event.call_args.kwargs
         assert call_kwargs["name"] == "MSFT Earnings"
+
+
+# ---------------------------------------------------------------------------
+# _post_earnings_results_impl
+# ---------------------------------------------------------------------------
+
+class TestPostEarningsResultsImpl:
+    def _make_cog_with_results_support(self):
+        cog = _make_cog()
+        cog.mutils.market_open_today.return_value = True
+
+        # Wire up the earnings results chain
+        cog.stock_data.earnings.get_earnings_on_date = AsyncMock(
+            return_value=pd.DataFrame({'ticker': ['AAPL']})
+        )
+        cog.stock_data.watchlists = MagicMock()
+        cog.stock_data.watchlists.get_all_watchlist_tickers = AsyncMock(return_value=['AAPL'])
+        cog.stock_data.earnings_results = MagicMock()
+        cog.stock_data.earnings_results.get_posted_tickers_today = AsyncMock(return_value=set())
+        cog.stock_data.earnings_results.insert_result = AsyncMock()
+        cog.stock_data.yfinance = MagicMock()
+        return cog
+
+    @pytest.mark.asyncio
+    async def test_skips_when_market_closed(self):
+        cog = _make_cog()
+        cog.mutils.market_open_today.return_value = False
+
+        with patch("rocketstocks.bot.cogs.reports.send_report", new_callable=AsyncMock) as mock_send:
+            await cog._post_earnings_results_impl()
+
+        mock_send.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_skips_when_no_earnings_today(self):
+        cog = self._make_cog_with_results_support()
+        cog.stock_data.earnings.get_earnings_on_date.return_value = pd.DataFrame()
+
+        with patch("rocketstocks.bot.cogs.reports.send_report", new_callable=AsyncMock) as mock_send:
+            await cog._post_earnings_results_impl()
+
+        mock_send.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_skips_already_posted_tickers(self):
+        cog = self._make_cog_with_results_support()
+        cog.stock_data.earnings_results.get_posted_tickers_today.return_value = {'AAPL'}
+
+        with patch("rocketstocks.bot.cogs.reports.send_report", new_callable=AsyncMock) as mock_send:
+            await cog._post_earnings_results_impl()
+
+        mock_send.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_skips_non_watchlist_tickers(self):
+        cog = self._make_cog_with_results_support()
+        # AAPL is in earnings but NOT in the watchlist
+        cog.stock_data.watchlists.get_all_watchlist_tickers.return_value = ['MSFT']
+
+        with patch("rocketstocks.bot.cogs.reports.send_report", new_callable=AsyncMock) as mock_send:
+            await cog._post_earnings_results_impl()
+
+        mock_send.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_skips_when_result_not_yet_available(self):
+        cog = self._make_cog_with_results_support()
+        cog.stock_data.yfinance.get_earnings_result.return_value = None
+
+        with patch("rocketstocks.bot.cogs.reports.asyncio.to_thread", new=AsyncMock(return_value=None)), \
+             patch("rocketstocks.bot.cogs.reports.send_report", new_callable=AsyncMock) as mock_send:
+            await cog._post_earnings_results_impl()
+
+        mock_send.assert_not_called()
+        cog.stock_data.earnings_results.insert_result.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_posts_and_inserts_when_result_available(self):
+        cog = self._make_cog_with_results_support()
+        result = {'eps_actual': 1.52, 'eps_estimate': 1.45, 'surprise_pct': 4.83}
+
+        mock_report = MagicMock()
+        cog.bot.iter_channels = AsyncMock(return_value=[(None, MagicMock())])
+
+        with patch("rocketstocks.bot.cogs.reports.asyncio.to_thread", new=AsyncMock(return_value=result)), \
+             patch("rocketstocks.bot.cogs.reports.send_report", new_callable=AsyncMock) as mock_send, \
+             patch.object(cog, "build_earnings_result_report", new=AsyncMock(return_value=mock_report)):
+            await cog._post_earnings_results_impl()
+
+        mock_send.assert_called_once()
+        cog.stock_data.earnings_results.insert_result.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_handles_exception_per_ticker_without_crashing(self):
+        cog = self._make_cog_with_results_support()
+
+        with patch("rocketstocks.bot.cogs.reports.asyncio.to_thread", side_effect=RuntimeError("oops")), \
+             patch("rocketstocks.bot.cogs.reports.send_report", new_callable=AsyncMock) as mock_send:
+            # Should not raise
+            await cog._post_earnings_results_impl()
+
+        mock_send.assert_not_called()

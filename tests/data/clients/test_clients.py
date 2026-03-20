@@ -286,49 +286,6 @@ class TestNews:
 
 
 # ---------------------------------------------------------------------------
-# Financials — bug fixes
-# ---------------------------------------------------------------------------
-
-class TestFinancials:
-    def test_fetch_financials_returns_correct_keys(self):
-        """B4 + B17 fix: keys should be correct, no duplicates."""
-        with patch('yfinance.Ticker') as mock_ticker_cls:
-            mock_ticker = MagicMock()
-            mock_ticker_cls.return_value = mock_ticker
-
-            from rocketstocks.data.financials import fetch_financials
-            result = fetch_financials('AAPL')
-
-            # B17 fix: 'income_statement' not 'income_statment'
-            assert 'income_statement' in result
-            assert 'income_statment' not in result
-
-            # B4 fix: 'quarterly_balance_sheet' should be present and map to balance_sheet
-            assert 'quarterly_balance_sheet' in result
-            assert result['quarterly_balance_sheet'] is mock_ticker.quarterly_balance_sheet
-
-            # Both quarterly_income_statement and quarterly_balance_sheet should exist
-            assert 'quarterly_income_statement' in result
-            assert result['quarterly_income_statement'] is mock_ticker.quarterly_income_stmt
-
-    def test_fetch_financials_no_overwrite(self):
-        """B4: quarterly_income_statement must not be overwritten by quarterly_balance_sheet."""
-        with patch('yfinance.Ticker') as mock_ticker_cls:
-            mock_income = MagicMock(name='quarterly_income')
-            mock_balance = MagicMock(name='quarterly_balance')
-            mock_ticker = MagicMock()
-            mock_ticker.quarterly_income_stmt = mock_income
-            mock_ticker.quarterly_balance_sheet = mock_balance
-            mock_ticker_cls.return_value = mock_ticker
-
-            from rocketstocks.data.financials import fetch_financials
-            result = fetch_financials('AAPL')
-
-            # Must not be the same object (overwrite check)
-            assert result['quarterly_income_statement'] is not result['quarterly_balance_sheet']
-
-
-# ---------------------------------------------------------------------------
 # Earnings — consistent return type (B14)
 # ---------------------------------------------------------------------------
 

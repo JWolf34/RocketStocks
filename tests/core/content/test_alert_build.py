@@ -587,3 +587,61 @@ def test_override_and_edit_uses_momentum_logic():
     alert.alert_data['pct_change'] = 50.0
     result = alert.override_and_edit({'pct_change': 5.0})
     assert result is True
+
+
+# ---------------------------------------------------------------------------
+# EarningsMoverAlert — earnings result enrichment
+# ---------------------------------------------------------------------------
+
+def test_earnings_mover_with_results_shows_result_field(quote_up, ticker_info):
+    data = EarningsMoverData(
+        ticker='GME', ticker_info=ticker_info, quote=quote_up,
+        next_earnings_info=None, historical_earnings=pd.DataFrame(),
+        eps_actual=1.52, eps_estimate=1.45, surprise_pct=4.83,
+    )
+    spec = EarningsMoverAlert(data=data).build()
+    field_names = [f.name for f in spec.fields]
+    assert 'Earnings Result' in field_names
+
+
+def test_earnings_mover_without_results_omits_result_field(quote_up, ticker_info):
+    data = EarningsMoverData(
+        ticker='GME', ticker_info=ticker_info, quote=quote_up,
+        next_earnings_info=None, historical_earnings=pd.DataFrame(),
+    )
+    spec = EarningsMoverAlert(data=data).build()
+    field_names = [f.name for f in spec.fields]
+    assert 'Earnings Result' not in field_names
+
+
+def test_earnings_mover_result_field_contains_eps_value(quote_up, ticker_info):
+    data = EarningsMoverData(
+        ticker='GME', ticker_info=ticker_info, quote=quote_up,
+        next_earnings_info=None, historical_earnings=pd.DataFrame(),
+        eps_actual=2.34, eps_estimate=2.10, surprise_pct=11.4,
+    )
+    spec = EarningsMoverAlert(data=data).build()
+    result_field = next(f for f in spec.fields if f.name == 'Earnings Result')
+    assert '2.34' in result_field.value
+
+
+def test_earnings_mover_result_beat_shows_checkmark(quote_up, ticker_info):
+    data = EarningsMoverData(
+        ticker='GME', ticker_info=ticker_info, quote=quote_up,
+        next_earnings_info=None, historical_earnings=pd.DataFrame(),
+        eps_actual=1.52, eps_estimate=1.45, surprise_pct=4.83,
+    )
+    spec = EarningsMoverAlert(data=data).build()
+    result_field = next(f for f in spec.fields if f.name == 'Earnings Result')
+    assert '✅' in result_field.value
+
+
+def test_earnings_mover_result_miss_shows_x(quote_up, ticker_info):
+    data = EarningsMoverData(
+        ticker='GME', ticker_info=ticker_info, quote=quote_up,
+        next_earnings_info=None, historical_earnings=pd.DataFrame(),
+        eps_actual=1.30, eps_estimate=1.45, surprise_pct=-10.3,
+    )
+    spec = EarningsMoverAlert(data=data).build()
+    result_field = next(f for f in spec.fields if f.name == 'Earnings Result')
+    assert '❌' in result_field.value

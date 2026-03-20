@@ -40,6 +40,8 @@ def _make_stock_data(earnings_df: pd.DataFrame):
     sd.watchlists.get_watchlists = AsyncMock(return_value=[])
     sd.tickers.get_ticker_info = AsyncMock(return_value={})
     sd.popularity.fetch_popularity = AsyncMock(return_value=pd.DataFrame())
+    sd.earnings_results = MagicMock()
+    sd.earnings_results.get_result = AsyncMock(return_value=None)
     return sd
 
 
@@ -184,6 +186,60 @@ class TestEarningsPipeline:
             )
             mock_build.assert_not_called()
             mock_send.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_results_enrichment_passed_to_builder_when_available(self):
+        """When earnings_results.get_result returns data, it is forwarded to build_earnings_mover."""
+        df = pd.DataFrame({"ticker": ["AAPL"], "date": [datetime.date.today()]})
+        cog = _make_cog(earnings_df=df)
+        fake_trigger = _make_trigger_result(should_alert=True)
+        cog.stock_data.earnings_results.get_result = AsyncMock(
+            return_value={'eps_actual': 1.52, 'eps_estimate': 1.45, 'surprise_pct': 4.83}
+        )
+
+        with (
+            patch("rocketstocks.bot.cogs.alerts.evaluate_price_alert", return_value=fake_trigger),
+            patch.object(cog, "build_earnings_mover", new_callable=AsyncMock) as mock_build,
+            patch("rocketstocks.bot.cogs.alerts.send_alert", new_callable=AsyncMock),
+        ):
+            mock_build.return_value = MagicMock()
+            await cog._earnings_pipeline(
+                quotes={"AAPL": {"quote": {"netPercentChange": 8.5, "totalVolume": 1_000_000}}},
+                classifications={},
+                channels=[AsyncMock()],
+                earnings_today=df,
+                price_cache={},
+            )
+            _, call_kwargs = mock_build.call_args
+            assert call_kwargs.get('eps_actual') == pytest.approx(1.52)
+            assert call_kwargs.get('eps_estimate') == pytest.approx(1.45)
+            assert call_kwargs.get('surprise_pct') == pytest.approx(4.83)
+
+    @pytest.mark.asyncio
+    async def test_no_results_enrichment_when_not_available(self):
+        """When get_result returns None, eps fields are not passed to build_earnings_mover."""
+        df = pd.DataFrame({"ticker": ["AAPL"], "date": [datetime.date.today()]})
+        cog = _make_cog(earnings_df=df)
+        fake_trigger = _make_trigger_result(should_alert=True)
+        cog.stock_data.earnings_results.get_result = AsyncMock(return_value=None)
+
+        with (
+            patch("rocketstocks.bot.cogs.alerts.evaluate_price_alert", return_value=fake_trigger),
+            patch.object(cog, "build_earnings_mover", new_callable=AsyncMock) as mock_build,
+            patch("rocketstocks.bot.cogs.alerts.send_alert", new_callable=AsyncMock),
+        ):
+            mock_build.return_value = MagicMock()
+            await cog._earnings_pipeline(
+                quotes={"AAPL": {"quote": {"netPercentChange": 8.5, "totalVolume": 1_000_000}}},
+                classifications={},
+                channels=[AsyncMock()],
+                earnings_today=df,
+                price_cache={},
+            )
+            _, call_kwargs = mock_build.call_args
+            assert 'eps_actual' not in call_kwargs
+            assert 'eps_estimate' not in call_kwargs
+            assert 'surprise_pct' not in call_kwargs
 
 
 # ---------------------------------------------------------------------------

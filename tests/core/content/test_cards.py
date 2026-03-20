@@ -8,7 +8,7 @@ from rocketstocks.core.content.sections_card import (
     performance_card, fundamentals_card, technical_signals_card,
     popularity_card, upcoming_earnings_card, politician_info_card, sec_filings_card,
     ticker_info_card, todays_change_card, earnings_date_card, news_card,
-    recent_alerts_card,
+    recent_alerts_card, earnings_result_card,
 )
 
 
@@ -437,3 +437,44 @@ class TestRecentAlertsCard:
         alerts = [{'date': datetime.date(2026, 3, 5), 'alert_type': 'CUSTOM_ALERT', 'url': None}]
         result = recent_alerts_card(alerts)
         assert 'CUSTOM_ALERT' in result
+
+
+# ---------------------------------------------------------------------------
+# earnings_result_card
+# ---------------------------------------------------------------------------
+
+class TestEarningsResultCard:
+    def test_beat_shows_checkmark(self):
+        result = earnings_result_card(1.52, 1.45, 4.83)
+        assert '✅' in result
+        assert 'Beat' in result
+
+    def test_miss_shows_x(self):
+        result = earnings_result_card(1.30, 1.45, -10.3)
+        assert '❌' in result
+        assert 'Missed' in result
+
+    def test_contains_eps_actual(self):
+        result = earnings_result_card(1.52, 1.45, 4.83)
+        assert '1.52' in result
+
+    def test_contains_eps_estimate(self):
+        result = earnings_result_card(1.52, 1.45, 4.83)
+        assert '1.45' in result
+
+    def test_contains_surprise_pct(self):
+        result = earnings_result_card(1.52, 1.45, 4.83)
+        assert '4.8' in result
+
+    def test_none_estimate_handled(self):
+        result = earnings_result_card(1.52, None, None)
+        assert '1.52' in result
+        assert 'Result available' in result
+
+    def test_zero_surprise_treated_as_beat(self):
+        result = earnings_result_card(1.50, 1.50, 0.0)
+        assert '✅' in result
+
+    def test_shows_earnings_result_header(self):
+        result = earnings_result_card(1.52, 1.45, 4.83)
+        assert 'Earnings Result' in result
