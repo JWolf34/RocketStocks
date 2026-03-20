@@ -94,6 +94,7 @@ class Reports(commands.Cog):
         self.update_earnings_calendar.start()
         self.post_earnings_spotlight.start()
         self.post_weekly_earnings.start()
+        self.post_earnings_results.start()
 
     @commands.Cog.listener()
     async def on_ready(self):
@@ -274,6 +275,76 @@ class Reports(commands.Cog):
                 files = []
             for _, channel in await self.bot.iter_channels(SCREENERS):
                 await send_screener(content, channel, self.dstate, files=files)
+
+    @tasks.loop(minutes=10)
+    async def post_earnings_results(self):
+        """Poll for newly available earnings results and post reports to the reports channel."""
+        await self._run_task("post_earnings_results", self._post_earnings_results_impl())
+
+    @post_earnings_results.before_loop
+    async def sleep_until_10m(self):
+        sleep_time = seconds_until_minute_interval(minute=10)
+        logger.info(f"Earnings results polling will begin in {sleep_time} seconds")
+        await asyncio.sleep(sleep_time)
+
+    async def _post_earnings_results_impl(self):
+        if not self.mutils.market_open_today():
+            return
+
+        # Cover BMO (7 AM ET = 12:00 UTC) through AMC (8 PM ET = 01:00 UTC next day)
+        now_utc = datetime.datetime.utcnow()
+        hour_utc = now_utc.hour
+        if not (12 <= hour_utc <= 23 or hour_utc == 0):
+            return
+
+        today = datetime.date.today()
+        earnings_today = await self.stock_data.earnings.get_earnings_on_date(date=today)
+        if earnings_today.empty:
+            return
+
+        watchlist_tickers = set(await self.stock_data.watchlists.get_all_watchlist_tickers(
+            no_personal=True, no_systemGenerated=True
+        ))
+        watchlist_earnings = [
+            t for t in earnings_today['ticker'].tolist() if t in watchlist_tickers
+        ]
+        if not watchlist_earnings:
+            return
+
+        already_posted = await self.stock_data.earnings_results.get_posted_tickers_today(today)
+        pending = [t for t in watchlist_earnings if t not in already_posted]
+        if not pending:
+            return
+
+        logger.info(f"Checking earnings results for {len(pending)} watchlist tickers: {pending}")
+        for ticker in pending:
+            try:
+                result = await asyncio.to_thread(self.stock_data.yfinance.get_earnings_result, ticker)
+                await asyncio.sleep(1)
+                if result is None:
+                    logger.debug(f"[post_earnings_results] No result yet for '{ticker}'")
+                    continue
+
+                content = await self.build_earnings_result_report(
+                    ticker=ticker,
+                    eps_actual=result['eps_actual'],
+                    eps_estimate=result['eps_estimate'],
+                    surprise_pct=result['surprise_pct'],
+                )
+                view = StockReportButtons(ticker=ticker)
+                for _, channel in await self.bot.iter_channels(REPORTS):
+                    await send_report(content, channel, view=view)
+
+                await self.stock_data.earnings_results.insert_result(
+                    date=today,
+                    ticker=ticker,
+                    eps_actual=result['eps_actual'],
+                    eps_estimate=result['eps_estimate'],
+                    surprise_pct=result['surprise_pct'],
+                )
+                logger.info(f"[post_earnings_results] Posted earnings result for '{ticker}'")
+            except Exception:
+                logger.error(f"[post_earnings_results] Failed for '{ticker}'", exc_info=True)
 
     @tasks.loop(time=datetime.time(hour=6, minute=0, second=0))
     async def update_earnings_calendar(self):
