@@ -62,10 +62,19 @@ def recent_earnings_card(historical_earnings: pd.DataFrame, *, show_header: bool
         surprise = row['surprise']
         estimate = row['epsforecast']
         quarter = row['fiscalquarterending']
-        beat_miss = "✅" if surprise > 0 else "❌"
-        sign = '+' if surprise > 0 else ''
+
+        if pd.isna(surprise):
+            beat_miss, surprise_str = "❓", "N/A"
+        else:
+            beat_miss = "✅" if surprise > 0 else "❌"
+            sign = '+' if surprise > 0 else ''
+            surprise_str = f"{sign}{surprise:.1f}%"
+
+        eps_str = f"${eps:.2f}" if not pd.isna(eps) else "N/A"
+        est_str = f"${estimate:.2f}" if not pd.isna(estimate) else "N/A"
+
         lines.append(f"{beat_miss} **{quarter}** — {date_str}")
-        lines.append(f"EPS **${eps:.2f}** · Est **${estimate:.2f}** · Surprise **{sign}{surprise:.1f}%**")
+        lines.append(f"EPS **{eps_str}** · Est **{est_str}** · Surprise **{surprise_str}**")
 
     surprises = historical_earnings['surprise'].dropna().tolist()
     if surprises:
@@ -227,8 +236,10 @@ def fundamentals_card(
 
     fund = fundamentals['instruments'][0]['fundamental']
     mcap = format_large_num(fund['marketCap'])
-    eps = f"{fund['eps']:.2f}"
-    pe = f"{fund['peRatio']:.2f}"
+    eps_val = fund['eps']
+    pe_val = fund['peRatio']
+    eps = f"{eps_val:.2f}" if eps_val is not None else "N/A"
+    pe = f"{pe_val:.2f}" if pe_val is not None else "N/A"
     beta = fund['beta']
     div = "Yes" if fund['dividendAmount'] else "No"
     short = "Yes" if quote['reference']['isShortable'] else "No"

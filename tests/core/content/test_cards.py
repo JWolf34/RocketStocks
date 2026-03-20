@@ -8,7 +8,7 @@ from rocketstocks.core.content.sections_card import (
     performance_card, fundamentals_card, technical_signals_card,
     popularity_card, upcoming_earnings_card, politician_info_card, sec_filings_card,
     ticker_info_card, todays_change_card, earnings_date_card, news_card,
-    recent_alerts_card, earnings_result_card,
+    recent_alerts_card, earnings_result_card, recent_earnings_card,
 )
 
 
@@ -478,3 +478,118 @@ class TestEarningsResultCard:
     def test_shows_earnings_result_header(self):
         result = earnings_result_card(1.52, 1.45, 4.83)
         assert 'Earnings Result' in result
+
+
+# ---------------------------------------------------------------------------
+# recent_earnings_card — None/NaN safety
+# ---------------------------------------------------------------------------
+
+def _earnings_df(**overrides) -> pd.DataFrame:
+    """One-row historical earnings DataFrame with sensible defaults."""
+    row = {
+        'date': datetime.date(2025, 11, 1),
+        'fiscalquarterending': 'Sep 2025',
+        'eps': 1.52,
+        'epsforecast': 1.45,
+        'surprise': 4.83,
+    }
+    row.update(overrides)
+    return pd.DataFrame([row])
+
+
+class TestRecentEarningsCard:
+    def test_fully_populated_shows_beat_emoji(self):
+        result = recent_earnings_card(_earnings_df(surprise=4.83))
+        assert '✅' in result
+
+    def test_fully_populated_shows_miss_emoji(self):
+        result = recent_earnings_card(_earnings_df(surprise=-3.5))
+        assert '❌' in result
+
+    def test_fully_populated_formats_eps(self):
+        result = recent_earnings_card(_earnings_df(eps=1.52))
+        assert '$1.52' in result
+
+    def test_fully_populated_formats_estimate(self):
+        result = recent_earnings_card(_earnings_df(epsforecast=1.45))
+        assert '$1.45' in result
+
+    def test_surprise_none_no_type_error(self):
+        result = recent_earnings_card(_earnings_df(surprise=None))
+        assert 'N/A' in result
+        assert '❓' in result
+
+    def test_surprise_nan_no_type_error(self):
+        result = recent_earnings_card(_earnings_df(surprise=float('nan')))
+        assert 'N/A' in result
+        assert '❓' in result
+
+    def test_eps_none_no_type_error(self):
+        result = recent_earnings_card(_earnings_df(eps=None))
+        assert 'N/A' in result
+
+    def test_eps_nan_no_type_error(self):
+        result = recent_earnings_card(_earnings_df(eps=float('nan')))
+        assert 'N/A' in result
+
+    def test_epsforecast_none_no_type_error(self):
+        result = recent_earnings_card(_earnings_df(epsforecast=None))
+        assert 'N/A' in result
+
+    def test_epsforecast_nan_no_type_error(self):
+        result = recent_earnings_card(_earnings_df(epsforecast=float('nan')))
+        assert 'N/A' in result
+
+    def test_all_nullable_fields_none(self):
+        result = recent_earnings_card(_earnings_df(eps=None, epsforecast=None, surprise=None))
+        assert result.count('N/A') >= 3
+
+    def test_empty_df_returns_no_historical(self):
+        result = recent_earnings_card(pd.DataFrame())
+        assert 'No historical earnings found' in result
+
+    def test_none_df_returns_no_historical(self):
+        result = recent_earnings_card(None)
+        assert 'No historical earnings found' in result
+
+    def test_no_header_when_show_header_false(self):
+        result = recent_earnings_card(_earnings_df(), show_header=False)
+        assert '__**Recent Earnings**__' not in result
+
+    def test_returns_string(self):
+        result = recent_earnings_card(_earnings_df())
+        assert isinstance(result, str)
+
+
+# ---------------------------------------------------------------------------
+# fundamentals_card — None safety for eps/peRatio
+# ---------------------------------------------------------------------------
+
+class TestFundamentalsCardNoneSafety:
+    def _fund_with(self, eps, pe_ratio) -> dict:
+        return {
+            'instruments': [{'fundamental': {
+                'marketCap': 2_900_000_000_000,
+                'eps': eps,
+                'peRatio': pe_ratio,
+                'beta': 1.24,
+                'dividendAmount': 0.96,
+            }}]
+        }
+
+    def test_eps_none_shows_na(self):
+        result = fundamentals_card(self._fund_with(None, 29.42), _minimal_quote())
+        assert 'EPS **N/A**' in result
+
+    def test_pe_none_shows_na(self):
+        result = fundamentals_card(self._fund_with(6.42, None), _minimal_quote())
+        assert 'P/E **N/A**' in result
+
+    def test_both_none_no_type_error(self):
+        result = fundamentals_card(self._fund_with(None, None), _minimal_quote())
+        assert result.count('N/A') >= 2
+
+    def test_normal_values_formatted(self):
+        result = fundamentals_card(self._fund_with(6.42, 29.42), _minimal_quote())
+        assert 'EPS **6.42**' in result
+        assert 'P/E **29.42**' in result
