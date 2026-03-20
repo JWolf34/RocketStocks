@@ -98,7 +98,7 @@ class Data(commands.Cog):
         message = None
         for ticker in tickers:
             files = []
-            financials = await asyncio.to_thread(self.stock_data.fetch_financials, ticker)
+            financials = await asyncio.to_thread(self.stock_data.yfinance.get_financials, ticker)
             for statement, data in financials.items():
                 filepath = f"{datapaths.attachments_path}/{ticker}_{statement}.csv"
                 await asyncio.to_thread(data.to_csv, filepath)

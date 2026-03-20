@@ -8,7 +8,6 @@ from rocketstocks.data.bot_settings import BotSettingsRepository
 from rocketstocks.data.channel_config import ChannelConfigRepository
 from rocketstocks.data.db import Postgres
 from rocketstocks.data.earnings import Earnings
-from rocketstocks.data.financials import fetch_financials
 from rocketstocks.data.popularity_store import PopularityRepository
 from rocketstocks.data.price_history import PriceHistoryRepository
 from rocketstocks.data.ticker_stats import TickerStatsRepository
@@ -27,6 +26,8 @@ from rocketstocks.data.clients.schwab import Schwab
 from rocketstocks.data.schwab_token_store import SchwabTokenRepository
 from rocketstocks.data.clients.tiingo import Tiingo
 from rocketstocks.data.clients.stooq import Stooq
+from rocketstocks.data.clients.yfinance_client import YFinanceClient
+from rocketstocks.data.earnings_results_store import EarningsResultsRepository
 
 logger = logging.getLogger(__name__)
 
@@ -37,7 +38,8 @@ class StockData:
                  popularity_client=None, sec=None, tickers=None,
                  price_history=None, popularity=None, channel_config=None,
                  ticker_stats=None, surge_store=None, market_signal_store=None,
-                 alert_roles=None, tiingo=None, stooq=None, bot_settings=None):
+                 alert_roles=None, tiingo=None, stooq=None, bot_settings=None,
+                 yfinance=None, earnings_results=None):
 
         # Clients
         self.db = db or Postgres()
@@ -53,6 +55,7 @@ class StockData:
         self.sec = sec or SEC(db=self.db)
         self.tiingo = tiingo or Tiingo()
         self.stooq = stooq or Stooq()
+        self.yfinance = yfinance or YFinanceClient()
 
         # Repositories
         self.tickers = tickers or TickerRepository(db=self.db, nasdaq=self.nasdaq, sec=self.sec, tiingo=self.tiingo)
@@ -64,6 +67,7 @@ class StockData:
         self.market_signal_store = market_signal_store or MarketSignalRepository(db=self.db)
         self.alert_roles = alert_roles or AlertRolesRepository(db=self.db)
         self.bot_settings = bot_settings or BotSettingsRepository(db=self.db)
+        self.earnings_results = earnings_results or EarningsResultsRepository(db=self.db)
 
         self._alert_tickers: dict = {}
 
@@ -83,9 +87,8 @@ class StockData:
         self._alert_tickers[source] = tickers
 
     # ------------------------------------------------------------------
-    # Financials (standalone function wrapper)
+    # Financials (delegates to YFinanceClient)
     # ------------------------------------------------------------------
 
-    @staticmethod
-    def fetch_financials(ticker: str) -> dict:
-        return fetch_financials(ticker)
+    def fetch_financials(self, ticker: str) -> dict:
+        return self.yfinance.get_financials(ticker)
