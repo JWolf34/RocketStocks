@@ -15,6 +15,7 @@ dependencies = [
     "pandas-ta-classic",
     "mplfinance",
     "Backtesting",
+    "scipy",
     "tradingview_screener",
     "newsapi-python",
     "table2ascii",
