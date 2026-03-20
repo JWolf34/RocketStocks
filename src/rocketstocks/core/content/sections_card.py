@@ -562,6 +562,31 @@ def recent_alerts_card(recent_alerts: list) -> str:
     return '\n'.join(lines) + '\n\n'
 
 
+def earnings_result_card(eps_actual: float, eps_estimate: float | None, surprise_pct: float | None) -> str:
+    """Earnings result card — beat/miss headline with EPS and surprise details."""
+    lines = ["__**Earnings Result**__"]
+
+    if surprise_pct is not None:
+        beat = surprise_pct >= 0
+        emoji = "✅" if beat else "❌"
+        word = "Beat" if beat else "Missed"
+        sign = "+" if surprise_pct >= 0 else ""
+        lines.append(f"{emoji} **{word}** by **{sign}{surprise_pct:.1f}%**")
+    else:
+        lines.append("Result available")
+
+    detail_parts = [f"EPS **${eps_actual:.2f}**"]
+    if eps_estimate is not None:
+        detail_parts.append(f"Est **${eps_estimate:.2f}**")
+        if surprise_pct is not None:
+            surprise_abs = eps_actual - eps_estimate
+            s_sign = "+" if surprise_abs >= 0 else ""
+            detail_parts.append(f"Surprise **{s_sign}${surprise_abs:.2f}**")
+    lines.append(" · ".join(detail_parts))
+
+    return "\n".join(lines) + "\n\n"
+
+
 def weekly_earnings_cards(data: pd.DataFrame, watchlist_tickers: list[str]) -> str:
     """Upcoming earnings grouped by day as stacked cards."""
     import datetime as dt
