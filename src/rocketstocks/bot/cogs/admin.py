@@ -468,11 +468,11 @@ class Admin(commands.Cog):
 
     admin_group = app_commands.Group(
         name="admin",
-        description="Administrator commands for testing and data management",
+        description="Admin tools for testing, debugging, and data management",
         default_permissions=discord.Permissions(administrator=True),
     )
 
-    @admin_group.command(name="logs", description="Return the log file for the bot")
+    @admin_group.command(name="logs", description="Download the latest log file and full log archive")
     @app_commands.checks.has_permissions(administrator=True)
     async def admin_logs(self, interaction: discord.Interaction):
         """Return latest log file and ZIP file of all log files for the bot"""
@@ -493,7 +493,7 @@ class Admin(commands.Cog):
         await interaction.response.send_message("Log file has been sent", ephemeral=True)
         logger.info("Log file sent successfully")
 
-    @admin_group.command(name="update-5m", description="Forcefully update the 5m price history db table")
+    @admin_group.command(name="update-5m", description="Force-refresh 5-minute price history for all tickers")
     @app_commands.checks.has_permissions(administrator=True)
     async def admin_update_5m(self, interaction: discord.Interaction):
         await interaction.response.defer(ephemeral=True)
@@ -502,7 +502,7 @@ class Admin(commands.Cog):
         await self.stock_data.price_history.update_5m_price_history(tickers)
         await interaction.followup.send("5m price history table updated")
 
-    @admin_group.command(name="update-daily", description="Forcefully update the daily price history db table")
+    @admin_group.command(name="update-daily", description="Force-refresh daily price history for all tickers")
     @app_commands.checks.has_permissions(administrator=True)
     async def admin_update_daily(self, interaction: discord.Interaction):
         await interaction.response.defer(ephemeral=True)
@@ -511,7 +511,7 @@ class Admin(commands.Cog):
         await self.stock_data.price_history.update_daily_price_history(tickers)
         await interaction.followup.send("Daily price history table updated")
 
-    @admin_group.command(name="test-alert", description="Send a test alert embed with dummy data")
+    @admin_group.command(name="test-alert", description="Preview an alert embed with sample data")
     @app_commands.checks.has_permissions(administrator=True)
     @app_commands.describe(alert_type="The type of alert to preview")
     @app_commands.choices(alert_type=[
@@ -540,7 +540,7 @@ class Admin(commands.Cog):
             await interaction.followup.send(f"Error sending embed: {exc}", ephemeral=True)
             return
 
-    @admin_group.command(name="test-screener", description="Preview a screener embed with dummy data (ephemeral)")
+    @admin_group.command(name="test-screener", description="Preview a screener embed with sample data")
     @app_commands.checks.has_permissions(administrator=True)
     @app_commands.describe(screener="The type of screener to preview")
     @app_commands.choices(screener=[
@@ -567,7 +567,7 @@ class Admin(commands.Cog):
             logger.exception(f"Failed to send test screener to {interaction.user.name}")
             await interaction.followup.send(f"Error sending screener: {exc}", ephemeral=True)
 
-    @admin_group.command(name="test-report", description="Preview a report embed with dummy data (ephemeral)")
+    @admin_group.command(name="test-report", description="Preview a report embed with sample data")
     @app_commands.checks.has_permissions(administrator=True)
     @app_commands.describe(report="The type of report to preview")
     @app_commands.choices(report=[

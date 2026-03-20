@@ -415,10 +415,10 @@ class Reports(commands.Cog):
     # Slash commands    #
     #####################
 
-    report_group = app_commands.Group(name="report", description="Generate reports for tickers, watchlists, and more")
-    alert_group = app_commands.Group(name="alert", description="Summarize and manage alerts")
+    report_group = app_commands.Group(name="report", description="Generate in-depth stock reports")
+    alert_group = app_commands.Group(name="alert", description="View alert history and manage subscriptions")
 
-    @report_group.command(name="watchlist", description="Post stock reports on all tickers on a watchlist")
+    @report_group.command(name="watchlist", description="Generate stock reports for every ticker on a watchlist")
     @app_commands.describe(watchlist="Which watchlist to fetch reports for")
     @app_commands.autocomplete(watchlist=get_watchlist_options)
     @app_commands.describe(visibility="'private' to send to DMs, 'public' to send to the channel")
@@ -476,7 +476,7 @@ class Reports(commands.Cog):
             for ticker in all_tickers if ticker.startswith(partial)
         ][:25]
 
-    @report_group.command(name="ticker", description="Fetch stock reports of the specified tickers")
+    @report_group.command(name="ticker", description="Generate a detailed stock report for one or more tickers")
     @app_commands.describe(tickers="Tickers to post reports for (separated by spaces)")
     @app_commands.describe(visibility="'private' to send to DMs, 'public' to send to the channel")
     @app_commands.choices(visibility=[
@@ -524,7 +524,7 @@ class Reports(commands.Cog):
             for name, value in News().sort_by.items() if current.lower() in name.lower()
         ]
 
-    @app_commands.command(name="news", description="Fetch news on the query provided")
+    @app_commands.command(name="news", description="Search for recent news articles on any topic")
     @app_commands.describe(query="The search terms or terms to query for")
     @app_commands.describe(sort_by="Field by which to sort returned articles")
     @app_commands.autocomplete(sort_by=autocomplete_sortby,)
@@ -548,7 +548,7 @@ class Reports(commands.Cog):
             for name in self.stock_data.popularity.filters_map.keys() if current.lower() in name.lower()
         ]
 
-    @report_group.command(name="popularity", description="Fetch a report on the most popular stocks from the source provided")
+    @report_group.command(name="popularity", description="See the most-talked-about stocks from a chosen source")
     @app_commands.describe(source="The source to pull popular stocks from")
     @app_commands.autocomplete(source=autocomplete_filter,)
     @app_commands.describe(visibility="'private' to send to DMs, 'public' to send to the channel")
@@ -593,7 +593,7 @@ class Reports(commands.Cog):
             for p_name in names if current.lower() in p_name.lower()
         ][:25]
 
-    @report_group.command(name="politician", description="Fetch a report on the latest stocks traded by a politician")
+    @report_group.command(name="politician", description="See recent stock trades made by a U.S. politician")
     @app_commands.describe(politician_name="Politician to return trades for")
     @app_commands.autocomplete(politician_name=politician_options,)
     @app_commands.describe(visibility="'private' to send to DMs, 'public' to send to the channel")
@@ -774,7 +774,7 @@ class Reports(commands.Cog):
         alerts = await self.dstate.get_alerts_since(since_dt)
         return AlertSummary(data=AlertSummaryData(since_dt=since_dt, label=label, alerts=alerts))
 
-    @alert_group.command(name="summary", description="Summarize alerts since a selected time period")
+    @alert_group.command(name="summary", description="View a summary of recent alerts grouped by type")
     @app_commands.describe(
         since_when="Time period to summarize (defaults to since last close)",
         visibility="public posts to the alerts channel; private sends only to you",
@@ -819,7 +819,7 @@ class Reports(commands.Cog):
             ephemeral=True,
         )
 
-    @alert_group.command(name="subscribe", description="Manage your alert notification subscriptions")
+    @alert_group.command(name="subscribe", description="Choose which alert types you want to be pinged for")
     async def alert_subscribe(self, interaction: discord.Interaction):
         """Open the subscription selector for the interacting user."""
         await self._send_subscription_select(interaction)

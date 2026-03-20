@@ -90,9 +90,9 @@ class Notifications(commands.Cog):
     # Slash commands    #
     #####################
 
-    notifications_group = app_commands.Group(name="notifications", description="Manage the Sentinel notification system")
+    notifications_group = app_commands.Group(name="notifications", description="Manage bot event notifications")
 
-    @notifications_group.command(name="filter", description="Set the notification filter level")
+    @notifications_group.command(name="filter", description="Set which events to receive (all, failures only, off)")
     @app_commands.describe(level="Filter level: all, failures_only, or off")
     @app_commands.choices(level=[
         app_commands.Choice(name="all", value="all"),
@@ -112,7 +112,7 @@ class Notifications(commands.Cog):
             f"Notification filter updated to **{level.value}**.", ephemeral=True
         )
 
-    @notifications_group.command(name="status", description="Show current notification settings and recent events")
+    @notifications_group.command(name="status", description="View notification settings and the last few events")
     async def notifications_status(self, interaction: discord.Interaction):
         """Display current filter and the last 5 notification events."""
         embed = discord.Embed(

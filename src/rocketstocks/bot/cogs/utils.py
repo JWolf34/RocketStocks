@@ -95,7 +95,7 @@ def build_category_embed(bot: commands.Bot, category_key: str) -> discord.Embed:
         else:
             embed.add_field(
                 name=f"/{cmd.name}",
-                value=cmd.description or "No description.",
+                value=getattr(cmd, "description", None) or "No description.",
                 inline=False,
             )
     return embed
@@ -130,7 +130,7 @@ class Utils(commands.Cog):
     async def on_ready(self):
         logger.info(f"Cog {__name__} loaded!")
 
-    @app_commands.command(name='sync', description='Sync bot commands to the server')
+    @app_commands.command(name='sync', description='Sync slash commands with Discord (run after bot updates)')
     @app_commands.checks.has_permissions(administrator=True)
     async def sync(self, interaction: discord.Interaction):
         """Sync bot commands to Discord's servers. Use this after adding or removing an app command"""
@@ -144,7 +144,8 @@ class Utils(commands.Cog):
     async def help(self, interaction: discord.Interaction):
         """Post an interactive help message with a category dropdown."""
         logger.info(f"/help command called by user {interaction.user.name}")
-        is_admin = interaction.user.guild_permissions.administrator
+        perms = getattr(interaction.user, "guild_permissions", None)
+        is_admin = perms.administrator if perms is not None else False
         embed = build_overview_embed()
         view = HelpView(self.bot, is_admin)
         await interaction.response.send_message(embed=embed, view=view, ephemeral=True)

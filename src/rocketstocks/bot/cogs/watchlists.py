@@ -64,9 +64,9 @@ class Watchlists(commands.Cog):
             for ticker in all_tickers if ticker.startswith(partial)
         ][:25]
 
-    watchlist_group = app_commands.Group(name="watchlist", description="View and manage your watchlists")
+    watchlist_group = app_commands.Group(name="watchlist", description="Create and manage stock watchlists")
 
-    @watchlist_group.command(name="add", description="Add tickers to the selected watchlist")
+    @watchlist_group.command(name="add", description="Add tickers to a watchlist")
     @app_commands.describe(tickers="Tickers to add to watchlist (separated by spaces)")
     @app_commands.describe(watchlist="Which watchlist you want to make changes to")
     @app_commands.autocomplete(watchlist=watchlist_options)
@@ -106,7 +106,7 @@ class Watchlists(commands.Cog):
             logger.error(f"watchlist_add failed for user {interaction.user.name}", exc_info=True)
             await interaction.followup.send("An error occurred — please try again.", ephemeral=True)
 
-    @watchlist_group.command(name="remove", description="Remove tickers from the selected watchlist")
+    @watchlist_group.command(name="remove", description="Remove tickers from a watchlist")
     @app_commands.describe(tickers="Tickers to remove from watchlist (separated by spaces)")
     @app_commands.describe(watchlist="Which watchlist you want to make changes to")
     @app_commands.autocomplete(watchlist=watchlist_options)
@@ -148,7 +148,7 @@ class Watchlists(commands.Cog):
             logger.error(f"watchlist_remove failed for user {interaction.user.name}", exc_info=True)
             await interaction.followup.send("An error occurred — please try again.", ephemeral=True)
 
-    @watchlist_group.command(name="view", description="List the tickers on the selected watchlist")
+    @watchlist_group.command(name="view", description="View all tickers on a watchlist")
     @app_commands.describe(watchlist="Which watchlist you want to view")
     @app_commands.autocomplete(watchlist=watchlist_options)
     async def watchlist_view(self, interaction: discord.Interaction, watchlist: str):
@@ -174,7 +174,7 @@ class Watchlists(commands.Cog):
             logger.error(f"watchlist_view failed for user {interaction.user.name}", exc_info=True)
             await interaction.followup.send("An error occurred — please try again.", ephemeral=True)
 
-    @watchlist_group.command(name="set", description="Overwrite a watchlist with the specified tickers")
+    @watchlist_group.command(name="set", description="Replace all tickers on a watchlist")
     @app_commands.describe(tickers="Tickers to add to watchlist (separated by spaces)")
     @app_commands.describe(watchlist="Which watchlist you want to make changes to")
     @app_commands.autocomplete(watchlist=watchlist_options)
@@ -207,7 +207,7 @@ class Watchlists(commands.Cog):
             logger.error(f"watchlist_set failed for user {interaction.user.name}", exc_info=True)
             await interaction.followup.send("An error occurred — please try again.", ephemeral=True)
 
-    @watchlist_group.command(name="create", description="Create a new watchlist with the specified tickers")
+    @watchlist_group.command(name="create", description="Create a new watchlist with starting tickers")
     @app_commands.describe(watchlist="Name of the watchlist to create")
     @app_commands.describe(tickers="Tickers to add to watchlist (separated by spaces)")
     @app_commands.autocomplete(tickers=ticker_autocomplete)
@@ -279,7 +279,7 @@ class Watchlists(commands.Cog):
             logger.error(f"watchlist_delete failed for user {interaction.user.name}", exc_info=True)
             await interaction.followup.send("An error occurred — please try again.", ephemeral=True)
 
-    @watchlist_group.command(name="list", description="List all available watchlists with their ticker counts")
+    @watchlist_group.command(name="list", description="Show all watchlists and how many tickers each has")
     async def watchlist_list(self, interaction: discord.Interaction):
         """Show all watchlists and how many tickers each contains"""
         await interaction.response.defer(ephemeral=True)

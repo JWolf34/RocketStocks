@@ -164,7 +164,7 @@ class SchwabAuth(commands.Cog):
 
     schwab_group = app_commands.Group(
         name="schwab",
-        description="Manage Schwab API connection and authentication",
+        description="Manage the Schwab API token and authentication",
         default_permissions=discord.Permissions(administrator=True),
     )
 
@@ -172,7 +172,7 @@ class SchwabAuth(commands.Cog):
     # /schwab status
     # ------------------------------------------------------------------
 
-    @schwab_group.command(name="status", description="Show Schwab API token status")
+    @schwab_group.command(name="status", description="Check Schwab API token health (healthy, expiring, expired)")
     async def schwab_status(self, interaction: discord.Interaction):
         """Display colour-coded token health."""
         info = await self.bot.stock_data.schwab.get_token_info()
@@ -202,7 +202,7 @@ class SchwabAuth(commands.Cog):
     # /schwab auth
     # ------------------------------------------------------------------
 
-    @schwab_group.command(name="auth", description="Re-authenticate with Schwab via OAuth")
+    @schwab_group.command(name="auth", description="Start Schwab OAuth login to refresh the API token")
     async def schwab_auth(self, interaction: discord.Interaction):
         """Start the browser-based Schwab OAuth flow."""
         if self._active_auth is not None:

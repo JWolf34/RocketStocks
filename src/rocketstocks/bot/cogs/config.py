@@ -385,7 +385,7 @@ class Config(commands.Cog):
         default_permissions=discord.Permissions(administrator=True),
     )
 
-    @server_group.command(name="setup", description="Configure RocketStocks channels for this server")
+    @server_group.command(name="setup", description="Set up which channels the bot posts to")
     async def server_setup(self, interaction: discord.Interaction):
         """Send channel setup and bot settings views as ephemeral messages."""
         guild_id = interaction.guild_id
@@ -417,7 +417,7 @@ class Config(commands.Cog):
             ephemeral=True,
         )
 
-    @server_group.command(name="status", description="Show current channel and subscription role configuration")
+    @server_group.command(name="status", description="View current channel, role, and bot settings")
     async def server_status(self, interaction: discord.Interaction):
         """Display channel config, alert roles, and bot settings."""
         repo = self.bot.stock_data.channel_config

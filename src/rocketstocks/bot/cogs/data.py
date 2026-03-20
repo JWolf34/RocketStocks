@@ -30,9 +30,9 @@ class Data(commands.Cog):
     async def on_ready(self):
         logger.info(f"Cog {__name__} loaded!")
 
-    data_group = app_commands.Group(name="data", description="Fetch financial data for tickers")
+    data_group = app_commands.Group(name="data", description="Look up stock data — prices, earnings, quotes, and more")
 
-    @data_group.command(name="price", description="Returns data file for input ticker. Default: 1 year period.")
+    @data_group.command(name="price", description="Get daily or 5-min OHLCV price data as a CSV (DM'd to you)")
     @app_commands.describe(tickers="Tickers to return data for (separated by spaces)")
     @app_commands.describe(frequency="Type of data file to return - daily data or minute-by-minute data")
     @app_commands.choices(frequency=[
@@ -85,7 +85,7 @@ class Data(commands.Cog):
 
         await interaction.followup.send(followup, ephemeral=True)
 
-    @data_group.command(name="financials", description="Fetch financial reports of the specified tickers")
+    @data_group.command(name="financials", description="Get income, balance sheet, and cash flow CSVs (DM'd to you)")
     @app_commands.describe(tickers="Tickers to return financials for (separated by spaces)")
     async def data_financials(self, interaction: discord.Interaction, tickers: str):
         """Return latest financials on input tickers in JSON format"""
@@ -123,7 +123,7 @@ class Data(commands.Cog):
 
         await interaction.followup.send(followup, ephemeral=True)
 
-    @data_group.command(name="tickers", description="Return CSV with data on all tickers the bot runs analysis on")
+    @data_group.command(name="tickers", description="Get a CSV of every ticker the bot tracks (DM'd to you)")
     async def data_tickers(self, interaction: discord.Interaction):
         """Return CSV file with contents of 'tickers' table in database"""
         await interaction.response.defer(ephemeral=True)
@@ -143,7 +143,7 @@ class Data(commands.Cog):
         await interaction.followup.send("CSV file has been sent", ephemeral=True)
         logger.info(f"Provided data file for all {len(data)} tickers")
 
-    @data_group.command(name="earnings", description="Returns recent earnings data for the input tickers")
+    @data_group.command(name="earnings", description="Get historical EPS data as a table and CSV")
     @app_commands.describe(tickers="Tickers to return EPS data for (separated by spaces)")
     @app_commands.describe(visibility="'private' to send to DMs, 'public' to send to the channel")
     @app_commands.choices(visibility=[
@@ -209,7 +209,7 @@ class Data(commands.Cog):
 
         await interaction.followup.send(followup, ephemeral=True)
 
-    @data_group.command(name="sec-filing", description="Returns link to latest SEC form of requested type")
+    @data_group.command(name="sec-filing", description="Get a link to the latest SEC filing (10-K, 10-Q, 8-K, etc.)")
     @app_commands.describe(tickers="Tickers to return SEC forms for (separated by spaces)")
     @app_commands.describe(form="The form type to get a link to (10-K, 10-Q, 8-K, etc)")
     async def data_sec_filing(self, interaction: discord.Interaction, tickers: str, form: str):
@@ -243,7 +243,7 @@ class Data(commands.Cog):
         await interaction.followup.send(message)
         logger.info(f"Form {form} provided for tickers {tickers}")
 
-    @data_group.command(name="fundamentals", description="Return fundamental data for desired tickers in JSON format")
+    @data_group.command(name="fundamentals", description="Get fundamental data (P/E, EPS, beta, etc.) as JSON (DM'd to you)")
     @app_commands.describe(tickers="Tickers to return fundamentals for (separated by spaces)")
     async def data_fundamentals(self, interaction: discord.Interaction, tickers: str):
         """Return fundamentals in JSON format for input tickers"""
@@ -293,7 +293,7 @@ class Data(commands.Cog):
 
         await interaction.followup.send(followup, ephemeral=True)
 
-    @data_group.command(name="options", description="Return options chains for desired tickers in JSON format")
+    @data_group.command(name="options", description="Get full options chain data as JSON (DM'd to you)")
     @app_commands.describe(tickers="Tickers to return options chains for (separated by spaces)")
     async def data_options(self, interaction: discord.Interaction, tickers: str):
         """Return options chains in JSON format for input tickers"""
@@ -343,7 +343,7 @@ class Data(commands.Cog):
 
         await interaction.followup.send(followup, ephemeral=True)
 
-    @data_group.command(name="popularity", description="Return historical popularity of desired tickers in CSV format")
+    @data_group.command(name="popularity", description="Get historical social-media mention data as CSV (DM'd to you)")
     @app_commands.describe(tickers="Tickers to return popularity for (separated by spaces)")
     async def data_popularity(self, interaction: discord.Interaction, tickers: str):
         await interaction.response.defer(ephemeral=True)
@@ -385,7 +385,7 @@ class Data(commands.Cog):
 
         await interaction.followup.send(followup, ephemeral=True)
 
-    @data_group.command(name="quote", description="Return real-time quote for desired tickers")
+    @data_group.command(name="quote", description="Get a real-time quote with price, change, bid/ask, and volume")
     @app_commands.describe(tickers="Tickers to return quotes for (separated by spaces)")
     async def data_quote(self, interaction: discord.Interaction, tickers: str):
         """Return real-time quotes for input tickers"""
@@ -438,7 +438,7 @@ class Data(commands.Cog):
 
         await interaction.followup.send(embed=embed, ephemeral=True)
 
-    @data_group.command(name="upcoming-earnings", description="Return upcoming earnings info for desired tickers")
+    @data_group.command(name="upcoming-earnings", description="See the next earnings date, EPS forecast, and analyst estimates")
     @app_commands.describe(tickers="Tickers to return upcoming earnings for (separated by spaces)")
     async def data_upcoming_earnings(self, interaction: discord.Interaction, tickers: str):
         """Return upcoming earnings info for input tickers"""
@@ -472,7 +472,7 @@ class Data(commands.Cog):
 
         await interaction.followup.send(embed=embed, ephemeral=True)
 
-    @data_group.command(name="stats", description="Return statistical profile for desired tickers")
+    @data_group.command(name="stats", description="See volatility, classification, Bollinger Bands, and return stats")
     @app_commands.describe(tickers="Tickers to return stats for (separated by spaces)")
     async def data_stats(self, interaction: discord.Interaction, tickers: str):
         """Return ticker statistical profile for input tickers"""
@@ -509,7 +509,7 @@ class Data(commands.Cog):
 
         await interaction.followup.send(embed=embed, ephemeral=True)
 
-    @data_group.command(name="movers", description="Return top 10 daily price movers")
+    @data_group.command(name="movers", description="See today's top 10 stock price movers")
     async def data_movers(self, interaction: discord.Interaction):
         """Return top 10 daily price movers"""
         await interaction.response.defer(ephemeral=True)
