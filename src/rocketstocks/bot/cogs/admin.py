@@ -18,6 +18,7 @@ from rocketstocks.core.content.alerts.momentum_confirmation_alert import Momentu
 from rocketstocks.core.content.alerts.market_alert import MarketAlert
 from rocketstocks.core.content.models import (
     EarningsMoverData,
+    EarningsResultData,
     EarningsSpotlightData,
     GainerScreenerData,
     NewsReportData,
@@ -33,6 +34,7 @@ from rocketstocks.core.content.models import (
     MarketAlertData,
 )
 from rocketstocks.core.content.reports.earnings_report import EarningsSpotlightReport
+from rocketstocks.core.content.reports.earnings_result_report import EarningsResultReport
 from rocketstocks.core.content.reports.news_report import NewsReport
 from rocketstocks.core.content.reports.politician_report import PoliticianReport
 from rocketstocks.core.content.reports.popularity_report import PopularityReport
@@ -323,6 +325,18 @@ def _build_dummy_report(report_type: str):
             trades=trades_df,
             politician_facts={'Net Worth': '$120M', 'In Office Since': '1987'},
         ))
+    if report_type == 'earnings_result':
+        return EarningsResultReport(data=EarningsResultData(
+            ticker='NVDA',
+            ticker_info=ticker_info,
+            quote=_dummy_quote(pct_change=7.4, price=895.50, ticker='NVDA'),
+            eps_actual=5.89,
+            eps_estimate=5.56,
+            surprise_pct=5.9,
+            historical_earnings=_dummy_earnings_df(),
+            next_earnings_info={},
+            daily_price_history=_dummy_price_history(),
+        ))
     raise ValueError(f"Unknown report type: {report_type!r}")
 
 
@@ -559,6 +573,7 @@ class Admin(commands.Cog):
     @app_commands.choices(report=[
         app_commands.Choice(name="stock",              value="stock"),
         app_commands.Choice(name="earnings-spotlight", value="earnings"),
+        app_commands.Choice(name="earnings-result",    value="earnings_result"),
         app_commands.Choice(name="news",               value="news"),
         app_commands.Choice(name="popularity",         value="popularity"),
         app_commands.Choice(name="politician",         value="politician"),
