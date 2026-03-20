@@ -181,11 +181,24 @@ class MarketMoverData(TickerData):
 
 
 @dataclass
+class EarningsResultData(TickerData):
+    eps_actual: float
+    eps_estimate: float | None
+    surprise_pct: float | None
+    historical_earnings: pd.DataFrame
+    next_earnings_info: dict
+    daily_price_history: pd.DataFrame = field(default_factory=pd.DataFrame)
+
+
+@dataclass
 class EarningsMoverData(TickerData):
     next_earnings_info: dict
     historical_earnings: pd.DataFrame
     daily_price_history: pd.DataFrame = field(default_factory=pd.DataFrame)
     trigger_result: object | None = None   # AlertTriggerResult | None
+    eps_actual: float | None = None
+    eps_estimate: float | None = None
+    surprise_pct: float | None = None
 
 
 @dataclass
