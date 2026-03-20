@@ -200,6 +200,62 @@ CREATE TABLE IF NOT EXISTS earnings_results (
     source        varchar(16) NOT NULL DEFAULT 'yfinance',
     PRIMARY KEY (date, ticker)
 );
+
+CREATE TABLE IF NOT EXISTS backtest_runs (
+    run_id          SERIAL PRIMARY KEY,
+    strategy_name   VARCHAR(64) NOT NULL,
+    timeframe       VARCHAR(8) NOT NULL,
+    parameters      JSONB DEFAULT '{}'::jsonb,
+    filters         JSONB DEFAULT '{}'::jsonb,
+    ticker_count    INT NOT NULL DEFAULT 0,
+    start_date      DATE,
+    end_date        DATE,
+    cash            FLOAT NOT NULL DEFAULT 10000,
+    commission      FLOAT NOT NULL DEFAULT 0.002,
+    created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS backtest_results (
+    result_id       SERIAL PRIMARY KEY,
+    run_id          INT NOT NULL REFERENCES backtest_runs(run_id) ON DELETE CASCADE,
+    ticker          VARCHAR(8) NOT NULL,
+    classification  VARCHAR(16),
+    sector          VARCHAR(64),
+    return_pct      FLOAT,
+    sharpe_ratio    FLOAT,
+    max_drawdown    FLOAT,
+    win_rate        FLOAT,
+    num_trades      INT,
+    avg_trade_pct   FLOAT,
+    profit_factor   FLOAT,
+    exposure_pct    FLOAT,
+    equity_final    FLOAT,
+    buy_hold_pct    FLOAT,
+    error           TEXT,
+    created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    UNIQUE(run_id, ticker)
+);
+
+CREATE TABLE IF NOT EXISTS strategy_stats (
+    stat_id            SERIAL PRIMARY KEY,
+    run_id             INT NOT NULL REFERENCES backtest_runs(run_id) ON DELETE CASCADE,
+    group_key          VARCHAR(64) NOT NULL,
+    group_value        VARCHAR(64),
+    ticker_count       INT,
+    mean_return        FLOAT,
+    median_return      FLOAT,
+    std_return         FLOAT,
+    mean_sharpe        FLOAT,
+    mean_win_rate      FLOAT,
+    total_trades       INT,
+    mean_max_dd        FLOAT,
+    mean_profit_factor FLOAT,
+    t_stat             FLOAT,
+    p_value            FLOAT,
+    significant        BOOLEAN,
+    created_at         TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    UNIQUE(run_id, group_key)
+);
 """
 
 _DROP_ALL_SCRIPT = """
@@ -221,6 +277,9 @@ DROP TABLE IF EXISTS alert_roles;
 DROP TABLE IF EXISTS schwab_tokens;
 DROP TABLE IF EXISTS bot_settings;
 DROP TABLE IF EXISTS earnings_results;
+DROP TABLE IF EXISTS backtest_results;
+DROP TABLE IF EXISTS strategy_stats;
+DROP TABLE IF EXISTS backtest_runs;
 """
 
 
