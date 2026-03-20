@@ -28,6 +28,7 @@ from rocketstocks.core.content.models import (
     GainerScreenerData,
     VolumeScreenerData,
     EarningsSpotlightData,
+    EarningsResultData,
     WeeklyEarningsData,
     PoliticianReportData,
 )
@@ -36,6 +37,7 @@ from rocketstocks.core.content.reports.stock_report import StockReport
 from rocketstocks.core.content.reports.news_report import NewsReport
 from rocketstocks.core.content.reports.popularity_report import PopularityReport
 from rocketstocks.core.content.reports.earnings_report import EarningsSpotlightReport
+from rocketstocks.core.content.reports.earnings_result_report import EarningsResultReport
 from rocketstocks.core.content.reports.politician_report import PoliticianReport
 from rocketstocks.core.content.screeners.popularity_screener import PopularityScreener
 from rocketstocks.core.content.screeners.gainer_screener import GainerScreener
@@ -651,6 +653,31 @@ class Reports(commands.Cog):
             historical_earnings=historical_earnings,
             quote=quote,
             fundamentals=fundamentals,
+        ))
+
+    async def build_earnings_result_report(
+        self,
+        ticker: str,
+        eps_actual: float,
+        eps_estimate: float | None,
+        surprise_pct: float | None,
+        **kwargs,
+    ) -> EarningsResultReport:
+        ticker_info = kwargs.pop('ticker_info', await self.stock_data.tickers.get_ticker_info(ticker=ticker))
+        quote = kwargs.pop('quote', await self.stock_data.schwab.get_quote(ticker=ticker))
+        daily_price_history = kwargs.pop('daily_price_history', await self.stock_data.price_history.fetch_daily_price_history(ticker=ticker))
+        historical_earnings = kwargs.pop('historical_earnings', await self.stock_data.earnings.get_historical_earnings(ticker=ticker))
+        next_earnings_info = kwargs.pop('next_earnings_info', await self.stock_data.earnings.get_next_earnings_info(ticker=ticker))
+        return EarningsResultReport(data=EarningsResultData(
+            ticker=ticker,
+            ticker_info=ticker_info,
+            quote=quote,
+            eps_actual=eps_actual,
+            eps_estimate=eps_estimate,
+            surprise_pct=surprise_pct,
+            historical_earnings=historical_earnings,
+            next_earnings_info=next_earnings_info,
+            daily_price_history=daily_price_history,
         ))
 
     async def build_weekly_earnings_screener(self, **kwargs) -> WeeklyEarningsScreener:
