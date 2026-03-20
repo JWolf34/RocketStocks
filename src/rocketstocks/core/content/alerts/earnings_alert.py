@@ -7,6 +7,7 @@ from rocketstocks.core.content.models import (
     EarningsMoverData, EmbedField, EmbedSpec,
 )
 from rocketstocks.core.content import sections_card
+from rocketstocks.core.content.sections_card import earnings_result_card
 from rocketstocks.core.utils.formatting import (
     change_emoji, earnings_time_label, finviz_url, format_signed_pct, get_company_name,
 )
@@ -87,6 +88,15 @@ class EarningsMoverAlert(Alert):
         ]
 
         fields += _stat_fields_from_trigger(self.data.trigger_result)
+
+        if self.data.eps_actual is not None:
+            fields.append(EmbedField(
+                name="Earnings Result",
+                value=earnings_result_card(
+                    self.data.eps_actual, self.data.eps_estimate, self.data.surprise_pct
+                ),
+                inline=False,
+            ))
 
         if not self.data.historical_earnings.empty:
             fields.append(EmbedField(

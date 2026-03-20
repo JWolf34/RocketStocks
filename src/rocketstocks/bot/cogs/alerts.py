@@ -663,10 +663,24 @@ class Alerts(commands.Cog):
         posted_tickers = await self.dstate.get_alerts_by_type_today('EARNINGS_MOVER')
         posted_set = set(posted_tickers)
 
+        today = datetime.date.today()
+
         for ticker, quote in earnings_quotes.items():
             try:
                 pct_change = quote['quote']['netPercentChange']
                 classification = classifications.get(ticker, 'standard')
+
+                # Look up any stored earnings result for enrichment
+                earnings_result = await self.stock_data.earnings_results.get_result(
+                    date=today, ticker=ticker
+                )
+                result_kwargs = {}
+                if earnings_result:
+                    result_kwargs = {
+                        'eps_actual': earnings_result['eps_actual'],
+                        'eps_estimate': earnings_result['eps_estimate'],
+                        'surprise_pct': earnings_result['surprise_pct'],
+                    }
 
                 # Skip expensive re-evaluation for tickers with existing alerts
                 # Let override_and_edit momentum logic decide on updates
@@ -685,6 +699,7 @@ class Alerts(commands.Cog):
                         next_earnings_info=next_earnings_info,
                         daily_price_history=None,  # Skip fetch; not needed for override_and_edit
                         trigger_result=None,  # Don't re-evaluate; let override_and_edit decide
+                        **result_kwargs,
                     )
                     view = AlertButtons(ticker=ticker, doc_url=EARNINGS_MOVER_DOC_URL)
                     for channel in channels:
@@ -716,6 +731,7 @@ class Alerts(commands.Cog):
                         ].to_dict(orient='records')[0],
                         daily_price_history=daily_price_history,
                         trigger_result=trigger_result,
+                        **result_kwargs,
                     )
                     view = AlertButtons(ticker=ticker, doc_url=EARNINGS_MOVER_DOC_URL)
                     for channel in channels:
@@ -739,6 +755,9 @@ class Alerts(commands.Cog):
         )
         daily_price_history = kwargs.pop('daily_price_history', None)
         trigger_result = kwargs.pop('trigger_result', None)
+        eps_actual = kwargs.pop('eps_actual', None)
+        eps_estimate = kwargs.pop('eps_estimate', None)
+        surprise_pct = kwargs.pop('surprise_pct', None)
         return EarningsMoverAlert(data=EarningsMoverData(
             ticker=ticker,
             ticker_info=await self.stock_data.tickers.get_ticker_info(ticker=ticker),
@@ -747,6 +766,9 @@ class Alerts(commands.Cog):
             historical_earnings=historical_earnings,
             daily_price_history=daily_price_history if daily_price_history is not None else pd.DataFrame(),
             trigger_result=trigger_result,
+            eps_actual=eps_actual,
+            eps_estimate=eps_estimate,
+            surprise_pct=surprise_pct,
         ))
 
     async def build_watchlist_mover(self, ticker: str, **kwargs) -> WatchlistMoverAlert:
