@@ -189,6 +189,17 @@ CREATE TABLE IF NOT EXISTS bot_settings (
     key   VARCHAR(64) PRIMARY KEY,
     value TEXT NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS earnings_results (
+    date          date NOT NULL,
+    ticker        varchar(8) NOT NULL,
+    eps_actual    float,
+    eps_estimate  float,
+    surprise_pct  float,
+    posted_at     timestamptz NOT NULL DEFAULT NOW(),
+    source        varchar(16) NOT NULL DEFAULT 'yfinance',
+    PRIMARY KEY (date, ticker)
+);
 """
 
 _DROP_ALL_SCRIPT = """
@@ -209,6 +220,7 @@ DROP TABLE IF EXISTS market_signals;
 DROP TABLE IF EXISTS alert_roles;
 DROP TABLE IF EXISTS schwab_tokens;
 DROP TABLE IF EXISTS bot_settings;
+DROP TABLE IF EXISTS earnings_results;
 """
 
 
