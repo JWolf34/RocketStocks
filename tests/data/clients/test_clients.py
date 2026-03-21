@@ -609,6 +609,97 @@ class TestSchwabRateLimiting:
 
 
 # ---------------------------------------------------------------------------
+# Schwab — HTTP 429 rate limit error
+# ---------------------------------------------------------------------------
+
+class TestSchwabRateLimitError:
+    def _make(self):
+        from rocketstocks.data.clients.schwab import Schwab
+        obj = Schwab(token_store=AsyncMock(), limiter=_MockLimiter())
+        obj.client = AsyncMock()
+        return obj
+
+    def _mock_429(self):
+        resp = MagicMock()
+        resp.status_code = 429
+        return resp
+
+    @pytest.mark.asyncio
+    async def test_get_quote_raises_on_429(self):
+        from rocketstocks.data.clients.schwab import SchwabRateLimitError
+        obj = self._make()
+        obj.client.get_quote = AsyncMock(return_value=self._mock_429())
+        with pytest.raises(SchwabRateLimitError):
+            await obj.get_quote('AAPL')
+
+    @pytest.mark.asyncio
+    async def test_get_quotes_raises_on_429(self):
+        from rocketstocks.data.clients.schwab import SchwabRateLimitError
+        obj = self._make()
+        obj.client.get_quotes = AsyncMock(return_value=self._mock_429())
+        with pytest.raises(SchwabRateLimitError):
+            await obj.get_quotes(['AAPL', 'MSFT'])
+
+    @pytest.mark.asyncio
+    async def test_get_daily_price_history_raises_on_429(self):
+        """429 must NOT be swallowed by the HTTPStatusError catch block."""
+        from rocketstocks.data.clients.schwab import SchwabRateLimitError
+        obj = self._make()
+        obj.client.get_price_history_every_day = AsyncMock(return_value=self._mock_429())
+        with pytest.raises(SchwabRateLimitError):
+            await obj.get_daily_price_history('AAPL')
+
+    @pytest.mark.asyncio
+    async def test_get_5m_price_history_raises_on_429(self):
+        """429 must NOT be swallowed by the HTTPStatusError catch block."""
+        from rocketstocks.data.clients.schwab import SchwabRateLimitError
+        obj = self._make()
+        obj.client.get_price_history_every_five_minutes = AsyncMock(return_value=self._mock_429())
+        with pytest.raises(SchwabRateLimitError):
+            await obj.get_5m_price_history('AAPL')
+
+    @pytest.mark.asyncio
+    async def test_get_fundamentals_raises_on_429(self):
+        from rocketstocks.data.clients.schwab import SchwabRateLimitError
+        obj = self._make()
+        obj.client.get_instruments = AsyncMock(return_value=self._mock_429())
+        with pytest.raises(SchwabRateLimitError):
+            await obj.get_fundamentals(['AAPL'])
+
+    @pytest.mark.asyncio
+    async def test_get_options_chain_raises_on_429(self):
+        from rocketstocks.data.clients.schwab import SchwabRateLimitError
+        obj = self._make()
+        obj.client.get_option_chain = AsyncMock(return_value=self._mock_429())
+        with pytest.raises(SchwabRateLimitError):
+            await obj.get_options_chain('AAPL')
+
+    @pytest.mark.asyncio
+    async def test_get_movers_raises_on_429(self):
+        from rocketstocks.data.clients.schwab import SchwabRateLimitError
+        obj = self._make()
+        obj.client.get_movers = AsyncMock(return_value=self._mock_429())
+        with pytest.raises(SchwabRateLimitError):
+            await obj.get_movers()
+
+    @pytest.mark.asyncio
+    async def test_non_429_errors_not_raised_as_rate_limit(self):
+        """A 401 in get_daily_price_history should still return empty DataFrame."""
+        import httpx
+        from rocketstocks.data.clients.schwab import SchwabRateLimitError
+        obj = self._make()
+        resp = MagicMock()
+        resp.status_code = 401
+        resp.raise_for_status.side_effect = httpx.HTTPStatusError(
+            "401", request=MagicMock(), response=MagicMock()
+        )
+        obj.client.get_price_history_every_day = AsyncMock(return_value=resp)
+        result = await obj.get_daily_price_history('AAPL')
+        assert isinstance(result, pd.DataFrame)
+        assert result.empty
+
+
+# ---------------------------------------------------------------------------
 # Tiingo — rate limiting decorators
 # ---------------------------------------------------------------------------
 
