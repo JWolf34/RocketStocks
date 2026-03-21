@@ -5,7 +5,7 @@ from discord import app_commands
 from discord.ext import commands
 from src.rocketstocks.data.stockdata import StockData
 from rocketstocks.data.channel_config import REPORTS
-from rocketstocks.data.clients.schwab import SchwabTokenError
+from rocketstocks.data.clients.schwab import SchwabTokenError, SchwabRateLimitError
 from rocketstocks.core.config.paths import datapaths
 from rocketstocks.core.utils.formatting import ticker_string
 from rocketstocks.core.utils.dates import format_date_mdy
@@ -276,6 +276,11 @@ class Data(commands.Cog):
                     f"Request timed out for ticker `{ticker}` — try again shortly.", ephemeral=True
                 )
                 return
+            except SchwabRateLimitError:
+                await interaction.followup.send(
+                    "Schwab API rate limit exceeded — please wait a moment and try again.", ephemeral=True
+                )
+                return
             except SchwabTokenError:
                 await interaction.followup.send(
                     "Schwab authentication required — use `/schwab auth`.", ephemeral=True
@@ -426,6 +431,11 @@ class Data(commands.Cog):
 
         try:
             quotes = await self.stock_data.schwab.get_quotes(tickers)
+        except SchwabRateLimitError:
+            await interaction.followup.send(
+                "Schwab API rate limit exceeded — please wait a moment and try again.", ephemeral=True
+            )
+            return
         except SchwabTokenError:
             await interaction.followup.send(
                 "Schwab authentication required — use `/schwab auth`.", ephemeral=True
@@ -544,6 +554,11 @@ class Data(commands.Cog):
 
         try:
             movers_data = await self.stock_data.schwab.get_movers()
+        except SchwabRateLimitError:
+            await interaction.followup.send(
+                "Schwab API rate limit exceeded — please wait a moment and try again.", ephemeral=True
+            )
+            return
         except SchwabTokenError:
             await interaction.followup.send(
                 "Schwab authentication required — use `/schwab auth`.", ephemeral=True

@@ -10,6 +10,7 @@ from discord.ext import commands, tasks
 from rocketstocks.data.stockdata import StockData
 from rocketstocks.data.channel_config import ALERTS
 from rocketstocks.data.discord_state import DiscordState
+from rocketstocks.data.clients.schwab import SchwabRateLimitError
 from rocketstocks.core.utils.market import MarketUtils
 from rocketstocks.core.utils.dates import format_date_mdy, seconds_until_minute_interval
 from rocketstocks.core.notifications.config import NotificationLevel
@@ -222,6 +223,14 @@ class Alerts(commands.Cog):
             try:
                 batch = await self.stock_data.schwab.get_quotes(tickers=chunk)
                 batch_quotes.update(batch)
+            except SchwabRateLimitError as exc:
+                self.bot.emitter.emit(NotificationEvent(
+                    level=NotificationLevel.FAILURE,
+                    source=__name__,
+                    job_name="detect_popularity_surges",
+                    message=str(exc),
+                ))
+                break
             except Exception:
                 logger.error(
                     f"[_detect_popularity_surges] Quote fetch failed for chunk starting at index {i}",
@@ -310,6 +319,14 @@ class Alerts(commands.Cog):
             try:
                 batch = await self.stock_data.schwab.get_quotes(tickers=chunk)
                 quotes.update(batch)
+            except SchwabRateLimitError as exc:
+                self.bot.emitter.emit(NotificationEvent(
+                    level=NotificationLevel.FAILURE,
+                    source=__name__,
+                    job_name="process_alerts",
+                    message=str(exc),
+                ))
+                break
             except Exception:
                 logger.error(
                     f"[_process_alerts_impl] Quote fetch failed for chunk starting at index {i}",

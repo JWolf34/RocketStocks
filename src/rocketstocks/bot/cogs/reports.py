@@ -13,7 +13,7 @@ from discord.ext import commands, tasks
 from src.rocketstocks.data.stockdata import StockData
 from rocketstocks.data.channel_config import REPORTS, SCREENERS, ALERTS
 from rocketstocks.data.discord_state import DiscordState
-from rocketstocks.data.clients.schwab import SchwabTokenError
+from rocketstocks.data.clients.schwab import SchwabTokenError, SchwabRateLimitError
 from rocketstocks.data.clients.news import News
 from rocketstocks.core.utils.market import MarketUtils
 from rocketstocks.core.utils.dates import round_down_nearest_minute, seconds_until_minute_interval, timezone
@@ -449,11 +449,17 @@ class Reports(commands.Cog):
                 await interaction.followup.send("Use `/server setup` to configure the reports channel.", ephemeral=True)
                 return
             message = None
-            for ticker in tickers:
-                content = await self.build_stock_report(ticker=ticker, guild_id=interaction.guild_id)
-                view = StockReportButtons(ticker=content.ticker)
-                message = await send_report(content, channel, interaction=interaction,
-                                            visibility=visibility.value, view=view)
+            try:
+                for ticker in tickers:
+                    content = await self.build_stock_report(ticker=ticker, guild_id=interaction.guild_id)
+                    view = StockReportButtons(ticker=content.ticker)
+                    message = await send_report(content, channel, interaction=interaction,
+                                                visibility=visibility.value, view=view)
+            except SchwabRateLimitError:
+                await interaction.followup.send(
+                    "Schwab API rate limit exceeded — please wait a moment and try again.", ephemeral=True
+                )
+                return
 
             logger.info("Reports have been posted")
             if message is not None:
@@ -498,11 +504,17 @@ class Reports(commands.Cog):
             await interaction.followup.send("Use `/server setup` to configure the reports channel.", ephemeral=True)
             return
         message = None
-        for ticker in tickers:
-            content = await self.build_stock_report(ticker=ticker, guild_id=interaction.guild_id)
-            view = StockReportButtons(ticker=content.ticker)
-            message = await send_report(content, channel, interaction=interaction,
-                                        visibility=visibility.value, view=view)
+        try:
+            for ticker in tickers:
+                content = await self.build_stock_report(ticker=ticker, guild_id=interaction.guild_id)
+                view = StockReportButtons(ticker=content.ticker)
+                message = await send_report(content, channel, interaction=interaction,
+                                            visibility=visibility.value, view=view)
+        except SchwabRateLimitError:
+            await interaction.followup.send(
+                "Schwab API rate limit exceeded — please wait a moment and try again.", ephemeral=True
+            )
+            return
 
         follow_up = ""
         if message is not None:

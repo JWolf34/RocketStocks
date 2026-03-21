@@ -3,6 +3,7 @@ import datetime
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
 from rocketstocks.data.stockdata import StockData
+from rocketstocks.data.clients.schwab import SchwabRateLimitError
 from rocketstocks.core.notifications import EventEmitter
 from rocketstocks.core.notifications.event import NotificationEvent
 from rocketstocks.core.notifications.config import NotificationLevel
@@ -38,6 +39,14 @@ def register_jobs(aio_sched: AsyncIOScheduler, stock_data: StockData, emitter: E
                 chunk_quotes = await stock_data.schwab.get_quotes(tickers=chunk)
                 chunk_quotes.pop('errors', None)
                 all_quotes.update(chunk_quotes)
+            except SchwabRateLimitError as exc:
+                emitter.emit(NotificationEvent(
+                    level=NotificationLevel.FAILURE,
+                    source=__name__,
+                    job_name="classify_tickers",
+                    message=str(exc),
+                ))
+                break
             except Exception as exc:
                 logger.warning(f"Failed to fetch quotes for chunk {chunk}: {exc}")
 
