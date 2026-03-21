@@ -303,7 +303,7 @@ class Reports(commands.Cog):
             return
 
         watchlist_tickers = set(await self.stock_data.watchlists.get_all_watchlist_tickers(
-            no_personal=True, no_systemGenerated=True
+            watchlist_types=['named']
         ))
         watchlist_earnings = [
             t for t in earnings_today['ticker'].tolist() if t in watchlist_tickers
@@ -353,7 +353,7 @@ class Reports(commands.Cog):
 
     async def _update_earnings_calendar_impl(self):
         logger.info("Creating calendar events for upcoming earnings dates")
-        tickers = await self.stock_data.watchlists.get_all_watchlist_tickers(no_personal=False, no_systemGenerated=True)
+        tickers = await self.stock_data.watchlists.get_all_watchlist_tickers(watchlist_types=['named', 'personal'])
         logger.debug(f"Identified {len(tickers)} watchlist tickers to create earnings events for")
 
         for gld in self.bot.guilds:
@@ -431,12 +431,10 @@ class Reports(commands.Cog):
         await interaction.response.defer(ephemeral=True)
         logger.info(f"/report watchlist function called by user '{interaction.user.name}'")
 
-        watchlist_id = watchlist
-        if watchlist == 'personal':
-            watchlist_id = str(interaction.user.id)
+        watchlist_id = self.stock_data.watchlists.resolve_personal_id(interaction.user.id) if watchlist == 'personal' else watchlist
 
-        if watchlist_id not in await self.stock_data.watchlists.get_watchlists():
-            await interaction.followup.send(f"Watchlist '{watchlist_id}' does not exist")
+        if not await self.stock_data.watchlists.validate_watchlist(watchlist_id):
+            await interaction.followup.send(f"Watchlist '{watchlist}' does not exist", ephemeral=True)
             return
 
         tickers = await self.stock_data.watchlists.get_watchlist_tickers(watchlist_id)
@@ -754,7 +752,7 @@ class Reports(commands.Cog):
     async def build_weekly_earnings_screener(self, **kwargs) -> WeeklyEarningsScreener:
         upcoming_earnings = kwargs.pop('upcoming_earnings', await self.stock_data.earnings.fetch_upcoming_earnings())
         watchlist_tickers = kwargs.pop('watchlist_tickers',
-                                       await self.stock_data.watchlists.get_all_watchlist_tickers(no_personal=True, no_systemGenerated=True))
+                                       await self.stock_data.watchlists.get_all_watchlist_tickers(watchlist_types=['named']))
         return WeeklyEarningsScreener(data=WeeklyEarningsData(
             upcoming_earnings=upcoming_earnings,
             watchlist_tickers=watchlist_tickers,

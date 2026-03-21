@@ -311,16 +311,15 @@ class Alerts(commands.Cog):
         today = datetime.date.today()
         earnings_today = await self.stock_data.earnings.get_earnings_on_date(date=today)
         earnings_tickers = set(earnings_today['ticker'].tolist()) if not earnings_today.empty else set()
-        watchlist_tickers = set(await self.stock_data.watchlists.get_all_watchlist_tickers())
+        watchlist_tickers = set(await self.stock_data.watchlists.get_all_watchlist_tickers(
+            watchlist_types=['named', 'personal']
+        ))
         surge_ticker_set = set(surge_tickers)
 
-        # Build ticker → watchlist mapping to avoid N+1 queries in build_watchlist_mover
-        ticker_to_watchlist: dict = {}
-        all_watchlist_ids = await self.stock_data.watchlists.get_watchlists()
-        for wl_id in all_watchlist_ids:
-            wl_tickers = await self.stock_data.watchlists.get_watchlist_tickers(watchlist_id=wl_id)
-            for t in wl_tickers:
-                ticker_to_watchlist[t] = wl_id
+        # Build ticker → watchlist mapping in a single query (no N+1)
+        ticker_to_watchlist: dict = await self.stock_data.watchlists.get_ticker_to_watchlist_map(
+            watchlist_types=['named', 'personal']
+        )
 
         # Pre-fetch price history for all relevant tickers in a single batch query
         start_date = today - datetime.timedelta(days=90)
@@ -774,13 +773,10 @@ class Alerts(commands.Cog):
     async def build_watchlist_mover(self, ticker: str, **kwargs) -> WatchlistMoverAlert:
         """Build a WatchlistMoverAlert for the given ticker."""
         async def get_ticker_watchlist(ticker: str):
-            watchlists = await self.stock_data.watchlists.get_watchlists()
-            for watchlist_id in watchlists:
-                watchlist_tickers = await self.stock_data.watchlists.get_watchlist_tickers(
-                    watchlist_id=watchlist_id
-                )
-                if ticker in watchlist_tickers:
-                    return watchlist_id
+            mapping = await self.stock_data.watchlists.get_ticker_to_watchlist_map(
+                watchlist_types=['named', 'personal']
+            )
+            return mapping.get(ticker)
 
         quote = kwargs.pop('quote', await self.stock_data.schwab.get_quote(ticker=ticker))
         watchlist = kwargs.pop('watchlist', await get_ticker_watchlist(ticker=ticker))
