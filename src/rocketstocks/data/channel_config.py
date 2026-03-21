@@ -7,9 +7,8 @@ logger = logging.getLogger(__name__)
 REPORTS = "reports"
 ALERTS = "alerts"
 SCREENERS = "screeners"
-CHARTS = "charts"
 NOTIFICATIONS = "notifications"
-ALL_CONFIG_TYPES = [REPORTS, ALERTS, SCREENERS, CHARTS, NOTIFICATIONS]
+ALL_CONFIG_TYPES = [REPORTS, ALERTS, SCREENERS, NOTIFICATIONS]
 
 
 class ChannelConfigRepository:

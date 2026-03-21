@@ -5,7 +5,7 @@ import discord
 from discord.ext import commands
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from rocketstocks.data.stockdata import StockData
-from rocketstocks.data.channel_config import REPORTS, ALERTS, SCREENERS, CHARTS, NOTIFICATIONS
+from rocketstocks.data.channel_config import REPORTS, ALERTS, SCREENERS, NOTIFICATIONS
 from rocketstocks.data.schema import create_tables
 from rocketstocks.core.config.settings import settings
 from rocketstocks.core.utils.dates import configure_tz
@@ -22,7 +22,6 @@ _LEGACY_ENV_MAP = {
     REPORTS: "REPORTS_CHANNEL_ID",
     ALERTS: "ALERTS_CHANNEL_ID",
     SCREENERS: "SCREENERS_CHANNEL_ID",
-    CHARTS: "CHARTS_CHANNEL_ID",
     NOTIFICATIONS: "NOTIFICATIONS_CHANNEL_ID",
 }
 
