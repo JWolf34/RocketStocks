@@ -213,14 +213,20 @@ class Alerts(commands.Cog):
         if not surging:
             return
 
-        # Batch fetch quotes for all surging tickers in one API call
+        # Batch fetch quotes for all surging tickers — continue with partial results if a chunk fails
         surging_list = list(surging.keys())
         batch_quotes: dict = {}
         chunk_size = 25
         for i in range(0, len(surging_list), chunk_size):
             chunk = surging_list[i:i + chunk_size]
-            batch = await self.stock_data.schwab.get_quotes(tickers=chunk)
-            batch_quotes.update(batch)
+            try:
+                batch = await self.stock_data.schwab.get_quotes(tickers=chunk)
+                batch_quotes.update(batch)
+            except Exception:
+                logger.error(
+                    f"[_detect_popularity_surges] Quote fetch failed for chunk starting at index {i}",
+                    exc_info=True,
+                )
         batch_quotes.pop('errors', None)
 
         # Second pass: build and send alerts for surging tickers
@@ -296,12 +302,19 @@ class Alerts(commands.Cog):
 
         all_tickers = list(set(screener_tickers + surge_tickers + signal_tickers))
 
-        # Bulk Schwab quote fetch
+        # Bulk Schwab quote fetch — continue with partial results if a chunk fails
         quotes = {}
         chunk_size = 25
         for i in range(0, len(all_tickers), chunk_size):
             chunk = all_tickers[i:i + chunk_size]
-            quotes = quotes | await self.stock_data.schwab.get_quotes(tickers=chunk)
+            try:
+                batch = await self.stock_data.schwab.get_quotes(tickers=chunk)
+                quotes.update(batch)
+            except Exception:
+                logger.error(
+                    f"[_process_alerts_impl] Quote fetch failed for chunk starting at index {i}",
+                    exc_info=True,
+                )
         quotes.pop('errors', None)
 
         # Fetch all classifications once
