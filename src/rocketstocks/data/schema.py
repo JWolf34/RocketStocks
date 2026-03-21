@@ -16,6 +16,12 @@ WHERE delist_date IS NOT NULL
   AND delist_date > CURRENT_DATE - INTERVAL '30 days';
 ALTER TABLE alerts ALTER COLUMN alert_data TYPE jsonb USING alert_data::jsonb;
 ALTER TABLE market_signals ALTER COLUMN signal_data TYPE jsonb USING signal_data::jsonb;
+ALTER TABLE watchlists ADD COLUMN IF NOT EXISTS watchlist_type VARCHAR(16) NOT NULL DEFAULT 'named';
+ALTER TABLE watchlists ADD COLUMN IF NOT EXISTS owner_id BIGINT;
+ALTER TABLE watchlists ADD COLUMN IF NOT EXISTS display_name VARCHAR(255);
+ALTER TABLE watchlists ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ DEFAULT NOW();
+CREATE INDEX IF NOT EXISTS idx_watchlists_type ON watchlists (watchlist_type);
+CREATE INDEX IF NOT EXISTS idx_watchlists_owner ON watchlists (owner_id) WHERE owner_id IS NOT NULL;
 """
 
 _CREATE_SCRIPT = """
@@ -47,7 +53,11 @@ CREATE TABLE IF NOT EXISTS upcoming_earnings (
 CREATE TABLE IF NOT EXISTS watchlists (
     ID              varchar(255) PRIMARY KEY,
     tickers         TEXT,
-    systemgenerated boolean
+    systemgenerated boolean,
+    watchlist_type  varchar(16) NOT NULL DEFAULT 'named',
+    owner_id        BIGINT,
+    display_name    varchar(255),
+    created_at      TIMESTAMPTZ DEFAULT NOW()
 );
 
 CREATE TABLE IF NOT EXISTS popularity (
@@ -231,11 +241,66 @@ async def migrate_tickers_schema(db) -> None:
     logger.debug("Schema migrations completed successfully!")
 
 
+async def migrate_watchlists_metadata(db) -> None:
+    """Backfill watchlist_type and owner_id for existing rows (idempotent).
+
+    Personal watchlist IDs (all-digit strings, e.g. "123456789") are renamed to
+    "personal:<user_id>" and their watchlist_type set to 'personal'.  Classification
+    watchlists ("class:volatile") get watchlist_type='classification'.  System rows
+    (systemgenerated=true) get watchlist_type='system'.  Everything else stays 'named'.
+    """
+    # Idempotency guard — if any personal: rows already exist the migration has run.
+    row = await db.execute(
+        "SELECT 1 FROM watchlists WHERE id LIKE 'personal:%' LIMIT 1",
+        fetchone=True,
+    )
+    if row is not None:
+        logger.debug("Watchlist metadata migration already applied — skipping.")
+        return
+
+    logger.debug("Running watchlist metadata migration...")
+
+    # Mark system rows
+    await db.execute(
+        "UPDATE watchlists SET watchlist_type = 'system' WHERE systemgenerated = true"
+    )
+
+    # Mark classification rows and extract display_name from prefix
+    await db.execute(
+        "UPDATE watchlists SET watchlist_type = 'classification', "
+        "display_name = SUBSTRING(id FROM 7) "
+        "WHERE id LIKE 'class:%'"
+    )
+
+    # Rename personal rows (numeric IDs) — requires PK change, done row by row in a transaction
+    personal_rows = await db.execute(
+        "SELECT id, tickers, systemgenerated FROM watchlists WHERE id ~ '^[0-9]+$'"
+    )
+    if personal_rows:
+        async with db.transaction() as conn:
+            for row in personal_rows:
+                old_id, tickers_str, system_gen = row[0], row[1], row[2]
+                new_id = f"personal:{old_id}"
+                owner_id = int(old_id)
+                await conn.execute(
+                    "INSERT INTO watchlists (id, tickers, systemgenerated, watchlist_type, owner_id) "
+                    "VALUES (%s, %s, %s, 'personal', %s) ON CONFLICT DO NOTHING",
+                    [new_id, tickers_str, system_gen, owner_id],
+                )
+                await conn.execute(
+                    "DELETE FROM watchlists WHERE id = %s",
+                    [old_id],
+                )
+
+    logger.debug("Watchlist metadata migration completed.")
+
+
 async def create_tables(db) -> None:
     """Create all application tables (idempotent)."""
     logger.debug("Running script to create tables in database...")
     await db.execute(_CREATE_SCRIPT)
     await migrate_tickers_schema(db)
+    await migrate_watchlists_metadata(db)
     logger.debug("Create script completed successfully!")
 
 
