@@ -1,4 +1,5 @@
 import asyncio
+import pandas as pd
 import discord
 from discord import app_commands
 from discord.ext import commands
@@ -50,10 +51,14 @@ class Data(commands.Cog):
 
         message = None
         for ticker in tickers:
-            if frequency == 'daily':
-                data = await self.stock_data.price_history.fetch_daily_price_history(ticker=ticker)
-            else:
-                data = await self.stock_data.price_history.fetch_5m_price_history(ticker=ticker)
+            try:
+                if frequency == 'daily':
+                    data = await self.stock_data.price_history.fetch_daily_price_history(ticker=ticker)
+                else:
+                    data = await self.stock_data.price_history.fetch_5m_price_history(ticker=ticker)
+            except Exception:
+                logger.error(f"[data_price] Failed to fetch {frequency} data for '{ticker}'", exc_info=True)
+                data = pd.DataFrame()
             dm_content = ""
             file = None
             if not data.empty:
@@ -97,12 +102,16 @@ class Data(commands.Cog):
 
         message = None
         for ticker in tickers:
-            files = []
-            financials = await asyncio.to_thread(self.stock_data.yfinance.get_financials, ticker)
-            for statement, data in financials.items():
-                filepath = f"{datapaths.attachments_path}/{ticker}_{statement}.csv"
-                await asyncio.to_thread(data.to_csv, filepath)
-                files.append(discord.File(filepath))
+            try:
+                files = []
+                financials = await asyncio.to_thread(self.stock_data.yfinance.get_financials, ticker)
+                for statement, data in financials.items():
+                    filepath = f"{datapaths.attachments_path}/{ticker}_{statement}.csv"
+                    await asyncio.to_thread(data.to_csv, filepath)
+                    files.append(discord.File(filepath))
+            except Exception:
+                logger.error(f"[data_financials] Failed to fetch financials for '{ticker}'", exc_info=True)
+                files = []
 
             try:
                 message = await interaction.user.send("Financials for {}".format(ticker), files=files)
@@ -257,7 +266,16 @@ class Data(commands.Cog):
         for ticker in tickers:
             file = None
             try:
-                fundamentals = await self.stock_data.schwab.get_fundamentals(tickers=[ticker])
+                fundamentals = await asyncio.wait_for(
+                    self.stock_data.schwab.get_fundamentals(tickers=[ticker]),
+                    timeout=15.0,
+                )
+            except asyncio.TimeoutError:
+                logger.warning(f"[data_fundamentals] Schwab timed out for '{ticker}'")
+                await interaction.followup.send(
+                    f"Request timed out for ticker `{ticker}` — try again shortly.", ephemeral=True
+                )
+                return
             except SchwabTokenError:
                 await interaction.followup.send(
                     "Schwab authentication required — use `/schwab auth`.", ephemeral=True
@@ -307,7 +325,16 @@ class Data(commands.Cog):
         for ticker in tickers:
             file = None
             try:
-                options = await self.stock_data.schwab.get_options_chain(ticker)
+                options = await asyncio.wait_for(
+                    self.stock_data.schwab.get_options_chain(ticker),
+                    timeout=15.0,
+                )
+            except asyncio.TimeoutError:
+                logger.warning(f"[data_options] Schwab timed out for '{ticker}'")
+                await interaction.followup.send(
+                    f"Request timed out for ticker `{ticker}` — try again shortly.", ephemeral=True
+                )
+                return
             except SchwabTokenError:
                 await interaction.followup.send(
                     "Schwab authentication required — use `/schwab auth`.", ephemeral=True
@@ -401,7 +428,7 @@ class Data(commands.Cog):
             quotes = await self.stock_data.schwab.get_quotes(tickers)
         except SchwabTokenError:
             await interaction.followup.send(
-                "Schwab authentication required — use `/schwab-auth`.", ephemeral=True
+                "Schwab authentication required — use `/schwab auth`.", ephemeral=True
             )
             return
 
@@ -519,7 +546,7 @@ class Data(commands.Cog):
             movers_data = await self.stock_data.schwab.get_movers()
         except SchwabTokenError:
             await interaction.followup.send(
-                "Schwab authentication required — use `/schwab-auth`.", ephemeral=True
+                "Schwab authentication required — use `/schwab auth`.", ephemeral=True
             )
             return
 
