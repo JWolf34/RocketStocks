@@ -13,6 +13,7 @@ from discord.ext import commands, tasks
 from src.rocketstocks.data.stockdata import StockData
 from rocketstocks.data.channel_config import REPORTS, SCREENERS, ALERTS
 from rocketstocks.data.discord_state import DiscordState
+from rocketstocks.data.clients.schwab import SchwabTokenError
 from rocketstocks.data.clients.news import News
 from rocketstocks.core.utils.market import MarketUtils
 from rocketstocks.core.utils.dates import round_down_nearest_minute, seconds_until_minute_interval, timezone
@@ -455,7 +456,10 @@ class Reports(commands.Cog):
                                             visibility=visibility.value, view=view)
 
             logger.info("Reports have been posted")
-            follow_up = f"Posted reports for tickers [{', '.join(tickers)}]({message.jump_url})!"
+            if message is not None:
+                follow_up = f"Posted reports for tickers [{', '.join(tickers)}]({message.jump_url})!"
+            else:
+                follow_up = f"Posted reports for tickers {', '.join(tickers)}."
             await interaction.followup.send(follow_up, ephemeral=True)
 
     async def ticker_autocomplete(self, interaction: discord.Interaction, current: str) -> list[app_commands.Choice[str]]:
@@ -681,8 +685,20 @@ class Reports(commands.Cog):
         recent_sec_filings = kwargs.pop('recent_sec_filings', await self.stock_data.sec.get_recent_filings(ticker=ticker))
         historical_earnings = kwargs.pop('historical_earnings', await self.stock_data.earnings.get_historical_earnings(ticker=ticker))
         next_earnings_info = kwargs.pop('next_earnings_info', await self.stock_data.earnings.get_next_earnings_info(ticker=ticker))
-        quote = kwargs.pop('quote', await self.stock_data.schwab.get_quote(ticker=ticker))
-        fundamentals = kwargs.pop('fundamentals', await self.stock_data.schwab.get_fundamentals(tickers=[ticker]))
+        quote = kwargs.pop('quote', None)
+        if quote is None:
+            try:
+                quote = await self.stock_data.schwab.get_quote(ticker=ticker)
+            except SchwabTokenError:
+                logger.warning(f"[build_stock_report] Schwab unavailable — quote missing for '{ticker}'")
+                quote = {}
+        fundamentals = kwargs.pop('fundamentals', None)
+        if fundamentals is None:
+            try:
+                fundamentals = await self.stock_data.schwab.get_fundamentals(tickers=[ticker])
+            except SchwabTokenError:
+                logger.warning(f"[build_stock_report] Schwab unavailable — fundamentals missing for '{ticker}'")
+                fundamentals = {}
 
         raw_alerts = await self.dstate.get_recent_alerts_for_ticker(ticker)
         recent_alerts = []
@@ -712,8 +728,16 @@ class Reports(commands.Cog):
         daily_price_history = await self.stock_data.price_history.fetch_daily_price_history(ticker=ticker)
         next_earnings_info = await self.stock_data.earnings.get_next_earnings_info(ticker=ticker)
         historical_earnings = await self.stock_data.earnings.get_historical_earnings(ticker=ticker)
-        quote = await self.stock_data.schwab.get_quote(ticker=ticker)
-        fundamentals = await self.stock_data.schwab.get_fundamentals(tickers=[ticker])
+        try:
+            quote = await self.stock_data.schwab.get_quote(ticker=ticker)
+        except SchwabTokenError:
+            logger.warning(f"[build_earnings_spotlight_report] Schwab unavailable — quote missing for '{ticker}'")
+            quote = {}
+        try:
+            fundamentals = await self.stock_data.schwab.get_fundamentals(tickers=[ticker])
+        except SchwabTokenError:
+            logger.warning(f"[build_earnings_spotlight_report] Schwab unavailable — fundamentals missing for '{ticker}'")
+            fundamentals = {}
         return EarningsSpotlightReport(data=EarningsSpotlightData(
             ticker=ticker,
             ticker_info=ticker_info,
@@ -733,7 +757,13 @@ class Reports(commands.Cog):
         **kwargs,
     ) -> EarningsResultReport:
         ticker_info = kwargs.pop('ticker_info', await self.stock_data.tickers.get_ticker_info(ticker=ticker))
-        quote = kwargs.pop('quote', await self.stock_data.schwab.get_quote(ticker=ticker))
+        quote = kwargs.pop('quote', None)
+        if quote is None:
+            try:
+                quote = await self.stock_data.schwab.get_quote(ticker=ticker)
+            except SchwabTokenError:
+                logger.warning(f"[build_earnings_result_report] Schwab unavailable — quote missing for '{ticker}'")
+                quote = {}
         daily_price_history = kwargs.pop('daily_price_history', await self.stock_data.price_history.fetch_daily_price_history(ticker=ticker))
         historical_earnings = kwargs.pop('historical_earnings', await self.stock_data.earnings.get_historical_earnings(ticker=ticker))
         next_earnings_info = kwargs.pop('next_earnings_info', await self.stock_data.earnings.get_next_earnings_info(ticker=ticker))
@@ -803,7 +833,10 @@ class Reports(commands.Cog):
         channel = await self.bot.get_channel_for_guild(interaction.guild_id, ALERTS)
         vis = visibility.value if visibility else "private"
         message = await send_report(content, channel, interaction=interaction, visibility=vis)
-        await interaction.followup.send(f"[Alert summary posted]({message.jump_url})", ephemeral=True)
+        if message is not None:
+            await interaction.followup.send(f"[Alert summary posted]({message.jump_url})", ephemeral=True)
+        else:
+            await interaction.followup.send("Alert summary posted.", ephemeral=True)
 
     async def _send_subscription_select(self, interaction: discord.Interaction) -> None:
         """Send an ephemeral subscription dropdown to the interacting user."""
