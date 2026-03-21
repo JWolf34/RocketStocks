@@ -16,6 +16,10 @@ class SchwabTokenError(Exception):
     """Raised when the Schwab client is unavailable due to a token problem."""
 
 
+class SchwabRateLimitError(Exception):
+    """Raised when the Schwab API returns HTTP 429 Too Many Requests."""
+
+
 class Schwab:
     def __init__(self, client=None, token_store=None, limiter=None):
         self._token_store = token_store
@@ -83,6 +87,18 @@ class Schwab:
                 "Schwab client is not available. Run /schwab-auth to authenticate."
             )
 
+    def _check_rate_limit(self, resp) -> None:
+        """Raise SchwabRateLimitError if the response is HTTP 429."""
+        if resp.status_code == 429:
+            logger.error(
+                "Schwab API rate limit exceeded (HTTP 429). "
+                "Reduce request frequency or wait before retrying."
+            )
+            raise SchwabRateLimitError(
+                "Schwab API rate limit exceeded (HTTP 429 Too Many Requests). "
+                "Reduce request frequency or wait before retrying."
+            )
+
     def _handle_oauth_error(self, exc: OAuthError) -> None:
         """Mark token as invalid and re-raise as SchwabTokenError."""
         logger.error(
@@ -123,6 +139,7 @@ class Schwab:
                 self._handle_oauth_error(exc)
 
         logger.debug(f"Response status code is {resp.status_code}")
+        self._check_rate_limit(resp)
         try:
             resp.raise_for_status()
             data = resp.json()
@@ -163,6 +180,7 @@ class Schwab:
                 self._handle_oauth_error(exc)
 
         logger.debug(f"Response status code is {resp.status_code}")
+        self._check_rate_limit(resp)
         try:
             resp.raise_for_status()
         except httpx.HTTPStatusError as e:
@@ -191,6 +209,7 @@ class Schwab:
             except OAuthError as exc:
                 self._handle_oauth_error(exc)
         logger.debug(f"Response status code is {resp.status_code}")
+        self._check_rate_limit(resp)
         resp.raise_for_status()
         data = resp.json()
         return data[ticker]
@@ -205,6 +224,7 @@ class Schwab:
             except OAuthError as exc:
                 self._handle_oauth_error(exc)
         logger.debug(f"Response status code is {resp.status_code}")
+        self._check_rate_limit(resp)
         resp.raise_for_status()
         return resp.json()
 
@@ -221,6 +241,7 @@ class Schwab:
             except OAuthError as exc:
                 self._handle_oauth_error(exc)
         logger.debug(f"Response status code is {resp.status_code}")
+        self._check_rate_limit(resp)
         resp.raise_for_status()
         return resp.json()
 
@@ -233,6 +254,7 @@ class Schwab:
                 resp = await self.client.get_option_chain(ticker)
             except OAuthError as exc:
                 self._handle_oauth_error(exc)
+        self._check_rate_limit(resp)
         resp.raise_for_status()
         return resp.json()
 
@@ -250,5 +272,6 @@ class Schwab:
             except OAuthError as exc:
                 self._handle_oauth_error(exc)
         logger.debug(f"Response status code is {resp.status_code}")
+        self._check_rate_limit(resp)
         resp.raise_for_status()
         return resp.json()
