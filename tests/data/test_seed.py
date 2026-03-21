@@ -26,12 +26,12 @@ class TestSeedBoilerplateWatchlists:
         # one call per boilerplate watchlist + one for the sentinel
         assert wl.create_watchlist.await_count == len(_BOILERPLATE_WATCHLISTS) + 1
 
-        # each boilerplate watchlist is created with systemGenerated=False
+        # each boilerplate watchlist is created with watchlist_type='named'
         for name, tickers in _BOILERPLATE_WATCHLISTS.items():
-            wl.create_watchlist.assert_any_await(name, tickers, systemGenerated=False)
+            wl.create_watchlist.assert_any_await(name, tickers, watchlist_type='named')
 
-        # sentinel is created last with systemGenerated=True
-        wl.create_watchlist.assert_any_await(_SEED_KEY, [], systemGenerated=True)
+        # sentinel is created with watchlist_type='system'
+        wl.create_watchlist.assert_any_await(_SEED_KEY, [], watchlist_type='system')
 
     async def test_subsequent_run_skips_seeding(self):
         wl = _make_watchlists(sentinel_exists=True)
