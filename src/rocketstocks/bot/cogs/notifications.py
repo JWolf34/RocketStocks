@@ -90,7 +90,11 @@ class Notifications(commands.Cog):
     # Slash commands    #
     #####################
 
-    notifications_group = app_commands.Group(name="notifications", description="Manage bot event notifications")
+    notifications_group = app_commands.Group(
+        name="notifications",
+        description="Manage bot event notifications",
+        default_permissions=discord.Permissions(administrator=True),
+    )
 
     @notifications_group.command(name="filter", description="Set which events to receive (all, failures only, off)")
     @app_commands.describe(level="Filter level: all, failures_only, or off")
