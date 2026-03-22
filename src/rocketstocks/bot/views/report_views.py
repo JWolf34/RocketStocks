@@ -102,3 +102,17 @@ class PoliticianReportButtons(discord.ui.View):
             style=discord.ButtonStyle.url,
             url=f"https://www.capitoltrades.com/politicians/{pid}",
         ))
+
+
+class ComparisonReportButtons(discord.ui.View):
+    """Buttons for Comparison Report:
+    - FinViz compare shortcut
+    """
+    def __init__(self, tickers: list):
+        super().__init__(timeout=None)
+        tickers_str = ','.join(tickers)
+        self.add_item(discord.ui.Button(
+            label="FinViz Compare",
+            style=discord.ButtonStyle.url,
+            url=f"https://finviz.com/compare.ashx?t={tickers_str}&ta=0&p=d",
+        ))
