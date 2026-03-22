@@ -1026,6 +1026,38 @@ def short_interest_card(
     return "\n".join(lines)
 
 
+def earnings_forecast_card(quarterly_df: pd.DataFrame, yearly_df: pd.DataFrame) -> str:
+    """NASDAQ EPS forecast — current/next quarter estimates and yearly outlook."""
+    header = "__**Earnings Forecast**__"
+    lines = [header]
+
+    if quarterly_df is not None and not quarterly_df.empty:
+        lines.append("**Quarterly EPS Estimates**")
+        for _, row in quarterly_df.head(4).iterrows():
+            period = row.get('fiscalQuarter', row.get('period', row.get('Fiscal Quarter', '')))
+            eps_est = row.get('epsForecast', row.get('consensusEPS', row.get('EPS Forecast', 'N/A')))
+            num_analysts = row.get('noOfEsts', row.get('numOfEst', row.get('# Analysts', '')))
+            low = row.get('lowEPS', row.get('lowEst', row.get('Low', '')))
+            high = row.get('highEPS', row.get('highEst', row.get('High', '')))
+            range_str = f" · Range **{low}**–**{high}**" if low != '' and high != '' else ''
+            est_str = f" · {num_analysts} analysts" if num_analysts != '' else ''
+            lines.append(f"**{period}**: EPS Est **{eps_est}**{range_str}{est_str}")
+    else:
+        lines.append("No quarterly forecast data available")
+
+    if yearly_df is not None and not yearly_df.empty:
+        lines.append("**Annual EPS Estimates**")
+        for _, row in yearly_df.head(3).iterrows():
+            period = row.get('fiscalYear', row.get('year', row.get('Fiscal Year', '')))
+            eps_est = row.get('epsForecast', row.get('consensusEPS', row.get('EPS Forecast', 'N/A')))
+            num_analysts = row.get('noOfEsts', row.get('numOfEst', row.get('# Analysts', '')))
+            est_str = f" · {num_analysts} analysts" if num_analysts != '' else ''
+            lines.append(f"**{period}**: EPS Est **{eps_est}**{est_str}")
+
+    lines.append("")
+    return "\n".join(lines)
+
+
 def weekly_earnings_cards(data: pd.DataFrame, watchlist_tickers: list[str]) -> str:
     """Upcoming earnings grouped by day as stacked cards."""
     import datetime as dt
