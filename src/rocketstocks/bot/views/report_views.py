@@ -104,6 +104,25 @@ class PoliticianReportButtons(discord.ui.View):
         ))
 
 
+class TechnicalReportButtons(discord.ui.View):
+    """Buttons for Technical Report:
+    - TradingView chart shortcut
+    - FinViz shortcut
+    """
+    def __init__(self, ticker: str):
+        super().__init__(timeout=None)
+        self.add_item(discord.ui.Button(
+            label="TradingView",
+            style=discord.ButtonStyle.url,
+            url=f"https://www.tradingview.com/chart/?symbol={ticker}",
+        ))
+        self.add_item(discord.ui.Button(
+            label="FinViz",
+            style=discord.ButtonStyle.url,
+            url=finviz_url(ticker),
+        ))
+
+
 class ComparisonReportButtons(discord.ui.View):
     """Buttons for Comparison Report:
     - FinViz compare shortcut
