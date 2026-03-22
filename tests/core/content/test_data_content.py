@@ -11,6 +11,7 @@ from rocketstocks.core.content.models import (
     PriceSnapshotData, FinancialHighlightsData, FundamentalsSnapshotData,
     OptionsSummaryData, PopularitySnapshotData, TickersSummaryData,
     EarningsTableData, SecFilingData,
+    AnalystData, OwnershipData, InsiderData, ShortInterestData,
 )
 from rocketstocks.core.content.data.quote_card import QuoteCard
 from rocketstocks.core.content.data.upcoming_earnings_card import UpcomingEarningsCard
@@ -24,6 +25,10 @@ from rocketstocks.core.content.data.popularity_snapshot import PopularitySnapsho
 from rocketstocks.core.content.data.tickers_summary import TickersSummary
 from rocketstocks.core.content.data.earnings_card import EarningsCard
 from rocketstocks.core.content.data.sec_filing_card import SecFilingCard
+from rocketstocks.core.content.data.analyst_card import AnalystCard
+from rocketstocks.core.content.data.ownership_card import OwnershipCard
+from rocketstocks.core.content.data.insider_card import InsiderCard
+from rocketstocks.core.content.data.short_interest_card import ShortInterestCard
 from rocketstocks.bot.senders.embed_utils import spec_to_embed
 
 
@@ -776,3 +781,201 @@ class TestSecFilingCard:
     def test_spec_to_embed_produces_discord_embed(self):
         data = SecFilingData(tickers=['AAPL'], form='10-K', filings={'AAPL': None})
         assert isinstance(spec_to_embed(SecFilingCard(data).build()), discord.Embed)
+
+
+# ---------------------------------------------------------------------------
+# Phase 3 content class tests
+# ---------------------------------------------------------------------------
+
+def _price_targets():
+    return {'current': 150.0, 'low': 130.0, 'mean': 165.0, 'high': 185.0}
+
+
+def _recommendations():
+    return pd.DataFrame({'strongBuy': [8], 'buy': [12], 'hold': [6], 'sell': [2], 'strongSell': [1]})
+
+
+def _upgrades_downgrades():
+    idx = pd.to_datetime(['2025-12-01', '2025-11-15', '2025-11-01'])
+    return pd.DataFrame(
+        {'Firm': ['Goldman Sachs', 'Morgan Stanley', 'JP Morgan'],
+         'Action': ['up', 'down', 'main'],
+         'To Grade': ['Buy', 'Hold', 'Overweight']},
+        index=idx,
+    )
+
+
+def _institutional_holders():
+    return pd.DataFrame({
+        'Holder': ['Vanguard Group', 'BlackRock'],
+        'Shares': [900_000_000, 750_000_000],
+        '% Out': [0.0592, 0.0488],
+    })
+
+
+def _major_holders():
+    return pd.DataFrame({
+        0: [0.0062, 0.0592],
+        1: ['% of Shares Held by All Insider', '% of Shares Held by Institutions'],
+    })
+
+
+def _insider_transactions():
+    idx = pd.to_datetime(['2025-12-10', '2025-11-20'])
+    return pd.DataFrame(
+        {'Insider': ['Tim Cook', 'Luca Maestri'],
+         'Transaction': ['Sale', 'Purchase'],
+         'Shares': [50000, 10000],
+         'Value': [8_500_000, 1_750_000]},
+        index=idx,
+    )
+
+
+def _insider_purchases():
+    return pd.DataFrame({
+        'Insider Purchases Last 6m': ['Purchases', 'Sales', 'Net Activity'],
+        'Purchases': [3, 0, 3],
+        'Sales': [0, 5, -5],
+        'Net Activity': [3, -5, -2],
+    })
+
+
+class TestAnalystCard:
+    def _data(self):
+        return AnalystData(
+            ticker='AAPL',
+            price_targets=_price_targets(),
+            recommendations=_recommendations(),
+            upgrades_downgrades=_upgrades_downgrades(),
+        )
+
+    def test_build_returns_embedspec(self):
+        assert isinstance(AnalystCard(self._data()).build(), EmbedSpec)
+
+    def test_title_includes_ticker(self):
+        spec = AnalystCard(self._data()).build()
+        assert 'AAPL' in spec.title
+
+    def test_color_is_blue(self):
+        assert AnalystCard(self._data()).build().color == COLOR_BLUE
+
+    def test_shows_price_target_range(self):
+        spec = AnalystCard(self._data()).build()
+        assert '130.00' in spec.description
+        assert '165.00' in spec.description
+        assert '185.00' in spec.description
+
+    def test_none_price_targets_handled(self):
+        data = AnalystData(ticker='AAPL', price_targets=None,
+                           recommendations=_recommendations(), upgrades_downgrades=_upgrades_downgrades())
+        spec = AnalystCard(data).build()
+        assert isinstance(spec, EmbedSpec)
+
+    def test_empty_dataframes_handled(self):
+        data = AnalystData(ticker='AAPL', price_targets=None,
+                           recommendations=pd.DataFrame(), upgrades_downgrades=pd.DataFrame())
+        spec = AnalystCard(data).build()
+        assert isinstance(spec, EmbedSpec)
+
+    def test_spec_to_embed_produces_discord_embed(self):
+        assert isinstance(spec_to_embed(AnalystCard(self._data()).build()), discord.Embed)
+
+
+class TestOwnershipCard:
+    def _data(self):
+        return OwnershipData(
+            ticker='AAPL',
+            institutional_holders=_institutional_holders(),
+            major_holders=_major_holders(),
+        )
+
+    def test_build_returns_embedspec(self):
+        assert isinstance(OwnershipCard(self._data()).build(), EmbedSpec)
+
+    def test_title_includes_ticker(self):
+        spec = OwnershipCard(self._data()).build()
+        assert 'AAPL' in spec.title
+
+    def test_color_is_teal(self):
+        assert OwnershipCard(self._data()).build().color == COLOR_TEAL
+
+    def test_shows_institutional_holders(self):
+        spec = OwnershipCard(self._data()).build()
+        assert 'Vanguard' in spec.description
+
+    def test_empty_dataframes_handled(self):
+        data = OwnershipData(ticker='AAPL', institutional_holders=pd.DataFrame(),
+                             major_holders=pd.DataFrame())
+        spec = OwnershipCard(data).build()
+        assert isinstance(spec, EmbedSpec)
+
+    def test_spec_to_embed_produces_discord_embed(self):
+        assert isinstance(spec_to_embed(OwnershipCard(self._data()).build()), discord.Embed)
+
+
+class TestInsiderCard:
+    def _data(self):
+        return InsiderData(
+            ticker='AAPL',
+            insider_transactions=_insider_transactions(),
+            insider_purchases=_insider_purchases(),
+        )
+
+    def test_build_returns_embedspec(self):
+        assert isinstance(InsiderCard(self._data()).build(), EmbedSpec)
+
+    def test_title_includes_ticker(self):
+        spec = InsiderCard(self._data()).build()
+        assert 'AAPL' in spec.title
+
+    def test_color_is_amber(self):
+        assert InsiderCard(self._data()).build().color == COLOR_AMBER
+
+    def test_shows_recent_transactions(self):
+        spec = InsiderCard(self._data()).build()
+        assert 'Tim Cook' in spec.description
+
+    def test_empty_dataframes_handled(self):
+        data = InsiderData(ticker='AAPL', insider_transactions=pd.DataFrame(),
+                           insider_purchases=pd.DataFrame())
+        spec = InsiderCard(data).build()
+        assert isinstance(spec, EmbedSpec)
+
+    def test_spec_to_embed_produces_discord_embed(self):
+        assert isinstance(spec_to_embed(InsiderCard(self._data()).build()), discord.Embed)
+
+
+class TestShortInterestCard:
+    def _data(self):
+        return ShortInterestData(
+            ticker='AAPL',
+            short_interest_ratio=2.5,
+            short_interest_shares=85_000_000,
+            short_percent_of_float=0.55,
+            shares_outstanding=15_400_000_000,
+        )
+
+    def test_build_returns_embedspec(self):
+        assert isinstance(ShortInterestCard(self._data()).build(), EmbedSpec)
+
+    def test_title_includes_ticker(self):
+        spec = ShortInterestCard(self._data()).build()
+        assert 'AAPL' in spec.title
+
+    def test_color_is_red(self):
+        assert ShortInterestCard(self._data()).build().color == COLOR_RED
+
+    def test_shows_days_to_cover(self):
+        spec = ShortInterestCard(self._data()).build()
+        assert '2.5' in spec.description
+
+    def test_all_none_values_handled(self):
+        data = ShortInterestData(ticker='AAPL', short_interest_ratio=None,
+                                 short_interest_shares=None, short_percent_of_float=None,
+                                 shares_outstanding=None)
+        spec = ShortInterestCard(data).build()
+        assert isinstance(spec, EmbedSpec)
+        assert 'No short interest' in spec.description
+
+    def test_spec_to_embed_produces_discord_embed(self):
+        assert isinstance(spec_to_embed(ShortInterestCard(self._data()).build()), discord.Embed)
