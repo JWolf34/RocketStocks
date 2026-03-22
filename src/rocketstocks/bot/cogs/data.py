@@ -8,16 +8,27 @@ from rocketstocks.data.channel_config import REPORTS
 from rocketstocks.data.clients.schwab import SchwabTokenError, SchwabRateLimitError
 from rocketstocks.core.config.paths import datapaths
 from rocketstocks.core.utils.formatting import ticker_string
-from rocketstocks.core.utils.dates import format_date_mdy
 import logging
 import json
-from table2ascii import table2ascii, PresetStyle
 from rocketstocks.bot.senders.embed_utils import spec_to_embed
-from rocketstocks.core.content.models import QuoteData, UpcomingEarningsData, TickerStatsData, MoverData
+from rocketstocks.core.content.models import (
+    QuoteData, UpcomingEarningsData, TickerStatsData, MoverData,
+    PriceSnapshotData, FinancialHighlightsData, FundamentalsSnapshotData,
+    OptionsSummaryData, PopularitySnapshotData, TickersSummaryData,
+    EarningsTableData, SecFilingData,
+)
 from rocketstocks.core.content.data.quote_card import QuoteCard
 from rocketstocks.core.content.data.upcoming_earnings_card import UpcomingEarningsCard
 from rocketstocks.core.content.data.stats_card import StatsCard
 from rocketstocks.core.content.data.movers_card import MoversCard
+from rocketstocks.core.content.data.price_snapshot import PriceSnapshot
+from rocketstocks.core.content.data.financial_highlights import FinancialHighlights
+from rocketstocks.core.content.data.fundamentals_snapshot import FundamentalsSnapshot
+from rocketstocks.core.content.data.options_summary import OptionsSummary
+from rocketstocks.core.content.data.popularity_snapshot import PopularitySnapshot
+from rocketstocks.core.content.data.tickers_summary import TickersSummary
+from rocketstocks.core.content.data.earnings_card import EarningsCard
+from rocketstocks.core.content.data.sec_filing_card import SecFilingCard
 
 logger = logging.getLogger(__name__)
 
@@ -75,9 +86,30 @@ class Data(commands.Cog):
             else:
                 dm_content = f"Could not fetch price data for ticker `{ticker}`"
 
+            # Build snapshot embed — fetch live quote if daily; skip gracefully on auth error
+            snapshot_embed = None
+            if not data.empty:
+                quote = None
+                if frequency == 'daily':
+                    try:
+                        quote = await self.stock_data.schwab.get_quote(ticker)
+                    except (SchwabTokenError, SchwabRateLimitError, Exception):
+                        pass
+                snap_data = PriceSnapshotData(
+                    ticker=ticker,
+                    daily_price_history=data,
+                    frequency=frequency,
+                    quote=quote,
+                )
+                snapshot_embed = spec_to_embed(PriceSnapshot(snap_data).build())
+
             try:
-                if file:
+                if file and snapshot_embed:
+                    message = await interaction.user.send(content=dm_content, file=file, embed=snapshot_embed)
+                elif file:
                     message = await interaction.user.send(content=dm_content, file=file)
+                elif snapshot_embed:
+                    message = await interaction.user.send(content=dm_content, embed=snapshot_embed)
                 else:
                     message = await interaction.user.send(content=dm_content)
             except discord.Forbidden:
@@ -119,8 +151,19 @@ class Data(commands.Cog):
                 logger.error(f"[data_financials] Failed to fetch financials for '{ticker}'", exc_info=True)
                 files = []
 
+            highlights_embed = None
+            if files:
+                try:
+                    hi_data = FinancialHighlightsData(ticker=ticker, financials=financials)
+                    highlights_embed = spec_to_embed(FinancialHighlights(hi_data).build())
+                except Exception:
+                    logger.debug(f"[data_financials] Failed to build highlights embed for '{ticker}'", exc_info=True)
+
             try:
-                message = await interaction.user.send("Financials for {}".format(ticker), files=files)
+                send_kwargs = {"content": f"Financials for {ticker}", "files": files}
+                if highlights_embed:
+                    send_kwargs["embed"] = highlights_embed
+                message = await interaction.user.send(**send_kwargs)
             except discord.Forbidden:
                 await interaction.followup.send(
                     "Couldn't send DM — please enable DMs from server members in your privacy settings.",
@@ -147,8 +190,9 @@ class Data(commands.Cog):
         filepath = f"{datapaths.attachments_path}/all-tickers-info.csv"
         await asyncio.to_thread(data.to_csv, filepath)
         csv_file = discord.File(filepath)
+        summary_embed = spec_to_embed(TickersSummary(TickersSummaryData(tickers_df=data)).build())
         try:
-            await interaction.user.send(content="All tickers", file=csv_file)
+            await interaction.user.send(content="All tickers", file=csv_file, embed=summary_embed)
         except discord.Forbidden:
             await interaction.followup.send(
                 "Couldn't send DM — please enable DMs from server members in your privacy settings.",
@@ -173,35 +217,25 @@ class Data(commands.Cog):
         tickers, invalid_tickers = await self.stock_data.tickers.parse_valid_tickers(tickers)
         logger.info(f"Earnings requested for {tickers}")
 
-        column_map = {'date': 'Date Reported',
-                      'eps': 'EPS',
-                      'surprise': 'Surprise',
-                      'epsforecast': 'Estimate',
-                      'fiscalquarterending': 'Quarter'}
-
         message = None
         for ticker in tickers:
             eps = await self.stock_data.earnings.get_historical_earnings(ticker)
             file = None
+            embed = None
             if not eps.empty:
                 filepath = f"{datapaths.attachments_path}/{ticker}_eps.csv"
                 await asyncio.to_thread(eps.to_csv, filepath, index=False)
                 file = discord.File(filepath)
-
-                eps = eps.iloc[::-1].head(12)
-                eps = eps.filter(list(column_map.keys()))
-                eps = eps.rename(columns=column_map)
-                eps_table = table2ascii(
-                    header=eps.columns.tolist(),
-                    body=eps.values.tolist(),
-                    style=PresetStyle.thick
-                )
-                dm_content = f"**Earnings for {ticker}**\n ```{eps_table}```"
+                embed = spec_to_embed(EarningsCard(EarningsTableData(ticker=ticker, historical_earnings=eps)).build())
+                dm_content = f"Earnings history for `{ticker}`"
             else:
                 dm_content = f"Could not retrieve EPS data for ticker `{ticker}`"
             if visibility.value == "private":
                 try:
-                    message = await interaction.user.send(dm_content, files=[file] if file else [])
+                    send_kwargs = {"content": dm_content, "files": [file] if file else []}
+                    if embed:
+                        send_kwargs["embed"] = embed
+                    message = await interaction.user.send(**send_kwargs)
                 except discord.Forbidden:
                     await interaction.followup.send(
                         "Couldn't send DM — please enable DMs from server members in your privacy settings.",
@@ -213,7 +247,10 @@ class Data(commands.Cog):
                 if channel is None:
                     await interaction.followup.send("Use `/server setup` to configure the reports channel.", ephemeral=True)
                     return
-                message = await channel.send(dm_content, files=[file] if file else [])
+                send_kwargs = {"content": dm_content, "files": [file] if file else []}
+                if embed:
+                    send_kwargs["embed"] = embed
+                message = await channel.send(**send_kwargs)
 
         if tickers and message is not None:
             followup = f"Fetched EPS data for tickers [{ticker_string(tickers)}]({message.jump_url})."
@@ -234,28 +271,22 @@ class Data(commands.Cog):
 
         tickers, invalid_tickers = await self.stock_data.tickers.parse_valid_tickers(tickers)
 
-        message = ""
+        filings = {}
         for ticker in tickers:
             recent_filings = await self.stock_data.sec.get_recent_filings(ticker=ticker, latest=250)
             target_filing = None
-            for index, filing in recent_filings.iterrows():
+            for _, filing in recent_filings.iterrows():
                 if filing['form'] == form:
-                    target_filing = filing
+                    target_filing = filing.to_dict()
                     break
-            if target_filing is None:
-                message += f"No form {form} found for ticker `{ticker}`\n"
-            else:
-                filing_date = format_date_mdy(target_filing['filingDate'])
-                sec_link = target_filing['link']
-                message += f"[{ticker} Form {form} - Filed {filing_date}]({sec_link})\n"
+            filings[ticker] = target_filing
 
-        if not message:
-            message = f"No form {form} found for given tickers {ticker_string(tickers)}"
-        else:
-            message = f"Form {form} for tickers {ticker_string(tickers)}:\n\n" + message
-            if invalid_tickers:
-                message += f"\n\nInvalid tickers: {ticker_string(invalid_tickers)}"
-        await interaction.followup.send(message)
+        embed = spec_to_embed(SecFilingCard(SecFilingData(tickers=tickers, filings=filings, form=form)).build())
+        footer_parts = []
+        if invalid_tickers:
+            footer_parts.append(f"Invalid tickers: {ticker_string(invalid_tickers)}")
+        content = " · ".join(footer_parts) if footer_parts else None
+        await interaction.followup.send(content=content, embed=embed)
         logger.info(f"Form {form} provided for tickers {tickers}")
 
     @data_group.command(name="fundamentals", description="Get fundamental data (P/E, EPS, beta, etc.) as JSON (DM'd to you)")
@@ -298,14 +329,20 @@ class Data(commands.Cog):
                 await asyncio.to_thread(_write_json, filepath, fundamentals)
                 file = discord.File(filepath)
                 dm_content = f"Fundamentals for ticker `{ticker}`"
+                snap_embed = spec_to_embed(FundamentalsSnapshot(
+                    FundamentalsSnapshotData(ticker=ticker, fundamentals=fundamentals)
+                ).build())
             else:
                 dm_content = f"Could not retrieve fundamentals for ticker `{ticker}`"
+                snap_embed = None
 
             try:
+                send_kwargs = {"content": dm_content}
                 if file:
-                    message = await interaction.user.send(content=dm_content, file=file)
-                else:
-                    message = await interaction.user.send(content=dm_content)
+                    send_kwargs["file"] = file
+                if snap_embed:
+                    send_kwargs["embed"] = snap_embed
+                message = await interaction.user.send(**send_kwargs)
             except discord.Forbidden:
                 await interaction.followup.send(
                     "Couldn't send DM — please enable DMs from server members in your privacy settings.",
@@ -357,14 +394,21 @@ class Data(commands.Cog):
                 await asyncio.to_thread(_write_json, filepath, options)
                 file = discord.File(filepath)
                 dm_content = f"Options chain for ticker `{ticker}`"
+                current_price = options.get('underlyingPrice')
+                snap_embed = spec_to_embed(OptionsSummary(
+                    OptionsSummaryData(ticker=ticker, options_chain=options, current_price=current_price)
+                ).build())
             else:
                 dm_content = f"Could not retrieve options chain for ticker `{ticker}`"
+                snap_embed = None
 
             try:
+                send_kwargs = {"content": dm_content}
                 if file:
-                    message = await interaction.user.send(content=dm_content, file=file)
-                else:
-                    message = await interaction.user.send(content=dm_content)
+                    send_kwargs["file"] = file
+                if snap_embed:
+                    send_kwargs["embed"] = snap_embed
+                message = await interaction.user.send(**send_kwargs)
             except discord.Forbidden:
                 await interaction.followup.send(
                     "Couldn't send DM — please enable DMs from server members in your privacy settings.",
@@ -399,14 +443,20 @@ class Data(commands.Cog):
                 filepath = f"{datapaths.attachments_path}/{ticker}_popularity.csv"
                 await asyncio.to_thread(data.to_csv, filepath, index=False)
                 file = discord.File(filepath)
+                snap_embed = spec_to_embed(PopularitySnapshot(
+                    PopularitySnapshotData(ticker=ticker, popularity=data)
+                ).build())
             else:
                 dm_content = f"No popularity data available for ticker `{ticker}`"
+                snap_embed = None
 
             try:
+                send_kwargs = {"content": dm_content}
                 if file:
-                    message = await interaction.user.send(content=dm_content, file=file)
-                else:
-                    message = await interaction.user.send(content=dm_content)
+                    send_kwargs["file"] = file
+                if snap_embed:
+                    send_kwargs["embed"] = snap_embed
+                message = await interaction.user.send(**send_kwargs)
             except discord.Forbidden:
                 await interaction.followup.send(
                     "Couldn't send DM — please enable DMs from server members in your privacy settings.",
