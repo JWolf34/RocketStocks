@@ -306,3 +306,42 @@ class SecFilingData:
     form: str
 
 
+# ---------------------------------------------------------------------------
+# Data cog Phase 3 models — YFinance analyst / ownership / insider / short
+# ---------------------------------------------------------------------------
+
+@dataclass
+class AnalystData:
+    """Data for /data analyst."""
+    ticker: str
+    price_targets: dict | None
+    recommendations: pd.DataFrame
+    upgrades_downgrades: pd.DataFrame
+
+
+@dataclass
+class OwnershipData:
+    """Data for /data ownership."""
+    ticker: str
+    institutional_holders: pd.DataFrame
+    major_holders: pd.DataFrame
+
+
+@dataclass
+class InsiderData:
+    """Data for /data insider."""
+    ticker: str
+    insider_transactions: pd.DataFrame
+    insider_purchases: pd.DataFrame
+
+
+@dataclass
+class ShortInterestData:
+    """Data for /data short-interest."""
+    ticker: str
+    short_interest_ratio: float | None
+    short_interest_shares: float | None
+    short_percent_of_float: float | None
+    shares_outstanding: float | None
+
+
