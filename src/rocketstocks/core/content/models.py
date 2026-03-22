@@ -95,6 +95,19 @@ class FullStockReportData(StockReportData):
 
 
 @dataclass
+class ComparisonReportData:
+    """Data for /report compare — side-by-side ticker comparison."""
+    tickers: list            # ordered list; benchmark_ticker is last if present
+    quotes: dict             # {ticker: schwab_quote_dict}
+    fundamentals: dict       # {ticker: schwab_fundamentals_dict | None}
+    daily_price_histories: dict  # {ticker: pd.DataFrame}
+    popularities: dict       # {ticker: pd.DataFrame}
+    ticker_infos: dict       # {ticker: info_dict}
+    stats: dict              # {ticker: stats_dict | None}
+    benchmark_ticker: str | None = None
+
+
+@dataclass
 class NewsReportData:
     query: str
     news: dict
