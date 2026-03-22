@@ -852,6 +852,180 @@ def tickers_summary_card(tickers_df) -> str:
     return "\n".join(lines) + "\n\n"
 
 
+def analyst_card(price_targets: dict | None, recommendations: pd.DataFrame, upgrades_downgrades: pd.DataFrame) -> str:
+    """Analyst consensus — price target range, ratings breakdown, recent actions."""
+    header = "__**Analyst Consensus**__"
+    lines = [header]
+
+    # Price targets
+    if price_targets:
+        current = price_targets.get('current')
+        low = price_targets.get('low')
+        mean = price_targets.get('mean')
+        high = price_targets.get('high')
+        if mean is not None and current and current != 0:
+            upside = ((mean - current) / current) * 100
+            upside_str = f"+{upside:.1f}%" if upside >= 0 else f"{upside:.1f}%"
+            lines.append(f"Target Low **${low:.2f}** · Mean **${mean:.2f}** ({upside_str}) · High **${high:.2f}**")
+        elif mean is not None:
+            lines.append(f"Target Low **${low:.2f}** · Mean **${mean:.2f}** · High **${high:.2f}**")
+    else:
+        lines.append("Price targets unavailable")
+
+    # Recommendations summary
+    if recommendations is not None and not recommendations.empty:
+        cols = [c.lower() for c in recommendations.columns]
+        col_map = {c.lower(): c for c in recommendations.columns}
+        buy_col = col_map.get('strongbuy') or col_map.get('buy')
+        hold_col = col_map.get('hold')
+        sell_col = col_map.get('strongsell') or col_map.get('sell')
+        row = recommendations.iloc[0]
+        parts = []
+        if buy_col:
+            parts.append(f"Buy **{int(row[buy_col])}**")
+        if hold_col:
+            parts.append(f"Hold **{int(row[hold_col])}**")
+        if sell_col:
+            parts.append(f"Sell **{int(row[sell_col])}**")
+        if parts:
+            lines.append("Ratings — " + " · ".join(parts))
+
+    # Recent upgrades/downgrades (top 5)
+    if upgrades_downgrades is not None and not upgrades_downgrades.empty:
+        lines.append("**Recent Actions**")
+        df = upgrades_downgrades.copy()
+        if hasattr(df.index, 'tz_localize'):
+            try:
+                df.index = df.index.tz_localize(None)
+            except Exception:
+                pass
+        df = df.sort_index(ascending=False).head(5)
+        for idx, row in df.iterrows():
+            firm = row.get('Firm', row.get('firm', 'Unknown'))
+            action = row.get('Action', row.get('action', ''))
+            to_grade = row.get('To Grade', row.get('toGrade', ''))
+            date_str = str(idx)[:10]
+            lines.append(f"{date_str} · **{firm}** → {to_grade} ({action})")
+    else:
+        lines.append("No recent upgrades/downgrades")
+
+    lines.append("")
+    return "\n".join(lines)
+
+
+def ownership_card(institutional_holders: pd.DataFrame, major_holders: pd.DataFrame) -> str:
+    """Institutional and insider ownership breakdown."""
+    header = "__**Ownership**__"
+    lines = [header]
+
+    # Major holders pct summary
+    if major_holders is not None and not major_holders.empty:
+        df = major_holders.copy().reset_index(drop=True)
+        # major_holders has 2 columns: value and label (order may vary)
+        for _, row in df.iterrows():
+            vals = list(row)
+            if len(vals) >= 2:
+                pct_val, label = (vals[0], vals[1]) if isinstance(vals[0], (float, int)) else (vals[1], vals[0])
+                try:
+                    pct = float(pct_val) * 100
+                    lines.append(f"{label}: **{pct:.1f}%**")
+                except (TypeError, ValueError):
+                    pass
+
+    # Top 5 institutional holders
+    if institutional_holders is not None and not institutional_holders.empty:
+        lines.append("**Top Institutional Holders**")
+        df = institutional_holders.head(5)
+        for _, row in df.iterrows():
+            holder = row.get('Holder', row.get('holder', 'Unknown'))
+            shares = row.get('Shares', row.get('shares'))
+            pct_held = row.get('% Out', row.get('pctHeld'))
+            share_str = f"{int(shares):,}" if shares is not None and not (isinstance(shares, float) and shares != shares) else 'N/A'
+            pct_str = f"{float(pct_held)*100:.1f}%" if pct_held is not None else ''
+            lines.append(f"**{holder}** · {share_str} shares {pct_str}")
+    else:
+        lines.append("No institutional holder data")
+
+    lines.append("")
+    return "\n".join(lines)
+
+
+def insider_activity_card(insider_transactions: pd.DataFrame, insider_purchases: pd.DataFrame) -> str:
+    """Insider transaction summary — net buys/sells and recent activity."""
+    header = "__**Insider Activity**__"
+    lines = [header]
+
+    # Purchases summary
+    if insider_purchases is not None and not insider_purchases.empty:
+        df = insider_purchases.copy().reset_index(drop=True)
+        for _, row in df.iterrows():
+            insider_type = row.get('Insider Purchases Last 6m', row.get('insiderPurchases', ''))
+            purchases = row.get('Purchases', row.get('purchases', ''))
+            sales = row.get('Sales', row.get('sales', ''))
+            net = row.get('Net Activity', row.get('netActivity', ''))
+            if insider_type:
+                parts = []
+                if purchases != '':
+                    parts.append(f"Buys **{purchases}**")
+                if sales != '':
+                    parts.append(f"Sells **{sales}**")
+                if net != '':
+                    parts.append(f"Net **{net}**")
+                if parts:
+                    lines.append(f"{insider_type}: " + " · ".join(parts))
+
+    # Recent transactions (top 6)
+    if insider_transactions is not None and not insider_transactions.empty:
+        lines.append("**Recent Transactions**")
+        df = insider_transactions.copy()
+        if hasattr(df.index, 'tz_localize'):
+            try:
+                df.index = df.index.tz_localize(None)
+            except Exception:
+                pass
+        df = df.sort_index(ascending=False).head(6)
+        for idx, row in df.iterrows():
+            name = row.get('Insider', row.get('insider', 'Unknown'))
+            transaction = row.get('Transaction', row.get('transaction', ''))
+            shares = row.get('Shares', row.get('shares'))
+            value = row.get('Value', row.get('value'))
+            date_str = str(idx)[:10]
+            share_str = f"{int(shares):,}" if shares is not None and not (isinstance(shares, float) and shares != shares) else ''
+            val_str = f" · ${int(value):,}" if value is not None and not (isinstance(value, float) and value != value) else ''
+            lines.append(f"{date_str} · **{name}** · {transaction} {share_str}{val_str}")
+    else:
+        lines.append("No recent insider transactions")
+
+    lines.append("")
+    return "\n".join(lines)
+
+
+def short_interest_card(
+    short_interest_ratio: float | None,
+    short_interest_shares: float | None,
+    short_percent_of_float: float | None,
+    shares_outstanding: float | None,
+) -> str:
+    """Short interest summary — days to cover, % of float, shares short."""
+    header = "__**Short Interest**__"
+    lines = [header]
+
+    if short_interest_ratio is not None:
+        lines.append(f"Days to Cover **{short_interest_ratio:.1f}**")
+    if short_percent_of_float is not None:
+        lines.append(f"Short % of Float **{short_percent_of_float:.2f}%**")
+    if short_interest_shares is not None:
+        lines.append(f"Shares Short **{format_large_num(short_interest_shares)}**")
+    if shares_outstanding is not None:
+        lines.append(f"Shares Outstanding **{format_large_num(shares_outstanding)}**")
+
+    if not any([short_interest_ratio, short_interest_shares, short_percent_of_float]):
+        lines.append("No short interest data available")
+
+    lines.append("")
+    return "\n".join(lines)
+
+
 def weekly_earnings_cards(data: pd.DataFrame, watchlist_tickers: list[str]) -> str:
     """Upcoming earnings grouped by day as stacked cards."""
     import datetime as dt
