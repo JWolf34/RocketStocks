@@ -258,15 +258,21 @@ class Schwab:
         resp.raise_for_status()
         return resp.json()
 
-    async def get_movers(self):
-        """Get top 10 price movers for the day."""
+    async def get_movers(self, sort_order=None):
+        """Get top 10 price movers for the day.
+
+        Args:
+            sort_order: Schwab Movers.SortOrder enum value. Defaults to PERCENT_CHANGE_UP.
+                        Pass ``self.client.Movers.SortOrder.PERCENT_CHANGE_DOWN`` for losers.
+        """
         self._require_client()
         logger.debug("Retrieving top 10 price movers from Schwab")
+        effective_sort = sort_order if sort_order is not None else self.client.Movers.SortOrder.PERCENT_CHANGE_UP
         async with self._limiter:
             try:
                 resp = await self.client.get_movers(
                     index=self.client.Movers.Index.EQUITY_ALL,
-                    sort_order=self.client.Movers.SortOrder.PERCENT_CHANGE_UP,
+                    sort_order=effective_sort,
                     frequency=self.client.Movers.Frequency.TEN,
                 )
             except OAuthError as exc:
