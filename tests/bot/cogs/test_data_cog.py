@@ -663,3 +663,162 @@ class TestDataShortInterest:
         msg = interaction.followup.send.call_args[0][0]
         assert "BAD" in msg
 
+
+# ---------------------------------------------------------------------------
+# Phase 4 command tests
+# ---------------------------------------------------------------------------
+
+class TestDataNews:
+    @pytest.mark.asyncio
+    async def test_valid_tickers_send_embed(self):
+        cog = _make_cog()
+        interaction = _make_interaction()
+        cog.stock_data.tickers.parse_valid_tickers = AsyncMock(return_value=(["AAPL"], []))
+        cog.stock_data.news = MagicMock()
+
+        mock_embed = MagicMock()
+        with patch("rocketstocks.bot.cogs.data.asyncio.to_thread", new=AsyncMock(return_value={'articles': []})), \
+             patch("rocketstocks.bot.cogs.data.NewsCard") as mock_card, \
+             patch("rocketstocks.bot.cogs.data.spec_to_embed", return_value=mock_embed):
+            mock_card.return_value.build.return_value = MagicMock()
+            await cog.data_news.callback(cog, interaction, tickers="AAPL")
+
+        interaction.followup.send.assert_called_once()
+        assert interaction.followup.send.call_args.kwargs.get("embed") is mock_embed
+
+    @pytest.mark.asyncio
+    async def test_invalid_ticker_sends_error(self):
+        cog = _make_cog()
+        interaction = _make_interaction()
+        cog.stock_data.tickers.parse_valid_tickers = AsyncMock(return_value=([], ["BAD"]))
+
+        await cog.data_news.callback(cog, interaction, tickers="BAD")
+
+        msg = interaction.followup.send.call_args[0][0]
+        assert "BAD" in msg
+
+
+class TestDataForecast:
+    @pytest.mark.asyncio
+    async def test_valid_ticker_sends_embed(self):
+        cog = _make_cog()
+        interaction = _make_interaction()
+        cog.stock_data.tickers.parse_valid_tickers = AsyncMock(return_value=(["AAPL"], []))
+
+        mock_embed = MagicMock()
+        with patch("rocketstocks.bot.cogs.data.asyncio.to_thread", new=AsyncMock(return_value=pd.DataFrame())), \
+             patch("rocketstocks.bot.cogs.data.ForecastCard") as mock_card, \
+             patch("rocketstocks.bot.cogs.data.spec_to_embed", return_value=mock_embed):
+            mock_card.return_value.build.return_value = MagicMock()
+            await cog.data_forecast.callback(cog, interaction, ticker="AAPL")
+
+        interaction.followup.send.assert_called_once()
+        assert interaction.followup.send.call_args.kwargs.get("embed") is mock_embed
+
+    @pytest.mark.asyncio
+    async def test_nasdaq_error_sends_empty_forecast(self):
+        """If NASDAQ raises, command still sends an embed with empty DataFrames."""
+        cog = _make_cog()
+        interaction = _make_interaction()
+        cog.stock_data.tickers.parse_valid_tickers = AsyncMock(return_value=(["AAPL"], []))
+
+        mock_embed = MagicMock()
+        with patch("rocketstocks.bot.cogs.data.asyncio.to_thread", new=AsyncMock(side_effect=Exception("network"))), \
+             patch("rocketstocks.bot.cogs.data.ForecastCard") as mock_card, \
+             patch("rocketstocks.bot.cogs.data.spec_to_embed", return_value=mock_embed):
+            mock_card.return_value.build.return_value = MagicMock()
+            await cog.data_forecast.callback(cog, interaction, ticker="AAPL")
+
+        interaction.followup.send.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_invalid_ticker_sends_error(self):
+        cog = _make_cog()
+        interaction = _make_interaction()
+        cog.stock_data.tickers.parse_valid_tickers = AsyncMock(return_value=([], ["BAD"]))
+
+        await cog.data_forecast.callback(cog, interaction, ticker="BAD")
+
+        msg = interaction.followup.send.call_args[0][0]
+        assert "BAD" in msg
+
+
+class TestDataScreener:
+    @pytest.mark.asyncio
+    async def test_intraday_sends_embed(self):
+        cog = _make_cog()
+        interaction = _make_interaction()
+        cog.stock_data.trading_view = MagicMock()
+
+        mock_embed = MagicMock()
+        screener_type = MagicMock()
+        screener_type.value = "intraday"
+        with patch("rocketstocks.bot.cogs.data.asyncio.to_thread", new=AsyncMock(return_value=pd.DataFrame())), \
+             patch("rocketstocks.bot.cogs.data.OnDemandScreener") as mock_screener, \
+             patch("rocketstocks.bot.cogs.data.spec_to_embed", return_value=mock_embed):
+            mock_screener.return_value.build.return_value = MagicMock()
+            await cog.data_screener.callback(cog, interaction, screener_type=screener_type)
+
+        interaction.followup.send.assert_called_once()
+        assert interaction.followup.send.call_args.kwargs.get("embed") is mock_embed
+
+    @pytest.mark.asyncio
+    async def test_tradingview_error_sends_empty_screener(self):
+        """If TradingView raises, command still sends an embed with empty DataFrame."""
+        cog = _make_cog()
+        interaction = _make_interaction()
+        cog.stock_data.trading_view = MagicMock()
+
+        screener_type = MagicMock()
+        screener_type.value = "unusual-volume"
+        with patch("rocketstocks.bot.cogs.data.asyncio.to_thread", new=AsyncMock(side_effect=Exception("TV down"))), \
+             patch("rocketstocks.bot.cogs.data.OnDemandScreener") as mock_screener, \
+             patch("rocketstocks.bot.cogs.data.spec_to_embed", return_value=MagicMock()):
+            mock_screener.return_value.build.return_value = MagicMock()
+            await cog.data_screener.callback(cog, interaction, screener_type=screener_type)
+
+        interaction.followup.send.assert_called_once()
+
+
+class TestDataLosers:
+    @pytest.mark.asyncio
+    async def test_sends_embed_with_losers_direction(self):
+        cog = _make_cog()
+        interaction = _make_interaction()
+        cog.stock_data.schwab.client = MagicMock()
+        cog.stock_data.schwab.get_movers = AsyncMock(return_value={'screeners': []})
+
+        mock_embed = MagicMock()
+        with patch("rocketstocks.bot.cogs.data.MoversCard") as mock_card, \
+             patch("rocketstocks.bot.cogs.data.spec_to_embed", return_value=mock_embed):
+            mock_card.return_value.build.return_value = MagicMock()
+            await cog.data_losers.callback(cog, interaction)
+
+        interaction.followup.send.assert_called_once()
+        # Verify direction='losers' was passed to MoversCard
+        call_args = mock_card.call_args
+        assert call_args[0][0].direction == 'losers'
+
+    @pytest.mark.asyncio
+    async def test_no_client_sends_auth_message(self):
+        cog = _make_cog()
+        interaction = _make_interaction()
+        cog.stock_data.schwab.client = None
+
+        await cog.data_losers.callback(cog, interaction)
+
+        msg = interaction.followup.send.call_args[0][0]
+        assert "auth" in msg.lower() or "schwab" in msg.lower()
+
+    @pytest.mark.asyncio
+    async def test_rate_limit_error_sends_message(self):
+        from rocketstocks.data.clients.schwab import SchwabRateLimitError
+        cog = _make_cog()
+        interaction = _make_interaction()
+        cog.stock_data.schwab.client = MagicMock()
+        cog.stock_data.schwab.get_movers = AsyncMock(side_effect=SchwabRateLimitError("429"))
+
+        await cog.data_losers.callback(cog, interaction)
+
+        interaction.followup.send.assert_called_once()
+

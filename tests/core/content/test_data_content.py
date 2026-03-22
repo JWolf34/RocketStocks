@@ -12,6 +12,7 @@ from rocketstocks.core.content.models import (
     OptionsSummaryData, PopularitySnapshotData, TickersSummaryData,
     EarningsTableData, SecFilingData,
     AnalystData, OwnershipData, InsiderData, ShortInterestData,
+    NewsData, EarningsForecastData, OnDemandScreenerData,
 )
 from rocketstocks.core.content.data.quote_card import QuoteCard
 from rocketstocks.core.content.data.upcoming_earnings_card import UpcomingEarningsCard
@@ -29,6 +30,9 @@ from rocketstocks.core.content.data.analyst_card import AnalystCard
 from rocketstocks.core.content.data.ownership_card import OwnershipCard
 from rocketstocks.core.content.data.insider_card import InsiderCard
 from rocketstocks.core.content.data.short_interest_card import ShortInterestCard
+from rocketstocks.core.content.data.news_card import NewsCard
+from rocketstocks.core.content.data.forecast_card import ForecastCard
+from rocketstocks.core.content.data.on_demand_screener import OnDemandScreener
 from rocketstocks.bot.senders.embed_utils import spec_to_embed
 
 
@@ -979,3 +983,182 @@ class TestShortInterestCard:
 
     def test_spec_to_embed_produces_discord_embed(self):
         assert isinstance(spec_to_embed(ShortInterestCard(self._data()).build()), discord.Embed)
+
+
+# ---------------------------------------------------------------------------
+# Phase 4 content class tests
+# ---------------------------------------------------------------------------
+
+def _news_response(ticker='AAPL'):
+    return {
+        'status': 'ok',
+        'totalResults': 2,
+        'articles': [
+            {
+                'title': f'{ticker} hits all-time high',
+                'source': {'name': 'Reuters'},
+                'url': 'https://reuters.com/1',
+                'publishedAt': '2025-12-10T14:30:00Z',
+            },
+            {
+                'title': f'{ticker} beats earnings expectations',
+                'source': {'name': 'Bloomberg'},
+                'url': 'https://bloomberg.com/2',
+                'publishedAt': '2025-12-09T10:00:00Z',
+            },
+        ],
+    }
+
+
+def _quarterly_forecast():
+    return pd.DataFrame({
+        'fiscalQuarter': ['Mar 2026', 'Jun 2026', 'Sep 2026', 'Dec 2026'],
+        'epsForecast': ['1.55', '1.62', '1.70', '1.78'],
+        'noOfEsts': [28, 25, 22, 18],
+        'lowEPS': ['1.40', '1.45', '1.52', '1.60'],
+        'highEPS': ['1.70', '1.80', '1.90', '1.98'],
+    })
+
+
+def _yearly_forecast():
+    return pd.DataFrame({
+        'fiscalYear': ['2026', '2027'],
+        'epsForecast': ['6.65', '7.10'],
+        'noOfEsts': [30, 24],
+    })
+
+
+def _gainer_df(premarket=False):
+    if premarket:
+        return pd.DataFrame({
+            'name': ['AAPL', 'MSFT'],
+            'premarket_change': [2.1, 1.8],
+            'premarket_close': [186.0, 421.0],
+            'close': [185.0, 420.0],
+            'premarket_volume': [5_000_000, 3_000_000],
+            'market_cap_basic': [2.9e12, 3.1e12],
+        })
+    return pd.DataFrame({
+        'name': ['AAPL', 'MSFT'],
+        'change': [5.2, 3.8],
+        'close': [185.0, 420.0],
+        'volume': [50_000_000, 30_000_000],
+        'market_cap_basic': [2.9e12, 3.1e12],
+    })
+
+
+def _volume_df():
+    return pd.DataFrame({
+        'name': ['AAPL', 'TSLA'],
+        'close': [185.0, 250.0],
+        'change': [2.1, -1.5],
+        'relative_volume_10d_calc': [3.5, 2.8],
+        'volume': [80_000_000, 60_000_000],
+        'average_volume_10d_calc': [22_000_000, 21_000_000],
+        'market_cap_basic': [2.9e12, 0.8e12],
+    })
+
+
+class TestNewsCard:
+    def _data(self):
+        return NewsData(
+            tickers=['AAPL', 'MSFT'],
+            news_results={
+                'AAPL': _news_response('AAPL'),
+                'MSFT': _news_response('MSFT'),
+            },
+        )
+
+    def test_build_returns_embedspec(self):
+        assert isinstance(NewsCard(self._data()).build(), EmbedSpec)
+
+    def test_title_includes_tickers(self):
+        spec = NewsCard(self._data()).build()
+        assert 'AAPL' in spec.title
+        assert 'MSFT' in spec.title
+
+    def test_color_is_indigo(self):
+        assert NewsCard(self._data()).build().color == COLOR_INDIGO
+
+    def test_description_contains_headlines(self):
+        spec = NewsCard(self._data()).build()
+        assert 'all-time high' in spec.description or 'AAPL' in spec.description
+
+    def test_missing_news_shows_no_news_found(self):
+        data = NewsData(tickers=['AAPL'], news_results={'AAPL': None})
+        spec = NewsCard(data).build()
+        assert 'No news found' in spec.description
+
+    def test_spec_to_embed_produces_discord_embed(self):
+        assert isinstance(spec_to_embed(NewsCard(self._data()).build()), discord.Embed)
+
+
+class TestForecastCard:
+    def _data(self):
+        return EarningsForecastData(
+            ticker='AAPL',
+            quarterly_forecast=_quarterly_forecast(),
+            yearly_forecast=_yearly_forecast(),
+        )
+
+    def test_build_returns_embedspec(self):
+        assert isinstance(ForecastCard(self._data()).build(), EmbedSpec)
+
+    def test_title_includes_ticker(self):
+        spec = ForecastCard(self._data()).build()
+        assert 'AAPL' in spec.title
+
+    def test_color_is_cyan(self):
+        assert ForecastCard(self._data()).build().color == COLOR_CYAN
+
+    def test_shows_quarterly_eps(self):
+        spec = ForecastCard(self._data()).build()
+        assert 'Mar 2026' in spec.description
+        assert '1.55' in spec.description
+
+    def test_shows_yearly_eps(self):
+        spec = ForecastCard(self._data()).build()
+        assert '2026' in spec.description
+        assert '6.65' in spec.description
+
+    def test_empty_dataframes_handled(self):
+        data = EarningsForecastData(ticker='AAPL', quarterly_forecast=pd.DataFrame(),
+                                    yearly_forecast=pd.DataFrame())
+        spec = ForecastCard(data).build()
+        assert isinstance(spec, EmbedSpec)
+
+    def test_spec_to_embed_produces_discord_embed(self):
+        assert isinstance(spec_to_embed(ForecastCard(self._data()).build()), discord.Embed)
+
+
+class TestOnDemandScreener:
+    def test_intraday_returns_embedspec(self):
+        data = OnDemandScreenerData(screener_type='intraday', data=_gainer_df())
+        assert isinstance(OnDemandScreener(data).build(), EmbedSpec)
+
+    def test_premarket_returns_embedspec(self):
+        data = OnDemandScreenerData(screener_type='premarket', data=_gainer_df(premarket=True))
+        assert isinstance(OnDemandScreener(data).build(), EmbedSpec)
+
+    def test_unusual_volume_returns_embedspec(self):
+        data = OnDemandScreenerData(screener_type='unusual-volume', data=_volume_df())
+        assert isinstance(OnDemandScreener(data).build(), EmbedSpec)
+
+    def test_intraday_color_is_green(self):
+        data = OnDemandScreenerData(screener_type='intraday', data=_gainer_df())
+        from rocketstocks.core.content.models import COLOR_GREEN
+        assert OnDemandScreener(data).build().color == COLOR_GREEN
+
+    def test_unusual_volume_color_is_orange(self):
+        data = OnDemandScreenerData(screener_type='unusual-volume', data=_volume_df())
+        from rocketstocks.core.content.models import COLOR_ORANGE
+        assert OnDemandScreener(data).build().color == COLOR_ORANGE
+
+    def test_empty_df_handled(self):
+        data = OnDemandScreenerData(screener_type='intraday', data=pd.DataFrame())
+        spec = OnDemandScreener(data).build()
+        assert isinstance(spec, EmbedSpec)
+
+    def test_spec_to_embed_produces_discord_embed(self):
+        data = OnDemandScreenerData(screener_type='intraday', data=_gainer_df())
+        assert isinstance(spec_to_embed(OnDemandScreener(data).build()), discord.Embed)
