@@ -79,6 +79,22 @@ class StockReportData(TickerData):
 
 
 @dataclass
+class FullStockReportData(StockReportData):
+    """Extended stock report data for /report ticker detail=full."""
+    price_targets: dict | None = None
+    recommendations: pd.DataFrame = field(default_factory=pd.DataFrame)
+    upgrades_downgrades: pd.DataFrame = field(default_factory=pd.DataFrame)
+    short_interest_ratio: float | None = None
+    short_interest_shares: float | None = None
+    short_percent_of_float: float | None = None
+    shares_outstanding: float | None = None
+    quarterly_forecast: pd.DataFrame = field(default_factory=pd.DataFrame)
+    yearly_forecast: pd.DataFrame = field(default_factory=pd.DataFrame)
+    classification: str | None = None
+    volatility_20d: float | None = None
+
+
+@dataclass
 class NewsReportData:
     query: str
     news: dict
