@@ -14,7 +14,7 @@ from rocketstocks.core.content.models import (
     COLOR_BLUE, COLOR_GREEN, COLOR_ORANGE,
     COLOR_GOLD, COLOR_INDIGO, COLOR_PINK, COLOR_CYAN, COLOR_AMBER,
     EmbedSpec,
-    EarningsSpotlightData, GainerScreenerData, NewsReportData,
+    EarningsSpotlightData, FullStockReportData, GainerScreenerData, NewsReportData,
     PopularityReportData, PopularityScreenerData, StockReportData,
     VolumeScreenerData, WeeklyEarningsData,
 )
@@ -488,3 +488,116 @@ class TestOhlcvCard:
         from rocketstocks.core.content.sections_card import ohlcv_card
         result = ohlcv_card(self._quote_with_zeros(), pd.DataFrame())
         assert "Today's Summary" in result
+
+
+# ---------------------------------------------------------------------------
+# FullStockReport
+# ---------------------------------------------------------------------------
+
+class TestFullStockReportEmbedSpec:
+    def _make_report(self, **overrides):
+        from rocketstocks.core.content.reports.stock_report import FullStockReport
+        defaults = dict(
+            ticker="AAPL",
+            ticker_info=_minimal_ticker_info(),
+            quote=_minimal_quote(),
+            fundamentals=_minimal_fundamentals(),
+            daily_price_history=_price_history(),
+            popularity=pd.DataFrame(),
+            historical_earnings=_earnings_df(),
+            next_earnings_info={},
+            recent_sec_filings=pd.DataFrame(),
+            price_targets={'current': 185.0, 'low': 160.0, 'mean': 210.0, 'high': 250.0},
+            recommendations=pd.DataFrame({
+                'strongBuy': [10], 'buy': [15], 'hold': [8], 'sell': [2], 'strongSell': [1]
+            }),
+            upgrades_downgrades=pd.DataFrame(),
+            short_interest_ratio=2.5,
+            short_interest_shares=130_000_000,
+            short_percent_of_float=0.89,
+            shares_outstanding=14_681_000_000,
+            quarterly_forecast=pd.DataFrame({
+                'fiscalQuarter': ['Q1 2026', 'Q2 2026'],
+                'epsForecast': ['1.88', '2.01'],
+                'noOfEsts': [28, 25],
+                'lowEPS': ['1.70', '1.85'],
+                'highEPS': ['2.00', '2.15'],
+                'up': [2, 1],
+                'down': [0, 1],
+            }),
+            yearly_forecast=pd.DataFrame({
+                'fiscalYear': ['2026', '2027'],
+                'epsForecast': ['8.20', '9.10'],
+                'noOfEsts': [30, 22],
+            }),
+            classification='blue_chip',
+            volatility_20d=1.2,
+        )
+        defaults.update(overrides)
+        return FullStockReport(data=FullStockReportData(**defaults))
+
+    def test_returns_embed_spec(self):
+        spec = self._make_report().build()
+        assert isinstance(spec, EmbedSpec)
+
+    def test_title_contains_ticker_and_full(self):
+        spec = self._make_report().build()
+        assert "AAPL" in spec.title
+        assert "Full" in spec.title
+
+    def test_color_is_blue(self):
+        assert self._make_report().build().color == COLOR_BLUE
+
+    def test_has_three_embed_fields(self):
+        spec = self._make_report().build()
+        assert len(spec.fields) == 3
+
+    def test_field_names(self):
+        spec = self._make_report().build()
+        names = [f.name for f in spec.fields]
+        assert "Analyst Consensus" in names
+        assert "Earnings Forecast" in names
+        assert "Short Interest" in names
+
+    def test_description_under_4096(self):
+        spec = self._make_report().build()
+        assert len(spec.description) <= 4096
+
+    def test_fields_each_under_1024(self):
+        spec = self._make_report().build()
+        for f in spec.fields:
+            assert len(f.value) <= 1024, f"Field '{f.name}' value exceeds 1024 chars"
+
+    def test_char_budget_under_6000(self):
+        spec = self._make_report().build()
+        assert _embed_char_count(spec) < 6000
+
+    def test_classification_in_description(self):
+        spec = self._make_report().build()
+        assert "Blue Chip" in spec.description
+
+    def test_volatility_in_description(self):
+        spec = self._make_report().build()
+        assert "1.2%" in spec.description
+
+    def test_revision_counts_in_forecast_field(self):
+        spec = self._make_report().build()
+        forecast_field = next(f for f in spec.fields if f.name == "Earnings Forecast")
+        assert "↑2" in forecast_field.value
+
+    def test_empty_extended_data_does_not_crash(self):
+        spec = self._make_report(
+            price_targets=None,
+            recommendations=pd.DataFrame(),
+            upgrades_downgrades=pd.DataFrame(),
+            short_interest_ratio=None,
+            short_interest_shares=None,
+            short_percent_of_float=None,
+            shares_outstanding=None,
+            quarterly_forecast=pd.DataFrame(),
+            yearly_forecast=pd.DataFrame(),
+            classification=None,
+            volatility_20d=None,
+        ).build()
+        assert isinstance(spec, EmbedSpec)
+        assert len(spec.fields) == 3

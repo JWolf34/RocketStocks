@@ -701,3 +701,72 @@ class TestPostEarningsResultsImpl:
             await cog._post_earnings_results_impl()
 
         mock_send.assert_not_called()
+
+
+class TestBuildFullStockReport:
+    """Tests for build_full_stock_report() and the detail parameter."""
+
+    def _make_cog(self):
+        return _make_cog()
+
+    @pytest.mark.asyncio
+    async def test_returns_full_stock_report_instance(self):
+        from rocketstocks.core.content.reports.stock_report import FullStockReport
+        cog = self._make_cog()
+
+        base_report = MagicMock()
+        base_report.data.ticker_info = {}
+        base_report.data.quote = {}
+        base_report.data.fundamentals = {}
+        base_report.data.daily_price_history = pd.DataFrame()
+        base_report.data.popularity = pd.DataFrame()
+        base_report.data.historical_earnings = pd.DataFrame()
+        base_report.data.next_earnings_info = {}
+        base_report.data.recent_sec_filings = pd.DataFrame()
+        base_report.data.recent_alerts = []
+
+        cog.stock_data.yfinance = MagicMock()
+        cog.stock_data.yfinance.get_analyst_price_targets = MagicMock(return_value=None)
+        cog.stock_data.yfinance.get_recommendations_summary = MagicMock(return_value=pd.DataFrame())
+        cog.stock_data.yfinance.get_upgrades_downgrades = MagicMock(return_value=pd.DataFrame())
+        cog.stock_data.nasdaq = MagicMock()
+        cog.stock_data.nasdaq.get_earnings_forecast_quarterly = MagicMock(return_value=pd.DataFrame())
+        cog.stock_data.nasdaq.get_earnings_forecast_yearly = MagicMock(return_value=pd.DataFrame())
+        cog.stock_data.ticker_stats = MagicMock()
+        cog.stock_data.ticker_stats.get_stats = AsyncMock(return_value=None)
+
+        with patch.object(cog, 'build_stock_report', new=AsyncMock(return_value=base_report)), \
+             patch('rocketstocks.bot.cogs.reports.asyncio.to_thread', new=AsyncMock(return_value=None)):
+            result = await cog.build_full_stock_report(ticker='AAPL')
+
+        assert isinstance(result, FullStockReport)
+
+    @pytest.mark.asyncio
+    async def test_graceful_on_yfinance_failure(self):
+        from rocketstocks.core.content.reports.stock_report import FullStockReport
+        cog = self._make_cog()
+
+        base_report = MagicMock()
+        base_report.data.ticker_info = {}
+        base_report.data.quote = {}
+        base_report.data.fundamentals = {}
+        base_report.data.daily_price_history = pd.DataFrame()
+        base_report.data.popularity = pd.DataFrame()
+        base_report.data.historical_earnings = pd.DataFrame()
+        base_report.data.next_earnings_info = {}
+        base_report.data.recent_sec_filings = pd.DataFrame()
+        base_report.data.recent_alerts = []
+
+        cog.stock_data.yfinance = MagicMock()
+        cog.stock_data.nasdaq = MagicMock()
+        cog.stock_data.ticker_stats = MagicMock()
+        cog.stock_data.ticker_stats.get_stats = AsyncMock(return_value=None)
+
+        async def _raise(*_args, **_kwargs):
+            raise RuntimeError("API error")
+
+        with patch.object(cog, 'build_stock_report', new=AsyncMock(return_value=base_report)), \
+             patch('rocketstocks.bot.cogs.reports.asyncio.to_thread', new=_raise):
+            result = await cog.build_full_stock_report(ticker='AAPL')
+
+        assert isinstance(result, FullStockReport)

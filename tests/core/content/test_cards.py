@@ -9,6 +9,7 @@ from rocketstocks.core.content.sections_card import (
     popularity_card, upcoming_earnings_card, politician_info_card, sec_filings_card,
     ticker_info_card, todays_change_card, earnings_date_card, news_card,
     recent_alerts_card, earnings_result_card, recent_earnings_card,
+    classification_card, earnings_forecast_card,
 )
 
 
@@ -593,3 +594,86 @@ class TestFundamentalsCardNoneSafety:
         result = fundamentals_card(self._fund_with(6.42, 29.42), _minimal_quote())
         assert 'EPS **6.42**' in result
         assert 'P/E **29.42**' in result
+
+
+class TestClassificationCard:
+    def test_returns_empty_when_no_classification(self):
+        assert classification_card(None, 1.2) == ''
+
+    def test_contains_formatted_label(self):
+        result = classification_card('blue_chip', 1.2)
+        assert 'Blue Chip' in result
+
+    def test_contains_volatility(self):
+        result = classification_card('standard', 3.5)
+        assert '3.5%' in result
+
+    def test_no_volatility_metric_when_none(self):
+        result = classification_card('volatile', None)
+        assert '20D Vol' not in result
+        assert 'Volatile' in result
+
+    def test_has_section_header(self):
+        result = classification_card('blue_chip', 1.2)
+        assert '__**Classification**__' in result
+
+
+class TestEarningsForecastCardRevisions:
+    def _quarterly_with_revisions(self):
+        return pd.DataFrame({
+            'fiscalQuarter': ['Q1 2026', 'Q2 2026'],
+            'epsForecast': ['1.88', '2.01'],
+            'noOfEsts': [28, 25],
+            'lowEPS': ['1.70', '1.85'],
+            'highEPS': ['2.00', '2.15'],
+            'up': [3, 0],
+            'down': [1, 2],
+        })
+
+    def _quarterly_no_revisions(self):
+        return pd.DataFrame({
+            'fiscalQuarter': ['Q1 2026'],
+            'epsForecast': ['1.88'],
+            'noOfEsts': [28],
+            'lowEPS': ['1.70'],
+            'highEPS': ['2.00'],
+        })
+
+    def test_shows_up_revision_count(self):
+        result = earnings_forecast_card(self._quarterly_with_revisions(), pd.DataFrame())
+        assert '↑3' in result
+
+    def test_shows_down_revision_count(self):
+        result = earnings_forecast_card(self._quarterly_with_revisions(), pd.DataFrame())
+        assert '↓1' in result
+
+    def test_hides_revisions_when_both_zero(self):
+        df = pd.DataFrame({
+            'fiscalQuarter': ['Q2 2026'],
+            'epsForecast': ['2.01'],
+            'noOfEsts': [25],
+            'lowEPS': ['1.85'],
+            'highEPS': ['2.15'],
+            'up': [0],
+            'down': [0],
+        })
+        result = earnings_forecast_card(df, pd.DataFrame())
+        assert 'revisions' not in result
+
+    def test_no_revisions_column_does_not_crash(self):
+        result = earnings_forecast_card(self._quarterly_no_revisions(), pd.DataFrame())
+        assert '**Q1 2026**' in result
+
+    def test_handles_nasdaq_fiscalend_column(self):
+        df = pd.DataFrame({
+            'fiscalEnd': ['Mar 2026'],
+            'consensusEPSForecast': ['1.88'],
+            'noOfEstimates': [28],
+            'lowEPSForecast': ['1.70'],
+            'highEPSForecast': ['2.00'],
+            'up': [2],
+            'down': [1],
+        })
+        result = earnings_forecast_card(df, pd.DataFrame())
+        assert 'Mar 2026' in result
+        assert '↑2' in result
