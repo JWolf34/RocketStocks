@@ -243,3 +243,66 @@ class MoverData:
     screeners: list                  # list of mover dicts from Schwab
 
 
+# ---------------------------------------------------------------------------
+# Data cog snapshot models (Phase 2)
+# ---------------------------------------------------------------------------
+
+@dataclass
+class PriceSnapshotData:
+    """Data for the price snapshot embed in /data price."""
+    ticker: str
+    daily_price_history: pd.DataFrame
+    frequency: str                   # 'daily' or '5m'
+    quote: dict | None = None        # Schwab quote dict — optional (may be unavailable)
+
+
+@dataclass
+class FinancialHighlightsData:
+    """Data for the financial highlights embed in /data financials."""
+    ticker: str
+    financials: dict                 # yfinance financials dict (income/balance/cash DataFrames)
+
+
+@dataclass
+class FundamentalsSnapshotData:
+    """Data for the fundamentals snapshot embed in /data fundamentals."""
+    ticker: str
+    fundamentals: dict               # Schwab fundamentals JSON response
+
+
+@dataclass
+class OptionsSummaryData:
+    """Data for the options summary embed in /data options."""
+    ticker: str
+    options_chain: dict              # Schwab options chain JSON response
+    current_price: float | None = None
+
+
+@dataclass
+class PopularitySnapshotData:
+    """Data for the popularity snapshot embed in /data popularity."""
+    ticker: str
+    popularity: pd.DataFrame
+
+
+@dataclass
+class TickersSummaryData:
+    """Data for the tickers summary embed in /data tickers."""
+    tickers_df: pd.DataFrame
+
+
+@dataclass
+class EarningsTableData:
+    """Data for the earnings history embed in /data earnings."""
+    ticker: str
+    historical_earnings: pd.DataFrame
+
+
+@dataclass
+class SecFilingData:
+    """Data for the SEC filing embed in /data sec-filing."""
+    tickers: list
+    filings: dict                    # {ticker: filing_dict | None}
+    form: str
+
+
