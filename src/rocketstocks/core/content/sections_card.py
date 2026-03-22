@@ -1107,6 +1107,415 @@ def weekly_earnings_cards(data: pd.DataFrame, watchlist_tickers: list[str]) -> s
 
 
 # ---------------------------------------------------------------------------
+# Technical report cards — EmbedField values (no header; name= is the header)
+# ---------------------------------------------------------------------------
+
+def trend_analysis_card(daily_price_history: pd.DataFrame, current_price: float | None) -> str:
+    """SMA 20/50/200, EMA 9/21, price position, and SMA 50/200 cross."""
+    if daily_price_history is None or daily_price_history.empty:
+        return "No price data available"
+
+    close = daily_price_history['close']
+    n = len(close)
+    price = current_price or (float(close.iloc[-1]) if not close.empty else None)
+    if price is None:
+        return "No price data available"
+
+    # SMA 20 / 50 / 200
+    sma_parts = []
+    for period in [20, 50, 200]:
+        if n >= period:
+            sma = ta.sma(close, period)
+            val = float(sma.iloc[-1]) if sma is not None and not sma.empty else None
+            if val is not None and not pd.isna(val):
+                pct = ((price - val) / val) * 100.0
+                sign = '+' if pct >= 0 else ''
+                sma_parts.append(f"SMA{period} **${val:.2f}** ({sign}{pct:.1f}%)")
+            else:
+                sma_parts.append(f"SMA{period} N/A")
+        else:
+            sma_parts.append(f"SMA{period} N/A")
+
+    # EMA 9 / 21
+    ema_parts = []
+    for period in [9, 21]:
+        if n >= period:
+            ema = ta.ema(close, length=period)
+            val = float(ema.iloc[-1]) if ema is not None and not ema.empty else None
+            if val is not None and not pd.isna(val):
+                pct = ((price - val) / val) * 100.0
+                sign = '+' if pct >= 0 else ''
+                ema_parts.append(f"EMA{period} **${val:.2f}** ({sign}{pct:.1f}%)")
+            else:
+                ema_parts.append(f"EMA{period} N/A")
+        else:
+            ema_parts.append(f"EMA{period} N/A")
+
+    lines = [
+        ' · '.join(sma_parts),
+        ' · '.join(ema_parts),
+    ]
+
+    # Golden / Death cross
+    if n >= 200:
+        sma50 = ta.sma(close, 50)
+        sma200 = ta.sma(close, 200)
+        s50 = float(sma50.iloc[-1]) if sma50 is not None and not sma50.empty else None
+        s200 = float(sma200.iloc[-1]) if sma200 is not None and not sma200.empty else None
+        if s50 is not None and s200 is not None and not pd.isna(s50) and not pd.isna(s200):
+            cross_label = "**Golden Cross** 🟢" if s50 > s200 else "**Death Cross** 🔻"
+            lines.append(f"50/200 Cross: {cross_label}")
+
+    return '\n'.join(lines) or '\u200b'
+
+
+def momentum_detail_card(daily_price_history: pd.DataFrame) -> str:
+    """RSI(14), MACD histogram, and ROC(10)."""
+    if daily_price_history is None or daily_price_history.empty:
+        return "No price data available"
+
+    close = daily_price_history['close']
+    n = len(close)
+    lines = []
+
+    # RSI(14)
+    if n >= 15:
+        rsi_s = ta.rsi(close, length=14)
+        rsi_val = float(rsi_s.iloc[-1]) if rsi_s is not None and not rsi_s.empty and not pd.isna(rsi_s.iloc[-1]) else None
+        if rsi_val is not None:
+            zone = "Overbought" if rsi_val > 70 else "Oversold" if rsi_val < 30 else "Neutral"
+            lines.append(f"RSI(14): **{rsi_val:.1f}** — {zone}")
+        else:
+            lines.append("RSI(14): N/A")
+    else:
+        lines.append("RSI(14): N/A (insufficient data)")
+
+    # MACD (12/26/9)
+    if n >= 35:
+        macd_df = ta.macd(close)
+        if macd_df is not None and not macd_df.empty:
+            macd_val = float(macd_df.iloc[-1, 0])    # MACD line
+            hist_val = float(macd_df.iloc[-1, 1])    # Histogram
+            sig_val = float(macd_df.iloc[-1, 2])     # Signal line
+            if not pd.isna(hist_val):
+                direction = "Bullish" if hist_val > 0 else "Bearish"
+                sign = '+' if hist_val > 0 else ''
+                cross = "Above signal" if not pd.isna(macd_val) and not pd.isna(sig_val) and macd_val > sig_val else "Below signal"
+                lines.append(f"MACD: **{direction}** (hist {sign}{hist_val:.2f}) · {cross}")
+            else:
+                lines.append("MACD: N/A")
+        else:
+            lines.append("MACD: N/A")
+    else:
+        lines.append("MACD: N/A (insufficient data)")
+
+    # ROC(10)
+    if n >= 11:
+        roc_s = ta.roc(close=close, length=10)
+        roc_val = float(roc_s.iloc[-1]) if roc_s is not None and not roc_s.empty and not pd.isna(roc_s.iloc[-1]) else None
+        if roc_val is not None:
+            sign = '+' if roc_val > 0 else ''
+            bias = "Positive momentum" if roc_val > 0 else "Negative momentum"
+            lines.append(f"ROC(10): **{sign}{roc_val:.2f}%** — {bias}")
+        else:
+            lines.append("ROC(10): N/A")
+    else:
+        lines.append("ROC(10): N/A (insufficient data)")
+
+    return '\n'.join(lines) or '\u200b'
+
+
+def volatility_analysis_card(daily_price_history: pd.DataFrame, current_price: float | None) -> str:
+    """NATR(14) as HV proxy, Bollinger %B, and band width."""
+    if daily_price_history is None or daily_price_history.empty:
+        return "No price data available"
+    if 'high' not in daily_price_history.columns or 'low' not in daily_price_history.columns:
+        return "No OHLC data available"
+
+    close = daily_price_history['close']
+    high = daily_price_history['high']
+    low = daily_price_history['low']
+    n = len(close)
+    lines = []
+
+    # NATR(14) — normalized ATR as % of price
+    if n >= 15:
+        natr_s = ta.natr(high=high, low=low, close=close, length=14)
+        natr_val = float(natr_s.iloc[-1]) if natr_s is not None and not natr_s.empty and not pd.isna(natr_s.iloc[-1]) else None
+        natr_str = f"**{natr_val:.2f}%**" if natr_val is not None else "N/A"
+    else:
+        natr_str = "N/A"
+
+    # ATR(14)
+    if n >= 15:
+        atr_s = ta.atr(high=high, low=low, close=close, length=14)
+        atr_val = float(atr_s.iloc[-1]) if atr_s is not None and not atr_s.empty and not pd.isna(atr_s.iloc[-1]) else None
+        atr_str = f"**${atr_val:.2f}**" if atr_val is not None else "N/A"
+    else:
+        atr_str = "N/A"
+
+    lines.append(f"ATR(14): {atr_str} · NATR(14): {natr_str}")
+
+    # Bollinger Bands (20, 2σ)
+    if n >= 20:
+        bb_df = ta.bbands(close, length=20)
+        if bb_df is not None and not bb_df.empty and len(bb_df.columns) >= 5:
+            bbp = float(bb_df.iloc[-1, 4])   # BBP — %B
+            bbb = float(bb_df.iloc[-1, 3])   # BBB — Width %
+            if not pd.isna(bbp):
+                if bbp > 0.8:
+                    position = "Near upper band"
+                elif bbp > 0.5:
+                    position = "Upper half"
+                elif bbp > 0.2:
+                    position = "Lower half"
+                else:
+                    position = "Near lower band"
+                bb_p_str = f"**{bbp:.2f}** ({position})"
+            else:
+                bb_p_str = "N/A"
+            bbb_str = f"**{bbb:.1f}%**" if not pd.isna(bbb) else "N/A"
+            lines.append(f"BB %B: {bb_p_str} · BB Width: {bbb_str}")
+        else:
+            lines.append("BB: N/A")
+    else:
+        lines.append("BB: N/A (insufficient data)")
+
+    return '\n'.join(lines) or '\u200b'
+
+
+def volume_analysis_card(daily_price_history: pd.DataFrame, current_volume: float | None = None) -> str:
+    """RVOL(10), OBV trend, and Accumulation/Distribution trend."""
+    if daily_price_history is None or daily_price_history.empty:
+        return "No price data available"
+    if 'volume' not in daily_price_history.columns:
+        return "No volume data available"
+
+    close = daily_price_history['close']
+    volume = daily_price_history['volume']
+    n = len(close)
+
+    lines = []
+
+    # RVOL(10) — today vs 10-day average
+    if n >= 11:
+        vol_series = volume.tail(11)
+        today_vol = float(current_volume) if current_volume is not None else float(vol_series.iloc[-1])
+        avg_vol = float(vol_series.iloc[:-1].mean())
+        if avg_vol > 0:
+            rvol = today_vol / avg_vol
+            label = "Heavy" if rvol > 2 else "Above average" if rvol > 1.2 else "Below average" if rvol < 0.8 else "Average"
+            lines.append(f"RVOL(10): **{rvol:.1f}x** — {label}")
+        else:
+            lines.append("RVOL(10): N/A")
+    else:
+        lines.append("RVOL(10): N/A (insufficient data)")
+
+    trend_parts = []
+
+    # OBV trend (10-day SMA direction)
+    if n >= 15:
+        obv_s = ta.obv(close=close, volume=volume)
+        if obv_s is not None and len(obv_s) >= 10:
+            obv_sma = ta.sma(obv_s, 10)
+            if obv_sma is not None and len(obv_sma) >= 2:
+                last = float(obv_sma.iloc[-1])
+                prev = float(obv_sma.iloc[-2])
+                if not pd.isna(last) and not pd.isna(prev):
+                    obv_dir = "Rising 🟢" if last > prev else "Falling 🔻"
+                    trend_parts.append(f"OBV: **{obv_dir}**")
+
+    # A/D trend (10-day SMA direction) — requires open column
+    if n >= 15 and 'high' in daily_price_history.columns and 'low' in daily_price_history.columns:
+        open_col = daily_price_history.get('open') if hasattr(daily_price_history, 'get') else daily_price_history['open'] if 'open' in daily_price_history.columns else None
+        if open_col is not None:
+            ad_s = ta.ad(high=daily_price_history['high'], low=daily_price_history['low'],
+                         close=close, volume=volume, open=open_col)
+            if ad_s is not None and len(ad_s) >= 10:
+                ad_sma = ta.sma(ad_s, 10)
+                if ad_sma is not None and len(ad_sma) >= 2:
+                    last = float(ad_sma.iloc[-1])
+                    prev = float(ad_sma.iloc[-2])
+                    if not pd.isna(last) and not pd.isna(prev):
+                        ad_dir = "Rising 🟢" if last > prev else "Falling 🔻"
+                        trend_parts.append(f"A/D: **{ad_dir}**")
+
+    if trend_parts:
+        lines.append(' · '.join(trend_parts))
+
+    return '\n'.join(lines) or '\u200b'
+
+
+def key_levels_card(daily_price_history: pd.DataFrame, current_price: float | None) -> str:
+    """52-week high/low with % distance, and Bollinger Band levels as dynamic S/R."""
+    if daily_price_history is None or daily_price_history.empty:
+        return "No price data available"
+
+    close = daily_price_history['close']
+    n = len(close)
+    price = current_price or (float(close.iloc[-1]) if not close.empty else None)
+    if price is None:
+        return "No price data available"
+
+    lines = []
+
+    # 52W high / low
+    window = min(n, 252)
+    if 'high' in daily_price_history.columns and 'low' in daily_price_history.columns:
+        w52_high = float(daily_price_history['high'].tail(window).max())
+        w52_low = float(daily_price_history['low'].tail(window).min())
+    else:
+        w52_high = float(close.tail(window).max())
+        w52_low = float(close.tail(window).min())
+
+    from_high = ((price - w52_high) / w52_high) * 100.0
+    from_low = ((price - w52_low) / w52_low) * 100.0
+    high_sign = '+' if from_high >= 0 else ''
+    low_sign = '+' if from_low >= 0 else ''
+    lines.append(
+        f"52W High **${w52_high:.2f}** ({high_sign}{from_high:.1f}%) · "
+        f"52W Low **${w52_low:.2f}** ({low_sign}{from_low:.1f}%)"
+    )
+
+    # Bollinger Band levels as dynamic S/R
+    if n >= 20:
+        bb_df = ta.bbands(close, length=20)
+        if bb_df is not None and not bb_df.empty and len(bb_df.columns) >= 3:
+            bbl = float(bb_df.iloc[-1, 0])   # BBL (lower)
+            bbm = float(bb_df.iloc[-1, 1])   # BBM (mid)
+            bbu = float(bb_df.iloc[-1, 2])   # BBU (upper)
+            bbl_str = f"${bbl:.2f}" if not pd.isna(bbl) else "N/A"
+            bbm_str = f"${bbm:.2f}" if not pd.isna(bbm) else "N/A"
+            bbu_str = f"${bbu:.2f}" if not pd.isna(bbu) else "N/A"
+            lines.append(f"BB Upper **{bbu_str}** · BB Mid **{bbm_str}** · BB Lower **{bbl_str}**")
+
+    return '\n'.join(lines) or '\u200b'
+
+
+def signal_confluence_card(daily_price_history: pd.DataFrame, current_price: float | None) -> str:
+    """Count bullish vs bearish signals across all indicators; show overall bias."""
+    if daily_price_history is None or daily_price_history.empty:
+        return "No price data available"
+
+    close = daily_price_history['close']
+    n = len(close)
+    price = current_price or (float(close.iloc[-1]) if not close.empty else None)
+    if price is None:
+        return "No price data available"
+
+    bullish = []
+    bearish = []
+
+    # 1. RSI(14)
+    if n >= 15:
+        rsi_s = ta.rsi(close, length=14)
+        if rsi_s is not None and not rsi_s.empty:
+            rsi_val = float(rsi_s.iloc[-1])
+            if not pd.isna(rsi_val):
+                if rsi_val < 30:
+                    bullish.append("RSI oversold")
+                elif rsi_val > 70:
+                    bearish.append("RSI overbought")
+
+    # 2. MACD histogram
+    if n >= 35:
+        macd_df = ta.macd(close)
+        if macd_df is not None and not macd_df.empty:
+            hist = float(macd_df.iloc[-1, 1])
+            if not pd.isna(hist):
+                if hist > 0:
+                    bullish.append("MACD")
+                else:
+                    bearish.append("MACD")
+
+    # 3. ADX direction (DMP vs DMN)
+    has_hl = 'high' in daily_price_history.columns and 'low' in daily_price_history.columns
+    if n >= 28 and has_hl:
+        adx_df = ta.adx(close=close, high=daily_price_history['high'], low=daily_price_history['low'])
+        if adx_df is not None and not adx_df.empty:
+            dip = float(adx_df.iloc[-1, 1])
+            din = float(adx_df.iloc[-1, 2])
+            if not pd.isna(dip) and not pd.isna(din):
+                if dip > din:
+                    bullish.append("ADX trend")
+                else:
+                    bearish.append("ADX trend")
+
+    # 4. SMA 50/200 cross
+    if n >= 200:
+        sma50 = ta.sma(close, 50)
+        sma200 = ta.sma(close, 200)
+        s50 = float(sma50.iloc[-1]) if sma50 is not None and not sma50.empty else None
+        s200 = float(sma200.iloc[-1]) if sma200 is not None and not sma200.empty else None
+        if s50 is not None and s200 is not None and not pd.isna(s50) and not pd.isna(s200):
+            if s50 > s200:
+                bullish.append("Golden Cross")
+            else:
+                bearish.append("Death Cross")
+
+    # 5. Price vs SMA50
+    if n >= 50:
+        sma50 = ta.sma(close, 50)
+        s50 = float(sma50.iloc[-1]) if sma50 is not None and not sma50.empty else None
+        if s50 is not None and not pd.isna(s50):
+            if price > s50:
+                bullish.append("Price > SMA50")
+            else:
+                bearish.append("Price < SMA50")
+
+    # 6. OBV trend
+    if n >= 15 and 'volume' in daily_price_history.columns:
+        obv_s = ta.obv(close=close, volume=daily_price_history['volume'])
+        if obv_s is not None and len(obv_s) >= 10:
+            obv_sma = ta.sma(obv_s, 10)
+            if obv_sma is not None and len(obv_sma) >= 2:
+                last = float(obv_sma.iloc[-1])
+                prev = float(obv_sma.iloc[-2])
+                if not pd.isna(last) and not pd.isna(prev):
+                    if last > prev:
+                        bullish.append("OBV")
+                    else:
+                        bearish.append("OBV")
+
+    # 7. ROC(10)
+    if n >= 11:
+        roc_s = ta.roc(close=close, length=10)
+        if roc_s is not None and not roc_s.empty:
+            roc_val = float(roc_s.iloc[-1])
+            if not pd.isna(roc_val):
+                if roc_val > 0:
+                    bullish.append("ROC")
+                else:
+                    bearish.append("ROC")
+
+    total = len(bullish) + len(bearish)
+    if total == 0:
+        return "Insufficient data for signal scoring"
+
+    b_count = len(bullish)
+    bear_count = len(bearish)
+    margin = b_count - bear_count
+
+    if margin >= 3:
+        bias = "**Strong Bullish** 🟢"
+    elif margin > 0:
+        bias = "**Bullish** 🟢"
+    elif margin <= -3:
+        bias = "**Strong Bearish** 🔻"
+    elif margin < 0:
+        bias = "**Bearish** 🔻"
+    else:
+        bias = "**Neutral** ↔"
+
+    lines = [
+        f"📈 Bullish ({b_count}): {', '.join(bullish) if bullish else 'none'}",
+        f"📉 Bearish ({bear_count}): {', '.join(bearish) if bearish else 'none'}",
+        f"Bias: {bias}",
+    ]
+    return '\n'.join(lines)
+
+
+# ---------------------------------------------------------------------------
 # Comparison report cards — EmbedField values (no header; name= is the header)
 # ---------------------------------------------------------------------------
 
