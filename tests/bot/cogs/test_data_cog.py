@@ -58,9 +58,13 @@ class TestDataPrice:
         frequency = MagicMock()
         frequency.value = "daily"
 
+        mock_embed = MagicMock()
         with patch("rocketstocks.bot.cogs.data.asyncio.to_thread", new=AsyncMock()), \
-             patch("rocketstocks.bot.cogs.data.discord.File", return_value=MagicMock()):
-            await cog.data_price.callback(cog, interaction, tickers="AAPL", frequency=frequency)
+             patch("rocketstocks.bot.cogs.data.discord.File", return_value=MagicMock()), \
+             patch("rocketstocks.bot.cogs.data.PriceSnapshot") as mock_snap:
+            mock_snap.return_value.build.return_value = MagicMock()
+            with patch("rocketstocks.bot.cogs.data.spec_to_embed", return_value=mock_embed):
+                await cog.data_price.callback(cog, interaction, tickers="AAPL", frequency=frequency)
 
         interaction.user.send.assert_called_once()
         interaction.followup.send.assert_called_once()
@@ -79,9 +83,13 @@ class TestDataPrice:
         frequency = MagicMock()
         frequency.value = "daily"
 
+        mock_embed = MagicMock()
         with patch("rocketstocks.bot.cogs.data.asyncio.to_thread", new=AsyncMock()), \
-             patch("rocketstocks.bot.cogs.data.discord.File", return_value=MagicMock()):
-            await cog.data_price.callback(cog, interaction, tickers="AAPL", frequency=frequency)
+             patch("rocketstocks.bot.cogs.data.discord.File", return_value=MagicMock()), \
+             patch("rocketstocks.bot.cogs.data.PriceSnapshot") as mock_snap:
+            mock_snap.return_value.build.return_value = MagicMock()
+            with patch("rocketstocks.bot.cogs.data.spec_to_embed", return_value=mock_embed):
+                await cog.data_price.callback(cog, interaction, tickers="AAPL", frequency=frequency)
 
         interaction.followup.send.assert_called_once()
         call_kwargs = interaction.followup.send.call_args.kwargs
@@ -277,7 +285,11 @@ class TestDataPopularity:
         df.empty = False
         cog.stock_data.popularity.fetch_popularity = AsyncMock(return_value=df)
 
-        with patch("rocketstocks.bot.cogs.data.discord.File", return_value=MagicMock()) as mock_file:
+        mock_embed = MagicMock()
+        with patch("rocketstocks.bot.cogs.data.discord.File", return_value=MagicMock()) as mock_file, \
+             patch("rocketstocks.bot.cogs.data.PopularitySnapshot") as mock_snap, \
+             patch("rocketstocks.bot.cogs.data.spec_to_embed", return_value=mock_embed):
+            mock_snap.return_value.build.return_value = MagicMock()
             await cog.data_popularity.callback(cog, interaction, tickers="AAPL")
 
         interaction.user.send.assert_called_once()

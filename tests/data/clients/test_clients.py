@@ -683,6 +683,30 @@ class TestSchwabRateLimitError:
             await obj.get_movers()
 
     @pytest.mark.asyncio
+    async def test_get_movers_passes_sort_order_to_client(self):
+        """sort_order parameter must be forwarded to the underlying client call."""
+        obj = self._make()
+        sentinel = MagicMock(name='sort_order_sentinel')
+        obj.client.get_movers = AsyncMock(
+            return_value=MagicMock(status_code=200, json=lambda: {})
+        )
+        await obj.get_movers(sort_order=sentinel)
+        _, kwargs = obj.client.get_movers.call_args
+        assert kwargs.get('sort_order') == sentinel
+
+    @pytest.mark.asyncio
+    async def test_get_movers_uses_default_sort_when_none(self):
+        """When sort_order is omitted, the client receives PERCENT_CHANGE_UP."""
+        obj = self._make()
+        obj.client.Movers = MagicMock()
+        obj.client.get_movers = AsyncMock(
+            return_value=MagicMock(status_code=200, json=lambda: {})
+        )
+        await obj.get_movers()
+        _, kwargs = obj.client.get_movers.call_args
+        assert kwargs.get('sort_order') == obj.client.Movers.SortOrder.PERCENT_CHANGE_UP
+
+    @pytest.mark.asyncio
     async def test_non_429_errors_not_raised_as_rate_limit(self):
         """A 401 in get_daily_price_history should still return empty DataFrame."""
         import httpx
