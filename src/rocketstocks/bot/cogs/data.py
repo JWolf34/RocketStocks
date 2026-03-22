@@ -16,6 +16,7 @@ from rocketstocks.core.content.models import (
     PriceSnapshotData, FinancialHighlightsData, FundamentalsSnapshotData,
     OptionsSummaryData, PopularitySnapshotData, TickersSummaryData,
     EarningsTableData, SecFilingData,
+    AnalystData, OwnershipData, InsiderData, ShortInterestData,
 )
 from rocketstocks.core.content.data.quote_card import QuoteCard
 from rocketstocks.core.content.data.upcoming_earnings_card import UpcomingEarningsCard
@@ -29,6 +30,10 @@ from rocketstocks.core.content.data.popularity_snapshot import PopularitySnapsho
 from rocketstocks.core.content.data.tickers_summary import TickersSummary
 from rocketstocks.core.content.data.earnings_card import EarningsCard
 from rocketstocks.core.content.data.sec_filing_card import SecFilingCard
+from rocketstocks.core.content.data.analyst_card import AnalystCard
+from rocketstocks.core.content.data.ownership_card import OwnershipCard
+from rocketstocks.core.content.data.insider_card import InsiderCard
+from rocketstocks.core.content.data.short_interest_card import ShortInterestCard
 
 logger = logging.getLogger(__name__)
 
@@ -564,6 +569,107 @@ class Data(commands.Cog):
         screeners = movers_data.get('screeners', []) if movers_data else []
         data = MoverData(direction='gainers', screeners=screeners)
         embed = spec_to_embed(MoversCard(data).build())
+        await interaction.followup.send(embed=embed, ephemeral=True)
+
+
+    @data_group.command(name="analyst", description="See analyst price targets, ratings, and recent upgrades/downgrades")
+    @app_commands.describe(ticker="Ticker to look up")
+    async def data_analyst(self, interaction: discord.Interaction, ticker: str):
+        """Return analyst consensus embed for a single ticker."""
+        await interaction.response.defer(ephemeral=True)
+        logger.info(f"/data analyst called by {interaction.user.name} for {ticker}")
+
+        tickers, invalid = await self.stock_data.tickers.parse_valid_tickers(ticker)
+        if not tickers:
+            await interaction.followup.send(f"Could not fetch data for: {ticker_string(invalid)}", ephemeral=True)
+            return
+
+        t = tickers[0]
+        price_targets = await asyncio.to_thread(self.stock_data.yfinance.get_analyst_price_targets, t)
+        recommendations = await asyncio.to_thread(self.stock_data.yfinance.get_recommendations_summary, t)
+        upgrades_downgrades = await asyncio.to_thread(self.stock_data.yfinance.get_upgrades_downgrades, t)
+
+        data = AnalystData(
+            ticker=t,
+            price_targets=price_targets,
+            recommendations=recommendations,
+            upgrades_downgrades=upgrades_downgrades,
+        )
+        embed = spec_to_embed(AnalystCard(data).build())
+        await interaction.followup.send(embed=embed, ephemeral=True)
+
+    @data_group.command(name="ownership", description="See institutional and insider ownership breakdown")
+    @app_commands.describe(ticker="Ticker to look up")
+    async def data_ownership(self, interaction: discord.Interaction, ticker: str):
+        """Return ownership breakdown embed for a single ticker."""
+        await interaction.response.defer(ephemeral=True)
+        logger.info(f"/data ownership called by {interaction.user.name} for {ticker}")
+
+        tickers, invalid = await self.stock_data.tickers.parse_valid_tickers(ticker)
+        if not tickers:
+            await interaction.followup.send(f"Could not fetch data for: {ticker_string(invalid)}", ephemeral=True)
+            return
+
+        t = tickers[0]
+        institutional = await asyncio.to_thread(self.stock_data.yfinance.get_institutional_holders, t)
+        major = await asyncio.to_thread(self.stock_data.yfinance.get_major_holders, t)
+
+        data = OwnershipData(ticker=t, institutional_holders=institutional, major_holders=major)
+        embed = spec_to_embed(OwnershipCard(data).build())
+        await interaction.followup.send(embed=embed, ephemeral=True)
+
+    @data_group.command(name="insider", description="See recent insider transactions and purchase activity")
+    @app_commands.describe(ticker="Ticker to look up")
+    async def data_insider(self, interaction: discord.Interaction, ticker: str):
+        """Return insider activity embed for a single ticker."""
+        await interaction.response.defer(ephemeral=True)
+        logger.info(f"/data insider called by {interaction.user.name} for {ticker}")
+
+        tickers, invalid = await self.stock_data.tickers.parse_valid_tickers(ticker)
+        if not tickers:
+            await interaction.followup.send(f"Could not fetch data for: {ticker_string(invalid)}", ephemeral=True)
+            return
+
+        t = tickers[0]
+        transactions = await asyncio.to_thread(self.stock_data.yfinance.get_insider_transactions, t)
+        purchases = await asyncio.to_thread(self.stock_data.yfinance.get_insider_purchases, t)
+
+        data = InsiderData(ticker=t, insider_transactions=transactions, insider_purchases=purchases)
+        embed = spec_to_embed(InsiderCard(data).build())
+        await interaction.followup.send(embed=embed, ephemeral=True)
+
+    @data_group.command(name="short-interest", description="See short interest ratio, % of float, and shares short")
+    @app_commands.describe(ticker="Ticker to look up")
+    async def data_short_interest(self, interaction: discord.Interaction, ticker: str):
+        """Return short interest embed for a single ticker (sourced from Schwab fundamentals)."""
+        await interaction.response.defer(ephemeral=True)
+        logger.info(f"/data short-interest called by {interaction.user.name} for {ticker}")
+
+        tickers, invalid = await self.stock_data.tickers.parse_valid_tickers(ticker)
+        if not tickers:
+            await interaction.followup.send(f"Could not fetch data for: {ticker_string(invalid)}", ephemeral=True)
+            return
+
+        t = tickers[0]
+        try:
+            raw = await self.stock_data.schwab.get_fundamentals([t])
+        except (SchwabTokenError, SchwabRateLimitError) as exc:
+            await interaction.followup.send(str(exc), ephemeral=True)
+            return
+
+        fund = {}
+        instruments = raw.get('instruments', []) if raw else []
+        if instruments:
+            fund = instruments[0].get('fundamental', {})
+
+        data = ShortInterestData(
+            ticker=t,
+            short_interest_ratio=fund.get('shortInterestToFloat') or fund.get('shortIntRatio'),
+            short_interest_shares=fund.get('shortInterestShares') or fund.get('shortInt'),
+            short_percent_of_float=fund.get('shortPercentOfFloat') or fund.get('shortInterestToFloat'),
+            shares_outstanding=fund.get('sharesOutstanding'),
+        )
+        embed = spec_to_embed(ShortInterestCard(data).build())
         await interaction.followup.send(embed=embed, ephemeral=True)
 
 
