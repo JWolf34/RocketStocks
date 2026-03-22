@@ -345,3 +345,29 @@ class ShortInterestData:
     shares_outstanding: float | None
 
 
+# ---------------------------------------------------------------------------
+# Data cog Phase 4 models — News, Forecast, Screener, Losers
+# ---------------------------------------------------------------------------
+
+@dataclass
+class NewsData:
+    """Data for /data news — News API results per ticker."""
+    tickers: list
+    news_results: dict          # {ticker: news_api_response_dict}
+
+
+@dataclass
+class EarningsForecastData:
+    """Data for /data forecast — NASDAQ quarterly and yearly EPS forecasts."""
+    ticker: str
+    quarterly_forecast: pd.DataFrame
+    yearly_forecast: pd.DataFrame
+
+
+@dataclass
+class OnDemandScreenerData:
+    """Data for /data screener — on-demand TradingView screener result."""
+    screener_type: str          # 'premarket', 'intraday', or 'unusual-volume'
+    data: pd.DataFrame
+
+
