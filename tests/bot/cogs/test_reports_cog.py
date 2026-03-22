@@ -845,3 +845,51 @@ class TestBuildComparisonReport:
 
         result = await cog.build_comparison_report(tickers=["AAPL", "MSFT"])
         assert isinstance(result, ComparisonReport)
+
+
+class TestBuildTechnicalReport:
+    """Tests for build_technical_report()."""
+
+    def _make_cog(self):
+        return _make_cog()
+
+    @pytest.mark.asyncio
+    async def test_returns_technical_report_instance(self):
+        from rocketstocks.core.content.reports.technical_report import TechnicalReport
+        cog = self._make_cog()
+
+        cog.stock_data.schwab = MagicMock()
+        cog.stock_data.schwab.get_quote = AsyncMock(return_value={
+            'regular': {'regularMarketLastPrice': 188.9},
+            'quote': {'netPercentChange': 2.5, 'totalVolume': 50000000},
+            'reference': {'exchangeName': 'NASDAQ', 'isShortable': True, 'isHardToBorrow': False},
+            'symbol': 'AAPL',
+        })
+        cog.stock_data.tickers = MagicMock()
+        cog.stock_data.tickers.get_ticker_info = AsyncMock(return_value={'name': 'Apple Inc'})
+        cog.stock_data.price_history = MagicMock()
+        cog.stock_data.price_history.fetch_daily_price_history = AsyncMock(return_value=pd.DataFrame())
+        cog.stock_data.ticker_stats = MagicMock()
+        cog.stock_data.ticker_stats.get_stats = AsyncMock(return_value=None)
+
+        result = await cog.build_technical_report(ticker='AAPL')
+        assert isinstance(result, TechnicalReport)
+
+    @pytest.mark.asyncio
+    async def test_schwab_error_uses_empty_quote(self):
+        from rocketstocks.data.clients.schwab import SchwabTokenError
+        from rocketstocks.core.content.reports.technical_report import TechnicalReport
+        cog = self._make_cog()
+
+        cog.stock_data.schwab = MagicMock()
+        cog.stock_data.schwab.get_quote = AsyncMock(side_effect=SchwabTokenError("no token"))
+        cog.stock_data.tickers = MagicMock()
+        cog.stock_data.tickers.get_ticker_info = AsyncMock(return_value={})
+        cog.stock_data.price_history = MagicMock()
+        cog.stock_data.price_history.fetch_daily_price_history = AsyncMock(return_value=pd.DataFrame())
+        cog.stock_data.ticker_stats = MagicMock()
+        cog.stock_data.ticker_stats.get_stats = AsyncMock(return_value=None)
+
+        result = await cog.build_technical_report(ticker='AAPL')
+        assert isinstance(result, TechnicalReport)
+        assert result.data.quote == {}

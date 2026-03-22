@@ -810,3 +810,137 @@ class TestComparisonPopularityCard:
         result = comparison_popularity_card(_COMP_TICKERS, {"AAPL": pop_df, "MSFT": pd.DataFrame()})
         assert "MSFT" in result
         assert "No data" in result
+
+
+# ---------------------------------------------------------------------------
+# Technical report card tests
+# ---------------------------------------------------------------------------
+
+from rocketstocks.core.content.sections_card import (
+    trend_analysis_card, momentum_detail_card, volatility_analysis_card,
+    volume_analysis_card, key_levels_card, signal_confluence_card,
+)
+
+
+class TestTrendAnalysisCard:
+    def test_contains_sma_values(self):
+        result = trend_analysis_card(_price_history(250), 188.9)
+        assert "SMA20" in result
+        assert "SMA50" in result
+        assert "SMA200" in result
+
+    def test_contains_ema_values(self):
+        result = trend_analysis_card(_price_history(250), 188.9)
+        assert "EMA9" in result
+        assert "EMA21" in result
+
+    def test_shows_cross_status(self):
+        result = trend_analysis_card(_price_history(250), 188.9)
+        assert "Cross" in result
+
+    def test_insufficient_data_fallback(self):
+        result = trend_analysis_card(_price_history(10), 188.9)
+        assert "SMA200 N/A" in result
+
+    def test_empty_history(self):
+        result = trend_analysis_card(pd.DataFrame(), 188.9)
+        assert result  # no crash
+
+
+class TestMomentumDetailCard:
+    def test_contains_rsi(self):
+        result = momentum_detail_card(_price_history(250))
+        assert "RSI" in result
+
+    def test_contains_macd(self):
+        result = momentum_detail_card(_price_history(250))
+        assert "MACD" in result
+
+    def test_contains_roc(self):
+        result = momentum_detail_card(_price_history(250))
+        assert "ROC" in result
+
+    def test_empty_history(self):
+        result = momentum_detail_card(pd.DataFrame())
+        assert result  # no crash
+
+    def test_insufficient_data_fallback(self):
+        result = momentum_detail_card(_price_history(5))
+        assert "N/A" in result
+
+
+class TestVolatilityAnalysisCard:
+    def test_contains_atr_and_natr(self):
+        result = volatility_analysis_card(_price_history(250), 188.9)
+        assert "ATR" in result
+        assert "NATR" in result
+
+    def test_contains_bollinger(self):
+        result = volatility_analysis_card(_price_history(250), 188.9)
+        assert "BB" in result
+
+    def test_empty_history(self):
+        result = volatility_analysis_card(pd.DataFrame(), 188.9)
+        assert result
+
+    def test_no_ohlc_fallback(self):
+        df = pd.DataFrame({'close': [188.9] * 30, 'volume': [1000000] * 30,
+                           'date': [datetime.date.today()] * 30})
+        result = volatility_analysis_card(df, 188.9)
+        assert result
+
+
+class TestVolumeAnalysisCard:
+    def test_contains_rvol(self):
+        result = volume_analysis_card(_price_history(250))
+        assert "RVOL" in result
+
+    def test_contains_obv(self):
+        result = volume_analysis_card(_price_history(250))
+        assert "OBV" in result
+
+    def test_empty_history(self):
+        result = volume_analysis_card(pd.DataFrame())
+        assert result
+
+    def test_with_explicit_current_volume(self):
+        result = volume_analysis_card(_price_history(250), current_volume=100_000_000)
+        assert "RVOL" in result
+
+
+class TestKeyLevelsCard:
+    def test_contains_52w_high_low(self):
+        result = key_levels_card(_price_history(250), 188.9)
+        assert "52W High" in result
+        assert "52W Low" in result
+
+    def test_contains_bollinger_levels(self):
+        result = key_levels_card(_price_history(250), 188.9)
+        assert "BB" in result
+
+    def test_empty_history(self):
+        result = key_levels_card(pd.DataFrame(), 188.9)
+        assert result
+
+    def test_none_price_uses_last_close(self):
+        result = key_levels_card(_price_history(250), None)
+        assert "52W High" in result
+
+
+class TestSignalConfluenceCard:
+    def test_contains_bias(self):
+        result = signal_confluence_card(_price_history(250), 188.9)
+        assert "Bias" in result
+
+    def test_contains_bullish_bearish_counts(self):
+        result = signal_confluence_card(_price_history(250), 188.9)
+        assert "Bullish" in result
+        assert "Bearish" in result
+
+    def test_empty_history(self):
+        result = signal_confluence_card(pd.DataFrame(), 188.9)
+        assert result
+
+    def test_insufficient_data(self):
+        result = signal_confluence_card(_price_history(5), 188.9)
+        assert result

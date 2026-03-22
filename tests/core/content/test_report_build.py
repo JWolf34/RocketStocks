@@ -12,12 +12,12 @@ import pytest
 
 from rocketstocks.core.content.models import (
     COLOR_BLUE, COLOR_GREEN, COLOR_ORANGE,
-    COLOR_GOLD, COLOR_INDIGO, COLOR_PINK, COLOR_CYAN, COLOR_AMBER,
+    COLOR_GOLD, COLOR_INDIGO, COLOR_PINK, COLOR_CYAN, COLOR_AMBER, COLOR_TEAL,
     ComparisonReportData,
     EmbedSpec,
     EarningsSpotlightData, FullStockReportData, GainerScreenerData, NewsReportData,
     PopularityReportData, PopularityScreenerData, StockReportData,
-    VolumeScreenerData, WeeklyEarningsData,
+    TechnicalReportData, VolumeScreenerData, WeeklyEarningsData,
 )
 
 
@@ -708,4 +708,88 @@ class TestComparisonReportEmbedSpec:
 
     def test_empty_data_does_not_crash(self):
         spec = self._make_report(empty_data=True).build()
+        assert isinstance(spec, EmbedSpec)
+
+
+# ---------------------------------------------------------------------------
+# TechnicalReport
+# ---------------------------------------------------------------------------
+
+class TestTechnicalReportEmbedSpec:
+    def _make_report(self, price_history_rows=250, stats=None, empty_quote=False):
+        from rocketstocks.core.content.reports.technical_report import TechnicalReport
+        quote = {} if empty_quote else _minimal_quote()
+        data = TechnicalReportData(
+            ticker="AAPL",
+            ticker_info=_minimal_ticker_info(),
+            quote=quote,
+            daily_price_history=_price_history(price_history_rows),
+            stats=stats,
+        )
+        return TechnicalReport(data)
+
+    def test_returns_embed_spec(self):
+        spec = self._make_report().build()
+        assert isinstance(spec, EmbedSpec)
+
+    def test_color_is_teal(self):
+        assert self._make_report().build().color == COLOR_TEAL
+
+    def test_title_contains_ticker(self):
+        spec = self._make_report().build()
+        assert "AAPL" in spec.title
+
+    def test_has_footer(self):
+        spec = self._make_report().build()
+        assert "technical" in spec.footer
+
+    def test_has_timestamp(self):
+        spec = self._make_report().build()
+        assert spec.timestamp is True
+
+    def test_has_six_fields(self):
+        spec = self._make_report().build()
+        assert len(spec.fields) == 6
+
+    def test_field_names(self):
+        spec = self._make_report().build()
+        names = [f.name for f in spec.fields]
+        assert "Trend Analysis" in names
+        assert "Momentum" in names
+        assert "Volatility" in names
+        assert "Volume" in names
+        assert "Key Levels" in names
+        assert "Signal Confluence" in names
+
+    def test_field_values_under_1024_chars(self):
+        spec = self._make_report().build()
+        for f in spec.fields:
+            assert len(f.value) <= 1024, f"Field '{f.name}' value exceeds 1024 chars"
+
+    def test_char_budget_under_6000(self):
+        spec = self._make_report().build()
+        total = _embed_char_count(spec)
+        assert total < 6000, f"Embed char count {total} exceeds 6000"
+
+    def test_has_finviz_url(self):
+        spec = self._make_report().build()
+        assert spec.url is not None
+        assert "AAPL" in spec.url
+
+    def test_classification_in_description_when_present(self):
+        spec = self._make_report(stats={'classification': 'blue_chip', 'volatility_20d': 1.2}).build()
+        assert "Blue Chip" in spec.description
+
+    def test_empty_price_history_does_not_crash(self):
+        spec = self._make_report(price_history_rows=0).build()
+        assert isinstance(spec, EmbedSpec)
+
+    def test_insufficient_data_handled_gracefully(self):
+        # Only 20 rows — not enough for most indicators
+        spec = self._make_report(price_history_rows=20).build()
+        assert isinstance(spec, EmbedSpec)
+        assert len(spec.fields) == 6
+
+    def test_empty_quote_does_not_crash(self):
+        spec = self._make_report(empty_quote=True).build()
         assert isinstance(spec, EmbedSpec)
