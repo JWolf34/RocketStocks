@@ -573,6 +573,15 @@ def recent_alerts_card(recent_alerts: list) -> str:
     return '\n'.join(lines) + '\n\n'
 
 
+def classification_card(classification: str | None, volatility_20d: float | None) -> str:
+    """Stock classification and 20-day volatility one-liner."""
+    if not classification:
+        return ''
+    label = classification.replace('_', ' ').title()
+    vol_str = f" · 20D Vol **{volatility_20d:.1f}%**" if volatility_20d is not None else ''
+    return f"__**Classification**__\n**{label}**{vol_str}\n\n"
+
+
 def earnings_result_card(eps_actual: float, eps_estimate: float | None, surprise_pct: float | None) -> str:
     """Earnings result card — beat/miss headline with EPS and surprise details."""
     lines = ["__**Earnings Result**__"]
@@ -1034,14 +1043,24 @@ def earnings_forecast_card(quarterly_df: pd.DataFrame, yearly_df: pd.DataFrame) 
     if quarterly_df is not None and not quarterly_df.empty:
         lines.append("**Quarterly EPS Estimates**")
         for _, row in quarterly_df.head(4).iterrows():
-            period = row.get('fiscalQuarter', row.get('period', row.get('Fiscal Quarter', '')))
-            eps_est = row.get('epsForecast', row.get('consensusEPS', row.get('EPS Forecast', 'N/A')))
-            num_analysts = row.get('noOfEsts', row.get('numOfEst', row.get('# Analysts', '')))
-            low = row.get('lowEPS', row.get('lowEst', row.get('Low', '')))
-            high = row.get('highEPS', row.get('highEst', row.get('High', '')))
+            period = row.get('fiscalQuarter', row.get('fiscalEnd', row.get('period', row.get('Fiscal Quarter', ''))))
+            eps_est = row.get('epsForecast', row.get('consensusEPSForecast', row.get('consensusEPS', row.get('EPS Forecast', 'N/A'))))
+            num_analysts = row.get('noOfEsts', row.get('noOfEstimates', row.get('numOfEst', row.get('# Analysts', ''))))
+            low = row.get('lowEPS', row.get('lowEPSForecast', row.get('lowEst', row.get('Low', ''))))
+            high = row.get('highEPS', row.get('highEPSForecast', row.get('highEst', row.get('High', ''))))
+            up = row.get('up', '')
+            down = row.get('down', '')
             range_str = f" · Range **{low}**–**{high}**" if low != '' and high != '' else ''
             est_str = f" · {num_analysts} analysts" if num_analysts != '' else ''
-            lines.append(f"**{period}**: EPS Est **{eps_est}**{range_str}{est_str}")
+            rev_str = ''
+            try:
+                up_int = int(up) if up != '' else 0
+                down_int = int(down) if down != '' else 0
+                if up_int or down_int:
+                    rev_str = f" · ↑{up_int} ↓{down_int} revisions"
+            except (ValueError, TypeError):
+                pass
+            lines.append(f"**{period}**: EPS Est **{eps_est}**{range_str}{est_str}{rev_str}")
     else:
         lines.append("No quarterly forecast data available")
 
