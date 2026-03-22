@@ -23,6 +23,7 @@ from rocketstocks.core.notifications.event import NotificationEvent
 from rocketstocks.core.content.models import (
     AlertSummaryData,
     StockReportData,
+    FullStockReportData,
     NewsReportData,
     PopularityReportData,
     PopularityScreenerData,
@@ -34,7 +35,7 @@ from rocketstocks.core.content.models import (
     PoliticianReportData,
 )
 from rocketstocks.core.content.reports.alert_summary import AlertSummary
-from rocketstocks.core.content.reports.stock_report import StockReport
+from rocketstocks.core.content.reports.stock_report import StockReport, FullStockReport
 from rocketstocks.core.content.reports.news_report import NewsReport
 from rocketstocks.core.content.reports.popularity_report import PopularityReport
 from rocketstocks.core.content.reports.earnings_report import EarningsSpotlightReport
@@ -423,15 +424,27 @@ class Reports(commands.Cog):
     @app_commands.describe(watchlist="Which watchlist to fetch reports for")
     @app_commands.autocomplete(watchlist=get_watchlist_options)
     @app_commands.describe(visibility="'private' to send to DMs, 'public' to send to the channel")
+    @app_commands.describe(detail="'standard' for the default report, 'full' to include analyst, forecast, and short interest")
     @app_commands.choices(visibility=[
         app_commands.Choice(name="private", value='private'),
         app_commands.Choice(name="public", value='public'),
     ])
-    async def report_watchlist(self, interaction: discord.Interaction, watchlist: str, visibility: app_commands.Choice[str]):
+    @app_commands.choices(detail=[
+        app_commands.Choice(name="standard", value='standard'),
+        app_commands.Choice(name="full", value='full'),
+    ])
+    async def report_watchlist(
+        self,
+        interaction: discord.Interaction,
+        watchlist: str,
+        visibility: app_commands.Choice[str],
+        detail: app_commands.Choice[str] = None,
+    ):
         """Generate and send Stock Reports for all tickers on the input watchlist"""
         await interaction.response.defer(ephemeral=True)
         logger.info(f"/report watchlist function called by user '{interaction.user.name}'")
 
+        detail_value = detail.value if detail else 'standard'
         watchlist_id = self.stock_data.watchlists.resolve_personal_id(interaction.user.id) if watchlist == 'personal' else watchlist
 
         if not await self.stock_data.watchlists.validate_watchlist(watchlist_id):
@@ -439,7 +452,7 @@ class Reports(commands.Cog):
             return
 
         tickers = await self.stock_data.watchlists.get_watchlist_tickers(watchlist_id)
-        logger.info(f"Reports requested for watchlist '{watchlist}' with tickers {tickers}")
+        logger.info(f"Reports requested for watchlist '{watchlist}' with tickers {tickers} (detail={detail_value})")
 
         if not tickers:
             await interaction.followup.send("No tickers on the watchlist. Use /watchlist add to build a watchlist.", ephemeral=True)
@@ -451,7 +464,10 @@ class Reports(commands.Cog):
             message = None
             try:
                 for ticker in tickers:
-                    content = await self.build_stock_report(ticker=ticker, guild_id=interaction.guild_id)
+                    if detail_value == 'full':
+                        content = await self.build_full_stock_report(ticker=ticker, guild_id=interaction.guild_id)
+                    else:
+                        content = await self.build_stock_report(ticker=ticker, guild_id=interaction.guild_id)
                     view = StockReportButtons(ticker=content.ticker)
                     message = await send_report(content, channel, interaction=interaction,
                                                 visibility=visibility.value, view=view)
@@ -487,18 +503,30 @@ class Reports(commands.Cog):
     @report_group.command(name="ticker", description="Generate a detailed stock report for one or more tickers")
     @app_commands.describe(tickers="Tickers to post reports for (separated by spaces)")
     @app_commands.describe(visibility="'private' to send to DMs, 'public' to send to the channel")
+    @app_commands.describe(detail="'standard' for the default report, 'full' to include analyst, forecast, and short interest")
     @app_commands.choices(visibility=[
         app_commands.Choice(name="private", value='private'),
         app_commands.Choice(name="public", value='public'),
     ])
+    @app_commands.choices(detail=[
+        app_commands.Choice(name="standard", value='standard'),
+        app_commands.Choice(name="full", value='full'),
+    ])
     @app_commands.autocomplete(tickers=ticker_autocomplete)
-    async def report_ticker(self, interaction: discord.interactions, tickers: str, visibility: app_commands.Choice[str]):
+    async def report_ticker(
+        self,
+        interaction: discord.interactions,
+        tickers: str,
+        visibility: app_commands.Choice[str],
+        detail: app_commands.Choice[str] = None,
+    ):
         """Generate and send Stock Reports for all valid tickers input by the user"""
         await interaction.response.defer(ephemeral=True)
         logger.info(f"/report ticker function called by user {interaction.user.name}")
 
+        detail_value = detail.value if detail else 'standard'
         tickers, invalid_tickers = await self.stock_data.tickers.parse_valid_tickers(tickers.upper())
-        logger.info(f"Reports requested for tickers {tickers}. Invalid tickers: {invalid_tickers}")
+        logger.info(f"Reports requested for tickers {tickers} (detail={detail_value}). Invalid tickers: {invalid_tickers}")
         channel = await self.bot.get_channel_for_guild(interaction.guild_id, REPORTS)
         if channel is None and visibility.value == 'public':
             await interaction.followup.send("Use `/server setup` to configure the reports channel.", ephemeral=True)
@@ -506,7 +534,10 @@ class Reports(commands.Cog):
         message = None
         try:
             for ticker in tickers:
-                content = await self.build_stock_report(ticker=ticker, guild_id=interaction.guild_id)
+                if detail_value == 'full':
+                    content = await self.build_full_stock_report(ticker=ticker, guild_id=interaction.guild_id)
+                else:
+                    content = await self.build_stock_report(ticker=ticker, guild_id=interaction.guild_id)
                 view = StockReportButtons(ticker=content.ticker)
                 message = await send_report(content, channel, interaction=interaction,
                                             visibility=visibility.value, view=view)
@@ -733,6 +764,80 @@ class Reports(commands.Cog):
             quote=quote,
             fundamentals=fundamentals,
             recent_alerts=recent_alerts,
+        ))
+
+    async def build_full_stock_report(self, ticker: str, guild_id: int | None = None, **kwargs) -> FullStockReport:
+        """Build a full stock report with analyst consensus, earnings forecast, and short interest."""
+        # Start with all standard data (parallel with extended fetches below)
+        base_coro = self.build_stock_report(ticker=ticker, guild_id=guild_id)
+
+        async def _fetch_analyst():
+            try:
+                price_targets = await asyncio.to_thread(self.stock_data.yfinance.get_analyst_price_targets, ticker)
+                recommendations = await asyncio.to_thread(self.stock_data.yfinance.get_recommendations_summary, ticker)
+                upgrades_downgrades = await asyncio.to_thread(self.stock_data.yfinance.get_upgrades_downgrades, ticker)
+                return price_targets, recommendations, upgrades_downgrades
+            except Exception:
+                logger.warning(f"[build_full_stock_report] YFinance analyst fetch failed for '{ticker}'", exc_info=True)
+                return None, pd.DataFrame(), pd.DataFrame()
+
+        async def _fetch_forecast():
+            try:
+                quarterly = await asyncio.to_thread(self.stock_data.nasdaq.get_earnings_forecast_quarterly, ticker)
+                yearly = await asyncio.to_thread(self.stock_data.nasdaq.get_earnings_forecast_yearly, ticker)
+                return quarterly, yearly
+            except Exception:
+                logger.warning(f"[build_full_stock_report] NASDAQ forecast fetch failed for '{ticker}'", exc_info=True)
+                return pd.DataFrame(), pd.DataFrame()
+
+        async def _fetch_stats():
+            try:
+                return await self.stock_data.ticker_stats.get_stats(ticker)
+            except Exception:
+                logger.warning(f"[build_full_stock_report] ticker_stats fetch failed for '{ticker}'", exc_info=True)
+                return None
+
+        base_report, analyst_result, forecast_result, stats = await asyncio.gather(
+            base_coro,
+            _fetch_analyst(),
+            _fetch_forecast(),
+            _fetch_stats(),
+        )
+        price_targets, recommendations, upgrades_downgrades = analyst_result
+        quarterly_forecast, yearly_forecast = forecast_result
+
+        # Extract short interest from already-fetched fundamentals
+        fund = {}
+        if base_report.data.fundamentals:
+            instruments = base_report.data.fundamentals.get('instruments', [])
+            if instruments:
+                fund = instruments[0].get('fundamental', {})
+
+        classification = stats.get('classification') if stats else None
+        volatility_20d = stats.get('volatility_20d') if stats else None
+
+        return FullStockReport(data=FullStockReportData(
+            ticker=ticker,
+            ticker_info=base_report.data.ticker_info,
+            quote=base_report.data.quote,
+            fundamentals=base_report.data.fundamentals,
+            daily_price_history=base_report.data.daily_price_history,
+            popularity=base_report.data.popularity,
+            historical_earnings=base_report.data.historical_earnings,
+            next_earnings_info=base_report.data.next_earnings_info,
+            recent_sec_filings=base_report.data.recent_sec_filings,
+            recent_alerts=base_report.data.recent_alerts,
+            price_targets=price_targets,
+            recommendations=recommendations,
+            upgrades_downgrades=upgrades_downgrades,
+            short_interest_ratio=fund.get('shortInterestRatio') or fund.get('shortIntRatio'),
+            short_interest_shares=fund.get('shortInterestShares') or fund.get('shortInt'),
+            short_percent_of_float=fund.get('shortPercentOfFloat') or fund.get('shortInterestToFloat'),
+            shares_outstanding=fund.get('sharesOutstanding'),
+            quarterly_forecast=quarterly_forecast,
+            yearly_forecast=yearly_forecast,
+            classification=classification,
+            volatility_20d=volatility_20d,
         ))
 
     async def build_earnings_spotlight_report(self, ticker: str, **kwargs) -> EarningsSpotlightReport:
