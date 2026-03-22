@@ -16,6 +16,18 @@ from rocketstocks.core.utils.formatting import finviz_url
 logger = logging.getLogger(__name__)
 
 
+def _field_value(card_text: str, limit: int = 1024) -> str:
+    """Strip the __**Header**__ first line from a card string for use as EmbedField value."""
+    lines = card_text.strip('\n').split('\n', 1)
+    if len(lines) > 1 and lines[0].startswith('__**'):
+        content = lines[1].strip('\n')
+    else:
+        content = card_text.strip('\n')
+    if len(content) > limit:
+        content = content[:limit - 3] + '...'
+    return content or '\u200b'
+
+
 class StockReport:
     """Standalone stock report — no base class required."""
 
