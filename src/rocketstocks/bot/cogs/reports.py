@@ -34,10 +34,12 @@ from rocketstocks.core.content.models import (
     EarningsResultData,
     WeeklyEarningsData,
     PoliticianReportData,
+    TechnicalReportData,
 )
 from rocketstocks.core.content.reports.alert_summary import AlertSummary
 from rocketstocks.core.content.reports.comparison_report import ComparisonReport
 from rocketstocks.core.content.reports.stock_report import StockReport, FullStockReport
+from rocketstocks.core.content.reports.technical_report import TechnicalReport
 from rocketstocks.core.content.reports.news_report import NewsReport
 from rocketstocks.core.content.reports.popularity_report import PopularityReport
 from rocketstocks.core.content.reports.earnings_report import EarningsSpotlightReport
@@ -49,7 +51,8 @@ from rocketstocks.core.content.screeners.volume_screener import VolumeScreener
 from rocketstocks.core.content.screeners.earnings_screener import WeeklyEarningsScreener
 
 from rocketstocks.bot.views.report_views import (
-    ComparisonReportButtons, StockReportButtons, GainerScreenerButtons, VolumeScreenerButtons,
+    ComparisonReportButtons, StockReportButtons, TechnicalReportButtons,
+    GainerScreenerButtons, VolumeScreenerButtons,
     PopularityScreenerButtons, PopularityReportButtons, PoliticianReportButtons,
 )
 from rocketstocks.bot.views.subscription_views import AlertSubscriptionSelect, AlertSubscriptionView
@@ -619,6 +622,49 @@ class Reports(commands.Cog):
             follow_up += f" Invalid tickers: {', '.join(invalid_tickers)}"
         await interaction.followup.send(follow_up, ephemeral=True)
 
+    @report_group.command(name="technical", description="Deep-dive technical analysis for a single ticker")
+    @app_commands.describe(ticker="Ticker symbol to analyze (e.g. AAPL)")
+    @app_commands.describe(visibility="'private' to send to DMs, 'public' to send to the channel")
+    @app_commands.choices(visibility=[
+        app_commands.Choice(name="private", value='private'),
+        app_commands.Choice(name="public", value='public'),
+    ])
+    @app_commands.autocomplete(ticker=ticker_autocomplete)
+    async def report_technical(
+        self,
+        interaction: discord.Interaction,
+        ticker: str,
+        visibility: app_commands.Choice[str],
+    ):
+        """Generate a deep-dive technical analysis report."""
+        await interaction.response.defer(ephemeral=True)
+        logger.info(f"/report technical called by user '{interaction.user.name}'")
+
+        ticker = ticker.upper().strip()
+        channel = await self.bot.get_channel_for_guild(interaction.guild_id, REPORTS)
+        if channel is None and visibility.value == 'public':
+            await interaction.followup.send("Use `/server setup` to configure the reports channel.", ephemeral=True)
+            return
+
+        try:
+            content = await self.build_technical_report(ticker=ticker)
+        except SchwabRateLimitError:
+            await interaction.followup.send(
+                "Schwab API rate limit exceeded — please wait a moment and try again.", ephemeral=True
+            )
+            return
+
+        view = TechnicalReportButtons(ticker=ticker)
+        message = await send_report(content, channel, interaction=interaction,
+                                    visibility=visibility.value, view=view)
+
+        if message is not None:
+            await interaction.followup.send(
+                f"[Technical report posted]({message.jump_url}) for {ticker}!", ephemeral=True
+            )
+        else:
+            await interaction.followup.send(f"Technical report posted for {ticker}.", ephemeral=True)
+
     async def autocomplete_searchin(self, interaction: discord.Interaction, current: str):
         return [
             app_commands.Choice(name=name, value=value)
@@ -953,6 +999,24 @@ class Reports(commands.Cog):
             ticker_infos=ticker_infos,
             stats=stats,
             benchmark_ticker=benchmark_ticker,
+        ))
+
+    async def build_technical_report(self, ticker: str) -> TechnicalReport:
+        """Build a deep-dive technical analysis report for a single ticker."""
+        ticker_info = await self.stock_data.tickers.get_ticker_info(ticker=ticker)
+        daily_price_history = await self.stock_data.price_history.fetch_daily_price_history(ticker=ticker)
+        stats = await self.stock_data.ticker_stats.get_stats(ticker)
+        try:
+            quote = await self.stock_data.schwab.get_quote(ticker=ticker)
+        except SchwabTokenError:
+            logger.warning(f"[build_technical_report] Schwab unavailable — quote missing for '{ticker}'")
+            quote = {}
+        return TechnicalReport(data=TechnicalReportData(
+            ticker=ticker,
+            ticker_info=ticker_info,
+            quote=quote,
+            daily_price_history=daily_price_history,
+            stats=stats,
         ))
 
     async def build_earnings_spotlight_report(self, ticker: str, **kwargs) -> EarningsSpotlightReport:
