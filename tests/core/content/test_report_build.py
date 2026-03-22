@@ -13,6 +13,7 @@ import pytest
 from rocketstocks.core.content.models import (
     COLOR_BLUE, COLOR_GREEN, COLOR_ORANGE,
     COLOR_GOLD, COLOR_INDIGO, COLOR_PINK, COLOR_CYAN, COLOR_AMBER,
+    ComparisonReportData,
     EmbedSpec,
     EarningsSpotlightData, FullStockReportData, GainerScreenerData, NewsReportData,
     PopularityReportData, PopularityScreenerData, StockReportData,
@@ -601,3 +602,110 @@ class TestFullStockReportEmbedSpec:
         ).build()
         assert isinstance(spec, EmbedSpec)
         assert len(spec.fields) == 3
+
+
+# ---------------------------------------------------------------------------
+# ComparisonReport
+# ---------------------------------------------------------------------------
+
+class TestComparisonReportEmbedSpec:
+    _TICKERS = ["AAPL", "MSFT"]
+
+    def _make_report(self, benchmark_ticker=None, empty_data=False):
+        from rocketstocks.core.content.reports.comparison_report import ComparisonReport
+        tickers = list(self._TICKERS)
+        if benchmark_ticker and benchmark_ticker not in tickers:
+            tickers.append(benchmark_ticker)
+        quotes = {t: _minimal_quote(ticker=t) for t in tickers}
+        fundamentals = {t: _minimal_fundamentals() for t in tickers}
+        daily_price_histories = {t: _price_history() if not empty_data else pd.DataFrame() for t in tickers}
+        ticker_infos = {t: _minimal_ticker_info() for t in tickers}
+        popularities = {t: pd.DataFrame() for t in tickers}
+        stats = {t: None for t in tickers}
+        data = ComparisonReportData(
+            tickers=tickers,
+            quotes=quotes,
+            fundamentals=fundamentals,
+            daily_price_histories=daily_price_histories,
+            popularities=popularities,
+            ticker_infos=ticker_infos,
+            stats=stats,
+            benchmark_ticker=benchmark_ticker,
+        )
+        return ComparisonReport(data)
+
+    def test_returns_embed_spec(self):
+        spec = self._make_report().build()
+        assert isinstance(spec, EmbedSpec)
+
+    def test_color_is_indigo(self):
+        spec = self._make_report().build()
+        assert spec.color == COLOR_INDIGO
+
+    def test_title_contains_tickers(self):
+        spec = self._make_report().build()
+        assert "AAPL" in spec.title
+        assert "MSFT" in spec.title
+
+    def test_has_footer(self):
+        spec = self._make_report().build()
+        assert spec.footer is not None
+        assert "compare" in spec.footer
+
+    def test_has_timestamp(self):
+        spec = self._make_report().build()
+        assert spec.timestamp is True
+
+    def test_field_names(self):
+        spec = self._make_report().build()
+        names = [f.name for f in spec.fields]
+        assert "Price & Volume" in names
+        assert "Performance" in names
+        assert "Valuation" in names
+        assert "Technicals" in names
+
+    def test_no_popularity_field_when_no_data(self):
+        spec = self._make_report().build()
+        names = [f.name for f in spec.fields]
+        assert "Popularity" not in names
+
+    def test_popularity_field_included_when_data_present(self):
+        from rocketstocks.core.content.reports.comparison_report import ComparisonReport
+        import datetime as dt
+        pop_df = pd.DataFrame({
+            'datetime': [dt.datetime.now()],
+            'rank': [5],
+            'mentions': [100],
+            'mentions_24h_ago': [80],
+        })
+        tickers = list(self._TICKERS)
+        data = ComparisonReportData(
+            tickers=tickers,
+            quotes={t: _minimal_quote(ticker=t) for t in tickers},
+            fundamentals={t: _minimal_fundamentals() for t in tickers},
+            daily_price_histories={t: _price_history() for t in tickers},
+            popularities={tickers[0]: pop_df, tickers[1]: pd.DataFrame()},
+            ticker_infos={t: _minimal_ticker_info() for t in tickers},
+            stats={t: None for t in tickers},
+        )
+        spec = ComparisonReport(data).build()
+        names = [f.name for f in spec.fields]
+        assert "Popularity" in names
+
+    def test_benchmark_noted_in_description(self):
+        spec = self._make_report(benchmark_ticker="SPY").build()
+        assert "SPY" in spec.description
+
+    def test_field_values_under_1024_chars(self):
+        spec = self._make_report().build()
+        for f in spec.fields:
+            assert len(f.value) <= 1024, f"Field '{f.name}' value exceeds 1024 chars"
+
+    def test_char_budget_under_6000(self):
+        spec = self._make_report().build()
+        total = _embed_char_count(spec)
+        assert total < 6000, f"Embed char count {total} exceeds 6000"
+
+    def test_empty_data_does_not_crash(self):
+        spec = self._make_report(empty_data=True).build()
+        assert isinstance(spec, EmbedSpec)

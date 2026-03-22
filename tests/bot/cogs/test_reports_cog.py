@@ -770,3 +770,78 @@ class TestBuildFullStockReport:
             result = await cog.build_full_stock_report(ticker='AAPL')
 
         assert isinstance(result, FullStockReport)
+
+
+class TestBuildComparisonReport:
+    """Tests for build_comparison_report()."""
+
+    def _make_cog(self):
+        return _make_cog()
+
+    @pytest.mark.asyncio
+    async def test_returns_comparison_report_instance(self):
+        from rocketstocks.core.content.reports.comparison_report import ComparisonReport
+        cog = self._make_cog()
+
+        cog.stock_data.schwab = MagicMock()
+        cog.stock_data.schwab.get_quotes = AsyncMock(return_value={
+            "AAPL": {"regular": {"regularMarketLastPrice": 188.9}, "quote": {"netPercentChange": 2.5, "totalVolume": 50000000}, "reference": {}},
+            "MSFT": {"regular": {"regularMarketLastPrice": 410.0}, "quote": {"netPercentChange": 1.0, "totalVolume": 30000000}, "reference": {}},
+        })
+        cog.stock_data.schwab.get_fundamentals = AsyncMock(return_value={
+            "instruments": [{"fundamental": {"marketCap": 2_900_000_000_000, "eps": 6.42, "peRatio": 29.0, "beta": 1.2}}]
+        })
+        cog.stock_data.tickers = MagicMock()
+        cog.stock_data.tickers.get_ticker_info = AsyncMock(return_value={"name": "Test Corp"})
+        cog.stock_data.price_history = MagicMock()
+        cog.stock_data.price_history.fetch_daily_price_history = AsyncMock(return_value=pd.DataFrame())
+        cog.stock_data.popularity = MagicMock()
+        cog.stock_data.popularity.fetch_popularity = AsyncMock(return_value=pd.DataFrame())
+        cog.stock_data.ticker_stats = MagicMock()
+        cog.stock_data.ticker_stats.get_stats = AsyncMock(return_value=None)
+
+        result = await cog.build_comparison_report(tickers=["AAPL", "MSFT"])
+        assert isinstance(result, ComparisonReport)
+
+    @pytest.mark.asyncio
+    async def test_benchmark_appended_to_tickers(self):
+        from rocketstocks.core.content.reports.comparison_report import ComparisonReport
+        cog = self._make_cog()
+
+        cog.stock_data.schwab = MagicMock()
+        cog.stock_data.schwab.get_quotes = AsyncMock(return_value={})
+        cog.stock_data.schwab.get_fundamentals = AsyncMock(return_value={})
+        cog.stock_data.tickers = MagicMock()
+        cog.stock_data.tickers.get_ticker_info = AsyncMock(return_value={})
+        cog.stock_data.price_history = MagicMock()
+        cog.stock_data.price_history.fetch_daily_price_history = AsyncMock(return_value=pd.DataFrame())
+        cog.stock_data.popularity = MagicMock()
+        cog.stock_data.popularity.fetch_popularity = AsyncMock(return_value=pd.DataFrame())
+        cog.stock_data.ticker_stats = MagicMock()
+        cog.stock_data.ticker_stats.get_stats = AsyncMock(return_value=None)
+
+        result = await cog.build_comparison_report(tickers=["AAPL", "MSFT"], benchmark_ticker="SPY")
+        assert isinstance(result, ComparisonReport)
+        assert "SPY" in result.data.tickers
+        assert result.data.benchmark_ticker == "SPY"
+
+    @pytest.mark.asyncio
+    async def test_schwab_error_does_not_raise(self):
+        from rocketstocks.data.clients.schwab import SchwabTokenError
+        from rocketstocks.core.content.reports.comparison_report import ComparisonReport
+        cog = self._make_cog()
+
+        cog.stock_data.schwab = MagicMock()
+        cog.stock_data.schwab.get_quotes = AsyncMock(side_effect=SchwabTokenError("no token"))
+        cog.stock_data.schwab.get_fundamentals = AsyncMock(side_effect=SchwabTokenError("no token"))
+        cog.stock_data.tickers = MagicMock()
+        cog.stock_data.tickers.get_ticker_info = AsyncMock(return_value={})
+        cog.stock_data.price_history = MagicMock()
+        cog.stock_data.price_history.fetch_daily_price_history = AsyncMock(return_value=pd.DataFrame())
+        cog.stock_data.popularity = MagicMock()
+        cog.stock_data.popularity.fetch_popularity = AsyncMock(return_value=pd.DataFrame())
+        cog.stock_data.ticker_stats = MagicMock()
+        cog.stock_data.ticker_stats.get_stats = AsyncMock(return_value=None)
+
+        result = await cog.build_comparison_report(tickers=["AAPL", "MSFT"])
+        assert isinstance(result, ComparisonReport)

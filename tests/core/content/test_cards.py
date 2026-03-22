@@ -10,6 +10,8 @@ from rocketstocks.core.content.sections_card import (
     ticker_info_card, todays_change_card, earnings_date_card, news_card,
     recent_alerts_card, earnings_result_card, recent_earnings_card,
     classification_card, earnings_forecast_card,
+    comparison_price_volume_card, comparison_performance_card,
+    comparison_valuation_card, comparison_technicals_card, comparison_popularity_card,
 )
 
 
@@ -677,3 +679,134 @@ class TestEarningsForecastCardRevisions:
         result = earnings_forecast_card(df, pd.DataFrame())
         assert 'Mar 2026' in result
         assert '↑2' in result
+
+
+# ---------------------------------------------------------------------------
+# Comparison card tests
+# ---------------------------------------------------------------------------
+
+_COMP_TICKERS = ["AAPL", "MSFT"]
+
+
+def _comp_quotes():
+    return {t: _minimal_quote(ticker=t) for t in _COMP_TICKERS}
+
+
+def _comp_fundamentals():
+    return {t: _minimal_fundamentals() for t in _COMP_TICKERS}
+
+
+def _comp_price_histories():
+    return {t: _price_history() for t in _COMP_TICKERS}
+
+
+class TestComparisonPriceVolumeCard:
+    def test_contains_tickers(self):
+        result = comparison_price_volume_card(_COMP_TICKERS, _comp_quotes())
+        assert "AAPL" in result
+        assert "MSFT" in result
+
+    def test_contains_price_and_volume(self):
+        result = comparison_price_volume_card(_COMP_TICKERS, _comp_quotes())
+        assert "$" in result
+        assert "Vol" in result
+
+    def test_fallback_on_missing_quote(self):
+        result = comparison_price_volume_card(_COMP_TICKERS, {"AAPL": _minimal_quote("AAPL")})
+        assert "AAPL" in result
+        assert "MSFT" in result  # should show N/A, not raise
+
+    def test_empty_quotes_returns_placeholder(self):
+        result = comparison_price_volume_card(_COMP_TICKERS, {})
+        assert result  # not empty
+
+
+class TestComparisonPerformanceCard:
+    def test_contains_all_tickers(self):
+        result = comparison_performance_card(_COMP_TICKERS, _comp_quotes(), _comp_price_histories())
+        assert "AAPL" in result
+        assert "MSFT" in result
+
+    def test_contains_intervals(self):
+        result = comparison_performance_card(_COMP_TICKERS, _comp_quotes(), _comp_price_histories())
+        assert "1D" in result
+        assert "1M" in result
+
+    def test_benchmark_marked(self):
+        result = comparison_performance_card(
+            _COMP_TICKERS + ["SPY"],
+            {**_comp_quotes(), "SPY": _minimal_quote("SPY")},
+            {**_comp_price_histories(), "SPY": _price_history()},
+            benchmark_ticker="SPY",
+        )
+        assert "(B)" in result
+
+    def test_no_benchmark_label_without_benchmark(self):
+        result = comparison_performance_card(_COMP_TICKERS, _comp_quotes(), _comp_price_histories())
+        assert "(B)" not in result
+
+
+class TestComparisonValuationCard:
+    def test_contains_tickers_and_metrics(self):
+        result = comparison_valuation_card(_COMP_TICKERS, _comp_fundamentals())
+        assert "AAPL" in result
+        assert "MCap" in result
+        assert "P/E" in result
+        assert "Beta" in result
+
+    def test_fallback_on_missing_fundamentals(self):
+        result = comparison_valuation_card(_COMP_TICKERS, {"AAPL": _minimal_fundamentals()})
+        assert "AAPL" in result
+        assert "MSFT" in result and "N/A" in result
+
+    def test_empty_fundamentals(self):
+        result = comparison_valuation_card(_COMP_TICKERS, {})
+        assert result  # not empty, each ticker gets N/A
+
+
+class TestComparisonTechnicalsCard:
+    def test_contains_tickers(self):
+        result = comparison_technicals_card(_COMP_TICKERS, _comp_price_histories())
+        assert "AAPL" in result
+        assert "MSFT" in result
+
+    def test_contains_rsi_and_macd(self):
+        result = comparison_technicals_card(_COMP_TICKERS, _comp_price_histories())
+        assert "RSI" in result
+        assert "MACD" in result
+
+    def test_fallback_on_empty_history(self):
+        result = comparison_technicals_card(_COMP_TICKERS, {t: pd.DataFrame() for t in _COMP_TICKERS})
+        assert "N/A" in result
+
+
+class TestComparisonPopularityCard:
+    def test_returns_empty_when_no_data(self):
+        result = comparison_popularity_card(_COMP_TICKERS, {t: pd.DataFrame() for t in _COMP_TICKERS})
+        assert result == ''
+
+    def test_returns_empty_on_empty_dict(self):
+        result = comparison_popularity_card(_COMP_TICKERS, {})
+        assert result == ''
+
+    def test_shows_rank_when_data_present(self):
+        pop_df = pd.DataFrame({
+            'datetime': [datetime.datetime.now()],
+            'rank': [5],
+            'mentions': [100],
+            'mentions_24h_ago': [80],
+        })
+        result = comparison_popularity_card(_COMP_TICKERS, {"AAPL": pop_df, "MSFT": pd.DataFrame()})
+        assert "#5" in result
+        assert "100" in result
+
+    def test_shows_no_data_for_missing_tickers(self):
+        pop_df = pd.DataFrame({
+            'datetime': [datetime.datetime.now()],
+            'rank': [5],
+            'mentions': [100],
+            'mentions_24h_ago': [80],
+        })
+        result = comparison_popularity_card(_COMP_TICKERS, {"AAPL": pop_df, "MSFT": pd.DataFrame()})
+        assert "MSFT" in result
+        assert "No data" in result
