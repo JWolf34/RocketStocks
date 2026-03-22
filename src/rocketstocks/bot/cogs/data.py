@@ -17,6 +17,7 @@ from rocketstocks.core.content.models import (
     OptionsSummaryData, PopularitySnapshotData, TickersSummaryData,
     EarningsTableData, SecFilingData,
     AnalystData, OwnershipData, InsiderData, ShortInterestData,
+    NewsData, EarningsForecastData, OnDemandScreenerData,
 )
 from rocketstocks.core.content.data.quote_card import QuoteCard
 from rocketstocks.core.content.data.upcoming_earnings_card import UpcomingEarningsCard
@@ -34,6 +35,9 @@ from rocketstocks.core.content.data.analyst_card import AnalystCard
 from rocketstocks.core.content.data.ownership_card import OwnershipCard
 from rocketstocks.core.content.data.insider_card import InsiderCard
 from rocketstocks.core.content.data.short_interest_card import ShortInterestCard
+from rocketstocks.core.content.data.news_card import NewsCard
+from rocketstocks.core.content.data.forecast_card import ForecastCard
+from rocketstocks.core.content.data.on_demand_screener import OnDemandScreener
 
 logger = logging.getLogger(__name__)
 
@@ -670,6 +674,121 @@ class Data(commands.Cog):
             shares_outstanding=fund.get('sharesOutstanding'),
         )
         embed = spec_to_embed(ShortInterestCard(data).build())
+        await interaction.followup.send(embed=embed, ephemeral=True)
+
+
+    @data_group.command(name="news", description="Get the latest news headlines for one or more tickers")
+    @app_commands.describe(tickers="Tickers to fetch news for (separated by spaces)")
+    async def data_news(self, interaction: discord.Interaction, tickers: str):
+        """Return latest news headlines for input tickers."""
+        await interaction.response.defer(ephemeral=True)
+        logger.info(f"/data news called by {interaction.user.name} for {tickers}")
+
+        valid_tickers, invalid = await self.stock_data.tickers.parse_valid_tickers(tickers)
+        if not valid_tickers:
+            await interaction.followup.send(f"Could not fetch data for: {ticker_string(invalid)}", ephemeral=True)
+            return
+
+        news_results = {}
+        for ticker in valid_tickers:
+            try:
+                news_results[ticker] = await asyncio.to_thread(
+                    self.stock_data.news.get_news, ticker
+                )
+            except Exception:
+                logger.warning(f"[data_news] Failed to fetch news for {ticker}", exc_info=True)
+                news_results[ticker] = None
+
+        data = NewsData(tickers=valid_tickers, news_results=news_results)
+        embed = spec_to_embed(NewsCard(data).build())
+        await interaction.followup.send(embed=embed, ephemeral=True)
+
+    @data_group.command(name="forecast", description="Get quarterly and annual EPS forecasts from NASDAQ")
+    @app_commands.describe(ticker="Ticker to fetch forecast for")
+    async def data_forecast(self, interaction: discord.Interaction, ticker: str):
+        """Return earnings forecast embed for a single ticker."""
+        await interaction.response.defer(ephemeral=True)
+        logger.info(f"/data forecast called by {interaction.user.name} for {ticker}")
+
+        tickers, invalid = await self.stock_data.tickers.parse_valid_tickers(ticker)
+        if not tickers:
+            await interaction.followup.send(f"Could not fetch data for: {ticker_string(invalid)}", ephemeral=True)
+            return
+
+        t = tickers[0]
+        try:
+            quarterly = await asyncio.to_thread(
+                self.stock_data.nasdaq.get_earnings_forecast_quarterly, t
+            )
+            yearly = await asyncio.to_thread(
+                self.stock_data.nasdaq.get_earnings_forecast_yearly, t
+            )
+        except Exception:
+            logger.warning(f"[data_forecast] Failed to fetch forecast for {t}", exc_info=True)
+            quarterly, yearly = pd.DataFrame(), pd.DataFrame()
+
+        data = EarningsForecastData(ticker=t, quarterly_forecast=quarterly, yearly_forecast=yearly)
+        embed = spec_to_embed(ForecastCard(data).build())
+        await interaction.followup.send(embed=embed, ephemeral=True)
+
+    @data_group.command(name="screener", description="Run an on-demand TradingView screener")
+    @app_commands.describe(screener_type="Which screener to run")
+    @app_commands.choices(screener_type=[
+        app_commands.Choice(name='Premarket Gainers', value='premarket'),
+        app_commands.Choice(name='Intraday Gainers', value='intraday'),
+        app_commands.Choice(name='Unusual Volume', value='unusual-volume'),
+    ])
+    async def data_screener(self, interaction: discord.Interaction, screener_type: app_commands.Choice[str]):
+        """Return an on-demand screener embed."""
+        await interaction.response.defer(ephemeral=True)
+        logger.info(f"/data screener called by {interaction.user.name} — type: {screener_type.value}")
+
+        try:
+            if screener_type.value == 'premarket':
+                raw = await asyncio.to_thread(self.stock_data.trading_view.get_premarket_gainers)
+            elif screener_type.value == 'intraday':
+                raw = await asyncio.to_thread(self.stock_data.trading_view.get_intraday_gainers)
+            else:
+                raw = await asyncio.to_thread(self.stock_data.trading_view.get_unusual_volume_movers)
+        except Exception:
+            logger.warning(f"[data_screener] TradingView call failed", exc_info=True)
+            raw = pd.DataFrame()
+
+        data = OnDemandScreenerData(screener_type=screener_type.value, data=raw)
+        embed = spec_to_embed(OnDemandScreener(data).build())
+        await interaction.followup.send(embed=embed, ephemeral=True)
+
+    @data_group.command(name="losers", description="See today's top 10 stock price losers")
+    async def data_losers(self, interaction: discord.Interaction):
+        """Return top 10 daily price losers."""
+        await interaction.response.defer(ephemeral=True)
+        logger.info(f"/data losers called by {interaction.user.name}")
+
+        schwab_client = self.stock_data.schwab.client
+        if schwab_client is None:
+            await interaction.followup.send(
+                "Schwab authentication required — use `/schwab auth`.", ephemeral=True
+            )
+            return
+
+        try:
+            movers_data = await self.stock_data.schwab.get_movers(
+                sort_order=schwab_client.Movers.SortOrder.PERCENT_CHANGE_DOWN
+            )
+        except SchwabRateLimitError:
+            await interaction.followup.send(
+                "Schwab API rate limit exceeded — please wait a moment and try again.", ephemeral=True
+            )
+            return
+        except SchwabTokenError:
+            await interaction.followup.send(
+                "Schwab authentication required — use `/schwab auth`.", ephemeral=True
+            )
+            return
+
+        screeners = movers_data.get('screeners', []) if movers_data else []
+        data = MoverData(direction='losers', screeners=screeners)
+        embed = spec_to_embed(MoversCard(data).build())
         await interaction.followup.send(embed=embed, ephemeral=True)
 
 
