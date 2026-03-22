@@ -22,6 +22,7 @@ from rocketstocks.core.notifications.event import NotificationEvent
 
 from rocketstocks.core.content.models import (
     AlertSummaryData,
+    ComparisonReportData,
     StockReportData,
     FullStockReportData,
     NewsReportData,
@@ -35,6 +36,7 @@ from rocketstocks.core.content.models import (
     PoliticianReportData,
 )
 from rocketstocks.core.content.reports.alert_summary import AlertSummary
+from rocketstocks.core.content.reports.comparison_report import ComparisonReport
 from rocketstocks.core.content.reports.stock_report import StockReport, FullStockReport
 from rocketstocks.core.content.reports.news_report import NewsReport
 from rocketstocks.core.content.reports.popularity_report import PopularityReport
@@ -47,7 +49,7 @@ from rocketstocks.core.content.screeners.volume_screener import VolumeScreener
 from rocketstocks.core.content.screeners.earnings_screener import WeeklyEarningsScreener
 
 from rocketstocks.bot.views.report_views import (
-    StockReportButtons, GainerScreenerButtons, VolumeScreenerButtons,
+    ComparisonReportButtons, StockReportButtons, GainerScreenerButtons, VolumeScreenerButtons,
     PopularityScreenerButtons, PopularityReportButtons, PoliticianReportButtons,
 )
 from rocketstocks.bot.views.subscription_views import AlertSubscriptionSelect, AlertSubscriptionView
@@ -557,6 +559,66 @@ class Reports(commands.Cog):
             follow_up = f" No valid tickers input: {', '.join(invalid_tickers)}"
         await interaction.followup.send(follow_up, ephemeral=True)
 
+    @report_group.command(name="compare", description="Compare up to 5 stocks side-by-side against each other or a benchmark")
+    @app_commands.describe(tickers="Space-separated tickers to compare (max 5, e.g. AAPL MSFT GOOG)")
+    @app_commands.describe(benchmark="Optional benchmark ticker (e.g. SPY, QQQ, XLK) — appended to comparison")
+    @app_commands.describe(visibility="'private' to send to DMs, 'public' to send to the channel")
+    @app_commands.choices(visibility=[
+        app_commands.Choice(name="private", value='private'),
+        app_commands.Choice(name="public", value='public'),
+    ])
+    @app_commands.autocomplete(tickers=ticker_autocomplete)
+    async def report_compare(
+        self,
+        interaction: discord.Interaction,
+        tickers: str,
+        visibility: app_commands.Choice[str],
+        benchmark: str = None,
+    ):
+        """Generate a side-by-side comparison report for multiple tickers."""
+        await interaction.response.defer(ephemeral=True)
+        logger.info(f"/report compare called by user '{interaction.user.name}'")
+
+        parsed_tickers, invalid_tickers = await self.stock_data.tickers.parse_valid_tickers(tickers.upper())
+        if not parsed_tickers:
+            await interaction.followup.send(
+                f"No valid tickers provided. Invalid: {', '.join(invalid_tickers)}", ephemeral=True
+            )
+            return
+        if len(parsed_tickers) > 5:
+            parsed_tickers = parsed_tickers[:5]
+
+        benchmark_ticker = benchmark.upper().strip() if benchmark else None
+
+        channel = await self.bot.get_channel_for_guild(interaction.guild_id, REPORTS)
+        if channel is None and visibility.value == 'public':
+            await interaction.followup.send("Use `/server setup` to configure the reports channel.", ephemeral=True)
+            return
+
+        try:
+            content = await self.build_comparison_report(
+                tickers=parsed_tickers,
+                benchmark_ticker=benchmark_ticker,
+            )
+        except SchwabRateLimitError:
+            await interaction.followup.send(
+                "Schwab API rate limit exceeded — please wait a moment and try again.", ephemeral=True
+            )
+            return
+
+        view = ComparisonReportButtons(tickers=content.data.tickers)
+        message = await send_report(content, channel, interaction=interaction,
+                                    visibility=visibility.value, view=view)
+
+        ticker_str = ', '.join(content.data.tickers)
+        if message is not None:
+            follow_up = f"[Comparison report posted]({message.jump_url}) for {ticker_str}!"
+        else:
+            follow_up = f"Comparison report posted for {ticker_str}."
+        if invalid_tickers:
+            follow_up += f" Invalid tickers: {', '.join(invalid_tickers)}"
+        await interaction.followup.send(follow_up, ephemeral=True)
+
     async def autocomplete_searchin(self, interaction: discord.Interaction, current: str):
         return [
             app_commands.Choice(name=name, value=value)
@@ -838,6 +900,59 @@ class Reports(commands.Cog):
             yearly_forecast=yearly_forecast,
             classification=classification,
             volatility_20d=volatility_20d,
+        ))
+
+    async def build_comparison_report(
+        self,
+        tickers: list,
+        benchmark_ticker: str | None = None,
+    ) -> ComparisonReport:
+        """Build a side-by-side comparison report for up to 5 tickers."""
+        all_tickers = list(tickers)
+        if benchmark_ticker and benchmark_ticker not in all_tickers:
+            all_tickers.append(benchmark_ticker)
+
+        # Batch quotes in a single Schwab call
+        try:
+            quotes_raw = await self.stock_data.schwab.get_quotes(all_tickers)
+        except (SchwabTokenError, SchwabRateLimitError):
+            logger.warning("[build_comparison_report] Schwab unavailable — quotes missing")
+            quotes_raw = {}
+
+        async def _fetch_per_ticker(ticker):
+            ticker_info = await self.stock_data.tickers.get_ticker_info(ticker=ticker)
+            daily_price_history = await self.stock_data.price_history.fetch_daily_price_history(ticker=ticker)
+            popularity = await self.stock_data.popularity.fetch_popularity(ticker=ticker)
+            stats = await self.stock_data.ticker_stats.get_stats(ticker)
+            try:
+                fundamentals = await self.stock_data.schwab.get_fundamentals(tickers=[ticker])
+            except (SchwabTokenError, SchwabRateLimitError):
+                fundamentals = {}
+            return ticker, ticker_info, daily_price_history, popularity, fundamentals, stats
+
+        results = await asyncio.gather(*[_fetch_per_ticker(t) for t in all_tickers])
+
+        ticker_infos = {}
+        daily_price_histories = {}
+        popularities = {}
+        fundamentals = {}
+        stats = {}
+        for ticker, ti, dph, pop, fund, st in results:
+            ticker_infos[ticker] = ti
+            daily_price_histories[ticker] = dph
+            popularities[ticker] = pop
+            fundamentals[ticker] = fund
+            stats[ticker] = st
+
+        return ComparisonReport(data=ComparisonReportData(
+            tickers=all_tickers,
+            quotes=quotes_raw,
+            fundamentals=fundamentals,
+            daily_price_histories=daily_price_histories,
+            popularities=popularities,
+            ticker_infos=ticker_infos,
+            stats=stats,
+            benchmark_ticker=benchmark_ticker,
         ))
 
     async def build_earnings_spotlight_report(self, ticker: str, **kwargs) -> EarningsSpotlightReport:
