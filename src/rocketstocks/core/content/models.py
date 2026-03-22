@@ -400,3 +400,10 @@ class OnDemandScreenerData:
     data: pd.DataFrame
 
 
+@dataclass
+class TechnicalReportData(TickerData):
+    """Data for /report technical — deep-dive technical analysis."""
+    daily_price_history: pd.DataFrame = field(default_factory=pd.DataFrame)
+    stats: dict | None = None
+
+
