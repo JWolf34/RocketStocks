@@ -1104,3 +1104,180 @@ def weekly_earnings_cards(data: pd.DataFrame, watchlist_tickers: list[str]) -> s
             lines.append(f"**{ticker}**{star} · {time_label} · EPS Est {eps}")
         lines.append("")
     return '\n'.join(lines).strip()
+
+
+# ---------------------------------------------------------------------------
+# Comparison report cards — EmbedField values (no header; name= is the header)
+# ---------------------------------------------------------------------------
+
+def comparison_price_volume_card(tickers: list, quotes: dict) -> str:
+    """Per-ticker current price, 1D change %, and volume."""
+    lines = []
+    for ticker in tickers:
+        quote = (quotes or {}).get(ticker) or {}
+        try:
+            price = quote['regular']['regularMarketLastPrice']
+            pct = quote['quote'].get('netPercentChange', 0)
+            vol = format_large_num(quote['quote']['totalVolume'])
+            sign = '+' if pct >= 0 else ''
+            arrow = '🟢' if pct >= 0 else '🔻'
+            lines.append(f"**{ticker}**: ${price:.2f} {arrow} **{sign}{pct:.2f}%** · Vol **{vol}**")
+        except (KeyError, TypeError):
+            lines.append(f"**{ticker}**: N/A")
+    return '\n'.join(lines) or '\u200b'
+
+
+def comparison_performance_card(
+    tickers: list,
+    quotes: dict,
+    daily_price_histories: dict,
+    benchmark_ticker: str | None = None,
+) -> str:
+    """Per-ticker returns over 1D/5D/1M/3M.  Benchmark row is marked with (B)."""
+    today = datetime.datetime.now(tz=timezone()).date()
+    interval_map = {"1D": 1, "5D": 5, "1M": 30, "3M": 90}
+    lines = []
+
+    for ticker in tickers:
+        quote = (quotes or {}).get(ticker) or {}
+        hist = (daily_price_histories or {}).get(ticker)
+        try:
+            close = quote['regular']['regularMarketLastPrice']
+        except (KeyError, TypeError):
+            lines.append(f"**{ticker}**: N/A")
+            continue
+
+        parts = []
+        for label, days in interval_map.items():
+            if hist is None or hist.empty:
+                parts.append(f"{label} N/A")
+                continue
+            interval_date = today - datetime.timedelta(days=days)
+            while interval_date.weekday() > 4:
+                interval_date -= datetime.timedelta(days=1)
+            row = hist[hist['date'] == interval_date]['close']
+            if row.empty:
+                earlier = hist[hist['date'] <= interval_date]
+                if not earlier.empty:
+                    row = earlier.sort_values('date', ascending=False).iloc[0:1]['close']
+            if not row.empty:
+                prev = row.iloc[0]
+                pct = ((close - prev) / prev) * 100.0
+                sign = '+' if pct >= 0 else ''
+                parts.append(f"{label} **{sign}{pct:.1f}%**")
+            else:
+                parts.append(f"{label} N/A")
+
+        label_str = f"**{ticker}** (B)" if ticker == benchmark_ticker else f"**{ticker}**"
+        lines.append(label_str + ": " + " · ".join(parts))
+
+    return '\n'.join(lines) or '\u200b'
+
+
+def comparison_valuation_card(tickers: list, fundamentals: dict) -> str:
+    """Per-ticker market cap, P/E, EPS, and beta."""
+    lines = []
+    for ticker in tickers:
+        fund_data = (fundamentals or {}).get(ticker) or {}
+        instruments = fund_data.get('instruments', [])
+        if not instruments:
+            lines.append(f"**{ticker}**: N/A")
+            continue
+        fund = instruments[0].get('fundamental', {})
+        mcap = format_large_num(fund.get('marketCap', 0) or 0)
+        eps_val = fund.get('eps')
+        pe_val = fund.get('peRatio')
+        beta_val = fund.get('beta')
+        eps = f"{eps_val:.2f}" if eps_val is not None else "N/A"
+        pe = f"{pe_val:.2f}" if pe_val is not None else "N/A"
+        beta = f"{beta_val:.2f}" if beta_val is not None else "N/A"
+        lines.append(f"**{ticker}**: MCap **{mcap}** · P/E **{pe}** · EPS **{eps}** · Beta **{beta}**")
+    return '\n'.join(lines) or '\u200b'
+
+
+def comparison_technicals_card(tickers: list, daily_price_histories: dict) -> str:
+    """Per-ticker RSI, MACD direction, and SMA 50/200 cross."""
+    lines = []
+    for ticker in tickers:
+        hist = (daily_price_histories or {}).get(ticker)
+        if hist is None or hist.empty:
+            lines.append(f"**{ticker}**: N/A")
+            continue
+
+        close = hist['close']
+        n = len(close)
+        parts = []
+
+        # RSI(14)
+        if n >= 15:
+            rsi_s = ta.rsi(close, length=14)
+            rsi_val = rsi_s.iloc[-1] if rsi_s is not None and not rsi_s.empty else None
+            if rsi_val is not None and not pd.isna(rsi_val):
+                zone = "OB" if rsi_val > 70 else "OS" if rsi_val < 30 else "Neutral"
+                parts.append(f"RSI **{rsi_val:.1f}** ({zone})")
+            else:
+                parts.append("RSI N/A")
+        else:
+            parts.append("RSI N/A")
+
+        # MACD direction
+        if n >= 35:
+            macd_df = ta.macd(close)
+            if macd_df is not None and not macd_df.empty:
+                hist_val = macd_df.iloc[-1, 1]
+                if not pd.isna(hist_val):
+                    direction = "Bullish" if hist_val > 0 else "Bearish"
+                    parts.append(f"MACD **{direction}**")
+                else:
+                    parts.append("MACD N/A")
+            else:
+                parts.append("MACD N/A")
+        else:
+            parts.append("MACD N/A")
+
+        # SMA 50/200 cross
+        if n >= 200:
+            sma50 = ta.sma(close, 50)
+            sma200 = ta.sma(close, 200)
+            s50 = sma50.iloc[-1] if sma50 is not None and not sma50.empty else None
+            s200 = sma200.iloc[-1] if sma200 is not None and not sma200.empty else None
+            if s50 is not None and s200 is not None and not pd.isna(s50) and not pd.isna(s200):
+                cross = "Golden 🟢" if s50 > s200 else "Death 🔻"
+                parts.append(f"50/200 **{cross}**")
+            else:
+                parts.append("50/200 N/A")
+        else:
+            parts.append("50/200 N/A")
+
+        lines.append(f"**{ticker}**: " + " · ".join(parts))
+
+    return '\n'.join(lines) or '\u200b'
+
+
+def comparison_popularity_card(tickers: list, popularities: dict) -> str:
+    """Per-ticker popularity rank and mentions.  Returns '' if no ticker has data."""
+    rows = {}
+    for ticker in tickers:
+        pop = (popularities or {}).get(ticker)
+        if pop is None or pop.empty:
+            continue
+        latest = pop.iloc[0]
+        rank = latest.get('rank')
+        if rank is None or pd.isna(rank):
+            continue
+        mentions = latest.get('mentions')
+        rows[ticker] = (int(rank), int(mentions) if mentions is not None and not pd.isna(mentions) else None)
+
+    if not rows:
+        return ''
+
+    lines = []
+    for ticker in tickers:
+        if ticker in rows:
+            rank, mentions = rows[ticker]
+            m_str = f" · {mentions} mentions" if mentions is not None else ''
+            lines.append(f"**{ticker}**: #{rank}{m_str}")
+        else:
+            lines.append(f"**{ticker}**: No data")
+
+    return '\n'.join(lines)
