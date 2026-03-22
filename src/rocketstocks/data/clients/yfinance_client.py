@@ -72,3 +72,79 @@ class YFinanceClient:
             'cash_flow': stock.cashflow,
             'quarterly_cash_flow': stock.quarterly_cashflow,
         }
+
+    @sleep_and_retry
+    @limits(calls=5, period=1)
+    def get_analyst_price_targets(self, ticker: str) -> dict | None:
+        """Return analyst price targets for *ticker*, or None on failure."""
+        try:
+            return yf.Ticker(ticker).analyst_price_targets
+        except Exception:
+            logger.warning(f"get_analyst_price_targets({ticker}) failed", exc_info=True)
+            return None
+
+    @sleep_and_retry
+    @limits(calls=5, period=1)
+    def get_recommendations_summary(self, ticker: str) -> pd.DataFrame:
+        """Return analyst recommendations summary for *ticker*."""
+        try:
+            result = yf.Ticker(ticker).recommendations_summary
+            return result if result is not None else pd.DataFrame()
+        except Exception:
+            logger.warning(f"get_recommendations_summary({ticker}) failed", exc_info=True)
+            return pd.DataFrame()
+
+    @sleep_and_retry
+    @limits(calls=5, period=1)
+    def get_upgrades_downgrades(self, ticker: str) -> pd.DataFrame:
+        """Return recent analyst upgrades/downgrades for *ticker*."""
+        try:
+            result = yf.Ticker(ticker).upgrades_downgrades
+            return result if result is not None else pd.DataFrame()
+        except Exception:
+            logger.warning(f"get_upgrades_downgrades({ticker}) failed", exc_info=True)
+            return pd.DataFrame()
+
+    @sleep_and_retry
+    @limits(calls=5, period=1)
+    def get_institutional_holders(self, ticker: str) -> pd.DataFrame:
+        """Return institutional holders for *ticker*."""
+        try:
+            result = yf.Ticker(ticker).institutional_holders
+            return result if result is not None else pd.DataFrame()
+        except Exception:
+            logger.warning(f"get_institutional_holders({ticker}) failed", exc_info=True)
+            return pd.DataFrame()
+
+    @sleep_and_retry
+    @limits(calls=5, period=1)
+    def get_major_holders(self, ticker: str) -> pd.DataFrame:
+        """Return major holders breakdown for *ticker*."""
+        try:
+            result = yf.Ticker(ticker).major_holders
+            return result if result is not None else pd.DataFrame()
+        except Exception:
+            logger.warning(f"get_major_holders({ticker}) failed", exc_info=True)
+            return pd.DataFrame()
+
+    @sleep_and_retry
+    @limits(calls=5, period=1)
+    def get_insider_transactions(self, ticker: str) -> pd.DataFrame:
+        """Return insider transactions for *ticker*."""
+        try:
+            result = yf.Ticker(ticker).insider_transactions
+            return result if result is not None else pd.DataFrame()
+        except Exception:
+            logger.warning(f"get_insider_transactions({ticker}) failed", exc_info=True)
+            return pd.DataFrame()
+
+    @sleep_and_retry
+    @limits(calls=5, period=1)
+    def get_insider_purchases(self, ticker: str) -> pd.DataFrame:
+        """Return insider purchases summary for *ticker*."""
+        try:
+            result = yf.Ticker(ticker).insider_purchases
+            return result if result is not None else pd.DataFrame()
+        except Exception:
+            logger.warning(f"get_insider_purchases({ticker}) failed", exc_info=True)
+            return pd.DataFrame()
