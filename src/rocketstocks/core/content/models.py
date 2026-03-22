@@ -208,3 +208,38 @@ class WatchlistMoverData(TickerData):
     trigger_result: object | None = None   # AlertTriggerResult | None
 
 
+# ---------------------------------------------------------------------------
+# Data cog models
+# ---------------------------------------------------------------------------
+
+@dataclass
+class QuoteData:
+    """Data for /data quote — real-time quotes for one or more tickers."""
+    tickers: list
+    quotes: dict                     # {ticker: schwab_quote_dict}
+    invalid_tickers: list = field(default_factory=list)
+
+
+@dataclass
+class UpcomingEarningsData:
+    """Data for /data upcoming-earnings."""
+    tickers: list
+    earnings_info: dict              # {ticker: earnings_info_dict | None}
+    invalid_tickers: list = field(default_factory=list)
+
+
+@dataclass
+class TickerStatsData:
+    """Data for /data stats."""
+    tickers: list
+    stats: dict                      # {ticker: stats_dict | None}
+    invalid_tickers: list = field(default_factory=list)
+
+
+@dataclass
+class MoverData:
+    """Data for /data movers and /data losers."""
+    direction: str                   # 'gainers' or 'losers'
+    screeners: list                  # list of mover dicts from Schwab
+
+
