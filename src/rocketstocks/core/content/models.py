@@ -407,3 +407,11 @@ class TechnicalReportData(TickerData):
     stats: dict | None = None
 
 
+@dataclass
+class OptionsReportData(TickerData):
+    """Data for /report options — full options chain analysis."""
+    options_chain: dict = field(default_factory=dict)
+    daily_price_history: pd.DataFrame = field(default_factory=pd.DataFrame)
+    iv_history: pd.DataFrame = field(default_factory=pd.DataFrame)  # for IV Rank (Phase 5)
+
+
