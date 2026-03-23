@@ -40,9 +40,15 @@ class Watchlists(commands.Cog):
     async def on_ready(self):
         logger.info(f"Cog {__name__} loaded!")
 
+    def _resolve_watchlist_id(self, watchlist: str, user_id: int) -> str:
+        """Translate the user-facing 'personal' label to the storage key."""
+        if watchlist == 'personal':
+            return self.watchlists.resolve_personal_id(user_id)
+        return watchlist
+
     async def watchlist_options(self, interaction: discord.Interaction, current: str):
         """Autocomplete helper - return all watchlist names that match input 'current' """
-        watchlists = await self.watchlists.get_watchlists(no_systemGenerated=False)
+        watchlists = await self.watchlists.get_watchlists(watchlist_types=['named', 'personal'])
         return [
             app_commands.Choice(name=watchlist, value=watchlist)
             for watchlist in watchlists if current.lower() in watchlist.lower()
@@ -79,10 +85,16 @@ class Watchlists(commands.Cog):
         try:
             new_tickers, invalid_tickers = await self.stock_data.tickers.parse_valid_tickers(tickers.upper())
 
-            watchlist_id = watchlist if watchlist != 'personal' else str(interaction.user.id)
+            is_personal = watchlist == 'personal'
+            watchlist_id = self._resolve_watchlist_id(watchlist, interaction.user.id)
 
             if not await self.watchlists.validate_watchlist(watchlist_id=watchlist_id):
-                await self.watchlists.create_watchlist(watchlist_id=watchlist_id, tickers=[], systemGenerated=False)
+                await self.watchlists.create_watchlist(
+                    watchlist_id=watchlist_id,
+                    tickers=[],
+                    watchlist_type='personal' if is_personal else 'named',
+                    owner_id=interaction.user.id if is_personal else None,
+                )
 
             symbols = await self.watchlists.get_watchlist_tickers(watchlist_id)
             duplicate_tickers = [x for x in new_tickers if x in symbols]
@@ -101,7 +113,7 @@ class Watchlists(commands.Cog):
             if duplicate_tickers:
                 message += f" Already on watchlist: {ticker_string(duplicate_tickers)}."
 
-            await interaction.followup.send(message, ephemeral=True if watchlist_id.isdigit() else False)
+            await interaction.followup.send(message, ephemeral=is_personal)
         except Exception:
             logger.error(f"watchlist_add failed for user {interaction.user.name}", exc_info=True)
             await interaction.followup.send("An error occurred — please try again.", ephemeral=True)
@@ -119,7 +131,8 @@ class Watchlists(commands.Cog):
         try:
             tickers, invalid_tickers = await self.stock_data.tickers.parse_valid_tickers(tickers.upper())
 
-            watchlist_id = watchlist if watchlist != 'personal' else str(interaction.user.id)
+            is_personal = watchlist == 'personal'
+            watchlist_id = self._resolve_watchlist_id(watchlist, interaction.user.id)
 
             if not await self.watchlists.validate_watchlist(watchlist_id=watchlist_id):
                 message = f"Watchlist *{watchlist}* does not exist. Use `/watchlist add`, `/watchlist remove` or `/watchlist set` to update this watchlist."
@@ -143,7 +156,7 @@ class Watchlists(commands.Cog):
             if invalid_tickers:
                 message += f" Invalid tickers: {ticker_string(invalid_tickers)}."
 
-            await interaction.followup.send(message, ephemeral=True if watchlist_id.isdigit() else False)
+            await interaction.followup.send(message, ephemeral=is_personal)
         except Exception:
             logger.error(f"watchlist_remove failed for user {interaction.user.name}", exc_info=True)
             await interaction.followup.send("An error occurred — please try again.", ephemeral=True)
@@ -157,15 +170,16 @@ class Watchlists(commands.Cog):
         logger.info(f"/watchlist view function called by user {interaction.user.name}")
 
         try:
-            watchlist_id = watchlist if watchlist != 'personal' else str(interaction.user.id)
+            is_personal = watchlist == 'personal'
+            watchlist_id = self._resolve_watchlist_id(watchlist, interaction.user.id)
 
             if await self.watchlists.validate_watchlist(watchlist_id=watchlist_id):
                 tickers = await self.watchlists.get_watchlist_tickers(watchlist_id)
                 if tickers:
-                    await interaction.followup.send(f"*{watchlist}* ({len(tickers)} tickers): {ticker_string(tickers)}", ephemeral=True if watchlist_id.isdigit() else False)
+                    await interaction.followup.send(f"*{watchlist}* ({len(tickers)} tickers): {ticker_string(tickers)}", ephemeral=is_personal)
                     logger.info(f"Watchlist '{watchlist}' has tickers {tickers}")
                 else:
-                    await interaction.followup.send(f"No tickers on watchlist *{watchlist}*", ephemeral=True if watchlist_id.isdigit() else False)
+                    await interaction.followup.send(f"No tickers on watchlist *{watchlist}*", ephemeral=is_personal)
                     logger.info(f"Watchlist '{watchlist}' has no tickers")
             else:
                 await interaction.followup.send(f"Watchlist *{watchlist}* does not exist. Use `/watchlist create` to make a new watchlist.", ephemeral=True)
@@ -187,10 +201,16 @@ class Watchlists(commands.Cog):
         try:
             tickers, invalid_tickers = await self.stock_data.tickers.parse_valid_tickers(tickers.upper())
 
-            watchlist_id = watchlist if watchlist != 'personal' else str(interaction.user.id)
+            is_personal = watchlist == 'personal'
+            watchlist_id = self._resolve_watchlist_id(watchlist, interaction.user.id)
 
             if not await self.watchlists.validate_watchlist(watchlist_id=watchlist_id):
-                await self.watchlists.create_watchlist(watchlist_id=watchlist_id, tickers=[], systemGenerated=False)
+                await self.watchlists.create_watchlist(
+                    watchlist_id=watchlist_id,
+                    tickers=[],
+                    watchlist_type='personal' if is_personal else 'named',
+                    owner_id=interaction.user.id if is_personal else None,
+                )
 
             await self.watchlists.update_watchlist(watchlist_id=watchlist_id, tickers=tickers)
             logger.info(f"Watchlist '{watchlist}' set to {tickers}")
@@ -202,7 +222,7 @@ class Watchlists(commands.Cog):
             if invalid_tickers:
                 message += f" Invalid tickers: {ticker_string(invalid_tickers)}."
 
-            await interaction.followup.send(message, ephemeral=True if watchlist_id.isdigit() else False)
+            await interaction.followup.send(message, ephemeral=is_personal)
         except Exception:
             logger.error(f"watchlist_set failed for user {interaction.user.name}", exc_info=True)
             await interaction.followup.send("An error occurred — please try again.", ephemeral=True)
@@ -217,11 +237,17 @@ class Watchlists(commands.Cog):
         logger.info(f"/watchlist create function called by user {interaction.user.name}")
 
         try:
-            watchlist_id = watchlist if watchlist != 'personal' else str(interaction.user.id)
+            is_personal = watchlist == 'personal'
+            watchlist_id = self._resolve_watchlist_id(watchlist, interaction.user.id)
 
             if not await self.watchlists.validate_watchlist(watchlist_id=watchlist_id):
                 tickers, invalid_tickers = await self.stock_data.tickers.parse_valid_tickers(tickers.upper())
-                await self.watchlists.create_watchlist(watchlist_id=watchlist_id, tickers=tickers, systemGenerated=False)
+                await self.watchlists.create_watchlist(
+                    watchlist_id=watchlist_id,
+                    tickers=tickers,
+                    watchlist_type='personal' if is_personal else 'named',
+                    owner_id=interaction.user.id if is_personal else None,
+                )
                 logger.info(f"Watchlist '{watchlist}' set to {tickers}")
 
                 if tickers:
@@ -231,7 +257,7 @@ class Watchlists(commands.Cog):
                 if invalid_tickers:
                     message += f" Invalid tickers: {ticker_string(invalid_tickers)}."
 
-                await interaction.followup.send(message, ephemeral=True if watchlist_id.isdigit() else False)
+                await interaction.followup.send(message, ephemeral=is_personal)
             else:
                 message = f"Watchlist *{watchlist}* already exists. Use `/watchlist add`, `/watchlist remove` or `/watchlist set` to update this watchlist."
                 await interaction.followup.send(message, ephemeral=True)
@@ -286,16 +312,15 @@ class Watchlists(commands.Cog):
         logger.info(f"/watchlist list function called by user {interaction.user.name}")
 
         try:
-            counts = await self.watchlists.get_watchlist_counts(no_personal=True, no_systemGenerated=True)
-            public_counts = {wl_id: cnt for wl_id, cnt in counts.items() if wl_id != "personal"}
+            counts = await self.watchlists.get_watchlist_counts(watchlist_types=['named'])
 
-            if not public_counts:
+            if not counts:
                 await interaction.followup.send("No watchlists found. Use `/watchlist create` to create one.", ephemeral=True)
                 return
 
             lines = [
                 f"**{wl_id}** — {cnt} ticker{'s' if cnt != 1 else ''}"
-                for wl_id, cnt in sorted(public_counts.items())
+                for wl_id, cnt in sorted(counts.items())
             ]
             message = "**Available watchlists:**\n" + "\n".join(lines)
             await interaction.followup.send(message, ephemeral=False)

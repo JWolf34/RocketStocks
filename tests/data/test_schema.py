@@ -3,15 +3,16 @@ from unittest.mock import AsyncMock, MagicMock
 
 
 class TestCreateTables:
-    async def test_create_tables_calls_execute_twice(self):
-        """create_tables calls execute for CREATE script + migration script."""
+    async def test_create_tables_calls_execute_at_least_twice(self):
+        """create_tables calls execute for CREATE script + migration script + watchlist migration."""
         from rocketstocks.data.schema import create_tables
         mock_db = MagicMock()
         mock_db.execute = AsyncMock(return_value=None)
 
         await create_tables(mock_db)
 
-        assert mock_db.execute.call_count == 2
+        # CREATE script + migration script + watchlist idempotency check (+ possible backfill)
+        assert mock_db.execute.call_count >= 2
 
     async def test_create_tables_executes_create_script(self):
         from rocketstocks.data.schema import create_tables

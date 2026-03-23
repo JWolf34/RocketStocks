@@ -13,6 +13,7 @@ def _make_cog() -> Admin:
     bot = MagicMock(name="Bot")
     sd = MagicMock(name="StockData")
     sd.tickers = MagicMock()
+    sd.tickers.get_all_tickers = AsyncMock()
     sd.price_history = MagicMock()
     sd.price_history.update_5m_price_history = AsyncMock()
     sd.price_history.update_daily_price_history = AsyncMock()
@@ -46,7 +47,7 @@ class TestAdminUpdate5m:
     async def test_calls_update_5m_price_history(self):
         cog = _make_cog()
         interaction = _make_interaction()
-        cog.stock_data.tickers.get_all_tickers.return_value = ["AAPL", "MSFT"]
+        cog.stock_data.tickers.get_all_tickers.return_value = ["AAPL", "MSFT"]  # AsyncMock return_value
 
         await cog.admin_update_5m.callback(cog, interaction)
 

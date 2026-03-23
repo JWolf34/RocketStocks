@@ -9,7 +9,7 @@ from rocketstocks.core.config.settings import settings
 from rocketstocks.core.utils.dates import configure_tz
 from rocketstocks.core.notifications.config import NotificationFilter
 from rocketstocks.data.channel_config import (
-    REPORTS, ALERTS, SCREENERS, CHARTS, NOTIFICATIONS, ALL_CONFIG_TYPES,
+    REPORTS, ALERTS, SCREENERS, NOTIFICATIONS, ALL_CONFIG_TYPES,
 )
 from rocketstocks.bot.views.subscription_views import ALERT_ROLE_DEFS, SubscriptionEntryView
 
@@ -19,7 +19,6 @@ _CHANNEL_TYPES = [
     (REPORTS, "Reports Channel"),
     (ALERTS, "Alerts Channel"),
     (SCREENERS, "Screeners Channel"),
-    (CHARTS, "Charts Channel"),
     (NOTIFICATIONS, "Notifications Channel"),
 ]
 

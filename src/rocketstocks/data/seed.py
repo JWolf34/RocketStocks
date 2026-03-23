@@ -23,7 +23,7 @@ async def seed_boilerplate_watchlists(watchlists: Watchlists) -> None:
         return
     logger.info("Seeding boilerplate watchlists...")
     for name, tickers in _BOILERPLATE_WATCHLISTS.items():
-        await watchlists.create_watchlist(name, tickers, systemGenerated=False)
+        await watchlists.create_watchlist(name, tickers, watchlist_type='named')
         logger.info(f"  Created watchlist '{name}' with {len(tickers)} tickers")
-    await watchlists.create_watchlist(_SEED_KEY, [], systemGenerated=True)
+    await watchlists.create_watchlist(_SEED_KEY, [], watchlist_type='system')
     logger.info("Boilerplate watchlist seeding complete")

@@ -208,3 +208,166 @@ class WatchlistMoverData(TickerData):
     trigger_result: object | None = None   # AlertTriggerResult | None
 
 
+# ---------------------------------------------------------------------------
+# Data cog models
+# ---------------------------------------------------------------------------
+
+@dataclass
+class QuoteData:
+    """Data for /data quote — real-time quotes for one or more tickers."""
+    tickers: list
+    quotes: dict                     # {ticker: schwab_quote_dict}
+    invalid_tickers: list = field(default_factory=list)
+
+
+@dataclass
+class UpcomingEarningsData:
+    """Data for /data upcoming-earnings."""
+    tickers: list
+    earnings_info: dict              # {ticker: earnings_info_dict | None}
+    invalid_tickers: list = field(default_factory=list)
+
+
+@dataclass
+class TickerStatsData:
+    """Data for /data stats."""
+    tickers: list
+    stats: dict                      # {ticker: stats_dict | None}
+    invalid_tickers: list = field(default_factory=list)
+
+
+@dataclass
+class MoverData:
+    """Data for /data movers and /data losers."""
+    direction: str                   # 'gainers' or 'losers'
+    screeners: list                  # list of mover dicts from Schwab
+
+
+# ---------------------------------------------------------------------------
+# Data cog snapshot models (Phase 2)
+# ---------------------------------------------------------------------------
+
+@dataclass
+class PriceSnapshotData:
+    """Data for the price snapshot embed in /data price."""
+    ticker: str
+    daily_price_history: pd.DataFrame
+    frequency: str                   # 'daily' or '5m'
+    quote: dict | None = None        # Schwab quote dict — optional (may be unavailable)
+
+
+@dataclass
+class FinancialHighlightsData:
+    """Data for the financial highlights embed in /data financials."""
+    ticker: str
+    financials: dict                 # yfinance financials dict (income/balance/cash DataFrames)
+
+
+@dataclass
+class FundamentalsSnapshotData:
+    """Data for the fundamentals snapshot embed in /data fundamentals."""
+    ticker: str
+    fundamentals: dict               # Schwab fundamentals JSON response
+
+
+@dataclass
+class OptionsSummaryData:
+    """Data for the options summary embed in /data options."""
+    ticker: str
+    options_chain: dict              # Schwab options chain JSON response
+    current_price: float | None = None
+
+
+@dataclass
+class PopularitySnapshotData:
+    """Data for the popularity snapshot embed in /data popularity."""
+    ticker: str
+    popularity: pd.DataFrame
+
+
+@dataclass
+class TickersSummaryData:
+    """Data for the tickers summary embed in /data tickers."""
+    tickers_df: pd.DataFrame
+
+
+@dataclass
+class EarningsTableData:
+    """Data for the earnings history embed in /data earnings."""
+    ticker: str
+    historical_earnings: pd.DataFrame
+
+
+@dataclass
+class SecFilingData:
+    """Data for the SEC filing embed in /data sec-filing."""
+    tickers: list
+    filings: dict                    # {ticker: filing_dict | None}
+    form: str
+
+
+# ---------------------------------------------------------------------------
+# Data cog Phase 3 models — YFinance analyst / ownership / insider / short
+# ---------------------------------------------------------------------------
+
+@dataclass
+class AnalystData:
+    """Data for /data analyst."""
+    ticker: str
+    price_targets: dict | None
+    recommendations: pd.DataFrame
+    upgrades_downgrades: pd.DataFrame
+
+
+@dataclass
+class OwnershipData:
+    """Data for /data ownership."""
+    ticker: str
+    institutional_holders: pd.DataFrame
+    major_holders: pd.DataFrame
+
+
+@dataclass
+class InsiderData:
+    """Data for /data insider."""
+    ticker: str
+    insider_transactions: pd.DataFrame
+    insider_purchases: pd.DataFrame
+
+
+@dataclass
+class ShortInterestData:
+    """Data for /data short-interest."""
+    ticker: str
+    short_interest_ratio: float | None
+    short_interest_shares: float | None
+    short_percent_of_float: float | None
+    shares_outstanding: float | None
+
+
+# ---------------------------------------------------------------------------
+# Data cog Phase 4 models — News, Forecast, Screener, Losers
+# ---------------------------------------------------------------------------
+
+@dataclass
+class NewsData:
+    """Data for /data news — News API results per ticker."""
+    tickers: list
+    news_results: dict          # {ticker: news_api_response_dict}
+
+
+@dataclass
+class EarningsForecastData:
+    """Data for /data forecast — NASDAQ quarterly and yearly EPS forecasts."""
+    ticker: str
+    quarterly_forecast: pd.DataFrame
+    yearly_forecast: pd.DataFrame
+
+
+@dataclass
+class OnDemandScreenerData:
+    """Data for /data screener — on-demand TradingView screener result."""
+    screener_type: str          # 'premarket', 'intraday', or 'unusual-volume'
+    data: pd.DataFrame
+
+

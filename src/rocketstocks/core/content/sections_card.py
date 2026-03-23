@@ -598,6 +598,466 @@ def earnings_result_card(eps_actual: float, eps_estimate: float | None, surprise
     return "\n".join(lines) + "\n\n"
 
 
+def financial_highlights_card(financials: dict) -> str:
+    """Key financial statement metrics — Revenue, Income, Margins, Cash Flow."""
+    header = "__**Financial Highlights**__"
+    if not financials:
+        return header + "\nNo financial data available\n\n"
+
+    income = financials.get('quarterly_income_statement')
+    if income is None:
+        income = financials.get('income_statement')
+    cash_flow = financials.get('quarterly_cash_flow')
+    if cash_flow is None:
+        cash_flow = financials.get('cash_flow')
+
+    if income is None or income.empty:
+        return header + "\nNo financial data available\n\n"
+
+    lines = [header]
+
+    # Helper to find a row by trying multiple possible index names
+    def _find_row(df, *names):
+        for name in names:
+            if name in df.index:
+                vals = df.loc[name].dropna()
+                return vals.iloc[0] if not vals.empty else None
+        return None
+
+    revenue = _find_row(income, 'Total Revenue', 'Revenue', 'TotalRevenue')
+    net_income = _find_row(income, 'Net Income', 'NetIncome', 'Net Income Common Stockholders')
+    gross_profit = _find_row(income, 'Gross Profit', 'GrossProfit')
+    op_income = _find_row(income, 'Operating Income', 'OperatingIncome', 'EBIT')
+
+    if revenue is not None and revenue != 0:
+        rev_str = format_large_num(revenue)
+        lines.append(f"Revenue **{rev_str}**" + (f" · Net Income **{format_large_num(net_income)}**" if net_income is not None else ""))
+        if gross_profit is not None:
+            gm = (gross_profit / revenue) * 100
+            om = (op_income / revenue * 100) if op_income is not None else None
+            nm = (net_income / revenue * 100) if net_income is not None else None
+            margin_parts = [f"Gross **{gm:.1f}%**"]
+            if om is not None:
+                margin_parts.append(f"Op **{om:.1f}%**")
+            if nm is not None:
+                margin_parts.append(f"Net **{nm:.1f}%**")
+            lines.append("Margins — " + " · ".join(margin_parts))
+    else:
+        lines.append("Revenue N/A")
+
+    # Free Cash Flow / Operating Cash Flow
+    if cash_flow is not None and not cash_flow.empty:
+        ocf = _find_row(cash_flow, 'Operating Cash Flow', 'Cash Flow From Operations', 'OperatingCashFlow')
+        fcf = _find_row(cash_flow, 'Free Cash Flow', 'FreeCashFlow')
+        fcf_val = fcf if fcf is not None else ocf
+        if fcf_val is not None:
+            label = "FCF" if fcf is not None else "Op. Cash Flow"
+            lines.append(f"{label} **{format_large_num(fcf_val)}**")
+
+    return "\n".join(lines) + "\n\n"
+
+
+def fundamentals_snapshot_card(fundamentals: dict) -> str:
+    """Extended fundamentals card — valuation ratios, margins, short interest."""
+    header = "__**Fundamentals Snapshot**__"
+    if not fundamentals or not fundamentals.get('instruments'):
+        return header + "\nNo fundamentals available\n\n"
+
+    fund = fundamentals['instruments'][0]['fundamental']
+    lines = [header]
+
+    # Valuation ratios
+    pe = fund.get('peRatio')
+    pb = fund.get('pbRatio')
+    pcf = fund.get('pcfRatio')
+    eps = fund.get('epsTTM') or fund.get('eps')
+    beta = fund.get('beta')
+    ratio_parts = []
+    if pe is not None:
+        ratio_parts.append(f"P/E **{pe:.1f}**")
+    if pb is not None:
+        ratio_parts.append(f"P/B **{pb:.1f}**")
+    if pcf is not None:
+        ratio_parts.append(f"P/CF **{pcf:.1f}**")
+    if eps is not None:
+        ratio_parts.append(f"EPS **${eps:.2f}**")
+    if beta is not None:
+        ratio_parts.append(f"Beta **{beta:.2f}**")
+    if ratio_parts:
+        lines.append(" · ".join(ratio_parts))
+
+    # Dividend + Dividend Yield
+    div_amt = fund.get('dividendAmount')
+    div_yield = fund.get('dividendYield')
+    if div_amt:
+        div_str = f"Div **${div_amt:.2f}**"
+        if div_yield:
+            div_str += f" (**{div_yield:.2f}%** yield)"
+        lines.append(div_str)
+
+    # Margins (TTM)
+    gross_m = fund.get('grossMarginTTM')
+    op_m = fund.get('operatingMarginTTM')
+    net_m = fund.get('netProfitMarginTTM')
+    roe = fund.get('returnOnEquity')
+    roa = fund.get('returnOnAssets')
+    margin_parts = []
+    if gross_m is not None:
+        margin_parts.append(f"Gross **{gross_m:.1f}%**")
+    if op_m is not None:
+        margin_parts.append(f"Op **{op_m:.1f}%**")
+    if net_m is not None:
+        margin_parts.append(f"Net **{net_m:.1f}%**")
+    if margin_parts:
+        lines.append("Margins TTM — " + " · ".join(margin_parts))
+
+    eff_parts = []
+    if roe is not None:
+        eff_parts.append(f"ROE **{roe:.1f}%**")
+    if roa is not None:
+        eff_parts.append(f"ROA **{roa:.1f}%**")
+    if eff_parts:
+        lines.append(" · ".join(eff_parts))
+
+    # Short interest
+    si_ratio = fund.get('shortInterestRatio')
+    si_shares = fund.get('shortInterestShares')
+    shares_out = fund.get('sharesOutstanding')
+    si_parts = []
+    if si_ratio is not None:
+        si_parts.append(f"Days to Cover **{si_ratio:.1f}**")
+    if si_shares is not None and shares_out is not None and shares_out > 0:
+        si_pct = (si_shares / shares_out) * 100
+        si_parts.append(f"Short % **{si_pct:.1f}%**")
+    elif si_shares is not None:
+        si_parts.append(f"Short Shares **{format_large_num(si_shares)}**")
+    if si_parts:
+        lines.append("Short Interest — " + " · ".join(si_parts))
+
+    return "\n".join(lines) + "\n\n"
+
+
+def options_summary_card(options_chain: dict, current_price: float | None = None) -> str:
+    """Key options metrics — IV, put/call ratio, nearest expiration activity."""
+    header = "__**Options Summary**__"
+    if not options_chain or options_chain.get('status') == 'FAILED':
+        return header + "\nNo options data available\n\n"
+
+    lines = [header]
+
+    # Root-level metrics
+    iv = options_chain.get('volatility')
+    pcr = options_chain.get('putCallRatio')
+    underlying = options_chain.get('underlyingPrice') or current_price
+
+    if iv is not None and iv > 0:
+        lines.append(f"Implied Volatility **{iv:.1f}%**" + (f" · P/C Ratio **{pcr:.2f}**" if pcr else ""))
+    elif pcr:
+        lines.append(f"P/C Ratio **{pcr:.2f}**")
+
+    # Nearest expiration — most active strikes
+    call_map = options_chain.get('callExpDateMap', {})
+    put_map = options_chain.get('putExpDateMap', {})
+
+    if call_map:
+        nearest_exp = sorted(call_map.keys())[0]
+        exp_label = nearest_exp.split(':')[0]
+        strikes = call_map[nearest_exp]
+
+        # Find ATM strike (nearest to underlying price)
+        atm_strike = None
+        atm_iv = None
+        if underlying:
+            try:
+                strike_floats = [(abs(float(s) - underlying), s) for s in strikes]
+                strike_floats.sort()
+                atm_strike_str = strike_floats[0][1]
+                atm_contracts = strikes[atm_strike_str]
+                if atm_contracts:
+                    atm_iv = atm_contracts[0].get('volatility')
+                    atm_strike = float(atm_strike_str)
+            except (ValueError, KeyError, IndexError):
+                pass
+
+        atm_str = f"ATM ${atm_strike:.0f} IV **{atm_iv:.1f}%**" if atm_strike and atm_iv else ""
+        exp_line = f"Nearest Exp **{exp_label}**"
+        if atm_str:
+            exp_line += f" · {atm_str}"
+        lines.append(exp_line)
+
+        # Most active call + put by volume
+        def _top_strike(exp_map, exp_key):
+            if exp_key not in exp_map:
+                return None
+            strikes_data = exp_map[exp_key]
+            best = None
+            best_vol = 0
+            for strike_str, contracts in strikes_data.items():
+                for c in contracts:
+                    vol = c.get('totalVolume', 0) or 0
+                    if vol > best_vol:
+                        best_vol = vol
+                        best = (float(strike_str), vol, c.get('openInterest', 0))
+            return best
+
+        top_call = _top_strike(call_map, nearest_exp)
+        top_put = _top_strike(put_map, nearest_exp)
+        activity_parts = []
+        if top_call:
+            activity_parts.append(f"Call ${top_call[0]:.0f} **{top_call[1]:,}** vol")
+        if top_put:
+            activity_parts.append(f"Put ${top_put[0]:.0f} **{top_put[1]:,}** vol")
+        if activity_parts:
+            lines.append("Most Active — " + " · ".join(activity_parts))
+
+    return "\n".join(lines) + "\n\n"
+
+
+def tickers_summary_card(tickers_df) -> str:
+    """Summary statistics for the tracked ticker universe."""
+    header = "__**Tracked Tickers Summary**__"
+    if tickers_df is None or (hasattr(tickers_df, 'empty') and tickers_df.empty):
+        return header + "\nNo ticker data available\n\n"
+
+    lines = [header]
+    total = len(tickers_df)
+    lines.append(f"Total Tickers **{total:,}**")
+
+    # Sector breakdown (top 5)
+    if 'sector' in tickers_df.columns:
+        sector_counts = (
+            tickers_df['sector']
+            .dropna()
+            .loc[lambda s: s.str.strip().ne('')]
+            .value_counts()
+            .head(5)
+        )
+        if not sector_counts.empty:
+            sector_parts = [f"{s} **{n}**" for s, n in sector_counts.items()]
+            lines.append("Top Sectors — " + " · ".join(sector_parts))
+
+    # Exchange breakdown
+    if 'exchange' in tickers_df.columns:
+        exch_counts = (
+            tickers_df['exchange']
+            .dropna()
+            .loc[lambda s: s.str.strip().ne('')]
+            .value_counts()
+            .head(4)
+        )
+        if not exch_counts.empty:
+            exch_parts = [f"{e} **{n}**" for e, n in exch_counts.items()]
+            lines.append("Exchanges — " + " · ".join(exch_parts))
+
+    return "\n".join(lines) + "\n\n"
+
+
+def analyst_card(price_targets: dict | None, recommendations: pd.DataFrame, upgrades_downgrades: pd.DataFrame) -> str:
+    """Analyst consensus — price target range, ratings breakdown, recent actions."""
+    header = "__**Analyst Consensus**__"
+    lines = [header]
+
+    # Price targets
+    if price_targets:
+        current = price_targets.get('current')
+        low = price_targets.get('low')
+        mean = price_targets.get('mean')
+        high = price_targets.get('high')
+        if mean is not None and current and current != 0:
+            upside = ((mean - current) / current) * 100
+            upside_str = f"+{upside:.1f}%" if upside >= 0 else f"{upside:.1f}%"
+            lines.append(f"Target Low **${low:.2f}** · Mean **${mean:.2f}** ({upside_str}) · High **${high:.2f}**")
+        elif mean is not None:
+            lines.append(f"Target Low **${low:.2f}** · Mean **${mean:.2f}** · High **${high:.2f}**")
+    else:
+        lines.append("Price targets unavailable")
+
+    # Recommendations summary
+    if recommendations is not None and not recommendations.empty:
+        cols = [c.lower() for c in recommendations.columns]
+        col_map = {c.lower(): c for c in recommendations.columns}
+        buy_col = col_map.get('strongbuy') or col_map.get('buy')
+        hold_col = col_map.get('hold')
+        sell_col = col_map.get('strongsell') or col_map.get('sell')
+        row = recommendations.iloc[0]
+        parts = []
+        if buy_col:
+            parts.append(f"Buy **{int(row[buy_col])}**")
+        if hold_col:
+            parts.append(f"Hold **{int(row[hold_col])}**")
+        if sell_col:
+            parts.append(f"Sell **{int(row[sell_col])}**")
+        if parts:
+            lines.append("Ratings — " + " · ".join(parts))
+
+    # Recent upgrades/downgrades (top 5)
+    if upgrades_downgrades is not None and not upgrades_downgrades.empty:
+        lines.append("**Recent Actions**")
+        df = upgrades_downgrades.copy()
+        if hasattr(df.index, 'tz_localize'):
+            try:
+                df.index = df.index.tz_localize(None)
+            except Exception:
+                pass
+        df = df.sort_index(ascending=False).head(5)
+        for idx, row in df.iterrows():
+            firm = row.get('Firm', row.get('firm', 'Unknown'))
+            action = row.get('Action', row.get('action', ''))
+            to_grade = row.get('To Grade', row.get('toGrade', ''))
+            date_str = str(idx)[:10]
+            lines.append(f"{date_str} · **{firm}** → {to_grade} ({action})")
+    else:
+        lines.append("No recent upgrades/downgrades")
+
+    lines.append("")
+    return "\n".join(lines)
+
+
+def ownership_card(institutional_holders: pd.DataFrame, major_holders: pd.DataFrame) -> str:
+    """Institutional and insider ownership breakdown."""
+    header = "__**Ownership**__"
+    lines = [header]
+
+    # Major holders pct summary
+    if major_holders is not None and not major_holders.empty:
+        df = major_holders.copy().reset_index(drop=True)
+        # major_holders has 2 columns: value and label (order may vary)
+        for _, row in df.iterrows():
+            vals = list(row)
+            if len(vals) >= 2:
+                pct_val, label = (vals[0], vals[1]) if isinstance(vals[0], (float, int)) else (vals[1], vals[0])
+                try:
+                    pct = float(pct_val) * 100
+                    lines.append(f"{label}: **{pct:.1f}%**")
+                except (TypeError, ValueError):
+                    pass
+
+    # Top 5 institutional holders
+    if institutional_holders is not None and not institutional_holders.empty:
+        lines.append("**Top Institutional Holders**")
+        df = institutional_holders.head(5)
+        for _, row in df.iterrows():
+            holder = row.get('Holder', row.get('holder', 'Unknown'))
+            shares = row.get('Shares', row.get('shares'))
+            pct_held = row.get('% Out', row.get('pctHeld'))
+            share_str = f"{int(shares):,}" if shares is not None and not (isinstance(shares, float) and shares != shares) else 'N/A'
+            pct_str = f"{float(pct_held)*100:.1f}%" if pct_held is not None else ''
+            lines.append(f"**{holder}** · {share_str} shares {pct_str}")
+    else:
+        lines.append("No institutional holder data")
+
+    lines.append("")
+    return "\n".join(lines)
+
+
+def insider_activity_card(insider_transactions: pd.DataFrame, insider_purchases: pd.DataFrame) -> str:
+    """Insider transaction summary — net buys/sells and recent activity."""
+    header = "__**Insider Activity**__"
+    lines = [header]
+
+    # Purchases summary
+    if insider_purchases is not None and not insider_purchases.empty:
+        df = insider_purchases.copy().reset_index(drop=True)
+        for _, row in df.iterrows():
+            insider_type = row.get('Insider Purchases Last 6m', row.get('insiderPurchases', ''))
+            purchases = row.get('Purchases', row.get('purchases', ''))
+            sales = row.get('Sales', row.get('sales', ''))
+            net = row.get('Net Activity', row.get('netActivity', ''))
+            if insider_type:
+                parts = []
+                if purchases != '':
+                    parts.append(f"Buys **{purchases}**")
+                if sales != '':
+                    parts.append(f"Sells **{sales}**")
+                if net != '':
+                    parts.append(f"Net **{net}**")
+                if parts:
+                    lines.append(f"{insider_type}: " + " · ".join(parts))
+
+    # Recent transactions (top 6)
+    if insider_transactions is not None and not insider_transactions.empty:
+        lines.append("**Recent Transactions**")
+        df = insider_transactions.copy()
+        if hasattr(df.index, 'tz_localize'):
+            try:
+                df.index = df.index.tz_localize(None)
+            except Exception:
+                pass
+        df = df.sort_index(ascending=False).head(6)
+        for idx, row in df.iterrows():
+            name = row.get('Insider', row.get('insider', 'Unknown'))
+            transaction = row.get('Transaction', row.get('transaction', ''))
+            shares = row.get('Shares', row.get('shares'))
+            value = row.get('Value', row.get('value'))
+            date_str = str(idx)[:10]
+            share_str = f"{int(shares):,}" if shares is not None and not (isinstance(shares, float) and shares != shares) else ''
+            val_str = f" · ${int(value):,}" if value is not None and not (isinstance(value, float) and value != value) else ''
+            lines.append(f"{date_str} · **{name}** · {transaction} {share_str}{val_str}")
+    else:
+        lines.append("No recent insider transactions")
+
+    lines.append("")
+    return "\n".join(lines)
+
+
+def short_interest_card(
+    short_interest_ratio: float | None,
+    short_interest_shares: float | None,
+    short_percent_of_float: float | None,
+    shares_outstanding: float | None,
+) -> str:
+    """Short interest summary — days to cover, % of float, shares short."""
+    header = "__**Short Interest**__"
+    lines = [header]
+
+    if short_interest_ratio is not None:
+        lines.append(f"Days to Cover **{short_interest_ratio:.1f}**")
+    if short_percent_of_float is not None:
+        lines.append(f"Short % of Float **{short_percent_of_float:.2f}%**")
+    if short_interest_shares is not None:
+        lines.append(f"Shares Short **{format_large_num(short_interest_shares)}**")
+    if shares_outstanding is not None:
+        lines.append(f"Shares Outstanding **{format_large_num(shares_outstanding)}**")
+
+    if not any([short_interest_ratio, short_interest_shares, short_percent_of_float]):
+        lines.append("No short interest data available")
+
+    lines.append("")
+    return "\n".join(lines)
+
+
+def earnings_forecast_card(quarterly_df: pd.DataFrame, yearly_df: pd.DataFrame) -> str:
+    """NASDAQ EPS forecast — current/next quarter estimates and yearly outlook."""
+    header = "__**Earnings Forecast**__"
+    lines = [header]
+
+    if quarterly_df is not None and not quarterly_df.empty:
+        lines.append("**Quarterly EPS Estimates**")
+        for _, row in quarterly_df.head(4).iterrows():
+            period = row.get('fiscalQuarter', row.get('period', row.get('Fiscal Quarter', '')))
+            eps_est = row.get('epsForecast', row.get('consensusEPS', row.get('EPS Forecast', 'N/A')))
+            num_analysts = row.get('noOfEsts', row.get('numOfEst', row.get('# Analysts', '')))
+            low = row.get('lowEPS', row.get('lowEst', row.get('Low', '')))
+            high = row.get('highEPS', row.get('highEst', row.get('High', '')))
+            range_str = f" · Range **{low}**–**{high}**" if low != '' and high != '' else ''
+            est_str = f" · {num_analysts} analysts" if num_analysts != '' else ''
+            lines.append(f"**{period}**: EPS Est **{eps_est}**{range_str}{est_str}")
+    else:
+        lines.append("No quarterly forecast data available")
+
+    if yearly_df is not None and not yearly_df.empty:
+        lines.append("**Annual EPS Estimates**")
+        for _, row in yearly_df.head(3).iterrows():
+            period = row.get('fiscalYear', row.get('year', row.get('Fiscal Year', '')))
+            eps_est = row.get('epsForecast', row.get('consensusEPS', row.get('EPS Forecast', 'N/A')))
+            num_analysts = row.get('noOfEsts', row.get('numOfEst', row.get('# Analysts', '')))
+            est_str = f" · {num_analysts} analysts" if num_analysts != '' else ''
+            lines.append(f"**{period}**: EPS Est **{eps_est}**{est_str}")
+
+    lines.append("")
+    return "\n".join(lines)
+
+
 def weekly_earnings_cards(data: pd.DataFrame, watchlist_tickers: list[str]) -> str:
     """Upcoming earnings grouped by day as stacked cards."""
     import datetime as dt

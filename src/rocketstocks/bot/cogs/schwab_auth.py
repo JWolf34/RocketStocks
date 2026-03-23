@@ -161,6 +161,25 @@ class SchwabAuth(commands.Cog):
     @commands.Cog.listener()
     async def on_ready(self):
         logger.info(f"{__name__} loaded")
+        await self._check_token_on_startup()
+
+    async def _check_token_on_startup(self) -> None:
+        """Log token health at startup and emit a warning if action is needed."""
+        try:
+            info = await self.bot.stock_data.schwab.get_token_info()
+            label = _STATUS_LABELS.get(info.status, info.status.value)
+            logger.info(f"Schwab token status on startup: {label}")
+            if info.status in (TokenStatus.EXPIRING_SOON, TokenStatus.EXPIRED, TokenStatus.INVALID, TokenStatus.MISSING):
+                from rocketstocks.core.notifications.config import NotificationLevel
+                from rocketstocks.core.notifications.event import NotificationEvent
+                self.bot.emitter.emit(NotificationEvent(
+                    level=NotificationLevel.WARNING,
+                    source=__name__,
+                    job_name="schwab_token",
+                    message=f"Schwab token status: {label}. Run /schwab auth to re-authenticate.",
+                ))
+        except Exception:
+            logger.warning("Could not check Schwab token status on startup", exc_info=True)
 
     schwab_group = app_commands.Group(
         name="schwab",

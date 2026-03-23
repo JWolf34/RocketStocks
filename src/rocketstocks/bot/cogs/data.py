@@ -1,16 +1,43 @@
 import asyncio
+import pandas as pd
 import discord
 from discord import app_commands
 from discord.ext import commands
 from src.rocketstocks.data.stockdata import StockData
 from rocketstocks.data.channel_config import REPORTS
-from rocketstocks.data.clients.schwab import SchwabTokenError
+from rocketstocks.data.clients.schwab import SchwabTokenError, SchwabRateLimitError
 from rocketstocks.core.config.paths import datapaths
 from rocketstocks.core.utils.formatting import ticker_string
-from rocketstocks.core.utils.dates import format_date_mdy
 import logging
 import json
-from table2ascii import table2ascii, PresetStyle
+from rocketstocks.bot.senders.embed_utils import spec_to_embed
+from rocketstocks.core.content.models import (
+    QuoteData, UpcomingEarningsData, TickerStatsData, MoverData,
+    PriceSnapshotData, FinancialHighlightsData, FundamentalsSnapshotData,
+    OptionsSummaryData, PopularitySnapshotData, TickersSummaryData,
+    EarningsTableData, SecFilingData,
+    AnalystData, OwnershipData, InsiderData, ShortInterestData,
+    NewsData, EarningsForecastData, OnDemandScreenerData,
+)
+from rocketstocks.core.content.data.quote_card import QuoteCard
+from rocketstocks.core.content.data.upcoming_earnings_card import UpcomingEarningsCard
+from rocketstocks.core.content.data.stats_card import StatsCard
+from rocketstocks.core.content.data.movers_card import MoversCard
+from rocketstocks.core.content.data.price_snapshot import PriceSnapshot
+from rocketstocks.core.content.data.financial_highlights import FinancialHighlights
+from rocketstocks.core.content.data.fundamentals_snapshot import FundamentalsSnapshot
+from rocketstocks.core.content.data.options_summary import OptionsSummary
+from rocketstocks.core.content.data.popularity_snapshot import PopularitySnapshot
+from rocketstocks.core.content.data.tickers_summary import TickersSummary
+from rocketstocks.core.content.data.earnings_card import EarningsCard
+from rocketstocks.core.content.data.sec_filing_card import SecFilingCard
+from rocketstocks.core.content.data.analyst_card import AnalystCard
+from rocketstocks.core.content.data.ownership_card import OwnershipCard
+from rocketstocks.core.content.data.insider_card import InsiderCard
+from rocketstocks.core.content.data.short_interest_card import ShortInterestCard
+from rocketstocks.core.content.data.news_card import NewsCard
+from rocketstocks.core.content.data.forecast_card import ForecastCard
+from rocketstocks.core.content.data.on_demand_screener import OnDemandScreener
 
 logger = logging.getLogger(__name__)
 
@@ -50,10 +77,14 @@ class Data(commands.Cog):
 
         message = None
         for ticker in tickers:
-            if frequency == 'daily':
-                data = await self.stock_data.price_history.fetch_daily_price_history(ticker=ticker)
-            else:
-                data = await self.stock_data.price_history.fetch_5m_price_history(ticker=ticker)
+            try:
+                if frequency == 'daily':
+                    data = await self.stock_data.price_history.fetch_daily_price_history(ticker=ticker)
+                else:
+                    data = await self.stock_data.price_history.fetch_5m_price_history(ticker=ticker)
+            except Exception:
+                logger.error(f"[data_price] Failed to fetch {frequency} data for '{ticker}'", exc_info=True)
+                data = pd.DataFrame()
             dm_content = ""
             file = None
             if not data.empty:
@@ -64,9 +95,30 @@ class Data(commands.Cog):
             else:
                 dm_content = f"Could not fetch price data for ticker `{ticker}`"
 
+            # Build snapshot embed — fetch live quote if daily; skip gracefully on auth error
+            snapshot_embed = None
+            if not data.empty:
+                quote = None
+                if frequency == 'daily':
+                    try:
+                        quote = await self.stock_data.schwab.get_quote(ticker)
+                    except (SchwabTokenError, SchwabRateLimitError, Exception):
+                        pass
+                snap_data = PriceSnapshotData(
+                    ticker=ticker,
+                    daily_price_history=data,
+                    frequency=frequency,
+                    quote=quote,
+                )
+                snapshot_embed = spec_to_embed(PriceSnapshot(snap_data).build())
+
             try:
-                if file:
+                if file and snapshot_embed:
+                    message = await interaction.user.send(content=dm_content, file=file, embed=snapshot_embed)
+                elif file:
                     message = await interaction.user.send(content=dm_content, file=file)
+                elif snapshot_embed:
+                    message = await interaction.user.send(content=dm_content, embed=snapshot_embed)
                 else:
                     message = await interaction.user.send(content=dm_content)
             except discord.Forbidden:
@@ -97,15 +149,30 @@ class Data(commands.Cog):
 
         message = None
         for ticker in tickers:
-            files = []
-            financials = await asyncio.to_thread(self.stock_data.yfinance.get_financials, ticker)
-            for statement, data in financials.items():
-                filepath = f"{datapaths.attachments_path}/{ticker}_{statement}.csv"
-                await asyncio.to_thread(data.to_csv, filepath)
-                files.append(discord.File(filepath))
+            try:
+                files = []
+                financials = await asyncio.to_thread(self.stock_data.yfinance.get_financials, ticker)
+                for statement, data in financials.items():
+                    filepath = f"{datapaths.attachments_path}/{ticker}_{statement}.csv"
+                    await asyncio.to_thread(data.to_csv, filepath)
+                    files.append(discord.File(filepath))
+            except Exception:
+                logger.error(f"[data_financials] Failed to fetch financials for '{ticker}'", exc_info=True)
+                files = []
+
+            highlights_embed = None
+            if files:
+                try:
+                    hi_data = FinancialHighlightsData(ticker=ticker, financials=financials)
+                    highlights_embed = spec_to_embed(FinancialHighlights(hi_data).build())
+                except Exception:
+                    logger.debug(f"[data_financials] Failed to build highlights embed for '{ticker}'", exc_info=True)
 
             try:
-                message = await interaction.user.send("Financials for {}".format(ticker), files=files)
+                send_kwargs = {"content": f"Financials for {ticker}", "files": files}
+                if highlights_embed:
+                    send_kwargs["embed"] = highlights_embed
+                message = await interaction.user.send(**send_kwargs)
             except discord.Forbidden:
                 await interaction.followup.send(
                     "Couldn't send DM — please enable DMs from server members in your privacy settings.",
@@ -132,8 +199,9 @@ class Data(commands.Cog):
         filepath = f"{datapaths.attachments_path}/all-tickers-info.csv"
         await asyncio.to_thread(data.to_csv, filepath)
         csv_file = discord.File(filepath)
+        summary_embed = spec_to_embed(TickersSummary(TickersSummaryData(tickers_df=data)).build())
         try:
-            await interaction.user.send(content="All tickers", file=csv_file)
+            await interaction.user.send(content="All tickers", file=csv_file, embed=summary_embed)
         except discord.Forbidden:
             await interaction.followup.send(
                 "Couldn't send DM — please enable DMs from server members in your privacy settings.",
@@ -158,35 +226,25 @@ class Data(commands.Cog):
         tickers, invalid_tickers = await self.stock_data.tickers.parse_valid_tickers(tickers)
         logger.info(f"Earnings requested for {tickers}")
 
-        column_map = {'date': 'Date Reported',
-                      'eps': 'EPS',
-                      'surprise': 'Surprise',
-                      'epsforecast': 'Estimate',
-                      'fiscalquarterending': 'Quarter'}
-
         message = None
         for ticker in tickers:
             eps = await self.stock_data.earnings.get_historical_earnings(ticker)
             file = None
+            embed = None
             if not eps.empty:
                 filepath = f"{datapaths.attachments_path}/{ticker}_eps.csv"
                 await asyncio.to_thread(eps.to_csv, filepath, index=False)
                 file = discord.File(filepath)
-
-                eps = eps.iloc[::-1].head(12)
-                eps = eps.filter(list(column_map.keys()))
-                eps = eps.rename(columns=column_map)
-                eps_table = table2ascii(
-                    header=eps.columns.tolist(),
-                    body=eps.values.tolist(),
-                    style=PresetStyle.thick
-                )
-                dm_content = f"**Earnings for {ticker}**\n ```{eps_table}```"
+                embed = spec_to_embed(EarningsCard(EarningsTableData(ticker=ticker, historical_earnings=eps)).build())
+                dm_content = f"Earnings history for `{ticker}`"
             else:
                 dm_content = f"Could not retrieve EPS data for ticker `{ticker}`"
             if visibility.value == "private":
                 try:
-                    message = await interaction.user.send(dm_content, files=[file] if file else [])
+                    send_kwargs = {"content": dm_content, "files": [file] if file else []}
+                    if embed:
+                        send_kwargs["embed"] = embed
+                    message = await interaction.user.send(**send_kwargs)
                 except discord.Forbidden:
                     await interaction.followup.send(
                         "Couldn't send DM — please enable DMs from server members in your privacy settings.",
@@ -198,7 +256,10 @@ class Data(commands.Cog):
                 if channel is None:
                     await interaction.followup.send("Use `/server setup` to configure the reports channel.", ephemeral=True)
                     return
-                message = await channel.send(dm_content, files=[file] if file else [])
+                send_kwargs = {"content": dm_content, "files": [file] if file else []}
+                if embed:
+                    send_kwargs["embed"] = embed
+                message = await channel.send(**send_kwargs)
 
         if tickers and message is not None:
             followup = f"Fetched EPS data for tickers [{ticker_string(tickers)}]({message.jump_url})."
@@ -219,28 +280,22 @@ class Data(commands.Cog):
 
         tickers, invalid_tickers = await self.stock_data.tickers.parse_valid_tickers(tickers)
 
-        message = ""
+        filings = {}
         for ticker in tickers:
             recent_filings = await self.stock_data.sec.get_recent_filings(ticker=ticker, latest=250)
             target_filing = None
-            for index, filing in recent_filings.iterrows():
+            for _, filing in recent_filings.iterrows():
                 if filing['form'] == form:
-                    target_filing = filing
+                    target_filing = filing.to_dict()
                     break
-            if target_filing is None:
-                message += f"No form {form} found for ticker `{ticker}`\n"
-            else:
-                filing_date = format_date_mdy(target_filing['filingDate'])
-                sec_link = target_filing['link']
-                message += f"[{ticker} Form {form} - Filed {filing_date}]({sec_link})\n"
+            filings[ticker] = target_filing
 
-        if not message:
-            message = f"No form {form} found for given tickers {ticker_string(tickers)}"
-        else:
-            message = f"Form {form} for tickers {ticker_string(tickers)}:\n\n" + message
-            if invalid_tickers:
-                message += f"\n\nInvalid tickers: {ticker_string(invalid_tickers)}"
-        await interaction.followup.send(message)
+        embed = spec_to_embed(SecFilingCard(SecFilingData(tickers=tickers, filings=filings, form=form)).build())
+        footer_parts = []
+        if invalid_tickers:
+            footer_parts.append(f"Invalid tickers: {ticker_string(invalid_tickers)}")
+        content = " · ".join(footer_parts) if footer_parts else None
+        await interaction.followup.send(content=content, embed=embed)
         logger.info(f"Form {form} provided for tickers {tickers}")
 
     @data_group.command(name="fundamentals", description="Get fundamental data (P/E, EPS, beta, etc.) as JSON (DM'd to you)")
@@ -257,7 +312,21 @@ class Data(commands.Cog):
         for ticker in tickers:
             file = None
             try:
-                fundamentals = await self.stock_data.schwab.get_fundamentals(tickers=[ticker])
+                fundamentals = await asyncio.wait_for(
+                    self.stock_data.schwab.get_fundamentals(tickers=[ticker]),
+                    timeout=15.0,
+                )
+            except asyncio.TimeoutError:
+                logger.warning(f"[data_fundamentals] Schwab timed out for '{ticker}'")
+                await interaction.followup.send(
+                    f"Request timed out for ticker `{ticker}` — try again shortly.", ephemeral=True
+                )
+                return
+            except SchwabRateLimitError:
+                await interaction.followup.send(
+                    "Schwab API rate limit exceeded — please wait a moment and try again.", ephemeral=True
+                )
+                return
             except SchwabTokenError:
                 await interaction.followup.send(
                     "Schwab authentication required — use `/schwab auth`.", ephemeral=True
@@ -269,14 +338,20 @@ class Data(commands.Cog):
                 await asyncio.to_thread(_write_json, filepath, fundamentals)
                 file = discord.File(filepath)
                 dm_content = f"Fundamentals for ticker `{ticker}`"
+                snap_embed = spec_to_embed(FundamentalsSnapshot(
+                    FundamentalsSnapshotData(ticker=ticker, fundamentals=fundamentals)
+                ).build())
             else:
                 dm_content = f"Could not retrieve fundamentals for ticker `{ticker}`"
+                snap_embed = None
 
             try:
+                send_kwargs = {"content": dm_content}
                 if file:
-                    message = await interaction.user.send(content=dm_content, file=file)
-                else:
-                    message = await interaction.user.send(content=dm_content)
+                    send_kwargs["file"] = file
+                if snap_embed:
+                    send_kwargs["embed"] = snap_embed
+                message = await interaction.user.send(**send_kwargs)
             except discord.Forbidden:
                 await interaction.followup.send(
                     "Couldn't send DM — please enable DMs from server members in your privacy settings.",
@@ -307,7 +382,16 @@ class Data(commands.Cog):
         for ticker in tickers:
             file = None
             try:
-                options = await self.stock_data.schwab.get_options_chain(ticker)
+                options = await asyncio.wait_for(
+                    self.stock_data.schwab.get_options_chain(ticker),
+                    timeout=15.0,
+                )
+            except asyncio.TimeoutError:
+                logger.warning(f"[data_options] Schwab timed out for '{ticker}'")
+                await interaction.followup.send(
+                    f"Request timed out for ticker `{ticker}` — try again shortly.", ephemeral=True
+                )
+                return
             except SchwabTokenError:
                 await interaction.followup.send(
                     "Schwab authentication required — use `/schwab auth`.", ephemeral=True
@@ -319,14 +403,21 @@ class Data(commands.Cog):
                 await asyncio.to_thread(_write_json, filepath, options)
                 file = discord.File(filepath)
                 dm_content = f"Options chain for ticker `{ticker}`"
+                current_price = options.get('underlyingPrice')
+                snap_embed = spec_to_embed(OptionsSummary(
+                    OptionsSummaryData(ticker=ticker, options_chain=options, current_price=current_price)
+                ).build())
             else:
                 dm_content = f"Could not retrieve options chain for ticker `{ticker}`"
+                snap_embed = None
 
             try:
+                send_kwargs = {"content": dm_content}
                 if file:
-                    message = await interaction.user.send(content=dm_content, file=file)
-                else:
-                    message = await interaction.user.send(content=dm_content)
+                    send_kwargs["file"] = file
+                if snap_embed:
+                    send_kwargs["embed"] = snap_embed
+                message = await interaction.user.send(**send_kwargs)
             except discord.Forbidden:
                 await interaction.followup.send(
                     "Couldn't send DM — please enable DMs from server members in your privacy settings.",
@@ -361,14 +452,20 @@ class Data(commands.Cog):
                 filepath = f"{datapaths.attachments_path}/{ticker}_popularity.csv"
                 await asyncio.to_thread(data.to_csv, filepath, index=False)
                 file = discord.File(filepath)
+                snap_embed = spec_to_embed(PopularitySnapshot(
+                    PopularitySnapshotData(ticker=ticker, popularity=data)
+                ).build())
             else:
                 dm_content = f"No popularity data available for ticker `{ticker}`"
+                snap_embed = None
 
             try:
+                send_kwargs = {"content": dm_content}
                 if file:
-                    message = await interaction.user.send(content=dm_content, file=file)
-                else:
-                    message = await interaction.user.send(content=dm_content)
+                    send_kwargs["file"] = file
+                if snap_embed:
+                    send_kwargs["embed"] = snap_embed
+                message = await interaction.user.send(**send_kwargs)
             except discord.Forbidden:
                 await interaction.followup.send(
                     "Couldn't send DM — please enable DMs from server members in your privacy settings.",
@@ -399,43 +496,19 @@ class Data(commands.Cog):
 
         try:
             quotes = await self.stock_data.schwab.get_quotes(tickers)
+        except SchwabRateLimitError:
+            await interaction.followup.send(
+                "Schwab API rate limit exceeded — please wait a moment and try again.", ephemeral=True
+            )
+            return
         except SchwabTokenError:
             await interaction.followup.send(
-                "Schwab authentication required — use `/schwab-auth`.", ephemeral=True
+                "Schwab authentication required — use `/schwab auth`.", ephemeral=True
             )
             return
 
-        embed = discord.Embed(title="Real-Time Quotes", color=discord.Color.blue())
-        for ticker in tickers:
-            quote_data = quotes.get(ticker, {})
-            q = quote_data.get('quote', {})
-            r = quote_data.get('regular', {})
-            last_price = r.get('regularMarketLastPrice') or q.get('lastPrice', 'N/A')
-            change = q.get('netChange', 'N/A')
-            change_pct = q.get('netPercentChange', 'N/A')
-            bid = q.get('bidPrice', 'N/A')
-            ask = q.get('askPrice', 'N/A')
-            volume = q.get('totalVolume', 'N/A')
-            open_price = q.get('openPrice', 'N/A')
-            high = q.get('highPrice', 'N/A')
-            low = q.get('lowPrice', 'N/A')
-            if isinstance(change, (int, float)) and isinstance(change_pct, (int, float)):
-                change_str = f"{change:+.2f} ({change_pct:+.2f}%)"
-            else:
-                change_str = "N/A"
-            volume_str = f"{volume:,}" if isinstance(volume, (int, float)) else str(volume)
-            value = (
-                f"**Last:** ${last_price}\n"
-                f"**Change:** {change_str}\n"
-                f"**Bid × Ask:** ${bid} × ${ask}\n"
-                f"**Volume:** {volume_str}\n"
-                f"**Open / High / Low:** ${open_price} / ${high} / ${low}"
-            )
-            embed.add_field(name=ticker, value=value, inline=False)
-
-        if invalid_tickers:
-            embed.set_footer(text=f"Invalid tickers: {ticker_string(invalid_tickers)}")
-
+        data = QuoteData(tickers=tickers, quotes=quotes, invalid_tickers=invalid_tickers)
+        embed = spec_to_embed(QuoteCard(data).build())
         await interaction.followup.send(embed=embed, ephemeral=True)
 
     @data_group.command(name="upcoming-earnings", description="See the next earnings date, EPS forecast, and analyst estimates")
@@ -450,26 +523,12 @@ class Data(commands.Cog):
             await interaction.followup.send("No valid tickers provided.", ephemeral=True)
             return
 
-        embed = discord.Embed(title="Upcoming Earnings", color=discord.Color.green())
+        earnings_info = {}
         for ticker in tickers:
-            info = await self.stock_data.earnings.get_next_earnings_info(ticker)
-            if info is None:
-                embed.add_field(name=ticker, value="No upcoming earnings found.", inline=False)
-            else:
-                timing = info.get('time', 'N/A')
-                timing_label = {"pre": "Before Market", "after": "After Market"}.get(timing, timing)
-                value = (
-                    f"**Date:** {info.get('date', 'N/A')}\n"
-                    f"**When:** {timing_label}\n"
-                    f"**EPS Forecast:** {info.get('eps_forecast', 'N/A')}\n"
-                    f"**Estimates:** {info.get('no_of_ests', 'N/A')}\n"
-                    f"**Last Year EPS:** {info.get('last_year_eps', 'N/A')}"
-                )
-                embed.add_field(name=ticker, value=value, inline=False)
+            earnings_info[ticker] = await self.stock_data.earnings.get_next_earnings_info(ticker)
 
-        if invalid_tickers:
-            embed.set_footer(text=f"Invalid tickers: {ticker_string(invalid_tickers)}")
-
+        data = UpcomingEarningsData(tickers=tickers, earnings_info=earnings_info, invalid_tickers=invalid_tickers)
+        embed = spec_to_embed(UpcomingEarningsCard(data).build())
         await interaction.followup.send(embed=embed, ephemeral=True)
 
     @data_group.command(name="stats", description="See volatility, classification, Bollinger Bands, and return stats")
@@ -484,29 +543,12 @@ class Data(commands.Cog):
             await interaction.followup.send("No valid tickers provided.", ephemeral=True)
             return
 
-        embed = discord.Embed(title="Ticker Stats", color=discord.Color.purple())
+        stats_dict = {}
         for ticker in tickers:
-            stats = await self.stock_data.ticker_stats.get_stats(ticker)
-            if stats is None:
-                embed.add_field(name=ticker, value="No stats available. Run the classify job to populate.", inline=False)
-            else:
-                mkt_cap = stats.get('market_cap')
-                mkt_cap_str = f"${mkt_cap / 1e9:.1f}B" if mkt_cap else "N/A"
-                value = (
-                    f"**Classification:** {stats.get('classification', 'N/A')}\n"
-                    f"**Market Cap:** {mkt_cap_str}\n"
-                    f"**Volatility 20d:** {stats.get('volatility_20d', 'N/A')}\n"
-                    f"**Mean Return 20d/60d:** {stats.get('mean_return_20d', 'N/A')} / {stats.get('mean_return_60d', 'N/A')}\n"
-                    f"**Std Return 20d/60d:** {stats.get('std_return_20d', 'N/A')} / {stats.get('std_return_60d', 'N/A')}\n"
-                    f"**Avg RVOL 20d:** {stats.get('avg_rvol_20d', 'N/A')}\n"
-                    f"**BB Upper/Mid/Lower:** {stats.get('bb_upper', 'N/A')} / {stats.get('bb_mid', 'N/A')} / {stats.get('bb_lower', 'N/A')}\n"
-                    f"**Updated:** {stats.get('updated_at', 'N/A')}"
-                )
-                embed.add_field(name=ticker, value=value, inline=False)
+            stats_dict[ticker] = await self.stock_data.ticker_stats.get_stats(ticker)
 
-        if invalid_tickers:
-            embed.set_footer(text=f"Invalid tickers: {ticker_string(invalid_tickers)}")
-
+        data = TickerStatsData(tickers=tickers, stats=stats_dict, invalid_tickers=invalid_tickers)
+        embed = spec_to_embed(StatsCard(data).build())
         await interaction.followup.send(embed=embed, ephemeral=True)
 
     @data_group.command(name="movers", description="See today's top 10 stock price movers")
@@ -517,30 +559,236 @@ class Data(commands.Cog):
 
         try:
             movers_data = await self.stock_data.schwab.get_movers()
+        except SchwabRateLimitError:
+            await interaction.followup.send(
+                "Schwab API rate limit exceeded — please wait a moment and try again.", ephemeral=True
+            )
+            return
         except SchwabTokenError:
             await interaction.followup.send(
-                "Schwab authentication required — use `/schwab-auth`.", ephemeral=True
+                "Schwab authentication required — use `/schwab auth`.", ephemeral=True
             )
             return
 
         screeners = movers_data.get('screeners', []) if movers_data else []
-        embed = discord.Embed(title="Top 10 Daily Movers", color=discord.Color.gold())
-        if not screeners:
-            embed.description = "No mover data available."
-        else:
-            for mover in screeners[:10]:
-                ticker = mover.get('symbol', 'N/A')
-                last_price = mover.get('lastPrice', 'N/A')
-                change_pct = mover.get('percentChange', 'N/A')
-                volume = mover.get('totalVolume', 'N/A')
-                change_pct_str = f"{change_pct:+.2f}%" if isinstance(change_pct, (int, float)) else str(change_pct)
-                volume_str = f"{volume:,}" if isinstance(volume, (int, float)) else str(volume)
-                embed.add_field(
-                    name=f"{ticker}  {change_pct_str}",
-                    value=f"**Price:** ${last_price}  |  **Volume:** {volume_str}",
-                    inline=False,
-                )
+        data = MoverData(direction='gainers', screeners=screeners)
+        embed = spec_to_embed(MoversCard(data).build())
+        await interaction.followup.send(embed=embed, ephemeral=True)
 
+
+    @data_group.command(name="analyst", description="See analyst price targets, ratings, and recent upgrades/downgrades")
+    @app_commands.describe(ticker="Ticker to look up")
+    async def data_analyst(self, interaction: discord.Interaction, ticker: str):
+        """Return analyst consensus embed for a single ticker."""
+        await interaction.response.defer(ephemeral=True)
+        logger.info(f"/data analyst called by {interaction.user.name} for {ticker}")
+
+        tickers, invalid = await self.stock_data.tickers.parse_valid_tickers(ticker)
+        if not tickers:
+            await interaction.followup.send(f"Could not fetch data for: {ticker_string(invalid)}", ephemeral=True)
+            return
+
+        t = tickers[0]
+        price_targets = await asyncio.to_thread(self.stock_data.yfinance.get_analyst_price_targets, t)
+        recommendations = await asyncio.to_thread(self.stock_data.yfinance.get_recommendations_summary, t)
+        upgrades_downgrades = await asyncio.to_thread(self.stock_data.yfinance.get_upgrades_downgrades, t)
+
+        data = AnalystData(
+            ticker=t,
+            price_targets=price_targets,
+            recommendations=recommendations,
+            upgrades_downgrades=upgrades_downgrades,
+        )
+        embed = spec_to_embed(AnalystCard(data).build())
+        await interaction.followup.send(embed=embed, ephemeral=True)
+
+    @data_group.command(name="ownership", description="See institutional and insider ownership breakdown")
+    @app_commands.describe(ticker="Ticker to look up")
+    async def data_ownership(self, interaction: discord.Interaction, ticker: str):
+        """Return ownership breakdown embed for a single ticker."""
+        await interaction.response.defer(ephemeral=True)
+        logger.info(f"/data ownership called by {interaction.user.name} for {ticker}")
+
+        tickers, invalid = await self.stock_data.tickers.parse_valid_tickers(ticker)
+        if not tickers:
+            await interaction.followup.send(f"Could not fetch data for: {ticker_string(invalid)}", ephemeral=True)
+            return
+
+        t = tickers[0]
+        institutional = await asyncio.to_thread(self.stock_data.yfinance.get_institutional_holders, t)
+        major = await asyncio.to_thread(self.stock_data.yfinance.get_major_holders, t)
+
+        data = OwnershipData(ticker=t, institutional_holders=institutional, major_holders=major)
+        embed = spec_to_embed(OwnershipCard(data).build())
+        await interaction.followup.send(embed=embed, ephemeral=True)
+
+    @data_group.command(name="insider", description="See recent insider transactions and purchase activity")
+    @app_commands.describe(ticker="Ticker to look up")
+    async def data_insider(self, interaction: discord.Interaction, ticker: str):
+        """Return insider activity embed for a single ticker."""
+        await interaction.response.defer(ephemeral=True)
+        logger.info(f"/data insider called by {interaction.user.name} for {ticker}")
+
+        tickers, invalid = await self.stock_data.tickers.parse_valid_tickers(ticker)
+        if not tickers:
+            await interaction.followup.send(f"Could not fetch data for: {ticker_string(invalid)}", ephemeral=True)
+            return
+
+        t = tickers[0]
+        transactions = await asyncio.to_thread(self.stock_data.yfinance.get_insider_transactions, t)
+        purchases = await asyncio.to_thread(self.stock_data.yfinance.get_insider_purchases, t)
+
+        data = InsiderData(ticker=t, insider_transactions=transactions, insider_purchases=purchases)
+        embed = spec_to_embed(InsiderCard(data).build())
+        await interaction.followup.send(embed=embed, ephemeral=True)
+
+    @data_group.command(name="short-interest", description="See short interest ratio, % of float, and shares short")
+    @app_commands.describe(ticker="Ticker to look up")
+    async def data_short_interest(self, interaction: discord.Interaction, ticker: str):
+        """Return short interest embed for a single ticker (sourced from Schwab fundamentals)."""
+        await interaction.response.defer(ephemeral=True)
+        logger.info(f"/data short-interest called by {interaction.user.name} for {ticker}")
+
+        tickers, invalid = await self.stock_data.tickers.parse_valid_tickers(ticker)
+        if not tickers:
+            await interaction.followup.send(f"Could not fetch data for: {ticker_string(invalid)}", ephemeral=True)
+            return
+
+        t = tickers[0]
+        try:
+            raw = await self.stock_data.schwab.get_fundamentals([t])
+        except (SchwabTokenError, SchwabRateLimitError) as exc:
+            await interaction.followup.send(str(exc), ephemeral=True)
+            return
+
+        fund = {}
+        instruments = raw.get('instruments', []) if raw else []
+        if instruments:
+            fund = instruments[0].get('fundamental', {})
+
+        data = ShortInterestData(
+            ticker=t,
+            short_interest_ratio=fund.get('shortInterestToFloat') or fund.get('shortIntRatio'),
+            short_interest_shares=fund.get('shortInterestShares') or fund.get('shortInt'),
+            short_percent_of_float=fund.get('shortPercentOfFloat') or fund.get('shortInterestToFloat'),
+            shares_outstanding=fund.get('sharesOutstanding'),
+        )
+        embed = spec_to_embed(ShortInterestCard(data).build())
+        await interaction.followup.send(embed=embed, ephemeral=True)
+
+
+    @data_group.command(name="news", description="Get the latest news headlines for one or more tickers")
+    @app_commands.describe(tickers="Tickers to fetch news for (separated by spaces)")
+    async def data_news(self, interaction: discord.Interaction, tickers: str):
+        """Return latest news headlines for input tickers."""
+        await interaction.response.defer(ephemeral=True)
+        logger.info(f"/data news called by {interaction.user.name} for {tickers}")
+
+        valid_tickers, invalid = await self.stock_data.tickers.parse_valid_tickers(tickers)
+        if not valid_tickers:
+            await interaction.followup.send(f"Could not fetch data for: {ticker_string(invalid)}", ephemeral=True)
+            return
+
+        news_results = {}
+        for ticker in valid_tickers:
+            try:
+                news_results[ticker] = await asyncio.to_thread(
+                    self.stock_data.news.get_news, ticker
+                )
+            except Exception:
+                logger.warning(f"[data_news] Failed to fetch news for {ticker}", exc_info=True)
+                news_results[ticker] = None
+
+        data = NewsData(tickers=valid_tickers, news_results=news_results)
+        embed = spec_to_embed(NewsCard(data).build())
+        await interaction.followup.send(embed=embed, ephemeral=True)
+
+    @data_group.command(name="forecast", description="Get quarterly and annual EPS forecasts from NASDAQ")
+    @app_commands.describe(ticker="Ticker to fetch forecast for")
+    async def data_forecast(self, interaction: discord.Interaction, ticker: str):
+        """Return earnings forecast embed for a single ticker."""
+        await interaction.response.defer(ephemeral=True)
+        logger.info(f"/data forecast called by {interaction.user.name} for {ticker}")
+
+        tickers, invalid = await self.stock_data.tickers.parse_valid_tickers(ticker)
+        if not tickers:
+            await interaction.followup.send(f"Could not fetch data for: {ticker_string(invalid)}", ephemeral=True)
+            return
+
+        t = tickers[0]
+        try:
+            quarterly = await asyncio.to_thread(
+                self.stock_data.nasdaq.get_earnings_forecast_quarterly, t
+            )
+            yearly = await asyncio.to_thread(
+                self.stock_data.nasdaq.get_earnings_forecast_yearly, t
+            )
+        except Exception:
+            logger.warning(f"[data_forecast] Failed to fetch forecast for {t}", exc_info=True)
+            quarterly, yearly = pd.DataFrame(), pd.DataFrame()
+
+        data = EarningsForecastData(ticker=t, quarterly_forecast=quarterly, yearly_forecast=yearly)
+        embed = spec_to_embed(ForecastCard(data).build())
+        await interaction.followup.send(embed=embed, ephemeral=True)
+
+    @data_group.command(name="screener", description="Run an on-demand TradingView screener")
+    @app_commands.describe(screener_type="Which screener to run")
+    @app_commands.choices(screener_type=[
+        app_commands.Choice(name='Premarket Gainers', value='premarket'),
+        app_commands.Choice(name='Intraday Gainers', value='intraday'),
+        app_commands.Choice(name='Unusual Volume', value='unusual-volume'),
+    ])
+    async def data_screener(self, interaction: discord.Interaction, screener_type: app_commands.Choice[str]):
+        """Return an on-demand screener embed."""
+        await interaction.response.defer(ephemeral=True)
+        logger.info(f"/data screener called by {interaction.user.name} — type: {screener_type.value}")
+
+        try:
+            if screener_type.value == 'premarket':
+                raw = await asyncio.to_thread(self.stock_data.trading_view.get_premarket_gainers)
+            elif screener_type.value == 'intraday':
+                raw = await asyncio.to_thread(self.stock_data.trading_view.get_intraday_gainers)
+            else:
+                raw = await asyncio.to_thread(self.stock_data.trading_view.get_unusual_volume_movers)
+        except Exception:
+            logger.warning(f"[data_screener] TradingView call failed", exc_info=True)
+            raw = pd.DataFrame()
+
+        data = OnDemandScreenerData(screener_type=screener_type.value, data=raw)
+        embed = spec_to_embed(OnDemandScreener(data).build())
+        await interaction.followup.send(embed=embed, ephemeral=True)
+
+    @data_group.command(name="losers", description="See today's top 10 stock price losers")
+    async def data_losers(self, interaction: discord.Interaction):
+        """Return top 10 daily price losers."""
+        await interaction.response.defer(ephemeral=True)
+        logger.info(f"/data losers called by {interaction.user.name}")
+
+        schwab_client = self.stock_data.schwab.client
+        if schwab_client is None:
+            await interaction.followup.send(
+                "Schwab authentication required — use `/schwab auth`.", ephemeral=True
+            )
+            return
+
+        try:
+            movers_data = await self.stock_data.schwab.get_movers(
+                sort_order=schwab_client.Movers.SortOrder.PERCENT_CHANGE_DOWN
+            )
+        except SchwabRateLimitError:
+            await interaction.followup.send(
+                "Schwab API rate limit exceeded — please wait a moment and try again.", ephemeral=True
+            )
+            return
+        except SchwabTokenError:
+            await interaction.followup.send(
+                "Schwab authentication required — use `/schwab auth`.", ephemeral=True
+            )
+            return
+
+        screeners = movers_data.get('screeners', []) if movers_data else []
+        data = MoverData(direction='losers', screeners=screeners)
+        embed = spec_to_embed(MoversCard(data).build())
         await interaction.followup.send(embed=embed, ephemeral=True)
 
 

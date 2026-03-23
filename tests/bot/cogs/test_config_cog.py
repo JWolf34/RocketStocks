@@ -5,7 +5,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import discord
 
-from rocketstocks.data.channel_config import REPORTS, ALERTS, SCREENERS, CHARTS, NOTIFICATIONS, ALL_CONFIG_TYPES
+from rocketstocks.data.channel_config import REPORTS, ALERTS, SCREENERS, NOTIFICATIONS, ALL_CONFIG_TYPES
 
 
 def _make_bot(guild_id=123456):
@@ -334,7 +334,7 @@ class TestChannelSetupView:
         view = ChannelSetupView(bot, guild.id, {})
 
         selects = [c for c in view.children if isinstance(c, _ChannelTypeSelect)]
-        assert len(selects) == 5
+        assert len(selects) == 4
 
     @pytest.mark.asyncio
     async def test_pre_populates_default_values_from_current_config(self):

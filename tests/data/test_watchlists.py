@@ -3,7 +3,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from rocketstocks.data.watchlists import Watchlists
+from rocketstocks.data.watchlists import Watchlists, NAMED, PERSONAL, SYSTEM, CLASSIFICATION
 
 
 def _make(db=None):
@@ -12,6 +12,25 @@ def _make(db=None):
         db.execute = AsyncMock(return_value=None)
     return Watchlists(db)
 
+
+# ---------------------------------------------------------------------------
+# resolve_personal_id
+# ---------------------------------------------------------------------------
+
+class TestResolvePersonalId:
+    def test_returns_prefixed_string(self):
+        assert Watchlists.resolve_personal_id(12345) == "personal:12345"
+
+    def test_large_discord_id(self):
+        assert Watchlists.resolve_personal_id(123456789012345678) == "personal:123456789012345678"
+
+    def test_different_users_produce_different_ids(self):
+        assert Watchlists.resolve_personal_id(1) != Watchlists.resolve_personal_id(2)
+
+
+# ---------------------------------------------------------------------------
+# get_watchlist_tickers
+# ---------------------------------------------------------------------------
 
 class TestGetWatchlistTickers:
     async def test_returns_sorted_tickers(self):
@@ -27,6 +46,12 @@ class TestGetWatchlistTickers:
         wl = _make(db)
         assert await wl.get_watchlist_tickers("nonexistent") == []
 
+    async def test_returns_empty_list_for_empty_tickers_string(self):
+        db = MagicMock()
+        db.execute = AsyncMock(return_value=("",))
+        wl = _make(db)
+        assert await wl.get_watchlist_tickers("empty-list") == []
+
     async def test_calls_execute_with_watchlist_id(self):
         db = MagicMock()
         db.execute = AsyncMock(return_value=("AAPL",))
@@ -37,39 +62,47 @@ class TestGetWatchlistTickers:
         assert "my-list" in params
 
 
+# ---------------------------------------------------------------------------
+# get_all_watchlist_tickers
+# ---------------------------------------------------------------------------
+
 class TestGetAllWatchlistTickers:
-    async def test_excludes_personal_watchlists(self):
+    async def test_returns_tickers_for_requested_types(self):
         db = MagicMock()
-        # "123" is numeric → personal; "global" is not
+        # Mock returns whatever the SQL WHERE would return — just named rows here
         db.execute = AsyncMock(return_value=[
-            ("123", "AAPL MSFT", False),
-            ("global", "GOOG TSLA", False),
+            ("GOOG TSLA",),
         ])
         wl = _make(db)
-        result = await wl.get_all_watchlist_tickers(no_personal=True, no_systemGenerated=False)
+        result = await wl.get_all_watchlist_tickers(watchlist_types=[NAMED])
         assert "GOOG" in result
         assert "TSLA" in result
-        assert "AAPL" not in result
 
-    async def test_excludes_system_generated(self):
+    async def test_passes_types_as_sql_params(self):
         db = MagicMock()
-        db.execute = AsyncMock(return_value=[
-            ("alpha", "AAPL", True),    # system-generated
-            ("beta", "MSFT", False),    # normal
-        ])
+        db.execute = AsyncMock(return_value=[])
         wl = _make(db)
-        result = await wl.get_all_watchlist_tickers(no_personal=False, no_systemGenerated=True)
-        assert "MSFT" in result
-        assert "AAPL" not in result
+        await wl.get_all_watchlist_tickers(watchlist_types=[NAMED, PERSONAL])
+        params = db.execute.call_args[0][1]
+        assert NAMED in params
+        assert PERSONAL in params
+
+    async def test_defaults_to_named_only(self):
+        db = MagicMock()
+        db.execute = AsyncMock(return_value=[])
+        wl = _make(db)
+        await wl.get_all_watchlist_tickers()
+        params = db.execute.call_args[0][1]
+        assert params == [NAMED]
 
     async def test_returns_sorted_unique_tickers(self):
         db = MagicMock()
         db.execute = AsyncMock(return_value=[
-            ("alpha", "AAPL MSFT", False),
-            ("beta", "AAPL GOOG", False),
+            ("AAPL MSFT",),
+            ("AAPL GOOG",),
         ])
         wl = _make(db)
-        result = await wl.get_all_watchlist_tickers(no_personal=False, no_systemGenerated=False)
+        result = await wl.get_all_watchlist_tickers(watchlist_types=[NAMED])
         assert result == sorted(set(result))
         assert result.count("AAPL") == 1
 
@@ -81,42 +114,112 @@ class TestGetAllWatchlistTickers:
         assert result == []
 
 
+# ---------------------------------------------------------------------------
+# get_watchlists
+# ---------------------------------------------------------------------------
+
 class TestGetWatchlists:
-    async def test_appends_personal_when_no_personal_true(self):
+    async def test_includes_personal_entry_when_personal_in_types(self):
         db = MagicMock()
-        db.execute = AsyncMock(return_value=[("alpha", "AAPL", False)])
+        db.execute = AsyncMock(return_value=[("alpha", NAMED, None)])
         wl = _make(db)
-        result = await wl.get_watchlists(no_personal=True, no_systemGenerated=False)
+        result = await wl.get_watchlists(watchlist_types=[NAMED, PERSONAL])
         assert "personal" in result
+
+    async def test_does_not_include_personal_when_named_only(self):
+        db = MagicMock()
+        db.execute = AsyncMock(return_value=[("alpha", NAMED, None)])
+        wl = _make(db)
+        result = await wl.get_watchlists(watchlist_types=[NAMED])
+        # No personal rows returned, personal not in types
+        assert "personal" not in result
 
     async def test_returns_sorted_list(self):
         db = MagicMock()
         db.execute = AsyncMock(return_value=[
-            ("zebra", "TSLA", False),
-            ("alpha", "AAPL", False),
+            ("zebra", NAMED, None),
+            ("alpha", NAMED, None),
         ])
         wl = _make(db)
-        result = await wl.get_watchlists(no_personal=False, no_systemGenerated=False)
+        result = await wl.get_watchlists(watchlist_types=[NAMED])
         assert result == sorted(result)
 
-    async def test_excludes_system_generated_when_flag_set(self):
+    async def test_deduplicates_personal_entries(self):
         db = MagicMock()
+        # Two different users' personal watchlists — both translate to "personal"
         db.execute = AsyncMock(return_value=[
-            ("syslist", "AAPL", True),
-            ("userlist", "MSFT", False),
+            ("personal:111", PERSONAL, None),
+            ("personal:222", PERSONAL, None),
         ])
         wl = _make(db)
-        result = await wl.get_watchlists(no_personal=False, no_systemGenerated=True)
-        assert "userlist" in result
-        assert "syslist" not in result
+        result = await wl.get_watchlists(watchlist_types=[PERSONAL])
+        assert result.count("personal") == 1
 
     async def test_returns_empty_list_when_db_returns_none(self):
         db = MagicMock()
         db.execute = AsyncMock(return_value=None)
         wl = _make(db)
-        result = await wl.get_watchlists(no_personal=False, no_systemGenerated=False)
+        result = await wl.get_watchlists(watchlist_types=[NAMED])
+        # NAMED in types but no rows; PERSONAL not in types → no "personal" appended
         assert result == []
 
+    async def test_defaults_to_named_only(self):
+        db = MagicMock()
+        db.execute = AsyncMock(return_value=[])
+        wl = _make(db)
+        await wl.get_watchlists()
+        params = db.execute.call_args[0][1]
+        assert params == [NAMED]
+
+
+# ---------------------------------------------------------------------------
+# get_ticker_to_watchlist_map
+# ---------------------------------------------------------------------------
+
+class TestGetTickerToWatchlistMap:
+    async def test_returns_ticker_to_watchlist_name(self):
+        db = MagicMock()
+        db.execute = AsyncMock(return_value=[
+            ("mag7", "AAPL MSFT NVDA", NAMED, "mag7"),
+            ("semiconductors", "NVDA AMD", NAMED, "semiconductors"),
+        ])
+        wl = _make(db)
+        result = await wl.get_ticker_to_watchlist_map(watchlist_types=[NAMED])
+        assert result["AAPL"] == "mag7"
+        assert result["AMD"] == "semiconductors"
+        # Last watchlist wins if ticker appears in multiple
+        assert result["NVDA"] in {"mag7", "semiconductors"}
+
+    async def test_personal_watchlist_maps_to_Personal(self):
+        db = MagicMock()
+        db.execute = AsyncMock(return_value=[
+            ("personal:12345", "TSLA GOOG", PERSONAL, None),
+        ])
+        wl = _make(db)
+        result = await wl.get_ticker_to_watchlist_map(watchlist_types=[PERSONAL])
+        assert result["TSLA"] == "Personal"
+        assert result["GOOG"] == "Personal"
+
+    async def test_returns_empty_dict_when_no_rows(self):
+        db = MagicMock()
+        db.execute = AsyncMock(return_value=None)
+        wl = _make(db)
+        result = await wl.get_ticker_to_watchlist_map()
+        assert result == {}
+
+    async def test_defaults_to_named_and_personal(self):
+        db = MagicMock()
+        db.execute = AsyncMock(return_value=[])
+        wl = _make(db)
+        await wl.get_ticker_to_watchlist_map()
+        params = db.execute.call_args[0][1]
+        assert NAMED in params
+        assert PERSONAL in params
+
+
+# ---------------------------------------------------------------------------
+# update_watchlist
+# ---------------------------------------------------------------------------
 
 class TestUpdateWatchlist:
     async def test_calls_db_execute(self):
@@ -151,32 +254,79 @@ class TestUpdateWatchlist:
         assert "watchlists" in sql.lower()
 
 
+# ---------------------------------------------------------------------------
+# create_watchlist
+# ---------------------------------------------------------------------------
+
 class TestCreateWatchlist:
     async def test_calls_db_execute(self):
         db = MagicMock()
         db.execute = AsyncMock(return_value=None)
         wl = _make(db)
-        await wl.create_watchlist("my-list", ["AAPL", "MSFT"], False)
+        await wl.create_watchlist("my-list", ["AAPL", "MSFT"], watchlist_type=NAMED)
         db.execute.assert_called_once()
 
     async def test_sql_contains_insert_into_watchlists(self):
         db = MagicMock()
         db.execute = AsyncMock(return_value=None)
         wl = _make(db)
-        await wl.create_watchlist("my-list", ["AAPL", "MSFT"], False)
+        await wl.create_watchlist("my-list", ["AAPL", "MSFT"], watchlist_type=NAMED)
         sql = db.execute.call_args[0][0]
         assert "INSERT INTO watchlists" in sql
 
-    async def test_passes_id_tickers_and_systemgenerated(self):
+    async def test_passes_id_and_tickers(self):
         db = MagicMock()
         db.execute = AsyncMock(return_value=None)
         wl = _make(db)
-        await wl.create_watchlist("my-list", ["AAPL", "MSFT"], False)
+        await wl.create_watchlist("my-list", ["AAPL", "MSFT"], watchlist_type=NAMED)
         params = db.execute.call_args[0][1]
         assert "my-list" in params
         assert "AAPL MSFT" in params
-        assert False in params
 
+    async def test_system_type_sets_systemgenerated_true(self):
+        db = MagicMock()
+        db.execute = AsyncMock(return_value=None)
+        wl = _make(db)
+        await wl.create_watchlist("__sentinel__", [], watchlist_type=SYSTEM)
+        params = db.execute.call_args[0][1]
+        assert True in params   # systemgenerated
+
+    async def test_named_type_sets_systemgenerated_false(self):
+        db = MagicMock()
+        db.execute = AsyncMock(return_value=None)
+        wl = _make(db)
+        await wl.create_watchlist("my-list", ["AAPL"], watchlist_type=NAMED)
+        params = db.execute.call_args[0][1]
+        assert False in params   # systemgenerated
+
+    async def test_personal_type_includes_owner_id(self):
+        db = MagicMock()
+        db.execute = AsyncMock(return_value=None)
+        wl = _make(db)
+        await wl.create_watchlist("personal:12345", [], watchlist_type=PERSONAL, owner_id=12345)
+        params = db.execute.call_args[0][1]
+        assert 12345 in params
+
+    async def test_legacy_systemGenerated_false(self):
+        db = MagicMock()
+        db.execute = AsyncMock(return_value=None)
+        wl = _make(db)
+        await wl.create_watchlist("my-list", ["AAPL"], systemGenerated=False)
+        params = db.execute.call_args[0][1]
+        assert False in params  # systemgenerated computed from type
+
+    async def test_legacy_systemGenerated_true(self):
+        db = MagicMock()
+        db.execute = AsyncMock(return_value=None)
+        wl = _make(db)
+        await wl.create_watchlist("__seed__", [], systemGenerated=True)
+        params = db.execute.call_args[0][1]
+        assert True in params  # systemgenerated
+
+
+# ---------------------------------------------------------------------------
+# delete_watchlist
+# ---------------------------------------------------------------------------
 
 class TestDeleteWatchlist:
     async def test_calls_db_execute(self):
@@ -204,6 +354,10 @@ class TestDeleteWatchlist:
         assert "watchlists" in sql.lower()
 
 
+# ---------------------------------------------------------------------------
+# validate_watchlist
+# ---------------------------------------------------------------------------
+
 class TestValidateWatchlist:
     async def test_returns_true_when_found(self):
         db = MagicMock()
@@ -218,18 +372,13 @@ class TestValidateWatchlist:
         assert await wl.validate_watchlist("nonexistent") is False
 
 
+# ---------------------------------------------------------------------------
+# rename_watchlist
+# ---------------------------------------------------------------------------
+
 class TestRenameWatchlist:
     def _make_rename_db(self, old_exists: bool, new_exists: bool):
-        """
-        Build a db mock for rename_watchlist.
-
-        validate_watchlist calls db.execute(SELECT id..., fetchone=True):
-          - first call: old_id check → ("old-list",) if old_exists else None
-          - second call: new_id check → ("new-list",) if new_exists else None
-
-        The transaction context manager yields a conn mock whose .execute()
-        returns a cursor mock with .fetchone() supplying the row data.
-        """
+        """Build a db mock for rename_watchlist."""
         db = MagicMock()
 
         validate_side_effects = [
@@ -237,7 +386,7 @@ class TestRenameWatchlist:
             ("new-list",) if new_exists else None,
         ]
         mock_cur = MagicMock()
-        mock_cur.fetchone = AsyncMock(return_value=("AAPL MSFT", False))
+        mock_cur.fetchone = AsyncMock(return_value=("AAPL MSFT", False, NAMED, None, "old-list"))
         mock_conn = MagicMock()
         mock_conn.execute = AsyncMock(return_value=mock_cur)
 
@@ -246,8 +395,6 @@ class TestRenameWatchlist:
         mock_ctx.__aexit__ = AsyncMock(return_value=False)
         db.transaction.return_value = mock_ctx
 
-        # validate_watchlist uses fetchone=True; the transaction SELECT/INSERT/DELETE
-        # use conn.execute. We wire db.execute for the validate calls only.
         db.execute = AsyncMock(side_effect=validate_side_effects)
 
         return db, mock_conn
@@ -270,7 +417,6 @@ class TestRenameWatchlist:
         wl = _make(db)
         await wl.rename_watchlist("old-list", "new-list")
         calls = mock_conn.execute.call_args_list
-        # Second call is the INSERT
         insert_params = calls[1][0][1]
         assert "new-list" in insert_params
 
@@ -279,14 +425,14 @@ class TestRenameWatchlist:
         wl = _make(db)
         await wl.rename_watchlist("old-list", "new-list")
         calls = mock_conn.execute.call_args_list
-        # Third call is the DELETE
         delete_params = calls[2][0][1]
         assert "old-list" in delete_params
 
     async def test_preserves_tickers_and_systemgenerated(self):
         db, mock_conn = self._make_rename_db(old_exists=True, new_exists=False)
-        # Override fetchone to return custom data
-        mock_conn.execute.return_value.fetchone = AsyncMock(return_value=("AAPL MSFT", True))
+        mock_conn.execute.return_value.fetchone = AsyncMock(
+            return_value=("AAPL MSFT", True, SYSTEM, None, "old-list")
+        )
         wl = _make(db)
         await wl.rename_watchlist("old-list", "new-list")
         calls = mock_conn.execute.call_args_list
@@ -309,30 +455,39 @@ class TestRenameWatchlist:
         mock_conn.execute.assert_not_called()
 
 
+# ---------------------------------------------------------------------------
+# get_classification_overrides
+# ---------------------------------------------------------------------------
+
 class TestGetClassificationOverrides:
-    async def test_returns_overrides_from_class_prefixed_watchlists(self):
+    async def test_returns_overrides_from_classification_type_watchlists(self):
         db = MagicMock()
+        # New query returns (id, tickers, display_name) for watchlist_type='classification'
         db.execute = AsyncMock(return_value=[
-            ("class:volatile", "GME AMC"),
-            ("other", "AAPL"),
+            ("class:volatile", "GME AMC", "volatile"),
         ])
         wl = _make(db)
         result = await wl.get_classification_overrides()
         assert result["GME"] == "volatile"
         assert result["AMC"] == "volatile"
-        assert "AAPL" not in result
 
-    async def test_ignores_non_class_watchlists(self):
+    async def test_uses_display_name_as_category(self):
         db = MagicMock()
         db.execute = AsyncMock(return_value=[
-            ("regular", "TSLA MSFT"),
-            ("class:growth", "NVDA"),
+            ("class:growth", "NVDA", "growth"),
         ])
         wl = _make(db)
         result = await wl.get_classification_overrides()
-        assert "TSLA" not in result
-        assert "MSFT" not in result
         assert result["NVDA"] == "growth"
+
+    async def test_falls_back_to_id_prefix_when_no_display_name(self):
+        db = MagicMock()
+        db.execute = AsyncMock(return_value=[
+            ("class:meme", "GME", None),
+        ])
+        wl = _make(db)
+        result = await wl.get_classification_overrides()
+        assert result["GME"] == "meme"
 
     async def test_returns_empty_dict_when_no_rows(self):
         db = MagicMock()
@@ -341,12 +496,10 @@ class TestGetClassificationOverrides:
         result = await wl.get_classification_overrides()
         assert result == {}
 
-    async def test_returns_empty_dict_when_no_class_watchlists(self):
+    async def test_sql_filters_by_classification_type(self):
         db = MagicMock()
-        db.execute = AsyncMock(return_value=[
-            ("alpha", "AAPL MSFT"),
-            ("beta", "GOOG"),
-        ])
+        db.execute = AsyncMock(return_value=[])
         wl = _make(db)
-        result = await wl.get_classification_overrides()
-        assert result == {}
+        await wl.get_classification_overrides()
+        sql = db.execute.call_args[0][0]
+        assert "classification" in sql

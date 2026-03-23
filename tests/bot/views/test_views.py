@@ -109,8 +109,19 @@ class TestAlertButtons:
 
 
 class TestWatchlistSelect:
-    async def test_adds_ticker_to_selected_watchlist(self):
+    def _make_watchlist_repo(self, tickers=None, validate=True):
         from unittest.mock import AsyncMock, MagicMock
+        from rocketstocks.data.watchlists import Watchlists as WatchlistsRepo
+        watchlists = MagicMock()
+        watchlists.resolve_personal_id = WatchlistsRepo.resolve_personal_id
+        watchlists.validate_watchlist = AsyncMock(return_value=validate)
+        watchlists.get_watchlist_tickers = AsyncMock(return_value=tickers or [])
+        watchlists.update_watchlist = AsyncMock()
+        watchlists.create_watchlist = AsyncMock()
+        return watchlists
+
+    async def test_adds_ticker_to_selected_watchlist(self):
+        from unittest.mock import AsyncMock
         from rocketstocks.bot.views.alert_views import WatchlistSelect
 
         view = WatchlistSelect("GME", ["global", "personal"])
@@ -118,21 +129,17 @@ class TestWatchlistSelect:
         interaction = AsyncMock()
         interaction.user.id = 12345
         interaction.data = {"values": ["global"]}
-
-        watchlists = MagicMock()
-        watchlists.validate_watchlist.return_value = True
-        watchlists.get_watchlist_tickers.return_value = ["AAPL", "TSLA"]
-        interaction.client.stock_data.watchlists = watchlists
+        interaction.client.stock_data.watchlists = self._make_watchlist_repo(tickers=["AAPL", "TSLA"])
 
         await view._select_callback(interaction)
 
-        watchlists.update_watchlist.assert_called_once()
+        interaction.client.stock_data.watchlists.update_watchlist.assert_awaited_once()
         interaction.response.send_message.assert_awaited_once()
         msg = interaction.response.send_message.call_args[0][0]
         assert "GME" in msg
 
     async def test_already_on_watchlist_message(self):
-        from unittest.mock import AsyncMock, MagicMock
+        from unittest.mock import AsyncMock
         from rocketstocks.bot.views.alert_views import WatchlistSelect
 
         view = WatchlistSelect("AAPL", ["global"])
@@ -140,20 +147,49 @@ class TestWatchlistSelect:
         interaction = AsyncMock()
         interaction.user.id = 12345
         interaction.data = {"values": ["global"]}
-
-        watchlists = MagicMock()
-        watchlists.validate_watchlist.return_value = True
-        watchlists.get_watchlist_tickers.return_value = ["AAPL", "TSLA"]
-        interaction.client.stock_data.watchlists = watchlists
+        interaction.client.stock_data.watchlists = self._make_watchlist_repo(tickers=["AAPL", "TSLA"])
 
         await view._select_callback(interaction)
 
-        watchlists.update_watchlist.assert_not_called()
+        interaction.client.stock_data.watchlists.update_watchlist.assert_not_awaited()
         msg = interaction.response.send_message.call_args[0][0]
         assert "already" in msg.lower()
 
+    async def test_personal_selection_uses_prefixed_user_id(self):
+        from unittest.mock import AsyncMock
+        from rocketstocks.bot.views.alert_views import WatchlistSelect
+
+        view = WatchlistSelect("GME", ["personal"])
+
+        interaction = AsyncMock()
+        interaction.user.id = 99999
+        interaction.data = {"values": ["personal"]}
+        interaction.client.stock_data.watchlists = self._make_watchlist_repo(tickers=[])
+
+        await view._select_callback(interaction)
+
+        validate_call = interaction.client.stock_data.watchlists.validate_watchlist.call_args[0][0]
+        assert validate_call == "personal:99999"
+
+    async def test_creates_watchlist_if_not_exists(self):
+        from unittest.mock import AsyncMock
+        from rocketstocks.bot.views.alert_views import WatchlistSelect
+
+        view = WatchlistSelect("GME", ["personal"])
+
+        interaction = AsyncMock()
+        interaction.user.id = 99999
+        interaction.data = {"values": ["personal"]}
+        repo = self._make_watchlist_repo(tickers=[], validate=False)
+        interaction.client.stock_data.watchlists = repo
+
+        await view._select_callback(interaction)
+
+        repo.create_watchlist.assert_awaited_once()
+
     async def test_error_handling(self):
         from unittest.mock import AsyncMock, MagicMock
+        from rocketstocks.data.watchlists import Watchlists as WatchlistsRepo
         from rocketstocks.bot.views.alert_views import WatchlistSelect
 
         view = WatchlistSelect("GME", ["global"])
@@ -163,7 +199,8 @@ class TestWatchlistSelect:
         interaction.data = {"values": ["global"]}
 
         watchlists = MagicMock()
-        watchlists.validate_watchlist.side_effect = Exception("DB error")
+        watchlists.resolve_personal_id = WatchlistsRepo.resolve_personal_id
+        watchlists.validate_watchlist = AsyncMock(side_effect=Exception("DB error"))
         interaction.client.stock_data.watchlists = watchlists
 
         await view._select_callback(interaction)
@@ -182,7 +219,7 @@ class TestAlertButtonsAddToWatchlist:
 
         interaction = AsyncMock()
         watchlists_obj = MagicMock()
-        watchlists_obj.get_watchlists.return_value = ["global", "personal"]
+        watchlists_obj.get_watchlists = AsyncMock(return_value=["global", "personal"])
         interaction.client.stock_data.watchlists = watchlists_obj
 
         await v.add_to_watchlist.callback(interaction)
@@ -200,7 +237,7 @@ class TestAlertButtonsAddToWatchlist:
 
         interaction = AsyncMock()
         watchlists_obj = MagicMock()
-        watchlists_obj.get_watchlists.side_effect = Exception("DB error")
+        watchlists_obj.get_watchlists = AsyncMock(side_effect=Exception("DB error"))
         interaction.client.stock_data.watchlists = watchlists_obj
 
         await v.add_to_watchlist.callback(interaction)

@@ -476,21 +476,34 @@ class Admin(commands.Cog):
     @app_commands.checks.has_permissions(administrator=True)
     async def admin_logs(self, interaction: discord.Interaction):
         """Return latest log file and ZIP file of all log files for the bot"""
+        await interaction.response.defer(ephemeral=True)
         logger.info(f"/admin logs function called by user {interaction.user.name}")
 
-        files = []
+        try:
+            files = []
+            log_file = discord.File("logs/rocketstocks.log")
+            files.append(log_file)
 
-        log_file = discord.File("logs/rocketstocks.log")
-        files.append(log_file)
+            logs_zip = zipfile.ZipFile(f"{datapaths.attachments_path}/logs.zip", 'w', zipfile.ZIP_DEFLATED)
+            for log in os.listdir("logs"):
+                logs_zip.write(f"logs/{log}")
+            logs_zip.close()
+            files.append(discord.File(f"{datapaths.attachments_path}/logs.zip"))
+        except Exception:
+            logger.error("Failed to prepare log files", exc_info=True)
+            await interaction.followup.send("Failed to prepare log files — check that the logs directory exists.", ephemeral=True)
+            return
 
-        logs_zip = zipfile.ZipFile(f"{datapaths.attachments_path}/logs.zip", 'w', zipfile.ZIP_DEFLATED)
-        for log in os.listdir("logs"):
-            logs_zip.write(f"logs/{log}")
-        logs_zip.close()
-        files.append(discord.File(f"{datapaths.attachments_path}/logs.zip"))
+        try:
+            await interaction.user.send(content="Log file for RocketStocks :rocket:", files=files)
+        except discord.Forbidden:
+            await interaction.followup.send(
+                "Couldn't send DM — please enable DMs from server members in your privacy settings.",
+                ephemeral=True,
+            )
+            return
 
-        await interaction.user.send(content="Log file for RocketStocks :rocket:", files=files)
-        await interaction.response.send_message("Log file has been sent", ephemeral=True)
+        await interaction.followup.send("Log file has been sent.", ephemeral=True)
         logger.info("Log file sent successfully")
 
     @admin_group.command(name="update-5m", description="Force-refresh 5-minute price history for all tickers")
@@ -498,7 +511,7 @@ class Admin(commands.Cog):
     async def admin_update_5m(self, interaction: discord.Interaction):
         await interaction.response.defer(ephemeral=True)
         logger.info(f"/admin update-5m function called by user {interaction.user.name}")
-        tickers = self.stock_data.tickers.get_all_tickers()
+        tickers = await self.stock_data.tickers.get_all_tickers()
         await self.stock_data.price_history.update_5m_price_history(tickers)
         await interaction.followup.send("5m price history table updated")
 
@@ -507,7 +520,7 @@ class Admin(commands.Cog):
     async def admin_update_daily(self, interaction: discord.Interaction):
         await interaction.response.defer(ephemeral=True)
         logger.info(f"/admin update-daily function called by user {interaction.user.name}")
-        tickers = self.stock_data.tickers.get_all_tickers()
+        tickers = await self.stock_data.tickers.get_all_tickers()
         await self.stock_data.price_history.update_daily_price_history(tickers)
         await interaction.followup.send("Daily price history table updated")
 

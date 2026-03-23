@@ -38,6 +38,7 @@ def _make_stock_data(earnings_df: pd.DataFrame):
     sd.market_signal_store.get_signal_history = AsyncMock(return_value=[])
     sd.watchlists.get_all_watchlist_tickers = AsyncMock(return_value=[])
     sd.watchlists.get_watchlists = AsyncMock(return_value=[])
+    sd.watchlists.get_ticker_to_watchlist_map = AsyncMock(return_value={})
     sd.tickers.get_ticker_info = AsyncMock(return_value={})
     sd.popularity.fetch_popularity = AsyncMock(return_value=pd.DataFrame())
     sd.earnings_results = MagicMock()
@@ -619,7 +620,7 @@ class TestBuildWatchlistMover:
 
         expected_quote = {"quote": {"netPercentChange": 5.0}}
         cog.stock_data.schwab.get_quote = AsyncMock(return_value=expected_quote)
-        cog.stock_data.watchlists.get_watchlists.return_value = {}
+        cog.stock_data.watchlists.get_ticker_to_watchlist_map = AsyncMock(return_value={})
         cog.stock_data.tickers.get_ticker_info.return_value = {}
 
         with (

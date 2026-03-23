@@ -10,6 +10,7 @@ from discord.ext import commands, tasks
 from rocketstocks.data.stockdata import StockData
 from rocketstocks.data.channel_config import ALERTS
 from rocketstocks.data.discord_state import DiscordState
+from rocketstocks.data.clients.schwab import SchwabRateLimitError
 from rocketstocks.core.utils.market import MarketUtils
 from rocketstocks.core.utils.dates import format_date_mdy, seconds_until_minute_interval
 from rocketstocks.core.notifications.config import NotificationLevel
@@ -213,14 +214,28 @@ class Alerts(commands.Cog):
         if not surging:
             return
 
-        # Batch fetch quotes for all surging tickers in one API call
+        # Batch fetch quotes for all surging tickers — continue with partial results if a chunk fails
         surging_list = list(surging.keys())
         batch_quotes: dict = {}
         chunk_size = 25
         for i in range(0, len(surging_list), chunk_size):
             chunk = surging_list[i:i + chunk_size]
-            batch = await self.stock_data.schwab.get_quotes(tickers=chunk)
-            batch_quotes.update(batch)
+            try:
+                batch = await self.stock_data.schwab.get_quotes(tickers=chunk)
+                batch_quotes.update(batch)
+            except SchwabRateLimitError as exc:
+                self.bot.emitter.emit(NotificationEvent(
+                    level=NotificationLevel.FAILURE,
+                    source=__name__,
+                    job_name="detect_popularity_surges",
+                    message=str(exc),
+                ))
+                break
+            except Exception:
+                logger.error(
+                    f"[_detect_popularity_surges] Quote fetch failed for chunk starting at index {i}",
+                    exc_info=True,
+                )
         batch_quotes.pop('errors', None)
 
         # Second pass: build and send alerts for surging tickers
@@ -296,12 +311,27 @@ class Alerts(commands.Cog):
 
         all_tickers = list(set(screener_tickers + surge_tickers + signal_tickers))
 
-        # Bulk Schwab quote fetch
+        # Bulk Schwab quote fetch — continue with partial results if a chunk fails
         quotes = {}
         chunk_size = 25
         for i in range(0, len(all_tickers), chunk_size):
             chunk = all_tickers[i:i + chunk_size]
-            quotes = quotes | await self.stock_data.schwab.get_quotes(tickers=chunk)
+            try:
+                batch = await self.stock_data.schwab.get_quotes(tickers=chunk)
+                quotes.update(batch)
+            except SchwabRateLimitError as exc:
+                self.bot.emitter.emit(NotificationEvent(
+                    level=NotificationLevel.FAILURE,
+                    source=__name__,
+                    job_name="process_alerts",
+                    message=str(exc),
+                ))
+                break
+            except Exception:
+                logger.error(
+                    f"[_process_alerts_impl] Quote fetch failed for chunk starting at index {i}",
+                    exc_info=True,
+                )
         quotes.pop('errors', None)
 
         # Fetch all classifications once
@@ -311,16 +341,15 @@ class Alerts(commands.Cog):
         today = datetime.date.today()
         earnings_today = await self.stock_data.earnings.get_earnings_on_date(date=today)
         earnings_tickers = set(earnings_today['ticker'].tolist()) if not earnings_today.empty else set()
-        watchlist_tickers = set(await self.stock_data.watchlists.get_all_watchlist_tickers())
+        watchlist_tickers = set(await self.stock_data.watchlists.get_all_watchlist_tickers(
+            watchlist_types=['named', 'personal']
+        ))
         surge_ticker_set = set(surge_tickers)
 
-        # Build ticker → watchlist mapping to avoid N+1 queries in build_watchlist_mover
-        ticker_to_watchlist: dict = {}
-        all_watchlist_ids = await self.stock_data.watchlists.get_watchlists()
-        for wl_id in all_watchlist_ids:
-            wl_tickers = await self.stock_data.watchlists.get_watchlist_tickers(watchlist_id=wl_id)
-            for t in wl_tickers:
-                ticker_to_watchlist[t] = wl_id
+        # Build ticker → watchlist mapping in a single query (no N+1)
+        ticker_to_watchlist: dict = await self.stock_data.watchlists.get_ticker_to_watchlist_map(
+            watchlist_types=['named', 'personal']
+        )
 
         # Pre-fetch price history for all relevant tickers in a single batch query
         start_date = today - datetime.timedelta(days=90)
@@ -774,13 +803,10 @@ class Alerts(commands.Cog):
     async def build_watchlist_mover(self, ticker: str, **kwargs) -> WatchlistMoverAlert:
         """Build a WatchlistMoverAlert for the given ticker."""
         async def get_ticker_watchlist(ticker: str):
-            watchlists = await self.stock_data.watchlists.get_watchlists()
-            for watchlist_id in watchlists:
-                watchlist_tickers = await self.stock_data.watchlists.get_watchlist_tickers(
-                    watchlist_id=watchlist_id
-                )
-                if ticker in watchlist_tickers:
-                    return watchlist_id
+            mapping = await self.stock_data.watchlists.get_ticker_to_watchlist_map(
+                watchlist_types=['named', 'personal']
+            )
+            return mapping.get(ticker)
 
         quote = kwargs.pop('quote', await self.stock_data.schwab.get_quote(ticker=ticker))
         watchlist = kwargs.pop('watchlist', await get_ticker_watchlist(ticker=ticker))
