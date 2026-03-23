@@ -1690,3 +1690,289 @@ def comparison_popularity_card(tickers: list, popularities: dict) -> str:
             lines.append(f"**{ticker}**: No data")
 
     return '\n'.join(lines)
+
+
+# ---------------------------------------------------------------------------
+# Options report cards — EmbedField values (no header; name= is the header)
+# ---------------------------------------------------------------------------
+
+def _options_nearest_exp(exp_map: dict) -> str | None:
+    return sorted(exp_map.keys())[0] if exp_map else None
+
+
+def _options_find_atm(strikes_dict: dict, underlying: float) -> tuple[str, list] | tuple[None, None]:
+    """Return (strike_str, contracts) for the strike nearest to underlying."""
+    if not strikes_dict or not underlying:
+        return None, None
+    try:
+        best = min(strikes_dict.keys(), key=lambda s: abs(float(s) - underlying))
+        return best, strikes_dict[best]
+    except (ValueError, TypeError):
+        return None, None
+
+
+def _top_by_volume(strikes_dict: dict, n: int = 3) -> list[tuple[float, dict]]:
+    """Return up to n (strike_float, contract_dict) pairs sorted by totalVolume desc."""
+    rows = []
+    for s_str, contracts in strikes_dict.items():
+        for c in contracts:
+            try:
+                rows.append((float(s_str), c))
+            except (ValueError, TypeError):
+                pass
+    rows.sort(key=lambda x: x[1].get('totalVolume', 0) or 0, reverse=True)
+    return rows[:n]
+
+
+def iv_analysis_card(
+    options_chain: dict,
+    daily_price_history: pd.DataFrame,
+    iv_history: pd.DataFrame | None = None,
+) -> str:
+    """Chain IV, ATM IV, 20/60D HV, IV/HV ratio, IV Rank / IV Percentile."""
+    from rocketstocks.core.analysis.options import (
+        compute_historical_volatility, compute_iv_rank, compute_iv_percentile,
+    )
+    if not options_chain or options_chain.get('status') == 'FAILED':
+        return "No options data available"
+
+    lines = []
+
+    chain_iv = options_chain.get('volatility')
+    underlying = options_chain.get('underlyingPrice')
+
+    # Chain IV + ATM IV
+    atm_iv = None
+    call_map = options_chain.get('callExpDateMap', {})
+    nearest = _options_nearest_exp(call_map)
+    if nearest and underlying:
+        atm_str_key, atm_contracts = _options_find_atm(call_map.get(nearest, {}), underlying)
+        if atm_contracts:
+            raw = atm_contracts[0].get('volatility')
+            atm_iv = float(raw) if raw and raw > 0 else None
+
+    iv_parts = []
+    if chain_iv and chain_iv > 0:
+        iv_parts.append(f"Chain IV: **{chain_iv:.1f}%**")
+    if atm_iv:
+        iv_parts.append(f"ATM IV: **{atm_iv:.1f}%**")
+    if iv_parts:
+        lines.append(' · '.join(iv_parts))
+
+    # HV 20D and 60D via NATR
+    hv20 = compute_historical_volatility(daily_price_history, 20)
+    hv60 = compute_historical_volatility(daily_price_history, 60)
+    hv_parts = []
+    if hv20 is not None:
+        hv_parts.append(f"20D HV: **{hv20:.1f}%**")
+    if hv60 is not None:
+        hv_parts.append(f"60D HV: **{hv60:.1f}%**")
+    if hv_parts:
+        lines.append(' · '.join(hv_parts))
+
+    # IV/HV ratio
+    ref_iv = atm_iv or (float(chain_iv) if chain_iv else None)
+    if ref_iv and hv20 and hv20 > 0:
+        ratio = ref_iv / hv20
+        direction = "MORE" if ratio > 1.1 else "LESS" if ratio < 0.9 else "SIMILAR"
+        lines.append(f"IV/HV: **{ratio:.2f}x** — options pricing {direction} volatility than realized")
+
+    # IV Rank / IV Percentile
+    if ref_iv and iv_history is not None and not (hasattr(iv_history, 'empty') and iv_history.empty):
+        ivr = compute_iv_rank(ref_iv, iv_history)
+        ivp = compute_iv_percentile(ref_iv, iv_history)
+        ivr_str = f"**{ivr:.0f}%**" if ivr is not None else "N/A"
+        ivp_str = f"**{ivp:.0f}%**" if ivp is not None else "N/A"
+        lines.append(f"IV Rank: {ivr_str} · IV Percentile: {ivp_str}")
+    else:
+        lines.append("IV Rank: *Collecting data...* · IV Percentile: *Collecting data...*")
+
+    return '\n'.join(lines) or '\u200b'
+
+
+def put_call_card(options_chain: dict) -> str:
+    """P/C ratio with sentiment label, total call/put volume and OI."""
+    from rocketstocks.core.analysis.options import compute_put_call_stats
+    if not options_chain or options_chain.get('status') == 'FAILED':
+        return "No options data available"
+
+    lines = []
+
+    pcr = options_chain.get('putCallRatio')
+    if pcr is not None:
+        if pcr < 0.7:
+            sentiment = "Bullish"
+        elif pcr > 1.3:
+            sentiment = "Bearish"
+        else:
+            sentiment = "Neutral"
+        lines.append(f"P/C Ratio: **{pcr:.2f}** — {sentiment}")
+
+    stats = compute_put_call_stats(options_chain)
+    cv, pv = stats['call_volume'], stats['put_volume']
+    co, po = stats['call_oi'], stats['put_oi']
+    if cv or pv:
+        lines.append(f"Volume: Calls **{cv:,}** · Puts **{pv:,}**")
+    if co or po:
+        lines.append(f"OI: Calls **{format_large_num(co)}** · Puts **{format_large_num(po)}**")
+
+    return '\n'.join(lines) or '\u200b'
+
+
+def max_pain_card(options_chain: dict, current_price: float | None) -> str:
+    """Max pain strike and its distance from the current price."""
+    from rocketstocks.core.analysis.options import compute_max_pain
+    if not options_chain or options_chain.get('status') == 'FAILED':
+        return "No options data available"
+
+    strike = compute_max_pain(options_chain)
+    if strike is None:
+        return "Insufficient data to compute max pain"
+
+    price = current_price or options_chain.get('underlyingPrice')
+    if price:
+        pct = ((price - strike) / strike) * 100.0
+        sign = '+' if pct >= 0 else ''
+        pos = "above" if pct >= 0 else "below"
+        dist_str = f" · Current **${price:.2f}** ({sign}{pct:.1f}% {pos})"
+    else:
+        dist_str = ''
+
+    return f"Max Pain: **${strike:.2f}**{dist_str}"
+
+
+def iv_skew_card(options_chain: dict, current_price: float | None) -> str:
+    """OTM put IV vs OTM call IV at ~5% from ATM; skew direction."""
+    from rocketstocks.core.analysis.options import compute_iv_skew
+    if not options_chain or options_chain.get('status') == 'FAILED':
+        return "No options data available"
+
+    price = current_price or options_chain.get('underlyingPrice')
+    if not price:
+        return "No underlying price available"
+
+    result = compute_iv_skew(options_chain, price)
+    if result is None:
+        return "Insufficient data to compute IV skew"
+
+    put_s = result['otm_put_strike']
+    put_iv = result['otm_put_iv']
+    call_s = result['otm_call_strike']
+    call_iv = result['otm_call_iv']
+    skew = result['skew']
+    direction = result['direction']
+
+    sign = '+' if skew >= 0 else ''
+    if direction == 'put_skew':
+        label = "Put Skew — bearish hedge premium elevated"
+    elif direction == 'call_skew':
+        label = "Call Skew — bullish demand driving up call IV"
+    else:
+        label = "Neutral — put/call IV roughly balanced"
+
+    lines = [
+        f"OTM Put **${put_s:.0f}**: **{put_iv:.1f}%** IV · OTM Call **${call_s:.0f}**: **{call_iv:.1f}%** IV",
+        f"Skew: **{sign}{skew:.1f}%** — {label}",
+    ]
+    return '\n'.join(lines)
+
+
+def unusual_options_card(options_chain: dict) -> str:
+    """Contracts with volume/OI ≥ 3x (potential unusual/smart-money activity)."""
+    from rocketstocks.core.analysis.options import detect_unusual_activity
+    if not options_chain or options_chain.get('status') == 'FAILED':
+        return "No options data available"
+
+    hits = detect_unusual_activity(options_chain, vol_oi_threshold=3.0, max_results=4)
+    if not hits:
+        return "No unusual activity detected (vol/OI < 3x across all strikes)"
+
+    lines = []
+    for h in hits:
+        opt = h['type'].upper()
+        iv_str = f" · IV **{h['iv']:.1f}%**" if h['iv'] and h['iv'] > 0 else ''
+        lines.append(
+            f"{opt} **${h['strike']:.0f}** ({h['expiry']}) — "
+            f"Vol **{h['volume']:,}** · OI **{h['oi']:,}** · Ratio **{h['ratio']:.1f}x**{iv_str}"
+        )
+    return '\n'.join(lines)
+
+
+def active_strikes_card(options_chain: dict, current_price: float | None) -> str:
+    """Top 3 calls and top 3 puts by volume for the nearest expiration."""
+    if not options_chain or options_chain.get('status') == 'FAILED':
+        return "No options data available"
+
+    call_map = options_chain.get('callExpDateMap', {})
+    put_map = options_chain.get('putExpDateMap', {})
+    nearest = _options_nearest_exp(call_map)
+    if not nearest:
+        return "No expiration data available"
+
+    exp_label = nearest.split(':')[0]
+    lines = [f"Nearest exp: **{exp_label}**"]
+
+    for label, exp_map in [("Calls", call_map), ("Puts", put_map)]:
+        top = _top_by_volume(exp_map.get(nearest, {}), n=3)
+        if not top:
+            continue
+        lines.append(f"**{label}:**")
+        for strike, c in top:
+            vol = c.get('totalVolume', 0) or 0
+            oi = c.get('openInterest', 0) or 0
+            iv = c.get('volatility')
+            itm = ''
+            if current_price:
+                if label == "Calls" and current_price > strike:
+                    itm = ' ITM'
+                elif label == "Puts" and current_price < strike:
+                    itm = ' ITM'
+            iv_str = f" · IV **{iv:.1f}%**" if iv and iv > 0 else ''
+            lines.append(f"  ${strike:.0f}{itm}: **{vol:,}** vol · **{format_large_num(oi)}** OI{iv_str}")
+
+    return '\n'.join(lines) or '\u200b'
+
+
+def greeks_summary_card(options_chain: dict, current_price: float | None) -> str:
+    """ATM call and put Greeks at the nearest expiration."""
+    if not options_chain or options_chain.get('status') == 'FAILED':
+        return "No options data available"
+
+    price = current_price or options_chain.get('underlyingPrice')
+    call_map = options_chain.get('callExpDateMap', {})
+    put_map = options_chain.get('putExpDateMap', {})
+    nearest = _options_nearest_exp(call_map)
+    if not nearest or not price:
+        return "Insufficient data"
+
+    exp_label = nearest.split(':')[0]
+    atm_key, call_contracts = _options_find_atm(call_map.get(nearest, {}), price)
+    _, put_contracts = _options_find_atm(put_map.get(nearest, {}), price)
+
+    if not atm_key or not call_contracts:
+        return "No ATM strike data available"
+
+    lines = [f"ATM Strike **${float(atm_key):.0f}** (exp **{exp_label}**)"]
+
+    def _fmt_greeks(contracts: list, label: str) -> str:
+        if not contracts:
+            return f"{label}: N/A"
+        c = contracts[0]
+        d = c.get('delta')
+        g = c.get('gamma')
+        t = c.get('theta')
+        v = c.get('vega')
+        parts = []
+        if d is not None:
+            parts.append(f"Δ **{d:.3f}**")
+        if g is not None:
+            parts.append(f"Γ **{g:.4f}**")
+        if t is not None:
+            parts.append(f"Θ **{t:.3f}**")
+        if v is not None:
+            parts.append(f"V **{v:.3f}**")
+        return f"{label}: " + (' · '.join(parts) if parts else "N/A")
+
+    lines.append(_fmt_greeks(call_contracts, "Call"))
+    lines.append(_fmt_greeks(put_contracts or [], "Put"))
+    return '\n'.join(lines)
