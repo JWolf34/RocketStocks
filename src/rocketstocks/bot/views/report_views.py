@@ -135,3 +135,22 @@ class ComparisonReportButtons(discord.ui.View):
             style=discord.ButtonStyle.url,
             url=f"https://finviz.com/compare.ashx?t={tickers_str}&ta=0&p=d",
         ))
+
+
+class OptionsReportButtons(discord.ui.View):
+    """Buttons for Options Report:
+    - Market Chameleon options flow shortcut
+    - FinViz shortcut
+    """
+    def __init__(self, ticker: str):
+        super().__init__(timeout=None)
+        self.add_item(discord.ui.Button(
+            label="Market Chameleon",
+            style=discord.ButtonStyle.url,
+            url=f"https://marketchameleon.com/Overview/{ticker}/IV/",
+        ))
+        self.add_item(discord.ui.Button(
+            label="FinViz",
+            style=discord.ButtonStyle.url,
+            url=finviz_url(ticker),
+        ))
