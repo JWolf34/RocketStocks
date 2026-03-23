@@ -16,7 +16,7 @@ from rocketstocks.core.content.models import (
     ComparisonReportData,
     EmbedSpec,
     EarningsSpotlightData, FullStockReportData, GainerScreenerData, NewsReportData,
-    PopularityReportData, PopularityScreenerData, StockReportData,
+    OptionsReportData, PopularityReportData, PopularityScreenerData, StockReportData,
     TechnicalReportData, VolumeScreenerData, WeeklyEarningsData,
 )
 
@@ -793,3 +793,83 @@ class TestTechnicalReportEmbedSpec:
     def test_empty_quote_does_not_crash(self):
         spec = self._make_report(empty_quote=True).build()
         assert isinstance(spec, EmbedSpec)
+
+
+# ---------------------------------------------------------------------------
+# OptionsReport
+# ---------------------------------------------------------------------------
+
+class TestOptionsReportEmbedSpec:
+    def _make_chain(self, base_vol: int = 1000, base_oi: int = 5000, failed: bool = False) -> dict:
+        if failed:
+            return {'status': 'FAILED'}
+        strikes = [185.0, 190.0, 195.0, 200.0, 205.0]
+        exp_key = '2024-06-21:30'
+
+        def _c(s, ds):
+            return {'strikePrice': s, 'totalVolume': base_vol, 'openInterest': base_oi,
+                    'volatility': 25.0, 'delta': ds * 0.5, 'gamma': 0.04,
+                    'theta': -0.10, 'vega': 0.15, 'bid': 3.0, 'ask': 3.1, 'mark': 3.05}
+
+        return {
+            'status': 'SUCCESS', 'volatility': 25.5, 'putCallRatio': 0.85,
+            'underlyingPrice': 190.0,
+            'callExpDateMap': {exp_key: {str(s): [_c(s, 1.0)] for s in strikes}},
+            'putExpDateMap':  {exp_key: {str(s): [_c(s, -1.0)] for s in strikes}},
+        }
+
+    def _make_report(self, failed_chain: bool = False):
+        from rocketstocks.core.content.reports.options_report import OptionsReport
+        data = OptionsReportData(
+            ticker="AAPL",
+            ticker_info=_minimal_ticker_info(),
+            quote=_minimal_quote(),
+            options_chain=self._make_chain(failed=failed_chain),
+            daily_price_history=_price_history(100),
+        )
+        return OptionsReport(data)
+
+    def test_returns_embed_spec(self):
+        assert isinstance(self._make_report().build(), EmbedSpec)
+
+    def test_color_is_gold(self):
+        assert self._make_report().build().color == COLOR_GOLD
+
+    def test_title_contains_ticker(self):
+        assert "AAPL" in self._make_report().build().title
+
+    def test_has_footer(self):
+        assert "options" in self._make_report().build().footer
+
+    def test_has_timestamp(self):
+        assert self._make_report().build().timestamp is True
+
+    def test_has_seven_fields(self):
+        assert len(self._make_report().build().fields) == 7
+
+    def test_field_names(self):
+        names = [f.name for f in self._make_report().build().fields]
+        assert "Implied Volatility" in names
+        assert "Put / Call" in names
+        assert "Max Pain" in names
+        assert "IV Skew" in names
+        assert "Unusual Activity" in names
+        assert "Most Active Strikes" in names
+        assert "ATM Greeks" in names
+
+    def test_field_values_under_1024_chars(self):
+        for f in self._make_report().build().fields:
+            assert len(f.value) <= 1024, f"Field '{f.name}' exceeds 1024 chars"
+
+    def test_char_budget_under_6000(self):
+        total = _embed_char_count(self._make_report().build())
+        assert total < 6000
+
+    def test_has_finviz_url(self):
+        spec = self._make_report().build()
+        assert spec.url and "AAPL" in spec.url
+
+    def test_failed_chain_does_not_crash(self):
+        spec = self._make_report(failed_chain=True).build()
+        assert isinstance(spec, EmbedSpec)
+        assert len(spec.fields) == 7

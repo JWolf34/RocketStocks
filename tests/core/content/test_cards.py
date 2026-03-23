@@ -944,3 +944,169 @@ class TestSignalConfluenceCard:
     def test_insufficient_data(self):
         result = signal_confluence_card(_price_history(5), 188.9)
         assert result
+
+
+# ---------------------------------------------------------------------------
+# Options report card tests
+# ---------------------------------------------------------------------------
+
+from rocketstocks.core.content.sections_card import (
+    iv_analysis_card, put_call_card, max_pain_card, iv_skew_card,
+    unusual_options_card, active_strikes_card, greeks_summary_card,
+)
+
+
+def _make_options_chain(base_vol: int = 1000, base_oi: int = 5000) -> dict:
+    strikes = [185.0, 190.0, 195.0, 200.0, 205.0]
+    exp_key = '2024-06-21:30'
+
+    def _contract(s: float, delta_sign: float) -> dict:
+        return {
+            'strikePrice': s, 'totalVolume': base_vol, 'openInterest': base_oi,
+            'volatility': 25.0 + abs(s - 190.0) * 0.5,
+            'delta': delta_sign * 0.5, 'gamma': 0.04, 'theta': -0.10, 'vega': 0.15,
+            'bid': 3.0, 'ask': 3.1, 'mark': 3.05,
+        }
+
+    return {
+        'status': 'SUCCESS',
+        'volatility': 25.5,
+        'putCallRatio': 0.85,
+        'underlyingPrice': 190.0,
+        'callExpDateMap': {exp_key: {str(s): [_contract(s, 1.0)] for s in strikes}},
+        'putExpDateMap':  {exp_key: {str(s): [_contract(s, -1.0)] for s in strikes}},
+    }
+
+
+class TestIvAnalysisCard:
+    def test_contains_chain_iv(self):
+        result = iv_analysis_card(_make_options_chain(), _price_history(100))
+        assert "Chain IV" in result
+
+    def test_contains_atm_iv(self):
+        result = iv_analysis_card(_make_options_chain(), _price_history(100))
+        assert "ATM IV" in result
+
+    def test_contains_hv_when_data_available(self):
+        result = iv_analysis_card(_make_options_chain(), _price_history(100))
+        assert "HV" in result
+
+    def test_collecting_data_when_no_iv_history(self):
+        result = iv_analysis_card(_make_options_chain(), _price_history(100))
+        assert "Collecting data" in result
+
+    def test_no_crash_on_failed_chain(self):
+        result = iv_analysis_card({'status': 'FAILED'}, pd.DataFrame())
+        assert result
+
+    def test_no_crash_on_empty_chain(self):
+        result = iv_analysis_card({}, pd.DataFrame())
+        assert result
+
+
+class TestPutCallCard:
+    def test_contains_pcr(self):
+        result = put_call_card(_make_options_chain())
+        assert "P/C Ratio" in result
+
+    def test_contains_volume_and_oi(self):
+        result = put_call_card(_make_options_chain())
+        assert "Volume" in result
+        assert "OI" in result
+
+    def test_sentiment_label_bullish(self):
+        chain = _make_options_chain()
+        chain['putCallRatio'] = 0.5
+        result = put_call_card(chain)
+        assert "Bullish" in result
+
+    def test_sentiment_label_bearish(self):
+        chain = _make_options_chain()
+        chain['putCallRatio'] = 1.5
+        result = put_call_card(chain)
+        assert "Bearish" in result
+
+    def test_no_crash_on_empty_chain(self):
+        assert put_call_card({})
+
+
+class TestMaxPainCard:
+    def test_contains_max_pain_strike(self):
+        result = max_pain_card(_make_options_chain(), 190.0)
+        assert "Max Pain" in result
+        assert "$" in result
+
+    def test_contains_distance_from_current(self):
+        result = max_pain_card(_make_options_chain(), 190.0)
+        assert "%" in result
+
+    def test_no_crash_on_empty_chain(self):
+        assert max_pain_card({}, 190.0)
+
+    def test_no_price_still_works(self):
+        result = max_pain_card(_make_options_chain(), None)
+        assert "Max Pain" in result
+
+
+class TestIvSkewCard:
+    def test_contains_put_and_call_iv(self):
+        result = iv_skew_card(_make_options_chain(), 190.0)
+        assert "OTM Put" in result
+        assert "OTM Call" in result
+
+    def test_contains_skew_label(self):
+        result = iv_skew_card(_make_options_chain(), 190.0)
+        assert "Skew" in result
+
+    def test_no_crash_on_empty_chain(self):
+        assert iv_skew_card({}, 190.0)
+
+    def test_no_crash_without_price(self):
+        assert iv_skew_card(_make_options_chain(), None)
+
+
+class TestUnusualOptionsCard:
+    def test_detects_unusual_when_high_ratio(self):
+        chain = _make_options_chain(base_vol=50000, base_oi=1000)
+        result = unusual_options_card(chain)
+        assert "Ratio" in result
+
+    def test_no_unusual_message_when_low_ratio(self):
+        chain = _make_options_chain(base_vol=10, base_oi=5000)
+        result = unusual_options_card(chain)
+        assert "No unusual activity" in result
+
+    def test_no_crash_on_empty_chain(self):
+        assert unusual_options_card({})
+
+
+class TestActiveStrikesCard:
+    def test_contains_calls_and_puts(self):
+        result = active_strikes_card(_make_options_chain(), 190.0)
+        assert "Calls" in result
+        assert "Puts" in result
+
+    def test_contains_expiration(self):
+        result = active_strikes_card(_make_options_chain(), 190.0)
+        assert "2024" in result
+
+    def test_no_crash_on_empty_chain(self):
+        assert active_strikes_card({}, 190.0)
+
+
+class TestGreeksSummaryCard:
+    def test_contains_atm_strike(self):
+        result = greeks_summary_card(_make_options_chain(), 190.0)
+        assert "ATM Strike" in result
+
+    def test_contains_greek_labels(self):
+        result = greeks_summary_card(_make_options_chain(), 190.0)
+        assert "Δ" in result
+        assert "Γ" in result
+        assert "Θ" in result
+
+    def test_no_crash_on_empty_chain(self):
+        assert greeks_summary_card({}, 190.0)
+
+    def test_no_crash_without_price(self):
+        assert greeks_summary_card(_make_options_chain(), None)

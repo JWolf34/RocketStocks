@@ -893,3 +893,60 @@ class TestBuildTechnicalReport:
         result = await cog.build_technical_report(ticker='AAPL')
         assert isinstance(result, TechnicalReport)
         assert result.data.quote == {}
+
+
+class TestBuildOptionsReport:
+    """Tests for build_options_report()."""
+
+    def _make_cog(self):
+        return _make_cog()
+
+    def _minimal_chain(self):
+        strikes = [185.0, 190.0, 195.0]
+        exp_key = '2024-06-21:30'
+        def _c(s, ds):
+            return {'strikePrice': s, 'totalVolume': 500, 'openInterest': 2000,
+                    'volatility': 25.0, 'delta': ds * 0.5, 'gamma': 0.04,
+                    'theta': -0.10, 'vega': 0.15, 'bid': 2.0, 'ask': 2.1, 'mark': 2.05}
+        return {
+            'status': 'SUCCESS', 'volatility': 25.5, 'putCallRatio': 0.85,
+            'underlyingPrice': 190.0,
+            'callExpDateMap': {exp_key: {str(s): [_c(s, 1.0)] for s in strikes}},
+            'putExpDateMap':  {exp_key: {str(s): [_c(s, -1.0)] for s in strikes}},
+        }
+
+    @pytest.mark.asyncio
+    async def test_returns_options_report_instance(self):
+        from rocketstocks.core.content.reports.options_report import OptionsReport
+        cog = self._make_cog()
+        cog.stock_data.schwab = MagicMock()
+        cog.stock_data.schwab.get_options_chain = AsyncMock(return_value=self._minimal_chain())
+        cog.stock_data.schwab.get_quote = AsyncMock(return_value={
+            'regular': {'regularMarketLastPrice': 190.0},
+            'quote': {'netPercentChange': 1.0, 'totalVolume': 20000000},
+            'reference': {}, 'symbol': 'AAPL',
+        })
+        cog.stock_data.tickers = MagicMock()
+        cog.stock_data.tickers.get_ticker_info = AsyncMock(return_value={'name': 'Apple Inc'})
+        cog.stock_data.price_history = MagicMock()
+        cog.stock_data.price_history.fetch_daily_price_history = AsyncMock(return_value=pd.DataFrame())
+
+        result = await cog.build_options_report(ticker='AAPL')
+        assert isinstance(result, OptionsReport)
+
+    @pytest.mark.asyncio
+    async def test_schwab_chain_error_returns_empty_chain(self):
+        from rocketstocks.data.clients.schwab import SchwabTokenError
+        from rocketstocks.core.content.reports.options_report import OptionsReport
+        cog = self._make_cog()
+        cog.stock_data.schwab = MagicMock()
+        cog.stock_data.schwab.get_options_chain = AsyncMock(side_effect=SchwabTokenError("no token"))
+        cog.stock_data.schwab.get_quote = AsyncMock(side_effect=SchwabTokenError("no token"))
+        cog.stock_data.tickers = MagicMock()
+        cog.stock_data.tickers.get_ticker_info = AsyncMock(return_value={})
+        cog.stock_data.price_history = MagicMock()
+        cog.stock_data.price_history.fetch_daily_price_history = AsyncMock(return_value=pd.DataFrame())
+
+        result = await cog.build_options_report(ticker='AAPL')
+        assert isinstance(result, OptionsReport)
+        assert result.data.options_chain == {}
