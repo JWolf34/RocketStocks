@@ -55,13 +55,33 @@ class Nasdaq:
         url = f"https://api.nasdaq.com/api/analyst/{ticker}/earnings-forecast"
         resp = requests.get(url, headers=self.headers)
         resp.raise_for_status()
-        return resp.json()['data']
+        data = resp.json().get('data')
+        if data is None:
+            logger.warning(f"NASDAQ returned no forecast data for '{ticker}'")
+            return None
+        return data
 
     def get_earnings_forecast_quarterly(self, ticker) -> pd.DataFrame:
-        return pd.DataFrame.from_dict(self.get_earnings_forecast(ticker)['quarterlyForecast']['rows'])
+        data = self.get_earnings_forecast(ticker)
+        if data is None:
+            return pd.DataFrame()
+        qf = data.get('quarterlyForecast') or {}
+        rows = qf.get('rows')
+        if not rows:
+            logger.debug(f"No quarterly forecast rows for '{ticker}'")
+            return pd.DataFrame()
+        return pd.DataFrame.from_dict(rows)
 
     def get_earnings_forecast_yearly(self, ticker) -> pd.DataFrame:
-        return pd.DataFrame.from_dict(self.get_earnings_forecast(ticker)['yearlyForecast']['rows'])
+        data = self.get_earnings_forecast(ticker)
+        if data is None:
+            return pd.DataFrame()
+        yf = data.get('yearlyForecast') or {}
+        rows = yf.get('rows')
+        if not rows:
+            logger.debug(f"No yearly forecast rows for '{ticker}'")
+            return pd.DataFrame()
+        return pd.DataFrame.from_dict(rows)
 
     @sleep_and_retry
     @limits(calls=5, period=60)
