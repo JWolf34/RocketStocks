@@ -405,6 +405,8 @@ class TechnicalReportData(TickerData):
     """Data for /report technical — deep-dive technical analysis."""
     daily_price_history: pd.DataFrame = field(default_factory=pd.DataFrame)
     stats: dict | None = None
+    benchmark_history: pd.DataFrame = field(default_factory=pd.DataFrame)
+    float_data: dict | None = None
 
 
 @dataclass
