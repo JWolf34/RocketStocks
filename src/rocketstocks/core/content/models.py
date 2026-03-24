@@ -325,14 +325,15 @@ class EarningsTableData:
     """Data for the earnings history embed in /data earnings."""
     ticker: str
     historical_earnings: pd.DataFrame
+    next_earnings_info: dict | None = None
 
 
 @dataclass
 class SecFilingData:
     """Data for the SEC filing embed in /data sec-filing."""
     tickers: list
-    filings: dict                    # {ticker: filing_dict | None}
-    form: str
+    filings: dict                    # {ticker: list[filing_dict]}
+    form: str | None = None
 
 
 # ---------------------------------------------------------------------------
