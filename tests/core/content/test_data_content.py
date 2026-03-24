@@ -253,8 +253,8 @@ class TestStatsCard:
         data = TickerStatsData(tickers=['AAPL'], stats={'AAPL': _stats(classification='mega_cap', market_cap=3e12)})
         spec = StatsCard(data).build()
         value = spec.fields[0].value
-        assert 'mega_cap' in value
-        assert '$3000.0B' in value
+        assert 'Mega Cap' in value   # formatted with .replace('_', ' ').title()
+        assert '3T' in value         # format_large_num formats 3e12 as '3T'
 
     def test_none_stats_shows_no_stats_message(self):
         data = TickerStatsData(tickers=['AAPL'], stats={'AAPL': None})
@@ -746,30 +746,30 @@ class TestSecFilingCard:
     def test_build_returns_embedspec(self):
         data = SecFilingData(
             tickers=['AAPL'], form='10-K',
-            filings={'AAPL': {'filingDate': '2025-11-01', 'link': 'https://sec.gov/1'}},
+            filings={'AAPL': [{'form': '10-K', 'filingDate': '2025-11-01', 'link': 'https://sec.gov/1'}]},
         )
         spec = SecFilingCard(data).build()
         assert isinstance(spec, EmbedSpec)
 
     def test_title_includes_form(self):
-        data = SecFilingData(tickers=['AAPL'], form='10-K', filings={'AAPL': None})
+        data = SecFilingData(tickers=['AAPL'], form='10-K', filings={'AAPL': []})
         spec = SecFilingCard(data).build()
         assert '10-K' in spec.title
 
     def test_color_is_cyan(self):
-        data = SecFilingData(tickers=['AAPL'], form='10-K', filings={'AAPL': None})
+        data = SecFilingData(tickers=['AAPL'], form='10-K', filings={'AAPL': []})
         spec = SecFilingCard(data).build()
         assert spec.color == COLOR_CYAN
 
     def test_none_filing_shows_not_found(self):
-        data = SecFilingData(tickers=['AAPL'], form='10-K', filings={'AAPL': None})
+        data = SecFilingData(tickers=['AAPL'], form='10-K', filings={'AAPL': []})
         spec = SecFilingCard(data).build()
         assert 'No Form 10-K found' in spec.fields[0].value
 
     def test_filing_link_in_field(self):
         data = SecFilingData(
             tickers=['AAPL'], form='10-K',
-            filings={'AAPL': {'filingDate': '2025-11-01', 'link': 'https://sec.gov/1'}},
+            filings={'AAPL': [{'form': '10-K', 'filingDate': '2025-11-01', 'link': 'https://sec.gov/1'}]},
         )
         spec = SecFilingCard(data).build()
         assert 'https://sec.gov/1' in spec.fields[0].value
@@ -777,13 +777,16 @@ class TestSecFilingCard:
     def test_multiple_tickers(self):
         data = SecFilingData(
             tickers=['AAPL', 'MSFT'], form='10-K',
-            filings={'AAPL': None, 'MSFT': {'filingDate': '2025-11-05', 'link': 'https://sec.gov/2'}},
+            filings={
+                'AAPL': [],
+                'MSFT': [{'form': '10-K', 'filingDate': '2025-11-05', 'link': 'https://sec.gov/2'}],
+            },
         )
         spec = SecFilingCard(data).build()
         assert len(spec.fields) == 2
 
     def test_spec_to_embed_produces_discord_embed(self):
-        data = SecFilingData(tickers=['AAPL'], form='10-K', filings={'AAPL': None})
+        data = SecFilingData(tickers=['AAPL'], form='10-K', filings={'AAPL': []})
         assert isinstance(spec_to_embed(SecFilingCard(data).build()), discord.Embed)
 
 

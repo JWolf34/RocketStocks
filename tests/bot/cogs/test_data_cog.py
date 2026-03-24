@@ -67,7 +67,12 @@ class TestDataPrice:
             with patch("rocketstocks.bot.cogs.data.spec_to_embed", return_value=mock_embed):
                 await cog.data_price.callback(cog, interaction, tickers="AAPL", frequency=frequency)
 
-        interaction.user.send.assert_called_once()
+        # Embed sent first, file sent second
+        assert interaction.user.send.call_count == 2
+        first_call = interaction.user.send.call_args_list[0]
+        assert first_call.kwargs.get("embed") is mock_embed
+        second_call = interaction.user.send.call_args_list[1]
+        assert second_call.kwargs.get("file") is not None
         interaction.followup.send.assert_called_once()
 
     @pytest.mark.asyncio
@@ -127,17 +132,19 @@ class TestDataEarnings:
         interaction = _make_interaction()
         cog.stock_data.tickers.parse_valid_tickers = AsyncMock(return_value=(["AAPL"], []))
         cog.stock_data.earnings.get_historical_earnings = AsyncMock(return_value=pd.DataFrame())
+        cog.stock_data.earnings.get_next_earnings_info = AsyncMock(return_value=None)
 
         visibility = MagicMock()
         visibility.value = "private"
 
-        # Must not raise NameError
+        # Must not raise NameError or TypeError
         await cog.data_earnings.callback(cog, interaction, tickers="AAPL", visibility=visibility)
 
+        # Called once with only content (no file, no embed)
         interaction.user.send.assert_called_once()
         call_kwargs = interaction.user.send.call_args.kwargs
-        # files must be empty list, not [None]
-        assert call_kwargs.get("files") == []
+        assert "file" not in call_kwargs
+        assert "files" not in call_kwargs
 
     @pytest.mark.asyncio
     async def test_public_no_channel_configured_returns_early(self):
@@ -146,6 +153,7 @@ class TestDataEarnings:
         interaction = _make_interaction()
         cog.stock_data.tickers.parse_valid_tickers = AsyncMock(return_value=(["AAPL"], []))
         cog.stock_data.earnings.get_historical_earnings = AsyncMock(return_value=pd.DataFrame())
+        cog.stock_data.earnings.get_next_earnings_info = AsyncMock(return_value=None)
         cog.bot.get_channel_for_guild = MagicMock(return_value=None)
 
         visibility = MagicMock()
@@ -155,6 +163,33 @@ class TestDataEarnings:
 
         call_args = interaction.followup.send.call_args[0][0]
         assert "setup" in call_args.lower()
+
+    @pytest.mark.asyncio
+    async def test_upcoming_earnings_fetched_and_passed_to_card(self):
+        """B3: get_next_earnings_info is called and its result is passed to EarningsCard."""
+        cog = _make_cog()
+        interaction = _make_interaction()
+
+        eps_df = pd.DataFrame([{"date": "2025-01-01", "eps_actual": 1.5}])
+        next_info = {"date": "2026-04-01", "ticker": "AAPL"}
+        cog.stock_data.tickers.parse_valid_tickers = AsyncMock(return_value=(["AAPL"], []))
+        cog.stock_data.earnings.get_historical_earnings = AsyncMock(return_value=eps_df)
+        cog.stock_data.earnings.get_next_earnings_info = AsyncMock(return_value=next_info)
+
+        visibility = MagicMock()
+        visibility.value = "private"
+
+        with patch("rocketstocks.bot.cogs.data.asyncio.to_thread", new=AsyncMock()), \
+             patch("rocketstocks.bot.cogs.data.discord.File", return_value=MagicMock()), \
+             patch("rocketstocks.bot.cogs.data.EarningsCard") as mock_card, \
+             patch("rocketstocks.bot.cogs.data.spec_to_embed", return_value=MagicMock()):
+            mock_card.return_value.build.return_value = MagicMock()
+            await cog.data_earnings.callback(cog, interaction, tickers="AAPL", visibility=visibility)
+
+        cog.stock_data.earnings.get_next_earnings_info.assert_called_once_with("AAPL")
+        # EarningsCard was called with data containing next_earnings_info
+        card_data = mock_card.call_args[0][0]
+        assert card_data.next_earnings_info is next_info
 
 
 # ---------------------------------------------------------------------------
@@ -233,16 +268,23 @@ class TestDataOptions:
         cog = _make_cog()
         interaction = _make_interaction()
         cog.stock_data.tickers.parse_valid_tickers = AsyncMock(return_value=(["AAPL"], []))
-        cog.stock_data.schwab.get_options_chain = AsyncMock(return_value={"option": "data"})
+        cog.stock_data.schwab.get_options_chain = AsyncMock(return_value={"option": "data", "underlyingPrice": 185.0})
 
+        mock_embed = MagicMock()
         with patch("rocketstocks.bot.cogs.data._write_json"), \
              patch("rocketstocks.bot.cogs.data.asyncio.to_thread", new=AsyncMock()), \
-             patch("rocketstocks.bot.cogs.data.discord.File", return_value=MagicMock()) as mock_file:
+             patch("rocketstocks.bot.cogs.data.discord.File", return_value=MagicMock()) as mock_file, \
+             patch("rocketstocks.bot.cogs.data.OptionsSummary") as mock_snap, \
+             patch("rocketstocks.bot.cogs.data.spec_to_embed", return_value=mock_embed):
+            mock_snap.return_value.build.return_value = MagicMock()
             await cog.data_options.callback(cog, interaction, tickers="AAPL")
 
-        interaction.user.send.assert_called_once()
-        call_kwargs = interaction.user.send.call_args.kwargs
-        assert call_kwargs.get("file") is mock_file.return_value
+        # Embed sent first, file sent second
+        assert interaction.user.send.call_count == 2
+        first_call = interaction.user.send.call_args_list[0]
+        assert first_call.kwargs.get("embed") is mock_embed
+        second_call = interaction.user.send.call_args_list[1]
+        assert second_call.kwargs.get("file") is mock_file.return_value
 
     @pytest.mark.asyncio
     async def test_schwab_token_error_returns_auth_message(self):
@@ -287,15 +329,19 @@ class TestDataPopularity:
         cog.stock_data.popularity.fetch_popularity = AsyncMock(return_value=df)
 
         mock_embed = MagicMock()
-        with patch("rocketstocks.bot.cogs.data.discord.File", return_value=MagicMock()) as mock_file, \
+        with patch("rocketstocks.bot.cogs.data.asyncio.to_thread", new=AsyncMock()), \
+             patch("rocketstocks.bot.cogs.data.discord.File", return_value=MagicMock()) as mock_file, \
              patch("rocketstocks.bot.cogs.data.PopularitySnapshot") as mock_snap, \
              patch("rocketstocks.bot.cogs.data.spec_to_embed", return_value=mock_embed):
             mock_snap.return_value.build.return_value = MagicMock()
             await cog.data_popularity.callback(cog, interaction, tickers="AAPL")
 
-        interaction.user.send.assert_called_once()
-        call_kwargs = interaction.user.send.call_args.kwargs
-        assert call_kwargs.get("file") is mock_file.return_value
+        # Embed sent first, file sent second
+        assert interaction.user.send.call_count == 2
+        first_call = interaction.user.send.call_args_list[0]
+        assert first_call.kwargs.get("embed") is mock_embed
+        second_call = interaction.user.send.call_args_list[1]
+        assert second_call.kwargs.get("file") is mock_file.return_value
 
 
 # ---------------------------------------------------------------------------
@@ -385,47 +431,6 @@ class TestDataQuote:
         assert "schwab" in message.lower() or "auth" in message.lower()
 
 
-# ---------------------------------------------------------------------------
-# TestDataUpcomingEarnings
-# ---------------------------------------------------------------------------
-
-class TestDataUpcomingEarnings:
-    @pytest.mark.asyncio
-    async def test_ticker_with_data_sends_embed(self):
-        cog = _make_cog()
-        interaction = _make_interaction()
-        cog.stock_data.tickers.parse_valid_tickers = AsyncMock(return_value=(["AAPL"], []))
-        cog.stock_data.earnings.get_next_earnings_info = AsyncMock(return_value={
-            "date": "2026-04-01",
-            "time": "after",
-            "eps_forecast": "1.50",
-            "no_of_ests": 20,
-            "last_year_eps": "1.29",
-            "fiscal_quarter_ending": "Mar 2026",
-            "last_year_rpt_dt": "2025-04-01",
-            "ticker": "AAPL",
-        })
-
-        await cog.data_upcoming_earnings.callback(cog, interaction, tickers="AAPL")
-
-        interaction.followup.send.assert_called_once()
-        call_kwargs = interaction.followup.send.call_args.kwargs
-        assert "embed" in call_kwargs
-
-    @pytest.mark.asyncio
-    async def test_ticker_with_no_upcoming_earnings_shows_message_in_embed(self):
-        cog = _make_cog()
-        interaction = _make_interaction()
-        cog.stock_data.tickers.parse_valid_tickers = AsyncMock(return_value=(["AAPL"], []))
-        cog.stock_data.earnings.get_next_earnings_info = AsyncMock(return_value=None)
-
-        await cog.data_upcoming_earnings.callback(cog, interaction, tickers="AAPL")
-
-        interaction.followup.send.assert_called_once()
-        call_kwargs = interaction.followup.send.call_args.kwargs
-        assert "embed" in call_kwargs
-        embed = call_kwargs["embed"]
-        assert any("No upcoming earnings" in str(f.value) for f in embed.fields)
 
 
 # ---------------------------------------------------------------------------
@@ -594,21 +599,73 @@ class TestDataOwnership:
 
 class TestDataInsider:
     @pytest.mark.asyncio
-    async def test_valid_ticker_sends_embed(self):
+    async def test_valid_ticker_sends_embed_via_dm(self):
+        """B4: embed is DM'd, not sent as ephemeral followup."""
         cog = _make_cog()
         interaction = _make_interaction()
         cog.stock_data.tickers.parse_valid_tickers = AsyncMock(return_value=(["AAPL"], []))
         cog.stock_data.yfinance = MagicMock()
 
         mock_embed = MagicMock()
+        # Empty transactions → no CSV file, just embed
         with patch("rocketstocks.bot.cogs.data.asyncio.to_thread", new=AsyncMock(return_value=pd.DataFrame())), \
              patch("rocketstocks.bot.cogs.data.InsiderCard") as mock_card, \
              patch("rocketstocks.bot.cogs.data.spec_to_embed", return_value=mock_embed):
             mock_card.return_value.build.return_value = MagicMock()
             await cog.data_insider.callback(cog, interaction, ticker="AAPL")
 
+        # Embed goes via DM, not as ephemeral embed in followup
+        first_dm = interaction.user.send.call_args_list[0]
+        assert first_dm.kwargs.get("embed") is mock_embed
+        # Followup is jump_url confirmation, not the embed
         interaction.followup.send.assert_called_once()
-        assert interaction.followup.send.call_args.kwargs.get("embed") is mock_embed
+        assert interaction.followup.send.call_args.kwargs.get("embed") is None
+
+    @pytest.mark.asyncio
+    async def test_valid_ticker_with_transactions_sends_csv_file(self):
+        """B4: non-empty insider_transactions → CSV file sent in second DM."""
+        cog = _make_cog()
+        interaction = _make_interaction()
+        cog.stock_data.tickers.parse_valid_tickers = AsyncMock(return_value=(["AAPL"], []))
+        cog.stock_data.yfinance = MagicMock()
+
+        transactions_df = pd.DataFrame([{"Date": "2026-01-01", "Insider": "CEO", "Shares": 1000}])
+        empty_df = pd.DataFrame()
+
+        async def to_thread_side_effect(fn, *args, **kwargs):
+            return transactions_df if fn == cog.stock_data.yfinance.get_insider_transactions else empty_df
+
+        mock_embed = MagicMock()
+        mock_file = MagicMock()
+        with patch("rocketstocks.bot.cogs.data.asyncio.to_thread", side_effect=to_thread_side_effect), \
+             patch("rocketstocks.bot.cogs.data.discord.File", return_value=mock_file), \
+             patch("rocketstocks.bot.cogs.data.InsiderCard") as mock_card, \
+             patch("rocketstocks.bot.cogs.data.spec_to_embed", return_value=mock_embed):
+            mock_card.return_value.build.return_value = MagicMock()
+            await cog.data_insider.callback(cog, interaction, ticker="AAPL")
+
+        assert interaction.user.send.call_count == 2
+        second_dm = interaction.user.send.call_args_list[1]
+        assert second_dm.kwargs.get("file") is mock_file
+
+    @pytest.mark.asyncio
+    async def test_dm_forbidden_sends_ephemeral_fallback(self):
+        """B4: if DMs are disabled, sends an ephemeral error message."""
+        cog = _make_cog()
+        interaction = _make_interaction()
+        cog.stock_data.tickers.parse_valid_tickers = AsyncMock(return_value=(["AAPL"], []))
+        cog.stock_data.yfinance = MagicMock()
+        interaction.user.send = AsyncMock(side_effect=discord.Forbidden(MagicMock(), "Cannot send DMs"))
+
+        with patch("rocketstocks.bot.cogs.data.asyncio.to_thread", new=AsyncMock(return_value=pd.DataFrame())), \
+             patch("rocketstocks.bot.cogs.data.InsiderCard") as mock_card, \
+             patch("rocketstocks.bot.cogs.data.spec_to_embed", return_value=MagicMock()):
+            mock_card.return_value.build.return_value = MagicMock()
+            await cog.data_insider.callback(cog, interaction, ticker="AAPL")
+
+        interaction.followup.send.assert_called_once()
+        call_kwargs = interaction.followup.send.call_args.kwargs
+        assert call_kwargs.get("ephemeral") is True
 
     @pytest.mark.asyncio
     async def test_invalid_ticker_sends_error(self):
@@ -822,3 +879,71 @@ class TestDataLosers:
 
         interaction.followup.send.assert_called_once()
 
+
+# ---------------------------------------------------------------------------
+# TestDataSecFiling (B2)
+# ---------------------------------------------------------------------------
+
+class TestDataSecFiling:
+    def _make_filings_df(self, forms=None):
+        """Build a minimal filings DataFrame like SEC client returns."""
+        forms = forms or ["10-K", "10-Q", "8-K", "10-K", "10-Q", "8-K", "10-K", "10-Q", "8-K", "10-K", "10-Q"]
+        rows = [
+            {"form": f, "filingDate": "2026-01-0{}".format(i + 1), "link": f"https://sec.gov/{i}"}
+            for i, f in enumerate(forms)
+        ]
+        return pd.DataFrame(rows)
+
+    @pytest.mark.asyncio
+    async def test_no_form_returns_up_to_10_most_recent_filings(self):
+        """B2: without a form filter, returns ≤10 most recent filings of any type."""
+        cog = _make_cog()
+        interaction = _make_interaction()
+        cog.stock_data.tickers.parse_valid_tickers = AsyncMock(return_value=(["AAPL"], []))
+        cog.stock_data.sec = MagicMock()
+        cog.stock_data.sec.get_recent_filings = AsyncMock(return_value=self._make_filings_df())
+
+        with patch("rocketstocks.bot.cogs.data.SecFilingCard") as mock_card, \
+             patch("rocketstocks.bot.cogs.data.spec_to_embed", return_value=MagicMock()):
+            mock_card.return_value.build.return_value = MagicMock()
+            await cog.data_sec_filing.callback(cog, interaction, tickers="AAPL", form=None)
+
+        card_data = mock_card.call_args[0][0]
+        assert len(card_data.filings["AAPL"]) <= 10
+        assert card_data.form is None
+
+    @pytest.mark.asyncio
+    async def test_form_filter_returns_only_matching_filings(self):
+        """B2: with a form filter, only filings of that type are returned."""
+        cog = _make_cog()
+        interaction = _make_interaction()
+        cog.stock_data.tickers.parse_valid_tickers = AsyncMock(return_value=(["AAPL"], []))
+        cog.stock_data.sec = MagicMock()
+        # 3 matching 10-K filings among 11 total
+        cog.stock_data.sec.get_recent_filings = AsyncMock(return_value=self._make_filings_df())
+
+        with patch("rocketstocks.bot.cogs.data.SecFilingCard") as mock_card, \
+             patch("rocketstocks.bot.cogs.data.spec_to_embed", return_value=MagicMock()):
+            mock_card.return_value.build.return_value = MagicMock()
+            await cog.data_sec_filing.callback(cog, interaction, tickers="AAPL", form="10-K")
+
+        card_data = mock_card.call_args[0][0]
+        assert all(f["form"] == "10-K" for f in card_data.filings["AAPL"])
+        assert card_data.form == "10-K"
+
+    @pytest.mark.asyncio
+    async def test_empty_filings_returns_empty_list(self):
+        """B2: ticker with no filings → empty list, not KeyError."""
+        cog = _make_cog()
+        interaction = _make_interaction()
+        cog.stock_data.tickers.parse_valid_tickers = AsyncMock(return_value=(["AAPL"], []))
+        cog.stock_data.sec = MagicMock()
+        cog.stock_data.sec.get_recent_filings = AsyncMock(return_value=pd.DataFrame())
+
+        with patch("rocketstocks.bot.cogs.data.SecFilingCard") as mock_card, \
+             patch("rocketstocks.bot.cogs.data.spec_to_embed", return_value=MagicMock()):
+            mock_card.return_value.build.return_value = MagicMock()
+            await cog.data_sec_filing.callback(cog, interaction, tickers="AAPL", form=None)
+
+        card_data = mock_card.call_args[0][0]
+        assert card_data.filings["AAPL"] == []

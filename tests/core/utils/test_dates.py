@@ -5,12 +5,12 @@ from unittest.mock import patch
 import pytest
 
 from rocketstocks.core.utils.dates import (
-    date_utils,
     configure_tz, timezone, format_date_ymd, format_date_mdy,
     format_date_from_iso, dt_round_down, seconds_until_minute_interval,
     round_down_nearest_minute, format_duration_since, today,
 )
-import rocketstocks.core.utils.dates as dates_module
+import rocketstocks.core.utils.dates as date_utils
+import rocketstocks.core.utils.dates as dates_module  # noqa: F811 (also aliased as date_utils above)
 
 
 class TestFormatDateYmd:
