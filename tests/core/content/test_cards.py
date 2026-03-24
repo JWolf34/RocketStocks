@@ -1110,3 +1110,73 @@ class TestGreeksSummaryCard:
 
     def test_no_crash_without_price(self):
         assert greeks_summary_card(_make_options_chain(), None)
+
+
+# ---------------------------------------------------------------------------
+# Phase 6 card tests — relative_strength_card, short_interest_card
+# ---------------------------------------------------------------------------
+
+from rocketstocks.core.content.sections_card import relative_strength_card, float_data_card
+
+
+class TestRelativeStrengthCard:
+    def test_shows_period_labels(self):
+        result = relative_strength_card(_price_history(280), _price_history(280))
+        assert '1M' in result or '3M' in result
+
+    def test_shows_alpha_indicator(self):
+        result = relative_strength_card(_price_history(280), _price_history(280))
+        assert 'Alpha' in result
+
+    def test_empty_ticker_history(self):
+        result = relative_strength_card(pd.DataFrame(), _price_history(280))
+        assert 'Insufficient' in result
+
+    def test_empty_benchmark_history(self):
+        result = relative_strength_card(_price_history(280), pd.DataFrame())
+        assert 'Insufficient' in result
+
+    def test_short_history_skips_longer_periods(self):
+        # Only 25 rows — only 1M (21 days) may be available
+        result = relative_strength_card(_price_history(25), _price_history(25))
+        assert '6M' not in result
+        assert '1Y' not in result
+
+    def test_custom_benchmark_label(self):
+        result = relative_strength_card(_price_history(280), _price_history(280), benchmark_label='QQQ')
+        assert 'QQQ' in result
+
+    def test_returns_string(self):
+        result = relative_strength_card(_price_history(280), _price_history(280))
+        assert isinstance(result, str) and len(result) > 0
+
+
+class TestFloatDataCard:
+    def test_shows_float_shares(self):
+        fd = {'float_shares': 5_000_000_000, 'short_pct_float': 0.035, 'short_ratio': 2.4}
+        result = float_data_card(fd)
+        assert 'Float' in result
+
+    def test_shows_short_pct(self):
+        fd = {'float_shares': 1_000_000_000, 'short_pct_float': 0.05, 'short_ratio': 1.5}
+        result = float_data_card(fd)
+        assert 'Short' in result
+        assert '%' in result
+
+    def test_shows_short_ratio(self):
+        fd = {'float_shares': 1_000_000_000, 'short_pct_float': 0.05, 'short_ratio': 3.2}
+        result = float_data_card(fd)
+        assert 'days to cover' in result
+
+    def test_none_float_data(self):
+        result = float_data_card(None)
+        assert 'No short interest' in result
+
+    def test_empty_dict(self):
+        result = float_data_card({})
+        assert 'No short interest' in result
+
+    def test_partial_data(self):
+        result = float_data_card({'float_shares': 1_000_000_000})
+        assert 'Float' in result
+        assert isinstance(result, str)

@@ -860,26 +860,35 @@ class TestBuildTechnicalReport:
     def _make_cog(self):
         return _make_cog()
 
-    @pytest.mark.asyncio
-    async def test_returns_technical_report_instance(self):
-        from rocketstocks.core.content.reports.technical_report import TechnicalReport
-        cog = self._make_cog()
-
+    def _wire_technical_report(self, cog, quote=None, schwab_error=None):
+        """Wire up all dependencies needed by build_technical_report()."""
         cog.stock_data.schwab = MagicMock()
-        cog.stock_data.schwab.get_quote = AsyncMock(return_value={
-            'regular': {'regularMarketLastPrice': 188.9},
-            'quote': {'netPercentChange': 2.5, 'totalVolume': 50000000},
-            'reference': {'exchangeName': 'NASDAQ', 'isShortable': True, 'isHardToBorrow': False},
-            'symbol': 'AAPL',
-        })
+        if schwab_error:
+            cog.stock_data.schwab.get_quote = AsyncMock(side_effect=schwab_error)
+        else:
+            cog.stock_data.schwab.get_quote = AsyncMock(return_value=quote or {})
         cog.stock_data.tickers = MagicMock()
         cog.stock_data.tickers.get_ticker_info = AsyncMock(return_value={'name': 'Apple Inc'})
         cog.stock_data.price_history = MagicMock()
         cog.stock_data.price_history.fetch_daily_price_history = AsyncMock(return_value=pd.DataFrame())
         cog.stock_data.ticker_stats = MagicMock()
         cog.stock_data.ticker_stats.get_stats = AsyncMock(return_value=None)
+        cog.stock_data.yfinance = MagicMock()
+        cog.stock_data.yfinance.get_float_data = MagicMock(return_value={})
 
-        result = await cog.build_technical_report(ticker='AAPL')
+    @pytest.mark.asyncio
+    async def test_returns_technical_report_instance(self):
+        from rocketstocks.core.content.reports.technical_report import TechnicalReport
+        cog = self._make_cog()
+        self._wire_technical_report(cog, quote={
+            'regular': {'regularMarketLastPrice': 188.9},
+            'quote': {'netPercentChange': 2.5, 'totalVolume': 50000000},
+            'reference': {'exchangeName': 'NASDAQ', 'isShortable': True, 'isHardToBorrow': False},
+            'symbol': 'AAPL',
+        })
+
+        with patch("rocketstocks.bot.cogs.reports.asyncio.to_thread", new=AsyncMock(return_value={})):
+            result = await cog.build_technical_report(ticker='AAPL')
         assert isinstance(result, TechnicalReport)
 
     @pytest.mark.asyncio
@@ -887,19 +896,25 @@ class TestBuildTechnicalReport:
         from rocketstocks.data.clients.schwab import SchwabTokenError
         from rocketstocks.core.content.reports.technical_report import TechnicalReport
         cog = self._make_cog()
+        self._wire_technical_report(cog, schwab_error=SchwabTokenError("no token"))
 
-        cog.stock_data.schwab = MagicMock()
-        cog.stock_data.schwab.get_quote = AsyncMock(side_effect=SchwabTokenError("no token"))
-        cog.stock_data.tickers = MagicMock()
-        cog.stock_data.tickers.get_ticker_info = AsyncMock(return_value={})
-        cog.stock_data.price_history = MagicMock()
-        cog.stock_data.price_history.fetch_daily_price_history = AsyncMock(return_value=pd.DataFrame())
-        cog.stock_data.ticker_stats = MagicMock()
-        cog.stock_data.ticker_stats.get_stats = AsyncMock(return_value=None)
-
-        result = await cog.build_technical_report(ticker='AAPL')
+        with patch("rocketstocks.bot.cogs.reports.asyncio.to_thread", new=AsyncMock(return_value={})):
+            result = await cog.build_technical_report(ticker='AAPL')
         assert isinstance(result, TechnicalReport)
         assert result.data.quote == {}
+
+    @pytest.mark.asyncio
+    async def test_float_data_attached_to_report(self):
+        from rocketstocks.core.content.reports.technical_report import TechnicalReport
+        cog = self._make_cog()
+        float_data = {'float_shares': 1_000_000, 'short_pct_float': 0.05, 'short_ratio': 3.0}
+        self._wire_technical_report(cog)
+        cog.stock_data.yfinance.get_float_data = MagicMock(return_value=float_data)
+
+        with patch("rocketstocks.bot.cogs.reports.asyncio.to_thread", new=AsyncMock(return_value=float_data)):
+            result = await cog.build_technical_report(ticker='AAPL')
+        assert isinstance(result, TechnicalReport)
+        assert result.data.float_data == float_data
 
 
 class TestBuildOptionsReport:

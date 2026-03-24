@@ -716,7 +716,8 @@ class TestComparisonReportEmbedSpec:
 # ---------------------------------------------------------------------------
 
 class TestTechnicalReportEmbedSpec:
-    def _make_report(self, price_history_rows=250, stats=None, empty_quote=False):
+    def _make_report(self, price_history_rows=250, stats=None, empty_quote=False,
+                     benchmark_rows=250, float_data=None):
         from rocketstocks.core.content.reports.technical_report import TechnicalReport
         quote = {} if empty_quote else _minimal_quote()
         data = TechnicalReportData(
@@ -725,6 +726,8 @@ class TestTechnicalReportEmbedSpec:
             quote=quote,
             daily_price_history=_price_history(price_history_rows),
             stats=stats,
+            benchmark_history=_price_history(benchmark_rows),
+            float_data=float_data,
         )
         return TechnicalReport(data)
 
@@ -747,9 +750,9 @@ class TestTechnicalReportEmbedSpec:
         spec = self._make_report().build()
         assert spec.timestamp is True
 
-    def test_has_six_fields(self):
+    def test_has_eight_fields(self):
         spec = self._make_report().build()
-        assert len(spec.fields) == 6
+        assert len(spec.fields) == 8
 
     def test_field_names(self):
         spec = self._make_report().build()
@@ -760,6 +763,8 @@ class TestTechnicalReportEmbedSpec:
         assert "Volume" in names
         assert "Key Levels" in names
         assert "Signal Confluence" in names
+        assert "Relative Strength vs SPY" in names
+        assert "Short Interest" in names
 
     def test_field_values_under_1024_chars(self):
         spec = self._make_report().build()
@@ -788,11 +793,33 @@ class TestTechnicalReportEmbedSpec:
         # Only 20 rows — not enough for most indicators
         spec = self._make_report(price_history_rows=20).build()
         assert isinstance(spec, EmbedSpec)
-        assert len(spec.fields) == 6
+        assert len(spec.fields) == 8
 
     def test_empty_quote_does_not_crash(self):
         spec = self._make_report(empty_quote=True).build()
         assert isinstance(spec, EmbedSpec)
+
+    def test_relative_strength_field_with_sufficient_history(self):
+        spec = self._make_report(price_history_rows=280, benchmark_rows=280).build()
+        rs_field = next(f for f in spec.fields if f.name == "Relative Strength vs SPY")
+        # With 280 rows we have enough for all four periods
+        assert '1M' in rs_field.value or '3M' in rs_field.value
+
+    def test_relative_strength_field_empty_benchmark(self):
+        spec = self._make_report(benchmark_rows=0).build()
+        rs_field = next(f for f in spec.fields if f.name == "Relative Strength vs SPY")
+        assert "Insufficient" in rs_field.value
+
+    def test_short_interest_field_with_float_data(self):
+        fd = {'float_shares': 5_000_000_000, 'short_pct_float': 0.035, 'short_ratio': 2.4}
+        spec = self._make_report(float_data=fd).build()
+        si_field = next(f for f in spec.fields if f.name == "Short Interest")
+        assert "Float" in si_field.value
+
+    def test_short_interest_field_no_float_data(self):
+        spec = self._make_report(float_data=None).build()
+        si_field = next(f for f in spec.fields if f.name == "Short Interest")
+        assert "No short interest" in si_field.value
 
 
 # ---------------------------------------------------------------------------
