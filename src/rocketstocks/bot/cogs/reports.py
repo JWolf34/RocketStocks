@@ -1048,20 +1048,30 @@ class Reports(commands.Cog):
 
     async def build_technical_report(self, ticker: str) -> TechnicalReport:
         """Build a deep-dive technical analysis report for a single ticker."""
-        ticker_info = await self.stock_data.tickers.get_ticker_info(ticker=ticker)
-        daily_price_history = await self.stock_data.price_history.fetch_daily_price_history(ticker=ticker)
-        stats = await self.stock_data.ticker_stats.get_stats(ticker)
+        ticker_info, daily_price_history, benchmark_history, stats = await asyncio.gather(
+            self.stock_data.tickers.get_ticker_info(ticker=ticker),
+            self.stock_data.price_history.fetch_daily_price_history(ticker=ticker),
+            self.stock_data.price_history.fetch_daily_price_history(ticker='SPY'),
+            self.stock_data.ticker_stats.get_stats(ticker),
+        )
         try:
             quote = await self.stock_data.schwab.get_quote(ticker=ticker)
         except SchwabTokenError:
             logger.warning(f"[build_technical_report] Schwab unavailable — quote missing for '{ticker}'")
             quote = {}
+        try:
+            float_data = await asyncio.to_thread(self.stock_data.yfinance.get_float_data, ticker)
+        except Exception:
+            logger.warning(f"[build_technical_report] Failed to fetch float data for '{ticker}'")
+            float_data = {}
         return TechnicalReport(data=TechnicalReportData(
             ticker=ticker,
             ticker_info=ticker_info,
             quote=quote,
             daily_price_history=daily_price_history,
             stats=stats,
+            benchmark_history=benchmark_history,
+            float_data=float_data,
         ))
 
     async def build_options_report(self, ticker: str) -> OptionsReport:
