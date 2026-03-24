@@ -192,6 +192,13 @@ def register_jobs(aio_sched: AsyncIOScheduler, stock_data: StockData, emitter: E
                 message=f"Error checking token expiry: {str(exc)}",
             ))
 
+    async def _collect_iv_history():
+        await stock_data.iv_history.collect_daily_snapshots(
+            schwab=stock_data.schwab,
+            watchlists=stock_data.watchlists,
+            popularity=stock_data.popularity,
+        )
+
     async def _enrich_tickers():
         await stock_data.tickers.enrich_unenriched_batch(limit=240)
 
@@ -212,6 +219,7 @@ def register_jobs(aio_sched: AsyncIOScheduler, stock_data: StockData, emitter: E
     update_5m_data_daily_trigger = CronTrigger(day_of_week="tue-sat", hour=4, minute=0, timezone=timezone)
     update_politicians_trigger = CronTrigger(day_of_week="sun", hour=7, minute=0, timezone=timezone)
     check_schwab_token_expiry_trigger = CronTrigger(hour="*/6", minute=0, timezone=timezone, start_date=datetime.datetime(2000, 1, 1, 6, 0, 0))
+    collect_iv_history_trigger = CronTrigger(day_of_week="tue-sat", hour=21, minute=30, timezone=timezone)
     enrich_tickers_trigger = CronTrigger(hour="*/1", minute=5, timezone=timezone)
     import_delisted_trigger = CronTrigger(day_of_week="sun", hour=9, minute=0, timezone=timezone)
     load_delisted_prices_trigger = CronTrigger(hour=10, minute=0, timezone=timezone)
@@ -227,6 +235,7 @@ def register_jobs(aio_sched: AsyncIOScheduler, stock_data: StockData, emitter: E
     aio_sched.add_job(emitter.job_wrapper("Update politicians", stock_data.capitol_trades.update_politicians), trigger=update_politicians_trigger, name="Update politicians", timezone=timezone, replace_existing=True, misfire_grace_time=600)
     aio_sched.add_job(_check_schwab_token_expiry, trigger=check_schwab_token_expiry_trigger, name="Check Schwab token expiry", timezone=timezone, replace_existing=True, misfire_grace_time=60)
     aio_sched.add_job(emitter.job_wrapper("Classify tickers", _classify_tickers), trigger=classify_tickers_trigger, name="Classify tickers", timezone=timezone, replace_existing=True, misfire_grace_time=600)
+    aio_sched.add_job(emitter.job_wrapper("Collect IV history", _collect_iv_history), trigger=collect_iv_history_trigger, name="Collect IV history", timezone=timezone, replace_existing=True, misfire_grace_time=600)
     aio_sched.add_job(emitter.job_wrapper("Enrich tickers", _enrich_tickers), trigger=enrich_tickers_trigger, name="Enrich tickers", timezone=timezone, replace_existing=True, misfire_grace_time=600)
     aio_sched.add_job(emitter.job_wrapper("Import delisted tickers", _import_delisted), trigger=import_delisted_trigger, name="Import delisted tickers", timezone=timezone, replace_existing=True, misfire_grace_time=600)
     aio_sched.add_job(emitter.job_wrapper("Load delisted price history", _load_delisted_prices), trigger=load_delisted_prices_trigger, name="Load delisted price history", timezone=timezone, replace_existing=True, misfire_grace_time=600)
