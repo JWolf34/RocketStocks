@@ -210,6 +210,15 @@ CREATE TABLE IF NOT EXISTS earnings_results (
     source        varchar(16) NOT NULL DEFAULT 'yfinance',
     PRIMARY KEY (date, ticker)
 );
+
+CREATE TABLE IF NOT EXISTS iv_history (
+    ticker          varchar(8)  NOT NULL,
+    date            date        NOT NULL,
+    iv              real,
+    atm_iv          real,
+    put_call_ratio  real,
+    PRIMARY KEY (ticker, date)
+);
 """
 
 _DROP_ALL_SCRIPT = """
@@ -231,6 +240,7 @@ DROP TABLE IF EXISTS alert_roles;
 DROP TABLE IF EXISTS schwab_tokens;
 DROP TABLE IF EXISTS bot_settings;
 DROP TABLE IF EXISTS earnings_results;
+DROP TABLE IF EXISTS iv_history;
 """
 
 
