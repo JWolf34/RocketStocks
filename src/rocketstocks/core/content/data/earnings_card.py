@@ -2,7 +2,7 @@
 import logging
 
 from rocketstocks.core.content.models import COLOR_AMBER, EmbedSpec, EarningsTableData
-from rocketstocks.core.content.sections_card import recent_earnings_card
+from rocketstocks.core.content.sections_card import recent_earnings_card, upcoming_earnings_card
 
 logger = logging.getLogger(__name__)
 
@@ -15,6 +15,8 @@ class EarningsCard:
 
     def build(self) -> EmbedSpec:
         description = recent_earnings_card(self.data.historical_earnings)
+        if self.data.next_earnings_info:
+            description += upcoming_earnings_card(self.data.next_earnings_info)
         if len(description) > 4096:
             description = description[:4093] + '...'
         return EmbedSpec(
