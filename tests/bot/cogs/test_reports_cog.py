@@ -677,15 +677,22 @@ class TestPostEarningsResultsImpl:
 
     @pytest.mark.asyncio
     async def test_posts_and_inserts_when_result_available(self):
+        import datetime as _dt
         cog = self._make_cog_with_results_support()
         result = {'eps_actual': 1.52, 'eps_estimate': 1.45, 'surprise_pct': 4.83}
 
         mock_report = MagicMock()
         cog.bot.iter_channels = AsyncMock(return_value=[(None, MagicMock())])
 
-        with patch("rocketstocks.bot.cogs.reports.asyncio.to_thread", new=AsyncMock(return_value=result)), \
+        # Pin UTC hour to 15 so the time-of-day guard passes regardless of when tests run
+        fixed_now = _dt.datetime(2026, 3, 23, 15, 0, 0)
+        with patch("rocketstocks.bot.cogs.reports.datetime") as mock_dt, \
+             patch("rocketstocks.bot.cogs.reports.asyncio.to_thread", new=AsyncMock(return_value=result)), \
              patch("rocketstocks.bot.cogs.reports.send_report", new_callable=AsyncMock) as mock_send, \
              patch.object(cog, "build_earnings_result_report", new=AsyncMock(return_value=mock_report)):
+            mock_dt.datetime.utcnow.return_value = fixed_now
+            mock_dt.date.today.return_value = fixed_now.date()
+            mock_dt.time = _dt.time
             await cog._post_earnings_results_impl()
 
         mock_send.assert_called_once()
@@ -930,6 +937,8 @@ class TestBuildOptionsReport:
         cog.stock_data.tickers.get_ticker_info = AsyncMock(return_value={'name': 'Apple Inc'})
         cog.stock_data.price_history = MagicMock()
         cog.stock_data.price_history.fetch_daily_price_history = AsyncMock(return_value=pd.DataFrame())
+        cog.stock_data.iv_history = MagicMock()
+        cog.stock_data.iv_history.get_iv_history = AsyncMock(return_value=pd.DataFrame())
 
         result = await cog.build_options_report(ticker='AAPL')
         assert isinstance(result, OptionsReport)
@@ -946,6 +955,8 @@ class TestBuildOptionsReport:
         cog.stock_data.tickers.get_ticker_info = AsyncMock(return_value={})
         cog.stock_data.price_history = MagicMock()
         cog.stock_data.price_history.fetch_daily_price_history = AsyncMock(return_value=pd.DataFrame())
+        cog.stock_data.iv_history = MagicMock()
+        cog.stock_data.iv_history.get_iv_history = AsyncMock(return_value=pd.DataFrame())
 
         result = await cog.build_options_report(ticker='AAPL')
         assert isinstance(result, OptionsReport)
