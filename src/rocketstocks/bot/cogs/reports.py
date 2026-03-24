@@ -1066,11 +1066,12 @@ class Reports(commands.Cog):
 
     async def build_options_report(self, ticker: str) -> OptionsReport:
         """Build a full options analysis report for a single ticker."""
-        ticker_info, daily_price_history, options_chain, quote = await asyncio.gather(
+        ticker_info, daily_price_history, options_chain, quote, iv_history = await asyncio.gather(
             self.stock_data.tickers.get_ticker_info(ticker=ticker),
             self.stock_data.price_history.fetch_daily_price_history(ticker=ticker),
             self._fetch_options_chain(ticker),
             self._fetch_quote_safe(ticker, caller='build_options_report'),
+            self.stock_data.iv_history.get_iv_history(ticker=ticker, days=365),
         )
         return OptionsReport(data=OptionsReportData(
             ticker=ticker,
@@ -1078,6 +1079,7 @@ class Reports(commands.Cog):
             quote=quote,
             options_chain=options_chain,
             daily_price_history=daily_price_history,
+            iv_history=iv_history,
         ))
 
     async def _fetch_options_chain(self, ticker: str) -> dict:
