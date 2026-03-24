@@ -37,13 +37,21 @@ class SEC():
     async def get_submissions_data(self, ticker):
         logger.debug(f"Fetching  SEC submissions for ticker {ticker}")
         cik = await self._get_cik(ticker)
+        if not cik:
+            logger.warning(f"No CIK found for ticker {ticker}, skipping SEC submissions fetch")
+            return None
         resp = await asyncio.to_thread(
             requests.get, f"https://data.sec.gov/submissions/CIK{cik}.json", headers=self.headers
         )
+        if not resp.text:
+            logger.warning(f"Empty response from SEC submissions for ticker {ticker}")
+            return None
         return resp.json()
 
     async def get_recent_filings(self, ticker, latest=10):
         submissions = await self.get_submissions_data(ticker)
+        if not submissions:
+            return pd.DataFrame()
         filings = pd.DataFrame.from_dict(submissions['filings']['recent'])[:latest]
         links = []
         for filing in filings.to_dict(orient='records'):
