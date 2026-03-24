@@ -1976,3 +1976,59 @@ def greeks_summary_card(options_chain: dict, current_price: float | None) -> str
     lines.append(_fmt_greeks(call_contracts, "Call"))
     lines.append(_fmt_greeks(put_contracts or [], "Put"))
     return '\n'.join(lines)
+
+
+def relative_strength_card(
+    daily_price_history: pd.DataFrame,
+    benchmark_history: pd.DataFrame,
+    benchmark_label: str = "SPY",
+) -> str:
+    """Alpha vs benchmark over 1M/3M/6M/1Y — shows ticker return, benchmark return, and difference."""
+    if daily_price_history.empty or benchmark_history.empty:
+        return "Insufficient price data"
+
+    ticker_closes = daily_price_history['close'].dropna()
+    bench_closes = benchmark_history['close'].dropna()
+
+    if len(ticker_closes) < 2 or len(bench_closes) < 2:
+        return "Insufficient price data"
+
+    periods = [('1M', 21), ('3M', 63), ('6M', 126), ('1Y', 252)]
+    lines = []
+
+    for label, days in periods:
+        if len(ticker_closes) <= days or len(bench_closes) <= days:
+            continue
+        ticker_ret = (ticker_closes.iloc[-1] / ticker_closes.iloc[-days - 1]) - 1
+        bench_ret = (bench_closes.iloc[-1] / bench_closes.iloc[-days - 1]) - 1
+        alpha = ticker_ret - bench_ret
+
+        t_sign = '+' if ticker_ret >= 0 else ''
+        a_sign = '+' if alpha >= 0 else ''
+        direction = '▲' if alpha >= 0 else '▼'
+        lines.append(
+            f"**{label}** {t_sign}{ticker_ret * 100:.1f}% · {benchmark_label} {'+' if bench_ret >= 0 else ''}{bench_ret * 100:.1f}% · Alpha {direction} **{a_sign}{alpha * 100:.1f}%**"
+        )
+
+    return '\n'.join(lines) if lines else "Insufficient price history"
+
+
+def float_data_card(float_data: dict | None) -> str:
+    """Float size, short % of float, and short ratio (days to cover) from YFinance float data."""
+    if not float_data:
+        return "No short interest data available"
+
+    float_shares = float_data.get('float_shares')
+    short_pct = float_data.get('short_pct_float')
+    short_ratio = float_data.get('short_ratio')
+
+    lines = []
+    if float_shares is not None:
+        lines.append(f"Float **{format_large_num(float_shares)}** shares")
+    if short_pct is not None:
+        pct_val = short_pct * 100 if short_pct < 1 else short_pct  # handle fractional vs percent
+        lines.append(f"Short % of Float **{pct_val:.1f}%**")
+    if short_ratio is not None:
+        lines.append(f"Short Ratio **{short_ratio:.1f}** days to cover")
+
+    return '\n'.join(lines) if lines else "No short interest data available"
