@@ -8,8 +8,10 @@ from rocketstocks.core.content.models import (
 )
 from rocketstocks.core.content.sections_card import (
     classification_card,
+    float_data_card,
     key_levels_card,
     momentum_detail_card,
+    relative_strength_card,
     signal_confluence_card,
     ticker_info_card,
     todays_change_card,
@@ -85,6 +87,14 @@ class TechnicalReport:
             EmbedField(
                 name="Signal Confluence",
                 value=signal_confluence_card(d.daily_price_history, current_price),
+            ),
+            EmbedField(
+                name="Relative Strength vs SPY",
+                value=relative_strength_card(d.daily_price_history, d.benchmark_history),
+            ),
+            EmbedField(
+                name="Short Interest",
+                value=float_data_card(d.float_data),
             ),
         ]
 
