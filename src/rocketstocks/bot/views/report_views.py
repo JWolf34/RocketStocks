@@ -102,3 +102,55 @@ class PoliticianReportButtons(discord.ui.View):
             style=discord.ButtonStyle.url,
             url=f"https://www.capitoltrades.com/politicians/{pid}",
         ))
+
+
+class TechnicalReportButtons(discord.ui.View):
+    """Buttons for Technical Report:
+    - TradingView chart shortcut
+    - FinViz shortcut
+    """
+    def __init__(self, ticker: str):
+        super().__init__(timeout=None)
+        self.add_item(discord.ui.Button(
+            label="TradingView",
+            style=discord.ButtonStyle.url,
+            url=f"https://www.tradingview.com/chart/?symbol={ticker}",
+        ))
+        self.add_item(discord.ui.Button(
+            label="FinViz",
+            style=discord.ButtonStyle.url,
+            url=finviz_url(ticker),
+        ))
+
+
+class ComparisonReportButtons(discord.ui.View):
+    """Buttons for Comparison Report:
+    - FinViz compare shortcut
+    """
+    def __init__(self, tickers: list):
+        super().__init__(timeout=None)
+        tickers_str = ','.join(tickers)
+        self.add_item(discord.ui.Button(
+            label="FinViz Compare",
+            style=discord.ButtonStyle.url,
+            url=f"https://finviz.com/compare.ashx?t={tickers_str}&ta=0&p=d",
+        ))
+
+
+class OptionsReportButtons(discord.ui.View):
+    """Buttons for Options Report:
+    - Market Chameleon options flow shortcut
+    - FinViz shortcut
+    """
+    def __init__(self, ticker: str):
+        super().__init__(timeout=None)
+        self.add_item(discord.ui.Button(
+            label="Market Chameleon",
+            style=discord.ButtonStyle.url,
+            url=f"https://marketchameleon.com/Overview/{ticker}/IV/",
+        ))
+        self.add_item(discord.ui.Button(
+            label="FinViz",
+            style=discord.ButtonStyle.url,
+            url=finviz_url(ticker),
+        ))

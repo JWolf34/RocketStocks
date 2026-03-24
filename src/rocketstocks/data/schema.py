@@ -211,6 +211,15 @@ CREATE TABLE IF NOT EXISTS earnings_results (
     PRIMARY KEY (date, ticker)
 );
 
+CREATE TABLE IF NOT EXISTS iv_history (
+    ticker          varchar(8)  NOT NULL,
+    date            date        NOT NULL,
+    iv              real,
+    atm_iv          real,
+    put_call_ratio  real,
+    PRIMARY KEY (ticker, date)
+);
+
 CREATE TABLE IF NOT EXISTS backtest_runs (
     run_id          SERIAL PRIMARY KEY,
     strategy_name   VARCHAR(64) NOT NULL,
@@ -287,6 +296,7 @@ DROP TABLE IF EXISTS alert_roles;
 DROP TABLE IF EXISTS schwab_tokens;
 DROP TABLE IF EXISTS bot_settings;
 DROP TABLE IF EXISTS earnings_results;
+DROP TABLE IF EXISTS iv_history;
 DROP TABLE IF EXISTS backtest_results;
 DROP TABLE IF EXISTS strategy_stats;
 DROP TABLE IF EXISTS backtest_runs;

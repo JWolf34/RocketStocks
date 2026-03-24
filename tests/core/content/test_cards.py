@@ -9,6 +9,9 @@ from rocketstocks.core.content.sections_card import (
     popularity_card, upcoming_earnings_card, politician_info_card, sec_filings_card,
     ticker_info_card, todays_change_card, earnings_date_card, news_card,
     recent_alerts_card, earnings_result_card, recent_earnings_card,
+    classification_card, earnings_forecast_card,
+    comparison_price_volume_card, comparison_performance_card,
+    comparison_valuation_card, comparison_technicals_card, comparison_popularity_card,
 )
 
 
@@ -593,3 +596,587 @@ class TestFundamentalsCardNoneSafety:
         result = fundamentals_card(self._fund_with(6.42, 29.42), _minimal_quote())
         assert 'EPS **6.42**' in result
         assert 'P/E **29.42**' in result
+
+
+class TestClassificationCard:
+    def test_returns_empty_when_no_classification(self):
+        assert classification_card(None, 1.2) == ''
+
+    def test_contains_formatted_label(self):
+        result = classification_card('blue_chip', 1.2)
+        assert 'Blue Chip' in result
+
+    def test_contains_volatility(self):
+        result = classification_card('standard', 3.5)
+        assert '3.5%' in result
+
+    def test_no_volatility_metric_when_none(self):
+        result = classification_card('volatile', None)
+        assert '20D Vol' not in result
+        assert 'Volatile' in result
+
+    def test_has_section_header(self):
+        result = classification_card('blue_chip', 1.2)
+        assert '__**Classification**__' in result
+
+
+class TestEarningsForecastCardRevisions:
+    def _quarterly_with_revisions(self):
+        return pd.DataFrame({
+            'fiscalQuarter': ['Q1 2026', 'Q2 2026'],
+            'epsForecast': ['1.88', '2.01'],
+            'noOfEsts': [28, 25],
+            'lowEPS': ['1.70', '1.85'],
+            'highEPS': ['2.00', '2.15'],
+            'up': [3, 0],
+            'down': [1, 2],
+        })
+
+    def _quarterly_no_revisions(self):
+        return pd.DataFrame({
+            'fiscalQuarter': ['Q1 2026'],
+            'epsForecast': ['1.88'],
+            'noOfEsts': [28],
+            'lowEPS': ['1.70'],
+            'highEPS': ['2.00'],
+        })
+
+    def test_shows_up_revision_count(self):
+        result = earnings_forecast_card(self._quarterly_with_revisions(), pd.DataFrame())
+        assert '↑3' in result
+
+    def test_shows_down_revision_count(self):
+        result = earnings_forecast_card(self._quarterly_with_revisions(), pd.DataFrame())
+        assert '↓1' in result
+
+    def test_hides_revisions_when_both_zero(self):
+        df = pd.DataFrame({
+            'fiscalQuarter': ['Q2 2026'],
+            'epsForecast': ['2.01'],
+            'noOfEsts': [25],
+            'lowEPS': ['1.85'],
+            'highEPS': ['2.15'],
+            'up': [0],
+            'down': [0],
+        })
+        result = earnings_forecast_card(df, pd.DataFrame())
+        assert 'revisions' not in result
+
+    def test_no_revisions_column_does_not_crash(self):
+        result = earnings_forecast_card(self._quarterly_no_revisions(), pd.DataFrame())
+        assert '**Q1 2026**' in result
+
+    def test_handles_nasdaq_fiscalend_column(self):
+        df = pd.DataFrame({
+            'fiscalEnd': ['Mar 2026'],
+            'consensusEPSForecast': ['1.88'],
+            'noOfEstimates': [28],
+            'lowEPSForecast': ['1.70'],
+            'highEPSForecast': ['2.00'],
+            'up': [2],
+            'down': [1],
+        })
+        result = earnings_forecast_card(df, pd.DataFrame())
+        assert 'Mar 2026' in result
+        assert '↑2' in result
+
+
+# ---------------------------------------------------------------------------
+# Comparison card tests
+# ---------------------------------------------------------------------------
+
+_COMP_TICKERS = ["AAPL", "MSFT"]
+
+
+def _comp_quotes():
+    return {t: _minimal_quote(ticker=t) for t in _COMP_TICKERS}
+
+
+def _comp_fundamentals():
+    return {t: _minimal_fundamentals() for t in _COMP_TICKERS}
+
+
+def _comp_price_histories():
+    return {t: _price_history() for t in _COMP_TICKERS}
+
+
+class TestComparisonPriceVolumeCard:
+    def test_contains_tickers(self):
+        result = comparison_price_volume_card(_COMP_TICKERS, _comp_quotes())
+        assert "AAPL" in result
+        assert "MSFT" in result
+
+    def test_contains_price_and_volume(self):
+        result = comparison_price_volume_card(_COMP_TICKERS, _comp_quotes())
+        assert "$" in result
+        assert "Vol" in result
+
+    def test_fallback_on_missing_quote(self):
+        result = comparison_price_volume_card(_COMP_TICKERS, {"AAPL": _minimal_quote("AAPL")})
+        assert "AAPL" in result
+        assert "MSFT" in result  # should show N/A, not raise
+
+    def test_empty_quotes_returns_placeholder(self):
+        result = comparison_price_volume_card(_COMP_TICKERS, {})
+        assert result  # not empty
+
+
+class TestComparisonPerformanceCard:
+    def test_contains_all_tickers(self):
+        result = comparison_performance_card(_COMP_TICKERS, _comp_quotes(), _comp_price_histories())
+        assert "AAPL" in result
+        assert "MSFT" in result
+
+    def test_contains_intervals(self):
+        result = comparison_performance_card(_COMP_TICKERS, _comp_quotes(), _comp_price_histories())
+        assert "1D" in result
+        assert "1M" in result
+
+    def test_benchmark_marked(self):
+        result = comparison_performance_card(
+            _COMP_TICKERS + ["SPY"],
+            {**_comp_quotes(), "SPY": _minimal_quote("SPY")},
+            {**_comp_price_histories(), "SPY": _price_history()},
+            benchmark_ticker="SPY",
+        )
+        assert "(B)" in result
+
+    def test_no_benchmark_label_without_benchmark(self):
+        result = comparison_performance_card(_COMP_TICKERS, _comp_quotes(), _comp_price_histories())
+        assert "(B)" not in result
+
+
+class TestComparisonValuationCard:
+    def test_contains_tickers_and_metrics(self):
+        result = comparison_valuation_card(_COMP_TICKERS, _comp_fundamentals())
+        assert "AAPL" in result
+        assert "MCap" in result
+        assert "P/E" in result
+        assert "Beta" in result
+
+    def test_fallback_on_missing_fundamentals(self):
+        result = comparison_valuation_card(_COMP_TICKERS, {"AAPL": _minimal_fundamentals()})
+        assert "AAPL" in result
+        assert "MSFT" in result and "N/A" in result
+
+    def test_empty_fundamentals(self):
+        result = comparison_valuation_card(_COMP_TICKERS, {})
+        assert result  # not empty, each ticker gets N/A
+
+
+class TestComparisonTechnicalsCard:
+    def test_contains_tickers(self):
+        result = comparison_technicals_card(_COMP_TICKERS, _comp_price_histories())
+        assert "AAPL" in result
+        assert "MSFT" in result
+
+    def test_contains_rsi_and_macd(self):
+        result = comparison_technicals_card(_COMP_TICKERS, _comp_price_histories())
+        assert "RSI" in result
+        assert "MACD" in result
+
+    def test_fallback_on_empty_history(self):
+        result = comparison_technicals_card(_COMP_TICKERS, {t: pd.DataFrame() for t in _COMP_TICKERS})
+        assert "N/A" in result
+
+
+class TestComparisonPopularityCard:
+    def test_returns_empty_when_no_data(self):
+        result = comparison_popularity_card(_COMP_TICKERS, {t: pd.DataFrame() for t in _COMP_TICKERS})
+        assert result == ''
+
+    def test_returns_empty_on_empty_dict(self):
+        result = comparison_popularity_card(_COMP_TICKERS, {})
+        assert result == ''
+
+    def test_shows_rank_when_data_present(self):
+        pop_df = pd.DataFrame({
+            'datetime': [datetime.datetime.now()],
+            'rank': [5],
+            'mentions': [100],
+            'mentions_24h_ago': [80],
+        })
+        result = comparison_popularity_card(_COMP_TICKERS, {"AAPL": pop_df, "MSFT": pd.DataFrame()})
+        assert "#5" in result
+        assert "100" in result
+
+    def test_shows_no_data_for_missing_tickers(self):
+        pop_df = pd.DataFrame({
+            'datetime': [datetime.datetime.now()],
+            'rank': [5],
+            'mentions': [100],
+            'mentions_24h_ago': [80],
+        })
+        result = comparison_popularity_card(_COMP_TICKERS, {"AAPL": pop_df, "MSFT": pd.DataFrame()})
+        assert "MSFT" in result
+        assert "No data" in result
+
+
+# ---------------------------------------------------------------------------
+# Technical report card tests
+# ---------------------------------------------------------------------------
+
+from rocketstocks.core.content.sections_card import (
+    trend_analysis_card, momentum_detail_card, volatility_analysis_card,
+    volume_analysis_card, key_levels_card, signal_confluence_card,
+)
+
+
+class TestTrendAnalysisCard:
+    def test_contains_sma_values(self):
+        result = trend_analysis_card(_price_history(250), 188.9)
+        assert "SMA20" in result
+        assert "SMA50" in result
+        assert "SMA200" in result
+
+    def test_contains_ema_values(self):
+        result = trend_analysis_card(_price_history(250), 188.9)
+        assert "EMA9" in result
+        assert "EMA21" in result
+
+    def test_shows_cross_status(self):
+        result = trend_analysis_card(_price_history(250), 188.9)
+        assert "Cross" in result
+
+    def test_insufficient_data_fallback(self):
+        result = trend_analysis_card(_price_history(10), 188.9)
+        assert "SMA200 N/A" in result
+
+    def test_empty_history(self):
+        result = trend_analysis_card(pd.DataFrame(), 188.9)
+        assert result  # no crash
+
+
+class TestMomentumDetailCard:
+    def test_contains_rsi(self):
+        result = momentum_detail_card(_price_history(250))
+        assert "RSI" in result
+
+    def test_contains_macd(self):
+        result = momentum_detail_card(_price_history(250))
+        assert "MACD" in result
+
+    def test_contains_roc(self):
+        result = momentum_detail_card(_price_history(250))
+        assert "ROC" in result
+
+    def test_empty_history(self):
+        result = momentum_detail_card(pd.DataFrame())
+        assert result  # no crash
+
+    def test_insufficient_data_fallback(self):
+        result = momentum_detail_card(_price_history(5))
+        assert "N/A" in result
+
+
+class TestVolatilityAnalysisCard:
+    def test_contains_atr_and_natr(self):
+        result = volatility_analysis_card(_price_history(250), 188.9)
+        assert "ATR" in result
+        assert "NATR" in result
+
+    def test_contains_bollinger(self):
+        result = volatility_analysis_card(_price_history(250), 188.9)
+        assert "BB" in result
+
+    def test_empty_history(self):
+        result = volatility_analysis_card(pd.DataFrame(), 188.9)
+        assert result
+
+    def test_no_ohlc_fallback(self):
+        df = pd.DataFrame({'close': [188.9] * 30, 'volume': [1000000] * 30,
+                           'date': [datetime.date.today()] * 30})
+        result = volatility_analysis_card(df, 188.9)
+        assert result
+
+
+class TestVolumeAnalysisCard:
+    def test_contains_rvol(self):
+        result = volume_analysis_card(_price_history(250))
+        assert "RVOL" in result
+
+    def test_contains_obv(self):
+        result = volume_analysis_card(_price_history(250))
+        assert "OBV" in result
+
+    def test_empty_history(self):
+        result = volume_analysis_card(pd.DataFrame())
+        assert result
+
+    def test_with_explicit_current_volume(self):
+        result = volume_analysis_card(_price_history(250), current_volume=100_000_000)
+        assert "RVOL" in result
+
+
+class TestKeyLevelsCard:
+    def test_contains_52w_high_low(self):
+        result = key_levels_card(_price_history(250), 188.9)
+        assert "52W High" in result
+        assert "52W Low" in result
+
+    def test_contains_bollinger_levels(self):
+        result = key_levels_card(_price_history(250), 188.9)
+        assert "BB" in result
+
+    def test_empty_history(self):
+        result = key_levels_card(pd.DataFrame(), 188.9)
+        assert result
+
+    def test_none_price_uses_last_close(self):
+        result = key_levels_card(_price_history(250), None)
+        assert "52W High" in result
+
+
+class TestSignalConfluenceCard:
+    def test_contains_bias(self):
+        result = signal_confluence_card(_price_history(250), 188.9)
+        assert "Bias" in result
+
+    def test_contains_bullish_bearish_counts(self):
+        result = signal_confluence_card(_price_history(250), 188.9)
+        assert "Bullish" in result
+        assert "Bearish" in result
+
+    def test_empty_history(self):
+        result = signal_confluence_card(pd.DataFrame(), 188.9)
+        assert result
+
+    def test_insufficient_data(self):
+        result = signal_confluence_card(_price_history(5), 188.9)
+        assert result
+
+
+# ---------------------------------------------------------------------------
+# Options report card tests
+# ---------------------------------------------------------------------------
+
+from rocketstocks.core.content.sections_card import (
+    iv_analysis_card, put_call_card, max_pain_card, iv_skew_card,
+    unusual_options_card, active_strikes_card, greeks_summary_card,
+)
+
+
+def _make_options_chain(base_vol: int = 1000, base_oi: int = 5000) -> dict:
+    strikes = [185.0, 190.0, 195.0, 200.0, 205.0]
+    exp_key = '2024-06-21:30'
+
+    def _contract(s: float, delta_sign: float) -> dict:
+        return {
+            'strikePrice': s, 'totalVolume': base_vol, 'openInterest': base_oi,
+            'volatility': 25.0 + abs(s - 190.0) * 0.5,
+            'delta': delta_sign * 0.5, 'gamma': 0.04, 'theta': -0.10, 'vega': 0.15,
+            'bid': 3.0, 'ask': 3.1, 'mark': 3.05,
+        }
+
+    return {
+        'status': 'SUCCESS',
+        'volatility': 25.5,
+        'putCallRatio': 0.85,
+        'underlyingPrice': 190.0,
+        'callExpDateMap': {exp_key: {str(s): [_contract(s, 1.0)] for s in strikes}},
+        'putExpDateMap':  {exp_key: {str(s): [_contract(s, -1.0)] for s in strikes}},
+    }
+
+
+class TestIvAnalysisCard:
+    def test_contains_chain_iv(self):
+        result = iv_analysis_card(_make_options_chain(), _price_history(100))
+        assert "Chain IV" in result
+
+    def test_contains_atm_iv(self):
+        result = iv_analysis_card(_make_options_chain(), _price_history(100))
+        assert "ATM IV" in result
+
+    def test_contains_hv_when_data_available(self):
+        result = iv_analysis_card(_make_options_chain(), _price_history(100))
+        assert "HV" in result
+
+    def test_collecting_data_when_no_iv_history(self):
+        result = iv_analysis_card(_make_options_chain(), _price_history(100))
+        assert "Collecting data" in result
+
+    def test_no_crash_on_failed_chain(self):
+        result = iv_analysis_card({'status': 'FAILED'}, pd.DataFrame())
+        assert result
+
+    def test_no_crash_on_empty_chain(self):
+        result = iv_analysis_card({}, pd.DataFrame())
+        assert result
+
+
+class TestPutCallCard:
+    def test_contains_pcr(self):
+        result = put_call_card(_make_options_chain())
+        assert "P/C Ratio" in result
+
+    def test_contains_volume_and_oi(self):
+        result = put_call_card(_make_options_chain())
+        assert "Volume" in result
+        assert "OI" in result
+
+    def test_sentiment_label_bullish(self):
+        chain = _make_options_chain()
+        chain['putCallRatio'] = 0.5
+        result = put_call_card(chain)
+        assert "Bullish" in result
+
+    def test_sentiment_label_bearish(self):
+        chain = _make_options_chain()
+        chain['putCallRatio'] = 1.5
+        result = put_call_card(chain)
+        assert "Bearish" in result
+
+    def test_no_crash_on_empty_chain(self):
+        assert put_call_card({})
+
+
+class TestMaxPainCard:
+    def test_contains_max_pain_strike(self):
+        result = max_pain_card(_make_options_chain(), 190.0)
+        assert "Max Pain" in result
+        assert "$" in result
+
+    def test_contains_distance_from_current(self):
+        result = max_pain_card(_make_options_chain(), 190.0)
+        assert "%" in result
+
+    def test_no_crash_on_empty_chain(self):
+        assert max_pain_card({}, 190.0)
+
+    def test_no_price_still_works(self):
+        result = max_pain_card(_make_options_chain(), None)
+        assert "Max Pain" in result
+
+
+class TestIvSkewCard:
+    def test_contains_put_and_call_iv(self):
+        result = iv_skew_card(_make_options_chain(), 190.0)
+        assert "OTM Put" in result
+        assert "OTM Call" in result
+
+    def test_contains_skew_label(self):
+        result = iv_skew_card(_make_options_chain(), 190.0)
+        assert "Skew" in result
+
+    def test_no_crash_on_empty_chain(self):
+        assert iv_skew_card({}, 190.0)
+
+    def test_no_crash_without_price(self):
+        assert iv_skew_card(_make_options_chain(), None)
+
+
+class TestUnusualOptionsCard:
+    def test_detects_unusual_when_high_ratio(self):
+        chain = _make_options_chain(base_vol=50000, base_oi=1000)
+        result = unusual_options_card(chain)
+        assert "Ratio" in result
+
+    def test_no_unusual_message_when_low_ratio(self):
+        chain = _make_options_chain(base_vol=10, base_oi=5000)
+        result = unusual_options_card(chain)
+        assert "No unusual activity" in result
+
+    def test_no_crash_on_empty_chain(self):
+        assert unusual_options_card({})
+
+
+class TestActiveStrikesCard:
+    def test_contains_calls_and_puts(self):
+        result = active_strikes_card(_make_options_chain(), 190.0)
+        assert "Calls" in result
+        assert "Puts" in result
+
+    def test_contains_expiration(self):
+        result = active_strikes_card(_make_options_chain(), 190.0)
+        assert "2024" in result
+
+    def test_no_crash_on_empty_chain(self):
+        assert active_strikes_card({}, 190.0)
+
+
+class TestGreeksSummaryCard:
+    def test_contains_atm_strike(self):
+        result = greeks_summary_card(_make_options_chain(), 190.0)
+        assert "ATM Strike" in result
+
+    def test_contains_greek_labels(self):
+        result = greeks_summary_card(_make_options_chain(), 190.0)
+        assert "Δ" in result
+        assert "Γ" in result
+        assert "Θ" in result
+
+    def test_no_crash_on_empty_chain(self):
+        assert greeks_summary_card({}, 190.0)
+
+    def test_no_crash_without_price(self):
+        assert greeks_summary_card(_make_options_chain(), None)
+
+
+# ---------------------------------------------------------------------------
+# Phase 6 card tests — relative_strength_card, short_interest_card
+# ---------------------------------------------------------------------------
+
+from rocketstocks.core.content.sections_card import relative_strength_card, float_data_card
+
+
+class TestRelativeStrengthCard:
+    def test_shows_period_labels(self):
+        result = relative_strength_card(_price_history(280), _price_history(280))
+        assert '1M' in result or '3M' in result
+
+    def test_shows_alpha_indicator(self):
+        result = relative_strength_card(_price_history(280), _price_history(280))
+        assert 'Alpha' in result
+
+    def test_empty_ticker_history(self):
+        result = relative_strength_card(pd.DataFrame(), _price_history(280))
+        assert 'Insufficient' in result
+
+    def test_empty_benchmark_history(self):
+        result = relative_strength_card(_price_history(280), pd.DataFrame())
+        assert 'Insufficient' in result
+
+    def test_short_history_skips_longer_periods(self):
+        # Only 25 rows — only 1M (21 days) may be available
+        result = relative_strength_card(_price_history(25), _price_history(25))
+        assert '6M' not in result
+        assert '1Y' not in result
+
+    def test_custom_benchmark_label(self):
+        result = relative_strength_card(_price_history(280), _price_history(280), benchmark_label='QQQ')
+        assert 'QQQ' in result
+
+    def test_returns_string(self):
+        result = relative_strength_card(_price_history(280), _price_history(280))
+        assert isinstance(result, str) and len(result) > 0
+
+
+class TestFloatDataCard:
+    def test_shows_float_shares(self):
+        fd = {'float_shares': 5_000_000_000, 'short_pct_float': 0.035, 'short_ratio': 2.4}
+        result = float_data_card(fd)
+        assert 'Float' in result
+
+    def test_shows_short_pct(self):
+        fd = {'float_shares': 1_000_000_000, 'short_pct_float': 0.05, 'short_ratio': 1.5}
+        result = float_data_card(fd)
+        assert 'Short' in result
+        assert '%' in result
+
+    def test_shows_short_ratio(self):
+        fd = {'float_shares': 1_000_000_000, 'short_pct_float': 0.05, 'short_ratio': 3.2}
+        result = float_data_card(fd)
+        assert 'days to cover' in result
+
+    def test_none_float_data(self):
+        result = float_data_card(None)
+        assert 'No short interest' in result
+
+    def test_empty_dict(self):
+        result = float_data_card({})
+        assert 'No short interest' in result
+
+    def test_partial_data(self):
+        result = float_data_card({'float_shares': 1_000_000_000})
+        assert 'Float' in result
+        assert isinstance(result, str)

@@ -79,6 +79,35 @@ class StockReportData(TickerData):
 
 
 @dataclass
+class FullStockReportData(StockReportData):
+    """Extended stock report data for /report ticker detail=full."""
+    price_targets: dict | None = None
+    recommendations: pd.DataFrame = field(default_factory=pd.DataFrame)
+    upgrades_downgrades: pd.DataFrame = field(default_factory=pd.DataFrame)
+    short_interest_ratio: float | None = None
+    short_interest_shares: float | None = None
+    short_percent_of_float: float | None = None
+    shares_outstanding: float | None = None
+    quarterly_forecast: pd.DataFrame = field(default_factory=pd.DataFrame)
+    yearly_forecast: pd.DataFrame = field(default_factory=pd.DataFrame)
+    classification: str | None = None
+    volatility_20d: float | None = None
+
+
+@dataclass
+class ComparisonReportData:
+    """Data for /report compare — side-by-side ticker comparison."""
+    tickers: list            # ordered list; benchmark_ticker is last if present
+    quotes: dict             # {ticker: schwab_quote_dict}
+    fundamentals: dict       # {ticker: schwab_fundamentals_dict | None}
+    daily_price_histories: dict  # {ticker: pd.DataFrame}
+    popularities: dict       # {ticker: pd.DataFrame}
+    ticker_infos: dict       # {ticker: info_dict}
+    stats: dict              # {ticker: stats_dict | None}
+    benchmark_ticker: str | None = None
+
+
+@dataclass
 class NewsReportData:
     query: str
     news: dict
@@ -369,5 +398,22 @@ class OnDemandScreenerData:
     """Data for /data screener — on-demand TradingView screener result."""
     screener_type: str          # 'premarket', 'intraday', or 'unusual-volume'
     data: pd.DataFrame
+
+
+@dataclass
+class TechnicalReportData(TickerData):
+    """Data for /report technical — deep-dive technical analysis."""
+    daily_price_history: pd.DataFrame = field(default_factory=pd.DataFrame)
+    stats: dict | None = None
+    benchmark_history: pd.DataFrame = field(default_factory=pd.DataFrame)
+    float_data: dict | None = None
+
+
+@dataclass
+class OptionsReportData(TickerData):
+    """Data for /report options — full options chain analysis."""
+    options_chain: dict = field(default_factory=dict)
+    daily_price_history: pd.DataFrame = field(default_factory=pd.DataFrame)
+    iv_history: pd.DataFrame = field(default_factory=pd.DataFrame)  # for IV Rank (Phase 5)
 
 

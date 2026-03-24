@@ -12,11 +12,12 @@ import pytest
 
 from rocketstocks.core.content.models import (
     COLOR_BLUE, COLOR_GREEN, COLOR_ORANGE,
-    COLOR_GOLD, COLOR_INDIGO, COLOR_PINK, COLOR_CYAN, COLOR_AMBER,
+    COLOR_GOLD, COLOR_INDIGO, COLOR_PINK, COLOR_CYAN, COLOR_AMBER, COLOR_TEAL,
+    ComparisonReportData,
     EmbedSpec,
-    EarningsSpotlightData, GainerScreenerData, NewsReportData,
-    PopularityReportData, PopularityScreenerData, StockReportData,
-    VolumeScreenerData, WeeklyEarningsData,
+    EarningsSpotlightData, FullStockReportData, GainerScreenerData, NewsReportData,
+    OptionsReportData, PopularityReportData, PopularityScreenerData, StockReportData,
+    TechnicalReportData, VolumeScreenerData, WeeklyEarningsData,
 )
 
 
@@ -488,3 +489,414 @@ class TestOhlcvCard:
         from rocketstocks.core.content.sections_card import ohlcv_card
         result = ohlcv_card(self._quote_with_zeros(), pd.DataFrame())
         assert "Today's Summary" in result
+
+
+# ---------------------------------------------------------------------------
+# FullStockReport
+# ---------------------------------------------------------------------------
+
+class TestFullStockReportEmbedSpec:
+    def _make_report(self, **overrides):
+        from rocketstocks.core.content.reports.stock_report import FullStockReport
+        defaults = dict(
+            ticker="AAPL",
+            ticker_info=_minimal_ticker_info(),
+            quote=_minimal_quote(),
+            fundamentals=_minimal_fundamentals(),
+            daily_price_history=_price_history(),
+            popularity=pd.DataFrame(),
+            historical_earnings=_earnings_df(),
+            next_earnings_info={},
+            recent_sec_filings=pd.DataFrame(),
+            price_targets={'current': 185.0, 'low': 160.0, 'mean': 210.0, 'high': 250.0},
+            recommendations=pd.DataFrame({
+                'strongBuy': [10], 'buy': [15], 'hold': [8], 'sell': [2], 'strongSell': [1]
+            }),
+            upgrades_downgrades=pd.DataFrame(),
+            short_interest_ratio=2.5,
+            short_interest_shares=130_000_000,
+            short_percent_of_float=0.89,
+            shares_outstanding=14_681_000_000,
+            quarterly_forecast=pd.DataFrame({
+                'fiscalQuarter': ['Q1 2026', 'Q2 2026'],
+                'epsForecast': ['1.88', '2.01'],
+                'noOfEsts': [28, 25],
+                'lowEPS': ['1.70', '1.85'],
+                'highEPS': ['2.00', '2.15'],
+                'up': [2, 1],
+                'down': [0, 1],
+            }),
+            yearly_forecast=pd.DataFrame({
+                'fiscalYear': ['2026', '2027'],
+                'epsForecast': ['8.20', '9.10'],
+                'noOfEsts': [30, 22],
+            }),
+            classification='blue_chip',
+            volatility_20d=1.2,
+        )
+        defaults.update(overrides)
+        return FullStockReport(data=FullStockReportData(**defaults))
+
+    def test_returns_embed_spec(self):
+        spec = self._make_report().build()
+        assert isinstance(spec, EmbedSpec)
+
+    def test_title_contains_ticker_and_full(self):
+        spec = self._make_report().build()
+        assert "AAPL" in spec.title
+        assert "Full" in spec.title
+
+    def test_color_is_blue(self):
+        assert self._make_report().build().color == COLOR_BLUE
+
+    def test_has_three_embed_fields(self):
+        spec = self._make_report().build()
+        assert len(spec.fields) == 3
+
+    def test_field_names(self):
+        spec = self._make_report().build()
+        names = [f.name for f in spec.fields]
+        assert "Analyst Consensus" in names
+        assert "Earnings Forecast" in names
+        assert "Short Interest" in names
+
+    def test_description_under_4096(self):
+        spec = self._make_report().build()
+        assert len(spec.description) <= 4096
+
+    def test_fields_each_under_1024(self):
+        spec = self._make_report().build()
+        for f in spec.fields:
+            assert len(f.value) <= 1024, f"Field '{f.name}' value exceeds 1024 chars"
+
+    def test_char_budget_under_6000(self):
+        spec = self._make_report().build()
+        assert _embed_char_count(spec) < 6000
+
+    def test_classification_in_description(self):
+        spec = self._make_report().build()
+        assert "Blue Chip" in spec.description
+
+    def test_volatility_in_description(self):
+        spec = self._make_report().build()
+        assert "1.2%" in spec.description
+
+    def test_revision_counts_in_forecast_field(self):
+        spec = self._make_report().build()
+        forecast_field = next(f for f in spec.fields if f.name == "Earnings Forecast")
+        assert "↑2" in forecast_field.value
+
+    def test_empty_extended_data_does_not_crash(self):
+        spec = self._make_report(
+            price_targets=None,
+            recommendations=pd.DataFrame(),
+            upgrades_downgrades=pd.DataFrame(),
+            short_interest_ratio=None,
+            short_interest_shares=None,
+            short_percent_of_float=None,
+            shares_outstanding=None,
+            quarterly_forecast=pd.DataFrame(),
+            yearly_forecast=pd.DataFrame(),
+            classification=None,
+            volatility_20d=None,
+        ).build()
+        assert isinstance(spec, EmbedSpec)
+        assert len(spec.fields) == 3
+
+
+# ---------------------------------------------------------------------------
+# ComparisonReport
+# ---------------------------------------------------------------------------
+
+class TestComparisonReportEmbedSpec:
+    _TICKERS = ["AAPL", "MSFT"]
+
+    def _make_report(self, benchmark_ticker=None, empty_data=False):
+        from rocketstocks.core.content.reports.comparison_report import ComparisonReport
+        tickers = list(self._TICKERS)
+        if benchmark_ticker and benchmark_ticker not in tickers:
+            tickers.append(benchmark_ticker)
+        quotes = {t: _minimal_quote(ticker=t) for t in tickers}
+        fundamentals = {t: _minimal_fundamentals() for t in tickers}
+        daily_price_histories = {t: _price_history() if not empty_data else pd.DataFrame() for t in tickers}
+        ticker_infos = {t: _minimal_ticker_info() for t in tickers}
+        popularities = {t: pd.DataFrame() for t in tickers}
+        stats = {t: None for t in tickers}
+        data = ComparisonReportData(
+            tickers=tickers,
+            quotes=quotes,
+            fundamentals=fundamentals,
+            daily_price_histories=daily_price_histories,
+            popularities=popularities,
+            ticker_infos=ticker_infos,
+            stats=stats,
+            benchmark_ticker=benchmark_ticker,
+        )
+        return ComparisonReport(data)
+
+    def test_returns_embed_spec(self):
+        spec = self._make_report().build()
+        assert isinstance(spec, EmbedSpec)
+
+    def test_color_is_indigo(self):
+        spec = self._make_report().build()
+        assert spec.color == COLOR_INDIGO
+
+    def test_title_contains_tickers(self):
+        spec = self._make_report().build()
+        assert "AAPL" in spec.title
+        assert "MSFT" in spec.title
+
+    def test_has_footer(self):
+        spec = self._make_report().build()
+        assert spec.footer is not None
+        assert "compare" in spec.footer
+
+    def test_has_timestamp(self):
+        spec = self._make_report().build()
+        assert spec.timestamp is True
+
+    def test_field_names(self):
+        spec = self._make_report().build()
+        names = [f.name for f in spec.fields]
+        assert "Price & Volume" in names
+        assert "Performance" in names
+        assert "Valuation" in names
+        assert "Technicals" in names
+
+    def test_no_popularity_field_when_no_data(self):
+        spec = self._make_report().build()
+        names = [f.name for f in spec.fields]
+        assert "Popularity" not in names
+
+    def test_popularity_field_included_when_data_present(self):
+        from rocketstocks.core.content.reports.comparison_report import ComparisonReport
+        import datetime as dt
+        pop_df = pd.DataFrame({
+            'datetime': [dt.datetime.now()],
+            'rank': [5],
+            'mentions': [100],
+            'mentions_24h_ago': [80],
+        })
+        tickers = list(self._TICKERS)
+        data = ComparisonReportData(
+            tickers=tickers,
+            quotes={t: _minimal_quote(ticker=t) for t in tickers},
+            fundamentals={t: _minimal_fundamentals() for t in tickers},
+            daily_price_histories={t: _price_history() for t in tickers},
+            popularities={tickers[0]: pop_df, tickers[1]: pd.DataFrame()},
+            ticker_infos={t: _minimal_ticker_info() for t in tickers},
+            stats={t: None for t in tickers},
+        )
+        spec = ComparisonReport(data).build()
+        names = [f.name for f in spec.fields]
+        assert "Popularity" in names
+
+    def test_benchmark_noted_in_description(self):
+        spec = self._make_report(benchmark_ticker="SPY").build()
+        assert "SPY" in spec.description
+
+    def test_field_values_under_1024_chars(self):
+        spec = self._make_report().build()
+        for f in spec.fields:
+            assert len(f.value) <= 1024, f"Field '{f.name}' value exceeds 1024 chars"
+
+    def test_char_budget_under_6000(self):
+        spec = self._make_report().build()
+        total = _embed_char_count(spec)
+        assert total < 6000, f"Embed char count {total} exceeds 6000"
+
+    def test_empty_data_does_not_crash(self):
+        spec = self._make_report(empty_data=True).build()
+        assert isinstance(spec, EmbedSpec)
+
+
+# ---------------------------------------------------------------------------
+# TechnicalReport
+# ---------------------------------------------------------------------------
+
+class TestTechnicalReportEmbedSpec:
+    def _make_report(self, price_history_rows=250, stats=None, empty_quote=False,
+                     benchmark_rows=250, float_data=None):
+        from rocketstocks.core.content.reports.technical_report import TechnicalReport
+        quote = {} if empty_quote else _minimal_quote()
+        data = TechnicalReportData(
+            ticker="AAPL",
+            ticker_info=_minimal_ticker_info(),
+            quote=quote,
+            daily_price_history=_price_history(price_history_rows),
+            stats=stats,
+            benchmark_history=_price_history(benchmark_rows),
+            float_data=float_data,
+        )
+        return TechnicalReport(data)
+
+    def test_returns_embed_spec(self):
+        spec = self._make_report().build()
+        assert isinstance(spec, EmbedSpec)
+
+    def test_color_is_teal(self):
+        assert self._make_report().build().color == COLOR_TEAL
+
+    def test_title_contains_ticker(self):
+        spec = self._make_report().build()
+        assert "AAPL" in spec.title
+
+    def test_has_footer(self):
+        spec = self._make_report().build()
+        assert "technical" in spec.footer
+
+    def test_has_timestamp(self):
+        spec = self._make_report().build()
+        assert spec.timestamp is True
+
+    def test_has_eight_fields(self):
+        spec = self._make_report().build()
+        assert len(spec.fields) == 8
+
+    def test_field_names(self):
+        spec = self._make_report().build()
+        names = [f.name for f in spec.fields]
+        assert "Trend Analysis" in names
+        assert "Momentum" in names
+        assert "Volatility" in names
+        assert "Volume" in names
+        assert "Key Levels" in names
+        assert "Signal Confluence" in names
+        assert "Relative Strength vs SPY" in names
+        assert "Short Interest" in names
+
+    def test_field_values_under_1024_chars(self):
+        spec = self._make_report().build()
+        for f in spec.fields:
+            assert len(f.value) <= 1024, f"Field '{f.name}' value exceeds 1024 chars"
+
+    def test_char_budget_under_6000(self):
+        spec = self._make_report().build()
+        total = _embed_char_count(spec)
+        assert total < 6000, f"Embed char count {total} exceeds 6000"
+
+    def test_has_finviz_url(self):
+        spec = self._make_report().build()
+        assert spec.url is not None
+        assert "AAPL" in spec.url
+
+    def test_classification_in_description_when_present(self):
+        spec = self._make_report(stats={'classification': 'blue_chip', 'volatility_20d': 1.2}).build()
+        assert "Blue Chip" in spec.description
+
+    def test_empty_price_history_does_not_crash(self):
+        spec = self._make_report(price_history_rows=0).build()
+        assert isinstance(spec, EmbedSpec)
+
+    def test_insufficient_data_handled_gracefully(self):
+        # Only 20 rows — not enough for most indicators
+        spec = self._make_report(price_history_rows=20).build()
+        assert isinstance(spec, EmbedSpec)
+        assert len(spec.fields) == 8
+
+    def test_empty_quote_does_not_crash(self):
+        spec = self._make_report(empty_quote=True).build()
+        assert isinstance(spec, EmbedSpec)
+
+    def test_relative_strength_field_with_sufficient_history(self):
+        spec = self._make_report(price_history_rows=280, benchmark_rows=280).build()
+        rs_field = next(f for f in spec.fields if f.name == "Relative Strength vs SPY")
+        # With 280 rows we have enough for all four periods
+        assert '1M' in rs_field.value or '3M' in rs_field.value
+
+    def test_relative_strength_field_empty_benchmark(self):
+        spec = self._make_report(benchmark_rows=0).build()
+        rs_field = next(f for f in spec.fields if f.name == "Relative Strength vs SPY")
+        assert "Insufficient" in rs_field.value
+
+    def test_short_interest_field_with_float_data(self):
+        fd = {'float_shares': 5_000_000_000, 'short_pct_float': 0.035, 'short_ratio': 2.4}
+        spec = self._make_report(float_data=fd).build()
+        si_field = next(f for f in spec.fields if f.name == "Short Interest")
+        assert "Float" in si_field.value
+
+    def test_short_interest_field_no_float_data(self):
+        spec = self._make_report(float_data=None).build()
+        si_field = next(f for f in spec.fields if f.name == "Short Interest")
+        assert "No short interest" in si_field.value
+
+
+# ---------------------------------------------------------------------------
+# OptionsReport
+# ---------------------------------------------------------------------------
+
+class TestOptionsReportEmbedSpec:
+    def _make_chain(self, base_vol: int = 1000, base_oi: int = 5000, failed: bool = False) -> dict:
+        if failed:
+            return {'status': 'FAILED'}
+        strikes = [185.0, 190.0, 195.0, 200.0, 205.0]
+        exp_key = '2024-06-21:30'
+
+        def _c(s, ds):
+            return {'strikePrice': s, 'totalVolume': base_vol, 'openInterest': base_oi,
+                    'volatility': 25.0, 'delta': ds * 0.5, 'gamma': 0.04,
+                    'theta': -0.10, 'vega': 0.15, 'bid': 3.0, 'ask': 3.1, 'mark': 3.05}
+
+        return {
+            'status': 'SUCCESS', 'volatility': 25.5, 'putCallRatio': 0.85,
+            'underlyingPrice': 190.0,
+            'callExpDateMap': {exp_key: {str(s): [_c(s, 1.0)] for s in strikes}},
+            'putExpDateMap':  {exp_key: {str(s): [_c(s, -1.0)] for s in strikes}},
+        }
+
+    def _make_report(self, failed_chain: bool = False):
+        from rocketstocks.core.content.reports.options_report import OptionsReport
+        data = OptionsReportData(
+            ticker="AAPL",
+            ticker_info=_minimal_ticker_info(),
+            quote=_minimal_quote(),
+            options_chain=self._make_chain(failed=failed_chain),
+            daily_price_history=_price_history(100),
+        )
+        return OptionsReport(data)
+
+    def test_returns_embed_spec(self):
+        assert isinstance(self._make_report().build(), EmbedSpec)
+
+    def test_color_is_gold(self):
+        assert self._make_report().build().color == COLOR_GOLD
+
+    def test_title_contains_ticker(self):
+        assert "AAPL" in self._make_report().build().title
+
+    def test_has_footer(self):
+        assert "options" in self._make_report().build().footer
+
+    def test_has_timestamp(self):
+        assert self._make_report().build().timestamp is True
+
+    def test_has_seven_fields(self):
+        assert len(self._make_report().build().fields) == 7
+
+    def test_field_names(self):
+        names = [f.name for f in self._make_report().build().fields]
+        assert "Implied Volatility" in names
+        assert "Put / Call" in names
+        assert "Max Pain" in names
+        assert "IV Skew" in names
+        assert "Unusual Activity" in names
+        assert "Most Active Strikes" in names
+        assert "ATM Greeks" in names
+
+    def test_field_values_under_1024_chars(self):
+        for f in self._make_report().build().fields:
+            assert len(f.value) <= 1024, f"Field '{f.name}' exceeds 1024 chars"
+
+    def test_char_budget_under_6000(self):
+        total = _embed_char_count(self._make_report().build())
+        assert total < 6000
+
+    def test_has_finviz_url(self):
+        spec = self._make_report().build()
+        assert spec.url and "AAPL" in spec.url
+
+    def test_failed_chain_does_not_crash(self):
+        spec = self._make_report(failed_chain=True).build()
+        assert isinstance(spec, EmbedSpec)
+        assert len(spec.fields) == 7

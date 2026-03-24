@@ -22,7 +22,10 @@ from rocketstocks.core.notifications.event import NotificationEvent
 
 from rocketstocks.core.content.models import (
     AlertSummaryData,
+    ComparisonReportData,
+    OptionsReportData,
     StockReportData,
+    FullStockReportData,
     NewsReportData,
     PopularityReportData,
     PopularityScreenerData,
@@ -32,9 +35,13 @@ from rocketstocks.core.content.models import (
     EarningsResultData,
     WeeklyEarningsData,
     PoliticianReportData,
+    TechnicalReportData,
 )
 from rocketstocks.core.content.reports.alert_summary import AlertSummary
-from rocketstocks.core.content.reports.stock_report import StockReport
+from rocketstocks.core.content.reports.comparison_report import ComparisonReport
+from rocketstocks.core.content.reports.options_report import OptionsReport
+from rocketstocks.core.content.reports.stock_report import StockReport, FullStockReport
+from rocketstocks.core.content.reports.technical_report import TechnicalReport
 from rocketstocks.core.content.reports.news_report import NewsReport
 from rocketstocks.core.content.reports.popularity_report import PopularityReport
 from rocketstocks.core.content.reports.earnings_report import EarningsSpotlightReport
@@ -46,7 +53,8 @@ from rocketstocks.core.content.screeners.volume_screener import VolumeScreener
 from rocketstocks.core.content.screeners.earnings_screener import WeeklyEarningsScreener
 
 from rocketstocks.bot.views.report_views import (
-    StockReportButtons, GainerScreenerButtons, VolumeScreenerButtons,
+    ComparisonReportButtons, OptionsReportButtons, StockReportButtons, TechnicalReportButtons,
+    GainerScreenerButtons, VolumeScreenerButtons,
     PopularityScreenerButtons, PopularityReportButtons, PoliticianReportButtons,
 )
 from rocketstocks.bot.views.subscription_views import AlertSubscriptionSelect, AlertSubscriptionView
@@ -423,15 +431,27 @@ class Reports(commands.Cog):
     @app_commands.describe(watchlist="Which watchlist to fetch reports for")
     @app_commands.autocomplete(watchlist=get_watchlist_options)
     @app_commands.describe(visibility="'private' to send to DMs, 'public' to send to the channel")
+    @app_commands.describe(detail="'standard' for the default report, 'full' to include analyst, forecast, and short interest")
     @app_commands.choices(visibility=[
         app_commands.Choice(name="private", value='private'),
         app_commands.Choice(name="public", value='public'),
     ])
-    async def report_watchlist(self, interaction: discord.Interaction, watchlist: str, visibility: app_commands.Choice[str]):
+    @app_commands.choices(detail=[
+        app_commands.Choice(name="standard", value='standard'),
+        app_commands.Choice(name="full", value='full'),
+    ])
+    async def report_watchlist(
+        self,
+        interaction: discord.Interaction,
+        watchlist: str,
+        visibility: app_commands.Choice[str],
+        detail: app_commands.Choice[str] = None,
+    ):
         """Generate and send Stock Reports for all tickers on the input watchlist"""
         await interaction.response.defer(ephemeral=True)
         logger.info(f"/report watchlist function called by user '{interaction.user.name}'")
 
+        detail_value = detail.value if detail else 'standard'
         watchlist_id = self.stock_data.watchlists.resolve_personal_id(interaction.user.id) if watchlist == 'personal' else watchlist
 
         if not await self.stock_data.watchlists.validate_watchlist(watchlist_id):
@@ -439,7 +459,7 @@ class Reports(commands.Cog):
             return
 
         tickers = await self.stock_data.watchlists.get_watchlist_tickers(watchlist_id)
-        logger.info(f"Reports requested for watchlist '{watchlist}' with tickers {tickers}")
+        logger.info(f"Reports requested for watchlist '{watchlist}' with tickers {tickers} (detail={detail_value})")
 
         if not tickers:
             await interaction.followup.send("No tickers on the watchlist. Use /watchlist add to build a watchlist.", ephemeral=True)
@@ -451,7 +471,10 @@ class Reports(commands.Cog):
             message = None
             try:
                 for ticker in tickers:
-                    content = await self.build_stock_report(ticker=ticker, guild_id=interaction.guild_id)
+                    if detail_value == 'full':
+                        content = await self.build_full_stock_report(ticker=ticker, guild_id=interaction.guild_id)
+                    else:
+                        content = await self.build_stock_report(ticker=ticker, guild_id=interaction.guild_id)
                     view = StockReportButtons(ticker=content.ticker)
                     message = await send_report(content, channel, interaction=interaction,
                                                 visibility=visibility.value, view=view)
@@ -487,18 +510,30 @@ class Reports(commands.Cog):
     @report_group.command(name="ticker", description="Generate a detailed stock report for one or more tickers")
     @app_commands.describe(tickers="Tickers to post reports for (separated by spaces)")
     @app_commands.describe(visibility="'private' to send to DMs, 'public' to send to the channel")
+    @app_commands.describe(detail="'standard' for the default report, 'full' to include analyst, forecast, and short interest")
     @app_commands.choices(visibility=[
         app_commands.Choice(name="private", value='private'),
         app_commands.Choice(name="public", value='public'),
     ])
+    @app_commands.choices(detail=[
+        app_commands.Choice(name="standard", value='standard'),
+        app_commands.Choice(name="full", value='full'),
+    ])
     @app_commands.autocomplete(tickers=ticker_autocomplete)
-    async def report_ticker(self, interaction: discord.interactions, tickers: str, visibility: app_commands.Choice[str]):
+    async def report_ticker(
+        self,
+        interaction: discord.interactions,
+        tickers: str,
+        visibility: app_commands.Choice[str],
+        detail: app_commands.Choice[str] = None,
+    ):
         """Generate and send Stock Reports for all valid tickers input by the user"""
         await interaction.response.defer(ephemeral=True)
         logger.info(f"/report ticker function called by user {interaction.user.name}")
 
+        detail_value = detail.value if detail else 'standard'
         tickers, invalid_tickers = await self.stock_data.tickers.parse_valid_tickers(tickers.upper())
-        logger.info(f"Reports requested for tickers {tickers}. Invalid tickers: {invalid_tickers}")
+        logger.info(f"Reports requested for tickers {tickers} (detail={detail_value}). Invalid tickers: {invalid_tickers}")
         channel = await self.bot.get_channel_for_guild(interaction.guild_id, REPORTS)
         if channel is None and visibility.value == 'public':
             await interaction.followup.send("Use `/server setup` to configure the reports channel.", ephemeral=True)
@@ -506,7 +541,10 @@ class Reports(commands.Cog):
         message = None
         try:
             for ticker in tickers:
-                content = await self.build_stock_report(ticker=ticker, guild_id=interaction.guild_id)
+                if detail_value == 'full':
+                    content = await self.build_full_stock_report(ticker=ticker, guild_id=interaction.guild_id)
+                else:
+                    content = await self.build_stock_report(ticker=ticker, guild_id=interaction.guild_id)
                 view = StockReportButtons(ticker=content.ticker)
                 message = await send_report(content, channel, interaction=interaction,
                                             visibility=visibility.value, view=view)
@@ -525,6 +563,152 @@ class Reports(commands.Cog):
         if not tickers:
             follow_up = f" No valid tickers input: {', '.join(invalid_tickers)}"
         await interaction.followup.send(follow_up, ephemeral=True)
+
+    @report_group.command(name="compare", description="Compare up to 5 stocks side-by-side against each other or a benchmark")
+    @app_commands.describe(tickers="Space-separated tickers to compare (max 5, e.g. AAPL MSFT GOOG)")
+    @app_commands.describe(benchmark="Optional benchmark ticker (e.g. SPY, QQQ, XLK) — appended to comparison")
+    @app_commands.describe(visibility="'private' to send to DMs, 'public' to send to the channel")
+    @app_commands.choices(visibility=[
+        app_commands.Choice(name="private", value='private'),
+        app_commands.Choice(name="public", value='public'),
+    ])
+    @app_commands.autocomplete(tickers=ticker_autocomplete)
+    async def report_compare(
+        self,
+        interaction: discord.Interaction,
+        tickers: str,
+        visibility: app_commands.Choice[str],
+        benchmark: str = None,
+    ):
+        """Generate a side-by-side comparison report for multiple tickers."""
+        await interaction.response.defer(ephemeral=True)
+        logger.info(f"/report compare called by user '{interaction.user.name}'")
+
+        parsed_tickers, invalid_tickers = await self.stock_data.tickers.parse_valid_tickers(tickers.upper())
+        if not parsed_tickers:
+            await interaction.followup.send(
+                f"No valid tickers provided. Invalid: {', '.join(invalid_tickers)}", ephemeral=True
+            )
+            return
+        if len(parsed_tickers) > 5:
+            parsed_tickers = parsed_tickers[:5]
+
+        benchmark_ticker = benchmark.upper().strip() if benchmark else None
+
+        channel = await self.bot.get_channel_for_guild(interaction.guild_id, REPORTS)
+        if channel is None and visibility.value == 'public':
+            await interaction.followup.send("Use `/server setup` to configure the reports channel.", ephemeral=True)
+            return
+
+        try:
+            content = await self.build_comparison_report(
+                tickers=parsed_tickers,
+                benchmark_ticker=benchmark_ticker,
+            )
+        except SchwabRateLimitError:
+            await interaction.followup.send(
+                "Schwab API rate limit exceeded — please wait a moment and try again.", ephemeral=True
+            )
+            return
+
+        view = ComparisonReportButtons(tickers=content.data.tickers)
+        message = await send_report(content, channel, interaction=interaction,
+                                    visibility=visibility.value, view=view)
+
+        ticker_str = ', '.join(content.data.tickers)
+        if message is not None:
+            follow_up = f"[Comparison report posted]({message.jump_url}) for {ticker_str}!"
+        else:
+            follow_up = f"Comparison report posted for {ticker_str}."
+        if invalid_tickers:
+            follow_up += f" Invalid tickers: {', '.join(invalid_tickers)}"
+        await interaction.followup.send(follow_up, ephemeral=True)
+
+    @report_group.command(name="technical", description="Deep-dive technical analysis for a single ticker")
+    @app_commands.describe(ticker="Ticker symbol to analyze (e.g. AAPL)")
+    @app_commands.describe(visibility="'private' to send to DMs, 'public' to send to the channel")
+    @app_commands.choices(visibility=[
+        app_commands.Choice(name="private", value='private'),
+        app_commands.Choice(name="public", value='public'),
+    ])
+    @app_commands.autocomplete(ticker=ticker_autocomplete)
+    async def report_technical(
+        self,
+        interaction: discord.Interaction,
+        ticker: str,
+        visibility: app_commands.Choice[str],
+    ):
+        """Generate a deep-dive technical analysis report."""
+        await interaction.response.defer(ephemeral=True)
+        logger.info(f"/report technical called by user '{interaction.user.name}'")
+
+        ticker = ticker.upper().strip()
+        channel = await self.bot.get_channel_for_guild(interaction.guild_id, REPORTS)
+        if channel is None and visibility.value == 'public':
+            await interaction.followup.send("Use `/server setup` to configure the reports channel.", ephemeral=True)
+            return
+
+        try:
+            content = await self.build_technical_report(ticker=ticker)
+        except SchwabRateLimitError:
+            await interaction.followup.send(
+                "Schwab API rate limit exceeded — please wait a moment and try again.", ephemeral=True
+            )
+            return
+
+        view = TechnicalReportButtons(ticker=ticker)
+        message = await send_report(content, channel, interaction=interaction,
+                                    visibility=visibility.value, view=view)
+
+        if message is not None:
+            await interaction.followup.send(
+                f"[Technical report posted]({message.jump_url}) for {ticker}!", ephemeral=True
+            )
+        else:
+            await interaction.followup.send(f"Technical report posted for {ticker}.", ephemeral=True)
+
+    @report_group.command(name="options", description="Full options analysis — IV, max pain, skew, unusual activity, and Greeks")
+    @app_commands.describe(ticker="Ticker symbol to analyze (e.g. AAPL)")
+    @app_commands.describe(visibility="'private' to send to DMs, 'public' to send to the channel")
+    @app_commands.choices(visibility=[
+        app_commands.Choice(name="private", value='private'),
+        app_commands.Choice(name="public", value='public'),
+    ])
+    @app_commands.autocomplete(ticker=ticker_autocomplete)
+    async def report_options(
+        self,
+        interaction: discord.Interaction,
+        ticker: str,
+        visibility: app_commands.Choice[str],
+    ):
+        """Generate a full options analysis report."""
+        await interaction.response.defer(ephemeral=True)
+        logger.info(f"/report options called by user '{interaction.user.name}'")
+
+        ticker = ticker.upper().strip()
+        channel = await self.bot.get_channel_for_guild(interaction.guild_id, REPORTS)
+        if channel is None and visibility.value == 'public':
+            await interaction.followup.send("Use `/server setup` to configure the reports channel.", ephemeral=True)
+            return
+
+        try:
+            content = await self.build_options_report(ticker=ticker)
+        except SchwabRateLimitError:
+            await interaction.followup.send(
+                "Schwab API rate limit exceeded — please wait a moment and try again.", ephemeral=True
+            )
+            return
+
+        view = OptionsReportButtons(ticker=ticker)
+        message = await send_report(content, channel, interaction=interaction,
+                                    visibility=visibility.value, view=view)
+
+        if message is not None:
+            await interaction.followup.send(
+                f"[Options report posted]({message.jump_url}) for {ticker}!", ephemeral=True
+            )
+        else:
+            await interaction.followup.send(f"Options report posted for {ticker}.", ephemeral=True)
 
     async def autocomplete_searchin(self, interaction: discord.Interaction, current: str):
         return [
@@ -734,6 +918,196 @@ class Reports(commands.Cog):
             fundamentals=fundamentals,
             recent_alerts=recent_alerts,
         ))
+
+    async def build_full_stock_report(self, ticker: str, guild_id: int | None = None, **kwargs) -> FullStockReport:
+        """Build a full stock report with analyst consensus, earnings forecast, and short interest."""
+        # Start with all standard data (parallel with extended fetches below)
+        base_coro = self.build_stock_report(ticker=ticker, guild_id=guild_id)
+
+        async def _fetch_analyst():
+            try:
+                price_targets = await asyncio.to_thread(self.stock_data.yfinance.get_analyst_price_targets, ticker)
+                recommendations = await asyncio.to_thread(self.stock_data.yfinance.get_recommendations_summary, ticker)
+                upgrades_downgrades = await asyncio.to_thread(self.stock_data.yfinance.get_upgrades_downgrades, ticker)
+                return price_targets, recommendations, upgrades_downgrades
+            except Exception:
+                logger.warning(f"[build_full_stock_report] YFinance analyst fetch failed for '{ticker}'", exc_info=True)
+                return None, pd.DataFrame(), pd.DataFrame()
+
+        async def _fetch_forecast():
+            try:
+                quarterly = await asyncio.to_thread(self.stock_data.nasdaq.get_earnings_forecast_quarterly, ticker)
+                yearly = await asyncio.to_thread(self.stock_data.nasdaq.get_earnings_forecast_yearly, ticker)
+                return quarterly, yearly
+            except Exception:
+                logger.warning(f"[build_full_stock_report] NASDAQ forecast fetch failed for '{ticker}'", exc_info=True)
+                return pd.DataFrame(), pd.DataFrame()
+
+        async def _fetch_stats():
+            try:
+                return await self.stock_data.ticker_stats.get_stats(ticker)
+            except Exception:
+                logger.warning(f"[build_full_stock_report] ticker_stats fetch failed for '{ticker}'", exc_info=True)
+                return None
+
+        base_report, analyst_result, forecast_result, stats = await asyncio.gather(
+            base_coro,
+            _fetch_analyst(),
+            _fetch_forecast(),
+            _fetch_stats(),
+        )
+        price_targets, recommendations, upgrades_downgrades = analyst_result
+        quarterly_forecast, yearly_forecast = forecast_result
+
+        # Extract short interest from already-fetched fundamentals
+        fund = {}
+        if base_report.data.fundamentals:
+            instruments = base_report.data.fundamentals.get('instruments', [])
+            if instruments:
+                fund = instruments[0].get('fundamental', {})
+
+        classification = stats.get('classification') if stats else None
+        volatility_20d = stats.get('volatility_20d') if stats else None
+
+        return FullStockReport(data=FullStockReportData(
+            ticker=ticker,
+            ticker_info=base_report.data.ticker_info,
+            quote=base_report.data.quote,
+            fundamentals=base_report.data.fundamentals,
+            daily_price_history=base_report.data.daily_price_history,
+            popularity=base_report.data.popularity,
+            historical_earnings=base_report.data.historical_earnings,
+            next_earnings_info=base_report.data.next_earnings_info,
+            recent_sec_filings=base_report.data.recent_sec_filings,
+            recent_alerts=base_report.data.recent_alerts,
+            price_targets=price_targets,
+            recommendations=recommendations,
+            upgrades_downgrades=upgrades_downgrades,
+            short_interest_ratio=fund.get('shortInterestRatio') or fund.get('shortIntRatio'),
+            short_interest_shares=fund.get('shortInterestShares') or fund.get('shortInt'),
+            short_percent_of_float=fund.get('shortPercentOfFloat') or fund.get('shortInterestToFloat'),
+            shares_outstanding=fund.get('sharesOutstanding'),
+            quarterly_forecast=quarterly_forecast,
+            yearly_forecast=yearly_forecast,
+            classification=classification,
+            volatility_20d=volatility_20d,
+        ))
+
+    async def build_comparison_report(
+        self,
+        tickers: list,
+        benchmark_ticker: str | None = None,
+    ) -> ComparisonReport:
+        """Build a side-by-side comparison report for up to 5 tickers."""
+        all_tickers = list(tickers)
+        if benchmark_ticker and benchmark_ticker not in all_tickers:
+            all_tickers.append(benchmark_ticker)
+
+        # Batch quotes in a single Schwab call
+        try:
+            quotes_raw = await self.stock_data.schwab.get_quotes(all_tickers)
+        except (SchwabTokenError, SchwabRateLimitError):
+            logger.warning("[build_comparison_report] Schwab unavailable — quotes missing")
+            quotes_raw = {}
+
+        async def _fetch_per_ticker(ticker):
+            ticker_info = await self.stock_data.tickers.get_ticker_info(ticker=ticker)
+            daily_price_history = await self.stock_data.price_history.fetch_daily_price_history(ticker=ticker)
+            popularity = await self.stock_data.popularity.fetch_popularity(ticker=ticker)
+            stats = await self.stock_data.ticker_stats.get_stats(ticker)
+            try:
+                fundamentals = await self.stock_data.schwab.get_fundamentals(tickers=[ticker])
+            except (SchwabTokenError, SchwabRateLimitError):
+                fundamentals = {}
+            return ticker, ticker_info, daily_price_history, popularity, fundamentals, stats
+
+        results = await asyncio.gather(*[_fetch_per_ticker(t) for t in all_tickers])
+
+        ticker_infos = {}
+        daily_price_histories = {}
+        popularities = {}
+        fundamentals = {}
+        stats = {}
+        for ticker, ti, dph, pop, fund, st in results:
+            ticker_infos[ticker] = ti
+            daily_price_histories[ticker] = dph
+            popularities[ticker] = pop
+            fundamentals[ticker] = fund
+            stats[ticker] = st
+
+        return ComparisonReport(data=ComparisonReportData(
+            tickers=all_tickers,
+            quotes=quotes_raw,
+            fundamentals=fundamentals,
+            daily_price_histories=daily_price_histories,
+            popularities=popularities,
+            ticker_infos=ticker_infos,
+            stats=stats,
+            benchmark_ticker=benchmark_ticker,
+        ))
+
+    async def build_technical_report(self, ticker: str) -> TechnicalReport:
+        """Build a deep-dive technical analysis report for a single ticker."""
+        ticker_info, daily_price_history, benchmark_history, stats = await asyncio.gather(
+            self.stock_data.tickers.get_ticker_info(ticker=ticker),
+            self.stock_data.price_history.fetch_daily_price_history(ticker=ticker),
+            self.stock_data.price_history.fetch_daily_price_history(ticker='SPY'),
+            self.stock_data.ticker_stats.get_stats(ticker),
+        )
+        try:
+            quote = await self.stock_data.schwab.get_quote(ticker=ticker)
+        except SchwabTokenError:
+            logger.warning(f"[build_technical_report] Schwab unavailable — quote missing for '{ticker}'")
+            quote = {}
+        try:
+            float_data = await asyncio.to_thread(self.stock_data.yfinance.get_float_data, ticker)
+        except Exception:
+            logger.warning(f"[build_technical_report] Failed to fetch float data for '{ticker}'")
+            float_data = {}
+        return TechnicalReport(data=TechnicalReportData(
+            ticker=ticker,
+            ticker_info=ticker_info,
+            quote=quote,
+            daily_price_history=daily_price_history,
+            stats=stats,
+            benchmark_history=benchmark_history,
+            float_data=float_data,
+        ))
+
+    async def build_options_report(self, ticker: str) -> OptionsReport:
+        """Build a full options analysis report for a single ticker."""
+        ticker_info, daily_price_history, options_chain, quote, iv_history = await asyncio.gather(
+            self.stock_data.tickers.get_ticker_info(ticker=ticker),
+            self.stock_data.price_history.fetch_daily_price_history(ticker=ticker),
+            self._fetch_options_chain(ticker),
+            self._fetch_quote_safe(ticker, caller='build_options_report'),
+            self.stock_data.iv_history.get_iv_history(ticker=ticker, days=365),
+        )
+        return OptionsReport(data=OptionsReportData(
+            ticker=ticker,
+            ticker_info=ticker_info,
+            quote=quote,
+            options_chain=options_chain,
+            daily_price_history=daily_price_history,
+            iv_history=iv_history,
+        ))
+
+    async def _fetch_options_chain(self, ticker: str) -> dict:
+        try:
+            return await self.stock_data.schwab.get_options_chain(ticker=ticker)
+        except SchwabTokenError:
+            logger.warning(f"[build_options_report] Schwab unavailable — options chain missing for '{ticker}'")
+            return {}
+        except SchwabRateLimitError:
+            logger.warning(f"[build_options_report] Schwab rate limited — options chain missing for '{ticker}'")
+            return {}
+
+    async def _fetch_quote_safe(self, ticker: str, caller: str = '') -> dict:
+        try:
+            return await self.stock_data.schwab.get_quote(ticker=ticker)
+        except SchwabTokenError:
+            logger.warning(f"[{caller}] Schwab unavailable — quote missing for '{ticker}'")
+            return {}
 
     async def build_earnings_spotlight_report(self, ticker: str, **kwargs) -> EarningsSpotlightReport:
         ticker_info = await self.stock_data.tickers.get_ticker_info(ticker=ticker)

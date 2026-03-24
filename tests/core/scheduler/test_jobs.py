@@ -22,13 +22,13 @@ def _make_emitter():
 
 
 class TestRegisterJobs:
-    def test_adds_thirteen_jobs(self):
+    def test_adds_fourteen_jobs(self):
         from rocketstocks.core.scheduler.jobs import register_jobs
         mock_sched = MagicMock()
         sd = _make_stock_data()
         emitter = _make_emitter()
         register_jobs(mock_sched, sd, emitter)
-        assert mock_sched.add_job.call_count == 13
+        assert mock_sched.add_job.call_count == 14
 
     def test_update_tickers_job_registered(self):
         from rocketstocks.core.scheduler.jobs import register_jobs
@@ -85,13 +85,13 @@ class TestRegisterJobs:
             assert call.kwargs.get("timezone") == "UTC"
 
     def test_job_wrapper_called_for_each_job(self):
-        """Verify that emitter.job_wrapper is called once per wrapped job (12 total; token-expiry is unwrapped)."""
+        """Verify that emitter.job_wrapper is called once per wrapped job (13 total; token-expiry is unwrapped)."""
         from rocketstocks.core.scheduler.jobs import register_jobs
         mock_sched = MagicMock()
         sd = _make_stock_data()
         emitter = _make_emitter()
         register_jobs(mock_sched, sd, emitter)
-        assert emitter.job_wrapper.call_count == 12
+        assert emitter.job_wrapper.call_count == 13
 
     def test_job_wrapper_receives_correct_names(self):
         """Verify job_wrapper is called with expected job names."""
