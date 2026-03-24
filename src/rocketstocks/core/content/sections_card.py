@@ -412,11 +412,68 @@ def popularity_card(popularity: pd.DataFrame) -> str:
 
     mentions_str = f" · **{mentions}** mentions" if mentions is not None and not pd.isna(mentions) else ""
 
+    # Historical insights — all-time best rank, 30D averages, days tracked, 7D trend
+    historical_parts = []
+    try:
+        best_rank = int(popularity['rank'].min())
+        best_idx = popularity['rank'].idxmin()
+        best_date = popularity.loc[best_idx, 'datetime']
+        best_date_str = best_date.strftime("%-m/%-d/%y") if pd.notna(best_date) else "?"
+        historical_parts.append(f"All-time best: **#{best_rank}** ({best_date_str})")
+    except Exception:
+        pass
+
+    try:
+        cutoff_30d = now - datetime.timedelta(days=30)
+        recent_30d = popularity[popularity['datetime'] >= cutoff_30d]
+        if not recent_30d.empty:
+            avg_rank_30d = recent_30d['rank'].mean()
+            historical_parts.append(f"30D avg rank: **#{avg_rank_30d:.0f}**")
+            if 'mentions' in recent_30d.columns:
+                avg_mentions_30d = recent_30d['mentions'].dropna().mean()
+                if pd.notna(avg_mentions_30d) and avg_mentions_30d > 0:
+                    historical_parts.append(f"30D avg mentions: **{avg_mentions_30d:.0f}**")
+    except Exception:
+        pass
+
+    try:
+        total_days = popularity['datetime'].dt.date.nunique()
+        if total_days > 0:
+            historical_parts.append(f"Days tracked: **{total_days}**")
+    except Exception:
+        pass
+
+    # 7D rank trend: slope of daily-best-rank (lower rank = improving popularity)
+    try:
+        cutoff_7d = now - datetime.timedelta(days=7)
+        recent_7d = popularity[popularity['datetime'] >= cutoff_7d].copy()
+        if len(recent_7d) >= 3:
+            daily_best = recent_7d.groupby(recent_7d['datetime'].dt.date)['rank'].min()
+            if len(daily_best) >= 3:
+                x = list(range(len(daily_best)))
+                y = list(daily_best.values)
+                n = len(x)
+                slope = (n * sum(xi * yi for xi, yi in zip(x, y)) - sum(x) * sum(y)) / (n * sum(xi ** 2 for xi in x) - sum(x) ** 2)
+                if slope < -2:
+                    trend = "📈 Improving"
+                elif slope > 2:
+                    trend = "📉 Declining"
+                else:
+                    trend = "→ Stable"
+                historical_parts.append(f"7D trend: **{trend}**")
+    except Exception:
+        pass
+
+    historical_line = ""
+    if historical_parts:
+        historical_line = "\n" + " · ".join(historical_parts)
+
     return (
         f"__**Popularity**__ · Rank **#{current_rank}**{mentions_str}\n"
         + " · ".join(intraday_parts) + "\n"
         + " · ".join(daily_parts)
-        + mentions_line + "\n\n"
+        + mentions_line
+        + historical_line + "\n\n"
     )
 
 
@@ -608,43 +665,95 @@ def earnings_result_card(eps_actual: float, eps_estimate: float | None, surprise
 
 
 def financial_highlights_card(financials: dict) -> str:
-    """Key financial statement metrics — Revenue, Income, Margins, Cash Flow."""
+    """Key financial statement metrics — Revenue, Income, Margins, Cash Flow (multi-period)."""
     header = "__**Financial Highlights**__"
     if not financials:
         return header + "\nNo financial data available\n\n"
 
     income = financials.get('quarterly_income_statement')
-    if income is None:
+    if income is None or (hasattr(income, 'empty') and income.empty):
         income = financials.get('income_statement')
     cash_flow = financials.get('quarterly_cash_flow')
-    if cash_flow is None:
+    if cash_flow is None or (hasattr(cash_flow, 'empty') and cash_flow.empty):
         cash_flow = financials.get('cash_flow')
+    annual_income = financials.get('income_statement')
 
     if income is None or income.empty:
         return header + "\nNo financial data available\n\n"
 
-    lines = [header]
+    def _period_label(col) -> str:
+        """Convert column (string date or Timestamp) to 'Q3'25' style."""
+        try:
+            dt = pd.Timestamp(col)
+            quarter = (dt.month - 1) // 3 + 1
+            return f"Q{quarter}'{dt.strftime('%y')}"
+        except Exception:
+            return str(col)[:7]
 
-    # Helper to find a row by trying multiple possible index names
-    def _find_row(df, *names):
+    def _get_val(df, col, *names):
+        """Get a single cell value from a named row and specific column."""
         for name in names:
-            if name in df.index:
-                vals = df.loc[name].dropna()
-                return vals.iloc[0] if not vals.empty else None
+            if name in df.index and col in df.columns:
+                val = df.loc[name, col]
+                if pd.notna(val):
+                    return float(val)
         return None
 
-    revenue = _find_row(income, 'Total Revenue', 'Revenue', 'TotalRevenue')
-    net_income = _find_row(income, 'Net Income', 'NetIncome', 'Net Income Common Stockholders')
-    gross_profit = _find_row(income, 'Gross Profit', 'GrossProfit')
-    op_income = _find_row(income, 'Operating Income', 'OperatingIncome', 'EBIT')
+    def _pct_change(current, previous) -> str | None:
+        """Format QoQ/YoY % change, return None if unavailable."""
+        if current is None or previous is None or previous == 0:
+            return None
+        pct = (current - previous) / abs(previous) * 100
+        sign = "+" if pct >= 0 else ""
+        return f"{sign}{pct:.1f}%"
 
-    if revenue is not None and revenue != 0:
-        rev_str = format_large_num(revenue)
-        lines.append(f"Revenue **{rev_str}**" + (f" · Net Income **{format_large_num(net_income)}**" if net_income is not None else ""))
-        if gross_profit is not None:
-            gm = (gross_profit / revenue) * 100
-            om = (op_income / revenue * 100) if op_income is not None else None
-            nm = (net_income / revenue * 100) if net_income is not None else None
+    lines = [header]
+
+    # Sort columns descending (most recent first), take up to 2
+    cols = list(income.columns)
+    try:
+        cols_sorted = sorted(cols, key=lambda c: pd.Timestamp(c), reverse=True)
+    except Exception:
+        cols_sorted = cols
+    col_new = cols_sorted[0] if cols_sorted else None
+    col_old = cols_sorted[1] if len(cols_sorted) > 1 else None
+
+    if col_new is None:
+        return header + "\nNo financial data available\n\n"
+
+    label_new = _period_label(col_new)
+    label_old = _period_label(col_old) if col_old else None
+
+    # Revenue
+    rev_new = _get_val(income, col_new, 'Total Revenue', 'Revenue', 'TotalRevenue')
+    rev_old = _get_val(income, col_old, 'Total Revenue', 'Revenue', 'TotalRevenue') if col_old else None
+    ni_new = _get_val(income, col_new, 'Net Income', 'NetIncome', 'Net Income Common Stockholders')
+    ni_old = _get_val(income, col_old, 'Net Income', 'NetIncome', 'Net Income Common Stockholders') if col_old else None
+    gp_new = _get_val(income, col_new, 'Gross Profit', 'GrossProfit')
+    op_new = _get_val(income, col_new, 'Operating Income', 'OperatingIncome', 'EBIT')
+
+    if rev_new is not None and rev_new != 0:
+        rev_qoq = _pct_change(rev_new, rev_old)
+        rev_line = f"**{label_new}** Revenue **{format_large_num(rev_new)}**"
+        if rev_old is not None:
+            rev_line += f" · **{label_old}** **{format_large_num(rev_old)}**"
+            if rev_qoq:
+                rev_line += f" (QoQ **{rev_qoq}**)"
+        lines.append(rev_line)
+
+        ni_qoq = _pct_change(ni_new, ni_old)
+        if ni_new is not None:
+            ni_line = f"Net Income **{format_large_num(ni_new)}**"
+            if ni_old is not None:
+                ni_line += f" · **{format_large_num(ni_old)}**"
+                if ni_qoq:
+                    ni_line += f" (QoQ **{ni_qoq}**)"
+            lines.append(ni_line)
+
+        if gp_new is not None:
+            gm = gp_new / rev_new * 100
+            om = op_new / rev_new * 100 if op_new is not None else None
+            nm = ni_new / rev_new * 100 if ni_new is not None else None
             margin_parts = [f"Gross **{gm:.1f}%**"]
             if om is not None:
                 margin_parts.append(f"Op **{om:.1f}%**")
@@ -654,14 +763,42 @@ def financial_highlights_card(financials: dict) -> str:
     else:
         lines.append("Revenue N/A")
 
-    # Free Cash Flow / Operating Cash Flow
+    # FCF / Operating Cash Flow
     if cash_flow is not None and not cash_flow.empty:
-        ocf = _find_row(cash_flow, 'Operating Cash Flow', 'Cash Flow From Operations', 'OperatingCashFlow')
-        fcf = _find_row(cash_flow, 'Free Cash Flow', 'FreeCashFlow')
-        fcf_val = fcf if fcf is not None else ocf
-        if fcf_val is not None:
-            label = "FCF" if fcf is not None else "Op. Cash Flow"
-            lines.append(f"{label} **{format_large_num(fcf_val)}**")
+        cf_cols = list(cash_flow.columns)
+        try:
+            cf_cols_sorted = sorted(cf_cols, key=lambda c: pd.Timestamp(c), reverse=True)
+        except Exception:
+            cf_cols_sorted = cf_cols
+        cf_col = cf_cols_sorted[0] if cf_cols_sorted else None
+        if cf_col:
+            ocf = _get_val(cash_flow, cf_col, 'Operating Cash Flow', 'Cash Flow From Operations', 'OperatingCashFlow')
+            fcf = _get_val(cash_flow, cf_col, 'Free Cash Flow', 'FreeCashFlow')
+            fcf_val = fcf if fcf is not None else ocf
+            if fcf_val is not None:
+                label = "FCF" if fcf is not None else "Op. Cash Flow"
+                lines.append(f"{label} **{format_large_num(fcf_val)}**")
+
+    # Annual YoY if 2+ annual periods available
+    if annual_income is not None and not annual_income.empty:
+        annual_cols = list(annual_income.columns)
+        try:
+            annual_cols_sorted = sorted(annual_cols, key=lambda c: pd.Timestamp(c), reverse=True)
+        except Exception:
+            annual_cols_sorted = annual_cols
+        if len(annual_cols_sorted) >= 2:
+            a_new = annual_cols_sorted[0]
+            a_old = annual_cols_sorted[1]
+            rev_a_new = _get_val(annual_income, a_new, 'Total Revenue', 'Revenue', 'TotalRevenue')
+            rev_a_old = _get_val(annual_income, a_old, 'Total Revenue', 'Revenue', 'TotalRevenue')
+            yoy = _pct_change(rev_a_new, rev_a_old)
+            if rev_a_new is not None and yoy:
+                a_label = _period_label(a_new).replace("Q1'", "FY'").replace("Q2'", "FY'").replace("Q3'", "FY'").replace("Q4'", "FY'")
+                try:
+                    a_label = f"FY'{pd.Timestamp(a_new).strftime('%y')}"
+                except Exception:
+                    pass
+                lines.append(f"Annual Revenue **{format_large_num(rev_a_new)}** (YoY **{yoy}**)")
 
     return "\n".join(lines) + "\n\n"
 
@@ -748,6 +885,10 @@ def fundamentals_snapshot_card(fundamentals: dict) -> str:
 
 def options_summary_card(options_chain: dict, current_price: float | None = None) -> str:
     """Key options metrics — IV, put/call ratio, nearest expiration activity."""
+    from rocketstocks.core.analysis.options import (
+        compute_put_call_stats, compute_max_pain, compute_iv_skew, detect_unusual_activity,
+    )
+
     header = "__**Options Summary**__"
     if not options_chain or options_chain.get('status') == 'FAILED':
         return header + "\nNo options data available\n\n"
@@ -755,27 +896,23 @@ def options_summary_card(options_chain: dict, current_price: float | None = None
     lines = [header]
 
     # Root-level metrics
-    iv = options_chain.get('volatility')
+    chain_iv = options_chain.get('volatility')
     pcr = options_chain.get('putCallRatio')
     underlying = options_chain.get('underlyingPrice') or current_price
 
-    if iv is not None and iv > 0:
-        lines.append(f"Implied Volatility **{iv:.1f}%**" + (f" · P/C Ratio **{pcr:.2f}**" if pcr else ""))
-    elif pcr:
-        lines.append(f"P/C Ratio **{pcr:.2f}**")
-
-    # Nearest expiration — most active strikes
+    # Nearest expiration — find ATM IV as primary
     call_map = options_chain.get('callExpDateMap', {})
     put_map = options_chain.get('putExpDateMap', {})
 
+    atm_strike = None
+    atm_iv = None
+    nearest_exp = None
     if call_map:
         nearest_exp = sorted(call_map.keys())[0]
         exp_label = nearest_exp.split(':')[0]
         strikes = call_map[nearest_exp]
 
         # Find ATM strike (nearest to underlying price)
-        atm_strike = None
-        atm_iv = None
         if underlying:
             try:
                 strike_floats = [(abs(float(s) - underlying), s) for s in strikes]
@@ -788,11 +925,37 @@ def options_summary_card(options_chain: dict, current_price: float | None = None
             except (ValueError, KeyError, IndexError):
                 pass
 
-        atm_str = f"ATM ${atm_strike:.0f} IV **{atm_iv:.1f}%**" if atm_strike and atm_iv else ""
-        exp_line = f"Nearest Exp **{exp_label}**"
-        if atm_str:
-            exp_line += f" · {atm_str}"
-        lines.append(exp_line)
+    # IV line: ATM IV is primary; chain-level shown as secondary reference
+    iv_parts = []
+    if atm_iv and atm_iv > 0:
+        iv_parts.append(f"IV **{atm_iv:.1f}%** (ATM)")
+    elif chain_iv and chain_iv > 0:
+        iv_parts.append(f"IV **{chain_iv:.1f}%**")
+    if chain_iv and chain_iv > 0 and atm_iv and atm_iv > 0:
+        iv_parts.append(f"Chain IV **{chain_iv:.1f}%**")
+    if pcr:
+        iv_parts.append(f"P/C **{pcr:.2f}**")
+    if iv_parts:
+        lines.append(" · ".join(iv_parts))
+
+    # Put/call aggregate volume & OI
+    try:
+        pc_stats = compute_put_call_stats(options_chain)
+        call_vol = pc_stats.get('call_volume', 0)
+        put_vol = pc_stats.get('put_volume', 0)
+        call_oi = pc_stats.get('call_oi', 0)
+        put_oi = pc_stats.get('put_oi', 0)
+        if call_vol or put_vol:
+            lines.append(
+                f"Call Vol **{call_vol:,}** · Put Vol **{put_vol:,}** · "
+                f"Call OI **{call_oi:,}** · Put OI **{put_oi:,}**"
+            )
+    except Exception:
+        pass
+
+    if nearest_exp:
+        # Nearest expiration label
+        lines.append(f"Nearest Exp **{exp_label}**")
 
         # Most active call + put by volume
         def _top_strike(exp_map, exp_key):
@@ -819,6 +982,37 @@ def options_summary_card(options_chain: dict, current_price: float | None = None
         if activity_parts:
             lines.append("Most Active — " + " · ".join(activity_parts))
 
+    # Max pain
+    try:
+        if underlying:
+            max_pain = compute_max_pain(options_chain)
+            if max_pain:
+                dist = max_pain - underlying
+                sign = "+" if dist >= 0 else ""
+                lines.append(f"Max Pain **${max_pain:.0f}** ({sign}{dist:.1f} from price)")
+    except Exception:
+        pass
+
+    # IV skew
+    try:
+        if underlying and underlying > 0:
+            skew = compute_iv_skew(options_chain, underlying)
+            if skew:
+                direction = skew['direction'].replace('_', ' ').title()
+                lines.append(
+                    f"IV Skew **{direction}** (put {skew['otm_put_iv']:.1f}% vs call {skew['otm_call_iv']:.1f}%)"
+                )
+    except Exception:
+        pass
+
+    # Unusual activity
+    try:
+        unusual = detect_unusual_activity(options_chain)
+        if unusual:
+            lines.append(f"Unusual Activity **{len(unusual)}** contract(s) flagged")
+    except Exception:
+        pass
+
     return "\n".join(lines) + "\n\n"
 
 
@@ -832,12 +1026,18 @@ def tickers_summary_card(tickers_df) -> str:
     total = len(tickers_df)
     lines.append(f"Total Tickers **{total:,}**")
 
-    # Sector breakdown (top 5)
+    # Active vs delisted
+    if 'delist_date' in tickers_df.columns:
+        delisted = tickers_df['delist_date'].notna().sum()
+        active = total - delisted
+        lines.append(f"Active **{active:,}** · Delisted **{delisted:,}**")
+
+    # Sector breakdown (top 5, exclude NaN/empty/"NaN" strings)
     if 'sector' in tickers_df.columns:
         sector_counts = (
             tickers_df['sector']
             .dropna()
-            .loc[lambda s: s.str.strip().ne('')]
+            .loc[lambda s: s.str.strip().ne('').values & s.ne('NaN').values]
             .value_counts()
             .head(5)
         )
@@ -845,18 +1045,43 @@ def tickers_summary_card(tickers_df) -> str:
             sector_parts = [f"{s} **{n}**" for s, n in sector_counts.items()]
             lines.append("Top Sectors — " + " · ".join(sector_parts))
 
-    # Exchange breakdown
+    # Security type breakdown (top 4)
+    if 'security_type' in tickers_df.columns:
+        type_counts = (
+            tickers_df['security_type']
+            .dropna()
+            .loc[lambda s: s.str.strip().ne('').values & s.ne('NaN').values]
+            .value_counts()
+            .head(4)
+        )
+        if not type_counts.empty:
+            type_parts = [f"{t} **{n}**" for t, n in type_counts.items()]
+            lines.append("Security Types — " + " · ".join(type_parts))
+
+    # Exchange breakdown (top 4)
     if 'exchange' in tickers_df.columns:
         exch_counts = (
             tickers_df['exchange']
             .dropna()
-            .loc[lambda s: s.str.strip().ne('')]
+            .loc[lambda s: s.str.strip().ne('').values & s.ne('NaN').values]
             .value_counts()
             .head(4)
         )
         if not exch_counts.empty:
             exch_parts = [f"{e} **{n}**" for e, n in exch_counts.items()]
             lines.append("Exchanges — " + " · ".join(exch_parts))
+
+    # Country breakdown (top 3, only if more than 1 unique country)
+    if 'country' in tickers_df.columns:
+        country_counts = (
+            tickers_df['country']
+            .dropna()
+            .loc[lambda s: s.str.strip().ne('').values & s.ne('NaN').values]
+            .value_counts()
+        )
+        if len(country_counts) > 1:
+            country_parts = [f"{c} **{n}**" for c, n in country_counts.head(3).items()]
+            lines.append("Top Countries — " + " · ".join(country_parts))
 
     return "\n".join(lines) + "\n\n"
 
@@ -881,43 +1106,71 @@ def analyst_card(price_targets: dict | None, recommendations: pd.DataFrame, upgr
     else:
         lines.append("Price targets unavailable")
 
-    # Recommendations summary
+    # Recommendations summary — all 5 categories, current month (period "0m" = iloc[0])
     if recommendations is not None and not recommendations.empty:
-        cols = [c.lower() for c in recommendations.columns]
         col_map = {c.lower(): c for c in recommendations.columns}
-        buy_col = col_map.get('strongbuy') or col_map.get('buy')
-        hold_col = col_map.get('hold')
-        sell_col = col_map.get('strongsell') or col_map.get('sell')
         row = recommendations.iloc[0]
+        period_col = col_map.get('period')
+        period_label = ""
+        if period_col:
+            period_val = str(row.get(period_col, '')).strip()
+            period_label = " (Current Month)" if period_val in ('0m', '0') else f" ({period_val})"
+
         parts = []
-        if buy_col:
-            parts.append(f"Buy **{int(row[buy_col])}**")
-        if hold_col:
-            parts.append(f"Hold **{int(row[hold_col])}**")
-        if sell_col:
-            parts.append(f"Sell **{int(row[sell_col])}**")
+        for label, key in [
+            ("Strong Buy", 'strongbuy'), ("Buy", 'buy'),
+            ("Hold", 'hold'), ("Sell", 'sell'), ("Strong Sell", 'strongsell'),
+        ]:
+            actual_col = col_map.get(key)
+            if actual_col:
+                try:
+                    val = int(row[actual_col])
+                    if val > 0:
+                        parts.append(f"{label} **{val}**")
+                except (TypeError, ValueError):
+                    pass
         if parts:
-            lines.append("Ratings — " + " · ".join(parts))
+            lines.append(f"Ratings{period_label} — " + " · ".join(parts))
+
+        # Trend vs previous month (iloc[1]) if available
+        if len(recommendations) > 1:
+            prev_row = recommendations.iloc[1]
+            trend_parts = []
+            for label, key in [("Buy", 'strongbuy'), ("", 'buy'), ("Hold", 'hold'), ("Sell", 'strongsell'), ("", 'sell')]:
+                actual_col = col_map.get(key)
+                if actual_col:
+                    try:
+                        delta = int(row[actual_col]) - int(prev_row[actual_col])
+                        if delta != 0 and label:
+                            sign = "+" if delta > 0 else ""
+                            trend_parts.append(f"{sign}{delta} {label}")
+                    except (TypeError, ValueError):
+                        pass
+            if trend_parts:
+                lines.append("vs Last Month — " + " · ".join(trend_parts))
 
     # Recent upgrades/downgrades (top 5)
+    _ACTION_LABELS = {'up': 'Upgraded', 'down': 'Downgraded', 'main': 'Maintained', 'init': 'Initiated'}
     if upgrades_downgrades is not None and not upgrades_downgrades.empty:
         lines.append("**Recent Actions**")
         df = upgrades_downgrades.copy()
-        if hasattr(df.index, 'tz_localize'):
-            try:
-                df.index = df.index.tz_localize(None)
-            except Exception:
-                pass
+        try:
+            df.index = pd.to_datetime(df.index).tz_localize(None)
+        except Exception:
+            pass
         df = df.sort_index(ascending=False).head(5)
         for idx, row in df.iterrows():
             firm = row.get('Firm', row.get('firm', 'Unknown'))
-            action = row.get('Action', row.get('action', ''))
+            action_raw = str(row.get('Action', row.get('action', ''))).lower()
+            action = _ACTION_LABELS.get(action_raw, action_raw.title())
             to_grade = row.get('To Grade', row.get('toGrade', ''))
             date_str = str(idx)[:10]
-            lines.append(f"{date_str} · **{firm}** → {to_grade} ({action})")
+            grade_str = f" → {to_grade}" if to_grade else ""
+            lines.append(f"{date_str} · **{firm}** {action}{grade_str}")
     else:
         lines.append("No recent upgrades/downgrades")
 
+    lines.append("*Source: Yahoo Finance*")
     lines.append("")
     return "\n".join(lines)
 
@@ -1067,11 +1320,14 @@ def earnings_forecast_card(quarterly_df: pd.DataFrame, yearly_df: pd.DataFrame) 
     if yearly_df is not None and not yearly_df.empty:
         lines.append("**Annual EPS Estimates**")
         for _, row in yearly_df.head(3).iterrows():
-            period = row.get('fiscalYear', row.get('year', row.get('Fiscal Year', '')))
-            eps_est = row.get('epsForecast', row.get('consensusEPS', row.get('EPS Forecast', 'N/A')))
-            num_analysts = row.get('noOfEsts', row.get('numOfEst', row.get('# Analysts', '')))
+            period = row.get('fiscalYear', row.get('fiscalEnd', row.get('year', row.get('Fiscal Year', ''))))
+            eps_est = row.get('consensusEPSForecast', row.get('epsForecast', row.get('consensusEPS', row.get('EPS Forecast', 'N/A'))))
+            num_analysts = row.get('noOfEstimates', row.get('noOfEsts', row.get('numOfEst', row.get('# Analysts', ''))))
+            low = row.get('lowEPSForecast', row.get('lowEPS', row.get('lowEst', row.get('Low', ''))))
+            high = row.get('highEPSForecast', row.get('highEPS', row.get('highEst', row.get('High', ''))))
+            range_str = f" · Range **{low}**–**{high}**" if low != '' and high != '' else ''
             est_str = f" · {num_analysts} analysts" if num_analysts != '' else ''
-            lines.append(f"**{period}**: EPS Est **{eps_est}**{est_str}")
+            lines.append(f"**{period}**: EPS Est **{eps_est}**{range_str}{est_str}")
 
     lines.append("")
     return "\n".join(lines)
