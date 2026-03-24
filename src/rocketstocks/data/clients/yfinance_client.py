@@ -148,3 +148,22 @@ class YFinanceClient:
         except Exception:
             logger.warning(f"get_insider_purchases({ticker}) failed", exc_info=True)
             return pd.DataFrame()
+
+    @sleep_and_retry
+    @limits(calls=5, period=1)
+    def get_float_data(self, ticker: str) -> dict:
+        """Return float and short interest data for *ticker*.
+
+        Keys: ``float_shares``, ``short_pct_float``, ``short_ratio``.
+        Returns an empty dict on failure.
+        """
+        try:
+            info = yf.Ticker(ticker).info
+            return {
+                'float_shares': info.get('floatShares'),
+                'short_pct_float': info.get('shortPercentOfFloat'),
+                'short_ratio': info.get('shortRatio'),
+            }
+        except Exception:
+            logger.warning(f"get_float_data({ticker}) failed", exc_info=True)
+            return {}
