@@ -17,6 +17,8 @@ WHERE delist_date IS NOT NULL
   AND delist_date > CURRENT_DATE - INTERVAL '30 days';
 ALTER TABLE alerts ALTER COLUMN alert_data TYPE jsonb USING alert_data::jsonb;
 ALTER TABLE market_signals ALTER COLUMN signal_data TYPE jsonb USING signal_data::jsonb;
+ALTER TABLE market_signals ADD COLUMN IF NOT EXISTS signal_source varchar(32) DEFAULT 'composite';
+ALTER TABLE market_signals ADD COLUMN IF NOT EXISTS price_at_flag float;
 ALTER TABLE watchlists ADD COLUMN IF NOT EXISTS watchlist_type VARCHAR(16) NOT NULL DEFAULT 'named';
 ALTER TABLE watchlists ADD COLUMN IF NOT EXISTS owner_id BIGINT;
 ALTER TABLE watchlists ADD COLUMN IF NOT EXISTS display_name VARCHAR(255);
@@ -180,6 +182,8 @@ CREATE TABLE IF NOT EXISTS market_signals (
     confirmed_at     timestamp,
     alert_message_id bigint,
     signal_data      jsonb DEFAULT '[]'::jsonb,
+    signal_source    varchar(32) DEFAULT 'composite',
+    price_at_flag    float,
     PRIMARY KEY (ticker, detected_at)
 );
 
