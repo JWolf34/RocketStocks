@@ -49,11 +49,16 @@ _ROLE_COLOURS: dict[str, discord.Colour] = {
     "watchlist_mover": discord.Colour.blue(),
     "popularity_surge": discord.Colour.purple(),
     "momentum_confirmed": discord.Colour.gold(),
-    "market_mover_sustained": discord.Colour.teal(),
-    "market_mover_price_accelerating": discord.Colour.green(),
-    "market_mover_volume_accelerating": discord.Colour.dark_green(),
-    "market_mover_volume_extreme": discord.Colour.dark_blue(),
+    "volume_accumulation": discord.Colour.dark_blue(),
+    "breakout": discord.Colour.green(),
     "all_alerts": discord.Colour.orange(),
+}
+
+_STALE_ROLE_KEYS = {
+    "market_mover_sustained",
+    "market_mover_price_accelerating",
+    "market_mover_volume_accelerating",
+    "market_mover_volume_extreme",
 }
 
 
@@ -300,11 +305,34 @@ class Config(commands.Cog):
     def __init__(self, bot: commands.Bot):
         self.bot = bot
 
+    async def _migrate_stale_roles(self):
+        """Remove deprecated market_mover_* roles from all guilds. Idempotent."""
+        alert_roles_repo = self.bot.stock_data.alert_roles
+        for guild in self.bot.guilds:
+            guild_roles = await alert_roles_repo.get_all_for_guild(guild.id)
+            for role_key, role_id in guild_roles.items():
+                if role_key not in _STALE_ROLE_KEYS:
+                    continue
+                discord_role = guild.get_role(role_id)
+                if discord_role:
+                    try:
+                        await discord_role.delete(reason="RocketStocks: removing deprecated market_mover role")
+                    except discord.Forbidden:
+                        logger.warning(f"Cannot delete stale role {role_key} in guild {guild.id}")
+                await alert_roles_repo.delete_role(guild.id, role_key)
+                logger.info(f"Migrated stale role {role_key} from guild {guild.id}")
+
     @commands.Cog.listener()
     async def on_ready(self):
         logger.info(f"{__name__} loaded")
-        # Prompt any guild that isn't fully configured yet
+        await self._migrate_stale_roles()
+        # Create any missing new roles for fully-configured guilds
         repo = self.bot.stock_data.channel_config
+        for guild in self.bot.guilds:
+            config = await repo.get_all_for_guild(guild.id)
+            if all(ct in config for ct in ALL_CONFIG_TYPES):
+                await setup_alert_subscriptions(self.bot, guild)
+        # Prompt any guild that isn't fully configured yet
         guild_ids = [g.id for g in self.bot.guilds]
         unconfigured = await repo.get_unconfigured_guilds(guild_ids)
         for guild_id in unconfigured:
