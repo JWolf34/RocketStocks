@@ -4,7 +4,9 @@ import asyncio
 import time
 import traceback as tb
 
+import discord
 import pandas as pd
+from discord import app_commands
 from discord.ext import commands, tasks
 
 from rocketstocks.data.stockdata import StockData
@@ -17,12 +19,19 @@ from rocketstocks.core.notifications.config import NotificationLevel
 from rocketstocks.core.notifications.event import NotificationEvent
 import rocketstocks.core.analysis.indicators as an
 
-from rocketstocks.core.analysis.alert_strategy import evaluate_price_alert
+from rocketstocks.core.analysis.alert_strategy import evaluate_price_alert, evaluate_confirmation
 from rocketstocks.core.analysis.popularity_signals import evaluate_popularity_surge
 from rocketstocks.core.analysis.composite_score import compute_composite_score
 from rocketstocks.core.analysis.signal_confirmation import should_confirm_signal
+from rocketstocks.core.analysis.alert_performance import (
+    compute_surge_confidence,
+    compute_signal_confidence,
+    compute_price_outcome,
+)
 
 from rocketstocks.core.content.models import (
+    AlertHistoryData,
+    AlertStatsData,
     EarningsMoverData,
     WatchlistMoverData,
     PopularitySurgeData,
@@ -36,6 +45,8 @@ from rocketstocks.core.content.alerts.popularity_surge_alert import PopularitySu
 from rocketstocks.core.content.alerts.momentum_confirmation_alert import MomentumConfirmationAlert
 from rocketstocks.core.content.alerts.market_alert import MarketAlert
 from rocketstocks.core.content.alerts.market_mover_alert import MarketMoverAlert
+from rocketstocks.core.content.reports.alert_stats_report import AlertStats
+from rocketstocks.core.content.reports.alert_history_report import AlertHistory
 
 from rocketstocks.bot.views.alert_views import (
     AlertButtons,
