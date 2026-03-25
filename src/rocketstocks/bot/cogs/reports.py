@@ -5,7 +5,6 @@ import asyncio
 import time
 import traceback as tb
 import pandas as pd
-import pandas_market_calendars as mcal
 import discord
 from discord import app_commands
 from discord.ext import commands, tasks
@@ -21,7 +20,6 @@ from rocketstocks.core.notifications.config import NotificationLevel
 from rocketstocks.core.notifications.event import NotificationEvent
 
 from rocketstocks.core.content.models import (
-    AlertSummaryData,
     ComparisonReportData,
     OptionsReportData,
     StockReportData,
@@ -37,7 +35,6 @@ from rocketstocks.core.content.models import (
     PoliticianReportData,
     TechnicalReportData,
 )
-from rocketstocks.core.content.reports.alert_summary import AlertSummary
 from rocketstocks.core.content.reports.comparison_report import ComparisonReport
 from rocketstocks.core.content.reports.options_report import OptionsReport
 from rocketstocks.core.content.reports.stock_report import StockReport, FullStockReport
@@ -57,34 +54,10 @@ from rocketstocks.bot.views.report_views import (
     GainerScreenerButtons, VolumeScreenerButtons,
     PopularityScreenerButtons, PopularityReportButtons, PoliticianReportButtons,
 )
-from rocketstocks.bot.views.subscription_views import AlertSubscriptionSelect, AlertSubscriptionView
 from rocketstocks.bot.senders.report_sender import send_report, send_screener
 from rocketstocks.bot.senders.embed_utils import spec_to_embed
 
 logger = logging.getLogger(__name__)
-
-
-def _resolve_since_dt(value: str) -> tuple[datetime.datetime, str]:
-    """Map choice value → (since_datetime, human_label)."""
-    calendar = mcal.get_calendar('NYSE')
-    today = datetime.date.today()
-
-    if value == 'market_open_today':
-        # 9:30 AM ET = 14:30 UTC
-        market_open = datetime.datetime.combine(today, datetime.time(14, 30))
-        return market_open, 'since market open today'
-
-    if value == 'last_3_days':
-        return datetime.datetime.combine(today - datetime.timedelta(days=3), datetime.time.min), 'last 3 days'
-
-    if value == 'last_7_days':
-        return datetime.datetime.combine(today - datetime.timedelta(days=7), datetime.time.min), 'last 7 days'
-
-    # Default: 'last_close' → previous trading day at 4 PM ET (21:00 UTC)
-    valid = calendar.valid_days(start_date=today - datetime.timedelta(days=10), end_date=today)
-    prev_day = [d.date() for d in valid if d.date() < today][-1]
-    prev_close = datetime.datetime.combine(prev_day, datetime.time(21, 0))  # 4 PM ET in UTC
-    return prev_close, f'since last close ({prev_day.strftime("%b %d")})'
 
 
 class Reports(commands.Cog):
@@ -425,7 +398,6 @@ class Reports(commands.Cog):
     #####################
 
     report_group = app_commands.Group(name="report", description="Generate in-depth stock reports")
-    alert_group = app_commands.Group(name="alert", description="View alert history and manage subscriptions")
 
     @report_group.command(name="watchlist", description="Generate stock reports for every ticker on a watchlist")
     @app_commands.describe(watchlist="Which watchlist to fetch reports for")
@@ -1184,62 +1156,6 @@ class Reports(commands.Cog):
             politician_facts=politician_facts,
         ))
 
-    async def build_alert_summary(self, since_dt: datetime.datetime, label: str) -> AlertSummary:
-        alerts = await self.dstate.get_alerts_since(since_dt)
-        return AlertSummary(data=AlertSummaryData(since_dt=since_dt, label=label, alerts=alerts))
-
-    @alert_group.command(name="summary", description="View a summary of recent alerts grouped by type")
-    @app_commands.describe(
-        since_when="Time period to summarize (defaults to since last close)",
-        visibility="public posts to the alerts channel; private sends only to you",
-    )
-    @app_commands.choices(
-        since_when=[
-            app_commands.Choice(name="Since last close (default)", value="last_close"),
-            app_commands.Choice(name="Since market open today",    value="market_open_today"),
-            app_commands.Choice(name="Last 3 days",                value="last_3_days"),
-            app_commands.Choice(name="Last 7 days",                value="last_7_days"),
-        ],
-        visibility=[
-            app_commands.Choice(name="public",  value="public"),
-            app_commands.Choice(name="private", value="private"),
-        ],
-    )
-    async def alert_summary(
-        self,
-        interaction: discord.Interaction,
-        since_when: app_commands.Choice[str] = None,
-        visibility: app_commands.Choice[str] = None,
-    ):
-        """Summarize recent alerts grouped by type."""
-        await interaction.response.defer(ephemeral=True)
-        logger.info(f"/alert summary called by user '{interaction.user.name}'")
-        since_dt, label = _resolve_since_dt(since_when.value if since_when else 'last_close')
-        content = await self.build_alert_summary(since_dt, label)
-        channel = await self.bot.get_channel_for_guild(interaction.guild_id, ALERTS)
-        vis = visibility.value if visibility else "private"
-        message = await send_report(content, channel, interaction=interaction, visibility=vis)
-        if message is not None:
-            await interaction.followup.send(f"[Alert summary posted]({message.jump_url})", ephemeral=True)
-        else:
-            await interaction.followup.send("Alert summary posted.", ephemeral=True)
-
-    async def _send_subscription_select(self, interaction: discord.Interaction) -> None:
-        """Send an ephemeral subscription dropdown to the interacting user."""
-        guild_roles = await self.bot.stock_data.alert_roles.get_all_for_guild(interaction.guild_id)
-        member_role_ids = {r.id for r in interaction.user.roles}
-        select = AlertSubscriptionSelect(guild_roles, member_role_ids)
-        view = AlertSubscriptionView(select)
-        await interaction.response.send_message(
-            "Select the alerts you want to be notified about:",
-            view=view,
-            ephemeral=True,
-        )
-
-    @alert_group.command(name="subscribe", description="Choose which alert types you want to be pinged for")
-    async def alert_subscribe(self, interaction: discord.Interaction):
-        """Open the subscription selector for the interacting user."""
-        await self._send_subscription_select(interaction)
 
 
 async def setup(bot):

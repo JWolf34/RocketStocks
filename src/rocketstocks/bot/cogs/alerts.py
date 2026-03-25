@@ -6,6 +6,7 @@ import traceback as tb
 
 import discord
 import pandas as pd
+import pandas_market_calendars as mcal
 from discord import app_commands
 from discord.ext import commands, tasks
 
@@ -32,6 +33,7 @@ from rocketstocks.core.analysis.alert_performance import (
 from rocketstocks.core.content.models import (
     AlertHistoryData,
     AlertStatsData,
+    AlertSummaryData,
     EarningsMoverData,
     WatchlistMoverData,
     PopularitySurgeData,
@@ -47,6 +49,7 @@ from rocketstocks.core.content.alerts.volume_accumulation_alert import VolumeAcc
 from rocketstocks.core.content.alerts.breakout_alert import BreakoutAlert
 from rocketstocks.core.content.reports.alert_stats_report import AlertStats
 from rocketstocks.core.content.reports.alert_history_report import AlertHistory
+from rocketstocks.core.content.reports.alert_summary import AlertSummary
 
 from rocketstocks.bot.views.alert_views import (
     AlertButtons,
@@ -59,8 +62,31 @@ from rocketstocks.bot.views.alert_views import (
     EARNINGS_MOVER_DOC_URL,
 )
 from rocketstocks.bot.senders.alert_sender import send_alert
+from rocketstocks.bot.senders.report_sender import send_report
+from rocketstocks.bot.views.subscription_views import AlertSubscriptionSelect, AlertSubscriptionView
 
 logger = logging.getLogger(__name__)
+
+
+def _resolve_since_dt(value: str) -> tuple[datetime.datetime, str]:
+    """Map choice value → (since_datetime, human_label)."""
+    calendar = mcal.get_calendar('NYSE')
+    today = datetime.date.today()
+
+    if value == 'market_open_today':
+        market_open = datetime.datetime.combine(today, datetime.time(14, 30))
+        return market_open, 'since market open today'
+
+    if value == 'last_3_days':
+        return datetime.datetime.combine(today - datetime.timedelta(days=3), datetime.time.min), 'last 3 days'
+
+    if value == 'last_7_days':
+        return datetime.datetime.combine(today - datetime.timedelta(days=7), datetime.time.min), 'last 7 days'
+
+    valid = calendar.valid_days(start_date=today - datetime.timedelta(days=10), end_date=today)
+    prev_day = [d.date() for d in valid if d.date() < today][-1]
+    prev_close = datetime.datetime.combine(prev_day, datetime.time(21, 0))
+    return prev_close, f'since last close ({prev_day.strftime("%b %d")})'
 
 
 class Alerts(commands.Cog):
@@ -1214,6 +1240,60 @@ class Alerts(commands.Cog):
         except Exception:
             logger.error(f"[alert history] Failed for '{ticker}'", exc_info=True)
             await interaction.followup.send("Failed to fetch alert history.", ephemeral=True)
+
+    async def build_alert_summary(self, since_dt: datetime.datetime, label: str) -> AlertSummary:
+        alerts = await self.dstate.get_alerts_since(since_dt)
+        return AlertSummary(data=AlertSummaryData(since_dt=since_dt, label=label, alerts=alerts))
+
+    async def _send_subscription_select(self, interaction: discord.Interaction) -> None:
+        guild_roles = await self.bot.stock_data.alert_roles.get_all_for_guild(interaction.guild_id)
+        member_role_ids = {r.id for r in interaction.user.roles}
+        select = AlertSubscriptionSelect(guild_roles, member_role_ids)
+        view = AlertSubscriptionView(select)
+        await interaction.response.send_message(
+            "Select the alerts you want to be notified about:",
+            view=view,
+            ephemeral=True,
+        )
+
+    @alert_group.command(name="summary", description="View a summary of recent alerts grouped by type")
+    @app_commands.describe(
+        since_when="Time period to summarize (defaults to since last close)",
+        visibility="public posts to the alerts channel; private sends only to you",
+    )
+    @app_commands.choices(
+        since_when=[
+            app_commands.Choice(name="Since last close (default)", value="last_close"),
+            app_commands.Choice(name="Since market open today",    value="market_open_today"),
+            app_commands.Choice(name="Last 3 days",                value="last_3_days"),
+            app_commands.Choice(name="Last 7 days",                value="last_7_days"),
+        ],
+        visibility=[
+            app_commands.Choice(name="public",  value="public"),
+            app_commands.Choice(name="private", value="private"),
+        ],
+    )
+    async def alert_summary(
+        self,
+        interaction: discord.Interaction,
+        since_when: app_commands.Choice[str] = None,
+        visibility: app_commands.Choice[str] = None,
+    ):
+        await interaction.response.defer(ephemeral=True)
+        logger.info(f"/alert summary called by user '{interaction.user.name}'")
+        since_dt, label = _resolve_since_dt(since_when.value if since_when else 'last_close')
+        content = await self.build_alert_summary(since_dt, label)
+        channel = await self.bot.get_channel_for_guild(interaction.guild_id, ALERTS)
+        vis = visibility.value if visibility else "private"
+        message = await send_report(content, channel, interaction=interaction, visibility=vis)
+        if message is not None:
+            await interaction.followup.send(f"[Alert summary posted]({message.jump_url})", ephemeral=True)
+        else:
+            await interaction.followup.send("Alert summary posted.", ephemeral=True)
+
+    @alert_group.command(name="subscribe", description="Choose which alert types you want to be pinged for")
+    async def alert_subscribe(self, interaction: discord.Interaction):
+        await self._send_subscription_select(interaction)
 
 
 #########
