@@ -5,6 +5,7 @@ No discord or data imports. All functions are pure analysis logic.
 from __future__ import annotations
 
 import logging
+import math
 from dataclasses import dataclass
 
 import pandas as pd
@@ -42,6 +43,77 @@ class AlertTriggerResult:
     confluence_details: dict | None
     volume_zscore: float | None
     signal_type: str | None          # 'mean_reversion', 'trend_breakout', 'unusual_move'
+
+
+@dataclass
+class ConfirmationResult:
+    """Result of evaluating whether price movement since a leading indicator warrants confirmation."""
+    should_confirm: bool
+    pct_since_flag: float | None    # % price change since leading indicator was flagged
+    zscore_since_flag: float        # z-scored against the ticker's own intraday distribution
+    is_sustained: bool | None       # True if price is consistently moving in the same direction
+
+
+def evaluate_confirmation(
+    price_at_flag: float,
+    current_price: float,
+    mean_return: float,
+    std_return: float,
+    zscore_threshold: float = 1.5,
+    observations: list[dict] | None = None,
+) -> ConfirmationResult:
+    """Evaluate whether price has moved significantly since a leading indicator was flagged.
+
+    Uses the ticker's own historical return distribution for z-scoring, so "significant"
+    is relative to how the ticker normally moves — not an absolute threshold.
+
+    Args:
+        price_at_flag: Price at the time the leading indicator fired.
+        current_price: Current price.
+        mean_return: Mean daily return (%) for the ticker over the lookback period.
+        std_return: Standard deviation of daily returns (%) over the lookback period.
+        zscore_threshold: Minimum abs(z-score) to confirm (default 1.5).
+        observations: Optional list of prior observation dicts, each with a
+            'pct_since_flag' key, for sustained-direction check.
+
+    Returns:
+        A :class:`ConfirmationResult` describing whether to confirm and why.
+    """
+    pct_since_flag: float | None = None
+    zscore_since_flag: float = float('nan')
+    is_sustained: bool | None = None
+
+    if price_at_flag and price_at_flag != 0 and current_price:
+        pct_since_flag = (current_price - price_at_flag) / price_at_flag * 100
+
+    if pct_since_flag is not None and std_return and std_return != 0 and not math.isnan(std_return):
+        zscore_since_flag = (pct_since_flag - mean_return) / std_return
+
+    # Sustained-direction check: if multiple prior observations exist, price should
+    # be consistently moving away from the flag price (not spiking and reversing).
+    if (observations and len(observations) >= 2
+            and pct_since_flag is not None):
+        prior_pcts = [
+            obs.get('pct_since_flag')
+            for obs in observations
+            if obs.get('pct_since_flag') is not None
+        ]
+        if len(prior_pcts) >= 2:
+            direction = 1 if pct_since_flag > 0 else -1
+            is_sustained = all(p * direction > 0 for p in prior_pcts)
+
+    should_confirm = (
+        pct_since_flag is not None
+        and not math.isnan(zscore_since_flag)
+        and abs(zscore_since_flag) >= zscore_threshold
+    )
+
+    return ConfirmationResult(
+        should_confirm=should_confirm,
+        pct_since_flag=pct_since_flag,
+        zscore_since_flag=zscore_since_flag,
+        is_sustained=is_sustained,
+    )
 
 
 def evaluate_price_alert(
