@@ -286,6 +286,7 @@ class Alerts(commands.Cog):
                     rank_change=surge_result.rank_change,
                     price_at_flag=price_at_flag,
                     alert_message_id=message_id,
+                    mention_acceleration=surge_result.mention_acceleration,
                 )
 
             except Exception:
@@ -924,6 +925,7 @@ class Alerts(commands.Cog):
         surge_alert_message_id = kwargs.pop('surge_alert_message_id', None)
         daily_price_history = kwargs.pop('daily_price_history', pd.DataFrame())
         trigger_result = kwargs.pop('trigger_result', None)
+        confidence_pct = kwargs.pop('confidence_pct', None)
         return MomentumConfirmationAlert(data=MomentumConfirmationData(
             ticker=ticker,
             ticker_info=await self.stock_data.tickers.get_ticker_info(ticker=ticker),
