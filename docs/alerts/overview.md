@@ -1,6 +1,16 @@
 # Alert System Overview
 
-RocketStocks monitors thousands of stocks and fires Discord alerts when statistically unusual activity is detected. The system runs two tiers of detection: a social-media sentiment tier that scans popularity data every 30 minutes, and a price/volume tier that processes five parallel pipelines every 5 minutes during market hours.
+RocketStocks monitors stocks and fires Discord alerts when statistically unusual activity is detected. The system is designed around **leading indicators** — alerts that fire before price moves, not after. Two independent signal pipelines (social traction, volume divergence) each produce a leading indicator alert followed by a confirmation alert when price follows through.
+
+---
+
+## Design Philosophy
+
+**Leading indicator alerts fire freely.** Popularity Surge and Volume Accumulation alerts fire on social and volume signals regardless of current price movement. The goal is to flag potential opportunities early and track how often they lead to price action.
+
+**Follow-up alerts confirm with price-since-flag z-score.** Momentum Confirmation and Breakout alerts measure price change *since the leading indicator was flagged*, z-scored against the ticker's own historical return distribution. This avoids rewarding moves that already happened before the signal.
+
+**Reactive alerts (Earnings Mover, Watchlist Mover) remain price-driven.** These fire on the current price move — traders explicitly want to know when tickers they're watching or tickers with earnings are moving right now.
 
 ---
 
@@ -14,6 +24,7 @@ RocketStocks monitors thousands of stocks and fires Discord alerts when statisti
 ║       │                                                              ║
 ║       ▼                                                              ║
 ║  evaluate_popularity_surge()                                         ║
+║       │ tier damping + mention acceleration gate                     ║
 ║       │ MENTION_SURGE / RANK_JUMP / NEW_ENTRANT / VELOCITY_SPIKE     ║
 ║       ▼                                                              ║
 ║  PopularitySurgeAlert ──► Discord  ──► insert into popularity_surges ║
@@ -25,38 +36,37 @@ RocketStocks monitors thousands of stocks and fires Discord alerts when statisti
 ║  TIER 2 — Alert Processing  (every 5 min, market hours)             ║
 ║                                                                      ║
 ║  ┌────────────────────┐  ┌──────────────────────────────────────┐   ║
-║  │ Confirmation       │  │ Market Signal (silent)               │   ║
+║  │ Confirmation       │  │ Volume Accumulation                  │   ║
 ║  │ Pipeline           │  │ Pipeline                             │   ║
 ║  │                    │  │                                      │   ║
-║  │ surge tickers only │  │ screener tickers                     │   ║
-║  │ evaluate_price +   │  │ (excl. surge, watchlist, earnings)   │   ║
-║  │ mark confirmed     │  │ evaluate_price + composite_score     │   ║
-║  │                    │  │ → silently record in market_signals  │   ║
-║  │ → MomentumConfirm  │  │   NO alert sent                      │   ║
-║  │   Alert            │  └──────────────────────────────────────┘   ║
-║  └────────────────────┘                │                            ║
-║                                        │  pending signals           ║
-║                                        ▼  feed next cycle           ║
-║  ┌────────────────────┐  ┌──────────────────────────────────────┐   ║
-║  │ Watchlist          │  │ Market Confirmation                  │   ║
-║  │ Pipeline           │  │ Pipeline                             │   ║
-║  │                    │  │                                      │   ║
-║  │ user watchlist     │  │ active signals from market_signals   │   ║
-║  │ tickers            │  │ should_confirm_signal()              │   ║
-║  │ evaluate_price     │  │ (sustained / accelerating)           │   ║
-║  │ → WatchlistMover   │  │ → MarketMoverAlert ──► Discord       │   ║
-║  │   Alert            │  │   mark_confirmed in DB               │   ║
-║  └────────────────────┘  └──────────────────────────────────────┘   ║
+║  │ surge tickers only │  │ all quoted tickers                   │   ║
+║  │ evaluate_          │  │ evaluate_volume_accumulation()        │   ║
+║  │ confirmation()     │  │ → VolumeAccumulationAlert ──► Discord │   ║
+║  │ (price since flag) │  │   insert into market_signals         │   ║
+║  │                    │  └──────────────────────────────────────┘   ║
+║  │ → Momentum         │                │                            ║
+║  │   ConfirmAlert     │                │  pending signals           ║
+║  └────────────────────┘                ▼  feed next cycle           ║
+║                          ┌──────────────────────────────────────┐   ║
+║                          │ Breakout Pipeline                    │   ║
+║                          │                                      │   ║
+║                          │ active signals from market_signals   │   ║
+║                          │ evaluate_confirmation()              │   ║
+║                          │ (price since flag, 10-min delay)     │   ║
+║                          │ → BreakoutAlert ──► Discord          │   ║
+║                          │   mark_confirmed in DB               │   ║
+║                          └──────────────────────────────────────┘   ║
 ║                                                                      ║
-║  ┌────────────────────┐                                             ║
-║  │ Earnings           │  (run in parallel alongside all above)      ║
-║  │ Pipeline           │                                             ║
-║  │                    │                                             ║
-║  │ tickers with       │                                             ║
-║  │ earnings today     │                                             ║
-║  │ evaluate_price     │                                             ║
-║  │ → EarningsMover    │                                             ║
-║  │   Alert            │                                             ║
+║  ┌────────────────────┐  ┌──────────────────────────────────────┐   ║
+║  │ Watchlist          │  │ Earnings                             │   ║
+║  │ Pipeline           │  │ Pipeline                             │   ║
+║  │                    │  │                                      │   ║
+║  │ user watchlist     │  │ tickers with earnings today          │   ║
+║  │ tickers            │  │ evaluate_price_alert()               │   ║
+║  │ evaluate_price_    │  │ → EarningsMoverAlert                 │   ║
+║  │ alert()            │  └──────────────────────────────────────┘   ║
+║  │ → WatchlistMover   │                                             ║
+║  │   Alert            │  (all 5 pipelines run in parallel)          ║
 ║  └────────────────────┘                                             ║
 ╚══════════════════════════════════════════════════════════════════════╝
 ```
@@ -86,27 +96,22 @@ All times are UTC.
 ## How Stocks Enter Each Pipeline
 
 **Popularity Surge (Tier 1)**
-ApeWisdom returns the top 1,000 stocks by mention count. Every ticker in that list is evaluated by `evaluate_popularity_surge()`. Tickers with fewer than 5 mentions are skipped. If a surge is detected, the ticker is inserted into the `popularity_surges` table and a `PopularitySurgeAlert` is posted.
+ApeWisdom returns the top 1,000 stocks by mention count. Every ticker in that list is evaluated by `evaluate_popularity_surge()`. Tickers with fewer than 15 mentions are skipped. If a surge is detected (subject to tier damping and the mention acceleration gate), the ticker is inserted into the `popularity_surges` table and a `PopularitySurgeAlert` is posted.
 
 **Confirmation Pipeline**
-All tickers currently in the `popularity_surges` table with `confirmed=FALSE` and `expired=FALSE` and `flagged_at` within the last 24 hours. These are the active unconfirmed surges from Tier 1.
+All tickers currently in the `popularity_surges` table with `confirmed=FALSE`, `expired=FALSE`, and `flagged_at` within the last 24 hours, **and** at least 15 minutes have elapsed since flagging. Price change since flagging is z-scored against the ticker's own historical return distribution via `evaluate_confirmation()`.
 
-**Market Signal Pipeline (silent)**
-All tickers from the bot's screener list (`stock_data.alert_tickers`) **minus** any ticker that is:
-- currently in an active popularity surge, OR
-- on a user watchlist, OR
-- reporting earnings today.
+**Volume Accumulation Pipeline**
+All tickers in the current Schwab quote batch (screener tickers, active surge tickers, watchlist tickers, and earnings tickers). For each, the pipeline computes volume z-score and price z-score and calls `evaluate_volume_accumulation()`. Tickers already signaled today are skipped. When accumulation is detected, a signal is recorded in `market_signals` with `signal_source='volume_accumulation'` and a `VolumeAccumulationAlert` is posted.
 
-When a ticker passes the composite score threshold, a record is written silently to `market_signals` — no Discord message is sent. Each subsequent 5-minute cycle appends an observation snapshot to that record.
-
-**Market Confirmation Pipeline (visible)**
-All tickers with a `pending` record in `market_signals` from today. For each, `should_confirm_signal()` checks whether the move has sustained or accelerated across observations. When confirmed, a `MarketMoverAlert` is posted to Discord and the record is marked `confirmed`.
+**Breakout Pipeline**
+All tickers with a `pending` record in `market_signals` from today with `signal_source='volume_accumulation'`, **and** at least 10 minutes have elapsed since the signal was detected. `evaluate_confirmation()` checks whether price has moved significantly since the signal time. When confirmed, a `BreakoutAlert` is posted and the signal is marked `confirmed`.
 
 **Watchlist Pipeline**
-All tickers currently on any user watchlist (from the `watchlists` table), regardless of whether they appear in the screener list.
+All tickers currently on any user watchlist (from the `watchlists` table). Uses `evaluate_price_alert()` with dynamic z-score thresholds.
 
 **Earnings Pipeline**
-All tickers where today's date matches a record in the `upcoming_earnings` table.
+All tickers where today's date matches a record in the `upcoming_earnings` table. Uses `evaluate_price_alert()` with dynamic z-score thresholds.
 
 ---
 
@@ -126,34 +131,39 @@ The `record_momentum()` method is called by the alert sender after `override_and
 
 These two alert types form a cause-and-effect pair:
 
-1. **Tier 1 detects social interest** — a stock appears in the top 1,000 by mentions/rank activity. A `PopularitySurgeAlert` is posted immediately to Discord and the surge is recorded in the DB with `confirmed=FALSE`.
+1. **Tier 1 detects social interest** — a stock appears in the top 1,000 by mentions/rank activity with accelerating mention growth. A `PopularitySurgeAlert` is posted immediately to Discord and the surge is recorded in the DB with `confirmed=FALSE`.
 
-2. **Tier 2 watches for price follow-through** — every 5 minutes, the Confirmation Pipeline checks each active unconfirmed surge. If `evaluate_price_alert()` fires for that ticker, a `MomentumConfirmationAlert` is posted and the surge is marked `confirmed=TRUE` in the DB. Once confirmed, no further confirmation can fire for that surge record.
+2. **Tier 2 watches for price follow-through** — every 5 minutes, the Confirmation Pipeline checks each active unconfirmed surge (after a 15-minute delay). `evaluate_confirmation()` z-scores the price change since the surge was flagged against the ticker's own return distribution. When `abs(zscore_since_flag) >= 1.5`, a `MomentumConfirmationAlert` is posted and the surge is marked `confirmed=TRUE`.
 
 3. **Expiry** — if 24 hours pass without confirmation, the surge record is marked `expired=TRUE` and removed from the active pool.
 
 ---
 
-## Market Signal → Market Mover Relationship
+## Volume Accumulation → Breakout Relationship
 
-These two stages form a cause-and-effect pair for general market activity:
+These two alert types form a cause-and-effect pair for the volume-divergence pipeline:
 
-1. **Market Signal Pipeline silently flags unusual activity** — when a screener ticker passes both the `evaluate_price_alert()` gate and the composite score dual-gate, a record is written to `market_signals` with `status='pending'`. No Discord message is sent at this point. Each subsequent 5-minute cycle updates the record with a new observation snapshot (pct_change, vol_z, price_z, composite) stored as a JSON array.
+1. **Volume Accumulation detects institutional activity** — when a ticker shows vol_z >= 2.0 with abs(price_z) < 1.0, unusual volume is present without a corresponding price move. A `VolumeAccumulationAlert` is posted and a signal is recorded in `market_signals` with `status='pending'`.
 
-2. **Market Confirmation Pipeline checks for sustained or accelerating moves** — every 5 minutes, `should_confirm_signal()` evaluates each pending signal's observation history. If the move qualifies (see [Market Mover](market_mover.md)), a `MarketMoverAlert` is posted to Discord and the record is marked `confirmed`.
+2. **Breakout pipeline confirms price follow-through** — every 5 minutes, `evaluate_confirmation()` checks whether price has moved significantly since the signal time (after a 10-minute delay). When `abs(zscore_since_flag) >= 1.5`, a `BreakoutAlert` is posted linking back to the original Volume Accumulation alert, and the signal is marked `confirmed`.
 
 3. **Expiry** — pending signals older than 8 hours are marked `expired` and removed from the active pool.
 
-This two-stage design eliminates single-bar noise: a move must sustain or intensify across at least two 5-minute observations before a visible alert fires.
+---
+
+## Signal Confluence
+
+All tickers flow through all applicable pipelines. A ticker can trigger both a Popularity Surge AND a Volume Accumulation alert. Traders who see both alerts for the same ticker know the signal is coming from independent sources — social traction and institutional volume — which is a stronger combined signal.
 
 ---
 
 ## Alert Type Reference
 
-| Alert | Pipeline | Trigger |
-|---|---|---|
-| [Popularity Surge](popularity_surge.md) | Tier 1 (30 min) | Social sentiment spike |
-| [Momentum Confirmation](momentum_confirmation.md) | Tier 2 – Confirmation | Price/volume follow-through on a popularity surge |
-| [Market Mover](market_mover.md) | Tier 2 – Market Confirmation | Sustained or accelerating price/volume signal |
-| [Watchlist Mover](watchlist_mover.md) | Tier 2 – Watchlist | Watched stock moves above z-score threshold |
-| [Earnings Mover](earnings_mover.md) | Tier 2 – Earnings | Earnings-day ticker moves above z-score threshold |
+| Alert | Pipeline | Category | Trigger |
+|---|---|---|---|
+| [Popularity Surge](popularity_surge.md) | Tier 1 (30 min) | Predictive (leading) | Early-phase social traction with acceleration gate |
+| [Momentum Confirmation](momentum_confirmation.md) | Tier 2 – Confirmation | Predictive (follow-up) | Price z-score since surge flagged ≥ 1.5σ (15-min delay) |
+| [Volume Accumulation](volume_accumulation.md) | Tier 2 – Volume | Predictive (leading) | High volume without price movement (vol_z ≥ 2.0, price_z < 1.0) |
+| [Breakout](breakout.md) | Tier 2 – Breakout | Predictive (follow-up) | Price z-score since signal ≥ 1.5σ (10-min delay) |
+| [Watchlist Mover](watchlist_mover.md) | Tier 2 – Watchlist | Reactive | Watched stock moves above dynamic z-score threshold |
+| [Earnings Mover](earnings_mover.md) | Tier 2 – Earnings | Reactive | Earnings-day ticker moves above dynamic z-score threshold |

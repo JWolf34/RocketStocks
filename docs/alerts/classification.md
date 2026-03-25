@@ -1,19 +1,51 @@
 # Stock Classification
 
-Every ticker tracked by RocketStocks is assigned a `StockClass` once per trading day. This classification drives alert sensitivity: a meme stock that swings 10% on a slow day is unremarkable, but a blue-chip moving 2% with elevated volume is a genuine event. Using a single threshold for all stocks would produce either too many false positives on volatile names or too few alerts on stable ones.
+Every ticker tracked by RocketStocks is assigned a `StockClass` once per trading day. This classification drives **alert strategy** — which detection logic applies. A blue chip uses Bollinger Band analysis; all others use a dynamic z-score threshold that scales continuously with volatility.
 
 ---
 
 ## The Four Classes
 
-| Class | Description | Alert Approach |
+| Class | Description | Alert Strategy |
 |---|---|---|
-| `meme` | Highly popular on social media AND historically volatile | Z-score threshold 2.0σ |
-| `volatile` | Small cap with high daily volatility | Z-score threshold 2.0σ |
+| `meme` | Highly popular on social media AND historically volatile | Dynamic z-score threshold (see below) |
+| `volatile` | Small cap with high daily volatility | Dynamic z-score threshold |
 | `blue_chip` | Large cap with low daily volatility | Bollinger Band strategy + confluence fallback |
-| `standard` | Everything else | Z-score threshold 2.5σ |
+| `standard` | Everything else | Dynamic z-score threshold |
 
-The lower threshold for meme and volatile stocks acknowledges that their moves are more frequent; the system still wants to catch the statistically unusual ones. The higher threshold for standard stocks reduces noise on mid-caps. Blue chips use an entirely different trigger strategy because their normal moves rarely cross a z-score threshold — instead the system looks for Bollinger Band breaches with volume confirmation.
+Blue chips use an entirely different trigger strategy because their normal moves rarely cross a z-score threshold — instead the system looks for Bollinger Band breaches with volume confirmation.
+
+For meme, volatile, and standard classes, the numerical z-score threshold is not fixed per-class — it scales continuously with volatility via `dynamic_zscore_threshold()`.
+
+---
+
+## Dynamic Z-Score Threshold
+
+Instead of discrete per-class thresholds that produce cliff effects (a stock at 3.9% volatility and one at 4.1% got different fixed thresholds), the system uses a continuous function:
+
+```python
+def dynamic_zscore_threshold(volatility_20d: float, max_volatility: float = 8.0) -> float:
+    normalized = min(volatility_20d / max_volatility, 1.0)
+    return 3.0 - (normalized * 1.5)
+    # Range: 3.0 (near-zero vol) down to 1.5 (≥8% vol)
+    # Fallback: 2.5 for unknown/negative volatility
+```
+
+**Illustrative thresholds:**
+
+| volatility_20d | threshold |
+|---|---|
+| 0.5% | ~2.91 |
+| 1.5% | ~2.72 |
+| 2.5% | ~2.53 |
+| 4.0% | ~2.25 |
+| 6.0% | ~1.88 |
+| 8.0%+ | 1.50 (floor) |
+| Unknown/None | 2.50 (fallback) |
+
+A highly volatile stock gets a lower threshold (easier to trigger because its moves are larger by nature), and a stable stock gets a higher one. Two stocks at similar volatility get similar thresholds — no sudden jumps.
+
+The four StockClass categories still drive strategy dispatch (blue_chip → BB strategy, others → dynamic z-score), but the numerical threshold within the z-score strategy is now volatility-driven rather than class-driven.
 
 ---
 
@@ -30,7 +62,7 @@ If a watchlist is named with the prefix `class:`, its members are forced into th
 - `class:blue_chip`
 - `class:standard`
 
-Example: adding TSLA to a watchlist named `class:volatile` forces TSLA to use the volatile thresholds even if its market cap would normally qualify it as standard or blue chip. This is useful when a stock's behavior has changed but the daily stats haven't caught up yet.
+Example: adding TSLA to a watchlist named `class:volatile` forces TSLA to use the volatile classification (and its corresponding dynamic threshold) even if its market cap would normally qualify it as standard or blue chip.
 
 ### 2. Meme: High Popularity + High Volatility
 
@@ -66,10 +98,10 @@ Example: **AAPL** — market cap in the trillions, typical daily move under 1.5%
 
 Everything that does not match rules 2–4. This includes:
 
-- Mid-caps with moderate volatility (e.g., **MSFT** if volatility is >= 1.5% but the stock is still large)
+- Mid-caps with moderate volatility
 - Any stock missing market cap or volatility data
 
-Example: **MSFT** — large cap but if its 20-day volatility exceeds 1.5%, it falls through to standard and uses the 2.5σ threshold.
+Example: **MSFT** — large cap but if its 20-day volatility exceeds 1.5%, it falls through to standard.
 
 ---
 
@@ -79,7 +111,7 @@ Volatility is the standard deviation of daily percentage returns over the most r
 
 ```
 daily_return[i] = (close[i] - close[i-1]) / close[i-1] * 100
-volatility_20d  = std(daily_return[-20:])   # population-style, pandas default ddof=1
+volatility_20d  = std(daily_return[-20:])   # pandas default ddof=1
 ```
 
 The result is in percent. A value of 3.5 means the stock typically moves 3.5% per day (one standard deviation).
@@ -102,9 +134,9 @@ Bollinger Band values (upper, middle, lower) are also computed and stored for bl
 
 ## Examples
 
-| Ticker | Market Cap | Volatility 20d | Pop Rank | Class |
-|---|---|---|---|---|
-| GME | ~$7B | ~8% | ~30 | `meme` (rank ≤ 50, vol > 4%) |
-| Small biotech (e.g., SAVA) | ~$300M | ~12% | Not top 50 | `volatile` (cap < $2B, vol > 4%) |
-| AAPL | ~$3T | ~0.9% | Not top 50 | `blue_chip` (cap ≥ $10B, vol < 1.5%) |
-| MSFT | ~$3T | ~1.8% | Not top 50 | `standard` (cap ≥ $10B but vol ≥ 1.5%) |
+| Ticker | Market Cap | Volatility 20d | Pop Rank | Class | Approx Threshold |
+|---|---|---|---|---|---|
+| GME | ~$7B | ~8% | ~30 | `meme` (rank ≤ 50, vol > 4%) | 1.5 |
+| Small biotech (e.g., SAVA) | ~$300M | ~12% | Not top 50 | `volatile` (cap < $2B, vol > 4%) | 1.5 (floored) |
+| AAPL | ~$3T | ~0.9% | Not top 50 | `blue_chip` (cap ≥ $10B, vol < 1.5%) | BB strategy |
+| MSFT | ~$3T | ~1.8% | Not top 50 | `standard` (cap ≥ $10B but vol ≥ 1.5%) | ~2.66 |
