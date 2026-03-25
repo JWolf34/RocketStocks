@@ -52,6 +52,14 @@ class AlertRolesRepository:
         )
         return {row[0]: row[1] for row in (rows or [])}
 
+    async def delete_role(self, guild_id: int, role_key: str) -> None:
+        """Remove a single role mapping for a guild."""
+        await self._db.execute(
+            "DELETE FROM alert_roles WHERE guild_id = %s AND role_key = %s",
+            [guild_id, role_key],
+        )
+        logger.debug(f"Deleted alert role: guild={guild_id} key={role_key}")
+
     async def delete_guild(self, guild_id: int) -> None:
         """Remove all role mappings for a guild."""
         await self._db.execute(
