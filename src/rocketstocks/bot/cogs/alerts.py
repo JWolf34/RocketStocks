@@ -21,8 +21,8 @@ import rocketstocks.core.analysis.indicators as an
 
 from rocketstocks.core.analysis.alert_strategy import evaluate_price_alert, evaluate_confirmation
 from rocketstocks.core.analysis.popularity_signals import evaluate_popularity_surge
-from rocketstocks.core.analysis.composite_score import compute_composite_score
-from rocketstocks.core.analysis.signal_confirmation import should_confirm_signal
+from rocketstocks.core.analysis.volume_divergence import evaluate_volume_accumulation
+from rocketstocks.core.analysis.options_flow import evaluate_options_flow
 from rocketstocks.core.analysis.alert_performance import (
     compute_surge_confidence,
     compute_signal_confidence,
@@ -36,15 +36,15 @@ from rocketstocks.core.content.models import (
     WatchlistMoverData,
     PopularitySurgeData,
     MomentumConfirmationData,
-    MarketAlertData,
-    MarketMoverData,
+    VolumeAccumulationAlertData,
+    BreakoutAlertData,
 )
 from rocketstocks.core.content.alerts.earnings_alert import EarningsMoverAlert
 from rocketstocks.core.content.alerts.watchlist_alert import WatchlistMoverAlert
 from rocketstocks.core.content.alerts.popularity_surge_alert import PopularitySurgeAlert
 from rocketstocks.core.content.alerts.momentum_confirmation_alert import MomentumConfirmationAlert
-from rocketstocks.core.content.alerts.market_alert import MarketAlert
-from rocketstocks.core.content.alerts.market_mover_alert import MarketMoverAlert
+from rocketstocks.core.content.alerts.volume_accumulation_alert import VolumeAccumulationAlert
+from rocketstocks.core.content.alerts.breakout_alert import BreakoutAlert
 from rocketstocks.core.content.reports.alert_stats_report import AlertStats
 from rocketstocks.core.content.reports.alert_history_report import AlertHistory
 
@@ -53,7 +53,8 @@ from rocketstocks.bot.views.alert_views import (
     PopularitySurgeAlertButtons,
     POPULARITY_SURGE_DOC_URL,
     MOMENTUM_CONFIRMATION_DOC_URL,
-    MARKET_MOVER_DOC_URL,
+    VOLUME_ACCUMULATION_DOC_URL,
+    BREAKOUT_DOC_URL,
     WATCHLIST_MOVER_DOC_URL,
     EARNINGS_MOVER_DOC_URL,
 )
@@ -317,8 +318,10 @@ class Alerts(commands.Cog):
         active_surges = await self.stock_data.surge_store.get_active_surges()
         surge_tickers = [s['ticker'] for s in active_surges]
 
-        # Gather active market signal tickers for confirmation pipeline
-        active_signals = await self.stock_data.market_signal_store.get_active_signals()
+        # Gather active volume accumulation signals for the breakout pipeline
+        active_signals = await self.stock_data.market_signal_store.get_active_signals(
+            signal_source='volume_accumulation'
+        )
         signal_tickers = [s['ticker'] for s in active_signals]
 
         all_tickers = list(set(screener_tickers + surge_tickers + signal_tickers))
@@ -356,7 +359,6 @@ class Alerts(commands.Cog):
         watchlist_tickers = set(await self.stock_data.watchlists.get_all_watchlist_tickers(
             watchlist_types=['named', 'personal']
         ))
-        surge_ticker_set = set(surge_tickers)
 
         # Build ticker → watchlist mapping in a single query (no N+1)
         ticker_to_watchlist: dict = await self.stock_data.watchlists.get_ticker_to_watchlist_map(
@@ -375,19 +377,15 @@ class Alerts(commands.Cog):
 
         labels = [
             "_confirmation_pipeline",
-            "_market_signal_pipeline",
-            "_market_confirmation_pipeline",
+            "_volume_accumulation_pipeline",
+            "_breakout_pipeline",
             "_watchlist_pipeline",
             "_earnings_pipeline",
         ]
         results = await asyncio.gather(
             self._confirmation_pipeline(active_surges, quotes, classifications, alert_channels, price_cache),
-            self._market_signal_pipeline(
-                quotes, classifications,
-                exclude=surge_ticker_set | watchlist_tickers | earnings_tickers,
-                price_cache=price_cache,
-            ),
-            self._market_confirmation_pipeline(active_signals, quotes, alert_channels, price_cache),
+            self._volume_accumulation_pipeline(quotes, classifications, alert_channels, price_cache),
+            self._breakout_pipeline(active_signals, quotes, alert_channels, price_cache),
             self._watchlist_pipeline(
                 quotes, classifications, alert_channels, watchlist_tickers, price_cache, ticker_to_watchlist,
             ),
@@ -507,168 +505,293 @@ class Alerts(commands.Cog):
             logger.debug("Could not fetch surge confidence", exc_info=True)
             return None
 
-    async def _market_signal_pipeline(
+    async def _volume_accumulation_pipeline(
         self,
         quotes: dict,
         classifications: dict,
-        exclude: set,
+        channels: list,
         price_cache: dict,
     ):
-        """Silently record market signals — no alerts sent here."""
-        logger.info("Processing market signal pipeline")
+        """Detect volume-price divergence and send VolumeAccumulationAlert (leading indicator).
 
-        # Batch: fetch all pending signals for today in one query
+        Scans all quoted tickers — including surge, watchlist, and earnings tickers.
+        Confluence between a popularity surge and volume accumulation is valuable signal.
+        """
+        logger.info("Processing volume accumulation pipeline")
+
+        # Batch: fetch all pending volume accumulation signals for today
         signaled_today = await self.stock_data.market_signal_store.get_signaled_tickers_today()
 
         for ticker, quote in quotes.items():
-            if ticker in exclude:
-                continue
             try:
-                pct_change = quote['quote']['netPercentChange']
-                classification = classifications.get(ticker, 'standard')
-                daily_price_history = price_cache.get(ticker, pd.DataFrame())
+                pct_change = quote['quote'].get('netPercentChange', 0.0)
                 current_volume = quote['quote'].get('totalVolume')
+                daily_price_history = price_cache.get(ticker, pd.DataFrame())
 
-                trigger_result = evaluate_price_alert(
-                    classification=classification,
-                    pct_change=pct_change,
-                    daily_prices=daily_price_history,
-                    current_volume=current_volume,
+                if daily_price_history.empty or current_volume is None:
+                    continue
+
+                # Compute price z-score
+                price_z = an.indicators.price.intraday_zscore(
+                    daily_prices_df=daily_price_history,
+                    current_pct_change=pct_change,
+                    period=20,
                 )
 
-                composite_result = compute_composite_score(trigger_result)
+                # Compute volume z-score
+                from rocketstocks.core.analysis.signals import signals
+                vol_z = signals.volume_zscore(
+                    volume_series=daily_price_history['volume'],
+                    curr_volume=float(current_volume),
+                    period=20,
+                )
 
-                if composite_result.should_alert:
-                    vol_z = trigger_result.volume_zscore
-                    price_z = trigger_result.zscore
+                # Compute RVOL
+                rvol = float('nan')
+                try:
+                    rvol = an.indicators.volume.rvol(
+                        data=daily_price_history,
+                        periods=10,
+                        curr_volume=float(current_volume),
+                    )
+                except Exception:
+                    pass
 
-                    rvol = None
-                    if not daily_price_history.empty and current_volume is not None:
-                        try:
-                            rvol = an.indicators.volume.rvol(
-                                data=daily_price_history,
-                                periods=10,
-                                curr_volume=current_volume,
-                            )
-                        except Exception:
-                            pass
+                import math
+                if math.isnan(vol_z) or math.isnan(price_z) or math.isnan(rvol):
+                    continue
 
-                    if ticker in signaled_today:
-                        latest_signal = signaled_today[ticker]
-                        if latest_signal is not None:
-                            await self.stock_data.market_signal_store.update_observation(
-                                ticker,
-                                latest_signal['detected_at'],
-                                pct_change,
-                                composite_result.composite_score,
-                                vol_z,
-                                price_z,
-                            )
-                            logger.debug(
-                                f"[_market_signal_pipeline] Updated observation for '{ticker}' "
-                                f"composite={composite_result.composite_score:.2f}"
-                            )
-                    else:
-                        detected_at = datetime.datetime.utcnow()
-                        initial_obs = [{
-                            'ts': detected_at.isoformat(),
-                            'pct_change': pct_change,
-                            'vol_z': vol_z,
-                            'price_z': price_z,
-                            'composite': composite_result.composite_score,
-                        }]
-                        await self.stock_data.market_signal_store.insert_signal(
-                            ticker=ticker,
-                            detected_at=detected_at,
-                            composite_score=composite_result.composite_score,
-                            price_z=price_z,
-                            vol_z=vol_z,
-                            pct_change=pct_change,
-                            dominant_signal=composite_result.dominant_signal,
-                            rvol=rvol,
-                            signal_data=initial_obs,
+                result = evaluate_volume_accumulation(
+                    vol_zscore=vol_z,
+                    price_zscore=price_z,
+                    rvol=rvol,
+                )
+
+                if not result.is_accumulating:
+                    continue
+
+                # Already signaled today — skip
+                if ticker in signaled_today:
+                    logger.debug(
+                        f"[_volume_accumulation_pipeline] '{ticker}' already signaled today — skipping"
+                    )
+                    continue
+
+                # Fetch options chain and evaluate flow
+                options_flow = None
+                try:
+                    current_price = MarketUtils().get_current_price(quote)
+                    options_chain = await self.stock_data.schwab.get_options_chain(ticker=ticker)
+                    if options_chain:
+                        options_flow = evaluate_options_flow(
+                            options_chain=options_chain,
+                            underlying_price=current_price,
                         )
-                        logger.debug(
-                            f"[_market_signal_pipeline] Recorded new signal for '{ticker}' "
-                            f"composite={composite_result.composite_score:.2f}"
-                        )
+                        if options_flow.has_unusual_activity:
+                            result.signal_strength = 'volume_plus_options'
+                            result.options_flow = options_flow
+                except Exception:
+                    logger.debug(
+                        f"[_volume_accumulation_pipeline] Options fetch failed for '{ticker}'",
+                        exc_info=True,
+                    )
+
+                logger.info(
+                    f"[_volume_accumulation_pipeline] Volume accumulation on '{ticker}': "
+                    f"vol_z={vol_z:.2f}, price_z={price_z:.2f}, rvol={rvol:.2f}, "
+                    f"strength={result.signal_strength}"
+                )
+
+                ticker_info = await self.stock_data.tickers.get_ticker_info(ticker=ticker)
+                price_at_flag = MarketUtils().get_current_price(quote)
+
+                alert = VolumeAccumulationAlert(data=VolumeAccumulationAlertData(
+                    ticker=ticker,
+                    ticker_info=ticker_info,
+                    quote=quote,
+                    vol_zscore=vol_z,
+                    price_zscore=price_z,
+                    rvol=rvol,
+                    divergence_score=result.divergence_score,
+                    signal_strength=result.signal_strength,
+                    options_flow=options_flow,
+                ))
+                view = AlertButtons(ticker=ticker, doc_url=VOLUME_ACCUMULATION_DOC_URL)
+
+                detected_at = datetime.datetime.utcnow()
+                first_message = None
+                for channel in channels:
+                    role_mention = await self._build_role_mention(alert, channel)
+                    sent = await send_alert(alert, channel, self.dstate, view=view, role_mention=role_mention)
+                    if sent is not None and first_message is None:
+                        first_message = sent
+
+                message_id = first_message.id if first_message else None
+
+                await self.stock_data.market_signal_store.insert_signal(
+                    ticker=ticker,
+                    detected_at=detected_at,
+                    composite_score=result.divergence_score,
+                    price_z=price_z,
+                    vol_z=vol_z,
+                    pct_change=pct_change,
+                    dominant_signal='volume',
+                    rvol=rvol,
+                    signal_source='volume_accumulation',
+                    price_at_flag=price_at_flag,
+                    signal_data=[{
+                        'ts': detected_at.isoformat(),
+                        'pct_change': pct_change,
+                        'vol_z': vol_z,
+                        'price_z': price_z,
+                        'divergence_score': result.divergence_score,
+                    }],
+                )
+
+                if message_id is not None:
+                    await self.stock_data.market_signal_store.update_alert_message_id(
+                        ticker, detected_at, message_id
+                    )
+
             except Exception:
-                logger.error(f"[_market_signal_pipeline] Failed for '{ticker}'", exc_info=True)
+                logger.error(f"[_volume_accumulation_pipeline] Failed for '{ticker}'", exc_info=True)
 
-    async def _market_confirmation_pipeline(
+    async def _breakout_pipeline(
         self,
         active_signals: list[dict],
         quotes: dict,
         channels: list,
         price_cache: dict,
     ):
-        """Post Market Mover alerts for signals that have sustained or accelerated."""
-        logger.info("Processing market confirmation pipeline")
+        """Send BreakoutAlert when price confirms a Volume Accumulation signal."""
+        logger.info("Processing breakout pipeline")
+        utcnow = datetime.datetime.utcnow()
+
+        signal_confidence_pct = await self._fetch_signal_confidence_pct()
+
         for signal in active_signals:
             ticker = signal['ticker']
             if ticker not in quotes:
                 continue
             try:
-                quote = quotes[ticker]
-                pct_change = quote['quote']['netPercentChange']
-                current_volume = quote['quote'].get('totalVolume')
+                detected_at = signal.get('detected_at')
+                if detected_at is not None:
+                    elapsed = (utcnow - detected_at).total_seconds()
+                    if elapsed < 600:  # 10-minute minimum delay
+                        logger.debug(
+                            f"[_breakout_pipeline] '{ticker}' skipped — "
+                            f"only {elapsed:.0f}s since signal (min 600s)"
+                        )
+                        continue
 
+                quote = quotes[ticker]
+                current_price = MarketUtils().get_current_price(quote)
+                price_at_flag = signal.get('price_at_flag')
+
+                stats = await self.stock_data.ticker_stats.get_stats(ticker)
+                mean_return = (stats or {}).get('mean_return_20d', 0.0) or 0.0
+                std_return = (stats or {}).get('std_return_20d', 1.0) or 1.0
+
+                trigger_result = evaluate_confirmation(
+                    price_at_flag=price_at_flag or 0.0,
+                    current_price=current_price,
+                    mean_return=mean_return,
+                    std_return=std_return,
+                )
+
+                if not trigger_result.should_confirm:
+                    continue
+
+                pct_change = quote['quote'].get('netPercentChange', 0.0)
+                current_volume = quote['quote'].get('totalVolume')
                 daily_price_history = price_cache.get(ticker, pd.DataFrame())
 
-                trigger_result = evaluate_price_alert(
-                    classification='standard',
-                    pct_change=pct_change,
-                    daily_prices=daily_price_history,
-                    current_volume=current_volume,
-                )
-                vol_z = trigger_result.volume_zscore
+                rvol = signal.get('rvol')
+                if not daily_price_history.empty and current_volume is not None:
+                    try:
+                        rvol = an.indicators.volume.rvol(
+                            data=daily_price_history,
+                            periods=10,
+                            curr_volume=float(current_volume),
+                        )
+                    except Exception:
+                        pass
 
-                observations = await self.stock_data.market_signal_store.get_signal_history(ticker)
+                current_vol_z = None
+                if not daily_price_history.empty and current_volume is not None:
+                    try:
+                        from rocketstocks.core.analysis.signals import signals
+                        current_vol_z = signals.volume_zscore(
+                            volume_series=daily_price_history['volume'],
+                            curr_volume=float(current_volume),
+                            period=20,
+                        )
+                    except Exception:
+                        pass
 
-                confirmed, reason = should_confirm_signal(
-                    signal=signal,
-                    observations=observations,
+                price_change_since_flag = trigger_result.pct_since_flag
+                price_z = an.indicators.price.intraday_zscore(
+                    daily_prices_df=daily_price_history,
                     current_pct_change=pct_change,
-                    current_vol_z=vol_z,
+                    period=20,
                 )
 
-                if confirmed:
-                    composite_result = compute_composite_score(trigger_result)
+                # Reconstruct options_flow from signal_data if present
+                options_flow_data = None
+                signal_data = signal.get('signal_data') or []
+                if signal_data and isinstance(signal_data, list) and signal_data[0].get('options_flow'):
+                    options_flow_data = signal_data[0]['options_flow']
 
-                    rvol = signal.get('rvol')
-                    if not daily_price_history.empty and current_volume is not None:
-                        try:
-                            rvol = an.indicators.volume.rvol(
-                                data=daily_price_history,
-                                periods=10,
-                                curr_volume=current_volume,
-                            )
-                        except Exception:
-                            pass
+                logger.info(
+                    f"[_breakout_pipeline] Breakout confirmed for '{ticker}' "
+                    f"pct_since_flag={price_change_since_flag:.2f}%, "
+                    f"zscore={trigger_result.zscore_since_flag:.2f}"
+                )
 
-                    logger.info(
-                        f"[_market_confirmation_pipeline] Confirming '{ticker}' "
-                        f"reason={reason}, observations={len(observations)}"
-                    )
+                alert = await self.build_breakout(
+                    ticker=ticker,
+                    quote=quote,
+                    signal_detected_at=detected_at,
+                    signal_alert_message_id=signal.get('alert_message_id'),
+                    price_at_flag=price_at_flag,
+                    price_change_since_flag=price_change_since_flag,
+                    vol_z_at_signal=signal.get('vol_z'),
+                    current_vol_z=current_vol_z,
+                    price_zscore=price_z,
+                    divergence_score=signal.get('composite_score'),
+                    rvol=rvol,
+                    signal_strength=signal.get('dominant_signal', 'volume_only'),
+                    trigger_result=trigger_result,
+                    confidence_pct=signal_confidence_pct,
+                    daily_price_history=daily_price_history,
+                )
+                view = AlertButtons(ticker=ticker, doc_url=BREAKOUT_DOC_URL)
+                for channel in channels:
+                    role_mention = await self._build_role_mention(alert, channel)
+                    await send_alert(alert, channel, self.dstate, view=view, role_mention=role_mention)
 
-                    alert = await self.build_market_mover(
-                        ticker=ticker,
-                        quote=quote,
-                        composite_result=composite_result,
-                        signal_detected_at=signal['detected_at'],
-                        confirmation_reason=reason,
-                        signal_observations=len(observations),
-                        daily_price_history=daily_price_history,
-                        rvol=rvol,
-                    )
-                    view = AlertButtons(ticker=ticker, doc_url=MARKET_MOVER_DOC_URL)
-                    for channel in channels:
-                        role_mention = await self._build_role_mention(alert, channel)
-                        await send_alert(alert, channel, self.dstate, view=view, role_mention=role_mention)
+                await self.stock_data.market_signal_store.mark_confirmed(ticker, detected_at)
 
-                    await self.stock_data.market_signal_store.mark_confirmed(ticker, signal['detected_at'])
             except Exception:
-                logger.error(f"[_market_confirmation_pipeline] Failed for '{ticker}'", exc_info=True)
+                logger.error(f"[_breakout_pipeline] Failed for '{ticker}'", exc_info=True)
+
+    async def _fetch_signal_confidence_pct(self) -> float | None:
+        """Fetch the 30-day volume accumulation signal confirmation rate for display in embeds."""
+        try:
+            cutoff = datetime.datetime.utcnow() - datetime.timedelta(days=30)
+            rows = await self.stock_data.db.execute(
+                "SELECT status FROM market_signals "
+                "WHERE signal_source = 'volume_accumulation' AND detected_at >= %s",
+                [cutoff],
+            )
+            if not rows:
+                return None
+            df = pd.DataFrame(rows, columns=['status'])
+            stats = compute_signal_confidence(df)
+            return stats.get('rate')
+        except Exception:
+            logger.debug("Could not fetch signal confidence", exc_info=True)
+            return None
 
     async def _watchlist_pipeline(
         self,
