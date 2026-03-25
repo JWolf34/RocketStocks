@@ -9,6 +9,7 @@ _FIELDS = [
     'ticker', 'flagged_at', 'surge_types', 'current_rank',
     'mention_ratio', 'rank_change', 'price_at_flag',
     'alert_message_id', 'confirmed', 'confirmed_at', 'expired',
+    'mention_acceleration',
 ]
 _ACTIVE_CUTOFF_HOURS = 24  # Surges older than 24 hours are eligible to expire
 
@@ -29,18 +30,20 @@ class SurgeRepository:
         rank_change: int | None,
         price_at_flag: float | None,
         alert_message_id: int | None = None,
+        mention_acceleration: float | None = None,
     ) -> None:
         """Insert a new popularity surge record (ignores duplicates)."""
         await self._db.execute(
             """
             INSERT INTO popularity_surges
             (ticker, flagged_at, surge_types, current_rank, mention_ratio,
-             rank_change, price_at_flag, alert_message_id)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+             rank_change, price_at_flag, alert_message_id, mention_acceleration)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
             ON CONFLICT (ticker, flagged_at) DO NOTHING
             """,
             [ticker, flagged_at, surge_types, current_rank,
-             mention_ratio, rank_change, price_at_flag, alert_message_id],
+             mention_ratio, rank_change, price_at_flag, alert_message_id,
+             mention_acceleration],
         )
         logger.debug(f"Inserted surge for '{ticker}' at {flagged_at}")
 
