@@ -15,7 +15,8 @@ from rocketstocks.core.content.alerts.earnings_alert import EarningsMoverAlert
 from rocketstocks.core.content.alerts.watchlist_alert import WatchlistMoverAlert
 from rocketstocks.core.content.alerts.popularity_surge_alert import PopularitySurgeAlert
 from rocketstocks.core.content.alerts.momentum_confirmation_alert import MomentumConfirmationAlert
-from rocketstocks.core.content.alerts.market_alert import MarketAlert
+from rocketstocks.core.content.alerts.volume_accumulation_alert import VolumeAccumulationAlert
+from rocketstocks.core.content.alerts.breakout_alert import BreakoutAlert
 from rocketstocks.core.content.models import (
     EarningsMoverData,
     EarningsResultData,
@@ -31,7 +32,8 @@ from rocketstocks.core.content.models import (
     WeeklyEarningsData,
     PopularitySurgeData,
     MomentumConfirmationData,
-    MarketAlertData,
+    VolumeAccumulationAlertData,
+    BreakoutAlertData,
 )
 from rocketstocks.core.content.reports.earnings_report import EarningsSpotlightReport
 from rocketstocks.core.content.reports.earnings_result_report import EarningsResultReport
@@ -414,38 +416,34 @@ def _build_dummy_alert(alert_type: str):
             trigger_result=trigger,
         ))
 
-    if alert_type == 'market_alert':
-        from rocketstocks.core.analysis.alert_strategy import AlertTriggerResult
-        from rocketstocks.core.analysis.classification import StockClass
-        from rocketstocks.core.analysis.composite_score import CompositeScoreResult
-        trigger = AlertTriggerResult(
-            should_alert=True,
-            classification=StockClass.VOLATILE,
-            zscore=3.5,
-            percentile=98.5,
-            bb_position=None,
-            confluence_count=None,
-            confluence_total=None,
-            confluence_details=None,
-            volume_zscore=4.2,
-            signal_type='unusual_move',
-        )
-        composite = CompositeScoreResult(
-            composite_score=3.1,
-            should_alert=True,
-            volume_component=4.2,
-            price_component=3.5,
-            cross_signal_component=0.0,
-            classification_component=2.0,
-            trigger_result=trigger,
-            dominant_signal='volume',
-        )
-        return MarketAlert(MarketAlertData(
+    if alert_type == 'volume_accumulation':
+        return VolumeAccumulationAlert(VolumeAccumulationAlertData(
             ticker=ticker,
             ticker_info=ticker_info,
             quote=quote,
-            composite_result=composite,
+            vol_zscore=3.8,
+            price_zscore=0.4,
             rvol=4.5,
+            divergence_score=3.4,
+            signal_strength='volume_only',
+        ))
+
+    if alert_type == 'breakout':
+        return BreakoutAlert(BreakoutAlertData(
+            ticker=ticker,
+            ticker_info=ticker_info,
+            quote=quote,
+            signal_detected_at=datetime.datetime.utcnow() - datetime.timedelta(minutes=35),
+            signal_alert_message_id=None,
+            price_at_flag=170.0,
+            price_change_since_flag=4.8,
+            vol_z_at_signal=3.8,
+            current_vol_z=2.1,
+            price_zscore=1.9,
+            divergence_score=3.4,
+            rvol=4.5,
+            signal_strength='volume_only',
+            confidence_pct=68.0,
         ))
 
     raise ValueError(f"Unknown alert type: {alert_type!r}")
@@ -532,7 +530,8 @@ class Admin(commands.Cog):
         app_commands.Choice(name="Watchlist Mover",        value="watchlist_mover"),
         app_commands.Choice(name="Popularity Surge",       value="popularity_surge"),
         app_commands.Choice(name="Momentum Confirmation",  value="momentum_confirmation"),
-        app_commands.Choice(name="Market Alert",           value="market_alert"),
+        app_commands.Choice(name="Volume Accumulation",    value="volume_accumulation"),
+        app_commands.Choice(name="Breakout",               value="breakout"),
     ])
     async def admin_test_alert(self, interaction: discord.Interaction, alert_type: app_commands.Choice[str]):
         await interaction.response.defer(ephemeral=True)
