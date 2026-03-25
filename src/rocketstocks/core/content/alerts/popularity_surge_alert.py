@@ -1,4 +1,5 @@
 import logging
+import math
 
 from rocketstocks.core.content.alerts.base import Alert
 from rocketstocks.core.content.models import (
@@ -29,6 +30,7 @@ class PopularitySurgeAlert(Alert):
         self.alert_data['mention_ratio'] = surge_result.mention_ratio
         self.alert_data['surge_types'] = [st.value for st in surge_result.surge_types]
         self.alert_data['rank_velocity_zscore'] = surge_result.rank_velocity_zscore
+        self.alert_data['mention_acceleration'] = surge_result.mention_acceleration
 
         # pct_change for base class momentum tracking
         pct_change = data.quote['quote'].get('netPercentChange', 0.0)
@@ -41,6 +43,16 @@ class PopularitySurgeAlert(Alert):
         company_name = get_company_name(self.data.ticker_info, self.data.ticker)
         price = MarketUtils().get_current_price(self.data.quote)
         pct_change = self.alert_data['pct_change']
+
+        # Mention acceleration phase label
+        accel = surge_result.mention_acceleration
+        if accel is not None and not math.isnan(accel):
+            if accel > 0:
+                phase_label = "📈 Social traction **accelerating**"
+            else:
+                phase_label = "📉 Social traction decelerating"
+        else:
+            phase_label = None
 
         # Build surge reason bullets
         reasons = []
@@ -57,10 +69,13 @@ class PopularitySurgeAlert(Alert):
                 reasons.append(f"• Gaining popularity at **+{display_zscore:.2f}σ** above normal pace")
 
         reason_text = "\n".join(reasons) if reasons else "Unusual popularity activity detected"
-        description = (
+        description_parts = [
             f"**{company_name}** · `{self.data.ticker}` is seeing unusual social traction "
             f"({format_signed_pct(pct_change)} · ${price:.2f})\n\n{reason_text}"
-        )
+        ]
+        if phase_label:
+            description_parts.append(f"\n{phase_label}")
+        description = "\n".join(description_parts)
 
         fields = []
 
@@ -86,6 +101,15 @@ class PopularitySurgeAlert(Alert):
             fields.append(EmbedField(name="Mention Surge", value=f"{mention_ratio:.1f}x", inline=True))
 
         fields += self.price_change_fields(price, pct_change)
+
+        # Confidence stat
+        confidence_pct = getattr(self.data, 'confidence_pct', None)
+        if confidence_pct is not None:
+            fields.append(EmbedField(
+                name="Signal Confidence (30d)",
+                value=f"**{confidence_pct:.1f}%** of past surges confirmed",
+                inline=True,
+            ))
 
         history = self.data.popularity_history
         if (not history.empty
