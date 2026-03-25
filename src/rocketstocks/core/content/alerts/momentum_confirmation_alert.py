@@ -1,8 +1,8 @@
+import datetime
 import logging
 import math
 
 from rocketstocks.core.content.alerts.base import Alert
-from rocketstocks.core.content.alerts.earnings_alert import _stat_fields_from_trigger
 from rocketstocks.core.content.models import (
     COLOR_GOLD,
     EmbedField, EmbedSpec,
@@ -22,6 +22,16 @@ _SURGE_TYPE_LABELS = {
 }
 
 
+def _format_duration(seconds: float) -> str:
+    """Format a duration in seconds as a human-readable string."""
+    minutes = int(seconds // 60)
+    if minutes < 60:
+        return f"{minutes} min"
+    hours = minutes // 60
+    mins = minutes % 60
+    return f"{hours}h {mins}m" if mins else f"{hours}h"
+
+
 class MomentumConfirmationAlert(Alert):
     alert_type = "MOMENTUM_CONFIRMATION"
     role_key = "momentum_confirmed"
@@ -39,7 +49,15 @@ class MomentumConfirmationAlert(Alert):
         )
         self.alert_data['surge_types'] = data.surge_types
 
-        self.populate_trigger_data(self.alert_data, data.trigger_result)
+        # Store ConfirmationResult fields if provided
+        trigger = data.trigger_result
+        if trigger is not None and hasattr(trigger, 'zscore_since_flag'):
+            self.alert_data['zscore_since_flag'] = trigger.zscore_since_flag
+            self.alert_data['is_sustained'] = trigger.is_sustained
+        elif trigger is not None and hasattr(trigger, 'zscore'):
+            # Legacy AlertTriggerResult fallback
+            self.alert_data['zscore'] = trigger.zscore
+            self.alert_data['percentile'] = trigger.percentile
 
     def build(self) -> EmbedSpec:
         logger.debug("Building Momentum Confirmation embed...")
