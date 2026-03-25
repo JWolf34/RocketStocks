@@ -134,6 +134,24 @@ class MomentumConfirmationAlert(Alert):
             inline=False,
         ))
 
+        # Link to original surge alert message
+        surge_msg_id = self.data.surge_alert_message_id
+        if surge_msg_id is not None:
+            fields.append(EmbedField(
+                name="Original Surge Alert",
+                value=f"Message ID: {surge_msg_id}",
+                inline=False,
+            ))
+
+        # Confidence stat
+        confidence_pct = getattr(self.data, 'confidence_pct', None)
+        if confidence_pct is not None:
+            fields.append(EmbedField(
+                name="Signal Confidence (30d)",
+                value=f"**{confidence_pct:.1f}%** of popularity surges confirmed",
+                inline=True,
+            ))
+
         return EmbedSpec(
             title=f"⚡ Momentum Confirmed: {self.data.ticker}",
             description=description,
