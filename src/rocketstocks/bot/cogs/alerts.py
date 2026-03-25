@@ -489,6 +489,23 @@ class Alerts(commands.Cog):
             except Exception:
                 logger.error(f"[_confirmation_pipeline] Failed for '{ticker}'", exc_info=True)
 
+    async def _fetch_surge_confidence_pct(self) -> float | None:
+        """Fetch the 30-day surge confirmation rate for display in embeds."""
+        try:
+            cutoff = datetime.datetime.utcnow() - datetime.timedelta(days=30)
+            rows = await self.stock_data.db.execute(
+                "SELECT confirmed, expired FROM popularity_surges WHERE flagged_at >= %s",
+                [cutoff],
+            )
+            if not rows:
+                return None
+            df = pd.DataFrame(rows, columns=['confirmed', 'expired'])
+            stats = compute_surge_confidence(df)
+            return stats.get('rate')
+        except Exception:
+            logger.debug("Could not fetch surge confidence", exc_info=True)
+            return None
+
     async def _market_signal_pipeline(
         self,
         quotes: dict,
