@@ -4,6 +4,7 @@ import logging
 logger = logging.getLogger(__name__)
 
 _MIGRATION_SCRIPT = """
+ALTER TABLE popularity_surges ADD COLUMN IF NOT EXISTS mention_acceleration float;
 ALTER TABLE tickers DROP COLUMN IF EXISTS url;
 ALTER TABLE tickers ADD COLUMN IF NOT EXISTS exchange varchar(16);
 ALTER TABLE tickers ADD COLUMN IF NOT EXISTS security_type varchar(8);
@@ -151,17 +152,18 @@ CREATE TABLE IF NOT EXISTS ticker_stats (
 );
 
 CREATE TABLE IF NOT EXISTS popularity_surges (
-    ticker          varchar(8) NOT NULL,
-    flagged_at      timestamp NOT NULL,
-    surge_types     varchar(255) NOT NULL,
-    current_rank    int,
-    mention_ratio   float,
-    rank_change     int,
-    price_at_flag   float,
-    alert_message_id bigint,
-    confirmed       boolean DEFAULT FALSE,
-    confirmed_at    timestamp,
-    expired         boolean DEFAULT FALSE,
+    ticker               varchar(8) NOT NULL,
+    flagged_at           timestamp NOT NULL,
+    surge_types          varchar(255) NOT NULL,
+    current_rank         int,
+    mention_ratio        float,
+    rank_change          int,
+    price_at_flag        float,
+    alert_message_id     bigint,
+    confirmed            boolean DEFAULT FALSE,
+    confirmed_at         timestamp,
+    expired              boolean DEFAULT FALSE,
+    mention_acceleration float,
     PRIMARY KEY (ticker, flagged_at)
 );
 
