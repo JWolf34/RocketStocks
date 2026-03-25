@@ -8,8 +8,8 @@ logger = logging.getLogger(__name__)
 _GITHUB_DOCS_BASE = "https://github.com/JWolf34/RocketStocks/blob/main/docs/alerts"
 POPULARITY_SURGE_DOC_URL = f"{_GITHUB_DOCS_BASE}/popularity_surge.md"
 MOMENTUM_CONFIRMATION_DOC_URL = f"{_GITHUB_DOCS_BASE}/momentum_confirmation.md"
-MARKET_ALERT_DOC_URL = f"{_GITHUB_DOCS_BASE}/market_alert.md"
-MARKET_MOVER_DOC_URL = f"{_GITHUB_DOCS_BASE}/market_mover.md"
+VOLUME_ACCUMULATION_DOC_URL = f"{_GITHUB_DOCS_BASE}/volume_accumulation.md"
+BREAKOUT_DOC_URL = f"{_GITHUB_DOCS_BASE}/breakout.md"
 WATCHLIST_MOVER_DOC_URL = f"{_GITHUB_DOCS_BASE}/watchlist_mover.md"
 EARNINGS_MOVER_DOC_URL = f"{_GITHUB_DOCS_BASE}/earnings_mover.md"
 
