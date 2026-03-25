@@ -191,24 +191,31 @@ class MomentumConfirmationData(TickerData):
 
 
 @dataclass
-class MarketAlertData(TickerData):
-    composite_result: object  # CompositeScoreResult
-    daily_price_history: pd.DataFrame = field(default_factory=pd.DataFrame)
-    rvol: float | None = None
+class VolumeAccumulationAlertData(TickerData):
+    vol_zscore: float
+    price_zscore: float
+    rvol: float
+    divergence_score: float
+    signal_strength: str         # 'volume_only' or 'volume_plus_options'
+    options_flow: object | None = None  # OptionsFlowResult
 
 
 @dataclass
-class MarketMoverData(TickerData):
-    composite_result: object   # CompositeScoreResult
-    signal_detected_at: object  # datetime
-    confirmation_reason: str   # 'sustained', 'price_accelerating', 'volume_accelerating', 'volume_extreme'
-    signal_observations: int
-    price_velocity: float | None = None
-    price_acceleration: float | None = None
-    volume_velocity: float | None = None
-    volume_acceleration: float | None = None
+class BreakoutAlertData(TickerData):
+    signal_detected_at: object   # datetime
+    signal_alert_message_id: int | None
+    price_at_flag: float | None
+    price_change_since_flag: float | None
+    vol_z_at_signal: float | None
+    current_vol_z: float | None
+    price_zscore: float | None
+    divergence_score: float | None
+    rvol: float | None
+    signal_strength: str
+    options_flow: object | None = None  # OptionsFlowResult
+    trigger_result: object | None = None  # ConfirmationResult
+    confidence_pct: float | None = None
     daily_price_history: pd.DataFrame = field(default_factory=pd.DataFrame)
-    rvol: float | None = None
 
 
 @dataclass
