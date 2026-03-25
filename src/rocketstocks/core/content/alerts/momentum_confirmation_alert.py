@@ -66,6 +66,21 @@ class MomentumConfirmationAlert(Alert):
         price = MarketUtils().get_current_price(self.data.quote)
         company_name = get_company_name(self.data.ticker_info, self.data.ticker)
 
+        # Time since surge was flagged
+        surge_flagged_at = self.data.surge_flagged_at
+        elapsed_str = ""
+        if surge_flagged_at is not None:
+            try:
+                now_utc = datetime.datetime.utcnow()
+                flagged_dt = (
+                    surge_flagged_at if isinstance(surge_flagged_at, datetime.datetime)
+                    else datetime.datetime.fromisoformat(str(surge_flagged_at))
+                )
+                elapsed = (now_utc - flagged_dt).total_seconds()
+                elapsed_str = f" · Surge flagged {_format_duration(elapsed)} ago"
+            except Exception:
+                pass
+
         # Price change since surge was flagged
         price_since_flag = self.data.price_change_since_flag
         since_flag_str = ""
@@ -77,8 +92,8 @@ class MomentumConfirmationAlert(Alert):
         ) or "Popularity Surge"
 
         description = (
-            f"**{company_name}** · `{self.data.ticker}` — price/volume confirming earlier "
-            f"popularity surge ({surge_types_str})\n"
+            f"**{company_name}** · `{self.data.ticker}` — price confirming earlier "
+            f"popularity surge ({surge_types_str}){elapsed_str}\n"
             f"{change_emoji(pct_change)} **{format_signed_pct(pct_change)}** — "
             f"**${price:.2f}**{since_flag_str}"
         )
@@ -92,7 +107,26 @@ class MomentumConfirmationAlert(Alert):
                 inline=True,
             ))
 
-        fields += _stat_fields_from_trigger(self.data.trigger_result)
+        # ConfirmationResult stats
+        trigger = self.data.trigger_result
+        if trigger is not None and hasattr(trigger, 'zscore_since_flag'):
+            zscore_sf = trigger.zscore_since_flag
+            if zscore_sf is not None and not (isinstance(zscore_sf, float) and math.isnan(zscore_sf)):
+                fields.append(EmbedField(
+                    name="Z-Score Since Flag",
+                    value=f"{zscore_sf:.2f}σ",
+                    inline=True,
+                ))
+            if trigger.is_sustained is not None:
+                fields.append(EmbedField(
+                    name="Sustained",
+                    value="✅ Yes" if trigger.is_sustained else "⚠️ Mixed",
+                    inline=True,
+                ))
+        elif trigger is not None and hasattr(trigger, 'zscore'):
+            # Legacy AlertTriggerResult display
+            from rocketstocks.core.content.alerts.earnings_alert import _stat_fields_from_trigger
+            fields += _stat_fields_from_trigger(trigger)
 
         fields.append(EmbedField(
             name="Original Surge Types",
