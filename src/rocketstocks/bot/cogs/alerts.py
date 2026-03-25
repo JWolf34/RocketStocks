@@ -994,48 +994,62 @@ class Alerts(commands.Cog):
             trigger_result=trigger_result,
         ))
 
-    async def build_market_alert(self, ticker: str, **kwargs) -> MarketAlert:
-        """Build a MarketAlert for the given ticker."""
+    async def build_volume_accumulation(self, ticker: str, **kwargs) -> VolumeAccumulationAlert:
+        """Build a VolumeAccumulationAlert for the given ticker."""
         quote = kwargs.pop('quote', await self.stock_data.schwab.get_quote(ticker=ticker))
-        composite_result = kwargs.pop('composite_result')
-        daily_price_history = kwargs.pop('daily_price_history', pd.DataFrame())
-        rvol = kwargs.pop('rvol', None)
-        return MarketAlert(data=MarketAlertData(
+        vol_zscore = kwargs.pop('vol_zscore')
+        price_zscore = kwargs.pop('price_zscore')
+        rvol = kwargs.pop('rvol')
+        divergence_score = kwargs.pop('divergence_score')
+        signal_strength = kwargs.pop('signal_strength', 'volume_only')
+        options_flow = kwargs.pop('options_flow', None)
+        return VolumeAccumulationAlert(data=VolumeAccumulationAlertData(
             ticker=ticker,
             ticker_info=await self.stock_data.tickers.get_ticker_info(ticker=ticker),
             quote=quote,
-            composite_result=composite_result,
-            daily_price_history=daily_price_history,
+            vol_zscore=vol_zscore,
+            price_zscore=price_zscore,
             rvol=rvol,
+            divergence_score=divergence_score,
+            signal_strength=signal_strength,
+            options_flow=options_flow,
         ))
 
-    async def build_market_mover(self, ticker: str, **kwargs) -> MarketMoverAlert:
-        """Build a MarketMoverAlert for the given ticker."""
+    async def build_breakout(self, ticker: str, **kwargs) -> BreakoutAlert:
+        """Build a BreakoutAlert for the given ticker."""
         quote = kwargs.pop('quote', await self.stock_data.schwab.get_quote(ticker=ticker))
-        composite_result = kwargs.pop('composite_result')
         signal_detected_at = kwargs.pop('signal_detected_at', None)
-        confirmation_reason = kwargs.pop('confirmation_reason', '')
-        signal_observations = kwargs.pop('signal_observations', 0)
-        daily_price_history = kwargs.pop('daily_price_history', pd.DataFrame())
+        signal_alert_message_id = kwargs.pop('signal_alert_message_id', None)
+        price_at_flag = kwargs.pop('price_at_flag', None)
+        price_change_since_flag = kwargs.pop('price_change_since_flag', None)
+        vol_z_at_signal = kwargs.pop('vol_z_at_signal', None)
+        current_vol_z = kwargs.pop('current_vol_z', None)
+        price_zscore = kwargs.pop('price_zscore', None)
+        divergence_score = kwargs.pop('divergence_score', None)
         rvol = kwargs.pop('rvol', None)
-        price_velocity = kwargs.pop('price_velocity', None)
-        price_acceleration = kwargs.pop('price_acceleration', None)
-        volume_velocity = kwargs.pop('volume_velocity', None)
-        volume_acceleration = kwargs.pop('volume_acceleration', None)
-        return MarketMoverAlert(data=MarketMoverData(
+        signal_strength = kwargs.pop('signal_strength', 'volume_only')
+        options_flow = kwargs.pop('options_flow', None)
+        trigger_result = kwargs.pop('trigger_result', None)
+        confidence_pct = kwargs.pop('confidence_pct', None)
+        daily_price_history = kwargs.pop('daily_price_history', pd.DataFrame())
+        return BreakoutAlert(data=BreakoutAlertData(
             ticker=ticker,
             ticker_info=await self.stock_data.tickers.get_ticker_info(ticker=ticker),
             quote=quote,
-            composite_result=composite_result,
             signal_detected_at=signal_detected_at,
-            confirmation_reason=confirmation_reason,
-            signal_observations=signal_observations,
-            daily_price_history=daily_price_history,
+            signal_alert_message_id=signal_alert_message_id,
+            price_at_flag=price_at_flag,
+            price_change_since_flag=price_change_since_flag,
+            vol_z_at_signal=vol_z_at_signal,
+            current_vol_z=current_vol_z,
+            price_zscore=price_zscore,
+            divergence_score=divergence_score,
             rvol=rvol,
-            price_velocity=price_velocity,
-            price_acceleration=price_acceleration,
-            volume_velocity=volume_velocity,
-            volume_acceleration=volume_acceleration,
+            signal_strength=signal_strength,
+            options_flow=options_flow,
+            trigger_result=trigger_result,
+            confidence_pct=confidence_pct,
+            daily_price_history=daily_price_history,
         ))
 
     async def build_momentum_confirmation(self, ticker: str, **kwargs) -> MomentumConfirmationAlert:
