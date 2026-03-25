@@ -128,6 +128,31 @@ def classify_ticker(
     return StockClass.STANDARD
 
 
+def dynamic_zscore_threshold(volatility_20d: float, max_volatility: float = 8.0) -> float:
+    """Return a z-score threshold scaled continuously by volatility.
+
+    Higher volatility → lower threshold (alerts trigger more easily).
+    Lower volatility → higher threshold (alerts are harder to trigger).
+
+    Range: 1.5 (at max_volatility or above) to 3.0 (at zero volatility).
+    Falls back to 2.5 if volatility is unknown (NaN or negative).
+
+    Eliminates cliff effects: adjacent volatility values produce similar thresholds
+    rather than jumping between discrete per-class constants.
+
+    Args:
+        volatility_20d: 20-day daily return std-dev in percent.
+        max_volatility: Volatility at which the threshold reaches its floor (1.5).
+
+    Returns:
+        A z-score threshold in the range [1.5, 3.0].
+    """
+    if _isnan(volatility_20d) or volatility_20d < 0:
+        return 2.5  # neutral default for unknown volatility
+    normalized = min(volatility_20d / max_volatility, 1.0)
+    return 3.0 - (normalized * 1.5)
+
+
 def _isnan(v) -> bool:
     try:
         return np.isnan(v)

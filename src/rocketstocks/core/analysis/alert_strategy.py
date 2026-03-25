@@ -10,19 +10,15 @@ from dataclasses import dataclass
 
 import pandas as pd
 
-from rocketstocks.core.analysis.classification import StockClass
+from rocketstocks.core.analysis.classification import (
+    StockClass,
+    compute_volatility,
+    dynamic_zscore_threshold,
+)
 from rocketstocks.core.analysis.indicators import indicators
 from rocketstocks.core.analysis.signals import signals
 
 logger = logging.getLogger(__name__)
-
-# Z-score thresholds per stock class
-_ZSCORE_THRESHOLDS = {
-    StockClass.VOLATILE: 2.0,
-    StockClass.MEME: 2.0,
-    StockClass.STANDARD: 2.5,
-    StockClass.BLUE_CHIP: 2.0,  # used in fallback only
-}
 
 # Minimum volume z-score required to confirm blue-chip breakouts
 _BLUE_CHIP_VOLUME_ZSCORE_MIN = 2.0
@@ -143,8 +139,10 @@ def evaluate_price_alert(
     zscore = float('nan')
     percentile = float('nan')
     vol_zscore = None
+    volatility_20d = float('nan')
 
     if not daily_prices.empty and 'close' in daily_prices.columns:
+        volatility_20d = compute_volatility(daily_prices)
         zscore = indicators.price.intraday_zscore(daily_prices, pct_change, period=20)
         percentile = indicators.price.return_percentile(daily_prices, pct_change, period=60)
 
@@ -164,6 +162,7 @@ def evaluate_price_alert(
             zscore=zscore,
             percentile=percentile,
             vol_zscore=vol_zscore,
+            volatility_20d=volatility_20d,
         )
     else:
         return _standard_strategy(
@@ -172,6 +171,7 @@ def evaluate_price_alert(
             zscore=zscore,
             percentile=percentile,
             vol_zscore=vol_zscore,
+            volatility_20d=volatility_20d,
         )
 
 
@@ -181,10 +181,11 @@ def _standard_strategy(
     zscore: float,
     percentile: float,
     vol_zscore: float | None,
+    volatility_20d: float,
 ) -> AlertTriggerResult:
-    """Volatile, Meme, and Standard strategy: trigger on abs(z-score) >= threshold."""
+    """Volatile, Meme, and Standard strategy: trigger on abs(z-score) >= dynamic threshold."""
     import math
-    threshold = _ZSCORE_THRESHOLDS.get(classification, 2.5)
+    threshold = dynamic_zscore_threshold(volatility_20d)
     should_alert = (not math.isnan(zscore)) and abs(zscore) >= threshold
 
     return AlertTriggerResult(
@@ -208,6 +209,7 @@ def _blue_chip_strategy(
     zscore: float,
     percentile: float,
     vol_zscore: float | None,
+    volatility_20d: float,
 ) -> AlertTriggerResult:
     """Blue chip strategy: BB breach + volume confirmation, with confluence fallback."""
     import math
@@ -277,10 +279,11 @@ def _blue_chip_strategy(
                     should_alert = True
                     signal_type = 'trend_breakout'
 
-        # Fallback: 3+ confluence signals + volume confirm + z-score >= 2.0
+        # Fallback: 3+ confluence signals + volume confirm + z-score >= dynamic threshold
         if not should_alert:
             valid_count = confluence_count if confluence_count is not None else 0
-            zs_ok = not math.isnan(zscore) and abs(zscore) >= 2.0
+            threshold = dynamic_zscore_threshold(volatility_20d)
+            zs_ok = not math.isnan(zscore) and abs(zscore) >= threshold
             if valid_count >= _BLUE_CHIP_CONFLUENCE_MIN and has_vol_confirm and zs_ok:
                 should_alert = True
                 signal_type = 'unusual_move'
