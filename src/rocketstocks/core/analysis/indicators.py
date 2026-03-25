@@ -131,6 +131,38 @@ class indicators:
             return float(diffs.mean())
 
         @staticmethod
+        def mention_acceleration(popularity_df: pd.DataFrame, periods: int = 3) -> float:
+            """Return the acceleration of mention counts (second difference).
+
+            Computes the first difference of mentions (velocity), then the first
+            difference of velocity (acceleration).  Positive = accelerating
+            (growth phase).  Negative = decelerating (peak/decline phase).
+
+            Args:
+                popularity_df: DataFrame with 'mentions' and 'datetime' columns.
+                periods: Number of most-recent periods to use (default 3). Minimum 3
+                    observations are required to compute a single acceleration value.
+
+            Returns:
+                Acceleration float, or NaN if there are fewer than 3 data points or
+                the required columns are missing.
+            """
+            logger.debug(f"Calculating mention acceleration (periods={periods})")
+            if popularity_df.empty or 'mentions' not in popularity_df.columns:
+                return float('nan')
+            sorted_df = popularity_df.sort_values('datetime')
+            mentions = sorted_df['mentions'].tail(periods + 2)
+            if len(mentions) < 3:
+                return float('nan')
+            velocity = mentions.diff().dropna()
+            if len(velocity) < 2:
+                return float('nan')
+            acceleration = velocity.diff().dropna()
+            if acceleration.empty:
+                return float('nan')
+            return float(acceleration.iloc[-1])
+
+        @staticmethod
         def rank_velocity_zscore(
             popularity_df: pd.DataFrame,
             lookback: int = 30,
