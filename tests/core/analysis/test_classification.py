@@ -8,6 +8,7 @@ from rocketstocks.core.analysis.classification import (
     classify_ticker,
     compute_volatility,
     compute_return_stats,
+    dynamic_zscore_threshold,
 )
 
 
@@ -204,3 +205,57 @@ class TestClassifyTicker:
         assert StockClass.MEME.value == 'meme'
         assert StockClass.BLUE_CHIP.value == 'blue_chip'
         assert StockClass.STANDARD.value == 'standard'
+
+
+# ---------------------------------------------------------------------------
+# dynamic_zscore_threshold
+# ---------------------------------------------------------------------------
+
+class TestDynamicZscoreThreshold:
+    def test_zero_volatility_returns_max_threshold(self):
+        assert dynamic_zscore_threshold(0.0) == 3.0
+
+    def test_max_volatility_returns_min_threshold(self):
+        assert dynamic_zscore_threshold(8.0) == pytest.approx(1.5)
+
+    def test_above_max_volatility_clamps_to_floor(self):
+        assert dynamic_zscore_threshold(100.0) == pytest.approx(1.5)
+
+    def test_midpoint_volatility_returns_midpoint_threshold(self):
+        # vol=4.0 → normalized=0.5 → 3.0 - (0.5 * 1.5) = 2.25
+        assert dynamic_zscore_threshold(4.0) == pytest.approx(2.25)
+
+    def test_low_volatility_returns_high_threshold(self):
+        # vol=1% → threshold > 2.5
+        assert dynamic_zscore_threshold(1.0) > 2.5
+
+    def test_high_volatility_returns_low_threshold(self):
+        # vol=7% → threshold < 2.0
+        assert dynamic_zscore_threshold(7.0) < 2.0
+
+    def test_nan_volatility_returns_neutral_default(self):
+        assert dynamic_zscore_threshold(float('nan')) == 2.5
+
+    def test_negative_volatility_returns_neutral_default(self):
+        assert dynamic_zscore_threshold(-1.0) == 2.5
+
+    def test_monotonically_decreasing(self):
+        vols = [0.5, 1.0, 2.0, 3.0, 4.0, 5.0, 7.0, 8.0]
+        thresholds = [dynamic_zscore_threshold(v) for v in vols]
+        assert all(thresholds[i] > thresholds[i + 1] for i in range(len(thresholds) - 1))
+
+    def test_no_cliff_near_old_class_boundary(self):
+        # Old system: stocks near 4% vol boundary jumped from threshold 2.5 → 2.0.
+        # New system: thresholds at 3.9% and 4.1% should be within 0.1 of each other.
+        t1 = dynamic_zscore_threshold(3.9)
+        t2 = dynamic_zscore_threshold(4.1)
+        assert abs(t1 - t2) < 0.1
+
+    def test_custom_max_volatility(self):
+        # With max_volatility=4.0, vol=4.0 should hit the floor (1.5)
+        assert dynamic_zscore_threshold(4.0, max_volatility=4.0) == pytest.approx(1.5)
+
+    def test_result_always_in_valid_range(self):
+        for vol in [0.0, 1.0, 4.0, 8.0, 20.0]:
+            t = dynamic_zscore_threshold(vol)
+            assert 1.5 <= t <= 3.0
