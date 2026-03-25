@@ -44,7 +44,7 @@ async def test_insert_surge_executes_sql(repo, mock_db):
     sql, params = mock_db.execute.call_args[0]
     assert 'INSERT INTO popularity_surges' in sql
     assert 'ON CONFLICT' in sql
-    assert params == ['GME', ts, 'mention_surge,rank_jump', 50, 4.5, 150, 25.0, 999]
+    assert params == ['GME', ts, 'mention_surge,rank_jump', 50, 4.5, 150, 25.0, 999, None]
 
 
 async def test_insert_surge_without_message_id(repo, mock_db):

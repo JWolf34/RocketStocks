@@ -5,7 +5,7 @@ import pandas as pd
 from unittest.mock import AsyncMock, MagicMock, patch
 
 from rocketstocks.bot.cogs.alerts import Alerts
-from rocketstocks.core.analysis.alert_strategy import AlertTriggerResult
+from rocketstocks.core.analysis.alert_strategy import AlertTriggerResult, ConfirmationResult
 from rocketstocks.core.analysis.classification import StockClass
 from rocketstocks.core.analysis.composite_score import CompositeScoreResult
 
@@ -18,11 +18,21 @@ def _make_bot():
     return bot
 
 
+def _make_confirmation_result(should_confirm=True):
+    return ConfirmationResult(
+        should_confirm=should_confirm,
+        pct_since_flag=3.0 if should_confirm else 0.1,
+        zscore_since_flag=2.0 if should_confirm else 0.1,
+        is_sustained=None,
+    )
+
+
 def _make_stock_data(earnings_df: pd.DataFrame):
     sd = MagicMock(name="StockData")
     sd.earnings.get_earnings_on_date = AsyncMock(return_value=earnings_df)
     sd.alert_tickers = {}
     sd.ticker_stats.get_all_classifications = AsyncMock(return_value={})
+    sd.ticker_stats.get_stats = AsyncMock(return_value=None)
     sd.price_history.fetch_daily_price_history = AsyncMock(return_value=pd.DataFrame())
     sd.price_history.fetch_daily_price_history_batch = AsyncMock(return_value={})
     sd.surge_store.get_active_surges = AsyncMock(return_value=[])
@@ -30,6 +40,7 @@ def _make_stock_data(earnings_df: pd.DataFrame):
     sd.surge_store.is_already_flagged = AsyncMock(return_value=False)
     sd.surge_store.get_flagged_tickers = AsyncMock(return_value=set())
     sd.surge_store.insert_surge = AsyncMock()
+    sd.surge_store.mark_confirmed = AsyncMock()
     sd.market_signal_store.get_active_signals = AsyncMock(return_value=[])
     sd.market_signal_store.expire_old_signals = AsyncMock(return_value=None)
     sd.market_signal_store.is_already_signaled = AsyncMock(return_value=False)
@@ -43,6 +54,8 @@ def _make_stock_data(earnings_df: pd.DataFrame):
     sd.popularity.fetch_popularity = AsyncMock(return_value=pd.DataFrame())
     sd.earnings_results = MagicMock()
     sd.earnings_results.get_result = AsyncMock(return_value=None)
+    sd.db = MagicMock()
+    sd.db.execute = AsyncMock(return_value=None)
     return sd
 
 
@@ -487,13 +500,14 @@ class TestMarketConfirmationPipeline:
 class TestConfirmationPipeline:
     @pytest.mark.asyncio
     async def test_confirmation_fires_on_price_alert(self):
-        """_confirmation_pipeline confirms a surge when price alert triggers."""
+        """_confirmation_pipeline confirms a surge when evaluate_confirmation fires."""
         cog = _make_cog(earnings_df=pd.DataFrame())
         ticker = "GME"
         quote = {
             "quote": {"netPercentChange": 12.0, "totalVolume": 5_000_000},
             "regular": {"regularMarketLastPrice": 27.0},
         }
+        # flagged_at must be > 15 min ago to pass the delay gate
         surge = {
             "ticker": ticker,
             "flagged_at": datetime.datetime.utcnow() - datetime.timedelta(hours=1),
@@ -501,10 +515,10 @@ class TestConfirmationPipeline:
             "price_at_flag": 25.0,
             "alert_message_id": 111222333,
         }
-        fake_trigger = _make_trigger_result(should_alert=True)
+        fake_confirmation = _make_confirmation_result(should_confirm=True)
 
         with (
-            patch("rocketstocks.bot.cogs.alerts.evaluate_price_alert", return_value=fake_trigger),
+            patch("rocketstocks.bot.cogs.alerts.evaluate_confirmation", return_value=fake_confirmation),
             patch.object(cog, "build_momentum_confirmation", new_callable=AsyncMock) as mock_build,
             patch("rocketstocks.bot.cogs.alerts.send_alert", new_callable=AsyncMock) as mock_send,
         ):
@@ -536,10 +550,10 @@ class TestConfirmationPipeline:
             "price_at_flag": 25.0,
             "alert_message_id": None,
         }
-        fake_trigger = _make_trigger_result(should_alert=True)
+        fake_confirmation = _make_confirmation_result(should_confirm=True)
 
         with (
-            patch("rocketstocks.bot.cogs.alerts.evaluate_price_alert", return_value=fake_trigger),
+            patch("rocketstocks.bot.cogs.alerts.evaluate_confirmation", return_value=fake_confirmation),
             patch.object(cog, "build_momentum_confirmation", new_callable=AsyncMock) as mock_build,
             patch("rocketstocks.bot.cogs.alerts.send_alert", new_callable=AsyncMock),
         ):
@@ -556,24 +570,25 @@ class TestConfirmationPipeline:
 
     @pytest.mark.asyncio
     async def test_confirmation_skips_when_no_trigger(self):
-        """_confirmation_pipeline does not confirm if price alert doesn't fire."""
+        """_confirmation_pipeline does not confirm when evaluate_confirmation returns False."""
         cog = _make_cog(earnings_df=pd.DataFrame())
         ticker = "GME"
         quote = {
             "quote": {"netPercentChange": 0.5, "totalVolume": 1_000},
             "regular": {"regularMarketLastPrice": 25.0},
         }
+        # flagged_at must be > 15 min ago to pass the delay gate
         surge = {
             "ticker": ticker,
-            "flagged_at": datetime.datetime.utcnow(),
+            "flagged_at": datetime.datetime.utcnow() - datetime.timedelta(hours=1),
             "surge_types": "mention_surge",
             "price_at_flag": 25.0,
             "alert_message_id": None,
         }
-        fake_trigger = _make_trigger_result(should_alert=False)
+        fake_confirmation = _make_confirmation_result(should_confirm=False)
 
         with (
-            patch("rocketstocks.bot.cogs.alerts.evaluate_price_alert", return_value=fake_trigger),
+            patch("rocketstocks.bot.cogs.alerts.evaluate_confirmation", return_value=fake_confirmation),
             patch("rocketstocks.bot.cogs.alerts.send_alert", new_callable=AsyncMock) as mock_send,
         ):
             await cog._confirmation_pipeline(

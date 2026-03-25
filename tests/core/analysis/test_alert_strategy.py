@@ -7,6 +7,8 @@ import pytest
 from rocketstocks.core.analysis.classification import StockClass
 from rocketstocks.core.analysis.alert_strategy import (
     AlertTriggerResult,
+    ConfirmationResult,
+    evaluate_confirmation,
     evaluate_price_alert,
 )
 
@@ -210,3 +212,123 @@ class TestBlueChipStrategy:
         )
         # Even if BB is breached, no volume confirm → may not alert via BB path
         assert isinstance(result.should_alert, bool)
+
+
+# ---------------------------------------------------------------------------
+# evaluate_confirmation
+# ---------------------------------------------------------------------------
+
+class TestEvaluateConfirmation:
+
+    def test_confirms_when_large_positive_zscore(self):
+        """Price moved up strongly since flag → should_confirm=True."""
+        result = evaluate_confirmation(
+            price_at_flag=100.0,
+            current_price=103.0,   # +3%
+            mean_return=0.0,
+            std_return=1.0,        # z-score = 3.0 >= threshold 1.5
+        )
+        assert result.should_confirm is True
+        assert result.pct_since_flag == pytest.approx(3.0)
+        assert result.zscore_since_flag == pytest.approx(3.0)
+
+    def test_confirms_when_large_negative_zscore(self):
+        """Price dropped sharply since flag — still confirms (abs >= threshold)."""
+        result = evaluate_confirmation(
+            price_at_flag=100.0,
+            current_price=97.0,    # -3%
+            mean_return=0.0,
+            std_return=1.0,        # z-score = -3.0
+        )
+        assert result.should_confirm is True
+
+    def test_no_confirm_below_threshold(self):
+        """Small move: abs(zscore) < 1.5 → should_confirm=False."""
+        result = evaluate_confirmation(
+            price_at_flag=100.0,
+            current_price=100.5,   # +0.5%
+            mean_return=0.0,
+            std_return=1.0,        # z-score = 0.5 < 1.5
+        )
+        assert result.should_confirm is False
+
+    def test_custom_threshold(self):
+        """Custom threshold of 2.0 — z-score of 1.8 should not confirm."""
+        result = evaluate_confirmation(
+            price_at_flag=100.0,
+            current_price=101.8,   # +1.8%
+            mean_return=0.0,
+            std_return=1.0,
+            zscore_threshold=2.0,
+        )
+        assert result.should_confirm is False
+
+    def test_no_confirm_when_price_at_flag_is_zero(self):
+        """price_at_flag=0 → pct_since_flag=None → should_confirm=False."""
+        result = evaluate_confirmation(
+            price_at_flag=0.0,
+            current_price=105.0,
+            mean_return=0.0,
+            std_return=1.0,
+        )
+        assert result.should_confirm is False
+        assert result.pct_since_flag is None
+
+    def test_no_confirm_when_std_is_zero(self):
+        """std_return=0 → z-score undefined → should_confirm=False."""
+        result = evaluate_confirmation(
+            price_at_flag=100.0,
+            current_price=103.0,
+            mean_return=0.0,
+            std_return=0.0,
+        )
+        assert result.should_confirm is False
+        assert math.isnan(result.zscore_since_flag)
+
+    def test_sustained_direction_true_when_consistent(self):
+        """Multiple observations all moving in the same direction → is_sustained=True."""
+        observations = [
+            {'pct_since_flag': 1.0},
+            {'pct_since_flag': 2.0},
+        ]
+        result = evaluate_confirmation(
+            price_at_flag=100.0,
+            current_price=103.0,   # +3%
+            mean_return=0.0,
+            std_return=1.0,
+            observations=observations,
+        )
+        assert result.is_sustained is True
+
+    def test_sustained_direction_false_when_mixed(self):
+        """Some observations positive, some negative → is_sustained=False."""
+        observations = [
+            {'pct_since_flag': 1.0},
+            {'pct_since_flag': -0.5},
+        ]
+        result = evaluate_confirmation(
+            price_at_flag=100.0,
+            current_price=103.0,
+            mean_return=0.0,
+            std_return=1.0,
+            observations=observations,
+        )
+        assert result.is_sustained is False
+
+    def test_is_sustained_none_with_fewer_than_2_observations(self):
+        """< 2 prior observations → is_sustained stays None."""
+        result = evaluate_confirmation(
+            price_at_flag=100.0,
+            current_price=103.0,
+            mean_return=0.0,
+            std_return=1.0,
+            observations=[{'pct_since_flag': 1.0}],
+        )
+        assert result.is_sustained is None
+
+    def test_returns_confirmation_result_type(self):
+        result = evaluate_confirmation(
+            price_at_flag=100.0, current_price=102.0,
+            mean_return=0.0, std_return=1.0,
+        )
+        assert isinstance(result, ConfirmationResult)

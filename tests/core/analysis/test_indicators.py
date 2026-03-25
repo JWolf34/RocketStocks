@@ -184,3 +184,58 @@ class TestIndicatorsPopularity:
     def test_rank_velocity_zscore_returns_nan_for_empty(self):
         z = indicators.popularity.rank_velocity_zscore(pd.DataFrame())
         assert math.isnan(z)
+
+    # --- mention_acceleration ---
+
+    def _make_mentions_df(self, mentions: list[int]) -> pd.DataFrame:
+        base = datetime.datetime(2024, 1, 1)
+        return pd.DataFrame({
+            'datetime': [base + datetime.timedelta(hours=i) for i in range(len(mentions))],
+            'rank': list(range(len(mentions))),
+            'mentions': mentions,
+        })
+
+    def test_mention_acceleration_positive_when_growing_faster(self):
+        """Mentions: 10, 20, 40, 80 — velocity doubling each step → positive acceleration."""
+        df = self._make_mentions_df([10, 20, 40, 80])
+        acc = indicators.popularity.mention_acceleration(df)
+        assert isinstance(acc, float)
+        assert acc > 0
+
+    def test_mention_acceleration_negative_when_slowing(self):
+        """Mentions: 100, 150, 170, 180 — growth slowing → negative acceleration."""
+        df = self._make_mentions_df([100, 150, 170, 180])
+        acc = indicators.popularity.mention_acceleration(df)
+        assert isinstance(acc, float)
+        assert acc < 0
+
+    def test_mention_acceleration_zero_for_linear_growth(self):
+        """Mentions: 10, 20, 30, 40 — constant velocity → acceleration ≈ 0."""
+        df = self._make_mentions_df([10, 20, 30, 40])
+        acc = indicators.popularity.mention_acceleration(df)
+        assert isinstance(acc, float)
+        assert abs(acc) < 1e-9
+
+    def test_mention_acceleration_nan_for_fewer_than_3_points(self):
+        """2 points are not enough to compute acceleration."""
+        df = self._make_mentions_df([10, 20])
+        acc = indicators.popularity.mention_acceleration(df)
+        assert math.isnan(acc)
+
+    def test_mention_acceleration_nan_for_empty_df(self):
+        acc = indicators.popularity.mention_acceleration(pd.DataFrame())
+        assert math.isnan(acc)
+
+    def test_mention_acceleration_nan_for_missing_mentions_column(self):
+        df = _make_popularity_df(n=5)  # has 'rank' but no 'mentions'
+        acc = indicators.popularity.mention_acceleration(df)
+        assert math.isnan(acc)
+
+    def test_mention_acceleration_uses_most_recent_periods(self):
+        """With periods=3, only the last 5 rows are considered; older data is ignored."""
+        # First 10 rows: constant growth (acc=0). Last 4: accelerating (acc>0).
+        flat = [10 * i for i in range(1, 11)]  # 10,20,...,100
+        accel = [100, 200, 400, 800]
+        df = self._make_mentions_df(flat + accel)
+        acc = indicators.popularity.mention_acceleration(df, periods=3)
+        assert acc > 0

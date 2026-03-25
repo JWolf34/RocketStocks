@@ -7,6 +7,7 @@ import pytest
 
 from rocketstocks.core.analysis.popularity_signals import (
     SurgeType,
+    _get_tier_thresholds,
     evaluate_popularity_surge,
 )
 
@@ -222,15 +223,19 @@ def test_new_entrant_rank_201_to_500_no_trigger():
 # ---------------------------------------------------------------------------
 
 def test_velocity_spike_triggers_with_high_zscore():
-    """Mocked rank_velocity_zscore = -2.5 (gaining popularity) → VELOCITY_SPIKE."""
-    history = pd.DataFrame({'rank': [100, 90, 80, 70, 60], 'datetime': pd.date_range('2026-01-01', periods=5)})
+    """Mocked rank_velocity_zscore = -2.5 (gaining popularity) → VELOCITY_SPIKE.
+
+    Using Tier 3 rank (150) so the default 2.5σ threshold applies unchanged.
+    """
+    history = pd.DataFrame({'rank': [200, 180, 160, 155, 150], 'datetime': pd.date_range('2026-01-01', periods=5)})
     with (
         patch('rocketstocks.core.analysis.popularity_signals.indicators') as mock_ind,
     ):
         mock_ind.popularity.rank_velocity.return_value = -5.0
         mock_ind.popularity.rank_velocity_zscore.return_value = -2.5
+        mock_ind.popularity.mention_acceleration.return_value = float('nan')
         result = evaluate_popularity_surge(
-            ticker='GME', current_rank=60, rank_24h_ago=60,
+            ticker='GME', current_rank=150, rank_24h_ago=150,
             mentions=100, mentions_24h_ago=100,
             popularity_history=history,
         )
@@ -239,13 +244,14 @@ def test_velocity_spike_triggers_with_high_zscore():
 
 
 def test_velocity_spike_gaining_popularity_triggers():
-    """Negative z-score means gaining popularity — direction matters now."""
-    history = pd.DataFrame({'rank': [50, 60, 70, 80, 90], 'datetime': pd.date_range('2026-01-01', periods=5)})
+    """Negative z-score means gaining popularity — Tier 3 rank used (101-500)."""
+    history = pd.DataFrame({'rank': [300, 280, 260, 240, 220], 'datetime': pd.date_range('2026-01-01', periods=5)})
     with patch('rocketstocks.core.analysis.popularity_signals.indicators') as mock_ind:
         mock_ind.popularity.rank_velocity.return_value = -5.0
         mock_ind.popularity.rank_velocity_zscore.return_value = -2.5
+        mock_ind.popularity.mention_acceleration.return_value = float('nan')
         result = evaluate_popularity_surge(
-            ticker='GME', current_rank=90, rank_24h_ago=50,
+            ticker='GME', current_rank=220, rank_24h_ago=300,
             mentions=100, mentions_24h_ago=100,
             popularity_history=history,
         )
@@ -253,13 +259,14 @@ def test_velocity_spike_gaining_popularity_triggers():
 
 
 def test_velocity_spike_below_threshold_no_trigger():
-    """zscore = -2.0 is not <= -2.5 → no VELOCITY_SPIKE."""
-    history = pd.DataFrame({'rank': [100, 95, 90, 85, 80], 'datetime': pd.date_range('2026-01-01', periods=5)})
+    """zscore = -2.0 is not <= -2.5 → no VELOCITY_SPIKE (Tier 3 rank)."""
+    history = pd.DataFrame({'rank': [200, 195, 190, 185, 180], 'datetime': pd.date_range('2026-01-01', periods=5)})
     with patch('rocketstocks.core.analysis.popularity_signals.indicators') as mock_ind:
         mock_ind.popularity.rank_velocity.return_value = -3.0
         mock_ind.popularity.rank_velocity_zscore.return_value = -2.0
+        mock_ind.popularity.mention_acceleration.return_value = float('nan')
         result = evaluate_popularity_surge(
-            ticker='GME', current_rank=80, rank_24h_ago=80,
+            ticker='GME', current_rank=180, rank_24h_ago=180,
             mentions=100, mentions_24h_ago=100,
             popularity_history=history,
         )
@@ -267,13 +274,14 @@ def test_velocity_spike_below_threshold_no_trigger():
 
 
 def test_velocity_spike_positive_zscore_no_trigger():
-    """Positive z-score = losing popularity → no VELOCITY_SPIKE (direction now matters)."""
-    history = pd.DataFrame({'rank': [60, 70, 80, 90, 100], 'datetime': pd.date_range('2026-01-01', periods=5)})
+    """Positive z-score = losing popularity → no VELOCITY_SPIKE (Tier 3 rank)."""
+    history = pd.DataFrame({'rank': [150, 160, 170, 180, 190], 'datetime': pd.date_range('2026-01-01', periods=5)})
     with patch('rocketstocks.core.analysis.popularity_signals.indicators') as mock_ind:
         mock_ind.popularity.rank_velocity.return_value = 5.0
         mock_ind.popularity.rank_velocity_zscore.return_value = 3.0  # positive = losing popularity
+        mock_ind.popularity.mention_acceleration.return_value = float('nan')
         result = evaluate_popularity_surge(
-            ticker='GME', current_rank=100, rank_24h_ago=60,
+            ticker='GME', current_rank=190, rank_24h_ago=150,
             mentions=100, mentions_24h_ago=100,
             popularity_history=history,
         )
@@ -282,12 +290,13 @@ def test_velocity_spike_positive_zscore_no_trigger():
 
 def test_velocity_spike_nan_zscore_no_trigger():
     """NaN zscore → no VELOCITY_SPIKE (guarded by math.isnan check)."""
-    history = pd.DataFrame({'rank': [100], 'datetime': pd.date_range('2026-01-01', periods=1)})
+    history = pd.DataFrame({'rank': [200], 'datetime': pd.date_range('2026-01-01', periods=1)})
     with patch('rocketstocks.core.analysis.popularity_signals.indicators') as mock_ind:
         mock_ind.popularity.rank_velocity.return_value = float('nan')
         mock_ind.popularity.rank_velocity_zscore.return_value = float('nan')
+        mock_ind.popularity.mention_acceleration.return_value = float('nan')
         result = evaluate_popularity_surge(
-            ticker='GME', current_rank=100, rank_24h_ago=100,
+            ticker='GME', current_rank=200, rank_24h_ago=200,
             mentions=100, mentions_24h_ago=100,
             popularity_history=history,
         )
@@ -304,6 +313,7 @@ def test_multiple_surge_types_detected():
     with patch('rocketstocks.core.analysis.popularity_signals.indicators') as mock_ind:
         mock_ind.popularity.rank_velocity.return_value = -30.0
         mock_ind.popularity.rank_velocity_zscore.return_value = 0.5  # below threshold
+        mock_ind.popularity.mention_acceleration.return_value = float('nan')
         result = evaluate_popularity_surge(
             ticker='GME', current_rank=50, rank_24h_ago=200,
             mentions=3000, mentions_24h_ago=500,
@@ -315,14 +325,19 @@ def test_multiple_surge_types_detected():
 
 
 def test_all_four_surge_types_detected():
-    """All four surge types triggered simultaneously."""
-    history = pd.DataFrame({'rank': [500, 400, 300, 200, 100], 'datetime': pd.date_range('2026-01-01', periods=5)})
+    """All four surge types triggered simultaneously using a Tier 3 rank (101-500).
+
+    Using rank=150 (Tier 3) so the default velocity threshold of 2.5σ applies,
+    letting the -3.0 z-score trigger VELOCITY_SPIKE.
+    """
+    history = pd.DataFrame({'rank': [500, 400, 300, 200, 150], 'datetime': pd.date_range('2026-01-01', periods=5)})
     with patch('rocketstocks.core.analysis.popularity_signals.indicators') as mock_ind:
         mock_ind.popularity.rank_velocity.return_value = -100.0
         mock_ind.popularity.rank_velocity_zscore.return_value = -3.0
+        mock_ind.popularity.mention_acceleration.return_value = float('nan')
         result = evaluate_popularity_surge(
-            ticker='NEW', current_rank=50, rank_24h_ago=None,  # NEW_ENTRANT
-            mentions=4000, mentions_24h_ago=500,               # MENTION_SURGE (8x)
+            ticker='NEW', current_rank=150, rank_24h_ago=None,  # NEW_ENTRANT (rank<=200)
+            mentions=4000, mentions_24h_ago=500,                # MENTION_SURGE (8x)
             popularity_history=history,
         )
     # NEW_ENTRANT (rank<=200, no prior) + MENTION_SURGE + VELOCITY_SPIKE
@@ -496,3 +511,209 @@ def test_result_fields_populated():
     assert result.rank_24h_ago == 20
     assert result.mentions == 500
     assert result.mentions_24h_ago == 100
+
+
+# ---------------------------------------------------------------------------
+# Tier damping (_get_tier_thresholds)
+# ---------------------------------------------------------------------------
+
+def test_tier_1_suppresses_velocity_and_tightens_mention():
+    """Rank 1-25 → suppress VELOCITY_SPIKE, require 5x for MENTION_SURGE."""
+    overrides = _get_tier_thresholds(15)
+    assert overrides.get('suppress_velocity') is True
+    assert overrides.get('mention_surge_threshold') == 5.0
+
+
+def test_tier_2_tightens_velocity_threshold():
+    """Rank 26-100 → tighten VELOCITY_SPIKE to 3.5σ."""
+    overrides = _get_tier_thresholds(50)
+    assert overrides.get('velocity_zscore_threshold') == 3.5
+    assert not overrides.get('suppress_velocity')
+
+
+def test_tier_3_has_no_overrides():
+    """Rank 101-500 → no overrides (default sweet spot)."""
+    for rank in [101, 250, 499, 500]:
+        assert _get_tier_thresholds(rank) == {}
+
+
+def test_tier_4_tightens_new_entrant_and_min_base():
+    """Rank 501+ → NEW_ENTRANT cutoff=150, min_base=10."""
+    overrides = _get_tier_thresholds(501)
+    assert overrides.get('new_entrant_cutoff') == 150
+    assert overrides.get('mention_surge_min_base') == 10
+
+
+def test_tier_none_rank_has_no_overrides():
+    """None rank → no overrides."""
+    assert _get_tier_thresholds(None) == {}
+
+
+def test_tier_1_velocity_spike_suppressed_in_full_eval():
+    """Tier 1 stock (rank 20) does not trigger VELOCITY_SPIKE even at extreme zscore."""
+    history = pd.DataFrame({'rank': [20, 19, 18, 17, 16], 'datetime': pd.date_range('2026-01-01', periods=5)})
+    with patch('rocketstocks.core.analysis.popularity_signals.indicators') as mock_ind:
+        mock_ind.popularity.rank_velocity.return_value = -5.0
+        mock_ind.popularity.rank_velocity_zscore.return_value = -10.0  # extreme
+        mock_ind.popularity.mention_acceleration.return_value = float('nan')
+        result = evaluate_popularity_surge(
+            ticker='AAPL', current_rank=20, rank_24h_ago=20,
+            mentions=50, mentions_24h_ago=50,
+            popularity_history=history,
+        )
+    assert SurgeType.VELOCITY_SPIKE not in result.surge_types
+
+
+def test_tier_1_mention_surge_requires_5x():
+    """Tier 1 stock: 4x mention surge does NOT fire; 5x does."""
+    history = pd.DataFrame({
+        'rank': [5, 5, 5], 'datetime': pd.date_range('2026-01-01', periods=3),
+        'mentions': [100, 200, 300],
+    })
+    with patch('rocketstocks.core.analysis.popularity_signals.indicators') as mock_ind:
+        mock_ind.popularity.rank_velocity.return_value = 0.0
+        mock_ind.popularity.rank_velocity_zscore.return_value = 0.0
+        mock_ind.popularity.mention_acceleration.return_value = 100.0  # positive — not gated
+
+        # 4x ratio: base=100, current=400 — should NOT trigger (tier requires 5x)
+        result_4x = evaluate_popularity_surge(
+            ticker='TSLA', current_rank=10, rank_24h_ago=10,
+            mentions=400, mentions_24h_ago=100,
+            popularity_history=history,
+        )
+        assert SurgeType.MENTION_SURGE not in result_4x.surge_types
+
+        # 5x ratio: base=100, current=500 — SHOULD trigger
+        result_5x = evaluate_popularity_surge(
+            ticker='TSLA', current_rank=10, rank_24h_ago=10,
+            mentions=500, mentions_24h_ago=100,
+            popularity_history=history,
+        )
+        assert SurgeType.MENTION_SURGE in result_5x.surge_types
+
+
+def test_tier_2_velocity_spike_needs_higher_zscore():
+    """Tier 2 stock (rank 60): zscore -2.5 does NOT fire; -3.5 does."""
+    history = pd.DataFrame({
+        'rank': [60, 58, 56], 'datetime': pd.date_range('2026-01-01', periods=3),
+        'mentions': [100, 120, 145],
+    })
+    with patch('rocketstocks.core.analysis.popularity_signals.indicators') as mock_ind:
+        mock_ind.popularity.rank_velocity.return_value = -2.0
+        mock_ind.popularity.rank_velocity_zscore.return_value = -2.5  # default threshold passes, tier 2 requires -3.5
+        mock_ind.popularity.mention_acceleration.return_value = 10.0  # accelerating
+
+        result = evaluate_popularity_surge(
+            ticker='XYZ', current_rank=60, rank_24h_ago=60,
+            mentions=50, mentions_24h_ago=50,
+            popularity_history=history,
+        )
+        assert SurgeType.VELOCITY_SPIKE not in result.surge_types
+
+
+def test_tier_4_new_entrant_cutoff_150():
+    """Tier 4 stock (rank 510) with no prior rank: cutoff=150, but current rank 510 > 150 → not new entrant.
+
+    Contrast with a Tier 3 stock at rank 160 (no prior): cutoff stays 200, 160 <= 200 → IS new entrant.
+    """
+    # Tier 4: rank 510, no prior rank — with cutoff=150, 510 > 150 → NOT new entrant
+    tier4_result = evaluate_popularity_surge(
+        ticker='NEWCO', current_rank=510, rank_24h_ago=None,
+        mentions=30, mentions_24h_ago=10,
+    )
+    assert SurgeType.NEW_ENTRANT not in tier4_result.surge_types
+
+    # Also verify the threshold override: _get_tier_thresholds(510) returns cutoff=150
+    overrides = _get_tier_thresholds(510)
+    assert overrides.get('new_entrant_cutoff') == 150
+
+
+# ---------------------------------------------------------------------------
+# Mention acceleration gate
+# ---------------------------------------------------------------------------
+
+def _make_accel_history(mentions: list[int]) -> pd.DataFrame:
+    base = pd.Timestamp('2026-01-01')
+    return pd.DataFrame({
+        'datetime': [base + pd.Timedelta(hours=i) for i in range(len(mentions))],
+        'rank': list(range(len(mentions))),
+        'mentions': mentions,
+    })
+
+
+def test_acceleration_gate_blocks_when_decelerating():
+    """When mention acceleration <= 0 and 3+ data points, surge is suppressed."""
+    history = _make_accel_history([100, 150, 170, 180])  # slowing
+    with patch('rocketstocks.core.analysis.popularity_signals.indicators') as mock_ind:
+        mock_ind.popularity.rank_velocity.return_value = -10.0
+        mock_ind.popularity.rank_velocity_zscore.return_value = -3.0
+        mock_ind.popularity.mention_acceleration.return_value = -5.0  # decelerating
+
+        result = evaluate_popularity_surge(
+            ticker='GME', current_rank=50, rank_24h_ago=200,
+            mentions=180, mentions_24h_ago=50,
+            popularity_history=history,
+        )
+    assert result.is_surging is False
+    assert result.mention_acceleration == pytest.approx(-5.0)
+
+
+def test_acceleration_gate_allows_when_accelerating():
+    """When mention acceleration > 0, surge is NOT suppressed by the gate."""
+    history = _make_accel_history([100, 150, 220, 350])  # accelerating
+    with patch('rocketstocks.core.analysis.popularity_signals.indicators') as mock_ind:
+        mock_ind.popularity.rank_velocity.return_value = -30.0
+        mock_ind.popularity.rank_velocity_zscore.return_value = -3.0
+        mock_ind.popularity.mention_acceleration.return_value = 50.0  # accelerating
+
+        result = evaluate_popularity_surge(
+            ticker='GME', current_rank=50, rank_24h_ago=200,
+            mentions=350, mentions_24h_ago=100,
+            popularity_history=history,
+        )
+    # RANK_JUMP (gain=150, ratio=3.0) + MENTION_SURGE (3.5x) + VELOCITY_SPIKE (-3σ) should fire
+    assert result.is_surging is True
+
+
+def test_acceleration_gate_skipped_with_fewer_than_3_points():
+    """With < 3 history points, the acceleration gate is skipped (sparse data fallback)."""
+    history = _make_accel_history([100, 300])  # only 2 points
+    with patch('rocketstocks.core.analysis.popularity_signals.indicators') as mock_ind:
+        mock_ind.popularity.rank_velocity.return_value = 0.0
+        mock_ind.popularity.rank_velocity_zscore.return_value = 0.0
+        mock_ind.popularity.mention_acceleration.return_value = float('nan')
+
+        result = evaluate_popularity_surge(
+            ticker='GME', current_rank=50, rank_24h_ago=200,
+            mentions=300, mentions_24h_ago=100,
+            popularity_history=history,
+        )
+    # RANK_JUMP + MENTION_SURGE should fire (no gate applied with NaN acceleration)
+    assert SurgeType.MENTION_SURGE in result.surge_types
+
+
+def test_acceleration_gate_skipped_with_none_history():
+    """None history → acceleration gate is not applied."""
+    result = evaluate_popularity_surge(
+        ticker='GME', current_rank=50, rank_24h_ago=200,
+        mentions=300, mentions_24h_ago=100,
+        popularity_history=None,
+    )
+    assert SurgeType.MENTION_SURGE in result.surge_types
+    assert result.mention_acceleration is None
+
+
+def test_mention_acceleration_field_populated_in_result():
+    """mention_acceleration field should be set in result when history has mentions column."""
+    history = _make_accel_history([100, 150, 220, 350])
+    with patch('rocketstocks.core.analysis.popularity_signals.indicators') as mock_ind:
+        mock_ind.popularity.rank_velocity.return_value = 0.0
+        mock_ind.popularity.rank_velocity_zscore.return_value = 0.0
+        mock_ind.popularity.mention_acceleration.return_value = 20.0
+
+        result = evaluate_popularity_surge(
+            ticker='GME', current_rank=300, rank_24h_ago=300,
+            mentions=350, mentions_24h_ago=100,
+            popularity_history=history,
+        )
+    assert result.mention_acceleration == pytest.approx(20.0)
