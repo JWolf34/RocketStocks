@@ -10,10 +10,8 @@ ALERT_ROLE_DEFS: list[tuple[str, str]] = [
     ("watchlist_mover", "📋 Watchlist Mover"),
     ("popularity_surge", "🔥 Popularity Surge"),
     ("momentum_confirmed", "⚡ Momentum Confirmed"),
-    ("market_mover_sustained", "⏳ Market: Sustained"),
-    ("market_mover_price_accelerating", "⬆️ Market: Price Accelerating"),
-    ("market_mover_volume_accelerating", "📈 Market: Volume Accelerating"),
-    ("market_mover_volume_extreme", "📊 Market: Extreme Volume"),
+    ("volume_accumulation", "📊 Volume Accumulation"),
+    ("breakout", "🚀 Breakout"),
     ("all_alerts", "🔔 All Alerts"),
 ]
 
