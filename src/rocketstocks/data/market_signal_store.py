@@ -10,7 +10,7 @@ _TABLE = 'market_signals'
 _FIELDS = [
     'ticker', 'detected_at', 'composite_score', 'price_z', 'vol_z',
     'pct_change', 'dominant_signal', 'rvol', 'status', 'confirmed_at',
-    'alert_message_id', 'signal_data',
+    'alert_message_id', 'signal_data', 'signal_source', 'price_at_flag',
 ]
 _ACTIVE_CUTOFF_HOURS = 8  # Signals older than 8 hours are eligible to expire
 
@@ -32,14 +32,16 @@ class MarketSignalRepository:
         dominant_signal: str | None,
         rvol: float | None,
         signal_data: list | None = None,
+        signal_source: str = 'composite',
+        price_at_flag: float | None = None,
     ) -> None:
         """Insert a new market signal record (ignores duplicates)."""
         await self._db.execute(
             """
             INSERT INTO market_signals
             (ticker, detected_at, composite_score, price_z, vol_z, pct_change,
-             dominant_signal, rvol, signal_data)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+             dominant_signal, rvol, signal_data, signal_source, price_at_flag)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             ON CONFLICT (ticker, detected_at) DO NOTHING
             """,
             [
@@ -51,20 +53,35 @@ class MarketSignalRepository:
                 dominant_signal,
                 float(rvol) if rvol is not None else None,
                 Json(signal_data or []),
+                signal_source,
+                float(price_at_flag) if price_at_flag is not None else None,
             ],
         )
         logger.debug(f"Inserted market signal for '{ticker}' at {detected_at}")
 
-    async def get_active_signals(self) -> list[dict]:
-        """Return pending, unexpired, today's signals."""
+    async def get_active_signals(self, signal_source: str | None = None) -> list[dict]:
+        """Return pending, unexpired, today's signals.
+
+        Args:
+            signal_source: Optional filter — only return signals with this source
+                (e.g. 'volume_accumulation'). Returns all sources when None.
+        """
         now = datetime.datetime.utcnow()
         day_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
         day_end = day_start + datetime.timedelta(days=1)
-        rows = await self._db.execute(
-            f"SELECT {', '.join(_FIELDS)} FROM {_TABLE} "
-            "WHERE status = 'pending' AND detected_at >= %s AND detected_at < %s",
-            [day_start, day_end],
-        )
+        if signal_source is not None:
+            rows = await self._db.execute(
+                f"SELECT {', '.join(_FIELDS)} FROM {_TABLE} "
+                "WHERE status = 'pending' AND detected_at >= %s AND detected_at < %s "
+                "AND signal_source = %s",
+                [day_start, day_end, signal_source],
+            )
+        else:
+            rows = await self._db.execute(
+                f"SELECT {', '.join(_FIELDS)} FROM {_TABLE} "
+                "WHERE status = 'pending' AND detected_at >= %s AND detected_at < %s",
+                [day_start, day_end],
+            )
         return [dict(zip(_FIELDS, row)) for row in (rows or [])]
 
     async def get_signal_history(self, ticker: str) -> list[dict]:
@@ -129,6 +146,20 @@ class MarketSignalRepository:
             fetchone=True,
         )
         return (row[0] > 0) if row else False
+
+    async def update_alert_message_id(
+        self,
+        ticker: str,
+        detected_at: datetime.datetime,
+        message_id: int,
+    ) -> None:
+        """Update the Discord message ID after a volume accumulation alert has been sent."""
+        await self._db.execute(
+            "UPDATE market_signals SET alert_message_id = %s "
+            "WHERE ticker = %s AND detected_at = %s",
+            [message_id, ticker, detected_at],
+        )
+        logger.debug(f"Updated alert_message_id={message_id} for '{ticker}' at {detected_at}")
 
     async def update_observation(
         self,
