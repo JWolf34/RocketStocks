@@ -937,7 +937,146 @@ class Alerts(commands.Cog):
             surge_alert_message_id=surge_alert_message_id,
             daily_price_history=daily_price_history,
             trigger_result=trigger_result,
+            confidence_pct=confidence_pct,
         ))
+
+
+    # -------------------------------------------------------------------------
+    # /alert commands
+    # -------------------------------------------------------------------------
+
+    alert_group = app_commands.Group(name="alert", description="Alert performance and history")
+
+    @alert_group.command(name="stats", description="Show alert predictive accuracy for a period")
+    @app_commands.describe(
+        period="Time period: today, 7d (default), or 30d",
+        alert_type="Optional filter by alert type",
+    )
+    async def alert_stats(
+        self,
+        interaction: discord.Interaction,
+        period: str = "7d",
+        alert_type: str | None = None,
+    ) -> None:
+        await interaction.response.defer(ephemeral=True)
+        try:
+            # Resolve period to a start datetime
+            now = datetime.datetime.utcnow()
+            period_lower = period.lower()
+            if period_lower == "today":
+                since_dt = now.replace(hour=0, minute=0, second=0, microsecond=0)
+                period_label = "Today"
+            elif period_lower == "30d":
+                since_dt = now - datetime.timedelta(days=30)
+                period_label = "Last 30 Days"
+            else:
+                since_dt = now - datetime.timedelta(days=7)
+                period_label = "Last 7 Days"
+
+            cutoff = since_dt
+
+            # Fetch surge and signal data
+            surge_rows = await self.stock_data.db.execute(
+                "SELECT confirmed, expired FROM popularity_surges WHERE flagged_at >= %s",
+                [cutoff],
+            ) or []
+            surge_df = pd.DataFrame(surge_rows, columns=['confirmed', 'expired'])
+
+            signal_rows = await self.stock_data.db.execute(
+                "SELECT status FROM market_signals WHERE detected_at >= %s",
+                [cutoff],
+            ) or []
+            signal_df = pd.DataFrame(signal_rows, columns=['status'])
+
+            # Fetch recent alerts for price outcome computation
+            alerts_raw = await self.dstate.get_alerts_since(since_dt)
+            if alert_type:
+                alerts_raw = [a for a in alerts_raw if a.get('alert_type') == alert_type.upper()]
+
+            # Count by type
+            alert_counts: dict = {}
+            for a in alerts_raw:
+                atype = a.get('alert_type', 'UNKNOWN')
+                alert_counts[atype] = alert_counts.get(atype, 0) + 1
+
+            # Compute price outcomes (uses existing price history cache)
+            price_tickers = list({a['ticker'] for a in alerts_raw})
+            start_date = cutoff.date() - datetime.timedelta(days=5)
+            price_history = await self.stock_data.price_history.fetch_daily_price_history_batch(
+                tickers=price_tickers, start_date=start_date,
+            ) if price_tickers else {}
+
+            price_outcomes = compute_price_outcome(
+                alerts=alerts_raw, price_history=price_history
+            )
+
+            data = AlertStatsData(
+                period_label=period_label,
+                surge_confidence=compute_surge_confidence(surge_df),
+                signal_confidence=compute_signal_confidence(signal_df),
+                price_outcomes=price_outcomes,
+                alert_counts=alert_counts,
+            )
+            embed_spec = AlertStats(data).build()
+
+            from rocketstocks.bot.senders.embed_utils import spec_to_embed
+            await interaction.followup.send(embed=spec_to_embed(embed_spec), ephemeral=True)
+        except Exception:
+            logger.error("[alert stats] Failed", exc_info=True)
+            await interaction.followup.send("Failed to fetch alert stats.", ephemeral=True)
+
+    @alert_group.command(name="history", description="Show recent alerts for a ticker with price outcomes")
+    @app_commands.describe(
+        ticker="Stock ticker symbol",
+        count="Number of recent alerts to show (default 10)",
+    )
+    async def alert_history(
+        self,
+        interaction: discord.Interaction,
+        ticker: str,
+        count: int = 10,
+    ) -> None:
+        await interaction.response.defer(ephemeral=True)
+        try:
+            ticker = ticker.upper().strip()
+            count = max(1, min(count, 25))  # clamp 1-25
+
+            # Fetch alerts for this ticker (last 90 days)
+            since_dt = datetime.datetime.utcnow() - datetime.timedelta(days=90)
+            all_alerts = await self.dstate.get_alerts_since(since_dt)
+            ticker_alerts = [a for a in all_alerts if a.get('ticker') == ticker]
+            ticker_alerts.sort(key=lambda a: a.get('date', datetime.date.min), reverse=True)
+
+            total = len(ticker_alerts)
+            shown_alerts = ticker_alerts[:count]
+
+            # Join with price history for outcomes
+            if shown_alerts:
+                start_date = since_dt.date() - datetime.timedelta(days=5)
+                price_history = await self.stock_data.price_history.fetch_daily_price_history_batch(
+                    tickers=[ticker], start_date=start_date,
+                )
+                outcomes_by_date = compute_price_outcome(
+                    alerts=shown_alerts, price_history=price_history
+                ).get('per_alert', [])
+                outcome_map = {(o['ticker'], o['alert_date']): o for o in outcomes_by_date}
+
+                enriched = []
+                for a in shown_alerts:
+                    key = (a.get('ticker'), a.get('date'))
+                    outcome = outcome_map.get(key, {})
+                    enriched.append({**a, **outcome})
+            else:
+                enriched = []
+
+            data = AlertHistoryData(ticker=ticker, alerts=enriched, count=total)
+            embed_spec = AlertHistory(data).build()
+
+            from rocketstocks.bot.senders.embed_utils import spec_to_embed
+            await interaction.followup.send(embed=spec_to_embed(embed_spec), ephemeral=True)
+        except Exception:
+            logger.error(f"[alert history] Failed for '{ticker}'", exc_info=True)
+            await interaction.followup.send("Failed to fetch alert history.", ephemeral=True)
 
 
 #########
