@@ -6,17 +6,15 @@ import pytest
 
 from rocketstocks.core.analysis.alert_strategy import AlertTriggerResult
 from rocketstocks.core.analysis.classification import StockClass
-from rocketstocks.core.analysis.composite_score import CompositeScoreResult
 from rocketstocks.core.analysis.popularity_signals import PopularitySurgeResult, SurgeType
 from rocketstocks.core.content.alerts.earnings_alert import EarningsMoverAlert
 from rocketstocks.core.content.alerts.watchlist_alert import WatchlistMoverAlert
 from rocketstocks.core.content.alerts.popularity_surge_alert import PopularitySurgeAlert
 from rocketstocks.core.content.alerts.momentum_confirmation_alert import MomentumConfirmationAlert
-from rocketstocks.core.content.alerts.market_alert import MarketAlert
 from rocketstocks.core.content.models import (
-    COLOR_GREEN, COLOR_RED, COLOR_PURPLE, COLOR_GOLD, COLOR_CYAN,
+    COLOR_GREEN, COLOR_RED, COLOR_PURPLE, COLOR_GOLD,
     EarningsMoverData, WatchlistMoverData,
-    PopularitySurgeData, MomentumConfirmationData, MarketAlertData,
+    PopularitySurgeData, MomentumConfirmationData,
     EmbedSpec, EmbedField,
 )
 
@@ -66,21 +64,6 @@ def _make_surge_result(ticker='GME', surge_types=None):
         mention_ratio=3.56,
         rank_velocity=-12.0,
         rank_velocity_zscore=-2.8,
-    )
-
-
-def _make_composite_result(trigger_result=None, dominant='volume'):
-    if trigger_result is None:
-        trigger_result = _make_trigger_result()
-    return CompositeScoreResult(
-        composite_score=3.1,
-        should_alert=True,
-        volume_component=4.2,
-        price_component=2.8,
-        cross_signal_component=0.0,
-        classification_component=2.0,
-        trigger_result=trigger_result,
-        dominant_signal=dominant,
     )
 
 
@@ -331,118 +314,6 @@ def test_momentum_confirmation_alert_data_stored(quote_up, ticker_info):
 
 
 # ---------------------------------------------------------------------------
-# MarketAlert
-# ---------------------------------------------------------------------------
-
-def test_market_alert_embed_returns_spec(quote_up, ticker_info):
-    tr = _make_trigger_result()
-    cr = _make_composite_result(trigger_result=tr, dominant='volume')
-    data = MarketAlertData(ticker='GME', ticker_info=ticker_info, quote=quote_up,
-                           composite_result=cr, rvol=4.5)
-    alert = MarketAlert(data=data)
-    spec = alert.build()
-    assert isinstance(spec, EmbedSpec)
-    assert 'GME' in spec.title
-    assert spec.timestamp is True
-    assert 'market-alert' in spec.footer
-
-
-def test_market_alert_embed_positive_color(quote_up, ticker_info):
-    tr = _make_trigger_result()
-    cr = _make_composite_result(trigger_result=tr, dominant='volume')
-    data = MarketAlertData(ticker='GME', ticker_info=ticker_info, quote=quote_up,
-                           composite_result=cr)
-    spec = MarketAlert(data=data).build()
-    assert spec.color == COLOR_CYAN
-
-
-def test_market_alert_embed_negative_color(quote_down, ticker_info):
-    tr = _make_trigger_result()
-    cr = _make_composite_result(trigger_result=tr, dominant='price')
-    data = MarketAlertData(ticker='GME', ticker_info=ticker_info, quote=quote_down,
-                           composite_result=cr)
-    spec = MarketAlert(data=data).build()
-    assert spec.color == COLOR_RED
-
-
-def test_market_alert_embed_shows_composite_score(quote_up, ticker_info):
-    tr = _make_trigger_result()
-    cr = _make_composite_result(trigger_result=tr)
-    data = MarketAlertData(ticker='GME', ticker_info=ticker_info, quote=quote_up,
-                           composite_result=cr)
-    spec = MarketAlert(data=data).build()
-    field_names = [f.name for f in spec.fields]
-    assert 'Composite Score' in field_names
-    assert 'Score Breakdown' in field_names
-
-
-def test_market_alert_narrative_volume_driven(quote_up, ticker_info):
-    tr = _make_trigger_result()
-    cr = _make_composite_result(trigger_result=tr, dominant='volume')
-    data = MarketAlertData(ticker='GME', ticker_info=ticker_info, quote=quote_up,
-                           composite_result=cr)
-    spec = MarketAlert(data=data).build()
-    assert 'volume activity' in spec.description
-
-
-def test_market_alert_narrative_price_driven(quote_up, ticker_info):
-    tr = _make_trigger_result()
-    cr = _make_composite_result(trigger_result=tr, dominant='price')
-    data = MarketAlertData(ticker='GME', ticker_info=ticker_info, quote=quote_up,
-                           composite_result=cr)
-    spec = MarketAlert(data=data).build()
-    assert 'price move' in spec.description
-
-
-def test_market_alert_narrative_mixed(quote_up, ticker_info):
-    tr = _make_trigger_result()
-    cr = _make_composite_result(trigger_result=tr, dominant='mixed')
-    data = MarketAlertData(ticker='GME', ticker_info=ticker_info, quote=quote_up,
-                           composite_result=cr)
-    spec = MarketAlert(data=data).build()
-    assert 'mixed' in spec.description
-
-
-def test_market_alert_shows_rvol_when_available(quote_up, ticker_info):
-    tr = _make_trigger_result()
-    cr = _make_composite_result(trigger_result=tr)
-    data = MarketAlertData(ticker='GME', ticker_info=ticker_info, quote=quote_up,
-                           composite_result=cr, rvol=4.5)
-    spec = MarketAlert(data=data).build()
-    field_names = [f.name for f in spec.fields]
-    assert 'RVOL' in field_names
-
-
-def test_market_alert_no_rvol_field_when_none(quote_up, ticker_info):
-    tr = _make_trigger_result()
-    cr = _make_composite_result(trigger_result=tr)
-    data = MarketAlertData(ticker='GME', ticker_info=ticker_info, quote=quote_up,
-                           composite_result=cr, rvol=None)
-    spec = MarketAlert(data=data).build()
-    field_names = [f.name for f in spec.fields]
-    assert 'RVOL' not in field_names
-
-
-def test_market_alert_dominant_in_footer(quote_up, ticker_info):
-    tr = _make_trigger_result()
-    cr = _make_composite_result(trigger_result=tr, dominant='volume')
-    data = MarketAlertData(ticker='GME', ticker_info=ticker_info, quote=quote_up,
-                           composite_result=cr)
-    spec = MarketAlert(data=data).build()
-    assert 'volume' in spec.footer
-
-
-def test_market_alert_stores_composite_score_in_alert_data(quote_up, ticker_info):
-    tr = _make_trigger_result()
-    cr = _make_composite_result(trigger_result=tr)
-    data = MarketAlertData(ticker='GME', ticker_info=ticker_info, quote=quote_up,
-                           composite_result=cr)
-    alert = MarketAlert(data=data)
-    assert alert.alert_data['composite_score'] == pytest.approx(3.1)
-    assert alert.alert_data['dominant_signal'] == 'volume'
-
-
-# ---------------------------------------------------------------------------
 # ticker_info=None guard — all TickerData-based alerts must not raise
 # ---------------------------------------------------------------------------
 
@@ -480,15 +351,6 @@ def test_momentum_confirmation_embed_none_ticker_info(quote_up):
         trigger_result=tr,
     )
     spec = MomentumConfirmationAlert(data=data).build()
-    assert 'GME' in spec.description
-
-
-def test_market_alert_embed_none_ticker_info(quote_up):
-    tr = _make_trigger_result()
-    cr = _make_composite_result(trigger_result=tr)
-    data = MarketAlertData(ticker='GME', ticker_info=None, quote=quote_up,
-                           composite_result=cr)
-    spec = MarketAlert(data=data).build()
     assert 'GME' in spec.description
 
 

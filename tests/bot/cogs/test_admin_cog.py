@@ -111,7 +111,7 @@ class TestAdminTestAlert:
 
     @pytest.mark.parametrize("alert_type", [
         "earnings_mover", "watchlist_mover", "popularity_surge",
-        "momentum_confirmation", "market_alert",
+        "momentum_confirmation", "volume_accumulation", "breakout",
     ])
     def test_build_dummy_alert_all_types(self, alert_type):
         alert = _build_dummy_alert(alert_type)

@@ -64,8 +64,9 @@ async def test_insert_signal_default_empty_signal_data(repo, mock_db):
         rvol=None,
     )
     _, params = mock_db.execute.call_args[0]
-    # signal_data is wrapped in Json() for JSONB native handling, not a JSON string
-    assert isinstance(params[-1], Json) and params[-1].obj == []
+    # signal_data is at index 8 (after ticker, detected_at, composite_score, price_z, vol_z,
+    # pct_change, dominant_signal, rvol); followed by signal_source and price_at_flag
+    assert isinstance(params[8], Json) and params[8].obj == []
 
 
 # ---------------------------------------------------------------------------

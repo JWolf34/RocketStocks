@@ -95,11 +95,11 @@ class TestAlertButtons:
         assert all("GME" in u for u in urls)
 
     async def test_doc_url_adds_what_does_this_mean_button(self):
-        from rocketstocks.bot.views.alert_views import AlertButtons, MARKET_ALERT_DOC_URL
-        v = AlertButtons("GME", doc_url=MARKET_ALERT_DOC_URL)
+        from rocketstocks.bot.views.alert_views import AlertButtons, VOLUME_ACCUMULATION_DOC_URL
+        v = AlertButtons("GME", doc_url=VOLUME_ACCUMULATION_DOC_URL)
         urls = _get_button_urls(v)
         assert len(urls) == 4
-        assert MARKET_ALERT_DOC_URL in urls
+        assert VOLUME_ACCUMULATION_DOC_URL in urls
 
     async def test_without_doc_url_no_what_does_this_mean_button(self):
         from rocketstocks.bot.views.alert_views import AlertButtons

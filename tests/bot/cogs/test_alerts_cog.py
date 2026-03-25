@@ -7,7 +7,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 from rocketstocks.bot.cogs.alerts import Alerts
 from rocketstocks.core.analysis.alert_strategy import AlertTriggerResult, ConfirmationResult
 from rocketstocks.core.analysis.classification import StockClass
-from rocketstocks.core.analysis.composite_score import CompositeScoreResult
+from rocketstocks.core.analysis.volume_divergence import VolumeAccumulationResult
 
 
 def _make_bot():
@@ -47,6 +47,9 @@ def _make_stock_data(earnings_df: pd.DataFrame):
     sd.market_signal_store.get_latest_signal = AsyncMock(return_value=None)
     sd.market_signal_store.get_signaled_tickers_today = AsyncMock(return_value={})
     sd.market_signal_store.get_signal_history = AsyncMock(return_value=[])
+    sd.market_signal_store.insert_signal = AsyncMock(return_value=None)
+    sd.market_signal_store.update_alert_message_id = AsyncMock(return_value=None)
+    sd.market_signal_store.mark_confirmed = AsyncMock(return_value=None)
     sd.watchlists.get_all_watchlist_tickers = AsyncMock(return_value=[])
     sd.watchlists.get_watchlists = AsyncMock(return_value=[])
     sd.watchlists.get_ticker_to_watchlist_map = AsyncMock(return_value={})
@@ -74,16 +77,14 @@ def _make_trigger_result(should_alert=True):
     )
 
 
-def _make_composite_result(should_alert=True):
-    return CompositeScoreResult(
-        composite_score=3.1 if should_alert else 1.0,
-        should_alert=should_alert,
-        volume_component=4.2,
-        price_component=2.8,
-        cross_signal_component=0.0,
-        classification_component=0.0,
-        trigger_result=_make_trigger_result(should_alert=should_alert),
-        dominant_signal='volume',
+def _make_accumulation_result(is_accumulating=True):
+    return VolumeAccumulationResult(
+        is_accumulating=is_accumulating,
+        vol_zscore=3.0 if is_accumulating else 1.0,
+        price_zscore=0.3,
+        rvol=4.0,
+        divergence_score=2.7 if is_accumulating else 0.7,
+        signal_strength='volume_only',
     )
 
 
@@ -290,146 +291,147 @@ class TestWatchlistPipeline:
 
 
 # ---------------------------------------------------------------------------
-# Market signal pipeline (silent recording)
+# Volume accumulation pipeline
 # ---------------------------------------------------------------------------
 
-class TestMarketSignalPipeline:
+class TestVolumeAccumulationPipeline:
+    def _make_price_df(self):
+        """Return a minimal daily price history DataFrame with varying volume to avoid NaN z-scores."""
+        n = 30
+        close = [100.0 + i * 0.1 for i in range(n)]
+        # Vary volumes so std > 0 and z-scores are finite
+        volume = [900_000 + i * 10_000 for i in range(n)]
+        return pd.DataFrame({
+            'open': close, 'high': close, 'low': close, 'close': close,
+            'volume': volume,
+        })
+
     @pytest.mark.asyncio
-    async def test_records_signal_when_composite_triggers(self):
-        """_market_signal_pipeline inserts a new signal when composite passes."""
+    async def test_sends_alert_and_inserts_signal_when_accumulating(self):
+        """Pipeline sends VolumeAccumulationAlert and inserts signal when detected."""
         cog = _make_cog(earnings_df=pd.DataFrame())
         ticker = "GME"
-        quote = {"quote": {"netPercentChange": 15.0, "totalVolume": 5_000_000},
-                 "regular": {"regularMarketLastPrice": 25.0}}
-        fake_trigger = _make_trigger_result(should_alert=True)
-        fake_composite = _make_composite_result(should_alert=True)
+        price_df = self._make_price_df()
+        quote = {"quote": {"netPercentChange": 0.2, "totalVolume": 5_000_000},
+                 "regular": {"regularMarketLastPrice": 52.0}}
+        fake_result = _make_accumulation_result(is_accumulating=True)
+
+        cog.stock_data.schwab.get_options_chain = AsyncMock(return_value=None)
 
         with (
-            patch("rocketstocks.bot.cogs.alerts.evaluate_price_alert", return_value=fake_trigger),
-            patch("rocketstocks.bot.cogs.alerts.compute_composite_score", return_value=fake_composite),
+            patch("rocketstocks.bot.cogs.alerts.evaluate_volume_accumulation", return_value=fake_result),
             patch("rocketstocks.bot.cogs.alerts.send_alert", new_callable=AsyncMock) as mock_send,
         ):
-            await cog._market_signal_pipeline(
+            mock_send.return_value = None
+            await cog._volume_accumulation_pipeline(
                 quotes={ticker: quote},
                 classifications={},
-                exclude=set(),
-                price_cache={},
+                channels=[AsyncMock()],
+                price_cache={ticker: price_df},
             )
-            # Silent — no alert sent
-            mock_send.assert_not_called()
+            mock_send.assert_called_once()
 
-        # Signal should be recorded
         cog.stock_data.market_signal_store.insert_signal.assert_called_once()
 
     @pytest.mark.asyncio
-    async def test_updates_observation_when_already_signaled(self):
-        """_market_signal_pipeline updates existing signal when ticker already signaled."""
+    async def test_no_alert_when_not_accumulating(self):
+        """No alert sent when volume divergence is not detected."""
         cog = _make_cog(earnings_df=pd.DataFrame())
         ticker = "GME"
-        quote = {"quote": {"netPercentChange": 15.0, "totalVolume": 5_000_000}}
-        fake_trigger = _make_trigger_result(should_alert=True)
-        fake_composite = _make_composite_result(should_alert=True)
+        price_df = self._make_price_df()
+        quote = {"quote": {"netPercentChange": 0.2, "totalVolume": 100_000}}
+        fake_result = _make_accumulation_result(is_accumulating=False)
 
-        existing_signal = {
-            'ticker': ticker,
-            'detected_at': datetime.datetime.utcnow(),
-            'composite_score': 3.0,
-        }
-        # Use batch method: get_signaled_tickers_today returns {ticker: signal_dict}
+        with (
+            patch("rocketstocks.bot.cogs.alerts.evaluate_volume_accumulation", return_value=fake_result),
+            patch("rocketstocks.bot.cogs.alerts.send_alert", new_callable=AsyncMock) as mock_send,
+        ):
+            await cog._volume_accumulation_pipeline(
+                quotes={ticker: quote},
+                classifications={},
+                channels=[],
+                price_cache={ticker: price_df},
+            )
+            mock_send.assert_not_called()
+
+        cog.stock_data.market_signal_store.insert_signal.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_skips_already_signaled_ticker(self):
+        """Ticker already signaled today is skipped."""
+        cog = _make_cog(earnings_df=pd.DataFrame())
+        ticker = "GME"
+        price_df = self._make_price_df()
+        quote = {"quote": {"netPercentChange": 0.2, "totalVolume": 5_000_000}}
+        fake_result = _make_accumulation_result(is_accumulating=True)
+        # Already signaled today
         cog.stock_data.market_signal_store.get_signaled_tickers_today.return_value = {
-            ticker: existing_signal,
+            ticker: {'ticker': ticker, 'detected_at': datetime.datetime.utcnow()},
         }
 
         with (
-            patch("rocketstocks.bot.cogs.alerts.evaluate_price_alert", return_value=fake_trigger),
-            patch("rocketstocks.bot.cogs.alerts.compute_composite_score", return_value=fake_composite),
+            patch("rocketstocks.bot.cogs.alerts.evaluate_volume_accumulation", return_value=fake_result),
+            patch("rocketstocks.bot.cogs.alerts.send_alert", new_callable=AsyncMock) as mock_send,
         ):
-            await cog._market_signal_pipeline(
+            await cog._volume_accumulation_pipeline(
                 quotes={ticker: quote},
                 classifications={},
-                exclude=set(),
-                price_cache={},
+                channels=[],
+                price_cache={ticker: price_df},
             )
+            mock_send.assert_not_called()
 
         cog.stock_data.market_signal_store.insert_signal.assert_not_called()
-        cog.stock_data.market_signal_store.update_observation.assert_called_once()
 
     @pytest.mark.asyncio
-    async def test_excluded_tickers_skipped(self):
-        """Tickers in the exclude set are not processed."""
+    async def test_skips_ticker_with_empty_price_history(self):
+        """Tickers with no price history are skipped gracefully."""
         cog = _make_cog(earnings_df=pd.DataFrame())
         ticker = "GME"
-        quote = {"quote": {"netPercentChange": 15.0, "totalVolume": 5_000_000}}
+        quote = {"quote": {"netPercentChange": 0.2, "totalVolume": 5_000_000}}
 
-        with patch("rocketstocks.bot.cogs.alerts.evaluate_price_alert") as mock_eval:
-            await cog._market_signal_pipeline(
+        with patch("rocketstocks.bot.cogs.alerts.evaluate_volume_accumulation") as mock_eval:
+            await cog._volume_accumulation_pipeline(
                 quotes={ticker: quote},
                 classifications={},
-                exclude={ticker},
-                price_cache={},
+                channels=[],
+                price_cache={},  # no price history
             )
             mock_eval.assert_not_called()
 
-    @pytest.mark.asyncio
-    async def test_no_record_when_composite_fails(self):
-        """No signal recorded when composite_result.should_alert=False."""
-        cog = _make_cog(earnings_df=pd.DataFrame())
-        ticker = "GME"
-        quote = {"quote": {"netPercentChange": 1.0, "totalVolume": 100_000}}
-        fake_trigger = _make_trigger_result(should_alert=False)
-        fake_composite = _make_composite_result(should_alert=False)
-
-        with (
-            patch("rocketstocks.bot.cogs.alerts.evaluate_price_alert", return_value=fake_trigger),
-            patch("rocketstocks.bot.cogs.alerts.compute_composite_score", return_value=fake_composite),
-        ):
-            await cog._market_signal_pipeline(
-                quotes={ticker: quote},
-                classifications={},
-                exclude=set(),
-                price_cache={},
-            )
-
-        cog.stock_data.market_signal_store.insert_signal.assert_not_called()
-
 
 # ---------------------------------------------------------------------------
-# Market confirmation pipeline
+# Breakout pipeline
 # ---------------------------------------------------------------------------
 
-class TestMarketConfirmationPipeline:
+class TestBreakoutPipeline:
     @pytest.mark.asyncio
-    async def test_sends_mover_alert_when_confirmed(self):
-        """_market_confirmation_pipeline sends Market Mover when signal confirmed."""
+    async def test_sends_breakout_alert_when_confirmed(self):
+        """_breakout_pipeline sends BreakoutAlert when price confirms."""
         cog = _make_cog(earnings_df=pd.DataFrame())
         ticker = "GME"
-        quote = {"quote": {"netPercentChange": 5.0, "totalVolume": 3_000_000},
-                 "regular": {"regularMarketLastPrice": 25.0}}
+        quote = {"quote": {"netPercentChange": 3.5, "totalVolume": 4_000_000},
+                 "regular": {"regularMarketLastPrice": 55.0}}
         signal = {
             'ticker': ticker,
-            'detected_at': datetime.datetime.utcnow() - datetime.timedelta(minutes=10),
-            'pct_change': 4.0,
-            'vol_z': 2.0,
-            'composite_score': 3.0,
-            'dominant_signal': 'volume',
-            'rvol': 2.5,
+            'detected_at': datetime.datetime.utcnow() - datetime.timedelta(minutes=20),
+            'price_at_flag': 50.0,
+            'vol_z': 3.0,
+            'composite_score': 2.8,
+            'dominant_signal': 'volume_only',
+            'rvol': 3.5,
+            'alert_message_id': 111222333,
+            'signal_data': [],
         }
-        fake_trigger = _make_trigger_result(should_alert=True)
-        fake_composite = _make_composite_result(should_alert=True)
-        cog.stock_data.market_signal_store.get_signal_history.return_value = [
-            {'ts': 'a', 'pct_change': 4.0, 'vol_z': 2.0, 'price_z': 1.8, 'composite': 3.0},
-            {'ts': 'b', 'pct_change': 4.5, 'vol_z': 2.2, 'price_z': 1.9, 'composite': 3.1},
-        ]
+        fake_confirmation = _make_confirmation_result(should_confirm=True)
 
         with (
-            patch("rocketstocks.bot.cogs.alerts.evaluate_price_alert", return_value=fake_trigger),
-            patch("rocketstocks.bot.cogs.alerts.compute_composite_score", return_value=fake_composite),
-            patch("rocketstocks.bot.cogs.alerts.should_confirm_signal", return_value=(True, 'sustained')),
-            patch.object(cog, "build_market_mover", new_callable=AsyncMock) as mock_build,
+            patch("rocketstocks.bot.cogs.alerts.evaluate_confirmation", return_value=fake_confirmation),
+            patch.object(cog, "build_breakout", new_callable=AsyncMock) as mock_build,
             patch("rocketstocks.bot.cogs.alerts.send_alert", new_callable=AsyncMock) as mock_send,
         ):
             mock_build.return_value = MagicMock()
-            await cog._market_confirmation_pipeline(
+            await cog._breakout_pipeline(
                 active_signals=[signal],
                 quotes={ticker: quote},
                 channels=[AsyncMock()],
@@ -442,31 +444,31 @@ class TestMarketConfirmationPipeline:
 
     @pytest.mark.asyncio
     async def test_no_alert_when_not_confirmed(self):
-        """No alert sent when should_confirm_signal returns False."""
+        """No alert sent when evaluate_confirmation returns False."""
         cog = _make_cog(earnings_df=pd.DataFrame())
         ticker = "GME"
-        quote = {"quote": {"netPercentChange": 2.0, "totalVolume": 500_000}}
+        quote = {"quote": {"netPercentChange": 0.1, "totalVolume": 500_000}}
         signal = {
             'ticker': ticker,
-            'detected_at': datetime.datetime.utcnow(),
-            'pct_change': 2.0,
-            'vol_z': 1.5,
-            'composite_score': 2.6,
-            'dominant_signal': 'mixed',
-            'rvol': None,
+            'detected_at': datetime.datetime.utcnow() - datetime.timedelta(minutes=20),
+            'price_at_flag': 50.0,
+            'vol_z': 2.5,
+            'composite_score': 2.2,
+            'dominant_signal': 'volume_only',
+            'rvol': 2.0,
+            'alert_message_id': None,
+            'signal_data': [],
         }
-        fake_trigger = _make_trigger_result(should_alert=False)
-        cog.stock_data.market_signal_store.get_signal_history.return_value = []
+        fake_confirmation = _make_confirmation_result(should_confirm=False)
 
         with (
-            patch("rocketstocks.bot.cogs.alerts.evaluate_price_alert", return_value=fake_trigger),
-            patch("rocketstocks.bot.cogs.alerts.should_confirm_signal", return_value=(False, '')),
+            patch("rocketstocks.bot.cogs.alerts.evaluate_confirmation", return_value=fake_confirmation),
             patch("rocketstocks.bot.cogs.alerts.send_alert", new_callable=AsyncMock) as mock_send,
         ):
-            await cog._market_confirmation_pipeline(
+            await cog._breakout_pipeline(
                 active_signals=[signal],
                 quotes={ticker: quote},
-                channels=[AsyncMock()],
+                channels=[],
                 price_cache={},
             )
             mock_send.assert_not_called()
@@ -474,23 +476,50 @@ class TestMarketConfirmationPipeline:
         cog.stock_data.market_signal_store.mark_confirmed.assert_not_called()
 
     @pytest.mark.asyncio
+    async def test_skips_signal_within_10_min_delay(self):
+        """Signals detected less than 10 min ago are skipped."""
+        cog = _make_cog(earnings_df=pd.DataFrame())
+        ticker = "GME"
+        quote = {"quote": {"netPercentChange": 3.0, "totalVolume": 4_000_000}}
+        signal = {
+            'ticker': ticker,
+            'detected_at': datetime.datetime.utcnow() - datetime.timedelta(minutes=5),
+            'price_at_flag': 50.0,
+            'vol_z': 3.0,
+            'composite_score': 2.8,
+            'dominant_signal': 'volume_only',
+            'rvol': 3.5,
+            'alert_message_id': None,
+            'signal_data': [],
+        }
+
+        with patch("rocketstocks.bot.cogs.alerts.evaluate_confirmation") as mock_eval:
+            await cog._breakout_pipeline(
+                active_signals=[signal],
+                quotes={ticker: quote},
+                channels=[],
+                price_cache={},
+            )
+            mock_eval.assert_not_called()
+
+    @pytest.mark.asyncio
     async def test_skips_ticker_not_in_quotes(self):
         """Signals whose ticker is not in quotes are skipped."""
         cog = _make_cog(earnings_df=pd.DataFrame())
         signal = {
             'ticker': 'GME',
-            'detected_at': datetime.datetime.utcnow(),
-            'pct_change': 2.0,
+            'detected_at': datetime.datetime.utcnow() - datetime.timedelta(minutes=20),
+            'price_at_flag': 50.0,
         }
 
-        with patch("rocketstocks.bot.cogs.alerts.should_confirm_signal") as mock_conf:
-            await cog._market_confirmation_pipeline(
+        with patch("rocketstocks.bot.cogs.alerts.evaluate_confirmation") as mock_eval:
+            await cog._breakout_pipeline(
                 active_signals=[signal],
                 quotes={},
                 channels=[],
                 price_cache={},
             )
-            mock_conf.assert_not_called()
+            mock_eval.assert_not_called()
 
 
 # ---------------------------------------------------------------------------
@@ -721,22 +750,27 @@ class TestPerTickerIsolation:
         mock_send.assert_called_once()
 
     @pytest.mark.asyncio
-    async def test_market_signal_pipeline_isolation(self):
-        """A single failing ticker in _market_signal_pipeline does not abort the rest."""
+    async def test_volume_accumulation_pipeline_isolation(self):
+        """A single failing ticker in _volume_accumulation_pipeline does not abort the rest."""
         cog = _make_cog(earnings_df=pd.DataFrame())
+        n = 30
+        close = [100.0 + i * 0.1 for i in range(n)]
+        volume = [900_000 + i * 10_000 for i in range(n)]
+        price_df = pd.DataFrame({'open': close, 'high': close, 'low': close, 'close': close, 'volume': volume})
         quotes = {
-            "AAPL": {"quote": {"netPercentChange": 15.0, "totalVolume": 1_000_000}},
-            "MSFT": {"quote": {"netPercentChange": 15.0, "totalVolume": 1_000_000}},
+            "AAPL": {"quote": {"netPercentChange": 0.2, "totalVolume": 5_000_000}, "regular": {"regularMarketLastPrice": 52.0}},
+            "MSFT": {"quote": {"netPercentChange": 0.2, "totalVolume": 5_000_000}, "regular": {"regularMarketLastPrice": 52.0}},
         }
-        fake_trigger = _make_trigger_result(should_alert=False)
+        fake_result = _make_accumulation_result(is_accumulating=False)
 
-        # AAPL (first in dict) raises, MSFT succeeds — pipeline must not abort
+        # AAPL raises in evaluate_volume_accumulation, MSFT does not — pipeline must not abort
         with patch(
-            "rocketstocks.bot.cogs.alerts.evaluate_price_alert",
-            side_effect=[RuntimeError("eval failed"), fake_trigger],
+            "rocketstocks.bot.cogs.alerts.evaluate_volume_accumulation",
+            side_effect=[RuntimeError("eval failed"), fake_result],
         ) as mock_eval:
-            await cog._market_signal_pipeline(
-                quotes=quotes, classifications={}, exclude=set(), price_cache={},
+            await cog._volume_accumulation_pipeline(
+                quotes=quotes, classifications={}, channels=[AsyncMock()],
+                price_cache={"AAPL": price_df, "MSFT": price_df},
             )
 
         # Both tickers were attempted despite the first one failing
@@ -755,10 +789,10 @@ class TestProcessAlertsImpl:
         cog.mutils.market_open_today.return_value = False
         cog.mutils.get_market_period.return_value = "closed"
 
-        with patch.object(cog, "_market_signal_pipeline", new_callable=AsyncMock) as mock_market:
+        with patch.object(cog, "_volume_accumulation_pipeline", new_callable=AsyncMock) as mock_va:
             await cog._process_alerts_impl()
 
-        mock_market.assert_not_called()
+        mock_va.assert_not_called()
 
     @pytest.mark.asyncio
     async def test_skips_when_eod(self):
@@ -787,13 +821,14 @@ class TestProcessAlertsImpl:
 
         received = []
 
-        async def capture_classifications(quotes, classifications, exclude=None, **kwargs):
-            received.append(classifications)
+        async def capture_classifications(*args, **kwargs):
+            # _volume_accumulation_pipeline(quotes, classifications, channels, price_cache)
+            received.append(args[1])
 
         with (
             patch.object(cog, "_confirmation_pipeline", new_callable=AsyncMock),
-            patch.object(cog, "_market_signal_pipeline", side_effect=capture_classifications),
-            patch.object(cog, "_market_confirmation_pipeline", new_callable=AsyncMock),
+            patch.object(cog, "_volume_accumulation_pipeline", side_effect=capture_classifications),
+            patch.object(cog, "_breakout_pipeline", new_callable=AsyncMock),
             patch.object(cog, "_watchlist_pipeline", new_callable=AsyncMock),
             patch.object(cog, "_earnings_pipeline", new_callable=AsyncMock),
         ):
@@ -802,33 +837,35 @@ class TestProcessAlertsImpl:
         assert received[0] == expected_classifications
 
     @pytest.mark.asyncio
-    async def test_surge_tickers_excluded_from_market_signal_pipeline(self):
-        """Active surge tickers are excluded from _market_signal_pipeline."""
+    async def test_surge_tickers_included_in_volume_accumulation_pipeline(self):
+        """Surge tickers are NOT excluded from _volume_accumulation_pipeline — confluence is valuable."""
         cog = _make_cog(earnings_df=pd.DataFrame())
         cog.mutils.market_open_today.return_value = True
         cog.mutils.get_market_period.return_value = "intraday"
         cog.bot.iter_channels = AsyncMock(return_value=[(1, MagicMock())])
-        cog.stock_data.schwab.get_quotes = AsyncMock(return_value={})
+        cog.stock_data.schwab.get_quotes = AsyncMock(return_value={"GME": {}})
         cog.stock_data.surge_store.get_active_surges.return_value = [
             {"ticker": "GME", "flagged_at": datetime.datetime.utcnow(), "surge_types": "mention_surge",
              "price_at_flag": 20.0, "alert_message_id": None}
         ]
 
-        market_exclude = []
+        va_quotes = []
 
-        async def capture_market_exclude(quotes, classifications, exclude=None, **kwargs):
-            market_exclude.append(exclude or set())
+        async def capture_va_quotes(*args, **kwargs):
+            # _volume_accumulation_pipeline(quotes, classifications, channels, price_cache)
+            va_quotes.append(set(args[0].keys()))
 
         with (
             patch.object(cog, "_confirmation_pipeline", new_callable=AsyncMock),
-            patch.object(cog, "_market_signal_pipeline", side_effect=capture_market_exclude),
-            patch.object(cog, "_market_confirmation_pipeline", new_callable=AsyncMock),
+            patch.object(cog, "_volume_accumulation_pipeline", side_effect=capture_va_quotes),
+            patch.object(cog, "_breakout_pipeline", new_callable=AsyncMock),
             patch.object(cog, "_watchlist_pipeline", new_callable=AsyncMock),
             patch.object(cog, "_earnings_pipeline", new_callable=AsyncMock),
         ):
             await cog._process_alerts_impl()
 
-        assert 'GME' in market_exclude[0]
+        # GME should be present in the volume accumulation pipeline (not excluded)
+        assert 'GME' in va_quotes[0]
 
     @pytest.mark.asyncio
     async def test_all_pipelines_run_concurrently(self):
@@ -842,16 +879,16 @@ class TestProcessAlertsImpl:
 
         with (
             patch.object(cog, "_confirmation_pipeline", new_callable=AsyncMock) as mock_conf,
-            patch.object(cog, "_market_signal_pipeline", new_callable=AsyncMock) as mock_signal,
-            patch.object(cog, "_market_confirmation_pipeline", new_callable=AsyncMock) as mock_mover,
+            patch.object(cog, "_volume_accumulation_pipeline", new_callable=AsyncMock) as mock_va,
+            patch.object(cog, "_breakout_pipeline", new_callable=AsyncMock) as mock_breakout,
             patch.object(cog, "_watchlist_pipeline", new_callable=AsyncMock) as mock_watchlist,
             patch.object(cog, "_earnings_pipeline", new_callable=AsyncMock) as mock_earnings,
         ):
             await cog._process_alerts_impl()
 
         mock_conf.assert_called_once()
-        mock_signal.assert_called_once()
-        mock_mover.assert_called_once()
+        mock_va.assert_called_once()
+        mock_breakout.assert_called_once()
         mock_watchlist.assert_called_once()
         mock_earnings.assert_called_once()
 
@@ -867,8 +904,8 @@ class TestProcessAlertsImpl:
 
         with (
             patch.object(cog, "_confirmation_pipeline", new_callable=AsyncMock, side_effect=RuntimeError("boom")),
-            patch.object(cog, "_market_signal_pipeline", new_callable=AsyncMock),
-            patch.object(cog, "_market_confirmation_pipeline", new_callable=AsyncMock),
+            patch.object(cog, "_volume_accumulation_pipeline", new_callable=AsyncMock),
+            patch.object(cog, "_breakout_pipeline", new_callable=AsyncMock),
             patch.object(cog, "_watchlist_pipeline", new_callable=AsyncMock),
             patch.object(cog, "_earnings_pipeline", new_callable=AsyncMock),
         ):
@@ -887,8 +924,8 @@ class TestProcessAlertsImpl:
 
         with (
             patch.object(cog, "_confirmation_pipeline", new_callable=AsyncMock),
-            patch.object(cog, "_market_signal_pipeline", new_callable=AsyncMock),
-            patch.object(cog, "_market_confirmation_pipeline", new_callable=AsyncMock),
+            patch.object(cog, "_volume_accumulation_pipeline", new_callable=AsyncMock),
+            patch.object(cog, "_breakout_pipeline", new_callable=AsyncMock),
             patch.object(cog, "_watchlist_pipeline", new_callable=AsyncMock),
             patch.object(cog, "_earnings_pipeline", new_callable=AsyncMock),
         ):

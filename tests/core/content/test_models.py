@@ -8,7 +8,6 @@ from rocketstocks.core.content.models import (
     EarningsMoverData,
     EarningsSpotlightData,
     GainerScreenerData,
-    MarketAlertData,
     MomentumConfirmationData,
     NewsReportData,
     PoliticianReportData,
@@ -20,6 +19,8 @@ from rocketstocks.core.content.models import (
     VolumeScreenerData,
     WatchlistMoverData,
     WeeklyEarningsData,
+    VolumeAccumulationAlertData,
+    BreakoutAlertData,
 )
 
 
@@ -215,39 +216,41 @@ def test_momentum_confirmation_data_construction(minimal_ticker_info, minimal_qu
     assert data.daily_price_history.empty  # default
 
 
-def test_market_alert_data_construction(minimal_ticker_info, minimal_quote, empty_df):
-    from rocketstocks.core.analysis.alert_strategy import AlertTriggerResult
-    from rocketstocks.core.analysis.classification import StockClass
-    from rocketstocks.core.analysis.composite_score import CompositeScoreResult
-    trigger = AlertTriggerResult(
-        should_alert=True,
-        classification=StockClass.VOLATILE,
-        zscore=3.5,
-        percentile=98.5,
-        bb_position=None,
-        confluence_count=None,
-        confluence_total=None,
-        confluence_details=None,
-        volume_zscore=4.2,
-        signal_type='unusual_move',
-    )
-    composite = CompositeScoreResult(
-        composite_score=3.1,
-        should_alert=True,
-        volume_component=4.2,
-        price_component=3.5,
-        cross_signal_component=0.0,
-        classification_component=2.0,
-        trigger_result=trigger,
-        dominant_signal='volume',
-    )
-    data = MarketAlertData(
+def test_volume_accumulation_alert_data_construction(minimal_ticker_info, minimal_quote):
+    data = VolumeAccumulationAlertData(
         ticker='GME',
         ticker_info=minimal_ticker_info,
         quote=minimal_quote,
-        composite_result=composite,
+        vol_zscore=3.8,
+        price_zscore=0.4,
         rvol=4.5,
+        divergence_score=3.4,
+        signal_strength='volume_only',
     )
     assert data.ticker == 'GME'
-    assert data.rvol == pytest.approx(4.5)
-    assert data.composite_result is composite
+    assert data.vol_zscore == pytest.approx(3.8)
+    assert data.divergence_score == pytest.approx(3.4)
+    assert data.options_flow is None
+
+
+def test_breakout_alert_data_construction(minimal_ticker_info, minimal_quote):
+    import datetime
+    data = BreakoutAlertData(
+        ticker='GME',
+        ticker_info=minimal_ticker_info,
+        quote=minimal_quote,
+        signal_detected_at=datetime.datetime.utcnow() - datetime.timedelta(minutes=30),
+        signal_alert_message_id=123456789,
+        price_at_flag=170.0,
+        price_change_since_flag=4.8,
+        vol_z_at_signal=3.8,
+        current_vol_z=2.1,
+        price_zscore=1.9,
+        divergence_score=3.4,
+        rvol=4.5,
+        signal_strength='volume_only',
+    )
+    assert data.ticker == 'GME'
+    assert data.price_change_since_flag == pytest.approx(4.8)
+    assert data.signal_alert_message_id == 123456789
+    assert data.daily_price_history.empty  # default
