@@ -98,6 +98,18 @@ async def test_get_all_for_guild_returns_empty_dict_when_none(repo, mock_db):
 
 
 # ---------------------------------------------------------------------------
+# delete_role
+# ---------------------------------------------------------------------------
+
+async def test_delete_role_executes_delete_with_key(repo, mock_db):
+    await repo.delete_role(guild_id=777, role_key='market_mover_sustained')
+    mock_db.execute.assert_called_once()
+    sql, params = mock_db.execute.call_args[0]
+    assert 'DELETE FROM alert_roles' in sql
+    assert params == [777, 'market_mover_sustained']
+
+
+# ---------------------------------------------------------------------------
 # delete_guild
 # ---------------------------------------------------------------------------
 

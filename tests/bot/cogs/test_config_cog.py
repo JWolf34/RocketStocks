@@ -18,10 +18,14 @@ def _make_bot(guild_id=123456):
     bot.stock_data.bot_settings = MagicMock(name="BotSettingsRepository")
     bot.stock_data.bot_settings.get = AsyncMock(return_value=None)
     bot.stock_data.bot_settings.set = AsyncMock()
+    bot.stock_data.alert_roles = MagicMock(name="AlertRolesRepository")
+    bot.stock_data.alert_roles.get_all_for_guild = AsyncMock(return_value={})
+    bot.stock_data.alert_roles.delete_role = AsyncMock()
     bot.notification_config = MagicMock(name="NotificationConfig")
     guild = MagicMock(name="Guild")
     guild.id = guild_id
     guild.name = "Test Guild"
+    guild.get_role = MagicMock(return_value=None)
     bot.guilds = [guild]
     bot.get_guild.return_value = guild
     bot.get_channel.return_value = MagicMock(name="TextChannel", mention="#channel")
@@ -538,6 +542,157 @@ class TestBotSettingsView:
                 await view._on_save(interaction)
 
         mock_subs.assert_awaited_once_with(bot, guild)
+
+
+class TestMigrateStaleRoles:
+    def _make_bot_with_alert_roles(self, guild_roles: dict):
+        bot, guild = _make_bot()
+        bot.stock_data.alert_roles = MagicMock()
+        bot.stock_data.alert_roles.get_all_for_guild = AsyncMock(return_value=guild_roles)
+        bot.stock_data.alert_roles.delete_role = AsyncMock()
+        return bot, guild
+
+    @pytest.mark.asyncio
+    async def test_deletes_stale_discord_roles_and_db_entries(self):
+        from rocketstocks.bot.cogs.config import Config
+        stale_roles = {
+            'market_mover_sustained': 501,
+            'market_mover_volume_extreme': 502,
+        }
+        bot, guild = self._make_bot_with_alert_roles(stale_roles)
+
+        stale_discord_role = MagicMock(spec=discord.Role)
+        stale_discord_role.delete = AsyncMock()
+        guild.get_role = MagicMock(return_value=stale_discord_role)
+
+        cog = Config(bot=bot)
+        await cog._migrate_stale_roles()
+
+        assert stale_discord_role.delete.await_count == 2
+        assert bot.stock_data.alert_roles.delete_role.await_count == 2
+
+    @pytest.mark.asyncio
+    async def test_leaves_valid_roles_untouched(self):
+        from rocketstocks.bot.cogs.config import Config
+        mixed_roles = {
+            'earnings_mover': 100,
+            'market_mover_sustained': 501,
+        }
+        bot, guild = self._make_bot_with_alert_roles(mixed_roles)
+
+        discord_roles = {}
+        for role_id in mixed_roles.values():
+            r = MagicMock(spec=discord.Role)
+            r.delete = AsyncMock()
+            discord_roles[role_id] = r
+
+        guild.get_role = MagicMock(side_effect=lambda rid: discord_roles.get(rid))
+
+        cog = Config(bot=bot)
+        await cog._migrate_stale_roles()
+
+        # Only stale role deleted
+        assert bot.stock_data.alert_roles.delete_role.await_count == 1
+        call_args = bot.stock_data.alert_roles.delete_role.call_args
+        assert call_args[0][1] == 'market_mover_sustained'
+
+    @pytest.mark.asyncio
+    async def test_handles_forbidden_on_discord_delete(self):
+        from rocketstocks.bot.cogs.config import Config
+        stale_roles = {'market_mover_sustained': 501}
+        bot, guild = self._make_bot_with_alert_roles(stale_roles)
+
+        stale_discord_role = MagicMock(spec=discord.Role)
+        stale_discord_role.delete = AsyncMock(side_effect=discord.Forbidden(MagicMock(), "Missing Permissions"))
+        guild.get_role = MagicMock(return_value=stale_discord_role)
+
+        cog = Config(bot=bot)
+        # Should not raise; DB deletion still happens
+        await cog._migrate_stale_roles()
+
+        bot.stock_data.alert_roles.delete_role.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_no_ops_when_no_stale_roles(self):
+        from rocketstocks.bot.cogs.config import Config
+        valid_roles = {'earnings_mover': 100, 'breakout': 200}
+        bot, guild = self._make_bot_with_alert_roles(valid_roles)
+        guild.get_role = MagicMock(return_value=MagicMock(spec=discord.Role))
+
+        cog = Config(bot=bot)
+        await cog._migrate_stale_roles()
+
+        bot.stock_data.alert_roles.delete_role.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_skips_discord_delete_when_role_not_in_guild(self):
+        from rocketstocks.bot.cogs.config import Config
+        stale_roles = {'market_mover_sustained': 501}
+        bot, guild = self._make_bot_with_alert_roles(stale_roles)
+        guild.get_role = MagicMock(return_value=None)  # Role not found in guild
+
+        cog = Config(bot=bot)
+        await cog._migrate_stale_roles()
+
+        # DB deletion still happens even if Discord role is gone
+        bot.stock_data.alert_roles.delete_role.assert_awaited_once()
+
+
+class TestOnReadyMigrationAndSetup:
+    @pytest.mark.asyncio
+    async def test_on_ready_calls_migrate_stale_roles(self):
+        from rocketstocks.bot.cogs.config import Config
+        bot, guild = _make_bot()
+        bot.stock_data.alert_roles = MagicMock()
+        bot.stock_data.alert_roles.get_all_for_guild = AsyncMock(return_value={})
+        bot.stock_data.alert_roles.delete_role = AsyncMock()
+        bot.stock_data.channel_config.get_unconfigured_guilds = AsyncMock(return_value=[])
+
+        cog = Config(bot=bot)
+        with patch.object(cog, '_migrate_stale_roles', new_callable=AsyncMock) as mock_migrate:
+            bot.stock_data.channel_config.get_all_for_guild = AsyncMock(return_value={})
+            await cog.on_ready()
+
+        mock_migrate.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_on_ready_calls_setup_for_fully_configured_guilds(self):
+        from rocketstocks.bot.cogs.config import Config
+        bot, guild = _make_bot()
+        bot.stock_data.alert_roles = MagicMock()
+        bot.stock_data.alert_roles.get_all_for_guild = AsyncMock(return_value={})
+        bot.stock_data.alert_roles.delete_role = AsyncMock()
+        bot.stock_data.channel_config.get_unconfigured_guilds = AsyncMock(return_value=[])
+
+        fully_configured = {ct: 100 + i for i, ct in enumerate(ALL_CONFIG_TYPES)}
+        bot.stock_data.channel_config.get_all_for_guild = AsyncMock(return_value=fully_configured)
+
+        cog = Config(bot=bot)
+        with patch.object(cog, '_migrate_stale_roles', new_callable=AsyncMock):
+            with patch('rocketstocks.bot.cogs.config.setup_alert_subscriptions', new_callable=AsyncMock) as mock_setup:
+                await cog.on_ready()
+
+        mock_setup.assert_awaited_once_with(bot, guild)
+
+    @pytest.mark.asyncio
+    async def test_on_ready_skips_setup_for_unconfigured_guilds(self):
+        from rocketstocks.bot.cogs.config import Config
+        bot, guild = _make_bot()
+        bot.stock_data.alert_roles = MagicMock()
+        bot.stock_data.alert_roles.get_all_for_guild = AsyncMock(return_value={})
+        bot.stock_data.alert_roles.delete_role = AsyncMock()
+        bot.stock_data.channel_config.get_unconfigured_guilds = AsyncMock(return_value=[])
+
+        # Only reports configured — not all types
+        partial_config = {REPORTS: 100}
+        bot.stock_data.channel_config.get_all_for_guild = AsyncMock(return_value=partial_config)
+
+        cog = Config(bot=bot)
+        with patch.object(cog, '_migrate_stale_roles', new_callable=AsyncMock):
+            with patch('rocketstocks.bot.cogs.config.setup_alert_subscriptions', new_callable=AsyncMock) as mock_setup:
+                await cog.on_ready()
+
+        mock_setup.assert_not_awaited()
 
 
 class TestSetupAlertSubscriptions:

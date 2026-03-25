@@ -22,8 +22,8 @@ def _make_guild_roles(keys: list[str]) -> dict[str, int]:
 # ALERT_ROLE_DEFS
 # ---------------------------------------------------------------------------
 
-def test_alert_role_defs_has_nine_entries():
-    assert len(ALERT_ROLE_DEFS) == 9
+def test_alert_role_defs_has_seven_entries():
+    assert len(ALERT_ROLE_DEFS) == 7
 
 
 def test_alert_role_defs_includes_all_alerts():
@@ -31,10 +31,20 @@ def test_alert_role_defs_includes_all_alerts():
     assert 'all_alerts' in keys
 
 
-def test_alert_role_defs_includes_four_market_mover_keys():
+def test_alert_role_defs_includes_volume_accumulation():
+    keys = [k for k, _ in ALERT_ROLE_DEFS]
+    assert 'volume_accumulation' in keys
+
+
+def test_alert_role_defs_includes_breakout():
+    keys = [k for k, _ in ALERT_ROLE_DEFS]
+    assert 'breakout' in keys
+
+
+def test_alert_role_defs_has_no_market_mover_keys():
     keys = [k for k, _ in ALERT_ROLE_DEFS]
     market_keys = [k for k in keys if k.startswith('market_mover_')]
-    assert len(market_keys) == 4
+    assert market_keys == []
 
 
 # ---------------------------------------------------------------------------
