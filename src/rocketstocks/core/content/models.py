@@ -175,6 +175,7 @@ class WeeklyEarningsData:
 class PopularitySurgeData(TickerData):
     surge_result: object  # PopularitySurgeResult (object to avoid circular import)
     popularity_history: pd.DataFrame = field(default_factory=pd.DataFrame)
+    confidence_pct: float | None = None  # % of past surges that confirmed (last 30d)
 
 
 @dataclass
@@ -185,7 +186,8 @@ class MomentumConfirmationData(TickerData):
     price_change_since_flag: float | None = None
     surge_alert_message_id: int | None = None
     daily_price_history: pd.DataFrame = field(default_factory=pd.DataFrame)
-    trigger_result: object | None = None  # AlertTriggerResult | None
+    trigger_result: object | None = None  # ConfirmationResult | AlertTriggerResult | None
+    confidence_pct: float | None = None  # % of past surges that confirmed (last 30d)
 
 
 @dataclass
@@ -235,6 +237,24 @@ class WatchlistMoverData(TickerData):
     watchlist: str
     daily_price_history: pd.DataFrame = field(default_factory=pd.DataFrame)
     trigger_result: object | None = None   # AlertTriggerResult | None
+
+
+@dataclass
+class AlertStatsData:
+    """Data for /alert stats — predictive accuracy dashboard."""
+    period_label: str                # e.g. "Last 7 Days"
+    surge_confidence: dict           # from compute_surge_confidence()
+    signal_confidence: dict          # from compute_signal_confidence()
+    price_outcomes: dict             # from compute_price_outcome()
+    alert_counts: dict               # {alert_type: int}
+
+
+@dataclass
+class AlertHistoryData:
+    """Data for /alert history — recent alerts for a ticker with outcomes."""
+    ticker: str
+    alerts: list                     # list of alert dicts (date, alert_type, alert_data, outcome)
+    count: int
 
 
 # ---------------------------------------------------------------------------
