@@ -403,34 +403,54 @@ class Alerts(commands.Cog):
         channels: list,
         price_cache: dict,
     ):
-        """Confirm popularity surges when price/volume follows."""
+        """Confirm popularity surges when price moves significantly since the surge was flagged."""
         logger.info("Processing confirmation pipeline")
+        utcnow = datetime.datetime.utcnow()
+        # Fetch surge confidence for the embed (last 30 days)
+        surge_confidence_pct = await self._fetch_surge_confidence_pct()
+
         for surge in active_surges:
             ticker = surge['ticker']
             if ticker not in quotes:
                 continue
             try:
-                quote = quotes[ticker]
-                pct_change = quote['quote']['netPercentChange']
-                classification = classifications.get(ticker, 'standard')
-                daily_price_history = price_cache.get(ticker, pd.DataFrame())
-                current_volume = quote['quote'].get('totalVolume')
+                # 15-minute minimum delay — ensures confirmation measures subsequent
+                # price action, not the move that triggered the surge itself.
+                flagged_at = surge.get('flagged_at')
+                if flagged_at is not None:
+                    elapsed = (utcnow - flagged_at).total_seconds()
+                    if elapsed < 900:  # 15 minutes
+                        logger.debug(
+                            f"[_confirmation_pipeline] '{ticker}' skipped — "
+                            f"only {elapsed:.0f}s since surge flagged (min 900s)"
+                        )
+                        continue
 
-                trigger_result = evaluate_price_alert(
-                    classification=classification,
-                    pct_change=pct_change,
-                    daily_prices=daily_price_history,
-                    current_volume=current_volume,
+                quote = quotes[ticker]
+                market = MarketUtils()
+                current_price = market.get_current_price(quote)
+                price_at_flag = surge.get('price_at_flag')
+
+                # Compute price change since flag
+                price_change_since_flag = None
+                if price_at_flag and price_at_flag != 0 and current_price:
+                    price_change_since_flag = (
+                        (current_price - price_at_flag) / price_at_flag * 100
+                    )
+
+                # Use evaluate_confirmation() with ticker's own return distribution
+                stats = await self.stock_data.ticker_stats.get_stats(ticker)
+                mean_return = (stats or {}).get('mean_return_20d', 0.0) or 0.0
+                std_return = (stats or {}).get('std_return_20d', 1.0) or 1.0
+
+                trigger_result = evaluate_confirmation(
+                    price_at_flag=price_at_flag or 0.0,
+                    current_price=current_price,
+                    mean_return=mean_return,
+                    std_return=std_return,
                 )
 
-                if trigger_result.should_alert:
-                    price_at_flag = surge.get('price_at_flag')
-                    market = MarketUtils()
-                    current_price = market.get_current_price(quote)
-                    price_change_since_flag = None
-                    if price_at_flag and price_at_flag != 0:
-                        price_change_since_flag = ((current_price - price_at_flag) / price_at_flag) * 100
-
+                if trigger_result.should_confirm:
                     surge_types = [
                         st.strip()
                         for st in (surge.get('surge_types') or '').split(',')
@@ -440,13 +460,14 @@ class Alerts(commands.Cog):
                     alert = await self.build_momentum_confirmation(
                         ticker=ticker,
                         quote=quote,
-                        surge_flagged_at=surge.get('flagged_at'),
+                        surge_flagged_at=flagged_at,
                         surge_types=surge_types,
                         price_at_flag=price_at_flag,
                         price_change_since_flag=price_change_since_flag,
                         surge_alert_message_id=surge.get('alert_message_id'),
-                        daily_price_history=daily_price_history,
+                        daily_price_history=price_cache.get(ticker, pd.DataFrame()),
                         trigger_result=trigger_result,
+                        confidence_pct=surge_confidence_pct,
                     )
                     view = PopularitySurgeAlertButtons(ticker=ticker, doc_url=MOMENTUM_CONFIRMATION_DOC_URL)
                     for channel in channels:
