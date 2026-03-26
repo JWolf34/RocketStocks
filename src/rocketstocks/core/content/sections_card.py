@@ -604,6 +604,8 @@ _ALERT_TYPE_LABELS = {
     'MARKET_ALERT': '📈 Market Alert',
     'POPULARITY_SURGE': '🔥 Popularity Surge',
     'MOMENTUM_CONFIRMATION': '⚡ Momentum Confirmation',
+    'VOLUME_ACCUMULATION': '📊 Volume Accumulation',
+    'BREAKOUT': '🚀 Breakout',
 }
 
 
