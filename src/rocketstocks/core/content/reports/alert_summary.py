@@ -17,10 +17,13 @@ _ALERT_TYPE_LABELS = {
     'EARNINGS_ALERT':         'Earnings Alerts',
     'POPULARITY_SURGE':       'Popularity Surges',
     'MOMENTUM_CONFIRMATION':  'Momentum Confirmations',
+    'VOLUME_ACCUMULATION':    'Volume Accumulations',
+    'BREAKOUT':               'Breakouts',
 }
 _ALERT_TYPE_ORDER = [
     'MARKET_MOVER', 'MARKET_ALERT', 'WATCHLIST_ALERT',
     'EARNINGS_ALERT', 'POPULARITY_SURGE', 'MOMENTUM_CONFIRMATION',
+    'VOLUME_ACCUMULATION', 'BREAKOUT',
 ]
 
 EMBED_CHAR_BUDGET = 5500
@@ -64,6 +67,25 @@ def _format_line(ticker: str, alert_data: dict, alert_type: str) -> str:
         return '  '.join(parts)
 
     if alert_type == 'MOMENTUM_CONFIRMATION':
+        pct = alert_data.get('price_change_since_flag')
+        pct_str = f"{pct:+.1f}% since flag" if pct is not None else 'n/a'
+        return f"• {ticker}  {pct_str}"
+
+    if alert_type == 'VOLUME_ACCUMULATION':
+        vol_z = alert_data.get('vol_zscore')
+        pct = alert_data.get('pct_change')
+        rvol = alert_data.get('rvol')
+        pct_str = f"{pct:+.1f}%" if pct is not None else 'n/a'
+        z_str = f"vol z: {vol_z:.1f}" if vol_z is not None else ''
+        rvol_str = f"rvol: {rvol:.1f}x" if rvol is not None else ''
+        parts = [f"• {ticker}", pct_str]
+        if z_str:
+            parts.append(z_str)
+        if rvol_str:
+            parts.append(rvol_str)
+        return '  '.join(parts)
+
+    if alert_type == 'BREAKOUT':
         pct = alert_data.get('price_change_since_flag')
         pct_str = f"{pct:+.1f}% since flag" if pct is not None else 'n/a'
         return f"• {ticker}  {pct_str}"
