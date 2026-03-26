@@ -30,20 +30,35 @@ async def send_alert(
     embed = spec_to_embed(alert.build())
 
     # For MomentumConfirmationAlert: link back to the original surge alert with duration
-    if (hasattr(alert, 'data')
-            and hasattr(alert.data, 'surge_alert_message_id')
-            and alert.data.surge_alert_message_id):
+    if (getattr(alert, 'alert_type', None) == 'MOMENTUM_CONFIRMATION'
+            and getattr(getattr(alert, 'data', None), 'surge_alert_message_id', None)):
         surge_link = (
             f"https://discord.com/channels/{channel.guild.id}/"
             f"{channel.id}/{alert.data.surge_alert_message_id}"
         )
-        # Include duration since surge was flagged if available
         duration_text = ""
-        if hasattr(alert.data, 'surge_flagged_at') and alert.data.surge_flagged_at:
-            duration = format_duration_since(alert.data.surge_flagged_at)
+        surge_flagged_at = getattr(alert.data, 'surge_flagged_at', None)
+        if surge_flagged_at:
+            duration = format_duration_since(surge_flagged_at)
             if duration:
                 duration_text = f" ({duration})"
         embed.description = (embed.description or "") + f"\n\n[📡 View original surge alert{duration_text}]({surge_link})"
+
+    # For BreakoutAlert: link back to the original volume accumulation alert
+    if (getattr(alert, 'alert_type', None) == 'BREAKOUT'
+            and getattr(getattr(alert, 'data', None), 'signal_alert_message_id', None)
+            and hasattr(channel, 'guild') and channel.guild is not None):
+        signal_link = (
+            f"https://discord.com/channels/{channel.guild.id}/"
+            f"{channel.id}/{alert.data.signal_alert_message_id}"
+        )
+        duration_text = ""
+        signal_detected_at = getattr(alert.data, 'signal_detected_at', None)
+        if signal_detected_at:
+            duration = format_duration_since(signal_detected_at)
+            if duration:
+                duration_text = f" ({duration})"
+        embed.description = (embed.description or "") + f"\n\n[📊 View original volume alert{duration_text}]({signal_link})"
 
     today = datetime.datetime.now(tz=timezone()).date()
     message_id = await dstate.get_alert_message_id(
