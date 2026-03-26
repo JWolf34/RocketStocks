@@ -16,6 +16,8 @@ _ALERT_LABELS = {
     'WATCHLIST_ALERT':       '👁 Watchlist Mover',
     'EARNINGS_ALERT':        '📊 Earnings Mover',
     'MARKET_MOVER':          '📈 Market Mover',
+    'VOLUME_ACCUMULATION':   '📊 Volume Accumulation',
+    'BREAKOUT':              '🚀 Breakout',
 }
 
 
