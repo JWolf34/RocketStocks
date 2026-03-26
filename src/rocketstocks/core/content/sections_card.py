@@ -1106,6 +1106,8 @@ def analyst_card(price_targets: dict | None, recommendations: pd.DataFrame, upgr
     else:
         lines.append("Price targets unavailable")
 
+    lines.append("")
+
     # Recommendations summary — all 5 categories, current month (period "0m" = iloc[0])
     if recommendations is not None and not recommendations.empty:
         col_map = {c.lower(): c for c in recommendations.columns}
@@ -1152,6 +1154,7 @@ def analyst_card(price_targets: dict | None, recommendations: pd.DataFrame, upgr
     # Recent upgrades/downgrades (top 5)
     _ACTION_LABELS = {'up': 'Upgraded', 'down': 'Downgraded', 'main': 'Maintained', 'init': 'Initiated'}
     if upgrades_downgrades is not None and not upgrades_downgrades.empty:
+        lines.append("")
         lines.append("**Recent Actions**")
         df = upgrades_downgrades.copy()
         try:
@@ -1313,11 +1316,15 @@ def earnings_forecast_card(quarterly_df: pd.DataFrame, yearly_df: pd.DataFrame) 
                     rev_str = f" · ↑{up_int} ↓{down_int} revisions"
             except (ValueError, TypeError):
                 pass
-            lines.append(f"**{period}**: EPS Est **{eps_est}**{range_str}{est_str}{rev_str}")
+            lines.append(f"**{period}**: EPS Est **{eps_est}**")
+            meta = (range_str + est_str + rev_str).lstrip(' ·')
+            if meta:
+                lines.append(meta)
     else:
         lines.append("No quarterly forecast data available")
 
     if yearly_df is not None and not yearly_df.empty:
+        lines.append("")
         lines.append("**Annual EPS Estimates**")
         for _, row in yearly_df.head(3).iterrows():
             period = row.get('fiscalYear', row.get('fiscalEnd', row.get('year', row.get('Fiscal Year', ''))))
@@ -1327,7 +1334,10 @@ def earnings_forecast_card(quarterly_df: pd.DataFrame, yearly_df: pd.DataFrame) 
             high = row.get('highEPSForecast', row.get('highEPS', row.get('highEst', row.get('High', ''))))
             range_str = f" · Range **{low}**–**{high}**" if low != '' and high != '' else ''
             est_str = f" · {num_analysts} analysts" if num_analysts != '' else ''
-            lines.append(f"**{period}**: EPS Est **{eps_est}**{range_str}{est_str}")
+            lines.append(f"**{period}**: EPS Est **{eps_est}**")
+            meta = (range_str + est_str).lstrip(' ·')
+            if meta:
+                lines.append(meta)
 
     lines.append("")
     return "\n".join(lines)
