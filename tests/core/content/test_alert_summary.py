@@ -100,6 +100,31 @@ class TestFormatLine:
         assert "UNKNOWN" in line
         assert "n/a" in line
 
+    def test_volume_accumulation(self):
+        data = {'pct_change': 0.3, 'vol_zscore': 3.1, 'rvol': 4.2}
+        line = _format_line("GME", data, "VOLUME_ACCUMULATION")
+        assert "GME" in line
+        assert "+0.3%" in line
+        assert "vol z: 3.1" in line
+        assert "rvol: 4.2x" in line
+
+    def test_volume_accumulation_missing_fields(self):
+        line = _format_line("GME", {}, "VOLUME_ACCUMULATION")
+        assert "GME" in line
+        assert "n/a" in line
+
+    def test_breakout(self):
+        data = {'price_change_since_flag': 3.5}
+        line = _format_line("TSLA", data, "BREAKOUT")
+        assert "TSLA" in line
+        assert "+3.5%" in line
+        assert "since flag" in line
+
+    def test_breakout_missing_fields(self):
+        line = _format_line("TSLA", {}, "BREAKOUT")
+        assert "TSLA" in line
+        assert "n/a" in line
+
     def test_unknown_alert_type_fallback(self):
         line = _format_line("XYZ", {}, "SOME_FUTURE_TYPE")
         assert "XYZ" in line
@@ -152,9 +177,23 @@ class TestAlertSummaryBuild:
             _make_alert("T4", "EARNINGS_ALERT", {'pct_change': -2.0, 'zscore': -1.0}),
             _make_alert("T5", "POPULARITY_SURGE", {'rank_change': 50, 'mention_ratio': 3.0}),
             _make_alert("T6", "MOMENTUM_CONFIRMATION", {'price_change_since_flag': 1.5}),
+            _make_alert("T7", "VOLUME_ACCUMULATION", {'pct_change': 0.2, 'vol_zscore': 3.0, 'rvol': 4.0}),
+            _make_alert("T8", "BREAKOUT", {'price_change_since_flag': 2.5}),
         ]
         spec = _make_summary(alerts).build()
-        assert len(spec.fields) == 6
+        assert len(spec.fields) == 8
+
+    def test_volume_accumulation_appears_in_summary(self):
+        alerts = [_make_alert("GME", "VOLUME_ACCUMULATION", {'pct_change': 0.3, 'vol_zscore': 3.1, 'rvol': 4.2})]
+        spec = _make_summary(alerts).build()
+        field_names = [f.name for f in spec.fields]
+        assert any("Volume Accumulations" in n for n in field_names)
+
+    def test_breakout_appears_in_summary(self):
+        alerts = [_make_alert("TSLA", "BREAKOUT", {'price_change_since_flag': 3.5})]
+        spec = _make_summary(alerts).build()
+        field_names = [f.name for f in spec.fields]
+        assert any("Breakouts" in n for n in field_names)
 
     def test_embed_budget_truncation(self):
         # Create alerts distributed across all 6 types so each type produces a

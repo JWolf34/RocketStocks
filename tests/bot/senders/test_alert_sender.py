@@ -215,3 +215,70 @@ class TestSendAlertMomentumConfirmation:
         sent_kwargs = channel.send.call_args.kwargs
         sent_embed = sent_kwargs["embed"]
         assert "[📡 View original surge alert" not in sent_embed.description
+
+
+class TestSendAlertBreakout:
+    async def test_signal_link_without_duration_when_no_detected_at(self):
+        """Breakout alert adds volume signal link without duration if signal_detected_at is None."""
+        from rocketstocks.bot.senders.alert_sender import send_alert
+        channel, _ = _make_channel()
+
+        alert = _make_alert(ticker="GME", alert_type="BREAKOUT")
+        alert.data = MagicMock()
+        alert.data.signal_alert_message_id = 987654321
+        alert.data.signal_detected_at = None
+
+        dstate = _make_dstate(message_id=None)
+        channel.guild.id = 9999
+        channel.id = 8888
+
+        with _patch_date_utils():
+            await send_alert(alert, channel, dstate)
+
+        sent_embed = channel.send.call_args.kwargs["embed"]
+        assert "[📊 View original volume alert]" in sent_embed.description
+        assert "ago)" not in sent_embed.description
+
+    async def test_signal_link_with_duration_when_detected_at_provided(self):
+        """Breakout alert adds volume signal link with duration when signal_detected_at is set."""
+        from rocketstocks.bot.senders.alert_sender import send_alert
+        channel, _ = _make_channel()
+
+        alert = _make_alert(ticker="GME", alert_type="BREAKOUT")
+        alert.data = MagicMock()
+        alert.data.signal_alert_message_id = 987654321
+        alert.data.signal_detected_at = datetime.datetime.now(tz=datetime.timezone.utc) - datetime.timedelta(hours=1)
+
+        dstate = _make_dstate(message_id=None)
+        channel.guild.id = 9999
+        channel.id = 8888
+
+        def mock_format_duration(dt):
+            return "1 hour ago"
+
+        with _patch_date_utils():
+            with patch("rocketstocks.bot.senders.alert_sender.format_duration_since", side_effect=mock_format_duration):
+                await send_alert(alert, channel, dstate)
+
+        sent_embed = channel.send.call_args.kwargs["embed"]
+        assert "[📊 View original volume alert (1 hour ago)]" in sent_embed.description
+
+    async def test_signal_link_not_added_when_message_id_is_none(self):
+        """No volume signal link added if signal_alert_message_id is None."""
+        from rocketstocks.bot.senders.alert_sender import send_alert
+        channel, _ = _make_channel()
+
+        alert = _make_alert(ticker="GME", alert_type="BREAKOUT")
+        alert.data = MagicMock()
+        alert.data.signal_alert_message_id = None
+        alert.data.signal_detected_at = datetime.datetime.now(tz=datetime.timezone.utc)
+
+        dstate = _make_dstate(message_id=None)
+        channel.guild.id = 9999
+        channel.id = 8888
+
+        with _patch_date_utils():
+            await send_alert(alert, channel, dstate)
+
+        sent_embed = channel.send.call_args.kwargs["embed"]
+        assert "[📊 View original volume alert" not in sent_embed.description
