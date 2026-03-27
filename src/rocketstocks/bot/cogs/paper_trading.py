@@ -20,16 +20,23 @@ from rocketstocks.core.analysis.paper_trading import (
     calculate_total_gain_loss,
 )
 from rocketstocks.core.content.models import (
+    LeaderboardEntry,
+    LeaderboardViewData,
+    PerformanceViewData,
     PortfolioPosition,
     PortfolioViewData,
+    TradeAnnouncementData,
     TradeConfirmationData,
     TradeHistoryData,
     TradeQuoteData,
 )
+from rocketstocks.core.content.reports.leaderboard import Leaderboard
+from rocketstocks.core.content.reports.trade_announcement import TradeAnnouncement
 from rocketstocks.core.content.reports.trade_quote import TradeQuote
 from rocketstocks.core.content.reports.trade_confirmation import TradeConfirmation
 from rocketstocks.core.content.reports.portfolio_view import PortfolioView
 from rocketstocks.core.content.reports.trade_history import TradeHistory
+from rocketstocks.core.content.reports.performance_view import PerformanceView
 from rocketstocks.bot.senders.embed_utils import spec_to_embed
 from rocketstocks.bot.views.paper_trading_views import ConfirmResetView, TradeConfirmView
 
@@ -39,6 +46,7 @@ _STARTING_CASH = 10000.0
 _MAX_SHARES_PER_ORDER = 10_000
 _SNAPSHOT_HOUR_UTC = 21
 _SNAPSHOT_MINUTE_UTC = 5
+_MAX_PERFORMANCE_DAYS = 30
 
 
 class PaperTrading(commands.Cog):
@@ -222,6 +230,29 @@ class PaperTrading(commands.Cog):
         )
 
     # -------------------------------------------------------------------------
+    # Trade announcement helper
+    # -------------------------------------------------------------------------
+
+    async def _post_trade_announcement(
+        self, guild_id: int, announce_data: TradeAnnouncementData
+    ) -> None:
+        """Post a compact trade embed to the configured TRADE channel (best-effort)."""
+        channel_id = await self.stock_data.channel_config.get_channel_id(guild_id, TRADE)
+        if not channel_id:
+            return
+        channel = self.bot.get_channel(channel_id)
+        if not channel:
+            return
+        embed = spec_to_embed(TradeAnnouncement(announce_data).build())
+        try:
+            await channel.send(embed=embed)
+        except Exception:
+            logger.warning(
+                f"Failed to post trade announcement to channel {channel_id} guild={guild_id}",
+                exc_info=True,
+            )
+
+    # -------------------------------------------------------------------------
     # Ticker autocomplete
     # -------------------------------------------------------------------------
 
@@ -344,6 +375,20 @@ class PaperTrading(commands.Cog):
         confirm_embed = spec_to_embed(TradeConfirmation(confirm_data).build())
         await interaction.edit_original_response(embed=confirm_embed, view=None)
 
+        await self._post_trade_announcement(
+            interaction.guild_id,
+            TradeAnnouncementData(
+                user_name=interaction.user.display_name,
+                ticker=ticker,
+                ticker_name=ticker_name,
+                side="BUY",
+                shares=shares,
+                price=price,
+                total=total,
+                was_queued=was_queued,
+            ),
+        )
+
     # -------------------------------------------------------------------------
     # /trade sell
     # -------------------------------------------------------------------------
@@ -441,6 +486,20 @@ class PaperTrading(commands.Cog):
         )
         confirm_embed = spec_to_embed(TradeConfirmation(confirm_data).build())
         await interaction.edit_original_response(embed=confirm_embed, view=None)
+
+        await self._post_trade_announcement(
+            interaction.guild_id,
+            TradeAnnouncementData(
+                user_name=interaction.user.display_name,
+                ticker=ticker,
+                ticker_name=ticker_name,
+                side="SELL",
+                shares=shares,
+                price=price,
+                total=total,
+                was_queued=was_queued,
+            ),
+        )
 
     # -------------------------------------------------------------------------
     # /trade portfolio
@@ -576,6 +635,103 @@ class PaperTrading(commands.Cog):
         await interaction.edit_original_response(
             content="Portfolio reset! You now have **$10,000** to invest.", view=None
         )
+
+
+    # -------------------------------------------------------------------------
+    # /trade leaderboard
+    # -------------------------------------------------------------------------
+
+    @trade_group.command(name="leaderboard", description="View the paper trading leaderboard for this server")
+    async def trade_leaderboard(self, interaction: discord.Interaction):
+        await interaction.response.defer(ephemeral=True)
+
+        portfolios = await self.stock_data.paper_trading.get_all_portfolios(interaction.guild_id)
+        if not portfolios:
+            await interaction.followup.send("No portfolios yet. Use `/trade buy` to get started!", ephemeral=True)
+            return
+
+        entries = []
+        for portfolio in portfolios:
+            user_id = portfolio['user_id']
+            positions = await self.stock_data.paper_trading.get_positions(interaction.guild_id, user_id)
+
+            positions_value = 0.0
+            for pos in positions:
+                price = await self._get_price(pos['ticker'])
+                if price <= 0:
+                    price = pos['avg_cost_basis']
+                positions_value += calculate_position_value(pos['shares'], price)
+
+            total_value = calculate_portfolio_total(portfolio['cash'], positions_value)
+            total_gain_loss, total_gain_loss_pct = calculate_total_gain_loss(total_value)
+
+            member = interaction.guild.get_member(user_id)
+            user_name = member.display_name if member else f"User #{user_id}"
+
+            entries.append(LeaderboardEntry(
+                user_id=user_id,
+                user_name=user_name,
+                total_value=total_value,
+                total_gain_loss=total_gain_loss,
+                total_gain_loss_pct=total_gain_loss_pct,
+                position_count=len(positions),
+            ))
+
+        entries.sort(key=lambda e: e.total_value, reverse=True)
+        guild_name = interaction.guild.name if interaction.guild else "This Server"
+        view_data = LeaderboardViewData(guild_name=guild_name, entries=entries)
+        embed = spec_to_embed(Leaderboard(view_data).build())
+        await interaction.followup.send(embed=embed, ephemeral=True)
+
+    # -------------------------------------------------------------------------
+    # /trade performance
+    # -------------------------------------------------------------------------
+
+    @trade_group.command(name="performance", description="View your portfolio performance over time")
+    @app_commands.describe(
+        days="Number of days to look back (1–30, default 7)",
+        user="User to view (defaults to yourself)",
+    )
+    async def trade_performance(
+        self,
+        interaction: discord.Interaction,
+        days: int = 7,
+        user: discord.Member | None = None,
+    ):
+        await interaction.response.defer(ephemeral=True)
+
+        days = max(1, min(days, _MAX_PERFORMANCE_DAYS))
+        target = user or interaction.user
+
+        portfolio = await self._ensure_portfolio(interaction.guild_id, target.id)
+        positions = await self.stock_data.paper_trading.get_positions(interaction.guild_id, target.id)
+
+        positions_value = 0.0
+        for pos in positions:
+            price = await self._get_price(pos['ticker'])
+            if price <= 0:
+                price = pos['avg_cost_basis']
+            positions_value += calculate_position_value(pos['shares'], price)
+        current_value = calculate_portfolio_total(portfolio['cash'], positions_value)
+        total_gain_loss, total_gain_loss_pct = calculate_total_gain_loss(current_value)
+
+        import datetime as _dt
+        end_date = _dt.date.today()
+        start_date = end_date - _dt.timedelta(days=days - 1)
+        snapshots = await self.stock_data.paper_trading.get_snapshots(
+            interaction.guild_id, target.id, start_date, end_date
+        )
+
+        perf_data = PerformanceViewData(
+            user_name=target.display_name,
+            snapshots=snapshots,
+            days=days,
+            current_value=current_value,
+            total_gain_loss=total_gain_loss,
+            total_gain_loss_pct=total_gain_loss_pct,
+        )
+        embed = spec_to_embed(PerformanceView(perf_data).build())
+        await interaction.followup.send(embed=embed, ephemeral=True)
 
 
 async def setup(bot: commands.Bot):
