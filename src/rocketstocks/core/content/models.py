@@ -445,3 +445,63 @@ class OptionsReportData(TickerData):
     iv_history: pd.DataFrame = field(default_factory=pd.DataFrame)  # for IV Rank (Phase 5)
 
 
+# ---------------------------------------------------------------------------
+# Paper trading models
+# ---------------------------------------------------------------------------
+
+@dataclass
+class TradeQuoteData:
+    """Data for the trade quote embed shown before confirmation."""
+    ticker: str
+    ticker_name: str
+    side: str             # 'BUY' or 'SELL'
+    shares: int
+    price: float
+    total: float
+    cash_after: float
+
+
+@dataclass
+class TradeConfirmationData:
+    """Data for the trade confirmation embed shown after execution or queuing."""
+    ticker: str
+    ticker_name: str
+    side: str             # 'BUY' or 'SELL'
+    shares: int
+    price: float
+    total: float
+    cash_remaining: float
+    was_queued: bool
+
+
+@dataclass
+class PortfolioPosition:
+    """A single position in the portfolio view."""
+    ticker: str
+    shares: int
+    avg_cost_basis: float
+    current_price: float
+    market_value: float
+    gain_loss: float
+    gain_loss_pct: float
+
+
+@dataclass
+class PortfolioViewData:
+    """Data for the /trade portfolio embed."""
+    user_name: str
+    cash: float
+    positions: list           # list[PortfolioPosition]
+    pending_orders: list      # list[dict]
+    total_value: float
+    total_gain_loss: float
+    total_gain_loss_pct: float
+
+
+@dataclass
+class TradeHistoryData:
+    """Data for the /trade history embed."""
+    user_name: str
+    transactions: list        # list[dict]
+
+
