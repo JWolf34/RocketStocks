@@ -41,6 +41,8 @@ def _make_stock_data():
     sd.tickers.get_all_tickers = AsyncMock(return_value=['AAPL', 'TSLA'])
     sd.tickers.get_ticker_info = AsyncMock(return_value={'name': 'Apple Inc.'})
     sd.schwab.get_quote = AsyncMock(return_value={'quote': {'lastPrice': 150.0}})
+    sd.channel_config.get_channel_id = AsyncMock(return_value=None)
+    sd.paper_trading.get_snapshots = AsyncMock(return_value=[])
     return sd
 
 
@@ -483,3 +485,259 @@ async def test_trade_reset_timeout():
     sd.paper_trading.reset_portfolio.assert_not_called()
     msg = interaction.edit_original_response.call_args[1].get('content', '')
     assert "timed out" in msg.lower()
+
+
+# ---------------------------------------------------------------------------
+# _post_trade_announcement
+# ---------------------------------------------------------------------------
+
+async def test_post_announcement_sends_to_configured_channel():
+    cog, bot, sd = _make_cog()
+    sd.channel_config = MagicMock()
+    sd.channel_config.get_channel_id = AsyncMock(return_value=9999)
+    mock_channel = MagicMock()
+    mock_channel.send = AsyncMock()
+    bot.get_channel = MagicMock(return_value=mock_channel)
+
+    from rocketstocks.core.content.models import TradeAnnouncementData
+    data = TradeAnnouncementData(
+        user_name="Alice", ticker="AAPL", ticker_name="Apple Inc.",
+        side="BUY", shares=10, price=150.0, total=1500.0, was_queued=False
+    )
+    await cog._post_trade_announcement(1001, data)
+    mock_channel.send.assert_called_once()
+
+
+async def test_post_announcement_skips_when_no_channel_configured():
+    cog, bot, sd = _make_cog()
+    sd.channel_config = MagicMock()
+    sd.channel_config.get_channel_id = AsyncMock(return_value=None)
+    bot.get_channel = MagicMock()
+
+    from rocketstocks.core.content.models import TradeAnnouncementData
+    data = TradeAnnouncementData(
+        user_name="Alice", ticker="AAPL", ticker_name="Apple Inc.",
+        side="BUY", shares=10, price=150.0, total=1500.0, was_queued=False
+    )
+    await cog._post_trade_announcement(1001, data)
+    bot.get_channel.assert_not_called()
+
+
+async def test_post_announcement_skips_when_channel_not_in_cache():
+    cog, bot, sd = _make_cog()
+    sd.channel_config = MagicMock()
+    sd.channel_config.get_channel_id = AsyncMock(return_value=9999)
+    bot.get_channel = MagicMock(return_value=None)
+
+    from rocketstocks.core.content.models import TradeAnnouncementData
+    data = TradeAnnouncementData(
+        user_name="Alice", ticker="AAPL", ticker_name="Apple Inc.",
+        side="BUY", shares=10, price=150.0, total=1500.0, was_queued=False
+    )
+    # should not raise
+    await cog._post_trade_announcement(1001, data)
+
+
+async def test_buy_posts_announcement_after_execution():
+    cog, bot, sd = _make_cog()
+    sd.channel_config = MagicMock()
+    sd.channel_config.get_channel_id = AsyncMock(return_value=None)  # no channel → no-op
+
+    with (
+        patch.object(cog.mutils, "get_current_price", return_value=150.0),
+        patch.object(cog.mutils, "in_intraday", return_value=True),
+        patch.object(cog.mutils, "_refresh_schedule_if_needed"),
+        patch("rocketstocks.bot.cogs.paper_trading.TradeConfirmView") as MockView,
+        patch.object(cog, "_post_trade_announcement", new=AsyncMock()) as mock_announce,
+    ):
+        mock_view = MagicMock()
+        mock_view.confirmed = True
+        mock_view.wait = AsyncMock()
+        MockView.return_value = mock_view
+
+        interaction = _make_interaction()
+        interaction.followup.send = AsyncMock()
+        interaction.edit_original_response = AsyncMock()
+
+        await cog.trade_buy.callback(cog, interaction, ticker="AAPL", shares=10)
+
+    mock_announce.assert_called_once()
+    call_kwargs = mock_announce.call_args[0]
+    assert call_kwargs[0] == 1001  # guild_id
+    assert call_kwargs[1].side == "BUY"
+
+
+async def test_sell_posts_announcement_after_execution():
+    cog, bot, sd = _make_cog()
+    sd.channel_config = MagicMock()
+    sd.channel_config.get_channel_id = AsyncMock(return_value=None)
+    sd.paper_trading.get_position.return_value = {'shares': 10, 'avg_cost_basis': 100.0}
+
+    with (
+        patch.object(cog.mutils, "get_current_price", return_value=200.0),
+        patch.object(cog.mutils, "in_intraday", return_value=True),
+        patch.object(cog.mutils, "_refresh_schedule_if_needed"),
+        patch("rocketstocks.bot.cogs.paper_trading.TradeConfirmView") as MockView,
+        patch.object(cog, "_post_trade_announcement", new=AsyncMock()) as mock_announce,
+    ):
+        mock_view = MagicMock()
+        mock_view.confirmed = True
+        mock_view.wait = AsyncMock()
+        MockView.return_value = mock_view
+
+        interaction = _make_interaction()
+        interaction.followup.send = AsyncMock()
+        interaction.edit_original_response = AsyncMock()
+
+        await cog.trade_sell.callback(cog, interaction, ticker="AAPL", shares=5)
+
+    mock_announce.assert_called_once()
+    call_kwargs = mock_announce.call_args[0]
+    assert call_kwargs[1].side == "SELL"
+
+
+# ---------------------------------------------------------------------------
+# /trade leaderboard
+# ---------------------------------------------------------------------------
+
+async def test_trade_leaderboard_no_portfolios():
+    cog, _, sd = _make_cog()
+    sd.paper_trading.get_all_portfolios.return_value = []
+    interaction = _make_interaction()
+    await cog.trade_leaderboard.callback(cog, interaction)
+    msg = interaction.followup.send.call_args[0][0]
+    assert "No portfolios" in msg
+
+
+async def test_trade_leaderboard_sends_embed():
+    cog, bot, sd = _make_cog()
+    sd.paper_trading.get_all_portfolios.return_value = [
+        {'user_id': 2001, 'cash': 5000.0},
+        {'user_id': 2002, 'cash': 8000.0},
+    ]
+    sd.paper_trading.get_positions.return_value = []
+
+    guild = MagicMock()
+    guild.name = "TestGuild"
+    guild.get_member.return_value = None
+    interaction = _make_interaction()
+    interaction.guild = guild
+
+    with patch.object(cog.mutils, "_refresh_schedule_if_needed"):
+        await cog.trade_leaderboard.callback(cog, interaction)
+
+    # Should send an embed (not a plain string)
+    call_kwargs = interaction.followup.send.call_args[1]
+    assert 'embed' in call_kwargs
+
+
+async def test_trade_leaderboard_uses_member_display_name():
+    cog, bot, sd = _make_cog()
+    sd.paper_trading.get_all_portfolios.return_value = [
+        {'user_id': 2001, 'cash': 9000.0},
+    ]
+    sd.paper_trading.get_positions.return_value = []
+
+    member = MagicMock()
+    member.display_name = "GuildMember"
+    guild = MagicMock()
+    guild.name = "G"
+    guild.get_member.return_value = member
+
+    interaction = _make_interaction()
+    interaction.guild = guild
+
+    with patch.object(cog.mutils, "_refresh_schedule_if_needed"):
+        await cog.trade_leaderboard.callback(cog, interaction)
+
+    interaction.followup.send.assert_called_once()
+
+
+async def test_trade_leaderboard_falls_back_user_id_when_no_member():
+    cog, _, sd = _make_cog()
+    sd.paper_trading.get_all_portfolios.return_value = [
+        {'user_id': 9999, 'cash': 10000.0},
+    ]
+    sd.paper_trading.get_positions.return_value = []
+
+    guild = MagicMock()
+    guild.name = "G"
+    guild.get_member.return_value = None  # member not cached
+
+    interaction = _make_interaction()
+    interaction.guild = guild
+
+    with patch.object(cog.mutils, "_refresh_schedule_if_needed"):
+        await cog.trade_leaderboard.callback(cog, interaction)
+
+    interaction.followup.send.assert_called_once()
+
+
+# ---------------------------------------------------------------------------
+# /trade performance
+# ---------------------------------------------------------------------------
+
+async def test_trade_performance_sends_embed():
+    cog, _, sd = _make_cog()
+    sd.paper_trading.get_snapshots = AsyncMock(return_value=[])
+
+    with patch.object(cog.mutils, "_refresh_schedule_if_needed"):
+        interaction = _make_interaction()
+        await cog.trade_performance.callback(cog, interaction, days=7, user=None)
+
+    interaction.followup.send.assert_called_once()
+
+
+async def test_trade_performance_clamps_days_max():
+    cog, _, sd = _make_cog()
+    sd.paper_trading.get_snapshots = AsyncMock(return_value=[])
+
+    with patch.object(cog.mutils, "_refresh_schedule_if_needed"):
+        interaction = _make_interaction()
+        await cog.trade_performance.callback(cog, interaction, days=999, user=None)
+
+    # Passes without error (days clamped to 30)
+    interaction.followup.send.assert_called_once()
+
+
+async def test_trade_performance_clamps_days_min():
+    cog, _, sd = _make_cog()
+    sd.paper_trading.get_snapshots = AsyncMock(return_value=[])
+
+    with patch.object(cog.mutils, "_refresh_schedule_if_needed"):
+        interaction = _make_interaction()
+        await cog.trade_performance.callback(cog, interaction, days=0, user=None)
+
+    interaction.followup.send.assert_called_once()
+
+
+async def test_trade_performance_fetches_correct_user():
+    cog, _, sd = _make_cog()
+    sd.paper_trading.get_snapshots = AsyncMock(return_value=[])
+
+    other = MagicMock()
+    other.id = 5555
+    other.display_name = "OtherUser"
+
+    with patch.object(cog.mutils, "_refresh_schedule_if_needed"):
+        interaction = _make_interaction()
+        await cog.trade_performance.callback(cog, interaction, days=7, user=other)
+
+    sd.paper_trading.get_portfolio.assert_called_with(interaction.guild_id, 5555)
+
+
+async def test_trade_performance_with_snapshots():
+    import datetime as _dt
+    cog, _, sd = _make_cog()
+    snaps = [
+        {'snapshot_date': _dt.date(2026, 3, 25), 'portfolio_value': 10500.0,
+         'cash': 500.0, 'positions_value': 10000.0},
+    ]
+    sd.paper_trading.get_snapshots = AsyncMock(return_value=snaps)
+
+    with patch.object(cog.mutils, "_refresh_schedule_if_needed"):
+        interaction = _make_interaction()
+        await cog.trade_performance.callback(cog, interaction, days=7, user=None)
+
+    call_kwargs = interaction.followup.send.call_args[1]
+    assert 'embed' in call_kwargs

@@ -246,3 +246,224 @@ def test_trade_history_user_in_description():
     data = TradeHistoryData(user_name="Alice", transactions=[])
     spec = TradeHistory(data).build()
     assert "Alice" in spec.description
+
+
+# ---------------------------------------------------------------------------
+# Leaderboard
+# ---------------------------------------------------------------------------
+
+from rocketstocks.core.content.models import (
+    COLOR_BLUE,
+    COLOR_GOLD,
+    LeaderboardEntry,
+    LeaderboardViewData,
+    PerformanceViewData,
+    TradeAnnouncementData,
+)
+from rocketstocks.core.content.reports.leaderboard import Leaderboard
+from rocketstocks.core.content.reports.trade_announcement import TradeAnnouncement
+from rocketstocks.core.content.reports.performance_view import PerformanceView
+
+
+def _make_entry(user_name="Alice", total_value=11000.0, gain=1000.0, pct=10.0, positions=2):
+    return LeaderboardEntry(
+        user_id=1001,
+        user_name=user_name,
+        total_value=total_value,
+        total_gain_loss=gain,
+        total_gain_loss_pct=pct,
+        position_count=positions,
+    )
+
+
+def test_leaderboard_empty_portfolios():
+    data = LeaderboardViewData(guild_name="TestGuild", entries=[])
+    spec = Leaderboard(data).build()
+    assert "No portfolios yet" in spec.description
+    assert spec.color == COLOR_BLUE
+
+
+def test_leaderboard_color_gold_when_entries():
+    data = LeaderboardViewData(guild_name="TestGuild", entries=[_make_entry()])
+    spec = Leaderboard(data).build()
+    assert spec.color == COLOR_GOLD
+
+
+def test_leaderboard_guild_name_in_description():
+    data = LeaderboardViewData(guild_name="MyGuild", entries=[_make_entry()])
+    spec = Leaderboard(data).build()
+    assert "MyGuild" in spec.description
+
+
+def test_leaderboard_shows_user_name():
+    data = LeaderboardViewData(guild_name="G", entries=[_make_entry(user_name="Bob")])
+    spec = Leaderboard(data).build()
+    assert "Bob" in spec.fields[0].value
+
+
+def test_leaderboard_first_place_medal():
+    data = LeaderboardViewData(guild_name="G", entries=[_make_entry()])
+    spec = Leaderboard(data).build()
+    assert "🥇" in spec.fields[0].value
+
+
+def test_leaderboard_top_3_medals():
+    entries = [
+        _make_entry("A", 12000.0, 2000.0, 20.0),
+        _make_entry("B", 11000.0, 1000.0, 10.0),
+        _make_entry("C", 10500.0, 500.0, 5.0),
+    ]
+    data = LeaderboardViewData(guild_name="G", entries=entries)
+    spec = Leaderboard(data).build()
+    assert "🥇" in spec.fields[0].value
+    assert "🥈" in spec.fields[0].value
+    assert "🥉" in spec.fields[0].value
+
+
+def test_leaderboard_truncates_entries():
+    entries = [_make_entry(f"User{i}") for i in range(20)]
+    data = LeaderboardViewData(guild_name="G", entries=entries)
+    spec = Leaderboard(data).build()
+    assert "more" in spec.fields[0].value
+
+
+def test_leaderboard_entry_count_in_field_name():
+    entries = [_make_entry("A"), _make_entry("B")]
+    data = LeaderboardViewData(guild_name="G", entries=entries)
+    spec = Leaderboard(data).build()
+    assert "2" in spec.fields[0].name
+
+
+# ---------------------------------------------------------------------------
+# TradeAnnouncement
+# ---------------------------------------------------------------------------
+
+def _make_announce_data(side="BUY", was_queued=False):
+    return TradeAnnouncementData(
+        user_name="Alice",
+        ticker="AAPL",
+        ticker_name="Apple Inc.",
+        side=side,
+        shares=10,
+        price=150.0,
+        total=1500.0,
+        was_queued=was_queued,
+    )
+
+
+def test_trade_announcement_buy_color():
+    spec = TradeAnnouncement(_make_announce_data("BUY")).build()
+    assert spec.color == COLOR_GREEN
+
+
+def test_trade_announcement_sell_color():
+    spec = TradeAnnouncement(_make_announce_data("SELL")).build()
+    assert spec.color == COLOR_RED
+
+
+def test_trade_announcement_executed_title():
+    spec = TradeAnnouncement(_make_announce_data(was_queued=False)).build()
+    assert "Executed" in spec.title
+
+
+def test_trade_announcement_queued_title():
+    spec = TradeAnnouncement(_make_announce_data(was_queued=True)).build()
+    assert "Queued" in spec.title
+
+
+def test_trade_announcement_user_in_description():
+    spec = TradeAnnouncement(_make_announce_data()).build()
+    assert "Alice" in spec.description
+
+
+def test_trade_announcement_ticker_in_title():
+    spec = TradeAnnouncement(_make_announce_data()).build()
+    assert "AAPL" in spec.title
+
+
+def test_trade_announcement_queued_mentions_market_open():
+    spec = TradeAnnouncement(_make_announce_data(was_queued=True)).build()
+    assert "market open" in spec.description.lower()
+
+
+def test_trade_announcement_has_side_field():
+    spec = TradeAnnouncement(_make_announce_data()).build()
+    assert any(f.name == "Side" for f in spec.fields)
+
+
+def test_trade_announcement_total_field():
+    spec = TradeAnnouncement(_make_announce_data()).build()
+    total_field = next(f for f in spec.fields if f.name == "Total")
+    assert "$1,500.00" in total_field.value
+
+
+# ---------------------------------------------------------------------------
+# PerformanceView
+# ---------------------------------------------------------------------------
+
+def _make_perf_data(snapshots=None, gain=1000.0, pct=10.0):
+    if snapshots is None:
+        snapshots = [
+            {'snapshot_date': datetime.date(2026, 3, 25), 'portfolio_value': 10500.0},
+            {'snapshot_date': datetime.date(2026, 3, 26), 'portfolio_value': 11000.0},
+        ]
+    return PerformanceViewData(
+        user_name="Alice",
+        snapshots=snapshots,
+        days=7,
+        current_value=11000.0,
+        total_gain_loss=gain,
+        total_gain_loss_pct=pct,
+    )
+
+
+def test_performance_view_green_on_gain():
+    spec = PerformanceView(_make_perf_data(gain=500.0)).build()
+    assert spec.color == COLOR_GREEN
+
+
+def test_performance_view_red_on_loss():
+    spec = PerformanceView(_make_perf_data(gain=-500.0, pct=-5.0)).build()
+    assert spec.color == COLOR_RED
+
+
+def test_performance_view_blue_on_flat():
+    spec = PerformanceView(_make_perf_data(gain=0.0, pct=0.0)).build()
+    assert spec.color == COLOR_BLUE
+
+
+def test_performance_view_user_in_description():
+    spec = PerformanceView(_make_perf_data()).build()
+    assert "Alice" in spec.description
+
+
+def test_performance_view_days_in_description():
+    spec = PerformanceView(_make_perf_data()).build()
+    assert "7" in spec.description
+
+
+def test_performance_view_no_snapshots_message():
+    data = _make_perf_data(snapshots=[])
+    spec = PerformanceView(data).build()
+    assert "No snapshots" in spec.fields[0].value
+
+
+def test_performance_view_shows_snapshot_values():
+    spec = PerformanceView(_make_perf_data()).build()
+    assert "$11,000.00" in spec.fields[0].value
+
+
+def test_performance_view_snapshot_count_in_field_name():
+    spec = PerformanceView(_make_perf_data()).build()
+    assert "2" in spec.fields[0].name
+
+
+def test_performance_view_truncates_long_history():
+    snaps = [
+        {'snapshot_date': datetime.date(2026, 3, i + 1), 'portfolio_value': 10000.0 + i * 100}
+        for i in range(25)
+    ]
+    data = _make_perf_data(snapshots=snaps)
+    spec = PerformanceView(data).build()
+    # Shows last 10, and count in name is 25
+    assert "25" in spec.fields[0].name
