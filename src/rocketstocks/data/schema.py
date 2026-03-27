@@ -281,6 +281,59 @@ CREATE TABLE IF NOT EXISTS strategy_stats (
     created_at         TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     UNIQUE(run_id, group_key)
 );
+
+CREATE TABLE IF NOT EXISTS paper_portfolios (
+    guild_id    BIGINT      NOT NULL,
+    user_id     BIGINT      NOT NULL,
+    cash        FLOAT       NOT NULL DEFAULT 10000.0,
+    created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    PRIMARY KEY (guild_id, user_id)
+);
+
+CREATE TABLE IF NOT EXISTS paper_positions (
+    guild_id        BIGINT     NOT NULL,
+    user_id         BIGINT     NOT NULL,
+    ticker          VARCHAR(8) NOT NULL,
+    shares          INT        NOT NULL,
+    avg_cost_basis  FLOAT      NOT NULL,
+    PRIMARY KEY (guild_id, user_id, ticker)
+);
+
+CREATE TABLE IF NOT EXISTS paper_transactions (
+    id          SERIAL      PRIMARY KEY,
+    guild_id    BIGINT      NOT NULL,
+    user_id     BIGINT      NOT NULL,
+    ticker      VARCHAR(8)  NOT NULL,
+    side        VARCHAR(4)  NOT NULL,
+    shares      INT         NOT NULL,
+    price       FLOAT       NOT NULL,
+    total       FLOAT       NOT NULL,
+    executed_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS paper_snapshots (
+    guild_id        BIGINT NOT NULL,
+    user_id         BIGINT NOT NULL,
+    snapshot_date   DATE   NOT NULL,
+    portfolio_value FLOAT  NOT NULL,
+    cash            FLOAT  NOT NULL,
+    positions_value FLOAT  NOT NULL,
+    PRIMARY KEY (guild_id, user_id, snapshot_date)
+);
+
+CREATE TABLE IF NOT EXISTS paper_pending_orders (
+    id              SERIAL      PRIMARY KEY,
+    guild_id        BIGINT      NOT NULL,
+    user_id         BIGINT      NOT NULL,
+    ticker          VARCHAR(8)  NOT NULL,
+    side            VARCHAR(4)  NOT NULL,
+    shares          INT         NOT NULL,
+    quoted_price    FLOAT       NOT NULL,
+    status          VARCHAR(10) NOT NULL DEFAULT 'pending',
+    queued_at       TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    executed_at     TIMESTAMPTZ,
+    execution_price FLOAT
+);
 """
 
 _DROP_ALL_SCRIPT = """
@@ -306,6 +359,11 @@ DROP TABLE IF EXISTS iv_history;
 DROP TABLE IF EXISTS backtest_results;
 DROP TABLE IF EXISTS strategy_stats;
 DROP TABLE IF EXISTS backtest_runs;
+DROP TABLE IF EXISTS paper_pending_orders;
+DROP TABLE IF EXISTS paper_transactions;
+DROP TABLE IF EXISTS paper_snapshots;
+DROP TABLE IF EXISTS paper_positions;
+DROP TABLE IF EXISTS paper_portfolios;
 """
 
 
