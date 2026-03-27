@@ -29,6 +29,7 @@ from rocketstocks.data.clients.stooq import Stooq
 from rocketstocks.data.clients.yfinance_client import YFinanceClient
 from rocketstocks.data.earnings_results_store import EarningsResultsRepository
 from rocketstocks.data.iv_history_store import IVHistoryRepository
+from rocketstocks.data.paper_trading_store import PaperTradingRepository
 
 logger = logging.getLogger(__name__)
 
@@ -40,7 +41,8 @@ class StockData:
                  price_history=None, popularity=None, channel_config=None,
                  ticker_stats=None, surge_store=None, market_signal_store=None,
                  alert_roles=None, tiingo=None, stooq=None, bot_settings=None,
-                 yfinance=None, earnings_results=None, iv_history=None):
+                 yfinance=None, earnings_results=None, iv_history=None,
+                 paper_trading=None):
 
         # Clients
         self.db = db or Postgres()
@@ -70,6 +72,7 @@ class StockData:
         self.bot_settings = bot_settings or BotSettingsRepository(db=self.db)
         self.earnings_results = earnings_results or EarningsResultsRepository(db=self.db)
         self.iv_history = iv_history or IVHistoryRepository(db=self.db)
+        self.paper_trading = paper_trading or PaperTradingRepository(db=self.db)
 
         self._alert_tickers: dict = {}
 
