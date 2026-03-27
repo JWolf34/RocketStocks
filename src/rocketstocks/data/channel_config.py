@@ -8,6 +8,7 @@ REPORTS = "reports"
 ALERTS = "alerts"
 SCREENERS = "screeners"
 NOTIFICATIONS = "notifications"
+TRADE = "trade"
 ALL_CONFIG_TYPES = [REPORTS, ALERTS, SCREENERS, NOTIFICATIONS]
 
 
