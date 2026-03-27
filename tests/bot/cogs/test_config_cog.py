@@ -338,7 +338,7 @@ class TestChannelSetupView:
         view = ChannelSetupView(bot, guild.id, {})
 
         selects = [c for c in view.children if isinstance(c, _ChannelTypeSelect)]
-        assert len(selects) == 4
+        assert len(selects) == 5
 
     @pytest.mark.asyncio
     async def test_pre_populates_default_values_from_current_config(self):
