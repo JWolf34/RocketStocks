@@ -505,3 +505,45 @@ class TradeHistoryData:
     transactions: list        # list[dict]
 
 
+@dataclass
+class LeaderboardEntry:
+    """One row in the /trade leaderboard."""
+    user_id: int
+    user_name: str
+    total_value: float
+    total_gain_loss: float
+    total_gain_loss_pct: float
+    position_count: int
+
+
+@dataclass
+class LeaderboardViewData:
+    """Data for the /trade leaderboard embed."""
+    guild_name: str
+    entries: list             # list[LeaderboardEntry], sorted desc by total_value
+
+
+@dataclass
+class TradeAnnouncementData:
+    """Data for a public trade announcement posted to the TRADE channel."""
+    user_name: str
+    ticker: str
+    ticker_name: str
+    side: str                 # 'BUY' or 'SELL'
+    shares: int
+    price: float
+    total: float
+    was_queued: bool
+
+
+@dataclass
+class PerformanceViewData:
+    """Data for the /trade performance embed."""
+    user_name: str
+    snapshots: list           # list[dict] with keys: snapshot_date, portfolio_value
+    days: int
+    current_value: float
+    total_gain_loss: float
+    total_gain_loss_pct: float
+
+
