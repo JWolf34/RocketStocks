@@ -114,7 +114,7 @@ class PaperTrading(commands.Cog):
         if not pending:
             return
 
-        logger.info(f"Executing {len(pending)} pending paper trading orders")
+        logger.info(f"Executing {len(pending)} pending paper trading orders at market open")
         for order in pending:
             try:
                 quote = await self.stock_data.schwab.get_quote(order['ticker'])
@@ -123,20 +123,58 @@ class PaperTrading(commands.Cog):
                     logger.warning(f"Skipping order {order['id']}: could not get price for {order['ticker']}")
                     continue
                 if order['side'] == 'BUY':
-                    await self.stock_data.paper_trading.execute_buy(
-                        order['guild_id'], order['user_id'], order['ticker'], order['shares'], price
+                    executed = await self.stock_data.paper_trading.execute_pending_buy(
+                        order['guild_id'], order['user_id'], order['ticker'],
+                        order['shares'], order['quoted_price'], price,
                     )
+                    if executed:
+                        await self.stock_data.paper_trading.mark_order_executed(order['id'], price)
+                        logger.debug(
+                            f"Executed queued BUY {order['shares']}x{order['ticker']} "
+                            f"@ {price} (order {order['id']})"
+                        )
+                    else:
+                        await self.stock_data.paper_trading.mark_order_cancelled(order['id'])
+                        await self._notify_order_cancelled(order, price)
+                        logger.info(
+                            f"Cancelled queued BUY order {order['id']} — insufficient funds "
+                            f"at market open price {price}"
+                        )
                 else:
-                    await self.stock_data.paper_trading.execute_sell(
-                        order['guild_id'], order['user_id'], order['ticker'], order['shares'], price
+                    await self.stock_data.paper_trading.execute_pending_sell(
+                        order['guild_id'], order['user_id'], order['ticker'],
+                        order['shares'], price,
                     )
-                await self.stock_data.paper_trading.mark_order_executed(order['id'], price)
-                logger.debug(
-                    f"Executed queued {order['side']} {order['shares']}x{order['ticker']} "
-                    f"@ {price} (order {order['id']})"
-                )
+                    await self.stock_data.paper_trading.mark_order_executed(order['id'], price)
+                    logger.debug(
+                        f"Executed queued SELL {order['shares']}x{order['ticker']} "
+                        f"@ {price} (order {order['id']})"
+                    )
             except Exception:
                 logger.error(f"Failed to execute pending order {order['id']}", exc_info=True)
+
+    async def _notify_order_cancelled(self, order: dict, market_price: float) -> None:
+        """Post a cancellation notice to the trade channel when an order is cancelled at market open."""
+        channel_id = await self.stock_data.channel_config.get_channel_id(order['guild_id'], TRADE)
+        if not channel_id:
+            return
+        channel = self.bot.get_channel(channel_id)
+        if not channel:
+            return
+        needed = order['shares'] * market_price
+        try:
+            await channel.send(
+                f"<@{order['user_id']}> Your queued **BUY** order for "
+                f"**{order['shares']:,}x {order['ticker']}** was cancelled at market open — "
+                f"insufficient funds. "
+                f"Market open price: **${market_price:,.2f}** "
+                f"(total needed: **${needed:,.2f}**)."
+            )
+        except Exception:
+            logger.warning(
+                f"Failed to post cancellation notice for order {order['id']}",
+                exc_info=True,
+            )
 
     @tasks.loop(time=datetime.time(hour=_SNAPSHOT_HOUR_UTC, minute=_SNAPSHOT_MINUTE_UTC))
     async def daily_snapshot(self):
