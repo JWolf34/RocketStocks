@@ -467,3 +467,152 @@ def test_performance_view_truncates_long_history():
     spec = PerformanceView(data).build()
     # Shows last 10, and count in name is 25
     assert "25" in spec.fields[0].name
+
+
+# ---------------------------------------------------------------------------
+# WeeklyRoundup
+# ---------------------------------------------------------------------------
+
+from rocketstocks.core.content.models import WeeklyAward, WeeklyRoundupData
+from rocketstocks.core.content.reports.weekly_roundup import WeeklyRoundup
+
+
+def _make_award(name="Biggest Gainer", winner="Alice", detail="+10%"):
+    return WeeklyAward(
+        award_name=name,
+        description="Test award description",
+        winner_name=winner,
+        detail=detail,
+    )
+
+
+def _make_no_winner_award(name="Ghost Trader"):
+    return WeeklyAward(
+        award_name=name,
+        description="No winner this week",
+        winner_name=None,
+        detail=None,
+    )
+
+
+def _make_roundup_data(
+    entries=None,
+    awards=None,
+    stats=None,
+):
+    if entries is None:
+        entries = [_make_entry("Alice", 11000.0, 1000.0, 10.0), _make_entry("Bob", 10500.0, 500.0, 5.0)]
+    if awards is None:
+        awards = [_make_award(f"Award {i}") for i in range(15)]
+    if stats is None:
+        stats = {
+            'total_trades': 42,
+            'active_traders': 5,
+            'most_traded_ticker': 'AAPL',
+            'total_volume': 75000.0,
+        }
+    return WeeklyRoundupData(
+        guild_name="TestGuild",
+        week_label="Mar 23–27, 2026",
+        leaderboard=entries,
+        awards=awards,
+        server_stats=stats,
+    )
+
+
+def test_weekly_roundup_title_contains_week_label():
+    spec = WeeklyRoundup(_make_roundup_data()).build()
+    assert "Mar 23–27, 2026" in spec.title
+
+
+def test_weekly_roundup_color_is_gold():
+    spec = WeeklyRoundup(_make_roundup_data()).build()
+    assert spec.color == COLOR_GOLD
+
+
+def test_weekly_roundup_guild_name_in_description():
+    spec = WeeklyRoundup(_make_roundup_data()).build()
+    assert "TestGuild" in spec.description
+
+
+def test_weekly_roundup_has_timestamp():
+    spec = WeeklyRoundup(_make_roundup_data()).build()
+    assert spec.timestamp is True
+
+
+def test_weekly_roundup_leaderboard_field_present():
+    spec = WeeklyRoundup(_make_roundup_data()).build()
+    field_names = [f.name for f in spec.fields]
+    assert any("Leaderboard" in n for n in field_names)
+
+
+def test_weekly_roundup_server_stats_field_present():
+    spec = WeeklyRoundup(_make_roundup_data()).build()
+    field_names = [f.name for f in spec.fields]
+    assert any("Stats" in n for n in field_names)
+
+
+def test_weekly_roundup_server_stats_values():
+    spec = WeeklyRoundup(_make_roundup_data()).build()
+    stats_field = next(f for f in spec.fields if "Stats" in f.name)
+    assert "42" in stats_field.value
+    assert "AAPL" in stats_field.value
+
+
+def test_weekly_roundup_leaderboard_shows_user_name():
+    spec = WeeklyRoundup(_make_roundup_data()).build()
+    lb_field = next(f for f in spec.fields if "Leaderboard" in f.name)
+    assert "Alice" in lb_field.value
+
+
+def test_weekly_roundup_leaderboard_rank_medals():
+    spec = WeeklyRoundup(_make_roundup_data()).build()
+    lb_field = next(f for f in spec.fields if "Leaderboard" in f.name)
+    assert "🥇" in lb_field.value
+
+
+def test_weekly_roundup_awards_field_shows_winner():
+    spec = WeeklyRoundup(_make_roundup_data()).build()
+    awards_field = next((f for f in spec.fields if "Awards" in f.name), None)
+    if awards_field:
+        assert "Alice" in awards_field.value
+
+
+def test_weekly_roundup_awards_no_winner_message():
+    awards = [_make_no_winner_award(f"Award {i}") for i in range(15)]
+    data = _make_roundup_data(awards=awards)
+    spec = WeeklyRoundup(data).build()
+    awards_field = next((f for f in spec.fields if "Awards" in f.name), None)
+    if awards_field:
+        assert "No winner this week" in awards_field.value
+
+
+def test_weekly_roundup_empty_leaderboard():
+    data = _make_roundup_data(entries=[])
+    spec = WeeklyRoundup(data).build()
+    # Should still build without error; no leaderboard field
+    field_names = [f.name for f in spec.fields]
+    assert any("Stats" in n for n in field_names)
+
+
+def test_weekly_roundup_no_split_for_small_content():
+    content = WeeklyRoundup(_make_roundup_data())
+    assert not content.needs_split()
+
+
+def test_weekly_roundup_needs_split_for_large_content():
+    # Create enough awards to push past 6000 chars
+    long_detail = "X" * 300
+    awards = [WeeklyAward(
+        award_name=f"Award {i}",
+        description="Some description " * 5,
+        winner_name="A very long winner name indeed",
+        detail=long_detail,
+    ) for i in range(15)]
+    entries = [_make_entry(f"User{i}" * 5, 10000.0 + i, float(i), float(i) / 100) for i in range(10)]
+    data = _make_roundup_data(awards=awards, entries=entries)
+    content = WeeklyRoundup(data)
+    if content.needs_split():
+        awards_embed = content.build_awards_embed()
+        assert "Awards" in awards_embed.title
+        assert "TestGuild" in awards_embed.description

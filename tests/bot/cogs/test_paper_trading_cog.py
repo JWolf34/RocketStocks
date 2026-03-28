@@ -77,13 +77,16 @@ def test_cog_construction_starts_tasks():
     sd = _make_stock_data()
     mock_pending = MagicMock()
     mock_snapshot = MagicMock()
+    mock_roundup = MagicMock()
     with (
         patch.object(PaperTrading, "execute_pending_orders", mock_pending),
         patch.object(PaperTrading, "daily_snapshot", mock_snapshot),
+        patch.object(PaperTrading, "weekly_roundup", mock_roundup),
     ):
         cog = PaperTrading(bot=bot, stock_data=sd)
     mock_pending.start.assert_called_once()
     mock_snapshot.start.assert_called_once()
+    mock_roundup.start.assert_called_once()
 
 
 # ---------------------------------------------------------------------------
