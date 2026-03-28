@@ -547,3 +547,22 @@ class PerformanceViewData:
     total_gain_loss_pct: float
 
 
+@dataclass
+class WeeklyAward:
+    """A single weekly award for the paper trading roundup."""
+    award_name: str
+    description: str
+    winner_name: str | None   # None if no one qualified
+    detail: str | None        # e.g. "+12.3% (AAPL $150 → $170)"
+
+
+@dataclass
+class WeeklyRoundupData:
+    """Data for the weekly paper trading roundup embed."""
+    guild_name: str
+    week_label: str                    # e.g. "Mar 24–28, 2026"
+    leaderboard: list                  # list[LeaderboardEntry], sorted by % return
+    awards: list                       # list[WeeklyAward] (15 entries)
+    server_stats: dict                 # total_trades, active_traders, most_traded_ticker, total_volume
+
+
