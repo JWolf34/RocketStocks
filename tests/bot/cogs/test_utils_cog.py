@@ -132,6 +132,7 @@ class TestHelpCommand:
         assert "reports" in option_values
         assert "data" in option_values
         assert "watchlists" in option_values
+        assert "paper_trading" in option_values
 
 
 class TestBuildOverviewEmbed:
@@ -147,6 +148,7 @@ class TestBuildOverviewEmbed:
         assert any("Reports" in name for name in field_names)
         assert any("Stock Data" in name for name in field_names)
         assert any("Watchlists" in name for name in field_names)
+        assert any("Paper Trading" in name for name in field_names)
 
     def test_does_not_include_admin_category_fields(self):
         from rocketstocks.bot.cogs.utils import build_overview_embed
@@ -200,6 +202,33 @@ class TestBuildCategoryEmbed:
         embed = build_category_embed(bot, "watchlists")
 
         assert embed.title == CATEGORIES["watchlists"]["label"]
+
+    def test_paper_trading_category_expands_trade_subcommands(self):
+        from rocketstocks.bot.cogs.utils import build_category_embed
+        bot = _make_bot()
+        trade_group = _make_mock_group("trade", "Paper trading commands", [
+            ("buy", "Buy shares"),
+            ("sell", "Sell shares"),
+            ("portfolio", "View portfolio"),
+            ("history", "Trade history"),
+            ("cancel", "Cancel pending order"),
+            ("reset", "Reset portfolio"),
+            ("leaderboard", "View leaderboard"),
+            ("performance", "View performance"),
+        ])
+        bot.tree.get_commands.return_value = [trade_group]
+
+        embed = build_category_embed(bot, "paper_trading")
+
+        field_names = [f.name for f in embed.fields]
+        assert "/trade buy" in field_names
+        assert "/trade sell" in field_names
+        assert "/trade portfolio" in field_names
+        assert "/trade history" in field_names
+        assert "/trade cancel" in field_names
+        assert "/trade reset" in field_names
+        assert "/trade leaderboard" in field_names
+        assert "/trade performance" in field_names
 
     def test_mixed_groups_and_commands_in_same_category(self):
         from rocketstocks.bot.cogs.utils import build_category_embed

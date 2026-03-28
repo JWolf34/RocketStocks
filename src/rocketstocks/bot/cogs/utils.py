@@ -23,6 +23,11 @@ CATEGORIES = {
         "description": "Create and manage personal watchlists to track your favorite stocks.",
         "commands": ["watchlist"],
     },
+    "paper_trading": {
+        "label": "💸 Paper Trading",
+        "description": "Trade stocks with virtual money. Buy, sell, manage your portfolio, track performance, and compete on the leaderboard.",
+        "commands": ["trade"],
+    },
     "notifications": {
         "label": "🔕 Notifications",
         "description": "Control how and when the bot sends you system event notifications.",
@@ -61,6 +66,11 @@ def build_overview_embed() -> discord.Embed:
     embed.add_field(
         name="📋 Watchlists",
         value="Create and manage personal watchlists to track your favorite stocks.",
+        inline=False,
+    )
+    embed.add_field(
+        name="💸 Paper Trading",
+        value="Buy and sell stocks with virtual money, track your portfolio, and compete on the leaderboard.",
         inline=False,
     )
     embed.set_footer(text="Select a category below to explore available commands.")
