@@ -103,6 +103,7 @@ def test_list_strategies_includes_builtins():
     # Trigger lazy load
     reg_module._loaded = False
     strategies = list_strategies()
-    assert 'alert_signal' in strategies
-    assert 'composite_signal' in strategies
-    assert 'confluence' in strategies
+    assert 'buy_hold' in strategies
+    assert 'volume_accumulation' in strategies
+    assert 'popularity_surge' in strategies
+    assert 'leading_indicator_combo' in strategies

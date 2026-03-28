@@ -5,6 +5,7 @@ import pytest
 
 from rocketstocks.backtest.stats import (
     GroupStats,
+    compare_against_benchmark,
     compare_strategies,
     compute_all_group_stats,
     compute_group_stats,
@@ -178,3 +179,109 @@ def test_compare_strategies_n_values():
     result = compare_strategies(a, b)
     assert result['n_a'] == 3
     assert result['n_b'] == 2
+
+
+def test_compare_strategies_includes_sharpe_and_drawdown():
+    a = _make_results([10.0, 12.0, 11.0])
+    b = _make_results([2.0, 3.0, 1.0])
+    result = compare_strategies(a, b, label_a='A', label_b='B')
+    assert 'mean_sharpe_a' in result
+    assert 'mean_sharpe_b' in result
+    assert 'mean_max_dd_a' in result
+    assert 'mean_max_dd_b' in result
+    assert 'mean_win_rate_a' in result
+    assert 'mean_win_rate_b' in result
+
+
+# ---------------------------------------------------------------------------
+# compare_against_benchmark
+# ---------------------------------------------------------------------------
+
+def test_compare_against_benchmark_returns_expected_keys():
+    results = _make_results([10.0, 12.0, 8.0, 11.0])
+    out = compare_against_benchmark(results, benchmark_return_pct=5.0, label='MyStrategy')
+    assert out['label'] == 'MyStrategy'
+    assert out['benchmark_return_pct'] == 5.0
+    for key in ('mean_excess_return', 'median_excess_return', 'pct_beating_benchmark',
+                't_stat', 'p_value', 'significant', 'n'):
+        assert key in out
+
+
+def test_compare_against_benchmark_correct_excess():
+    results = _make_results([10.0, 20.0])
+    out = compare_against_benchmark(results, benchmark_return_pct=5.0)
+    # excess: [5.0, 15.0], mean = 10.0
+    assert abs(out['mean_excess_return'] - 10.0) < 1e-9
+
+
+def test_compare_against_benchmark_pct_beating():
+    results = _make_results([10.0, 3.0, 8.0, 4.0])
+    out = compare_against_benchmark(results, benchmark_return_pct=5.0)
+    # Beats 5%: 10.0 and 8.0 → 2/4 = 50%
+    assert abs(out['pct_beating_benchmark'] - 50.0) < 1e-9
+
+
+def test_compare_against_benchmark_insufficient_data():
+    results = _make_results([7.0])
+    out = compare_against_benchmark(results, benchmark_return_pct=5.0)
+    assert 'error' not in out   # single result is still valid; just no t-test
+    assert math.isnan(out['t_stat'])
+
+
+def test_compare_against_benchmark_empty_returns_error():
+    out = compare_against_benchmark([], benchmark_return_pct=5.0)
+    assert out.get('error') == 'insufficient_data'
+
+
+def test_compare_against_benchmark_filters_errors():
+    results = _make_results([10.0, 12.0])
+    results.append({'ticker': 'BAD', 'return_pct': None, 'error': 'fail',
+                    'sharpe_ratio': None, 'max_drawdown': None, 'win_rate': None,
+                    'num_trades': None, 'profit_factor': None,
+                    'classification': 'standard', 'sector': 'Technology'})
+    out = compare_against_benchmark(results, benchmark_return_pct=5.0)
+    assert out['n'] == 2
+
+
+# ---------------------------------------------------------------------------
+# GroupStats excess return / exposure fields
+# ---------------------------------------------------------------------------
+
+def _make_results_with_benchmark(returns: list[float], buy_hold: float,
+                                  exposure: float = 50.0) -> list[dict]:
+    return [
+        {'ticker': f'T{i}', 'return_pct': r, 'sharpe_ratio': r / 10,
+         'max_drawdown': -abs(r), 'win_rate': 60.0, 'num_trades': 5,
+         'profit_factor': 1.2, 'classification': 'standard',
+         'sector': 'Technology', 'error': None,
+         'buy_hold_pct': buy_hold, 'exposure_pct': exposure}
+        for i, r in enumerate(returns)
+    ]
+
+
+def test_group_stats_mean_excess_return():
+    results = _make_results_with_benchmark([10.0, 12.0, 8.0], buy_hold=5.0)
+    gs = compute_group_stats(results)
+    # excess: [5, 7, 3], mean = 5.0
+    assert abs(gs.mean_excess_return - 5.0) < 1e-9
+
+
+def test_group_stats_pct_beating_buy_hold():
+    results = _make_results_with_benchmark([10.0, 4.0, 8.0, 3.0], buy_hold=5.0)
+    gs = compute_group_stats(results)
+    # 10 > 5 and 8 > 5 → 2/4 = 50%
+    assert abs(gs.pct_beating_buy_hold - 50.0) < 1e-9
+
+
+def test_group_stats_mean_exposure_pct():
+    results = _make_results_with_benchmark([5.0, 10.0], buy_hold=3.0, exposure=40.0)
+    gs = compute_group_stats(results)
+    assert abs(gs.mean_exposure_pct - 40.0) < 1e-9
+
+
+def test_group_stats_excess_fields_nan_when_missing():
+    results = _make_results([5.0, 8.0])   # no buy_hold_pct or exposure_pct
+    gs = compute_group_stats(results)
+    assert math.isnan(gs.mean_excess_return)
+    assert math.isnan(gs.pct_beating_buy_hold)
+    assert math.isnan(gs.mean_exposure_pct)

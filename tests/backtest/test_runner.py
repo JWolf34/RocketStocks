@@ -225,21 +225,136 @@ async def test_run_single_success_extracts_return_pct():
 
 
 # ---------------------------------------------------------------------------
-# 5m timeframe applies market hours filter
+# 5m timeframe applies mark_regular_hours (not filter_regular_hours)
 # ---------------------------------------------------------------------------
 
-async def test_run_5m_applies_filter_regular_hours():
+async def test_run_5m_applies_mark_regular_hours():
     sd = _make_mock_stock_data()
     repo = _make_mock_repo()
     runner = BacktestRunner(stock_data=sd, repo=repo)
 
-    with patch('rocketstocks.backtest.runner.filter_regular_hours') as mock_filter, \
+    with patch('rocketstocks.backtest.runner.mark_regular_hours') as mock_mark, \
          patch('rocketstocks.backtest.runner.get_strategy', return_value=_AlwaysBuyStrategy):
-        mock_filter.return_value = pd.DataFrame()  # empty → insufficient_data
+        mock_mark.return_value = pd.DataFrame()  # empty → insufficient_data
         await runner.run(
-            strategy_name='alert_signal',
+            strategy_name='test_strat',
             ticker_filter=TickerFilter(tickers=['AAPL']),
             timeframe='5m',
         )
 
-    mock_filter.assert_called_once()
+    mock_mark.assert_called_once()
+
+
+# ---------------------------------------------------------------------------
+# requires_daily: fetches and enriches daily data for 5m strategies
+# ---------------------------------------------------------------------------
+
+class _RequiresDailyStrategy(Strategy):
+    requires_daily = True
+    def init(self): pass
+    def next(self):
+        if not self.position:
+            self.buy()
+        elif len(self.data) - self.trades[-1].entry_bar >= 2:
+            self.position.close()
+
+
+async def test_run_5m_requires_daily_fetches_daily_data():
+    sd = _make_mock_stock_data()
+    repo = _make_mock_repo()
+    runner = BacktestRunner(stock_data=sd, repo=repo)
+
+    with patch('rocketstocks.backtest.runner.enrich_5m_with_daily_context',
+               return_value=pd.DataFrame()) as mock_enrich, \
+         patch('rocketstocks.backtest.runner.mark_regular_hours',
+               return_value=pd.DataFrame()) as mock_mark, \
+         patch('rocketstocks.backtest.runner.get_strategy',
+               return_value=_RequiresDailyStrategy):
+        mock_mark.return_value = pd.DataFrame()
+        await runner.run(
+            strategy_name='test_strat',
+            ticker_filter=TickerFilter(tickers=['AAPL']),
+            timeframe='5m',
+        )
+
+    # Daily data must have been fetched when requires_daily=True
+    assert sd.price_history.fetch_daily_price_history.await_count >= 1
+
+
+# ---------------------------------------------------------------------------
+# requires_popularity: fetches and merges popularity data
+# ---------------------------------------------------------------------------
+
+class _RequiresPopularityStrategy(Strategy):
+    requires_popularity = True
+    def init(self): pass
+    def next(self):
+        if not self.position:
+            self.buy()
+        elif len(self.data) - self.trades[-1].entry_bar >= 2:
+            self.position.close()
+
+
+async def test_run_daily_requires_popularity_fetches_data():
+    sd = _make_mock_stock_data()
+    repo = _make_mock_repo()
+    runner = BacktestRunner(stock_data=sd, repo=repo)
+
+    with patch('rocketstocks.backtest.runner.get_strategy',
+               return_value=_RequiresPopularityStrategy):
+        await runner.run(
+            strategy_name='test_strat',
+            ticker_filter=TickerFilter(tickers=['AAPL']),
+            timeframe='daily',
+        )
+
+    sd.popularity.fetch_popularity.assert_called_once_with('AAPL')
+
+
+# ---------------------------------------------------------------------------
+# run_benchmark
+# ---------------------------------------------------------------------------
+
+async def test_run_benchmark_returns_float():
+    sd = _make_mock_stock_data()
+    repo = _make_mock_repo()
+    runner = BacktestRunner(stock_data=sd, repo=repo)
+
+    with patch('rocketstocks.backtest.runner.get_strategy') as mock_get:
+        # Use a simple strategy that buys and holds
+        mock_get.return_value = _AlwaysBuyStrategy
+        result = await runner.run_benchmark(ticker='SPY', timeframe='daily')
+
+    assert isinstance(result, float)
+
+
+async def test_run_benchmark_nan_on_no_data():
+    sd = _make_mock_stock_data(daily_df=_make_daily_df(n=5))  # insufficient data
+    repo = _make_mock_repo()
+    runner = BacktestRunner(stock_data=sd, repo=repo)
+
+    with patch('rocketstocks.backtest.runner.get_strategy') as mock_get:
+        mock_get.return_value = _AlwaysBuyStrategy
+        result = await runner.run_benchmark(ticker='SPY', timeframe='daily')
+
+    import math
+    assert math.isnan(result)
+
+
+# ---------------------------------------------------------------------------
+# _extend_start
+# ---------------------------------------------------------------------------
+
+def test_extend_start_adds_days():
+    runner = BacktestRunner(stock_data=MagicMock(), repo=MagicMock())
+    start = datetime.date(2025, 3, 1)
+    extended = runner._extend_start(start, extra_trading_days=25)
+    assert extended < start
+    # Should be roughly 25*1.5 + 10 = 47 calendar days earlier
+    delta = (start - extended).days
+    assert delta >= 40
+
+
+def test_extend_start_none_returns_none():
+    runner = BacktestRunner(stock_data=MagicMock(), repo=MagicMock())
+    assert runner._extend_start(None, 25) is None
