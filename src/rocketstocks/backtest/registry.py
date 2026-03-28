@@ -60,6 +60,7 @@ def _ensure_loaded() -> None:
     if _loaded:
         return
     _loaded = True
-    import rocketstocks.backtest.strategies.alert_signal      # noqa: F401
-    import rocketstocks.backtest.strategies.composite_signal  # noqa: F401
-    import rocketstocks.backtest.strategies.confluence        # noqa: F401
+    import rocketstocks.backtest.strategies.buy_hold                # noqa: F401
+    import rocketstocks.backtest.strategies.volume_accumulation     # noqa: F401
+    import rocketstocks.backtest.strategies.popularity_surge        # noqa: F401
+    import rocketstocks.backtest.strategies.leading_indicator_combo # noqa: F401
