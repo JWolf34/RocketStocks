@@ -148,7 +148,7 @@ def _handle_list() -> int:
     return 0
 
 
-async def _handle_run(args, runner: BacktestRunner) -> int:
+async def _handle_run(args, runner: BacktestRunner, repo: BacktestRepository) -> int:
     ticker_filter = TickerFilter(
         tickers=args.tickers,
         classifications=args.classification,
@@ -253,11 +253,19 @@ async def _handle_compare(args, repo: BacktestRepository) -> int:
         print(f"  (Insufficient data for significance test)")
     else:
         sig = 'Yes' if comparison['significant'] else 'No'
-        print(f"  n:           {comparison['n_a']} vs {comparison['n_b']}")
-        print(f"  t-statistic: {comparison['t_stat']:.4f}")
-        print(f"  p-value:     {comparison['p_value']:.4f}")
-        print(f"  Significant: {sig} (p < 0.05)")
-        print(f"  Better:      {comparison['better']}")
+        print(f"  n:                {comparison['n_a']} vs {comparison['n_b']}")
+        print(f"  Mean return:      {_fmt(comparison.get('mean_a'))}%"
+              f" vs {_fmt(comparison.get('mean_b'))}%")
+        print(f"  Mean Sharpe:      {_fmt(comparison.get('mean_sharpe_a'), 3)}"
+              f" vs {_fmt(comparison.get('mean_sharpe_b'), 3)}")
+        print(f"  Mean Max DD:      {_fmt(comparison.get('mean_max_dd_a'))}%"
+              f" vs {_fmt(comparison.get('mean_max_dd_b'))}%")
+        print(f"  Mean Win Rate:    {_fmt(comparison.get('mean_win_rate_a'))}%"
+              f" vs {_fmt(comparison.get('mean_win_rate_b'))}%")
+        print(f"  t-statistic:      {comparison['t_stat']:.4f}")
+        print(f"  p-value:          {comparison['p_value']:.4f}")
+        print(f"  Significant:      {sig} (p < 0.05)")
+        print(f"  Better:           {comparison['better']}")
 
     return 0
 
@@ -355,7 +363,23 @@ def _print_group_stats(s: dict) -> None:
     print(f"  t-stat:           {_fmt(t_stat, 4)}")
     print(f"  p-value:          {_fmt(pv, 4)}")
     print(f"  Significant:      {sig}")
+    _print_if_set('  Mean Exposure:   ', s.get('mean_exposure_pct'), '%')
+    _print_if_set('  Mean Excess Ret: ', s.get('mean_excess_return'), '%')
+    _print_if_set('  % Beat Buy&Hold: ', s.get('pct_beating_buy_hold'), '%')
     print()
+
+
+def _print_if_set(label: str, value, suffix: str = '') -> None:
+    """Print a stat line only if the value is set (not None or NaN)."""
+    import math
+    if value is None:
+        return
+    try:
+        if math.isnan(float(value)):
+            return
+    except (TypeError, ValueError):
+        return
+    print(f'{label}{_fmt(value)}{suffix}')
 
 
 def _fmt(value, decimals: int = 2) -> str:
