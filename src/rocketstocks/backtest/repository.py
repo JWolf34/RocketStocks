@@ -139,6 +139,37 @@ class BacktestRepository:
         )
         return [dict(zip(_RESULT_FIELDS, row)) for row in (rows or [])]
 
+    async def get_results_sorted_by(
+        self,
+        run_id: int,
+        sort_key: str = 'return_pct',
+        limit: int = 20,
+    ) -> list[dict]:
+        """Return per-ticker results sorted by a metric, highest first.
+
+        Args:
+            run_id: Backtest run to query.
+            sort_key: Column to sort by. Validated against an allowlist to
+                prevent SQL injection; defaults to 'return_pct'.
+            limit: Maximum number of rows to return.
+
+        Returns:
+            List of result dicts sorted by sort_key DESC NULLS LAST.
+        """
+        _ALLOWED_SORT_KEYS = {'return_pct', 'sharpe_ratio', 'num_trades',
+                               'max_drawdown', 'win_rate', 'profit_factor'}
+        if sort_key not in _ALLOWED_SORT_KEYS:
+            sort_key = 'return_pct'
+
+        rows = await self._db.execute(
+            f"SELECT {', '.join(_RESULT_FIELDS)} FROM backtest_results "
+            f"WHERE run_id = %s "
+            f"ORDER BY {sort_key} DESC NULLS LAST "
+            f"LIMIT %s",
+            [run_id, limit],
+        )
+        return [dict(zip(_RESULT_FIELDS, row)) for row in (rows or [])]
+
     # -------------------------------------------------------------- stats --
 
     async def insert_stats_batch(self, run_id: int, stats_list: list[dict]) -> None:
