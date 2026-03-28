@@ -8,7 +8,7 @@ from rocketstocks.backtest.filters import TickerFilter
 from rocketstocks.backtest.registry import list_strategies
 from rocketstocks.backtest.repository import BacktestRepository
 from rocketstocks.backtest.runner import BacktestRunner
-from rocketstocks.backtest.stats import compare_strategies
+from rocketstocks.backtest.stats import compare_against_benchmark, compare_strategies
 
 logger = logging.getLogger(__name__)
 
@@ -52,6 +52,9 @@ def build_parser() -> argparse.ArgumentParser:
                        metavar='RANK', help='Most-popular end of rank range (1 = #1)')
     run_p.add_argument('--max-popularity-rank', type=int, default=None,
                        metavar='RANK', help='Least-popular end of rank range')
+    run_p.add_argument('--benchmark', type=str, default=None,
+                       metavar='TICKER',
+                       help='Run buy-and-hold on TICKER as a passive benchmark (e.g. SPY)')
 
     # --------------------------------------------------------------- stats --
     stats_p = sub.add_parser('stats', help='View aggregate stats for a backtest run')
@@ -119,7 +122,7 @@ async def main(argv: list[str] | None = None) -> int:
         runner = BacktestRunner(stock_data=stock_data, repo=repo)
 
         if args.command == 'run':
-            return await _handle_run(args, runner)
+            return await _handle_run(args, runner, repo)
         elif args.command == 'stats':
             return await _handle_stats(args, repo)
         elif args.command == 'compare':
@@ -177,7 +180,22 @@ async def _handle_run(args, runner: BacktestRunner) -> int:
         return 1
 
     print(f'\nBacktest run {run_id} complete.')
-    print(f'View results: python -m rocketstocks.backtest stats {run_id}')
+    print(f'View results:  python -m rocketstocks.backtest stats {run_id}')
+    print(f'Per-ticker:    python -m rocketstocks.backtest results {run_id}')
+
+    if args.benchmark:
+        benchmark_return = await runner.run_benchmark(
+            ticker=args.benchmark,
+            timeframe=args.timeframe,
+            cash=args.cash,
+            commission=args.commission,
+            start_date=start_date,
+            end_date=end_date,
+        )
+        results = await repo.get_successful_results_by_run(run_id)
+        bench = compare_against_benchmark(results, benchmark_return, label=args.benchmark)
+        _print_benchmark_comparison(bench)
+
     return 0
 
 
