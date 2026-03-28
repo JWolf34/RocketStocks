@@ -344,6 +344,125 @@ class PaperTradingRepository:
         )
         logger.debug(f"Marked order {order_id} as executed at {execution_price}")
 
+    async def mark_order_cancelled(self, order_id: int) -> None:
+        """Mark a pending order as cancelled (system-initiated, e.g. insufficient funds)."""
+        await self._db.execute(
+            "UPDATE paper_pending_orders SET status = 'cancelled' WHERE id = %s",
+            [order_id],
+        )
+        logger.debug(f"Marked order {order_id} as cancelled")
+
+    async def execute_pending_buy(
+        self,
+        guild_id: int,
+        user_id: int,
+        ticker: str,
+        shares: int,
+        quoted_price: float,
+        execution_price: float,
+    ) -> bool:
+        """Execute a queued buy at execution_price, adjusting for the cash reserved at quoted_price.
+
+        Cash was pre-reserved (shares * quoted_price) when the order was queued.  If the
+        execution price is higher, the extra cost is drawn from available cash; if the user
+        can't cover it the reserved amount is refunded and False is returned.  Returns True
+        on success.
+        """
+        reserved = shares * quoted_price
+        extra = shares * (execution_price - quoted_price)  # positive = need more, negative = refund
+
+        async with self._db.transaction() as conn:
+            if extra > 0:
+                row = await conn.execute(
+                    "SELECT cash FROM paper_portfolios WHERE guild_id = %s AND user_id = %s",
+                    [guild_id, user_id],
+                    fetchone=True,
+                )
+                available = row[0] if row else 0.0
+                if available < extra:
+                    # Refund the reservation and abort
+                    await conn.execute(
+                        "UPDATE paper_portfolios SET cash = cash + %s "
+                        "WHERE guild_id = %s AND user_id = %s",
+                        [reserved, guild_id, user_id],
+                    )
+                    return False
+
+            # Adjust cash for the price delta (deduct extra or credit savings)
+            if extra != 0:
+                await conn.execute(
+                    "UPDATE paper_portfolios SET cash = cash - %s "
+                    "WHERE guild_id = %s AND user_id = %s",
+                    [extra, guild_id, user_id],
+                )
+
+            # Upsert position with weighted average cost basis
+            row = await conn.execute(
+                "SELECT shares, avg_cost_basis FROM paper_positions "
+                "WHERE guild_id = %s AND user_id = %s AND ticker = %s",
+                [guild_id, user_id, ticker],
+                fetchone=True,
+            )
+            if row:
+                existing_shares, existing_avg = row[0], row[1]
+                new_shares = existing_shares + shares
+                new_avg = (existing_shares * existing_avg + shares * execution_price) / new_shares
+            else:
+                new_shares = shares
+                new_avg = execution_price
+
+            await conn.execute(
+                """
+                INSERT INTO paper_positions (guild_id, user_id, ticker, shares, avg_cost_basis)
+                VALUES (%s, %s, %s, %s, %s)
+                ON CONFLICT (guild_id, user_id, ticker)
+                DO UPDATE SET shares = EXCLUDED.shares, avg_cost_basis = EXCLUDED.avg_cost_basis
+                """,
+                [guild_id, user_id, ticker, new_shares, new_avg],
+            )
+            total = shares * execution_price
+            await conn.execute(
+                "INSERT INTO paper_transactions (guild_id, user_id, ticker, side, shares, price, total) "
+                "VALUES (%s, %s, %s, 'BUY', %s, %s, %s)",
+                [guild_id, user_id, ticker, shares, execution_price, total],
+            )
+
+        logger.debug(
+            f"Executed pending BUY {shares}x{ticker}@{execution_price} "
+            f"(quoted {quoted_price}) for guild={guild_id} user={user_id}"
+        )
+        return True
+
+    async def execute_pending_sell(
+        self,
+        guild_id: int,
+        user_id: int,
+        ticker: str,
+        shares: int,
+        execution_price: float,
+    ) -> None:
+        """Execute a queued sell at execution_price.
+
+        Shares were already removed from the position when the order was queued.
+        This method only adds the sale proceeds and records the transaction.
+        """
+        total = shares * execution_price
+        async with self._db.transaction() as conn:
+            await conn.execute(
+                "UPDATE paper_portfolios SET cash = cash + %s "
+                "WHERE guild_id = %s AND user_id = %s",
+                [total, guild_id, user_id],
+            )
+            await conn.execute(
+                "INSERT INTO paper_transactions (guild_id, user_id, ticker, side, shares, price, total) "
+                "VALUES (%s, %s, %s, 'SELL', %s, %s, %s)",
+                [guild_id, user_id, ticker, shares, execution_price, total],
+            )
+        logger.debug(
+            f"Executed pending SELL {shares}x{ticker}@{execution_price} "
+            f"for guild={guild_id} user={user_id}"
+        )
+
     # ------------------------------------------------------------------
     # Transactions
     # ------------------------------------------------------------------
