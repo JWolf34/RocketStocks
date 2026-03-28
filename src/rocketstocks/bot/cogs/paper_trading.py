@@ -18,6 +18,7 @@ from rocketstocks.core.analysis.paper_trading import (
     calculate_position_value,
     calculate_portfolio_total,
     calculate_total_gain_loss,
+    evaluate_weekly_awards,
 )
 from rocketstocks.core.content.models import (
     LeaderboardEntry,
@@ -29,6 +30,7 @@ from rocketstocks.core.content.models import (
     TradeConfirmationData,
     TradeHistoryData,
     TradeQuoteData,
+    WeeklyRoundupData,
 )
 from rocketstocks.core.content.reports.leaderboard import Leaderboard
 from rocketstocks.core.content.reports.trade_announcement import TradeAnnouncement
@@ -37,6 +39,7 @@ from rocketstocks.core.content.reports.trade_confirmation import TradeConfirmati
 from rocketstocks.core.content.reports.portfolio_view import PortfolioView
 from rocketstocks.core.content.reports.trade_history import TradeHistory
 from rocketstocks.core.content.reports.performance_view import PerformanceView
+from rocketstocks.core.content.reports.weekly_roundup import WeeklyRoundup
 from rocketstocks.bot.senders.embed_utils import spec_to_embed
 from rocketstocks.bot.views.paper_trading_views import ConfirmResetView, TradeConfirmView
 
@@ -47,6 +50,8 @@ _MAX_SHARES_PER_ORDER = 10_000
 _SNAPSHOT_HOUR_UTC = 21
 _SNAPSHOT_MINUTE_UTC = 5
 _MAX_PERFORMANCE_DAYS = 30
+_ROUNDUP_HOUR_UTC = 18   # noon CT Sunday
+_ROUNDUP_WEEKDAY = 6     # Sunday
 
 
 class PaperTrading(commands.Cog):
@@ -59,6 +64,7 @@ class PaperTrading(commands.Cog):
 
         self.execute_pending_orders.start()
         self.daily_snapshot.start()
+        self.weekly_roundup.start()
 
     @commands.Cog.listener()
     async def on_ready(self):
@@ -732,6 +738,176 @@ class PaperTrading(commands.Cog):
         )
         embed = spec_to_embed(PerformanceView(perf_data).build())
         await interaction.followup.send(embed=embed, ephemeral=True)
+
+
+    @tasks.loop(time=datetime.time(hour=_ROUNDUP_HOUR_UTC, minute=0))
+    async def weekly_roundup(self):
+        """Post the weekly paper trading roundup every Sunday at 18:00 UTC."""
+        await self._run_task("weekly_roundup", self._weekly_roundup_impl())
+
+    async def _weekly_roundup_impl(self):
+        now = datetime.datetime.now(datetime.timezone.utc)
+        if now.weekday() != _ROUNDUP_WEEKDAY:
+            return
+
+        channels = await self.bot.iter_channels(TRADE)
+        if not channels:
+            return
+
+        week_end = now.date()
+        week_start = week_end - datetime.timedelta(days=6)
+        week_label = (
+            f"{week_start.strftime('%b %-d')}–{week_end.strftime('%-d, %Y')}"
+        )
+
+        for guild_id, channel in channels:
+            try:
+                await self._post_guild_roundup(guild_id, channel, week_start, week_end, week_label)
+            except Exception:
+                logger.error(f"Failed weekly roundup for guild={guild_id}", exc_info=True)
+
+    async def _post_guild_roundup(
+        self,
+        guild_id: int,
+        channel,
+        week_start: datetime.date,
+        week_end: datetime.date,
+        week_label: str,
+    ) -> None:
+        portfolios = await self.stock_data.paper_trading.get_all_portfolios(guild_id)
+        if not portfolios:
+            return
+
+        guild = self.bot.get_guild(guild_id)
+        guild_name = guild.name if guild else f"Guild #{guild_id}"
+
+        # Collect user display names
+        user_names: dict = {}
+        for portfolio in portfolios:
+            uid = portfolio['user_id']
+            member = guild.get_member(uid) if guild else None
+            user_names[uid] = member.display_name if member else f"User #{uid}"
+
+        # Fetch current prices and build positions_by_user / portfolio_values_by_user
+        positions_by_user: dict = {}
+        portfolio_values_by_user: dict = {}
+        leaderboard_entries = []
+
+        for portfolio in portfolios:
+            uid = portfolio['user_id']
+            raw_positions = await self.stock_data.paper_trading.get_positions(guild_id, uid)
+            enriched = []
+            positions_value = 0.0
+            for pos in raw_positions:
+                price = await self._get_price(pos['ticker'])
+                if price <= 0:
+                    price = pos['avg_cost_basis']
+                market_value = calculate_position_value(pos['shares'], price)
+                positions_value += market_value
+                enriched.append({**pos, 'market_value': market_value, 'current_price': price})
+            positions_by_user[uid] = enriched
+            total_value = calculate_portfolio_total(portfolio['cash'], positions_value)
+            portfolio_values_by_user[uid] = total_value
+            gain_loss, gain_loss_pct = calculate_total_gain_loss(total_value)
+            leaderboard_entries.append(LeaderboardEntry(
+                user_id=uid,
+                user_name=user_names[uid],
+                total_value=total_value,
+                total_gain_loss=gain_loss,
+                total_gain_loss_pct=gain_loss_pct,
+                position_count=len(enriched),
+            ))
+
+        leaderboard_entries.sort(key=lambda e: e.total_gain_loss_pct, reverse=True)
+
+        # Fetch weekly snapshots
+        snapshots_by_user: dict = {}
+        for portfolio in portfolios:
+            uid = portfolio['user_id']
+            snaps = await self.stock_data.paper_trading.get_snapshots(
+                guild_id, uid, week_start, week_end
+            )
+            if snaps:
+                snapshots_by_user[uid] = snaps
+
+        # Fetch weekly transactions
+        week_start_dt = datetime.datetime.combine(
+            week_start, datetime.time.min, tzinfo=datetime.timezone.utc
+        )
+        transactions = await self.stock_data.paper_trading.get_guild_transactions(
+            guild_id, week_start_dt
+        )
+
+        # Fetch daily price history for held tickers
+        held_tickers = {
+            pos['ticker']
+            for positions in positions_by_user.values()
+            for pos in positions
+        }
+        price_history: dict = {}
+        for ticker in held_tickers:
+            df = await self.stock_data.price_history.fetch_daily_price_history(
+                ticker, start_date=week_start, end_date=week_end
+            )
+            if df is not None and not df.empty:
+                price_history[ticker] = [
+                    {
+                        'date': row['date'],
+                        'open': row['open'],
+                        'high': row['high'],
+                        'low': row['low'],
+                        'close': row['close'],
+                    }
+                    for _, row in df.iterrows()
+                ]
+
+        # Fetch ticker sectors
+        ticker_sectors: dict = {}
+        for ticker in held_tickers:
+            info = await self.stock_data.tickers.get_ticker_info(ticker)
+            if info and info.get('sector'):
+                ticker_sectors[ticker] = info['sector']
+
+        # Evaluate awards
+        all_user_ids = [p['user_id'] for p in portfolios]
+        awards = evaluate_weekly_awards(
+            snapshots_by_user=snapshots_by_user,
+            transactions=transactions,
+            positions_by_user=positions_by_user,
+            portfolio_values_by_user=portfolio_values_by_user,
+            price_history=price_history,
+            ticker_sectors=ticker_sectors,
+            all_user_ids=all_user_ids,
+            user_names=user_names,
+        )
+
+        # Server stats
+        active_traders = len({tx['user_id'] for tx in transactions})
+        total_volume = sum(tx['total'] for tx in transactions)
+        ticker_trade_counts: dict = {}
+        for tx in transactions:
+            ticker_trade_counts[tx['ticker']] = ticker_trade_counts.get(tx['ticker'], 0) + 1
+        most_traded = max(ticker_trade_counts, key=ticker_trade_counts.get) if ticker_trade_counts else None
+
+        roundup_data = WeeklyRoundupData(
+            guild_name=guild_name,
+            week_label=week_label,
+            leaderboard=leaderboard_entries,
+            awards=awards,
+            server_stats={
+                'total_trades': len(transactions),
+                'active_traders': active_traders,
+                'most_traded_ticker': most_traded,
+                'total_volume': total_volume,
+            },
+        )
+
+        content = WeeklyRoundup(roundup_data)
+        primary_embed = spec_to_embed(content.build())
+        await channel.send(embed=primary_embed)
+        if content.needs_split():
+            awards_embed = spec_to_embed(content.build_awards_embed())
+            await channel.send(embed=awards_embed)
 
 
 async def setup(bot: commands.Bot):
