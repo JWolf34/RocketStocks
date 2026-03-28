@@ -413,6 +413,159 @@ async def test_mark_order_executed_updates_status(repo, mock_db):
 
 
 # ---------------------------------------------------------------------------
+# mark_order_cancelled
+# ---------------------------------------------------------------------------
+
+async def test_mark_order_cancelled_sets_status(repo, mock_db):
+    await repo.mark_order_cancelled(7)
+    sql, params = mock_db.execute.call_args[0]
+    assert "status = 'cancelled'" in sql
+    assert 7 in params
+
+
+# ---------------------------------------------------------------------------
+# execute_pending_buy
+# ---------------------------------------------------------------------------
+
+async def test_execute_pending_buy_same_price_no_delta(repo, mock_db):
+    """When execution price equals quoted price, no extra cash check or adjustment."""
+    mock_conn = MagicMock()
+    mock_conn.execute = AsyncMock(return_value=None)
+    mock_db.transaction.return_value = _make_transaction_ctx(mock_conn)
+
+    result = await repo.execute_pending_buy(1001, 2001, 'AAPL', 10, 150.0, 150.0)
+
+    assert result is True
+    calls = [c[0][0] for c in mock_conn.execute.call_args_list]
+    # No SELECT cash call, no UPDATE cash call since delta==0
+    assert not any('SELECT cash' in sql for sql in calls)
+    assert any('paper_positions' in sql for sql in calls)
+    assert any('paper_transactions' in sql for sql in calls)
+
+
+async def test_execute_pending_buy_price_up_sufficient_funds(repo, mock_db):
+    """Price increased, user has enough extra cash — executes and charges delta."""
+    mock_conn = MagicMock()
+    call_count = 0
+
+    async def side_effect(sql, params=None, **kwargs):
+        nonlocal call_count
+        call_count += 1
+        if 'SELECT cash' in sql:
+            return (500.0,)   # available cash covers the $50 delta (10 * $5)
+        return None
+
+    mock_conn.execute = AsyncMock(side_effect=side_effect)
+    mock_db.transaction.return_value = _make_transaction_ctx(mock_conn)
+
+    result = await repo.execute_pending_buy(1001, 2001, 'AAPL', 10, 150.0, 155.0)
+
+    assert result is True
+    calls = [(c[0][0], c[0][1]) for c in mock_conn.execute.call_args_list]
+    delta_update = next(
+        (sql, p) for sql, p in calls if 'cash = cash - %s' in sql and 'paper_portfolios' in sql
+    )
+    assert pytest.approx(50.0) in delta_update[1]  # 10 * (155 - 150)
+
+
+async def test_execute_pending_buy_price_up_insufficient_funds(repo, mock_db):
+    """Price increased, user lacks extra cash — refunds reservation and returns False."""
+    mock_conn = MagicMock()
+
+    async def side_effect(sql, params=None, **kwargs):
+        if 'SELECT cash' in sql:
+            return (10.0,)  # only $10, needs $50 extra
+        return None
+
+    mock_conn.execute = AsyncMock(side_effect=side_effect)
+    mock_db.transaction.return_value = _make_transaction_ctx(mock_conn)
+
+    result = await repo.execute_pending_buy(1001, 2001, 'AAPL', 10, 150.0, 155.0)
+
+    assert result is False
+    calls = [(c[0][0], c[0][1]) for c in mock_conn.execute.call_args_list]
+    refund_call = next(
+        (sql, p) for sql, p in calls if 'cash = cash + %s' in sql and 'paper_portfolios' in sql
+    )
+    assert pytest.approx(1500.0) in refund_call[1]  # 10 * 150.0 refunded
+    # No position or transaction inserted
+    assert not any('paper_positions' in sql for sql in (s for s, _ in calls))
+    assert not any('paper_transactions' in sql for sql in (s for s, _ in calls))
+
+
+async def test_execute_pending_buy_price_down_refunds_delta(repo, mock_db):
+    """When execution price is lower, the savings are credited back to cash."""
+    mock_conn = MagicMock()
+    mock_conn.execute = AsyncMock(return_value=None)
+    mock_db.transaction.return_value = _make_transaction_ctx(mock_conn)
+
+    result = await repo.execute_pending_buy(1001, 2001, 'AAPL', 10, 150.0, 145.0)
+
+    assert result is True
+    calls = [(c[0][0], c[0][1]) for c in mock_conn.execute.call_args_list]
+    # delta is negative (-50), so UPDATE cash = cash - (-50) = cash + 50
+    delta_update = next(
+        (sql, p) for sql, p in calls if 'cash = cash - %s' in sql and 'paper_portfolios' in sql
+    )
+    assert pytest.approx(-50.0) in delta_update[1]
+
+
+async def test_execute_pending_buy_weighted_avg_existing_position(repo, mock_db):
+    """Existing position gets weighted average cost basis."""
+    mock_conn = MagicMock()
+
+    async def side_effect(sql, params=None, **kwargs):
+        if 'SELECT shares' in sql:
+            return (10, 100.0)  # existing: 10 shares @ $100
+        return None
+
+    mock_conn.execute = AsyncMock(side_effect=side_effect)
+    mock_db.transaction.return_value = _make_transaction_ctx(mock_conn)
+
+    await repo.execute_pending_buy(1001, 2001, 'AAPL', 10, 150.0, 150.0)
+
+    calls = [(c[0][0], c[0][1]) for c in mock_conn.execute.call_args_list]
+    upsert = next(sql for sql, _ in calls if 'INSERT INTO paper_positions' in sql)
+    upsert_params = next(p for sql, p in calls if 'INSERT INTO paper_positions' in sql)
+    assert upsert_params[3] == 20              # 10 + 10 total shares
+    assert pytest.approx(125.0) == upsert_params[4]  # (10*100 + 10*150) / 20
+
+
+# ---------------------------------------------------------------------------
+# execute_pending_sell
+# ---------------------------------------------------------------------------
+
+async def test_execute_pending_sell_adds_cash_and_records_transaction(repo, mock_db):
+    """execute_pending_sell credits cash and inserts transaction — no position change."""
+    mock_conn = MagicMock()
+    mock_conn.execute = AsyncMock(return_value=None)
+    mock_db.transaction.return_value = _make_transaction_ctx(mock_conn)
+
+    await repo.execute_pending_sell(1001, 2001, 'TSLA', 5, 200.0)
+
+    calls = [(c[0][0], c[0][1]) for c in mock_conn.execute.call_args_list]
+    cash_update = next(sql for sql, _ in calls if 'cash = cash + %s' in sql)
+    assert cash_update  # cash credited
+    cash_params = next(p for sql, p in calls if 'cash = cash + %s' in sql)
+    assert pytest.approx(1000.0) in cash_params  # 5 * 200.0
+    assert any('paper_transactions' in sql for sql, _ in calls)
+    # No position modification
+    assert not any('paper_positions' in sql for sql, _ in calls)
+
+
+async def test_execute_pending_sell_no_position_update(repo, mock_db):
+    """execute_pending_sell must never touch paper_positions (already locked at queue time)."""
+    mock_conn = MagicMock()
+    mock_conn.execute = AsyncMock(return_value=None)
+    mock_db.transaction.return_value = _make_transaction_ctx(mock_conn)
+
+    await repo.execute_pending_sell(1001, 2001, 'AAPL', 3, 100.0)
+
+    calls = [c[0][0] for c in mock_conn.execute.call_args_list]
+    assert not any('paper_positions' in sql for sql in calls)
+
+
+# ---------------------------------------------------------------------------
 # get_transactions
 # ---------------------------------------------------------------------------
 

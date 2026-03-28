@@ -34,6 +34,9 @@ def _make_stock_data():
     sd.paper_trading.cancel_buy_order = AsyncMock(return_value=True)
     sd.paper_trading.cancel_sell_order = AsyncMock(return_value=True)
     sd.paper_trading.mark_order_executed = AsyncMock()
+    sd.paper_trading.mark_order_cancelled = AsyncMock()
+    sd.paper_trading.execute_pending_buy = AsyncMock(return_value=True)
+    sd.paper_trading.execute_pending_sell = AsyncMock()
     sd.paper_trading.get_all_portfolios = AsyncMock(return_value=[])
     sd.paper_trading.get_distinct_guild_ids = AsyncMock(return_value=[])
     sd.paper_trading.insert_snapshot = AsyncMock()
@@ -115,7 +118,8 @@ async def test_execute_pending_orders_no_pending():
 async def test_execute_pending_buy_order():
     cog, _, sd = _make_cog()
     sd.paper_trading.get_all_pending_orders.return_value = [
-        {'id': 1, 'guild_id': 1001, 'user_id': 2001, 'ticker': 'AAPL', 'side': 'BUY', 'shares': 10}
+        {'id': 1, 'guild_id': 1001, 'user_id': 2001, 'ticker': 'AAPL', 'side': 'BUY',
+         'shares': 10, 'quoted_price': 150.0}
     ]
     with (
         patch.object(cog.mutils, "in_intraday", return_value=True),
@@ -123,14 +127,65 @@ async def test_execute_pending_buy_order():
         patch.object(cog.mutils, "get_current_price", return_value=155.0),
     ):
         await cog._execute_pending_orders_impl()
-    sd.paper_trading.execute_buy.assert_called_once_with(1001, 2001, 'AAPL', 10, 155.0)
+    sd.paper_trading.execute_pending_buy.assert_called_once_with(
+        1001, 2001, 'AAPL', 10, 150.0, 155.0
+    )
     sd.paper_trading.mark_order_executed.assert_called_once_with(1, 155.0)
+
+
+async def test_execute_pending_buy_cancelled_insufficient_funds():
+    cog, bot, sd = _make_cog()
+    sd.paper_trading.execute_pending_buy.return_value = False
+    sd.paper_trading.get_all_pending_orders.return_value = [
+        {'id': 3, 'guild_id': 1001, 'user_id': 2001, 'ticker': 'AAPL', 'side': 'BUY',
+         'shares': 10, 'quoted_price': 150.0}
+    ]
+    mock_channel = MagicMock()
+    mock_channel.send = AsyncMock()
+    sd.channel_config.get_channel_id = AsyncMock(return_value=9999)
+    bot.get_channel = MagicMock(return_value=mock_channel)
+
+    with (
+        patch.object(cog.mutils, "in_intraday", return_value=True),
+        patch.object(cog.mutils, "_refresh_schedule_if_needed"),
+        patch.object(cog.mutils, "get_current_price", return_value=200.0),
+    ):
+        await cog._execute_pending_orders_impl()
+
+    sd.paper_trading.mark_order_cancelled.assert_called_once_with(3)
+    sd.paper_trading.mark_order_executed.assert_not_called()
+    mock_channel.send.assert_called_once()
+    msg = mock_channel.send.call_args[0][0]
+    assert "AAPL" in msg
+    assert "cancelled" in msg.lower()
+    assert "<@2001>" in msg
+
+
+async def test_execute_pending_buy_cancelled_no_trade_channel():
+    """Cancellation should not raise even when no trade channel is configured."""
+    cog, _, sd = _make_cog()
+    sd.paper_trading.execute_pending_buy.return_value = False
+    sd.paper_trading.get_all_pending_orders.return_value = [
+        {'id': 4, 'guild_id': 1001, 'user_id': 2001, 'ticker': 'AAPL', 'side': 'BUY',
+         'shares': 5, 'quoted_price': 100.0}
+    ]
+    sd.channel_config.get_channel_id = AsyncMock(return_value=None)
+
+    with (
+        patch.object(cog.mutils, "in_intraday", return_value=True),
+        patch.object(cog.mutils, "_refresh_schedule_if_needed"),
+        patch.object(cog.mutils, "get_current_price", return_value=150.0),
+    ):
+        await cog._execute_pending_orders_impl()
+
+    sd.paper_trading.mark_order_cancelled.assert_called_once_with(4)
 
 
 async def test_execute_pending_sell_order():
     cog, _, sd = _make_cog()
     sd.paper_trading.get_all_pending_orders.return_value = [
-        {'id': 2, 'guild_id': 1001, 'user_id': 2001, 'ticker': 'TSLA', 'side': 'SELL', 'shares': 5}
+        {'id': 2, 'guild_id': 1001, 'user_id': 2001, 'ticker': 'TSLA', 'side': 'SELL',
+         'shares': 5, 'quoted_price': 190.0}
     ]
     with (
         patch.object(cog.mutils, "in_intraday", return_value=True),
@@ -138,13 +193,15 @@ async def test_execute_pending_sell_order():
         patch.object(cog.mutils, "get_current_price", return_value=200.0),
     ):
         await cog._execute_pending_orders_impl()
-    sd.paper_trading.execute_sell.assert_called_once_with(1001, 2001, 'TSLA', 5, 200.0)
+    sd.paper_trading.execute_pending_sell.assert_called_once_with(1001, 2001, 'TSLA', 5, 200.0)
+    sd.paper_trading.mark_order_executed.assert_called_once_with(2, 200.0)
 
 
 async def test_execute_pending_skips_zero_price():
     cog, _, sd = _make_cog()
     sd.paper_trading.get_all_pending_orders.return_value = [
-        {'id': 1, 'guild_id': 1001, 'user_id': 2001, 'ticker': 'AAPL', 'side': 'BUY', 'shares': 10}
+        {'id': 1, 'guild_id': 1001, 'user_id': 2001, 'ticker': 'AAPL', 'side': 'BUY',
+         'shares': 10, 'quoted_price': 150.0}
     ]
     with (
         patch.object(cog.mutils, "in_intraday", return_value=True),
@@ -152,7 +209,7 @@ async def test_execute_pending_skips_zero_price():
         patch.object(cog.mutils, "get_current_price", return_value=0.0),
     ):
         await cog._execute_pending_orders_impl()
-    sd.paper_trading.execute_buy.assert_not_called()
+    sd.paper_trading.execute_pending_buy.assert_not_called()
 
 
 # ---------------------------------------------------------------------------
