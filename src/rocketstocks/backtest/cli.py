@@ -80,6 +80,15 @@ def build_parser() -> argparse.ArgumentParser:
     opt_p.add_argument('--start-date', type=str, default=None, metavar='YYYY-MM-DD')
     opt_p.add_argument('--end-date', type=str, default=None, metavar='YYYY-MM-DD')
 
+    # ------------------------------------------------------------- results --
+    results_p = sub.add_parser('results', help='Show per-ticker results for a run')
+    results_p.add_argument('run_id', type=int, help='Run ID to display')
+    results_p.add_argument('--sort', type=str, default='return_pct',
+                           choices=['return_pct', 'sharpe_ratio', 'num_trades'],
+                           help='Sort key (default: return_pct)')
+    results_p.add_argument('--limit', type=int, default=20,
+                           help='Number of results to show (default: 20)')
+
     # ---------------------------------------------------------------- list --
     sub.add_parser('list', help='List all available strategy names')
 
@@ -117,6 +126,8 @@ async def main(argv: list[str] | None = None) -> int:
             return await _handle_compare(args, repo)
         elif args.command == 'optimize':
             return await _handle_optimize(args, runner)
+        elif args.command == 'results':
+            return await _handle_results(args, repo)
     finally:
         await stock_data.db.close()
 
@@ -263,6 +274,51 @@ async def _handle_optimize(args, runner: BacktestRunner) -> int:
         print(f'  {k:<20} {v:.4f}' if isinstance(v, float) else f'  {k:<20} {v}')
 
     return 0
+
+
+async def _handle_results(args, repo: BacktestRepository) -> int:
+    run = await repo.get_run(args.run_id)
+    if not run:
+        print(f'Run {args.run_id} not found.')
+        return 1
+
+    results = await repo.get_results_sorted_by(args.run_id, args.sort, args.limit)
+    print(f'\n=== Per-Ticker Results: Run {args.run_id} ({run["strategy_name"]}) ===')
+    print(f'Sorted by: {args.sort} | Showing top {args.limit}')
+    print()
+
+    for r in results:
+        excess = ''
+        if r.get('buy_hold_pct') is not None and r.get('return_pct') is not None:
+            excess_val = r['return_pct'] - r['buy_hold_pct']
+            excess = f'  excess: {_fmt(excess_val)}%'
+        err = f'  [ERROR: {r["error"]}]' if r.get('error') else ''
+        print(
+            f"  {r['ticker']:<8}"
+            f"  return: {_fmt(r.get('return_pct'))}%"
+            f"  sharpe: {_fmt(r.get('sharpe_ratio'), 3)}"
+            f"  trades: {r.get('num_trades') or 0}"
+            f"{excess}{err}"
+        )
+
+    return 0
+
+
+def _print_benchmark_comparison(bench: dict) -> None:
+    print(f'\n=== Benchmark Comparison ({bench.get("label", "")}) ===')
+    if 'error' in bench:
+        print(f'  Error: {bench["error"]}')
+        return
+    sig = 'Yes' if bench.get('significant') else 'No'
+    print(f"  Benchmark return:     {_fmt(bench.get('benchmark_return_pct'))}%")
+    print(f"  Mean excess return:   {_fmt(bench.get('mean_excess_return'))}%")
+    print(f"  Median excess return: {_fmt(bench.get('median_excess_return'))}%")
+    print(f"  % beating benchmark:  {_fmt(bench.get('pct_beating_benchmark'))}%")
+    print(f"  n:                    {bench.get('n', 0)}")
+    print(f"  t-statistic:          {_fmt(bench.get('t_stat'), 4)}")
+    print(f"  p-value:              {_fmt(bench.get('p_value'), 4)}")
+    print(f"  Significant:          {sig} (p < 0.05)")
+    print()
 
 
 def _print_group_stats(s: dict) -> None:
