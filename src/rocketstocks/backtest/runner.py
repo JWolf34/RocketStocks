@@ -4,7 +4,14 @@ import logging
 
 from backtesting import Backtest
 
-from rocketstocks.backtest.data_prep import filter_regular_hours, prep_daily, prep_5m
+from rocketstocks.backtest.data_prep import (
+    enrich_5m_with_daily_context,
+    filter_regular_hours,
+    mark_regular_hours,
+    merge_popularity,
+    prep_5m,
+    prep_daily,
+)
 from rocketstocks.backtest.filters import TickerFilter
 from rocketstocks.backtest.registry import get_strategy
 from rocketstocks.backtest.repository import BacktestRepository
@@ -158,11 +165,18 @@ class BacktestRunner:
         }
 
         try:
+            requires_daily = getattr(strategy_cls, 'requires_daily', False)
+            requires_popularity = getattr(strategy_cls, 'requires_popularity', False)
+
             if timeframe == 'daily':
                 raw_df = await self._stock_data.price_history.fetch_daily_price_history(
                     ticker, start_date=start_date, end_date=end_date,
                 )
                 df = prep_daily(raw_df)
+
+                if requires_popularity:
+                    pop_raw = await self._stock_data.popularity.fetch_popularity(ticker)
+                    df = merge_popularity(df, pop_raw)
             else:
                 start_dt = (
                     datetime.datetime.combine(start_date, datetime.time.min)
@@ -176,7 +190,19 @@ class BacktestRunner:
                     ticker, start_datetime=start_dt, end_datetime=end_dt,
                 )
                 df = prep_5m(raw_df)
-                df = filter_regular_hours(df)
+                df = mark_regular_hours(df)
+
+                if requires_daily:
+                    daily_start = self._extend_start(start_date, extra_trading_days=25)
+                    raw_daily = await self._stock_data.price_history.fetch_daily_price_history(
+                        ticker, start_date=daily_start, end_date=end_date,
+                    )
+                    daily_df = prep_daily(raw_daily)
+                    df = enrich_5m_with_daily_context(df, daily_df)
+
+                if requires_popularity:
+                    pop_raw = await self._stock_data.popularity.fetch_popularity(ticker)
+                    df = merge_popularity(df, pop_raw)
 
             if df.empty or len(df) < _MIN_BARS:
                 result['error'] = f'insufficient_data ({len(df)} bars)'
@@ -188,6 +214,7 @@ class BacktestRunner:
                 cash=cash,
                 commission=commission,
                 exclusive_orders=True,
+                finalize_trades=True,
             )
 
             stats = bt.run(**(strategy_params or {}))
@@ -210,6 +237,59 @@ class BacktestRunner:
             result['error'] = str(exc)
 
         return result
+
+    async def run_benchmark(
+        self,
+        ticker: str,
+        timeframe: str = 'daily',
+        cash: float = 10_000,
+        commission: float = 0.002,
+        start_date: datetime.date | None = None,
+        end_date: datetime.date | None = None,
+    ) -> float:
+        """Run buy-and-hold on a single ticker and return the return_pct.
+
+        Used to establish a passive benchmark for excess-return calculations.
+
+        Args:
+            ticker: Benchmark ticker (e.g. 'SPY').
+            timeframe: Price data timeframe.
+            cash: Starting cash.
+            commission: Per-trade commission fraction.
+            start_date: Start of benchmark period.
+            end_date: End of benchmark period.
+
+        Returns:
+            Return [%] for the buy-and-hold run, or NaN if data is unavailable.
+        """
+        result = await self._run_single(
+            ticker=ticker,
+            strategy_cls=get_strategy('buy_hold'),
+            timeframe=timeframe,
+            cash=cash,
+            commission=commission,
+            start_date=start_date,
+            end_date=end_date,
+            strategy_params=None,
+            classification='standard',
+            sector=None,
+        )
+        val = result.get('return_pct')
+        return float(val) if val is not None else float('nan')
+
+    def _extend_start(
+        self,
+        start_date: datetime.date | None,
+        extra_trading_days: int,
+    ) -> datetime.date | None:
+        """Return a start date shifted earlier by approximately extra_trading_days.
+
+        Uses a 1.5x calendar-day multiplier to account for weekends and holidays.
+        """
+        if start_date is None:
+            return None
+        extra_calendar = int(extra_trading_days * 1.5) + 10
+        return start_date - datetime.timedelta(days=extra_calendar)
 
     async def optimize(
         self,
@@ -263,12 +343,13 @@ class BacktestRunner:
                 ticker, start_datetime=start_dt, end_datetime=end_dt,
             )
             df = prep_5m(raw_df)
-            df = filter_regular_hours(df)
+            df = mark_regular_hours(df)
 
         if df.empty or len(df) < _MIN_BARS:
             return {'error': f'insufficient_data ({len(df)} bars)'}
 
-        bt = Backtest(df, strategy_cls, cash=cash, commission=commission, exclusive_orders=True)
+        bt = Backtest(df, strategy_cls, cash=cash, commission=commission,
+                      exclusive_orders=True, finalize_trades=True)
 
         return_heatmap = len(param_grid) == 2
         opt_result = bt.optimize(
