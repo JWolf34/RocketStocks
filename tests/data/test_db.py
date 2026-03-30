@@ -146,7 +146,7 @@ class TestExecuteBatch:
 # ---------------------------------------------------------------------------
 
 class TestTransaction:
-    async def test_yields_connection(self):
+    async def test_yields_transaction_conn(self):
         pg = _make_postgres()
         mock_conn = MagicMock()
         mock_conn.transaction.return_value.__aenter__ = AsyncMock(return_value=None)
@@ -154,5 +154,39 @@ class TestTransaction:
         pg._pool.connection.return_value.__aenter__ = AsyncMock(return_value=mock_conn)
         pg._pool.connection.return_value.__aexit__ = AsyncMock(return_value=False)
 
+        from rocketstocks.data.db import _TransactionConn
         async with pg.transaction() as conn:
-            assert conn is mock_conn
+            assert isinstance(conn, _TransactionConn)
+            assert conn._conn is mock_conn
+
+
+class TestTransactionConn:
+    def _make_conn(self, description=("col",), fetchone_row=None, fetchall_rows=None):
+        from rocketstocks.data.db import _TransactionConn
+        mock_raw = MagicMock()
+        mock_cur = MagicMock()
+        mock_cur.description = description
+        mock_cur.fetchone = AsyncMock(return_value=fetchone_row)
+        mock_cur.fetchall = AsyncMock(return_value=fetchall_rows or [])
+        mock_raw.execute = AsyncMock(return_value=mock_cur)
+        return _TransactionConn(mock_raw), mock_raw
+
+    async def test_execute_select_fetchone(self):
+        conn, mock_raw = self._make_conn(fetchone_row=(1, "AAPL"))
+        result = await conn.execute("SELECT ...", [1], fetchone=True)
+        assert result == (1, "AAPL")
+
+    async def test_execute_select_fetchall(self):
+        conn, mock_raw = self._make_conn(fetchall_rows=[(1,), (2,)])
+        result = await conn.execute("SELECT ...", [1])
+        assert result == [(1,), (2,)]
+
+    async def test_execute_dml_returns_none(self):
+        conn, mock_raw = self._make_conn(description=None)
+        result = await conn.execute("UPDATE ...", [1])
+        assert result is None
+
+    async def test_execute_passes_query_and_params(self):
+        conn, mock_raw = self._make_conn(description=None)
+        await conn.execute("DELETE FROM t WHERE id = %s", [42])
+        mock_raw.execute.assert_called_once_with("DELETE FROM t WHERE id = %s", [42])

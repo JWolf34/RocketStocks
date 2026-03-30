@@ -179,11 +179,11 @@ class MarketSignalRepository:
             'composite': float(composite_score) if composite_score is not None else None,
         }
         async with self._db.transaction() as conn:
-            cur = await conn.execute(
+            row = await conn.execute(
                 "SELECT signal_data FROM market_signals WHERE ticker = %s AND detected_at = %s",
                 [ticker, detected_at],
+                fetchone=True,
             )
-            row = await cur.fetchone()
             if row is None:
                 return
             existing = row[0] if isinstance(row[0], list) else []
