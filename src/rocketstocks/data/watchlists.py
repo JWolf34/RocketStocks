@@ -196,12 +196,12 @@ class Watchlists(object):
             logger.warning(f"Cannot rename: watchlist '{new_id}' already exists")
             return False
         async with self.db.transaction() as conn:
-            cur = await conn.execute(
+            row = await conn.execute(
                 "SELECT tickers, systemgenerated, watchlist_type, owner_id, display_name "
                 "FROM watchlists WHERE id = %s",
                 [old_id],
+                fetchone=True,
             )
-            row = await cur.fetchone()
             tickers_str, system_gen, wl_type, owner_id, disp = row[0], row[1], row[2], row[3], row[4]
             await conn.execute(
                 "INSERT INTO watchlists (id, tickers, systemgenerated, watchlist_type, owner_id, display_name) "

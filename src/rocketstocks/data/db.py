@@ -19,6 +19,24 @@ def _build_conninfo() -> str:
     )
 
 
+class _TransactionConn:
+    """Thin wrapper around a raw psycopg AsyncConnection inside a transaction.
+
+    Provides the same ``execute()`` signature as :class:`Postgres` so that
+    callers use an identical API whether inside or outside a transaction block.
+    The raw connection is never exposed directly.
+    """
+
+    def __init__(self, conn):
+        self._conn = conn
+
+    async def execute(self, query: str, params=None, fetchone: bool = False):
+        cur = await self._conn.execute(query, params)
+        if cur.description is not None:
+            return await cur.fetchone() if fetchone else await cur.fetchall()
+        return None
+
+
 class Postgres:
     def __init__(self, minconn: int = 2, maxconn: int = 10):
         """Create the async connection pool (call await open() before use)."""
@@ -60,14 +78,18 @@ class Postgres:
 
     @asynccontextmanager
     async def transaction(self):
-        """Yield a connection for multi-statement atomic operations.
+        """Yield a wrapped connection for multi-statement atomic operations.
+
+        The yielded ``conn`` exposes the same ``execute()`` API as this class,
+        including the ``fetchone`` parameter — never interact with the raw
+        psycopg connection directly.
 
         Usage::
 
             async with self._db.transaction() as conn:
-                await conn.execute("SELECT ...", params)
-                await conn.execute("UPDATE ...", params)
+                await conn.execute("INSERT ...", params)
+                row = await conn.execute("SELECT ...", params, fetchone=True)
         """
         async with self._pool.connection() as conn:
             async with conn.transaction():
-                yield conn
+                yield _TransactionConn(conn)
