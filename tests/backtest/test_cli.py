@@ -81,6 +81,28 @@ def test_parser_list_command():
     assert args.command == 'list'
 
 
+def test_parser_run_exchange_and_watchlist_flags():
+    parser = build_parser()
+    args = parser.parse_args([
+        'run', 'alert_signal',
+        '--exchange', 'NYSE', 'NASDAQ',
+        '--watchlist', 'mag7', 'semiconductors',
+    ])
+    assert args.exchange == ['NYSE', 'NASDAQ']
+    assert args.watchlist == ['mag7', 'semiconductors']
+
+
+def test_parser_run_volatility_flags():
+    parser = build_parser()
+    args = parser.parse_args([
+        'run', 'alert_signal',
+        '--min-volatility', '1.5',
+        '--max-volatility', '8.0',
+    ])
+    assert args.min_volatility == pytest.approx(1.5)
+    assert args.max_volatility == pytest.approx(8.0)
+
+
 # ---------------------------------------------------------------------------
 # _handle_list
 # ---------------------------------------------------------------------------

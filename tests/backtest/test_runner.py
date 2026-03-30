@@ -48,17 +48,24 @@ def _make_mock_stock_data(daily_df: pd.DataFrame | None = None) -> MagicMock:
     sd.tickers.get_all_ticker_info = AsyncMock(return_value=pd.DataFrame({
         'ticker': ['AAPL'],
         'sector': ['Technology'],
+        'exchange': ['NASDAQ'],
         'delist_date': [None],
     }))
     sd.ticker_stats = MagicMock()
     sd.ticker_stats.get_all_classifications = AsyncMock(return_value={'AAPL': 'blue_chip'})
     sd.ticker_stats.get_all_stats = AsyncMock(return_value=[
-        {'ticker': 'AAPL', 'classification': 'blue_chip', 'market_cap': 3_000_000_000_000},
+        {'ticker': 'AAPL', 'classification': 'blue_chip', 'market_cap': 3_000_000_000_000, 'volatility_20d': 1.2},
     ])
     sd.popularity = MagicMock()
     sd.popularity.fetch_popularity = AsyncMock(return_value=pd.DataFrame(
         columns=['datetime', 'rank', 'ticker', 'name', 'mentions', 'upvotes',
                  'rank_24h_ago', 'mentions_24h_ago']
+    ))
+    sd.watchlists = MagicMock()
+    sd.watchlists.get_ticker_to_watchlist_map = AsyncMock(return_value={})
+    sd.trading_view = MagicMock()
+    sd.trading_view.get_market_caps = MagicMock(return_value=pd.DataFrame(
+        columns=['ticker', 'market_cap']
     ))
     sd.price_history = MagicMock()
     sd.price_history.fetch_daily_price_history = AsyncMock(return_value=daily_df)

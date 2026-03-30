@@ -144,6 +144,46 @@ def test_compute_all_group_stats_empty_input():
     assert compute_all_group_stats([]) == []
 
 
+def test_compute_all_group_stats_groups_by_exchange():
+    results = [
+        {'ticker': 'AAPL', 'return_pct': 5.0, 'classification': 'blue_chip',
+         'sector': 'Technology', 'exchange': 'NASDAQ', 'watchlist': None,
+         'sharpe_ratio': 1.0, 'max_drawdown': -2.0, 'win_rate': 60.0,
+         'num_trades': 5, 'profit_factor': 1.2, 'error': None},
+        {'ticker': 'GME', 'return_pct': -4.0, 'classification': 'meme',
+         'sector': 'Consumer Cyclical', 'exchange': 'NYSE', 'watchlist': None,
+         'sharpe_ratio': -0.3, 'max_drawdown': -15.0, 'win_rate': 40.0,
+         'num_trades': 3, 'profit_factor': 0.7, 'error': None},
+    ]
+    groups = compute_all_group_stats(results)
+    group_keys = {g.group_key for g in groups}
+    assert 'exchange:NASDAQ' in group_keys
+    assert 'exchange:NYSE' in group_keys
+    nasdaq = next(g for g in groups if g.group_key == 'exchange:NASDAQ')
+    assert nasdaq.ticker_count == 1
+    assert nasdaq.mean_return == pytest.approx(5.0)
+
+
+def test_compute_all_group_stats_groups_by_watchlist():
+    results = [
+        {'ticker': 'AAPL', 'return_pct': 8.0, 'classification': 'blue_chip',
+         'sector': 'Technology', 'exchange': 'NASDAQ', 'watchlist': 'mag7',
+         'sharpe_ratio': 1.2, 'max_drawdown': -2.0, 'win_rate': 65.0,
+         'num_trades': 8, 'profit_factor': 1.5, 'error': None},
+        {'ticker': 'GME', 'return_pct': -4.0, 'classification': 'meme',
+         'sector': 'Consumer Cyclical', 'exchange': 'NYSE', 'watchlist': None,
+         'sharpe_ratio': -0.3, 'max_drawdown': -15.0, 'win_rate': 40.0,
+         'num_trades': 3, 'profit_factor': 0.7, 'error': None},
+    ]
+    groups = compute_all_group_stats(results)
+    group_keys = {g.group_key for g in groups}
+    assert 'watchlist:mag7' in group_keys
+    # GME has no watchlist — no watchlist:None group
+    assert not any(k.startswith('watchlist:None') for k in group_keys)
+    mag7 = next(g for g in groups if g.group_key == 'watchlist:mag7')
+    assert mag7.ticker_count == 1
+
+
 # ---------------------------------------------------------------------------
 # compare_strategies
 # ---------------------------------------------------------------------------

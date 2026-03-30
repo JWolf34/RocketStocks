@@ -29,13 +29,14 @@ def mock_stock_data(daily_price_df):
         'ticker': ['AAPL', 'MSFT', 'GME'],
         'sector': ['Technology', 'Technology', 'Consumer Cyclical'],
         'industry': ['Consumer Electronics', 'Software', 'Specialty Retail'],
+        'exchange': ['NASDAQ', 'NASDAQ', 'NYSE'],
         'delist_date': [None, None, None],
     }))
     sd.ticker_stats = MagicMock(name='ticker_stats')
     sd.ticker_stats.get_all_stats = AsyncMock(return_value=[
-        {'ticker': 'AAPL', 'classification': 'blue_chip', 'market_cap': 3_000_000_000_000},
-        {'ticker': 'MSFT', 'classification': 'blue_chip', 'market_cap': 2_500_000_000_000},
-        {'ticker': 'GME', 'classification': 'meme', 'market_cap': 10_000_000_000},
+        {'ticker': 'AAPL', 'classification': 'blue_chip', 'market_cap': 3_000_000_000_000, 'volatility_20d': 1.2},
+        {'ticker': 'MSFT', 'classification': 'blue_chip', 'market_cap': 2_500_000_000_000, 'volatility_20d': 1.1},
+        {'ticker': 'GME', 'classification': 'meme', 'market_cap': 10_000_000_000, 'volatility_20d': 6.5},
     ])
     sd.ticker_stats.get_all_classifications = AsyncMock(return_value={
         'AAPL': 'blue_chip', 'MSFT': 'blue_chip', 'GME': 'meme',
@@ -44,6 +45,13 @@ def mock_stock_data(daily_price_df):
     sd.popularity.fetch_popularity = AsyncMock(return_value=pd.DataFrame(
         columns=['datetime', 'rank', 'ticker', 'name', 'mentions', 'upvotes',
                  'rank_24h_ago', 'mentions_24h_ago']
+    ))
+    sd.watchlists = MagicMock(name='watchlists')
+    sd.watchlists.get_watchlist_tickers = AsyncMock(return_value=[])
+    sd.watchlists.get_ticker_to_watchlist_map = AsyncMock(return_value={})
+    sd.trading_view = MagicMock(name='trading_view')
+    sd.trading_view.get_market_caps = MagicMock(return_value=pd.DataFrame(
+        columns=['ticker', 'market_cap']
     ))
     sd.price_history = MagicMock(name='price_history')
     sd.price_history.fetch_daily_price_history = AsyncMock(return_value=daily_price_df)
