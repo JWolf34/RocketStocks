@@ -5,6 +5,7 @@ import pytest
 
 from rocketstocks.backtest.stats import (
     GroupStats,
+    _classify_market_cap,
     compare_against_benchmark,
     compare_strategies,
     compute_all_group_stats,
@@ -182,6 +183,119 @@ def test_compute_all_group_stats_groups_by_watchlist():
     assert not any(k.startswith('watchlist:None') for k in group_keys)
     mag7 = next(g for g in groups if g.group_key == 'watchlist:mag7')
     assert mag7.ticker_count == 1
+
+
+# ---------------------------------------------------------------------------
+# _classify_market_cap
+# ---------------------------------------------------------------------------
+
+def test_classify_market_cap_small():
+    assert _classify_market_cap(500_000_000) == 'small'
+
+
+def test_classify_market_cap_small_boundary():
+    assert _classify_market_cap(1_999_999_999) == 'small'
+
+
+def test_classify_market_cap_mid_lower_boundary():
+    assert _classify_market_cap(2_000_000_000) == 'mid'
+
+
+def test_classify_market_cap_mid():
+    assert _classify_market_cap(5_000_000_000) == 'mid'
+
+
+def test_classify_market_cap_mid_upper_boundary():
+    assert _classify_market_cap(9_999_999_999) == 'mid'
+
+
+def test_classify_market_cap_large():
+    assert _classify_market_cap(10_000_000_000) == 'large'
+
+
+def test_classify_market_cap_none_returns_none():
+    assert _classify_market_cap(None) is None
+
+
+# ---------------------------------------------------------------------------
+# compute_all_group_stats — market cap grouping
+# ---------------------------------------------------------------------------
+
+def _make_mcap_results() -> tuple[list[dict], dict[str, int | None]]:
+    """Returns results with 3 tickers spanning all three mcap tiers."""
+    results = [
+        {'ticker': 'SMALL', 'return_pct': 5.0, 'classification': 'standard',
+         'sector': 'Technology', 'exchange': 'NASDAQ', 'watchlist': None,
+         'sharpe_ratio': 0.5, 'max_drawdown': -5.0, 'win_rate': 55.0,
+         'num_trades': 4, 'profit_factor': 1.1, 'error': None},
+        {'ticker': 'MID', 'return_pct': 3.0, 'classification': 'standard',
+         'sector': 'Technology', 'exchange': 'NYSE', 'watchlist': None,
+         'sharpe_ratio': 0.3, 'max_drawdown': -3.0, 'win_rate': 50.0,
+         'num_trades': 3, 'profit_factor': 1.0, 'error': None},
+        {'ticker': 'LARGE', 'return_pct': 1.0, 'classification': 'blue_chip',
+         'sector': 'Healthcare', 'exchange': 'NYSE', 'watchlist': None,
+         'sharpe_ratio': 0.1, 'max_drawdown': -1.0, 'win_rate': 45.0,
+         'num_trades': 2, 'profit_factor': 0.9, 'error': None},
+    ]
+    mcap_map = {
+        'SMALL': 500_000_000,
+        'MID':   5_000_000_000,
+        'LARGE': 50_000_000_000,
+    }
+    return results, mcap_map
+
+
+def test_compute_all_group_stats_groups_by_market_cap():
+    results, mcap_map = _make_mcap_results()
+    groups = compute_all_group_stats(results, mcap_map=mcap_map)
+    keys = {g.group_key for g in groups}
+    assert 'mcap:small' in keys
+    assert 'mcap:mid' in keys
+    assert 'mcap:large' in keys
+
+
+def test_compute_all_group_stats_market_cap_group_values():
+    results, mcap_map = _make_mcap_results()
+    groups = compute_all_group_stats(results, mcap_map=mcap_map)
+    small = next(g for g in groups if g.group_key == 'mcap:small')
+    mid = next(g for g in groups if g.group_key == 'mcap:mid')
+    large = next(g for g in groups if g.group_key == 'mcap:large')
+    assert small.group_value == 'Small (<$2B)'
+    assert mid.group_value == 'Mid ($2B\u2013$10B)'
+    assert large.group_value == 'Large (>$10B)'
+
+
+def test_compute_all_group_stats_market_cap_ticker_counts():
+    results, mcap_map = _make_mcap_results()
+    groups = compute_all_group_stats(results, mcap_map=mcap_map)
+    small = next(g for g in groups if g.group_key == 'mcap:small')
+    assert small.ticker_count == 1
+    assert small.mean_return == pytest.approx(5.0)
+
+
+def test_compute_all_group_stats_skips_missing_market_cap():
+    results, mcap_map = _make_mcap_results()
+    # Remove SMALL from mcap_map — it should not appear in any mcap group
+    del mcap_map['SMALL']
+    groups = compute_all_group_stats(results, mcap_map=mcap_map)
+    small_groups = [g for g in groups if g.group_key == 'mcap:small']
+    assert small_groups == []
+
+
+def test_compute_all_group_stats_skips_none_market_cap():
+    results, mcap_map = _make_mcap_results()
+    mcap_map['LARGE'] = None
+    groups = compute_all_group_stats(results, mcap_map=mcap_map)
+    # LARGE has None market cap — no large group
+    large_groups = [g for g in groups if g.group_key == 'mcap:large']
+    assert large_groups == []
+
+
+def test_compute_all_group_stats_no_mcap_map_produces_no_mcap_keys():
+    results, _ = _make_mcap_results()
+    groups = compute_all_group_stats(results)
+    mcap_keys = [g.group_key for g in groups if g.group_key.startswith('mcap:')]
+    assert mcap_keys == []
 
 
 # ---------------------------------------------------------------------------

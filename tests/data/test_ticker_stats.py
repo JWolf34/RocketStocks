@@ -119,6 +119,41 @@ class TestGetAllClassifications:
         assert result == {}
 
 
+class TestGetAllMarketCaps:
+    async def test_returns_empty_dict_when_no_rows(self):
+        repo, db = _make_repo()
+        db.execute.return_value = []
+
+        result = await repo.get_all_market_caps()
+
+        assert result == {}
+
+    async def test_returns_ticker_market_cap_mapping(self):
+        repo, db = _make_repo()
+        db.execute.return_value = [('AAPL', 3_000_000_000), ('GME', 500_000_000)]
+
+        result = await repo.get_all_market_caps()
+
+        assert result['AAPL'] == 3_000_000_000
+        assert result['GME'] == 500_000_000
+
+    async def test_returns_none_market_cap(self):
+        repo, db = _make_repo()
+        db.execute.return_value = [('AAPL', None)]
+
+        result = await repo.get_all_market_caps()
+
+        assert result['AAPL'] is None
+
+    async def test_returns_empty_dict_when_none(self):
+        repo, db = _make_repo()
+        db.execute.return_value = None
+
+        result = await repo.get_all_market_caps()
+
+        assert result == {}
+
+
 class TestGetAllStats:
     async def test_returns_empty_list_when_no_rows(self):
         repo, db = _make_repo()
