@@ -10,7 +10,7 @@ _RUN_FIELDS = [
     'ticker_count', 'start_date', 'end_date', 'cash', 'commission', 'created_at',
 ]
 _RESULT_FIELDS = [
-    'result_id', 'run_id', 'ticker', 'classification', 'sector',
+    'result_id', 'run_id', 'ticker', 'classification', 'sector', 'exchange',
     'return_pct', 'sharpe_ratio', 'max_drawdown', 'win_rate', 'num_trades',
     'avg_trade_pct', 'profit_factor', 'exposure_pct', 'equity_final',
     'buy_hold_pct', 'error', 'created_at',
@@ -87,7 +87,7 @@ class BacktestRepository:
     async def insert_results_batch(self, run_id: int, results: list[dict]) -> None:
         """Bulk insert per-ticker results for a run."""
         cols = [
-            'run_id', 'ticker', 'classification', 'sector',
+            'run_id', 'ticker', 'classification', 'sector', 'exchange',
             'return_pct', 'sharpe_ratio', 'max_drawdown', 'win_rate',
             'num_trades', 'avg_trade_pct', 'profit_factor', 'exposure_pct',
             'equity_final', 'buy_hold_pct', 'error',
@@ -100,6 +100,7 @@ class BacktestRepository:
                 r.get('ticker'),
                 r.get('classification'),
                 r.get('sector'),
+                r.get('exchange'),
                 r.get('return_pct'),
                 r.get('sharpe_ratio'),
                 r.get('max_drawdown'),
