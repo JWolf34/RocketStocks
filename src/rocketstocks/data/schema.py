@@ -25,6 +25,7 @@ ALTER TABLE watchlists ADD COLUMN IF NOT EXISTS display_name VARCHAR(255);
 ALTER TABLE watchlists ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ DEFAULT NOW();
 CREATE INDEX IF NOT EXISTS idx_watchlists_type ON watchlists (watchlist_type);
 CREATE INDEX IF NOT EXISTS idx_watchlists_owner ON watchlists (owner_id) WHERE owner_id IS NOT NULL;
+ALTER TABLE backtest_results ADD COLUMN IF NOT EXISTS exchange VARCHAR(16);
 """
 
 _CREATE_SCRIPT = """
