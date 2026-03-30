@@ -146,6 +146,25 @@ def compute_all_group_stats(results: list[dict]) -> list[GroupStats]:
         if gs:
             out.append(gs)
 
+    by_exchange: dict[str, list[dict]] = {}
+    for r in results:
+        exchange = r.get('exchange') or 'unknown'
+        by_exchange.setdefault(exchange, []).append(r)
+    for exchange, group in by_exchange.items():
+        gs = compute_group_stats(group, group_key=f'exchange:{exchange}', group_value=exchange)
+        if gs:
+            out.append(gs)
+
+    by_watchlist: dict[str, list[dict]] = {}
+    for r in results:
+        wl = r.get('watchlist')
+        if wl:
+            by_watchlist.setdefault(wl, []).append(r)
+    for wl, group in by_watchlist.items():
+        gs = compute_group_stats(group, group_key=f'watchlist:{wl}', group_value=wl)
+        if gs:
+            out.append(gs)
+
     return out
 
 
