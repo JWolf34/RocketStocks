@@ -1,5 +1,6 @@
 import logging
 
+import pandas as pd
 from tradingview_screener import Query, Column as col
 
 logger = logging.getLogger(__name__)
@@ -118,6 +119,36 @@ class TradingView:
             preset='unusual_volume',
         ).get_scanner_data()
         return unusual_volume
+
+    @staticmethod
+    def get_market_caps(limit: int = 10000) -> pd.DataFrame:
+        """Fetch market cap for all active US stocks via TradingView screener.
+
+        Returns a DataFrame with columns ``ticker`` (str) and ``market_cap``
+        (float, USD). Used as a fallback when ``ticker_stats`` has sparse
+        market_cap coverage.
+
+        Args:
+            limit: Maximum number of tickers to return (default 10 000).
+        """
+        logger.debug(f"Fetching market caps for up to {limit} tickers from TradingView")
+        _, df = (
+            Query()
+            .select('name', 'market_cap_basic')
+            .where(*_COMMON_FILTERS)
+            .order_by('market_cap_basic', ascending=False, nulls_first=False)
+            .limit(limit)
+            .set_markets('america')
+            .get_scanner_data()
+        )
+        if df.empty:
+            return pd.DataFrame(columns=['ticker', 'market_cap'])
+        df = df[['name', 'market_cap_basic']].rename(
+            columns={'name': 'ticker', 'market_cap_basic': 'market_cap'}
+        )
+        df = df[df['market_cap'].notna()].copy()
+        df['market_cap'] = df['market_cap'].astype(float)
+        return df.reset_index(drop=True)
 
     @staticmethod
     def get_unusual_volume_at_time_movers():
