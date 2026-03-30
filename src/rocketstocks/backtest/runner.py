@@ -98,6 +98,9 @@ class BacktestRunner:
         classifications = await self._stock_data.ticker_stats.get_all_classifications()
         ticker_info_df = await self._stock_data.tickers.get_all_ticker_info()
         sector_map = dict(zip(ticker_info_df['ticker'], ticker_info_df['sector']))
+        exchange_col = ticker_info_df['exchange'] if 'exchange' in ticker_info_df.columns else None
+        exchange_map = dict(zip(ticker_info_df['ticker'], exchange_col)) if exchange_col is not None else {}
+        watchlist_map = await self._stock_data.watchlists.get_ticker_to_watchlist_map()
 
         run_id = await self._repo.insert_run(
             strategy_name=strategy_name,
@@ -126,6 +129,8 @@ class BacktestRunner:
                 strategy_params=strategy_params,
                 classification=classifications.get(ticker, 'standard'),
                 sector=sector_map.get(ticker),
+                exchange=exchange_map.get(ticker),
+                watchlist=watchlist_map.get(ticker),
             )
             result['run_id'] = run_id
             results.append(result)
@@ -156,12 +161,16 @@ class BacktestRunner:
         strategy_params: dict | None,
         classification: str,
         sector: str | None,
+        exchange: str | None = None,
+        watchlist: str | None = None,
     ) -> dict:
         """Run the backtest on one ticker and return a result dict."""
         result: dict = {
             'ticker': ticker,
             'classification': classification,
             'sector': sector,
+            'exchange': exchange,
+            'watchlist': watchlist,
         }
 
         try:
