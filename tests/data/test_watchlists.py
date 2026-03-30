@@ -377,7 +377,12 @@ class TestValidateWatchlist:
 # ---------------------------------------------------------------------------
 
 class TestRenameWatchlist:
-    def _make_rename_db(self, old_exists: bool, new_exists: bool):
+    def _make_rename_db(
+        self,
+        old_exists: bool,
+        new_exists: bool,
+        select_row=("AAPL MSFT", False, NAMED, None, "old-list"),
+    ):
         """Build a db mock for rename_watchlist."""
         db = MagicMock()
 
@@ -385,10 +390,18 @@ class TestRenameWatchlist:
             ("old-list",) if old_exists else None,
             ("new-list",) if new_exists else None,
         ]
-        mock_cur = MagicMock()
-        mock_cur.fetchone = AsyncMock(return_value=("AAPL MSFT", False, NAMED, None, "old-list"))
+
+        call_count = 0
+
+        async def conn_side_effect(sql, params=None, fetchone=False):
+            nonlocal call_count
+            call_count += 1
+            if call_count == 1:
+                return select_row  # SELECT tickers/metadata
+            return None  # INSERT / DELETE
+
         mock_conn = MagicMock()
-        mock_conn.execute = AsyncMock(return_value=mock_cur)
+        mock_conn.execute = AsyncMock(side_effect=conn_side_effect)
 
         mock_ctx = MagicMock()
         mock_ctx.__aenter__ = AsyncMock(return_value=mock_conn)
@@ -429,9 +442,10 @@ class TestRenameWatchlist:
         assert "old-list" in delete_params
 
     async def test_preserves_tickers_and_systemgenerated(self):
-        db, mock_conn = self._make_rename_db(old_exists=True, new_exists=False)
-        mock_conn.execute.return_value.fetchone = AsyncMock(
-            return_value=("AAPL MSFT", True, SYSTEM, None, "old-list")
+        db, mock_conn = self._make_rename_db(
+            old_exists=True,
+            new_exists=False,
+            select_row=("AAPL MSFT", True, SYSTEM, None, "old-list"),
         )
         wl = _make(db)
         await wl.rename_watchlist("old-list", "new-list")

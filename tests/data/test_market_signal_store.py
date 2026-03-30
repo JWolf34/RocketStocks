@@ -194,10 +194,17 @@ async def test_update_observation_appends_to_signal_data(repo, mock_db):
     ts = datetime.datetime(2026, 3, 8, 10, 0)
     existing = [{'ts': 'first', 'pct_change': 2.0}]
 
-    mock_cur = MagicMock()
-    mock_cur.fetchone = AsyncMock(return_value=(existing,))  # JSONB — list directly
+    call_count = 0
+
+    async def conn_side_effect(sql, params=None, fetchone=False):
+        nonlocal call_count
+        call_count += 1
+        if call_count == 1:
+            return (existing,)  # SELECT signal_data
+        return None  # UPDATE
+
     mock_conn = MagicMock()
-    mock_conn.execute = AsyncMock(return_value=mock_cur)
+    mock_conn.execute = AsyncMock(side_effect=conn_side_effect)
     mock_db.transaction.return_value.__aenter__ = AsyncMock(return_value=mock_conn)
     mock_db.transaction.return_value.__aexit__ = AsyncMock(return_value=False)
 
@@ -225,10 +232,8 @@ async def test_update_observation_no_op_when_no_row(repo, mock_db):
     """If signal row not found, no update executed."""
     ts = datetime.datetime(2026, 3, 8, 10, 0)
 
-    mock_cur = MagicMock()
-    mock_cur.fetchone = AsyncMock(return_value=None)
     mock_conn = MagicMock()
-    mock_conn.execute = AsyncMock(return_value=mock_cur)
+    mock_conn.execute = AsyncMock(return_value=None)  # SELECT returns None — no row
     mock_db.transaction.return_value.__aenter__ = AsyncMock(return_value=mock_conn)
     mock_db.transaction.return_value.__aexit__ = AsyncMock(return_value=False)
 
