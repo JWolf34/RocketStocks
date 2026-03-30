@@ -52,6 +52,14 @@ def build_parser() -> argparse.ArgumentParser:
                        metavar='RANK', help='Most-popular end of rank range (1 = #1)')
     run_p.add_argument('--max-popularity-rank', type=int, default=None,
                        metavar='RANK', help='Least-popular end of rank range')
+    run_p.add_argument('--exchange', nargs='+', default=None, metavar='EXCHANGE',
+                       help='Exchange names to include (e.g. NYSE NASDAQ)')
+    run_p.add_argument('--watchlist', nargs='+', default=None, metavar='WATCHLIST',
+                       help='Named watchlist IDs (e.g. mag7 semiconductors). Multiple are OR-combined.')
+    run_p.add_argument('--min-volatility', type=float, default=None,
+                       metavar='VOL', help='Minimum 20-day volatility in percent (inclusive)')
+    run_p.add_argument('--max-volatility', type=float, default=None,
+                       metavar='VOL', help='Maximum 20-day volatility in percent (inclusive)')
     run_p.add_argument('--benchmark', type=str, default=None,
                        metavar='TICKER',
                        help='Run buy-and-hold on TICKER as a passive benchmark (e.g. SPY)')
@@ -154,8 +162,12 @@ async def _handle_run(args, runner: BacktestRunner, repo: BacktestRepository) ->
         classifications=args.classification,
         sectors=args.sector,
         industries=args.industry,
+        exchanges=args.exchange,
+        watchlists=args.watchlist,
         min_market_cap=args.min_market_cap,
         max_market_cap=args.max_market_cap,
+        min_volatility=args.min_volatility,
+        max_volatility=args.max_volatility,
         min_popularity_rank=args.min_popularity_rank,
         max_popularity_rank=args.max_popularity_rank,
     )
