@@ -214,13 +214,20 @@ class Schwab:
         data = resp.json()
         return data[ticker]
 
-    async def get_quotes(self, tickers):
-        """Get quotes for multiple tickers from Schwab."""
+    async def get_quotes(self, tickers, fields=None):
+        """Get quotes for multiple tickers from Schwab.
+
+        Args:
+            tickers: List of ticker symbols.
+            fields: Optional list of field groups to include in the response
+                (e.g. ``['fundamental']``). When omitted the Schwab API returns
+                quote/regular/reference data only.
+        """
         self._require_client()
         logger.debug(f"Retrieving quotes for tickers {tickers} from Schwab")
         async with self._limiter:
             try:
-                resp = await self.client.get_quotes(symbols=tickers)
+                resp = await self.client.get_quotes(symbols=tickers, fields=fields)
             except OAuthError as exc:
                 self._handle_oauth_error(exc)
         logger.debug(f"Response status code is {resp.status_code}")

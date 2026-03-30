@@ -36,7 +36,9 @@ def register_jobs(aio_sched: AsyncIOScheduler, stock_data: StockData, emitter: E
         for i in range(0, len(tickers), chunk_size):
             chunk = tickers[i:i + chunk_size]
             try:
-                chunk_quotes = await stock_data.schwab.get_quotes(tickers=chunk)
+                chunk_quotes = await stock_data.schwab.get_quotes(
+                    tickers=chunk, fields=['fundamental']
+                )
                 chunk_quotes.pop('errors', None)
                 all_quotes.update(chunk_quotes)
             except SchwabRateLimitError as exc:
