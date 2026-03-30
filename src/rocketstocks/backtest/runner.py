@@ -96,6 +96,7 @@ class BacktestRunner:
 
         # Fetch metadata for result annotations
         classifications = await self._stock_data.ticker_stats.get_all_classifications()
+        mcap_map = await self._stock_data.ticker_stats.get_all_market_caps()
         ticker_info_df = await self._stock_data.tickers.get_all_ticker_info()
         sector_map = dict(zip(ticker_info_df['ticker'], ticker_info_df['sector']))
         exchange_col = ticker_info_df['exchange'] if 'exchange' in ticker_info_df.columns else None
@@ -137,7 +138,7 @@ class BacktestRunner:
 
         await self._repo.insert_results_batch(run_id, results)
 
-        group_stats = compute_all_group_stats(results)
+        group_stats = compute_all_group_stats(results, mcap_map=mcap_map)
         if group_stats:
             await self._repo.insert_stats_batch(run_id, [gs.to_dict() for gs in group_stats])
 

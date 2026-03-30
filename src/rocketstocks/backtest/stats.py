@@ -112,15 +112,40 @@ def compute_group_stats(
     )
 
 
-def compute_all_group_stats(results: list[dict]) -> list[GroupStats]:
-    """Compute aggregate stats across all tickers, by classification, and by sector.
+_MCAP_LABELS = {
+    'small': 'Small (<$2B)',
+    'mid':   'Mid ($2B–$10B)',
+    'large': 'Large (>$10B)',
+}
+
+
+def _classify_market_cap(market_cap: int | None) -> str | None:
+    if market_cap is None:
+        return None
+    if market_cap < 2_000_000_000:
+        return 'small'
+    if market_cap < 10_000_000_000:
+        return 'mid'
+    return 'large'
+
+
+def compute_all_group_stats(
+    results: list[dict],
+    mcap_map: dict[str, int | None] | None = None,
+) -> list[GroupStats]:
+    """Compute aggregate stats across all tickers, by classification, sector, exchange,
+    watchlist, and optionally by market cap tier.
 
     Args:
         results: Full list of result dicts from a backtest run.
+        mcap_map: Optional {ticker: market_cap} mapping. When provided, results
+            are also grouped into 'mcap:small' (<$2B), 'mcap:mid' ($2B–$10B),
+            and 'mcap:large' (>$10B) tiers. Tickers absent from the map or with
+            None market_cap are excluded from mcap groups.
 
     Returns:
-        List of GroupStats: one for 'all', one per classification found in
-        results, and one per sector found in results.
+        List of GroupStats: one for 'all', one per classification, one per sector,
+        one per exchange, one per watchlist, and (if mcap_map given) one per tier.
     """
     out: list[GroupStats] = []
 
@@ -164,6 +189,20 @@ def compute_all_group_stats(results: list[dict]) -> list[GroupStats]:
         gs = compute_group_stats(group, group_key=f'watchlist:{wl}', group_value=wl)
         if gs:
             out.append(gs)
+
+    if mcap_map:
+        by_mcap: dict[str, list[dict]] = {}
+        for r in results:
+            tier = _classify_market_cap(mcap_map.get(r['ticker']))
+            if tier:
+                by_mcap.setdefault(tier, []).append(r)
+        for tier in ('small', 'mid', 'large'):
+            group = by_mcap.get(tier, [])
+            gs = compute_group_stats(
+                group, group_key=f'mcap:{tier}', group_value=_MCAP_LABELS[tier]
+            )
+            if gs:
+                out.append(gs)
 
     return out
 

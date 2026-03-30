@@ -90,6 +90,13 @@ class TickerStatsRepository:
             return {}
         return {row[0]: row[1] for row in rows}
 
+    async def get_all_market_caps(self) -> dict[str, int | None]:
+        """Return {ticker: market_cap} for all rows in ticker_stats."""
+        rows = await self._db.execute("SELECT ticker, market_cap FROM ticker_stats")
+        if not rows:
+            return {}
+        return {row[0]: row[1] for row in rows}
+
     async def get_all_stats(self) -> list[dict]:
         """Return all rows in ticker_stats as a list of dicts."""
         rows = await self._db.execute(
