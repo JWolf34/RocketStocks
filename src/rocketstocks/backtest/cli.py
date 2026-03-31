@@ -63,6 +63,15 @@ def build_parser() -> argparse.ArgumentParser:
     run_p.add_argument('--benchmark', type=str, default=None,
                        metavar='TICKER',
                        help='Run buy-and-hold on TICKER as a passive benchmark (e.g. SPY)')
+    run_p.add_argument('--include-delisted', action='store_true', default=False,
+                       help='Include tickers with a delist_date (reduces survivorship bias)')
+    run_p.add_argument('--slippage', type=float, default=0.0,
+                       metavar='BPS',
+                       help='Extra slippage in basis points added to commission per trade (default: 0)')
+    run_p.add_argument('--spread-model', choices=['none', 'fixed', 'volatility'],
+                       default='none',
+                       help='Spread cost model: none (default), fixed=10bps per trade, '
+                            'volatility=spread scales with 20d volatility')
 
     # --------------------------------------------------------------- stats --
     stats_p = sub.add_parser('stats', help='View aggregate stats for a backtest run')
