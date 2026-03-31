@@ -109,6 +109,69 @@ def build_parser() -> argparse.ArgumentParser:
     results_p.add_argument('--limit', type=int, default=20,
                            help='Number of results to show (default: 20)')
 
+    # --------------------------------------------------------- walk-forward --
+    wf_p = sub.add_parser('walk-forward', help='Run walk-forward (out-of-sample) validation')
+    wf_p.add_argument('strategy', help='Strategy name')
+    wf_p.add_argument('--params', type=str, required=True, metavar='JSON',
+                      help='Parameter grid for per-fold optimization: {"hold_bars":[5,10]}')
+    wf_p.add_argument('--folds', type=int, default=5,
+                      help='Number of train/test folds (default: 5)')
+    wf_p.add_argument('--train-pct', type=float, default=0.7,
+                      help='Fraction of each fold used for training (default: 0.7)')
+    wf_p.add_argument('--maximize', type=str, default='Sharpe Ratio',
+                      help='Metric to maximize during optimization (default: "Sharpe Ratio")')
+    wf_p.add_argument('--optimize-on', type=str, default=None, metavar='TICKER',
+                      help='Ticker to use for per-fold optimization (default: first matched ticker)')
+    wf_p.add_argument('--timeframe', choices=['daily', '5m'], default='daily')
+    wf_p.add_argument('--cash', type=float, default=10_000)
+    wf_p.add_argument('--commission', type=float, default=0.002)
+    wf_p.add_argument('--start-date', type=str, required=True, metavar='YYYY-MM-DD')
+    wf_p.add_argument('--end-date', type=str, required=True, metavar='YYYY-MM-DD')
+    # filter flags (same as run)
+    wf_p.add_argument('--tickers', nargs='+', default=None, metavar='TICKER')
+    wf_p.add_argument('--classification', nargs='+', default=None, metavar='CLASS')
+    wf_p.add_argument('--sector', nargs='+', default=None, metavar='SECTOR')
+    wf_p.add_argument('--industry', nargs='+', default=None, metavar='INDUSTRY')
+    wf_p.add_argument('--min-market-cap', type=float, default=None, metavar='DOLLARS')
+    wf_p.add_argument('--max-market-cap', type=float, default=None, metavar='DOLLARS')
+    wf_p.add_argument('--exchange', nargs='+', default=None, metavar='EXCHANGE')
+    wf_p.add_argument('--watchlist', nargs='+', default=None, metavar='WATCHLIST')
+
+    # --------------------------------------------------------- correlation --
+    corr_p = sub.add_parser('correlation', help='Signal overlap and redundancy analysis')
+    corr_p.add_argument('run_id_a', type=int, help='First run ID')
+    corr_p.add_argument('run_id_b', type=int, help='Second run ID')
+    corr_p.add_argument('--window', type=int, default=3,
+                        help='Calendar days within which two entries on the same ticker '
+                             'are considered overlapping (default: 3)')
+
+    # --------------------------------------------------------- monte-carlo --
+    mc_p = sub.add_parser('monte-carlo', help='Monte Carlo drawdown distribution')
+    mc_p.add_argument('run_id', type=int, help='Run ID to simulate')
+    mc_p.add_argument('--simulations', type=int, default=1000,
+                      help='Number of random trade-order shuffles (default: 1000)')
+    mc_p.add_argument('--ruin-threshold', type=float, default=0.5, metavar='FRACTION',
+                      help='Equity fraction below which counts as ruin (default: 0.5 = 50%%)')
+    mc_p.add_argument('--ticker', type=str, default=None,
+                      help='Restrict simulation to trades from a single ticker')
+
+    # ---------------------------------------------------------------- decay --
+    decay_p = sub.add_parser('decay', help='Signal decay — forward return curves at multiple horizons')
+    decay_p.add_argument('run_id', type=int, help='Run ID to analyse')
+    decay_p.add_argument('--horizons', type=str, default='1,2,3,5,10,20',
+                         metavar='N,N,...',
+                         help='Comma-separated forward bar horizons (default: 1,2,3,5,10,20)')
+    decay_p.add_argument('--timeframe', choices=['daily', '5m'], default='daily',
+                         help='Price bar resolution for fetching forward prices (default: daily)')
+
+    # --------------------------------------------------------------- trades --
+    trades_p = sub.add_parser('trades', help='Show individual trade records for a run')
+    trades_p.add_argument('run_id', type=int, help='Run ID to display')
+    trades_p.add_argument('--ticker', type=str, default=None,
+                          help='Filter to a single ticker')
+    trades_p.add_argument('--limit', type=int, default=50,
+                          help='Number of trades to show (default: 50, 0 = all)')
+
     # ---------------------------------------------------------------- list --
     sub.add_parser('list', help='List all available strategy names')
 
