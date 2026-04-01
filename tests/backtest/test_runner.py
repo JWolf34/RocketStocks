@@ -33,6 +33,7 @@ def _make_mock_repo() -> MagicMock:
     repo.insert_run = AsyncMock(return_value=1)
     repo.insert_results_batch = AsyncMock()
     repo.insert_stats_batch = AsyncMock()
+    repo.insert_trades_batch = AsyncMock()
     repo.get_run = AsyncMock(return_value={'run_id': 1, 'strategy_name': 'test'})
     repo.get_successful_results_by_run = AsyncMock(return_value=[])
     repo.get_stats_by_run = AsyncMock(return_value=[])
@@ -53,6 +54,7 @@ def _make_mock_stock_data(daily_df: pd.DataFrame | None = None) -> MagicMock:
     }))
     sd.ticker_stats = MagicMock()
     sd.ticker_stats.get_all_classifications = AsyncMock(return_value={'AAPL': 'blue_chip'})
+    sd.ticker_stats.get_all_market_caps = AsyncMock(return_value={'AAPL': 3_000_000_000_000})
     sd.ticker_stats.get_all_stats = AsyncMock(return_value=[
         {'ticker': 'AAPL', 'classification': 'blue_chip', 'market_cap': 3_000_000_000_000, 'volatility_20d': 1.2},
     ])
@@ -187,7 +189,7 @@ async def test_run_single_insufficient_data_sets_error():
     repo = _make_mock_repo()
     runner = BacktestRunner(stock_data=sd, repo=repo)
 
-    result = await runner._run_single(
+    result, trades = await runner._run_single(
         ticker='AAPL',
         strategy_cls=_AlwaysBuyStrategy,
         timeframe='daily',
@@ -202,6 +204,7 @@ async def test_run_single_insufficient_data_sets_error():
 
     assert result['error'] is not None
     assert 'insufficient_data' in result['error']
+    assert trades == []
 
 
 # ---------------------------------------------------------------------------
@@ -213,7 +216,7 @@ async def test_run_single_success_extracts_return_pct():
     repo = _make_mock_repo()
     runner = BacktestRunner(stock_data=sd, repo=repo)
 
-    result = await runner._run_single(
+    result, trades = await runner._run_single(
         ticker='AAPL',
         strategy_cls=_AlwaysBuyStrategy,
         timeframe='daily',
@@ -229,6 +232,7 @@ async def test_run_single_success_extracts_return_pct():
     assert result['error'] is None
     assert result['return_pct'] is not None
     assert result['num_trades'] is not None and isinstance(result['num_trades'], int)
+    assert isinstance(trades, list)
 
 
 # ---------------------------------------------------------------------------

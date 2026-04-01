@@ -10,6 +10,7 @@ from rocketstocks.backtest.stats import (
     compare_strategies,
     compute_all_group_stats,
     compute_group_stats,
+    compute_regime_stats,
 )
 
 
@@ -439,3 +440,75 @@ def test_group_stats_excess_fields_nan_when_missing():
     assert math.isnan(gs.mean_excess_return)
     assert math.isnan(gs.pct_beating_buy_hold)
     assert math.isnan(gs.mean_exposure_pct)
+
+
+# ---------------------------------------------------------------------------
+# compute_regime_stats
+# ---------------------------------------------------------------------------
+
+def _make_trades(returns: list[float], regime: str) -> list[dict]:
+    return [{'return_pct': r, 'regime': regime} for r in returns]
+
+
+def test_compute_regime_stats_groups_by_regime():
+    trades = _make_trades([2.0, 3.0, 4.0], 'bull') + _make_trades([-1.0, -2.0, -3.0], 'bear')
+    stats = compute_regime_stats(trades)
+    regimes = {s['regime'] for s in stats}
+    assert 'bull' in regimes
+    assert 'bear' in regimes
+
+
+def test_compute_regime_stats_correct_group_key():
+    trades = _make_trades([1.0, 2.0, 3.0], 'bull')
+    stats = compute_regime_stats(trades)
+    assert all(s['group_key'] == f"regime:{s['regime']}" for s in stats)
+
+
+def test_compute_regime_stats_correct_mean_return():
+    trades = _make_trades([4.0, 6.0, 8.0], 'bull')
+    stats = compute_regime_stats(trades)
+    bull = next(s for s in stats if s['regime'] == 'bull')
+    assert abs(bull['mean_return'] - 6.0) < 1e-9
+
+
+def test_compute_regime_stats_win_rate():
+    trades = _make_trades([1.0, -1.0, 2.0, -2.0], 'correction')
+    stats = compute_regime_stats(trades)
+    corr = next(s for s in stats if s['regime'] == 'correction')
+    assert abs(corr['win_rate'] - 50.0) < 1e-9
+
+
+def test_compute_regime_stats_significance_flag():
+    trades = _make_trades([10.0, 11.0, 12.0, 10.5, 11.5, 10.0, 11.0], 'bull')
+    stats = compute_regime_stats(trades)
+    bull = next(s for s in stats if s['regime'] == 'bull')
+    assert bull['significant'] is True
+    assert bull['p_value'] < 0.05
+
+
+def test_compute_regime_stats_skips_single_trade_regimes():
+    trades = _make_trades([5.0], 'recovery')  # n=1, not enough for t-test
+    stats = compute_regime_stats(trades)
+    assert all(s['regime'] != 'recovery' for s in stats)
+
+
+def test_compute_regime_stats_skips_missing_return_pct():
+    trades = [
+        {'return_pct': 3.0, 'regime': 'bull'},
+        {'return_pct': 4.0, 'regime': 'bull'},
+        {'return_pct': None, 'regime': 'bull'},
+    ]
+    stats = compute_regime_stats(trades)
+    bull = next((s for s in stats if s['regime'] == 'bull'), None)
+    assert bull is not None
+    assert bull['n_trades'] == 2
+
+
+def test_compute_regime_stats_unknown_regime_used_as_key():
+    trades = _make_trades([1.0, 2.0, 3.0], 'unknown')
+    stats = compute_regime_stats(trades)
+    assert any(s['regime'] == 'unknown' for s in stats)
+
+
+def test_compute_regime_stats_empty_returns_empty_list():
+    assert compute_regime_stats([]) == []

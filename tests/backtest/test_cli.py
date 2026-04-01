@@ -103,6 +103,106 @@ def test_parser_run_volatility_flags():
     assert args.max_volatility == pytest.approx(8.0)
 
 
+def test_parser_run_slippage_flag():
+    parser = build_parser()
+    args = parser.parse_args(['run', 'alert_signal', '--slippage', '25'])
+    assert args.slippage == pytest.approx(25.0)
+
+
+def test_parser_run_spread_model_flag():
+    parser = build_parser()
+    args = parser.parse_args(['run', 'alert_signal', '--spread-model', 'fixed'])
+    assert args.spread_model == 'fixed'
+
+
+def test_parser_run_include_delisted_flag():
+    parser = build_parser()
+    args = parser.parse_args(['run', 'alert_signal', '--include-delisted'])
+    assert args.include_delisted is True
+
+
+def test_parser_trades_command():
+    parser = build_parser()
+    args = parser.parse_args(['trades', '7'])
+    assert args.command == 'trades'
+    assert args.run_id == 7
+
+
+def test_parser_trades_ticker_filter():
+    parser = build_parser()
+    args = parser.parse_args(['trades', '7', '--ticker', 'AAPL'])
+    assert args.ticker == 'AAPL'
+
+
+def test_parser_monte_carlo_command():
+    parser = build_parser()
+    args = parser.parse_args(['monte-carlo', '5'])
+    assert args.command == 'monte-carlo'
+    assert args.run_id == 5
+
+
+def test_parser_monte_carlo_options():
+    parser = build_parser()
+    args = parser.parse_args([
+        'monte-carlo', '5', '--simulations', '500', '--ruin-threshold', '0.4',
+    ])
+    assert args.simulations == 500
+    assert args.ruin_threshold == pytest.approx(0.4)
+
+
+def test_parser_decay_command():
+    parser = build_parser()
+    args = parser.parse_args(['decay', '3'])
+    assert args.command == 'decay'
+    assert args.run_id == 3
+
+
+def test_parser_decay_horizons():
+    parser = build_parser()
+    args = parser.parse_args(['decay', '3', '--horizons', '1,5,10'])
+    assert args.horizons == '1,5,10'
+
+
+def test_parser_correlation_command():
+    parser = build_parser()
+    args = parser.parse_args(['correlation', '1', '2'])
+    assert args.command == 'correlation'
+    assert args.run_id_a == 1
+    assert args.run_id_b == 2
+
+
+def test_parser_correlation_window():
+    parser = build_parser()
+    args = parser.parse_args(['correlation', '1', '2', '--window', '5'])
+    assert args.window == 5
+
+
+def test_parser_walk_forward_command():
+    parser = build_parser()
+    args = parser.parse_args([
+        'walk-forward', 'alert_signal',
+        '--params', '{"hold_bars": [5, 10]}',
+        '--folds', '3',
+        '--start-date', '2022-01-01',
+        '--end-date', '2023-12-31',
+    ])
+    assert args.command == 'walk-forward'
+    assert args.strategy == 'alert_signal'
+    assert args.folds == 3
+
+
+def test_parser_walk_forward_train_pct():
+    parser = build_parser()
+    args = parser.parse_args([
+        'walk-forward', 'alert_signal',
+        '--params', '{"hold_bars": [5]}',
+        '--train-pct', '0.8',
+        '--start-date', '2022-01-01',
+        '--end-date', '2023-12-31',
+    ])
+    assert args.train_pct == pytest.approx(0.8)
+
+
 # ---------------------------------------------------------------------------
 # _handle_list
 # ---------------------------------------------------------------------------

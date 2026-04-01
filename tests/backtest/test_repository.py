@@ -4,7 +4,7 @@ from unittest.mock import AsyncMock, MagicMock, call
 
 import pytest
 
-from rocketstocks.backtest.repository import BacktestRepository, _RUN_FIELDS, _STAT_FIELDS
+from rocketstocks.backtest.repository import BacktestRepository, _RUN_FIELDS, _STAT_FIELDS, _TRADE_FIELDS
 
 
 @pytest.fixture
@@ -167,3 +167,81 @@ async def test_get_stats_across_runs_joins_backtest_runs(repo, mock_db):
     assert 'JOIN backtest_runs' in sql
     assert 'strategy_name' in sql
     assert params == ['alert_signal', 'all']
+
+
+# ---------------------------------------------------------------------------
+# insert_trades_batch
+# ---------------------------------------------------------------------------
+
+def _make_trade(ticker: str = 'AAPL') -> dict:
+    return {
+        'ticker': ticker,
+        'entry_time': datetime.datetime(2024, 6, 1, 9, 30),
+        'exit_time': datetime.datetime(2024, 6, 3, 15, 0),
+        'entry_price': 180.0,
+        'exit_price': 185.0,
+        'size': 10,
+        'pnl': 50.0,
+        'return_pct': 2.78,
+        'commission': 0.4,
+        'duration_bars': 2,
+        'regime': 'bull',
+    }
+
+
+async def test_insert_trades_batch_calls_execute_batch(repo, mock_db):
+    trades = [_make_trade('AAPL'), _make_trade('MSFT')]
+    await repo.insert_trades_batch(run_id=1, trades=trades)
+    mock_db.execute_batch.assert_called_once()
+
+
+async def test_insert_trades_batch_sql_targets_backtest_trades(repo, mock_db):
+    await repo.insert_trades_batch(run_id=1, trades=[_make_trade()])
+    sql, values = mock_db.execute_batch.call_args[0]
+    assert 'INSERT INTO backtest_trades' in sql
+
+
+async def test_insert_trades_batch_run_id_prepended(repo, mock_db):
+    await repo.insert_trades_batch(run_id=42, trades=[_make_trade()])
+    _, values = mock_db.execute_batch.call_args[0]
+    assert values[0][0] == 42  # run_id is first field
+
+
+async def test_insert_trades_batch_empty_is_no_op(repo, mock_db):
+    await repo.insert_trades_batch(run_id=1, trades=[])
+    mock_db.execute_batch.assert_not_called()
+
+
+# ---------------------------------------------------------------------------
+# get_trades_by_run
+# ---------------------------------------------------------------------------
+
+async def test_get_trades_by_run_returns_list_of_dicts(repo, mock_db):
+    row = tuple(range(len(_TRADE_FIELDS)))
+    mock_db.execute.return_value = [row]
+    result = await repo.get_trades_by_run(run_id=1)
+    assert isinstance(result, list)
+    assert len(result) == 1
+    assert set(result[0].keys()) == set(_TRADE_FIELDS)
+
+
+async def test_get_trades_by_run_empty_when_no_rows(repo, mock_db):
+    mock_db.execute.return_value = []
+    result = await repo.get_trades_by_run(run_id=1)
+    assert result == []
+
+
+async def test_get_trades_by_run_filters_by_ticker(repo, mock_db):
+    mock_db.execute.return_value = []
+    await repo.get_trades_by_run(run_id=1, ticker='AAPL')
+    sql, params = mock_db.execute.call_args[0]
+    assert 'ticker' in sql
+    assert 'AAPL' in params
+
+
+async def test_get_trades_by_run_no_ticker_filter(repo, mock_db):
+    mock_db.execute.return_value = []
+    await repo.get_trades_by_run(run_id=5)
+    sql, params = mock_db.execute.call_args[0]
+    assert 'backtest_trades' in sql
+    assert 5 in params
