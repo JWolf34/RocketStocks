@@ -26,6 +26,9 @@ ALTER TABLE watchlists ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ DEFAULT N
 CREATE INDEX IF NOT EXISTS idx_watchlists_type ON watchlists (watchlist_type);
 CREATE INDEX IF NOT EXISTS idx_watchlists_owner ON watchlists (owner_id) WHERE owner_id IS NOT NULL;
 ALTER TABLE backtest_results ADD COLUMN IF NOT EXISTS exchange VARCHAR(16);
+ALTER TABLE strategy_stats ADD COLUMN IF NOT EXISTS mean_excess_return FLOAT;
+ALTER TABLE strategy_stats ADD COLUMN IF NOT EXISTS pct_beating_buy_hold FLOAT;
+ALTER TABLE strategy_stats ADD COLUMN IF NOT EXISTS mean_exposure_pct FLOAT;
 """
 
 _CREATE_SCRIPT = """
@@ -283,6 +286,24 @@ CREATE TABLE IF NOT EXISTS strategy_stats (
     UNIQUE(run_id, group_key)
 );
 
+CREATE TABLE IF NOT EXISTS backtest_trades (
+    trade_id        SERIAL PRIMARY KEY,
+    run_id          INT NOT NULL REFERENCES backtest_runs(run_id) ON DELETE CASCADE,
+    ticker          VARCHAR(8) NOT NULL,
+    entry_time      TIMESTAMPTZ NOT NULL,
+    exit_time       TIMESTAMPTZ NOT NULL,
+    entry_price     FLOAT NOT NULL,
+    exit_price      FLOAT NOT NULL,
+    size            INT NOT NULL,
+    pnl             FLOAT NOT NULL,
+    return_pct      FLOAT NOT NULL,
+    commission      FLOAT NOT NULL DEFAULT 0,
+    duration_bars   INT NOT NULL,
+    regime          VARCHAR(16)
+);
+CREATE INDEX IF NOT EXISTS idx_bt_trades_run ON backtest_trades(run_id);
+CREATE INDEX IF NOT EXISTS idx_bt_trades_ticker ON backtest_trades(run_id, ticker);
+
 CREATE TABLE IF NOT EXISTS paper_portfolios (
     guild_id    BIGINT      NOT NULL,
     user_id     BIGINT      NOT NULL,
@@ -357,6 +378,7 @@ DROP TABLE IF EXISTS schwab_tokens;
 DROP TABLE IF EXISTS bot_settings;
 DROP TABLE IF EXISTS earnings_results;
 DROP TABLE IF EXISTS iv_history;
+DROP TABLE IF EXISTS backtest_trades;
 DROP TABLE IF EXISTS backtest_results;
 DROP TABLE IF EXISTS strategy_stats;
 DROP TABLE IF EXISTS backtest_runs;
