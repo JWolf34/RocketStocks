@@ -211,6 +211,16 @@ async def main(argv: list[str] | None = None) -> int:
             return await _handle_optimize(args, runner)
         elif args.command == 'results':
             return await _handle_results(args, repo)
+        elif args.command == 'trades':
+            return await _handle_trades(args, repo)
+        elif args.command == 'walk-forward':
+            return await _handle_walk_forward(args, runner)
+        elif args.command == 'decay':
+            return await _handle_decay(args, runner, repo)
+        elif args.command == 'monte-carlo':
+            return await _handle_monte_carlo(args, repo)
+        elif args.command == 'correlation':
+            return await _handle_correlation(args, repo)
     finally:
         await stock_data.db.close()
 
@@ -464,6 +474,317 @@ def _print_if_set(label: str, value, suffix: str = '') -> None:
     except (TypeError, ValueError):
         return
     print(f'{label}{_fmt(value)}{suffix}')
+
+
+async def _handle_correlation(args, repo: BacktestRepository) -> int:
+    from rocketstocks.backtest.correlation import compute_signal_correlation
+
+    run_a = await repo.get_run(args.run_id_a)
+    run_b = await repo.get_run(args.run_id_b)
+    if not run_a or not run_b:
+        print('One or both run IDs not found.')
+        return 1
+
+    trades_a = await repo.get_trades_by_run(args.run_id_a)
+    trades_b = await repo.get_trades_by_run(args.run_id_b)
+
+    if not trades_a or not trades_b:
+        print('One or both runs have no trades stored. Re-run the backtests to generate trade data.')
+        return 1
+
+    label_a = f"Run {args.run_id_a} ({run_a['strategy_name']})"
+    label_b = f"Run {args.run_id_b} ({run_b['strategy_name']})"
+
+    result = compute_signal_correlation(
+        trades_a, trades_b,
+        label_a=label_a, label_b=label_b,
+        overlap_window=args.window,
+    )
+
+    print(f'\n=== Signal Correlation ===')
+    print(f'  {label_a}: {result.n_trades_a} trades')
+    print(f'  {label_b}: {result.n_trades_b} trades')
+    print(f'  Overlap window: ±{args.window} days, same ticker')
+    print()
+    print(f'Overlap:')
+    print(f'  Overlapping trades:      {result.n_overlap}')
+    print(f'  % of {run_a["strategy_name"]} trades:  {_fmt(result.overlap_pct_a)}%')
+    print(f'  % of {run_b["strategy_name"]} trades:  {_fmt(result.overlap_pct_b)}%')
+    print(f'  Jaccard index:           {_fmt(result.jaccard_index, 3)}  '
+          f'(0=no overlap, 1=identical)')
+    print()
+    print('Returns by group:')
+    print(f'  Both fire  ({result.n_overlap:3d} trades):  '
+          f'mean {_fmt(result.mean_return_overlap)}%  '
+          f'p={_fmt(result.p_value_overlap, 3)}  '
+          f'{"***" if result.significant_overlap else "n.s."}')
+    print(f'  {run_a["strategy_name"]:<20} only ({result.n_a_only:3d}):  '
+          f'mean {_fmt(result.mean_return_a_only)}%  '
+          f'p={_fmt(result.p_value_a_only, 3)}  '
+          f'{"***" if result.significant_a_only else "n.s."}')
+    print(f'  {run_b["strategy_name"]:<20} only ({result.n_b_only:3d}):  '
+          f'mean {_fmt(result.mean_return_b_only)}%  '
+          f'p={_fmt(result.p_value_b_only, 3)}  '
+          f'{"***" if result.significant_b_only else "n.s."}')
+    print()
+    print(f'Conclusion:')
+    for sentence in result.conclusion.split('. '):
+        if sentence:
+            print(f'  {sentence.strip()}.')
+
+    return 0
+
+
+async def _handle_monte_carlo(args, repo: BacktestRepository) -> int:
+    from rocketstocks.backtest.monte_carlo import run_monte_carlo
+
+    run = await repo.get_run(args.run_id)
+    if not run:
+        print(f'Run {args.run_id} not found.')
+        return 1
+
+    trades = await repo.get_trades_by_run(args.run_id, ticker=getattr(args, 'ticker', None))
+    if not trades:
+        print(f'No trades found for run {args.run_id}.')
+        return 1
+
+    trade_returns = [
+        float(t['return_pct'])
+        for t in trades
+        if t.get('return_pct') is not None
+    ]
+
+    if len(trade_returns) < 2:
+        print(f'Need at least 2 trades for Monte Carlo. Found {len(trade_returns)}.')
+        return 1
+
+    starting_cash = run.get('cash', 10_000) or 10_000
+
+    print(f'\nRunning {args.simulations:,} simulations... ', end='', flush=True)
+    result = run_monte_carlo(
+        trade_returns=trade_returns,
+        starting_cash=starting_cash,
+        n_simulations=args.simulations,
+        ruin_threshold=args.ruin_threshold,
+    )
+    print('done.')
+
+    ticker_label = f' ({args.ticker})' if getattr(args, 'ticker', None) else ''
+    print(f'\n=== Monte Carlo: Run {args.run_id} ({run["strategy_name"]}){ticker_label} ===')
+    print(f'Trades: {result.n_trades:,}  |  Simulations: {result.n_simulations:,}  |  Starting cash: ${result.starting_cash:,.0f}')
+    print()
+    print('Max Drawdown Distribution:')
+    print(f'  Historical (actual):  {_fmt(result.historical_max_dd)}%')
+    print(f'  Mean:                 {_fmt(result.mean_max_dd)}%')
+    print(f'  5th pctile (worst):   {_fmt(result.p5_max_dd)}%')
+    print(f'  25th pctile:          {_fmt(result.p25_max_dd)}%')
+    print(f'  Median:               {_fmt(result.p50_max_dd)}%')
+    print(f'  75th pctile:          {_fmt(result.p75_max_dd)}%')
+    print(f'  95th pctile (best):   {_fmt(result.p95_max_dd)}%')
+    print()
+    print('Final Equity Distribution:')
+    print(f'  5th pctile (worst):   ${result.p5_final_equity:,.0f}')
+    print(f'  25th pctile:          ${result.p25_final_equity:,.0f}')
+    print(f'  Median:               ${result.p50_final_equity:,.0f}')
+    print(f'  75th pctile:          ${result.p75_final_equity:,.0f}')
+    print(f'  95th pctile (best):   ${result.p95_final_equity:,.0f}')
+    print()
+    ruin_pct_display = int(result.ruin_threshold * 100)
+    print(f'Probability of Ruin (<{ruin_pct_display}% equity): {_fmt(result.ruin_probability)}%')
+
+    return 0
+
+
+async def _handle_decay(args, runner: BacktestRunner, repo: BacktestRepository) -> int:
+    from rocketstocks.backtest.data_prep import prep_daily
+    from rocketstocks.backtest.signal_decay import compute_signal_decay, find_peak_horizon
+
+    run = await repo.get_run(args.run_id)
+    if not run:
+        print(f'Run {args.run_id} not found.')
+        return 1
+
+    trades = await repo.get_trades_by_run(args.run_id)
+    if not trades:
+        print(f'No trades found for run {args.run_id}. Run a backtest first.')
+        return 1
+
+    horizons = [int(h.strip()) for h in args.horizons.split(',') if h.strip().isdigit()]
+    if not horizons:
+        print('Invalid --horizons value. Use comma-separated integers e.g. 1,3,5,10,20')
+        return 1
+
+    # Fetch daily price data for all unique tickers in trades
+    unique_tickers = list({t['ticker'] for t in trades})
+    start_date = run.get('start_date')
+    end_date = run.get('end_date')
+
+    price_data = {}
+    for ticker in unique_tickers:
+        try:
+            raw = await runner._stock_data.price_history.fetch_daily_price_history(
+                ticker, start_date=start_date, end_date=None,
+            )
+            if not raw.empty:
+                price_data[ticker] = prep_daily(raw)
+        except Exception as exc:
+            logger.debug(f'decay: could not fetch {ticker}: {exc}')
+
+    if not price_data:
+        print('Could not fetch price data for any ticker in this run.')
+        return 1
+
+    points = compute_signal_decay(trades, price_data, horizons=horizons)
+
+    print(f'\n=== Signal Decay Analysis: Run {args.run_id} ({run["strategy_name"]}) ===')
+    print(f'Signals: {len(trades)}  |  Tickers: {len(price_data)}  |  Timeframe: daily')
+    print()
+    print(f'  {"Horizon":<10} {"Mean Ret":>9} {"Median":>9} {"Std":>7} {"Win%":>7} {"n":>6} {"p-val":>8} {"Sig":>4}')
+    print('  ' + '-' * 65)
+    for p in points:
+        sig = '***' if p.significant else ''
+        print(
+            f"  {p.horizon:<10}"
+            f"  {_fmt(p.mean_return):>8}%"
+            f"  {_fmt(p.median_return):>8}%"
+            f"  {_fmt(p.std_return):>6}%"
+            f"  {_fmt(p.win_rate):>6}%"
+            f"  {p.n_signals:>5}"
+            f"  {_fmt(p.p_value, 3):>7}"
+            f"  {sig}"
+        )
+
+    peak = find_peak_horizon(points)
+    if peak is not None:
+        sig_points = [p for p in points if p.significant]
+        if sig_points:
+            last_sig = max(sig_points, key=lambda p: p.horizon).horizon
+            print(f'\nPeak edge at: {peak} bars | Edge significant up to: {last_sig} bars')
+            print(f'Suggested hold_bars: {last_sig}')
+        else:
+            print(f'\nNo horizons showed statistical significance (p < 0.05).')
+            print(f'Best mean return at {peak} bars, but not reliable.')
+
+    return 0
+
+
+async def _handle_walk_forward(args, runner: BacktestRunner) -> int:
+    from rocketstocks.backtest.walk_forward import WalkForwardRunner
+
+    param_grid = json.loads(args.params)
+    start_date = datetime.date.fromisoformat(args.start_date)
+    end_date = datetime.date.fromisoformat(args.end_date)
+
+    ticker_filter = TickerFilter(
+        tickers=args.tickers,
+        classifications=args.classification,
+        sectors=args.sector,
+        industries=args.industry,
+        exchanges=args.exchange,
+        watchlists=args.watchlist,
+        min_market_cap=args.min_market_cap,
+        max_market_cap=args.max_market_cap,
+    )
+
+    wf = WalkForwardRunner(runner)
+    result = await wf.run(
+        strategy_name=args.strategy,
+        ticker_filter=ticker_filter,
+        param_grid=param_grid,
+        folds=args.folds,
+        train_pct=args.train_pct,
+        maximize=args.maximize,
+        timeframe=args.timeframe,
+        cash=args.cash,
+        commission=args.commission,
+        start_date=start_date,
+        end_date=end_date,
+        optimize_on=args.optimize_on,
+    )
+
+    if 'error' in result:
+        print(f'Walk-forward failed: {result["error"]}')
+        return 1
+
+    print(f'\n=== Walk-Forward Validation: {args.strategy} ===')
+    print(f'Folds: {result["n_folds"]}  |  Tickers: {result["n_tickers"]}')
+    print(f'Date range: {args.start_date} → {args.end_date}')
+    print()
+
+    for fold in result.get('folds', []):
+        print(f"Fold {fold['fold']}: train={fold['train_start']}→{fold['train_end']}  "
+              f"test={fold['test_start']}→{fold['test_end']}")
+        if fold.get('error'):
+            print(f"  ERROR: {fold['error']}")
+            continue
+        if fold.get('best_params'):
+            params_str = ', '.join(f'{k}={v}' for k, v in fold['best_params'].items())
+            print(f"  Best params: {params_str}")
+        if fold.get('oos_run_id') is not None:
+            print(
+                f"  OOS run_id: {fold['oos_run_id']}"
+                f"  mean_return: {_fmt(fold.get('oos_mean_return'))}%"
+                f"  sharpe: {_fmt(fold.get('oos_sharpe'), 3)}"
+                f"  trades: {fold.get('oos_num_trades', 0)}"
+                f"  p={_fmt(fold.get('oos_p_value'), 3)}"
+            )
+        print()
+
+    oos = result.get('oos_stats')
+    if oos:
+        sig = 'Yes' if oos.get('significant') else 'No'
+        print('=== Out-of-Sample Aggregate (All Folds) ===')
+        print(f"  Mean Return:    {_fmt(oos.get('mean_return'))}%")
+        print(f"  Median Return:  {_fmt(oos.get('median_return'))}%")
+        print(f"  Mean Sharpe:    {_fmt(oos.get('mean_sharpe'), 3)}")
+        print(f"  Total Trades:   {oos.get('total_trades', 0)}")
+        print(f"  t-stat:         {_fmt(oos.get('t_stat'), 4)}")
+        print(f"  p-value:        {_fmt(oos.get('p_value'), 4)}")
+        print(f"  Significant:    {sig} (p < 0.05)")
+
+    stability = result.get('param_stability', {})
+    if stability:
+        print()
+        print('=== Parameter Stability ===')
+        for param, values in stability.items():
+            if values:
+                unique = sorted(set(values))
+                print(f"  {param}: chose {values}  (range: {unique[0]}–{unique[-1]})")
+
+    return 0
+
+
+async def _handle_trades(args, repo: BacktestRepository) -> int:
+    run = await repo.get_run(args.run_id)
+    if not run:
+        print(f'Run {args.run_id} not found.')
+        return 1
+
+    trades = await repo.get_trades_by_run(args.run_id, ticker=args.ticker)
+    limit = args.limit if args.limit > 0 else len(trades)
+    trades = trades[:limit]
+
+    ticker_label = f' ({args.ticker})' if args.ticker else ''
+    print(f'\n=== Trade Records: Run {args.run_id} ({run["strategy_name"]}){ticker_label} ===')
+    print(f'Showing {len(trades)} trade(s)')
+    print()
+
+    if not trades:
+        print('No trades found.')
+        return 0
+
+    for t in trades:
+        regime_str = f'  regime:{t["regime"]}' if t.get('regime') else ''
+        print(
+            f"  {t['ticker']:<8}"
+            f"  entry:{str(t['entry_time'])[:16]}"
+            f"  exit:{str(t['exit_time'])[:16]}"
+            f"  ret:{_fmt(t.get('return_pct'))}%"
+            f"  pnl:{_fmt(t.get('pnl'))}"
+            f"  bars:{t.get('duration_bars', 0)}"
+            f"{regime_str}"
+        )
+    return 0
 
 
 def _fmt(value, decimals: int = 2) -> str:
