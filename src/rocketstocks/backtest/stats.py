@@ -207,6 +207,58 @@ def compute_all_group_stats(
     return out
 
 
+def compute_regime_stats(trades: list[dict]) -> list[dict]:
+    """Compute per-regime trade statistics from trade-level records.
+
+    Unlike compute_group_stats (which groups per-ticker results), this function
+    groups individual trades by the market regime at entry time and computes
+    aggregate statistics for each regime.
+
+    Args:
+        trades: List of trade dicts from backtest_trades table. Each must have
+            'return_pct' and 'regime' fields.
+
+    Returns:
+        List of regime stat dicts, one per regime found. Each dict has:
+            group_key, regime, n_trades, mean_return, median_return,
+            std_return, win_rate, t_stat, p_value, significant.
+    """
+    from collections import defaultdict
+
+    by_regime: dict[str, list[float]] = defaultdict(list)
+    for t in trades:
+        regime = t.get('regime') or 'unknown'
+        ret = t.get('return_pct')
+        if ret is not None:
+            try:
+                by_regime[regime].append(float(ret))
+            except (TypeError, ValueError):
+                pass
+
+    out = []
+    for regime, returns in sorted(by_regime.items()):
+        n = len(returns)
+        if n < 2:
+            continue
+
+        t_stat_val, p_val = scipy_stats.ttest_1samp(returns, 0)
+        arr = np.array(returns)
+        out.append({
+            'group_key': f'regime:{regime}',
+            'regime': regime,
+            'n_trades': n,
+            'mean_return': float(arr.mean()),
+            'median_return': float(np.median(arr)),
+            'std_return': float(arr.std(ddof=1)),
+            'win_rate': float((arr > 0).mean() * 100),
+            't_stat': float(t_stat_val),
+            'p_value': float(p_val),
+            'significant': float(p_val) < 0.05,
+        })
+
+    return out
+
+
 def compare_against_benchmark(
     strategy_results: list[dict],
     benchmark_return_pct: float,
