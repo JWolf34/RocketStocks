@@ -21,6 +21,11 @@ _STAT_FIELDS = [
     'total_trades', 'mean_max_dd', 'mean_profit_factor', 't_stat', 'p_value',
     'significant', 'created_at',
 ]
+_TRADE_FIELDS = [
+    'trade_id', 'run_id', 'ticker', 'entry_time', 'exit_time',
+    'entry_price', 'exit_price', 'size', 'pnl', 'return_pct',
+    'commission', 'duration_bars', 'regime',
+]
 
 
 class BacktestRepository:
@@ -238,3 +243,75 @@ class BacktestRepository:
             [strategy_name, group_key],
         )
         return [dict(zip(_STAT_FIELDS, row)) for row in (rows or [])]
+
+    # -------------------------------------------------------------- trades --
+
+    async def insert_trades_batch(self, run_id: int, trades: list[dict]) -> None:
+        """Bulk insert per-trade records for a run.
+
+        Args:
+            run_id: The backtest run these trades belong to.
+            trades: List of trade dicts with keys matching _TRADE_FIELDS
+                (minus trade_id). Each dict must have: ticker, entry_time,
+                exit_time, entry_price, exit_price, size, pnl, return_pct,
+                commission, duration_bars. Optional: regime.
+        """
+        if not trades:
+            return
+        cols = [
+            'run_id', 'ticker', 'entry_time', 'exit_time',
+            'entry_price', 'exit_price', 'size', 'pnl', 'return_pct',
+            'commission', 'duration_bars', 'regime',
+        ]
+        placeholders = ', '.join(['%s'] * len(cols))
+        col_list = ', '.join(cols)
+        values = [
+            (
+                run_id,
+                t.get('ticker'),
+                t.get('entry_time'),
+                t.get('exit_time'),
+                t.get('entry_price'),
+                t.get('exit_price'),
+                t.get('size'),
+                t.get('pnl'),
+                t.get('return_pct'),
+                t.get('commission', 0.0),
+                t.get('duration_bars'),
+                t.get('regime'),
+            )
+            for t in trades
+        ]
+        await self._db.execute_batch(
+            f"INSERT INTO backtest_trades ({col_list}) VALUES ({placeholders})",
+            values,
+        )
+        logger.debug(f"Inserted {len(trades)} trades for run {run_id}")
+
+    async def get_trades_by_run(
+        self,
+        run_id: int,
+        ticker: str | None = None,
+    ) -> list[dict]:
+        """Return all trades for a run, optionally filtered to a single ticker.
+
+        Args:
+            run_id: Backtest run to query.
+            ticker: Optional ticker filter.
+
+        Returns:
+            List of trade dicts ordered by entry_time ascending.
+        """
+        if ticker:
+            rows = await self._db.execute(
+                f"SELECT {', '.join(_TRADE_FIELDS)} FROM backtest_trades "
+                "WHERE run_id = %s AND ticker = %s ORDER BY entry_time",
+                [run_id, ticker],
+            )
+        else:
+            rows = await self._db.execute(
+                f"SELECT {', '.join(_TRADE_FIELDS)} FROM backtest_trades "
+                "WHERE run_id = %s ORDER BY entry_time",
+                [run_id],
+            )
+        return [dict(zip(_TRADE_FIELDS, row)) for row in (rows or [])]
