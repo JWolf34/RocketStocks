@@ -15,6 +15,7 @@ from rocketstocks.backtest.data_prep import (
 from rocketstocks.backtest.filters import TickerFilter
 from rocketstocks.backtest.registry import get_strategy
 from rocketstocks.backtest.repository import BacktestRepository
+from rocketstocks.backtest.regime import classify_regimes, tag_trades_with_regime
 from rocketstocks.backtest.stats import compute_all_group_stats
 
 logger = logging.getLogger(__name__)
@@ -58,6 +59,8 @@ class BacktestRunner:
         start_date: datetime.date | None = None,
         end_date: datetime.date | None = None,
         strategy_params: dict | None = None,
+        slippage_bps: float = 0.0,
+        spread_model: str = 'none',
     ) -> int:
         """Run a strategy across all tickers matched by the filter.
 
@@ -77,6 +80,9 @@ class BacktestRunner:
             start_date: Earliest price bar to include.
             end_date: Latest price bar to include.
             strategy_params: Optional parameter overrides passed to ``bt.run()``.
+            slippage_bps: Additional slippage cost in basis points per trade (default 0).
+            spread_model: Spread cost model — ``'none'``, ``'fixed'`` (10bps), or
+                ``'volatility'`` (spread proportional to ticker's 20d volatility).
 
         Returns:
             The run_id of the created backtest run, or -1 if no tickers matched.
@@ -103,10 +109,25 @@ class BacktestRunner:
         exchange_map = dict(zip(ticker_info_df['ticker'], exchange_col)) if exchange_col is not None else {}
         watchlist_map = await self._stock_data.watchlists.get_ticker_to_watchlist_map()
 
+        # Build per-ticker volatility map for the volatility spread model
+        volatility_map: dict[str, float] = {}
+        if spread_model == 'volatility':
+            all_stats = await self._stock_data.ticker_stats.get_all_stats()
+            for stat in all_stats:
+                vol = stat.get('volatility_20d')
+                if vol is not None:
+                    volatility_map[stat['ticker']] = float(vol)
+
+        cost_params: dict = {}
+        if slippage_bps:
+            cost_params['slippage_bps'] = slippage_bps
+        if spread_model != 'none':
+            cost_params['spread_model'] = spread_model
+
         run_id = await self._repo.insert_run(
             strategy_name=strategy_name,
             timeframe=timeframe,
-            parameters=strategy_params or {},
+            parameters={**(strategy_params or {}), **cost_params},
             filters=ticker_filter.to_dict(),
             ticker_count=len(tickers),
             start_date=start_date,
@@ -116,15 +137,39 @@ class BacktestRunner:
         )
         logger.info(f'Created backtest run {run_id}')
 
+        # Pre-compute market regimes from SPY data for trade tagging
+        regime_map: dict = {}
+        try:
+            # Extend start by ~250 calendar days to ensure 200-day SMA is seeded
+            regime_start = (
+                (start_date - datetime.timedelta(days=360))
+                if start_date else None
+            )
+            spy_raw = await self._stock_data.price_history.fetch_daily_price_history(
+                'SPY', start_date=regime_start, end_date=end_date,
+            )
+            if not spy_raw.empty:
+                spy_df = prep_daily(spy_raw)
+                regime_map = classify_regimes(spy_df)
+        except Exception as exc:
+            logger.warning(f'Could not compute market regimes (SPY data unavailable): {exc}')
+
         results: list[dict] = []
+        all_trades: list[dict] = []
         for i, ticker in enumerate(tickers, 1):
             logger.info(f'[{i}/{len(tickers)}] {strategy_name} on {ticker}')
-            result = await self._run_single(
+            effective_commission = _compute_effective_commission(
+                base_commission=commission,
+                slippage_bps=slippage_bps,
+                spread_model=spread_model,
+                volatility=volatility_map.get(ticker),
+            )
+            result, trades = await self._run_single(
                 ticker=ticker,
                 strategy_cls=strategy_cls,
                 timeframe=timeframe,
                 cash=cash,
-                commission=commission,
+                commission=effective_commission,
                 start_date=start_date,
                 end_date=end_date,
                 strategy_params=strategy_params,
@@ -135,8 +180,13 @@ class BacktestRunner:
             )
             result['run_id'] = run_id
             results.append(result)
+            if trades and regime_map:
+                trades = tag_trades_with_regime(trades, regime_map)
+            all_trades.extend(trades)
 
         await self._repo.insert_results_batch(run_id, results)
+        if all_trades:
+            await self._repo.insert_trades_batch(run_id, all_trades)
 
         group_stats = compute_all_group_stats(results, mcap_map=mcap_map)
         if group_stats:
@@ -145,7 +195,8 @@ class BacktestRunner:
         successful = [r for r in results if r.get('error') is None]
         failed = [r for r in results if r.get('error') is not None]
         logger.info(
-            f"Run {run_id} complete: {len(successful)} succeeded, {len(failed)} failed"
+            f"Run {run_id} complete: {len(successful)} succeeded, {len(failed)} failed, "
+            f"{len(all_trades)} trades stored"
         )
 
         return run_id
@@ -164,8 +215,13 @@ class BacktestRunner:
         sector: str | None,
         exchange: str | None = None,
         watchlist: str | None = None,
-    ) -> dict:
-        """Run the backtest on one ticker and return a result dict."""
+    ) -> tuple[dict, list[dict]]:
+        """Run the backtest on one ticker and return (result, trades).
+
+        Returns:
+            Tuple of (result_dict, trade_list). trade_list is empty on error
+            or if no trades were made.
+        """
         result: dict = {
             'ticker': ticker,
             'classification': classification,
@@ -216,7 +272,7 @@ class BacktestRunner:
 
             if df.empty or len(df) < _MIN_BARS:
                 result['error'] = f'insufficient_data ({len(df)} bars)'
-                return result
+                return result, []
 
             bt = Backtest(
                 df,
@@ -242,11 +298,14 @@ class BacktestRunner:
 
             result['error'] = None
 
+            trades = _extract_trades(ticker, stats)
+
         except Exception as exc:
             logger.warning(f"Backtest failed for '{ticker}': {exc}")
             result['error'] = str(exc)
+            trades = []
 
-        return result
+        return result, trades
 
     async def run_benchmark(
         self,
@@ -272,7 +331,7 @@ class BacktestRunner:
         Returns:
             Return [%] for the buy-and-hold run, or NaN if data is unavailable.
         """
-        result = await self._run_single(
+        result, _ = await self._run_single(
             ticker=ticker,
             strategy_cls=get_strategy('buy_hold'),
             timeframe=timeframe,
@@ -390,3 +449,102 @@ class BacktestRunner:
                 out['heatmap'] = str(heatmap)
 
         return out
+
+
+def _compute_effective_commission(
+    base_commission: float,
+    slippage_bps: float = 0.0,
+    spread_model: str = 'none',
+    volatility: float | None = None,
+) -> float:
+    """Compute effective per-trade commission including slippage and spread costs.
+
+    Args:
+        base_commission: Base commission fraction (e.g. 0.002 for 0.2%).
+        slippage_bps: Extra slippage in basis points (e.g. 10 = 0.10%). Applied
+            once per side (buy + sell), so doubles on round-trip.
+        spread_model: Spread cost model:
+            - ``'none'``: no spread cost added
+            - ``'fixed'``: adds 10bps (0.10%) per trade
+            - ``'volatility'``: adds spread proportional to ticker's 20d volatility
+              (volatility_20d% / 200, capped at 0.5%)
+        volatility: Ticker's 20-day volatility in percent. Required for
+            ``spread_model='volatility'``.
+
+    Returns:
+        Effective commission fraction to pass to backtesting.py.
+    """
+    commission = base_commission + slippage_bps / 10_000
+
+    if spread_model == 'fixed':
+        commission += 0.001  # 10bps fixed spread
+    elif spread_model == 'volatility' and volatility is not None:
+        # Spread is roughly 5% of daily volatility, capped at 50bps
+        spread = min(volatility / 200, 0.005)
+        commission += spread
+
+    return commission
+
+
+def _extract_trades(ticker: str, stats) -> list[dict]:
+    """Extract per-trade records from a backtesting.py stats object.
+
+    backtesting.py stores a ``_trades`` DataFrame in the stats Series after
+    each ``bt.run()`` call. This function converts those rows to plain dicts
+    compatible with ``BacktestRepository.insert_trades_batch()``.
+
+    Args:
+        ticker: Ticker symbol these trades belong to.
+        stats: pandas Series returned by ``Backtest.run()``.
+
+    Returns:
+        List of trade dicts. Empty list if no trades or on any extraction error.
+    """
+    import math
+
+    try:
+        trades_df = stats.get('_trades')
+        if trades_df is None or trades_df.empty:
+            return []
+    except Exception:
+        return []
+
+    records = []
+    for row in trades_df.itertuples(index=False):
+        try:
+            entry_time = getattr(row, 'EntryTime', None)
+            exit_time = getattr(row, 'ExitTime', None)
+            if entry_time is None or exit_time is None:
+                continue
+
+            duration_bars = (
+                int(row.ExitBar - row.EntryBar)
+                if hasattr(row, 'EntryBar') and hasattr(row, 'ExitBar')
+                else 0
+            )
+
+            pnl = float(row.PnL) if hasattr(row, 'PnL') else 0.0
+            return_pct = float(row.ReturnPct) * 100 if hasattr(row, 'ReturnPct') else 0.0
+            commission = float(row.Commission) if hasattr(row, 'Commission') else 0.0
+
+            # Skip rows with NaN critical fields
+            if any(math.isnan(v) for v in (pnl, return_pct) if isinstance(v, float)):
+                continue
+
+            records.append({
+                'ticker': ticker,
+                'entry_time': entry_time,
+                'exit_time': exit_time,
+                'entry_price': float(row.EntryPrice),
+                'exit_price': float(row.ExitPrice),
+                'size': int(row.Size),
+                'pnl': pnl,
+                'return_pct': return_pct,
+                'commission': commission,
+                'duration_bars': duration_bars,
+                'regime': None,  # populated later by regime tagging (Phase 4)
+            })
+        except Exception as exc:
+            logger.debug(f"_extract_trades: skipping row for {ticker}: {exc}")
+
+    return records
