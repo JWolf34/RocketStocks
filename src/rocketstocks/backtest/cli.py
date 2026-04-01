@@ -8,7 +8,11 @@ from rocketstocks.backtest.filters import TickerFilter
 from rocketstocks.backtest.registry import list_strategies
 from rocketstocks.backtest.repository import BacktestRepository
 from rocketstocks.backtest.runner import BacktestRunner
-from rocketstocks.backtest.stats import compare_against_benchmark, compare_strategies
+from rocketstocks.backtest.stats import (
+    compare_against_benchmark,
+    compare_strategies,
+    compute_regime_stats,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -252,6 +256,7 @@ async def _handle_run(args, runner: BacktestRunner, repo: BacktestRepository) ->
         max_volatility=args.max_volatility,
         min_popularity_rank=args.min_popularity_rank,
         max_popularity_rank=args.max_popularity_rank,
+        exclude_delisted=not getattr(args, 'include_delisted', False),
     )
 
     start_date = datetime.date.fromisoformat(args.start_date) if args.start_date else None
@@ -267,6 +272,8 @@ async def _handle_run(args, runner: BacktestRunner, repo: BacktestRepository) ->
         start_date=start_date,
         end_date=end_date,
         strategy_params=strategy_params,
+        slippage_bps=getattr(args, 'slippage', 0.0),
+        spread_model=getattr(args, 'spread_model', 'none'),
     )
 
     if run_id < 0:
@@ -311,6 +318,11 @@ async def _handle_stats(args, repo: BacktestRepository) -> int:
     print(f"Created:    {run['created_at']}")
     if run.get('parameters'):
         print(f"Parameters: {run['parameters']}")
+    # Survivorship bias warning
+    filters = run.get('filters') or {}
+    if filters.get('exclude_delisted', True):
+        print(f"! Survivorship bias: delisted tickers were excluded from this run.")
+        print(f"  Results may be inflated. Re-run with --include-delisted for bias-corrected results.")
     print()
 
     if not stats_rows:
@@ -319,6 +331,24 @@ async def _handle_stats(args, repo: BacktestRepository) -> int:
 
     for s in stats_rows:
         _print_group_stats(s)
+
+    # Regime breakdown from trade-level data
+    trades = await repo.get_trades_by_run(args.run_id)
+    if trades:
+        regime_stats = compute_regime_stats(trades)
+        if regime_stats:
+            print('--- By Market Regime (trade-level) ---')
+            for rs in regime_stats:
+                sig = 'Yes' if rs.get('significant') else 'No'
+                print(
+                    f"  {rs['regime']:<12}"
+                    f"  trades:{rs['n_trades']}"
+                    f"  mean:{_fmt(rs.get('mean_return'))}%"
+                    f"  win:{_fmt(rs.get('win_rate'))}%"
+                    f"  p={_fmt(rs.get('p_value'), 3)}"
+                    f"  sig:{sig}"
+                )
+            print()
 
     return 0
 
