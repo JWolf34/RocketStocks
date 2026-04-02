@@ -14,5 +14,6 @@ pandas_market_calendars
 schwab-py
 beautifulsoup4
 numpy>=2.4.0
+scikit-learn
 python-dotenv
 setuptools
