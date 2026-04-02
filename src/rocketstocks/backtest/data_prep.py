@@ -334,6 +334,43 @@ def merge_popularity(price_df: pd.DataFrame, popularity_df: pd.DataFrame) -> pd.
     return result
 
 
+def enrich_with_prediction_features(df: pd.DataFrame) -> pd.DataFrame:
+    """Add direction-model feature columns to a backtesting DataFrame.
+
+    Computes MFI, Volume_Zscore, OBV_Velocity, and Confluence_Count using
+    vectorized operations on the full DataFrame. All rolling windows look
+    backward only — no lookahead bias.
+
+    This is a convenience wrapper around
+    ``direction_model.build_features_for_backtest()`` that adds the columns
+    directly to the DataFrame rather than returning a separate features frame.
+
+    Args:
+        df: DataFrame with capitalised OHLCV columns (from prep_daily or prep_5m).
+
+    Returns:
+        Copy of *df* with four added columns:
+            MFI              — Money Flow Index (0-100)
+            Volume_Zscore    — Volume z-score vs 20-bar prior baseline
+            OBV_Velocity     — Normalised OBV slope over 10 bars
+            Confluence_Count — Count of bullish RSI/MACD/ADX/OBV signals (0-4)
+    """
+    from rocketstocks.core.analysis.direction_model import build_features_for_backtest
+
+    result = df.copy()
+    if result.empty:
+        for col in ('MFI', 'Volume_Zscore', 'OBV_Velocity', 'Confluence_Count'):
+            result[col] = float('nan')
+        return result
+
+    features = build_features_for_backtest(result)
+    result['MFI'] = features['mfi'].values
+    result['Volume_Zscore'] = features['volume_zscore'].values
+    result['OBV_Velocity'] = features['obv_velocity'].values
+    result['Confluence_Count'] = features['confluence_count'].values
+    return result
+
+
 def prep_for_signals(df: pd.DataFrame) -> pd.DataFrame:
     """Reverse the column rename for passing data to core/analysis signal functions.
 
