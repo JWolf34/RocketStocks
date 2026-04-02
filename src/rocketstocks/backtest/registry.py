@@ -64,3 +64,4 @@ def _ensure_loaded() -> None:
     import rocketstocks.backtest.strategies.volume_accumulation     # noqa: F401
     import rocketstocks.backtest.strategies.popularity_surge        # noqa: F401
     import rocketstocks.backtest.strategies.leading_indicator_combo # noqa: F401
+    import rocketstocks.backtest.strategies.direction_prediction    # noqa: F401
