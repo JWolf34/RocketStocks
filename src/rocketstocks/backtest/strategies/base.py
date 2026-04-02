@@ -26,6 +26,18 @@ momentum
 
 bar_hold
     Simple hold N bars. Useful as baseline to compare against z-score exits.
+
+Direction filter (opt-in)
+--------------------------
+When use_direction_filter=True, a logistic regression model is trained on the
+first direction_train_fraction of bars in init(). Every candidate entry is
+then gated by the model: entry is only allowed when P(up) >= direction_threshold
+AND confidence >= direction_min_confidence.
+
+The model is trained once on historical data — bars before the training cutoff
+do not generate entries. This prevents lookahead while still letting the model
+learn the ticker's own directional patterns before the out-of-sample test
+window begins.
 """
 from __future__ import annotations
 
@@ -38,23 +50,34 @@ from backtesting import Strategy
 from rocketstocks.backtest.data_prep import prep_for_signals
 from rocketstocks.core.analysis.alert_strategy import evaluate_confirmation
 from rocketstocks.core.analysis.classification import compute_return_stats
+from rocketstocks.core.analysis.direction_model import (
+    DirectionModel,
+    build_features_for_backtest,
+)
 
 logger = logging.getLogger(__name__)
 
 
 class LeadingIndicatorStrategy(Strategy):
-    """Base class with configurable z-score exits and pending-signal support.
+    """Base class with configurable z-score exits, pending-signal support,
+    and an opt-in logistic regression direction filter.
 
     Subclasses must implement ``_detect_signal()`` and set class attributes
     ``requires_popularity`` and/or ``requires_daily`` as needed by the runner.
 
     Optimizable parameters (all can be overridden via --params):
 
-        exit_mode:    'breakout', 'momentum', or 'bar_hold'
-        exit_zscore:  breakout profit-take z-score threshold
-        stop_zscore:  stop-loss z-score threshold (breakout + momentum)
-        trail_zscore: momentum trailing exit: drop from peak z-score
-        hold_bars:    bar_hold primary exit; breakout/momentum max-hold failsafe
+        exit_mode:                  'breakout', 'momentum', or 'bar_hold'
+        exit_zscore:                breakout profit-take z-score threshold
+        stop_zscore:                stop-loss z-score threshold (breakout + momentum)
+        trail_zscore:               momentum trailing exit: drop from peak z-score
+        hold_bars:                  bar_hold primary exit; breakout/momentum max-hold failsafe
+
+        use_direction_filter:       Enable direction regression gate (default False)
+        direction_threshold:        Min P(up) to allow entry (default 0.60)
+        direction_forward_bars:     Forward bars used to define the label (default 5)
+        direction_train_fraction:   Fraction of bars used to train the model (default 0.50)
+        direction_min_confidence:   Min confidence (abs(P-0.5)*2) required (default 0.20)
     """
 
     exit_mode: str = 'breakout'
@@ -63,6 +86,13 @@ class LeadingIndicatorStrategy(Strategy):
     trail_zscore: float = 1.0
     hold_bars: int = 20
 
+    # Direction filter params (opt-in — all strategies remain unchanged by default)
+    use_direction_filter: bool = False
+    direction_threshold: float = 0.60
+    direction_forward_bars: int = 5
+    direction_train_fraction: float = 0.50
+    direction_min_confidence: float = 0.20
+
     # Runner inspects these flags to decide what extra data to fetch/merge.
     requires_popularity: bool = False
     requires_daily: bool = False
@@ -70,6 +100,15 @@ class LeadingIndicatorStrategy(Strategy):
     def init(self):
         self._pending = False
         self._peak_zscore = 0.0
+
+        # Direction filter state
+        self._direction_model: DirectionModel | None = None
+        self._direction_features: pd.DataFrame | None = None
+        self._direction_train_cutoff: int = 0
+        self._rejections: list[dict] = []
+
+        if self.use_direction_filter:
+            self._train_direction_model()
 
     def next(self):
         is_regular = self._is_regular_hours()
@@ -82,11 +121,12 @@ class LeadingIndicatorStrategy(Strategy):
             return
 
         if self._detect_signal():
-            if not self._has_regular_hours_col() or is_regular:
-                self.buy()
-                self._peak_zscore = 0.0
-            else:
-                self._pending = True
+            if self._direction_allows_entry():
+                if not self._has_regular_hours_col() or is_regular:
+                    self.buy()
+                    self._peak_zscore = 0.0
+                else:
+                    self._pending = True
 
         if self._pending and is_regular:
             self.buy()
@@ -96,6 +136,107 @@ class LeadingIndicatorStrategy(Strategy):
     def _detect_signal(self) -> bool:
         """Return True when the entry condition is met. Subclasses must override."""
         raise NotImplementedError
+
+    # ------------------------------------------------------------------
+    # Direction filter
+    # ------------------------------------------------------------------
+
+    def _train_direction_model(self) -> None:
+        """Fit the direction model on the training window."""
+        try:
+            from rocketstocks.core.analysis.direction_model import compute_forward_returns
+
+            features = build_features_for_backtest(self.data.df)
+            train_cutoff = max(
+                1, int(len(self.data.df) * float(self.direction_train_fraction))
+            )
+            forward_ret = compute_forward_returns(
+                self.data.df['Close'], forward_bars=int(self.direction_forward_bars)
+            )
+            model = DirectionModel(
+                forward_bars=int(self.direction_forward_bars),
+                min_training_samples=50,
+            )
+            success = model.fit(
+                features.iloc[:train_cutoff],
+                forward_ret.iloc[:train_cutoff],
+            )
+            if success:
+                self._direction_model = model
+                self._direction_features = features
+                self._direction_train_cutoff = train_cutoff
+                logger.debug(
+                    f'{self.__class__.__name__}: direction model fitted on '
+                    f'{train_cutoff} bars; test window starts at bar {train_cutoff}'
+                )
+            else:
+                logger.warning(
+                    f'{self.__class__.__name__}: direction model fit failed '
+                    f'(insufficient data); direction filter disabled'
+                )
+        except Exception as exc:
+            logger.warning(
+                f'{self.__class__.__name__}: direction model init failed: {exc}; '
+                f'direction filter disabled'
+            )
+
+    def _direction_allows_entry(self) -> bool:
+        """Return True if the direction filter permits entry at the current bar.
+
+        Returns True immediately if:
+        - use_direction_filter is False
+        - Model failed to fit (graceful degradation)
+        - Current bar is within the training window
+
+        Otherwise evaluates the model's prediction against thresholds.
+        Rejected entries are recorded in self._rejections for post-hoc analysis.
+        """
+        if not self.use_direction_filter:
+            return True
+
+        if self._direction_model is None or not self._direction_model.is_fitted:
+            return True
+
+        current_bar_idx = len(self.data) - 1
+        if current_bar_idx < self._direction_train_cutoff:
+            return True
+
+        # Look up the pre-computed feature row for this bar
+        if self._direction_features is None:
+            return True
+
+        if current_bar_idx >= len(self._direction_features):
+            return True
+
+        feat_row = self._direction_features.iloc[current_bar_idx]
+        if feat_row.isna().any():
+            return True  # Can't evaluate — allow entry rather than block
+
+        prediction = self._direction_model.predict(feat_row.to_dict())
+
+        if (
+            prediction.probability_up >= float(self.direction_threshold)
+            and prediction.confidence >= float(self.direction_min_confidence)
+        ):
+            return True
+
+        # Blocked — record rejection for accuracy analysis
+        self._rejections.append({
+            'bar_idx': current_bar_idx,
+            'probability_up': prediction.probability_up,
+            'confidence': prediction.confidence,
+            'predicted_direction': prediction.predicted_direction,
+        })
+        logger.debug(
+            f'{self.__class__.__name__}: direction filter blocked entry at bar '
+            f'{current_bar_idx} (P(up)={prediction.probability_up:.3f}, '
+            f'conf={prediction.confidence:.3f})'
+        )
+        return False
+
+    # ------------------------------------------------------------------
+    # Exit logic (unchanged from original)
+    # ------------------------------------------------------------------
 
     def _get_return_stats(self) -> tuple[float, float]:
         """Return (mean_return, std_return) for z-score exit computation.
