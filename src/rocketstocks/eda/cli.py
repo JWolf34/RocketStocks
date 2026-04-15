@@ -195,51 +195,33 @@ async def _handle_forward_returns(args, stock_data) -> int:
 
 
 async def _handle_lead_lag(args, stock_data) -> int:
-    from rocketstocks.eda.data_loader import load_daily_panel, load_intraday_panel
     from rocketstocks.eda.engines.cross_correlation import run_cross_correlation, print_results
 
     start_date, end_date = _parse_dates(args)
-
-    if args.timeframe == 'daily':
-        panel, _ = await load_daily_panel(stock_data, start_date, end_date, args.tickers)
-    else:
-        panel, _ = await load_intraday_panel(stock_data, start_date, end_date, args.tickers)
-
-    if panel.empty:
-        print("No panel data loaded. Check your date range and that price/popularity data exists.")
-        return 1
 
     # Determine signal column
     signal_col = args.signal_col
     if signal_col is None:
         source = args.source.split('+')[0].strip()
         if source == 'sentiment':
-            # mention_ratio: non-NaN whenever the ticker appears in popularity (sparse-friendly).
-            # mention_delta: non-NaN only on consecutive-day appearances — needs dense coverage.
             signal_col = 'mention_ratio'
         elif source == 'volume':
             signal_col = '_volume_zscore'
-            # Compute rolling volume z-score on the panel if not present
-            if '_volume_zscore' not in panel.columns and 'volume' in panel.columns:
-                panel = _add_volume_zscore(panel, args.timeframe)
         else:
             print(f"Could not determine signal column for source '{source}'. Use --signal-col.")
             return 1
 
-    if signal_col not in panel.columns:
-        print(f"Signal column '{signal_col}' not found in panel. Available: {list(panel.columns)}")
-        return 1
-
     return_col = 'daily_return' if args.timeframe == 'daily' else 'bar_return'
-    if return_col not in panel.columns:
-        print(f"Return column '{return_col}' not found in panel.")
-        return 1
+    print(f"Date window: {start_date or 'all'} → {end_date or 'all'}")
 
-    result = run_cross_correlation(
-        panel=panel,
+    result = await run_cross_correlation(
+        stock_data=stock_data,
         signal_col=signal_col,
         return_col=return_col,
+        tickers=args.tickers,
         timeframe=args.timeframe,
+        start_date=start_date,
+        end_date=end_date,
         max_lag=args.max_lag,
         min_periods=args.min_periods,
     )
