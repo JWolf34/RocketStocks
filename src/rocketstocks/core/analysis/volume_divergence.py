@@ -28,8 +28,9 @@ def evaluate_volume_accumulation(
     vol_zscore: float,
     price_zscore: float,
     rvol: float,
-    vol_threshold: float = 2.0,
+    vol_threshold: float = 2.5,
     price_ceiling: float = 1.0,
+    min_divergence: float = 1.5,
 ) -> VolumeAccumulationResult:
     """Evaluate whether a ticker shows volume accumulation without significant price movement.
 
@@ -37,8 +38,9 @@ def evaluate_volume_accumulation(
         vol_zscore: Volume z-score (current volume vs 20-day average).
         price_zscore: Intraday price z-score (current pct_change vs 20-day distribution).
         rvol: Relative volume (current volume / average volume).
-        vol_threshold: Minimum vol_zscore to qualify (default 2.0).
+        vol_threshold: Minimum vol_zscore to qualify (default 2.5).
         price_ceiling: Maximum abs(price_zscore) to qualify (default 1.0).
+        min_divergence: Minimum divergence score (vol_z - abs(price_z)) to qualify (default 1.5).
 
     Returns:
         VolumeAccumulationResult with is_accumulating=True when the pattern is detected.
@@ -59,8 +61,12 @@ def evaluate_volume_accumulation(
             signal_strength='volume_only',
         )
 
-    is_accumulating = vol_zscore >= vol_threshold and abs(price_zscore) < price_ceiling
     divergence_score = vol_zscore - abs(price_zscore)
+    is_accumulating = (
+        vol_zscore >= vol_threshold
+        and abs(price_zscore) < price_ceiling
+        and divergence_score >= min_divergence
+    )
 
     return VolumeAccumulationResult(
         is_accumulating=is_accumulating,
@@ -70,3 +76,4 @@ def evaluate_volume_accumulation(
         divergence_score=divergence_score,
         signal_strength='volume_only',
     )
+
