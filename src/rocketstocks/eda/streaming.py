@@ -106,6 +106,46 @@ async def fetch_bar_counts(
     return {ticker: int(count) for ticker, count in rows}
 
 
+async def fetch_distinct_tickers(
+    stock_data,
+    start_date: datetime.date | None = None,
+    end_date: datetime.date | None = None,
+) -> list[str]:
+    """Return distinct tickers from the popularity table within the date window.
+
+    Used by the cross-correlation engine when the caller does not restrict
+    analysis to a specific ticker list.
+
+    Args:
+        stock_data: StockData singleton.
+        start_date: Earliest popularity snapshot date to include.
+        end_date: Latest popularity snapshot date to include.
+
+    Returns:
+        Sorted list of ticker strings.
+    """
+    import datetime as _dt
+    conditions: list[str] = []
+    params: list = []
+
+    if start_date is not None:
+        conditions.append("datetime >= %s")
+        params.append(start_date)
+    if end_date is not None:
+        end_cutoff = (
+            end_date + _dt.timedelta(days=1)
+            if isinstance(end_date, _dt.date)
+            else end_date
+        )
+        conditions.append("datetime < %s")
+        params.append(end_cutoff)
+
+    where = f"WHERE {' AND '.join(conditions)}" if conditions else ""
+    query = f"SELECT DISTINCT ticker FROM popularity {where} ORDER BY ticker"
+    rows = await stock_data.db.execute(query, params or None)
+    return [row[0] for row in rows] if rows else []
+
+
 # ---------------------------------------------------------------------------
 # Internal helpers
 # ---------------------------------------------------------------------------
