@@ -30,7 +30,7 @@ class NotificationConfig:
         if self.filter == NotificationFilter.OFF:
             return False
         if self.filter == NotificationFilter.FAILURES_ONLY:
-            return event.level == NotificationLevel.FAILURE
+            return event.level in (NotificationLevel.FAILURE, NotificationLevel.WARNING)
         return True  # ALL
 
     @classmethod

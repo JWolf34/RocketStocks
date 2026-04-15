@@ -1,5 +1,6 @@
 import logging
 import datetime
+from typing import Callable
 
 import httpx
 import schwab
@@ -21,10 +22,12 @@ class SchwabRateLimitError(Exception):
 
 
 class Schwab:
-    def __init__(self, client=None, token_store=None, limiter=None):
+    def __init__(self, client=None, token_store=None, limiter=None,
+                 on_token_invalid: Callable | None = None):
         self._token_store = token_store
         self._token_invalid: bool = False
         self._limiter = limiter or AsyncLimiter(120, 60)  # 120 req/min
+        self._on_token_invalid = on_token_invalid
 
         if client is not None:
             self.client = client
@@ -107,6 +110,8 @@ class Schwab:
         )
         self._token_invalid = True
         self.client = None
+        if self._on_token_invalid is not None:
+            self._on_token_invalid()
         raise SchwabTokenError(
             f"Schwab token was rejected: {exc}. Run /schwab-auth to re-authenticate."
         ) from exc

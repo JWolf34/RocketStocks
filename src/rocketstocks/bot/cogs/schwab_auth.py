@@ -86,9 +86,7 @@ class SchwabCallbackModal(discord.ui.Modal, title="Paste Schwab Redirect URL"):
                 True,  # asyncio=True
             )
             await self._cog.bot.stock_data.schwab_token_store.save_token(token_dict)
-            # Inject new client and clear invalid flag
-            self._cog.bot.stock_data.schwab.client = new_client
-            self._cog.bot.stock_data.schwab._token_invalid = False
+            await self._cog.bot.stock_data.schwab.reload_client()
             self._cog._active_auth = None
             logger.info("Schwab re-authentication successful via Discord OAuth flow")
             await interaction.followup.send(
@@ -158,13 +156,15 @@ class SchwabAuth(commands.Cog):
         self.bot = bot
         self._active_auth = None  # stores the current AuthContext while flow is in progress
 
+    async def cog_load(self) -> None:
+        await self._check_token_on_startup()
+
     @commands.Cog.listener()
     async def on_ready(self):
         logger.info(f"{__name__} loaded")
-        await self._check_token_on_startup()
 
     async def _check_token_on_startup(self) -> None:
-        """Log token health at startup and emit a warning if action is needed."""
+        """Log token health at startup and emit a notification if action is needed."""
         try:
             info = await self.bot.stock_data.schwab.get_token_info()
             label = _STATUS_LABELS.get(info.status, info.status.value)
@@ -172,8 +172,13 @@ class SchwabAuth(commands.Cog):
             if info.status in (TokenStatus.EXPIRING_SOON, TokenStatus.EXPIRED, TokenStatus.INVALID, TokenStatus.MISSING):
                 from rocketstocks.core.notifications.config import NotificationLevel
                 from rocketstocks.core.notifications.event import NotificationEvent
+                level = (
+                    NotificationLevel.WARNING
+                    if info.status == TokenStatus.EXPIRING_SOON
+                    else NotificationLevel.FAILURE
+                )
                 self.bot.emitter.emit(NotificationEvent(
-                    level=NotificationLevel.WARNING,
+                    level=level,
                     source=__name__,
                     job_name="schwab_token",
                     message=f"Schwab token status: {label}. Run /schwab auth to re-authenticate.",
