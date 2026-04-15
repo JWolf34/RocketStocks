@@ -11,7 +11,9 @@ def _make_bot():
     bot.stock_data = MagicMock(name="StockData")
     bot.stock_data.schwab = MagicMock(name="Schwab")
     bot.stock_data.schwab._token_invalid = False
+    bot.stock_data.schwab.reload_client = AsyncMock()
     bot.stock_data.schwab_token_store = AsyncMock(name="SchwabTokenRepository")
+    bot.emitter = MagicMock(name="EventEmitter")
     return bot
 
 
@@ -186,11 +188,9 @@ class TestSchwabCallbackModal:
             interaction = _make_interaction()
             await modal.on_submit(interaction)
 
-        # Token should be saved to DB
+        # Token should be saved to DB, then client reloaded (not directly assigned)
         bot.stock_data.schwab_token_store.save_token.assert_awaited_once_with(token_dict)
-        # Client should be updated and flow cleared
-        assert bot.stock_data.schwab.client is new_client
-        assert bot.stock_data.schwab._token_invalid is False
+        bot.stock_data.schwab.reload_client.assert_awaited_once()
         assert cog._active_auth is None
         interaction.followup.send.assert_awaited_once()
         embed = interaction.followup.send.call_args.kwargs["embed"]
@@ -219,6 +219,55 @@ class TestSchwabCallbackModal:
         interaction.followup.send.assert_awaited_once()
         embed = interaction.followup.send.call_args.kwargs["embed"]
         assert "fail" in embed.title.lower()
+
+
+# ---------------------------------------------------------------------------
+# cog_load → _check_token_on_startup
+# ---------------------------------------------------------------------------
+
+class TestCogLoad:
+    @pytest.mark.asyncio
+    async def test_cog_load_calls_startup_check(self):
+        cog, bot = _make_cog()
+        bot.stock_data.schwab.get_token_info = AsyncMock(
+            return_value=_make_token_info(TokenStatus.HEALTHY, hours_remaining=96)
+        )
+        await cog.cog_load()
+        bot.stock_data.schwab.get_token_info.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_startup_emits_warning_for_expiring_soon(self):
+        from rocketstocks.core.notifications.config import NotificationLevel
+        cog, bot = _make_cog()
+        bot.stock_data.schwab.get_token_info = AsyncMock(
+            return_value=_make_token_info(TokenStatus.EXPIRING_SOON, hours_remaining=20)
+        )
+        await cog._check_token_on_startup()
+        bot.emitter.emit.assert_called_once()
+        event = bot.emitter.emit.call_args.args[0]
+        assert event.level == NotificationLevel.WARNING
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("status", [TokenStatus.EXPIRED, TokenStatus.INVALID, TokenStatus.MISSING])
+    async def test_startup_emits_failure_for_critical_statuses(self, status):
+        from rocketstocks.core.notifications.config import NotificationLevel
+        cog, bot = _make_cog()
+        bot.stock_data.schwab.get_token_info = AsyncMock(
+            return_value=_make_token_info(status)
+        )
+        await cog._check_token_on_startup()
+        bot.emitter.emit.assert_called_once()
+        event = bot.emitter.emit.call_args.args[0]
+        assert event.level == NotificationLevel.FAILURE
+
+    @pytest.mark.asyncio
+    async def test_startup_does_not_emit_for_healthy_token(self):
+        cog, bot = _make_cog()
+        bot.stock_data.schwab.get_token_info = AsyncMock(
+            return_value=_make_token_info(TokenStatus.HEALTHY, hours_remaining=96)
+        )
+        await cog._check_token_on_startup()
+        bot.emitter.emit.assert_not_called()
 
 
 # ---------------------------------------------------------------------------

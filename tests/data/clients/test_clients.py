@@ -85,6 +85,33 @@ class TestSchwab:
         assert obj.client is None
         assert obj._token_invalid is True
 
+    def test_on_token_invalid_callback_called_on_oauth_error(self):
+        """_on_token_invalid callback must be called when an OAuthError is handled."""
+        from authlib.integrations.base_client.errors import OAuthError
+        from rocketstocks.data.clients.schwab import Schwab, SchwabTokenError
+        callback = MagicMock()
+        token_store = AsyncMock()
+        obj = Schwab(token_store=token_store, on_token_invalid=callback)
+        inner_client = AsyncMock()
+        obj.client = inner_client
+        inner_client.get_quote = AsyncMock(side_effect=OAuthError(error='invalid_token'))
+        import asyncio
+        with pytest.raises(SchwabTokenError):
+            asyncio.get_event_loop().run_until_complete(obj.get_quote('AAPL'))
+        callback.assert_called_once()
+
+    def test_on_token_invalid_defaults_to_none(self):
+        """Schwab without a callback should not raise when an OAuthError occurs."""
+        from authlib.integrations.base_client.errors import OAuthError
+        from rocketstocks.data.clients.schwab import Schwab, SchwabTokenError
+        obj = self._make()
+        assert obj._on_token_invalid is None
+        obj.client.get_quote = AsyncMock(side_effect=OAuthError(error='invalid_token'))
+        import asyncio
+        with pytest.raises(SchwabTokenError):
+            asyncio.get_event_loop().run_until_complete(obj.get_quote('AAPL'))
+        # No error — callback absence is handled gracefully
+
     def test_no_import_time_datetime_default(self):
         """B3: end_datetime default must NOT be evaluated at import/class time."""
         import inspect

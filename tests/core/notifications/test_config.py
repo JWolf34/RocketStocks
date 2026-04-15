@@ -48,9 +48,9 @@ class TestNotificationConfigShouldNotify:
         cfg = NotificationConfig(filter=NotificationFilter.FAILURES_ONLY)
         assert cfg.should_notify(_event(NotificationLevel.FAILURE)) is True
 
-    def test_failures_only_blocks_warning(self):
+    def test_failures_only_allows_warning(self):
         cfg = NotificationConfig(filter=NotificationFilter.FAILURES_ONLY)
-        assert cfg.should_notify(_event(NotificationLevel.WARNING)) is False
+        assert cfg.should_notify(_event(NotificationLevel.WARNING)) is True
 
     def test_off_blocks_success(self):
         cfg = NotificationConfig(filter=NotificationFilter.OFF)
