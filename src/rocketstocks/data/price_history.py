@@ -170,6 +170,7 @@ class PriceHistoryRepository:
         self,
         tickers: list[str],
         start_date: datetime.date = None,
+        end_date: datetime.date = None,
     ) -> dict[str, pd.DataFrame]:
         """Fetch daily price history for multiple tickers in a single query.
 
@@ -186,6 +187,9 @@ class PriceHistoryRepository:
         if start_date is not None:
             query += " AND date > %s"
             params.append(start_date)
+        if end_date is not None:
+            query += " AND date <= %s"
+            params.append(end_date)
         query += " ORDER BY ticker, date"
 
         rows = await self._db.execute(query, params)

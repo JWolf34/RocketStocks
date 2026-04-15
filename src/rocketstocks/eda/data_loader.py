@@ -27,20 +27,12 @@ async def load_popularity_raw(
     Returns a DataFrame with all _POPULARITY_COLS columns, datetime parsed
     as Timestamp.  Rows ordered by (ticker, datetime) ascending.
     """
-    pop = await stock_data.popularity.fetch_popularity()
+    pop = await stock_data.popularity.fetch_popularity(start_date=start_date, end_date=end_date)
     if pop.empty:
         return pop
 
     pop['datetime'] = pd.to_datetime(pop['datetime'])
     pop = pop.sort_values(['ticker', 'datetime'])
-
-    if start_date is not None:
-        cutoff = pd.Timestamp(start_date)
-        pop = pop[pop['datetime'] >= cutoff]
-    if end_date is not None:
-        cutoff = pd.Timestamp(end_date) + pd.Timedelta(days=1)
-        pop = pop[pop['datetime'] < cutoff]
-
     return pop.reset_index(drop=True)
 
 
@@ -95,6 +87,7 @@ async def load_daily_panel(
     price_dict = await stock_data.price_history.fetch_daily_price_history_batch(
         pop_tickers,
         start_date=start_date,
+        end_date=end_date,
     )
 
     # Build close_dict for forward return lookups (DatetimeIndex, UTC-naive)
@@ -103,12 +96,6 @@ async def load_daily_panel(
 
     for ticker, price_df in price_dict.items():
         if price_df.empty or 'close' not in price_df.columns:
-            continue
-
-        # Apply end_date filter (batch method doesn't support it)
-        if end_date is not None:
-            price_df = price_df[price_df['date'] <= end_date]
-        if price_df.empty:
             continue
 
         price_df = price_df.copy()
