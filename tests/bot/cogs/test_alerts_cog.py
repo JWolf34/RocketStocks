@@ -315,11 +315,13 @@ class TestVolumeAccumulationPipeline:
         quote = {"quote": {"netPercentChange": 0.2, "totalVolume": 5_000_000},
                  "regular": {"regularMarketLastPrice": 52.0}}
         fake_result = _make_accumulation_result(is_accumulating=True)
+        fake_options_flow = MagicMock(has_unusual_activity=True)
 
-        cog.stock_data.schwab.get_options_chain = AsyncMock(return_value=None)
+        cog.stock_data.schwab.get_options_chain = AsyncMock(return_value={"callExpDateMap": {}})
 
         with (
             patch("rocketstocks.bot.cogs.alerts.evaluate_volume_accumulation", return_value=fake_result),
+            patch("rocketstocks.bot.cogs.alerts.evaluate_options_flow", return_value=fake_options_flow),
             patch("rocketstocks.bot.cogs.alerts.send_alert", new_callable=AsyncMock) as mock_send,
         ):
             mock_send.return_value = None
@@ -332,6 +334,34 @@ class TestVolumeAccumulationPipeline:
             mock_send.assert_called_once()
 
         cog.stock_data.market_signal_store.insert_signal.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_no_alert_when_no_unusual_options_activity(self):
+        """Pipeline skips ticker when options hard gate finds no unusual activity."""
+        cog = _make_cog(earnings_df=pd.DataFrame())
+        ticker = "GME"
+        price_df = self._make_price_df()
+        quote = {"quote": {"netPercentChange": 0.2, "totalVolume": 5_000_000},
+                 "regular": {"regularMarketLastPrice": 52.0}}
+        fake_result = _make_accumulation_result(is_accumulating=True)
+        fake_options_flow = MagicMock(has_unusual_activity=False)
+
+        cog.stock_data.schwab.get_options_chain = AsyncMock(return_value={"callExpDateMap": {}})
+
+        with (
+            patch("rocketstocks.bot.cogs.alerts.evaluate_volume_accumulation", return_value=fake_result),
+            patch("rocketstocks.bot.cogs.alerts.evaluate_options_flow", return_value=fake_options_flow),
+            patch("rocketstocks.bot.cogs.alerts.send_alert", new_callable=AsyncMock) as mock_send,
+        ):
+            await cog._volume_accumulation_pipeline(
+                quotes={ticker: quote},
+                classifications={},
+                channels=[AsyncMock()],
+                price_cache={ticker: price_df},
+            )
+            mock_send.assert_not_called()
+
+        cog.stock_data.market_signal_store.insert_signal.assert_not_called()
 
     @pytest.mark.asyncio
     async def test_no_alert_when_not_accumulating(self):
