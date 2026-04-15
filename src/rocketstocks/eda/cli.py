@@ -156,12 +156,13 @@ async def main(argv: list[str] | None = None) -> int:
 # ---------------------------------------------------------------------------
 
 async def _handle_forward_returns(args, stock_data) -> int:
-    from rocketstocks.eda.data_loader import load_daily_panel, load_intraday_panel
     from rocketstocks.eda.events.base import deduplicate_events
     from rocketstocks.eda.engines.forward_returns import run_forward_returns, print_results
 
     start_date, end_date = _parse_dates(args)
     detector = _build_detector(args)
+
+    print(f"Date window: {start_date or 'all'} → {end_date or 'all'}")
 
     events = await detector.detect(
         stock_data,
@@ -176,23 +177,16 @@ async def _handle_forward_returns(args, stock_data) -> int:
         return 1
 
     events = deduplicate_events(events, window_days=args.dedup_window)
-    print(f"\nDetected {len(events)} events across {events['ticker'].nunique()} tickers")
-
-    # Load price data for forward return lookups
-    if args.timeframe == 'daily':
-        _, close_dict = await load_daily_panel(
-            stock_data, start_date, end_date, args.tickers
-        )
-    else:
-        _, close_dict = await load_intraday_panel(
-            stock_data, start_date, end_date, args.tickers
-        )
+    n_event_tickers = events['ticker'].nunique()
+    print(f"\nDetected {len(events)} events across {n_event_tickers} tickers")
 
     custom_horizons = _parse_int_list(args.horizons) if args.horizons else None
-    results = run_forward_returns(
+    results = await run_forward_returns(
         events=events,
-        close_dict=close_dict,
+        stock_data=stock_data,
         timeframe=args.timeframe,
+        start_date=start_date,
+        end_date=end_date,
         custom_horizons=custom_horizons,
         stratify=not args.no_stratify,
     )

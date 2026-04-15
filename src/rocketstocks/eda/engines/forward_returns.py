@@ -6,8 +6,12 @@ events DataFrame in the standard format.
 
 Statistical approach mirrors backtest/signal_decay.py (searchsorted + horizon
 lookup, one-sample t-test) but operates on raw event sets rather than
-backtest trades, and adds control-group comparison + signal_value stratification.
+backtest trades, and adds control-group comparison.
+
+Memory model: streams price data one ticker at a time via stream_tickers(),
+keeping peak RSS bounded regardless of universe size.
 """
+import gc
 import logging
 import math
 from dataclasses import dataclass, field
@@ -16,11 +20,12 @@ import numpy as np
 import pandas as pd
 from scipy import stats as scipy_stats
 
-from rocketstocks.eda.events.base import build_control_group, empty_events
+from rocketstocks.eda.events.base import build_control_group
 from rocketstocks.eda.formatting import (
     fmt_pct, fmt_float, fmt_pvalue, significant_marker,
     print_table, print_separator,
 )
+from rocketstocks.eda.streaming import fetch_bar_counts, stream_tickers
 
 logger = logging.getLogger(__name__)
 
@@ -58,81 +63,147 @@ class ForwardReturnResult:
     strata: dict[str, list[HorizonResult]] = field(default_factory=dict)
 
 
-def run_forward_returns(
+async def run_forward_returns(
     events: pd.DataFrame,
-    close_dict: dict[str, pd.Series],
+    stock_data,
     timeframe: str = 'daily',
+    start_date=None,
+    end_date=None,
     custom_horizons: list[int] | None = None,
     n_control: int = 500,
     stratify: bool = True,
 ) -> list[ForwardReturnResult]:
     """Compute forward return distributions for each source_detail group.
 
+    Streams price data one ticker at a time so peak RSS stays bounded
+    regardless of universe × history size.
+
     Args:
         events: Standard events DataFrame (must include ticker, datetime,
-            signal_value, source_detail columns).
-        close_dict: Per-ticker close Series with DatetimeIndex.
+            signal_value columns; source_detail column is optional).
+        stock_data: StockData singleton with DB access.
         timeframe: 'daily' or '5m' — controls default horizons.
+        start_date: Earliest date for price lookups.
+        end_date: Latest date for price lookups.
         custom_horizons: Override default horizon list.
         n_control: Number of control-group samples.
-        stratify: Whether to stratify by signal_value buckets.
+        stratify: Accepted for API compatibility; stratification is omitted
+            in the streaming engine (Phase 2 work).
 
     Returns:
         List of ForwardReturnResult, one per unique source_detail value.
         If events has no source_detail column, returns a single result for all.
     """
-    if events.empty or not close_dict:
-        logger.warning("forward_returns: no events or price data")
+    if events.empty:
+        logger.warning("forward_returns: no events")
         return []
 
-    n_tickers = events['ticker'].nunique() if 'ticker' in events.columns else 0
+    n_tickers = events['ticker'].nunique()
     n_events = len(events)
-    print(f"Computing forward returns: {n_events} events across {n_tickers} tickers "
-          f"({len(close_dict)} tickers with price data)")
-
     horizons = custom_horizons or (
         _DAILY_HORIZONS if timeframe == 'daily' else _INTRADAY_HORIZONS
     )
     horizon_labels = _INTRADAY_HORIZON_LABELS if timeframe == '5m' else {}
+    time_col = 'date' if timeframe == 'daily' else 'datetime'
 
-    # Build sorted close series for fast searchsorted lookups
-    sorted_closes: dict[str, pd.Series] = {
-        t: s.sort_index() for t, s in close_dict.items()
-    }
+    # Build (ticker, date_str) exclusion set for control sampling
+    event_pairs: set[tuple[str, str]] = set()
+    for _, row in events.iterrows():
+        dt = pd.Timestamp(row['datetime'])
+        event_pairs.add((row['ticker'], dt.date().isoformat()))
 
-    # Control group (computed once, shared across source_details)
-    # bar_counts derived from the already-loaded close_dict; avoids re-fetching from DB.
-    bar_counts = {t: len(s) for t, s in sorted_closes.items()}
-    control_with_offsets = build_control_group(events, bar_counts, n_samples=n_control)
-    control_events = _resolve_control_offsets(control_with_offsets, sorted_closes, events)
-    control_horizons = _compute_horizons(control_events, sorted_closes, horizons, horizon_labels)
-
-    # Group by source_detail
+    # Group events by source_detail
     if 'source_detail' in events.columns:
-        groups = {detail: grp for detail, grp in events.groupby('source_detail')}
+        groups = {str(detail): grp for detail, grp in events.groupby('source_detail')}
     else:
         groups = {'all': events}
+
+    # One SQL query for bar counts; build control offsets (no price data loaded yet)
+    event_tickers = events['ticker'].unique().tolist()
+    bar_counts = await fetch_bar_counts(stock_data, event_tickers, timeframe, start_date, end_date)
+    control_with_offsets = build_control_group(events, bar_counts, n_samples=n_control)
+
+    control_tickers = (
+        control_with_offsets['ticker'].unique().tolist()
+        if not control_with_offsets.empty else []
+    )
+    stream_ticker_list = sorted(set(event_tickers) | set(control_tickers))
+    n_stream = len(stream_ticker_list)
+
+    print(
+        f"Computing forward returns: {n_events} events across {n_tickers} tickers "
+        f"({n_stream} tickers to stream)"
+    )
+
+    # Per-group return accumulators: {source_detail: {horizon: [return_pct, ...]}}
+    group_accumulators: dict[str, dict[int, list[float]]] = {
+        detail: {h: [] for h in horizons} for detail in groups
+    }
+    control_accumulator: dict[int, list[float]] = {h: [] for h in horizons}
+
+    n_streamed = 0
+    async for ticker, price_df, pop_df in stream_tickers(
+        stock_data, stream_ticker_list, timeframe, start_date, end_date
+    ):
+        gc.collect()
+        if price_df.empty or time_col not in price_df.columns or 'close' not in price_df.columns:
+            continue
+
+        price_df = price_df.sort_values(time_col)
+        idx = pd.to_datetime(price_df[time_col].astype(str))
+        close_series = pd.Series(price_df['close'].values, index=idx).sort_index()
+
+        # Accumulate event returns for each source_detail group
+        for detail, grp in groups.items():
+            ticker_events = grp[grp['ticker'] == ticker]
+            if not ticker_events.empty:
+                _accumulate_horizons(
+                    ticker_events, close_series, group_accumulators[detail], horizons
+                )
+
+        # Accumulate control returns — offset indexes directly into close_series
+        if not control_with_offsets.empty:
+            ticker_controls = control_with_offsets[control_with_offsets['ticker'] == ticker]
+            for _, ctrl_row in ticker_controls.iterrows():
+                offset = int(ctrl_row['_bar_offset'])
+                if offset >= len(close_series):
+                    continue
+                ts = pd.Timestamp(close_series.index[offset])
+                if (ticker, ts.date().isoformat()) in event_pairs:
+                    continue
+                entry_price = float(close_series.iloc[offset])
+                if entry_price <= 0 or math.isnan(entry_price):
+                    continue
+                for h in horizons:
+                    fwd_loc = offset + h
+                    if fwd_loc >= len(close_series):
+                        continue
+                    fwd_price = float(close_series.iloc[fwd_loc])
+                    if fwd_price <= 0 or math.isnan(fwd_price):
+                        continue
+                    control_accumulator[h].append((fwd_price / entry_price - 1) * 100.0)
+
+        n_streamed += 1
+        if n_streamed % 50 == 0:
+            from rocketstocks.eda._memlog import log_memory
+            log_memory(f"forward-returns after {n_streamed} tickers")
+
+    control_horizons = _horizons_from_accumulators(control_accumulator, horizons, horizon_labels)
 
     n_groups = len(groups)
     results: list[ForwardReturnResult] = []
     for i, (detail, grp) in enumerate(groups.items(), 1):
-        print(f"  [{i}/{n_groups}] {detail} ({len(grp)} events, "
-              f"{grp['ticker'].nunique()} tickers)")
-        grp = grp.dropna(subset=['ticker', 'datetime'])
-        main_horizons = _compute_horizons(grp, sorted_closes, horizons, horizon_labels)
-
-        # Stratify by signal_value buckets
-        strata: dict[str, list[HorizonResult]] = {}
-        if stratify and 'signal_value' in grp.columns:
-            strata = _compute_strata(grp, sorted_closes, horizons, horizon_labels)
-
+        print(f"  [{i}/{n_groups}] {detail} ({len(grp)} events, {grp['ticker'].nunique()} tickers)")
+        main_horizons = _horizons_from_accumulators(
+            group_accumulators[detail], horizons, horizon_labels
+        )
         results.append(ForwardReturnResult(
             source_detail=detail,
             n_events_total=len(grp),
             n_tickers=grp['ticker'].nunique(),
             horizons=main_horizons,
             control=control_horizons,
-            strata=strata,
+            strata={},
         ))
 
     return results
@@ -162,54 +233,69 @@ def print_results(results: list[ForwardReturnResult], timeframe: str = 'daily') 
 # Internal helpers
 # ---------------------------------------------------------------------------
 
-def _resolve_control_offsets(
-    control_with_offsets: pd.DataFrame,
-    sorted_closes: dict[str, pd.Series],
-    events: pd.DataFrame,
-) -> pd.DataFrame:
-    """Convert (ticker, _bar_offset) pairs → (ticker, datetime) control events.
+def _accumulate_horizons(
+    ticker_events: pd.DataFrame,
+    close_series: pd.Series,
+    accumulators: dict[int, list[float]],
+    horizons: list[int],
+) -> None:
+    """Accumulate forward returns for a single ticker into per-horizon lists.
 
-    Resolves each bar offset to an actual timestamp using the sorted close series,
-    then filters out any (ticker, date) pairs that coincide with an event.
-
-    Args:
-        control_with_offsets: Output of build_control_group — has _bar_offset column.
-        sorted_closes: Per-ticker close Series with sorted DatetimeIndex.
-        events: Original events DataFrame — used to exclude event dates.
-
-    Returns:
-        Standard events DataFrame with ticker, datetime, signal_value, source columns.
+    Mutates *accumulators* in-place.  Each entry appended is a percentage
+    return from event bar to the bar at ``horizon`` bars later.
     """
-    if control_with_offsets.empty:
-        return empty_events()
-
-    # Build set of (ticker, date_str) pairs to exclude
-    event_pairs: set[tuple[str, str]] = set()
-    if not events.empty:
-        for _, row in events.iterrows():
-            dt = pd.Timestamp(row['datetime'])
-            event_pairs.add((row['ticker'], dt.date().isoformat()))
-
-    rows = []
-    for _, row in control_with_offsets.iterrows():
-        ticker = row['ticker']
-        offset = int(row['_bar_offset'])
-        series = sorted_closes.get(ticker)
-        if series is None or offset >= len(series):
+    for _, row in ticker_events.iterrows():
+        dt = pd.Timestamp(row['datetime'])
+        loc = close_series.index.searchsorted(dt)
+        if loc >= len(close_series):
             continue
-        ts = pd.Timestamp(series.index[offset])
-        if (ticker, ts.date().isoformat()) in event_pairs:
+        entry_price = float(close_series.iloc[loc])
+        if entry_price <= 0 or math.isnan(entry_price):
             continue
-        rows.append({
-            'ticker': ticker,
-            'datetime': ts,
-            'signal_value': 0.0,
-            'source': 'control',
-        })
+        for h in horizons:
+            fwd_loc = loc + h
+            if fwd_loc >= len(close_series):
+                continue
+            fwd_price = float(close_series.iloc[fwd_loc])
+            if fwd_price <= 0 or math.isnan(fwd_price):
+                continue
+            accumulators[h].append((fwd_price / entry_price - 1) * 100.0)
 
-    if not rows:
-        return empty_events()
-    return pd.DataFrame(rows)
+
+def _horizons_from_accumulators(
+    accumulators: dict[int, list[float]],
+    horizons: list[int],
+    horizon_labels: dict[int, str],
+) -> list[HorizonResult]:
+    """Convert per-horizon return lists to HorizonResult statistics."""
+    results = []
+    for h in sorted(horizons):
+        returns = accumulators[h]
+        label = horizon_labels.get(h, f'{h}d' if h <= 30 else f'{h}b')
+        n = len(returns)
+        if n < 2:
+            results.append(HorizonResult(
+                horizon=h, horizon_label=label, n_events=n,
+                mean_return=float('nan'), median_return=float('nan'),
+                std_return=float('nan'), win_rate=float('nan'),
+                t_stat=float('nan'), p_value=float('nan'), significant=False,
+            ))
+            continue
+        arr = np.array(returns)
+        t_stat, p_value = scipy_stats.ttest_1samp(arr, 0)
+        results.append(HorizonResult(
+            horizon=h,
+            horizon_label=label,
+            n_events=n,
+            mean_return=float(arr.mean()),
+            median_return=float(np.median(arr)),
+            std_return=float(arr.std(ddof=1)),
+            win_rate=float((arr > 0).mean() * 100),
+            t_stat=float(t_stat),
+            p_value=float(p_value),
+            significant=float(p_value) < 0.05,
+        ))
+    return results
 
 
 def _compute_horizons(
@@ -218,7 +304,11 @@ def _compute_horizons(
     horizons: list[int],
     horizon_labels: dict[int, str],
 ) -> list[HorizonResult]:
-    """Compute forward return statistics at each horizon for given events."""
+    """Compute forward return statistics at each horizon for given events.
+
+    Pure helper — unchanged from original implementation.  Still used by
+    regime_analysis and tests that pass a pre-built close_dict.
+    """
     horizon_returns: dict[int, list[float]] = {h: [] for h in horizons}
 
     for _, row in events.iterrows():
@@ -288,7 +378,6 @@ def _compute_strata(
     if sv.empty:
         return {}
 
-    # Use quartile-based buckets so each stratum has reasonable sample size
     try:
         labels_quantile = ['Q1 (low)', 'Q2', 'Q3', 'Q4 (high)']
         events = events.copy()
