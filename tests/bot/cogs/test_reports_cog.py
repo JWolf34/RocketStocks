@@ -353,7 +353,7 @@ class TestUpdateEarningsCalendarImpl:
         cog.stock_data.watchlists.get_all_watchlist_tickers = AsyncMock(return_value=["AAPL"])
 
         earnings_info = {
-            'date': datetime.date(2026, 4, 1),
+            'date': datetime.date(2026, 5, 1),
             'time': [],   # empty list — no [0] element
             'fiscal_quarter_ending': 'Q1 2026',
             'eps_forecast': '1.50',
@@ -381,7 +381,7 @@ class TestUpdateEarningsCalendarImpl:
         cog.stock_data.watchlists.get_all_watchlist_tickers = AsyncMock(return_value=["AAPL", "MSFT"])
 
         good_earnings = {
-            'date': datetime.date(2026, 4, 1),
+            'date': datetime.date(2026, 5, 1),
             'time': [],
             'fiscal_quarter_ending': 'Q1 2026',
             'eps_forecast': '2.00',
