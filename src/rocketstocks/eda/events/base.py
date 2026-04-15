@@ -106,53 +106,66 @@ def deduplicate_events(
 
 def build_control_group(
     events: pd.DataFrame,
-    close_dict: dict[str, pd.Series],
+    bar_counts: dict[str, int],
     n_samples: int = 500,
     seed: int = 42,
 ) -> pd.DataFrame:
-    """Sample random ticker-date pairs that are NOT in the event set.
+    """Sample random (ticker, bar-offset) pairs for use as a control group.
 
-    Provides a baseline for comparing event forward returns against
-    unconditional returns from the same universe.
+    Memory-efficient replacement for the previous close_dict-based approach.
+    Instead of materialising every (ticker, Timestamp) candidate (~millions of
+    Python objects), this samples global bar indices and maps them to
+    (ticker, local_offset) pairs via a cumulative-sum + searchsorted operation.
+
+    Callers must resolve ``_bar_offset`` → ``datetime`` using the per-ticker
+    price data before passing results to analysis engines.  Event-date exclusion
+    is also performed at that resolution step (collisions are rare and handled
+    there).
 
     Args:
-        events: Events DataFrame (used to exclude event dates).
-        close_dict: Per-ticker close Series (used to sample valid dates).
+        events: Events DataFrame (reserved for future use; not currently applied
+            at sampling time — exclusion happens during offset resolution).
+        bar_counts: {ticker: n_bars} mapping — from ``fetch_bar_counts()`` or
+            ``{t: len(s) for t, s in close_dict.items()}``.
         n_samples: Target number of control observations.
         seed: Random seed for reproducibility.
 
     Returns:
-        DataFrame with columns: ticker, datetime, signal_value=0, source='control'.
+        DataFrame with columns: ticker, _bar_offset, signal_value=0, source='control'.
+        ``_bar_offset`` is a zero-based index into the ticker's chronologically
+        sorted price series.
     """
-    if not close_dict:
-        return empty_events('control')
+    tickers = [t for t, c in bar_counts.items() if c > 0]
+    if not tickers:
+        return _empty_control()
 
     rng = np.random.default_rng(seed)
 
-    # Build set of (ticker, date_str) pairs to exclude
-    event_pairs: set[tuple[str, str]] = set()
-    if not events.empty:
-        for _, row in events.iterrows():
-            dt = pd.Timestamp(row['datetime'])
-            event_pairs.add((row['ticker'], dt.date().isoformat()))
+    counts = np.array([bar_counts[t] for t in tickers], dtype=np.int64)
+    T = int(counts.sum())
+    if T == 0:
+        return _empty_control()
 
-    # Collect all valid (ticker, date) candidates
-    candidates: list[tuple[str, pd.Timestamp]] = []
-    for ticker, series in close_dict.items():
-        for ts in series.index:
-            key = (ticker, pd.Timestamp(ts).date().isoformat())
-            if key not in event_pairs:
-                candidates.append((ticker, pd.Timestamp(ts)))
+    n = min(n_samples, T)
+    global_indices = rng.choice(T, size=n, replace=False)
 
-    if not candidates:
-        return empty_events('control')
+    # Map each global index → (ticker_index, local_offset) via searchsorted on cumsum
+    cumsum = np.cumsum(counts)
+    ticker_indices = np.searchsorted(cumsum, global_indices, side='right')
 
-    n = min(n_samples, len(candidates))
-    chosen_idx = rng.choice(len(candidates), size=n, replace=False)
-    chosen = [candidates[i] for i in chosen_idx]
+    rows = []
+    for gi, ti in zip(global_indices, ticker_indices):
+        local_offset = int(gi - (cumsum[ti - 1] if ti > 0 else 0))
+        rows.append({
+            'ticker': tickers[int(ti)],
+            '_bar_offset': local_offset,
+            'signal_value': 0.0,
+            'source': 'control',
+        })
 
-    rows = [
-        {'ticker': t, 'datetime': dt, 'signal_value': 0.0, 'source': 'control'}
-        for t, dt in chosen
-    ]
     return pd.DataFrame(rows)
+
+
+def _empty_control() -> pd.DataFrame:
+    """Return a zero-row control DataFrame with the expected columns."""
+    return pd.DataFrame(columns=['ticker', '_bar_offset', 'signal_value', 'source'])
