@@ -9,7 +9,8 @@ from rocketstocks.data.channel_config import REPORTS, ALERTS, SCREENERS, NOTIFIC
 from rocketstocks.data.schema import create_tables
 from rocketstocks.core.config.settings import settings
 from rocketstocks.core.utils.dates import configure_tz
-from rocketstocks.core.notifications.config import NotificationFilter
+from rocketstocks.core.notifications.config import NotificationFilter, NotificationLevel
+from rocketstocks.core.notifications.event import NotificationEvent
 from rocketstocks.core.config.paths import validate_path, datapaths
 from rocketstocks.core.notifications import EventEmitter, NotificationConfig
 from rocketstocks.core.scheduler.jobs import register_jobs
@@ -83,6 +84,14 @@ class RocketStocksBot(commands.Bot):
                     logger.info(f"Notification filter set from DB: {db_filter}")
 
         await self.stock_data.init_schwab()
+        self.stock_data.schwab._on_token_invalid = lambda: self.emitter.emit(
+            NotificationEvent(
+                level=NotificationLevel.FAILURE,
+                source="rocketstocks.data.clients.schwab",
+                job_name="Schwab token",
+                message="Schwab token rejected at runtime. Run /schwab auth to re-authenticate.",
+            )
+        )
         logger.info("Schwab client initialized")
         self.aio_sched = AsyncIOScheduler()
         register_jobs(self.aio_sched, self.stock_data, self.emitter)
