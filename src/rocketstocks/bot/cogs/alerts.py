@@ -603,7 +603,7 @@ class Alerts(commands.Cog):
                     )
                     continue
 
-                # Fetch options chain and evaluate flow
+                # Fetch options chain — unusual activity is required to proceed
                 options_flow = None
                 try:
                     current_price = MarketUtils().get_current_price(quote)
@@ -613,14 +613,21 @@ class Alerts(commands.Cog):
                             options_chain=options_chain,
                             underlying_price=current_price,
                         )
-                        if options_flow.has_unusual_activity:
-                            result.signal_strength = 'volume_plus_options'
-                            result.options_flow = options_flow
                 except Exception:
                     logger.debug(
                         f"[_volume_accumulation_pipeline] Options fetch failed for '{ticker}'",
                         exc_info=True,
                     )
+
+                if not options_flow or not options_flow.has_unusual_activity:
+                    logger.debug(
+                        f"[_volume_accumulation_pipeline] '{ticker}' skipped — "
+                        f"no unusual options activity (hard gate)"
+                    )
+                    continue
+
+                result.signal_strength = 'volume_plus_options'
+                result.options_flow = options_flow
 
                 logger.info(
                     f"[_volume_accumulation_pipeline] Volume accumulation on '{ticker}': "
