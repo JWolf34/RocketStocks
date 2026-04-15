@@ -6,7 +6,7 @@ RocketStocks monitors stocks and fires Discord alerts when statistically unusual
 
 ## Design Philosophy
 
-**Leading indicator alerts fire freely.** Popularity Surge and Volume Accumulation alerts fire on social and volume signals regardless of current price movement. The goal is to flag potential opportunities early and track how often they lead to price action.
+**Leading indicator alerts require signal confluence.** Popularity Surge alerts fire on social signals regardless of price. Volume Accumulation alerts require both volume divergence and unusual options activity — this ensures the signal reflects genuine institutional positioning, not routine high-volume days. The goal is to flag high-conviction opportunities early and track how often they lead to price action.
 
 **Follow-up alerts confirm with price-since-flag z-score.** Momentum Confirmation and Breakout alerts measure price change *since the leading indicator was flagged*, z-scored against the ticker's own historical return distribution. This avoids rewarding moves that already happened before the signal.
 
@@ -102,7 +102,7 @@ ApeWisdom returns the top 1,000 stocks by mention count. Every ticker in that li
 All tickers currently in the `popularity_surges` table with `confirmed=FALSE`, `expired=FALSE`, and `flagged_at` within the last 24 hours, **and** at least 15 minutes have elapsed since flagging. Price change since flagging is z-scored against the ticker's own historical return distribution via `evaluate_confirmation()`.
 
 **Volume Accumulation Pipeline**
-All tickers in the current Schwab quote batch (screener tickers, active surge tickers, watchlist tickers, and earnings tickers). For each, the pipeline computes volume z-score and price z-score and calls `evaluate_volume_accumulation()`. Tickers already signaled today are skipped. When accumulation is detected, a signal is recorded in `market_signals` with `signal_source='volume_accumulation'` and a `VolumeAccumulationAlert` is posted.
+All tickers in the current Schwab quote batch (screener tickers, active surge tickers, watchlist tickers, and earnings tickers). For each, the pipeline computes volume z-score and price z-score and calls `evaluate_volume_accumulation()`. Tickers already signaled today are skipped. When accumulation is detected, the pipeline fetches the options chain — if no unusual options activity is found (volume/OI ≥ 3.0 on any contract), the ticker is skipped. Only when both volume divergence and unusual options activity are confirmed is a signal recorded in `market_signals` with `signal_source='volume_accumulation'` and a `VolumeAccumulationAlert` posted.
 
 **Breakout Pipeline**
 All tickers with a `pending` record in `market_signals` from today with `signal_source='volume_accumulation'`, **and** at least 10 minutes have elapsed since the signal was detected. `evaluate_confirmation()` checks whether price has moved significantly since the signal time. When confirmed, a `BreakoutAlert` is posted and the signal is marked `confirmed`.
@@ -143,7 +143,7 @@ These two alert types form a cause-and-effect pair:
 
 These two alert types form a cause-and-effect pair for the volume-divergence pipeline:
 
-1. **Volume Accumulation detects institutional activity** — when a ticker shows vol_z >= 2.0 with abs(price_z) < 1.0, unusual volume is present without a corresponding price move. A `VolumeAccumulationAlert` is posted and a signal is recorded in `market_signals` with `status='pending'`.
+1. **Volume Accumulation detects institutional activity** — when a ticker shows vol_z >= 2.5, abs(price_z) < 1.0, divergence_score >= 1.5, **and** at least one options contract with volume/OI >= 3.0, a `VolumeAccumulationAlert` is posted and a signal is recorded in `market_signals` with `status='pending'`. All three volume divergence conditions plus the options gate must pass.
 
 2. **Breakout pipeline confirms price follow-through** — every 5 minutes, `evaluate_confirmation()` checks whether price has moved significantly since the signal time (after a 10-minute delay). When `abs(zscore_since_flag) >= 1.5`, a `BreakoutAlert` is posted linking back to the original Volume Accumulation alert, and the signal is marked `confirmed`.
 
@@ -163,7 +163,7 @@ All tickers flow through all applicable pipelines. A ticker can trigger both a P
 |---|---|---|---|
 | [Popularity Surge](popularity_surge.md) | Tier 1 (30 min) | Predictive (leading) | Early-phase social traction with acceleration gate |
 | [Momentum Confirmation](momentum_confirmation.md) | Tier 2 – Confirmation | Predictive (follow-up) | Price z-score since surge flagged ≥ 1.5σ (15-min delay) |
-| [Volume Accumulation](volume_accumulation.md) | Tier 2 – Volume | Predictive (leading) | High volume without price movement (vol_z ≥ 2.0, price_z < 1.0) |
+| [Volume Accumulation](volume_accumulation.md) | Tier 2 – Volume | Predictive (leading) | High volume without price movement (vol_z ≥ 2.5, price_z < 1.0, divergence ≥ 1.5) + unusual options activity |
 | [Breakout](breakout.md) | Tier 2 – Breakout | Predictive (follow-up) | Price z-score since signal ≥ 1.5σ (10-min delay) |
 | [Watchlist Mover](watchlist_mover.md) | Tier 2 – Watchlist | Reactive | Watched stock moves above dynamic z-score threshold |
 | [Earnings Mover](earnings_mover.md) | Tier 2 – Earnings | Reactive | Earnings-day ticker moves above dynamic z-score threshold |

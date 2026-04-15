@@ -15,13 +15,18 @@ The "volume without price" pattern is characteristic of institutional activity. 
 `evaluate_volume_accumulation()` from `core/analysis/volume_divergence.py` evaluates each ticker:
 
 ```
-is_accumulating = vol_zscore >= 2.0  AND  abs(price_zscore) < 1.0
+divergence_score = vol_zscore - abs(price_zscore)
+
+is_accumulating = vol_zscore >= 2.5
+             AND abs(price_zscore) < 1.0
+             AND divergence_score >= 1.5
 ```
 
-- **Volume Z-Score** — `(current_volume - mean_volume_20d) / std_volume_20d`. A z-score of 2.0 means volume is 2 standard deviations above its 20-day average.
+- **Volume Z-Score** — `(current_volume - mean_volume_20d) / std_volume_20d`. A z-score of 2.5 means volume is 2.5 standard deviations above its 20-day average.
 - **Price Z-Score** — intraday z-score of the current pct_change relative to the ticker's 20-day return distribution. Must be below 1.0 in absolute terms — the price should not already be moving significantly.
+- **Divergence Score** — `vol_z - abs(price_z)`. Must be at least 1.5, ensuring the gap between volume activity and price activity is meaningful, not marginal.
 
-Both conditions must hold simultaneously. High volume alone is interesting; high volume without price movement is the signal.
+All three conditions must hold simultaneously. A borderline volume spike (e.g., vol_z=2.5, price_z=0.9) produces divergence_score=1.6 and passes; a weaker case (vol_z=2.5, price_z=0.95) produces 1.55 and also passes, but (vol_z=2.5, price_z=0.99) is blocked (1.51 rounds to a borderline pass — still passes). Only cases where the divergence is genuinely weak are filtered.
 
 ---
 
@@ -31,7 +36,17 @@ Both conditions must hold simultaneously. High volume alone is interesting; high
 divergence_score = vol_zscore - abs(price_zscore)
 ```
 
-Higher values indicate a more extreme gap between volume and price activity. A divergence score of 3.5 (vol_z=4.0, price_z=0.5) is more significant than a score of 1.5 (vol_z=2.0, price_z=0.5).
+Higher values indicate a more extreme gap between volume and price activity. A divergence score of 3.5 (vol_z=4.0, price_z=0.5) is more significant than a score of 1.6 (vol_z=2.5, price_z=0.9). Minimum required to trigger: 1.5.
+
+---
+
+## Options Flow Gate
+
+After `evaluate_volume_accumulation()` passes, the pipeline fetches the options chain and evaluates flow via `evaluate_options_flow()`. **If no unusual options activity is found, the ticker is skipped — no alert fires.** Unusual activity is defined as at least one contract with a volume/OI ratio ≥ 3.0.
+
+This requirement ensures Volume Accumulation alerts reflect genuine institutional positioning rather than routine high-volume days. Tickers without liquid options markets will not produce VA alerts.
+
+All VA alerts have `signal_strength = 'volume_plus_options'` — the `volume_only` value is no longer used in production.
 
 ---
 
@@ -39,10 +54,7 @@ Higher values indicate a more extreme gap between volume and price activity. A d
 
 | Value | Meaning |
 |---|---|
-| `volume_only` | Volume divergence detected; no unusual options activity |
-| `volume_plus_options` | Volume divergence AND unusual options flow detected |
-
-When the volume accumulation pipeline identifies a ticker, it optionally fetches the options chain and runs `evaluate_options_flow()`. If unusual options activity is detected (volume/OI ratio ≥ 3x on any contract), the signal strength is upgraded to `volume_plus_options`.
+| `volume_plus_options` | Volume divergence AND unusual options activity confirmed — the only value used in production |
 
 ---
 
@@ -92,45 +104,58 @@ The standard momentum acceleration update logic applies to the alert embed itsel
 
 ## Examples
 
-**Volume-only signal — triggers**
+**Classic accumulation — triggers**
 
-Standard ticker: up 0.4%, price_z = 0.3, vol_z = 3.8, RVOL = 4.2x.
-
-```
-vol_z=3.8 >= 2.0  ✓
-abs(price_z)=0.3 < 1.0  ✓
-→ is_accumulating = True
-divergence_score = 3.8 - 0.3 = 3.5
-signal_strength = 'volume_only'
-```
-
-**Volume + options signal — triggers**
-
-Blue chip: up 0.2%, price_z = 0.1, vol_z = 2.4, RVOL = 2.8x. Options chain shows 3 contracts with vol/OI ≥ 3x.
+Ticker: up 0.4%, price_z = 0.3, vol_z = 3.8, RVOL = 4.2x. Options chain shows 2 contracts with vol/OI = 4.5x.
 
 ```
-vol_z=2.4 >= 2.0  ✓
-abs(price_z)=0.1 < 1.0  ✓
-→ is_accumulating = True
-options flow detected → signal_strength = 'volume_plus_options'
+vol_z=3.8 >= 2.5              ✓
+abs(price_z)=0.3 < 1.0        ✓
+divergence_score=3.5 >= 1.5   ✓
+unusual options activity       ✓
+→ fires, signal_strength = 'volume_plus_options'
 ```
+
+**Volume divergent but no unusual options — does NOT trigger**
+
+Ticker: up 0.2%, price_z = 0.1, vol_z = 2.8, RVOL = 3.1x. Options chain has no contracts with vol/OI ≥ 3.0.
+
+```
+vol_z=2.8 >= 2.5              ✓
+abs(price_z)=0.1 < 1.0        ✓
+divergence_score=2.7 >= 1.5   ✓
+unusual options activity       ✗  ← skipped, no alert
+```
+
+**Weak divergence — does NOT trigger**
+
+Ticker: up 0.4%, price_z = 0.8, vol_z = 2.6.
+
+```
+vol_z=2.6 >= 2.5              ✓
+abs(price_z)=0.8 < 1.0        ✓
+divergence_score=1.8 >= 1.5   ✓  (passes)
+→ would continue to options check
+```
+
+vs. tighter case: price_z = 0.95, vol_z = 2.6 → divergence=1.65 ✓ still passes; but vol_z=2.5, price_z=0.95 → divergence=1.55 ✓ just passes.
 
 **Both dimensions elevated — does NOT trigger**
 
 Ticker: up 3.5%, price_z = 2.2, vol_z = 3.1.
 
 ```
-vol_z=3.1 >= 2.0  ✓
-abs(price_z)=2.2 < 1.0  ✗  (price already moving)
-→ is_accumulating = False  — this is a price move with volume, not accumulation before the move
+vol_z=3.1 >= 2.5              ✓
+abs(price_z)=2.2 < 1.0        ✗  (price already moving)
+→ is_accumulating = False — this is a price move with volume, not accumulation before the move
 ```
 
-**Volume too low — does NOT trigger**
+**Volume below threshold — does NOT trigger**
 
-Ticker: up 0.1%, price_z = 0.05, vol_z = 1.6.
+Ticker: up 0.1%, price_z = 0.05, vol_z = 2.2.
 
 ```
-vol_z=1.6 >= 2.0  ✗
+vol_z=2.2 >= 2.5  ✗
 → is_accumulating = False
 ```
 
@@ -140,9 +165,11 @@ vol_z=1.6 >= 2.0  ✗
 
 | Scenario | Triggers? | Reason |
 |---|---|---|
-| vol_z=3.5, price_z=0.4 | Yes | Both conditions met; divergence_score=3.1 |
-| vol_z=2.0, price_z=0.9 | Yes | Exactly at thresholds |
-| vol_z=2.0, price_z=1.0 | No | price_z not strictly below 1.0 |
-| vol_z=1.9, price_z=0.5 | No | vol_z below 2.0 threshold |
-| vol_z=4.0, price_z=2.5 | No | Price already moving significantly |
+| vol_z=3.5, price_z=0.4, unusual options | Yes | All gates pass; divergence=3.1 |
+| vol_z=2.5, price_z=0.0, unusual options | Yes | Exactly at vol threshold; divergence=2.5 |
+| vol_z=2.5, price_z=0.0, no unusual options | No | Options hard gate blocks |
+| vol_z=2.4, price_z=0.5, unusual options | No | vol_z below 2.5 threshold |
+| vol_z=2.5, price_z=1.0, unusual options | No | price_z not strictly below 1.0 |
+| vol_z=2.6, price_z=0.95 (div=1.65), options | Yes | All gates pass |
+| vol_z=4.0, price_z=2.5, unusual options | No | Price already moving; price_z ≥ 1.0 |
 | Ticker already signaled today | No | `is_already_signaled()` check skips it |
