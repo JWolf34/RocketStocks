@@ -16,7 +16,7 @@ import numpy as np
 import pandas as pd
 from scipy import stats as scipy_stats
 
-from rocketstocks.eda.events.base import build_control_group
+from rocketstocks.eda.events.base import build_control_group, empty_events
 from rocketstocks.eda.formatting import (
     fmt_pct, fmt_float, fmt_pvalue, significant_marker,
     print_table, print_separator,
@@ -101,7 +101,10 @@ def run_forward_returns(
     }
 
     # Control group (computed once, shared across source_details)
-    control_events = build_control_group(events, close_dict, n_samples=n_control)
+    # bar_counts derived from the already-loaded close_dict; avoids re-fetching from DB.
+    bar_counts = {t: len(s) for t, s in sorted_closes.items()}
+    control_with_offsets = build_control_group(events, bar_counts, n_samples=n_control)
+    control_events = _resolve_control_offsets(control_with_offsets, sorted_closes, events)
     control_horizons = _compute_horizons(control_events, sorted_closes, horizons, horizon_labels)
 
     # Group by source_detail
@@ -158,6 +161,56 @@ def print_results(results: list[ForwardReturnResult], timeframe: str = 'daily') 
 # ---------------------------------------------------------------------------
 # Internal helpers
 # ---------------------------------------------------------------------------
+
+def _resolve_control_offsets(
+    control_with_offsets: pd.DataFrame,
+    sorted_closes: dict[str, pd.Series],
+    events: pd.DataFrame,
+) -> pd.DataFrame:
+    """Convert (ticker, _bar_offset) pairs → (ticker, datetime) control events.
+
+    Resolves each bar offset to an actual timestamp using the sorted close series,
+    then filters out any (ticker, date) pairs that coincide with an event.
+
+    Args:
+        control_with_offsets: Output of build_control_group — has _bar_offset column.
+        sorted_closes: Per-ticker close Series with sorted DatetimeIndex.
+        events: Original events DataFrame — used to exclude event dates.
+
+    Returns:
+        Standard events DataFrame with ticker, datetime, signal_value, source columns.
+    """
+    if control_with_offsets.empty:
+        return empty_events()
+
+    # Build set of (ticker, date_str) pairs to exclude
+    event_pairs: set[tuple[str, str]] = set()
+    if not events.empty:
+        for _, row in events.iterrows():
+            dt = pd.Timestamp(row['datetime'])
+            event_pairs.add((row['ticker'], dt.date().isoformat()))
+
+    rows = []
+    for _, row in control_with_offsets.iterrows():
+        ticker = row['ticker']
+        offset = int(row['_bar_offset'])
+        series = sorted_closes.get(ticker)
+        if series is None or offset >= len(series):
+            continue
+        ts = pd.Timestamp(series.index[offset])
+        if (ticker, ts.date().isoformat()) in event_pairs:
+            continue
+        rows.append({
+            'ticker': ticker,
+            'datetime': ts,
+            'signal_value': 0.0,
+            'source': 'control',
+        })
+
+    if not rows:
+        return empty_events()
+    return pd.DataFrame(rows)
+
 
 def _compute_horizons(
     events: pd.DataFrame,
