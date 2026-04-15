@@ -9,6 +9,7 @@ from rocketstocks.eda.events.base import (
     empty_events,
     validate_events,
     EVENT_COLS,
+    _empty_control,
 )
 
 
@@ -31,6 +32,11 @@ def _make_close_dict(tickers: list[str], n: int = 30) -> dict:
         prices = 100 + rng.standard_normal(n).cumsum()
         close_dict[ticker] = pd.Series(prices, index=dates)
     return close_dict
+
+
+def _make_bar_counts(tickers: list[str], n: int = 30) -> dict:
+    """Build a bar_counts dict for testing."""
+    return {ticker: n for ticker in tickers}
 
 
 # ---------------------------------------------------------------------------
@@ -109,30 +115,17 @@ def test_dedup_preserves_first_event():
 # build_control_group
 # ---------------------------------------------------------------------------
 
-def test_control_group_excludes_event_dates():
-    """Control group should not contain dates that are in the event set."""
-    tickers = ['AAPL']
-    close_dict = _make_close_dict(tickers, n=50)
-    events = _make_events([{'ticker': 'AAPL', 'datetime': '2024-01-03'}])
-    control = build_control_group(events, close_dict, n_samples=10)
-
-    event_date = '2024-01-03'
-    for _, row in control.iterrows():
-        assert row['datetime'].date().isoformat() != event_date
-
-
 def test_control_group_source_is_control():
-    tickers = ['AAPL', 'GOOG']
-    close_dict = _make_close_dict(tickers, n=30)
+    bar_counts = _make_bar_counts(['AAPL', 'GOOG'], n=30)
     events = _make_events([{'ticker': 'AAPL', 'datetime': '2024-01-05'}])
-    control = build_control_group(events, close_dict, n_samples=20)
+    control = build_control_group(events, bar_counts, n_samples=20)
     assert (control['source'] == 'control').all()
 
 
 def test_control_group_respects_n_samples():
-    close_dict = _make_close_dict(['AAPL'], n=10)
+    bar_counts = _make_bar_counts(['AAPL'], n=10)
     events = _make_events([{'ticker': 'AAPL', 'datetime': '2024-01-03'}])
-    control = build_control_group(events, close_dict, n_samples=5)
+    control = build_control_group(events, bar_counts, n_samples=5)
     assert len(control) <= 5
 
 
@@ -140,3 +133,51 @@ def test_control_group_empty_dict():
     events = _make_events([{'ticker': 'AAPL', 'datetime': '2024-01-05'}])
     control = build_control_group(events, {})
     assert control.empty
+
+
+def test_control_group_offsets_in_range():
+    """Each _bar_offset must be in [0, bar_counts[ticker])."""
+    bar_counts = _make_bar_counts(['AAPL', 'GOOG'], n=20)
+    events = _make_events([{'ticker': 'AAPL', 'datetime': '2024-01-05'}])
+    control = build_control_group(events, bar_counts, n_samples=30)
+    for _, row in control.iterrows():
+        ticker = row['ticker']
+        assert 0 <= row['_bar_offset'] < bar_counts[ticker]
+
+
+def test_control_group_no_duplicate_offsets_per_ticker():
+    """Sampled (ticker, offset) pairs should be unique."""
+    bar_counts = _make_bar_counts(['AAPL'], n=50)
+    events = _make_events([{'ticker': 'AAPL', 'datetime': '2024-01-05'}])
+    control = build_control_group(events, bar_counts, n_samples=30, seed=0)
+    pairs = list(zip(control['ticker'], control['_bar_offset']))
+    assert len(pairs) == len(set(pairs))
+
+
+def test_control_group_signal_value_is_zero():
+    bar_counts = _make_bar_counts(['AAPL'], n=20)
+    events = _make_events([{'ticker': 'AAPL', 'datetime': '2024-01-05'}])
+    control = build_control_group(events, bar_counts, n_samples=10)
+    assert (control['signal_value'] == 0.0).all()
+
+
+def test_control_group_has_expected_columns():
+    bar_counts = _make_bar_counts(['AAPL'], n=20)
+    events = _make_events([{'ticker': 'AAPL', 'datetime': '2024-01-05'}])
+    control = build_control_group(events, bar_counts, n_samples=10)
+    assert set(control.columns) >= {'ticker', '_bar_offset', 'signal_value', 'source'}
+
+
+def test_control_group_empty_control_columns():
+    """_empty_control() has the expected column structure."""
+    df = _empty_control()
+    assert list(df.columns) == ['ticker', '_bar_offset', 'signal_value', 'source']
+    assert df.empty
+
+
+def test_control_group_zero_bar_count_tickers_excluded():
+    """Tickers with bar_count=0 should not appear in control output."""
+    bar_counts = {'AAPL': 20, 'GOOG': 0}
+    events = _make_events([{'ticker': 'AAPL', 'datetime': '2024-01-05'}])
+    control = build_control_group(events, bar_counts, n_samples=10)
+    assert 'GOOG' not in control['ticker'].values
