@@ -158,6 +158,7 @@ async def main(argv: list[str] | None = None) -> int:
 async def _handle_forward_returns(args, stock_data) -> int:
     from rocketstocks.eda.events.base import deduplicate_events
     from rocketstocks.eda.engines.forward_returns import run_forward_returns, print_results
+    from rocketstocks.eda._memlog import log_memory
 
     start_date, end_date = _parse_dates(args)
     detector = _build_detector(args)
@@ -171,6 +172,7 @@ async def _handle_forward_returns(args, stock_data) -> int:
         end_date=end_date,
         tickers=args.tickers,
     )
+    log_memory("after detect")
 
     if events.empty:
         print("No events detected. Try lowering --mention-thresholds or --volume-threshold.")
@@ -196,6 +198,7 @@ async def _handle_forward_returns(args, stock_data) -> int:
 
 async def _handle_lead_lag(args, stock_data) -> int:
     from rocketstocks.eda.engines.cross_correlation import run_cross_correlation, print_results
+    from rocketstocks.eda._memlog import log_memory
 
     start_date, end_date = _parse_dates(args)
 
@@ -225,18 +228,19 @@ async def _handle_lead_lag(args, stock_data) -> int:
         max_lag=args.max_lag,
         min_periods=args.min_periods,
     )
+    log_memory("after cross-correlation")
     print_results(result)
     return 0
 
 
 async def _handle_regime(args, stock_data) -> int:
-    from rocketstocks.eda.data_loader import (
-        load_daily_panel, load_intraday_panel, load_spy_daily
-    )
+    from rocketstocks.eda.data_loader import load_spy_daily
     from rocketstocks.eda.events.base import deduplicate_events
     from rocketstocks.eda.engines.regime_analysis import run_regime_analysis, print_results
+    from rocketstocks.eda._memlog import log_memory
 
     start_date, end_date = _parse_dates(args)
+    print(f"Date window: {start_date or 'all'} → {end_date or 'all'}")
     detector = _build_detector(args)
 
     events = await detector.detect(
@@ -246,22 +250,21 @@ async def _handle_regime(args, stock_data) -> int:
         end_date=end_date,
         tickers=args.tickers,
     )
+    log_memory("after detect")
 
     if events.empty:
         print("No events detected. Try lowering --mention-thresholds.")
         return 1
 
     events = deduplicate_events(events, window_days=3)
-    print(f"\nDetected {len(events)} events across {events['ticker'].nunique()} tickers")
+    event_tickers = sorted(events['ticker'].unique().tolist())
+    print(f"\nDetected {len(events)} events across {len(event_tickers)} tickers")
+    print(f"Fetching close data for {len(event_tickers)} event tickers...")
 
-    if args.timeframe == 'daily':
-        _, close_dict = await load_daily_panel(
-            stock_data, start_date, end_date, args.tickers
-        )
-    else:
-        _, close_dict = await load_intraday_panel(
-            stock_data, start_date, end_date, args.tickers
-        )
+    close_dict = await _build_close_dict(
+        stock_data, event_tickers, args.timeframe, start_date, end_date
+    )
+    log_memory(f"after loading close data ({len(close_dict)} tickers)")
 
     spy_df = await load_spy_daily(stock_data, start_date, end_date)
 
@@ -274,6 +277,7 @@ async def _handle_regime(args, stock_data) -> int:
         custom_horizons=custom_horizons,
         breadth_horizon_days=args.breadth_horizon,
     )
+    log_memory("after regime analysis")
     print_results(results)
     return 0
 
@@ -342,23 +346,48 @@ def _build_detector(args):
         )
 
 
-def _add_volume_zscore(panel: pd.DataFrame, timeframe: str) -> pd.DataFrame:
-    """Add a rolling volume z-score column to the panel."""
-    import numpy as np
-    panel = panel.copy()
-    time_col = 'date' if timeframe == 'daily' else 'datetime'
-    zscores = []
+async def _build_close_dict(
+    stock_data,
+    tickers: list[str],
+    timeframe: str,
+    start_date,
+    end_date,
+) -> dict[str, pd.Series]:
+    """Fetch close prices only for the given tickers and return {ticker: close_series}.
 
-    for _ticker, grp in panel.groupby('ticker'):
-        grp = grp.sort_values(time_col)
-        vol = grp['volume'].astype(float)
-        roll_mean = vol.shift(1).rolling(20, min_periods=3).mean()
-        roll_std = vol.shift(1).rolling(20, min_periods=3).std()
-        z = (vol - roll_mean) / roll_std.replace(0, np.nan)
-        zscores.append(z)
+    Daily path uses a single batch query; 5m path streams one ticker at a time
+    to avoid accumulating the full intraday panel in RAM.
+    """
+    import datetime as _dt
+    close_dict: dict[str, pd.Series] = {}
 
-    if zscores:
-        import pandas as pd
-        panel['_volume_zscore'] = pd.concat(zscores).reindex(panel.index)
+    if timeframe == 'daily':
+        price_dict = await stock_data.price_history.fetch_daily_price_history_batch(
+            tickers, start_date=start_date, end_date=end_date
+        )
+        for ticker, price_df in price_dict.items():
+            if price_df.empty or 'close' not in price_df.columns:
+                continue
+            price_df = price_df.sort_values('date')
+            idx = pd.to_datetime(price_df['date'].astype(str))
+            close_dict[ticker] = pd.Series(price_df['close'].values, index=idx)
+    else:
+        start_dt = (
+            _dt.datetime.combine(start_date, _dt.time.min) if start_date else None
+        )
+        end_dt = (
+            _dt.datetime.combine(end_date, _dt.time.max) if end_date else None
+        )
+        for ticker in tickers:
+            price_df = await stock_data.price_history.fetch_5m_price_history(
+                ticker, start_datetime=start_dt, end_datetime=end_dt
+            )
+            if price_df.empty or 'close' not in price_df.columns:
+                continue
+            price_df = price_df.sort_values('datetime')
+            close_dict[ticker] = pd.Series(
+                price_df['close'].values,
+                index=pd.to_datetime(price_df['datetime']),
+            )
 
-    return panel
+    return close_dict
