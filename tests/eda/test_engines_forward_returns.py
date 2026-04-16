@@ -1,5 +1,4 @@
 """Tests for rocketstocks.eda.engines.forward_returns."""
-import datetime
 import math
 from unittest.mock import AsyncMock, MagicMock
 
@@ -9,8 +8,6 @@ import pytest
 
 from rocketstocks.eda.engines.forward_returns import (
     run_forward_returns,
-    HorizonResult,
-    ForwardReturnResult,
     _compute_horizons,
     _accumulate_horizons,
     _horizons_from_accumulators,
