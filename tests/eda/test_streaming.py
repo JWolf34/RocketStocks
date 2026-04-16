@@ -5,7 +5,7 @@ from unittest.mock import AsyncMock, MagicMock
 import pandas as pd
 import pytest
 
-from rocketstocks.eda.streaming import fetch_bar_counts, stream_tickers
+from rocketstocks.eda.streaming import fetch_bar_counts, fetch_distinct_tickers, stream_tickers
 
 
 # ---------------------------------------------------------------------------
@@ -154,3 +154,64 @@ async def test_stream_tickers_passes_date_bounds():
     call_kwargs = sd.price_history.fetch_daily_price_history.call_args[1]
     assert call_kwargs['start_date'] == start
     assert call_kwargs['end_date'] == end
+
+
+# ---------------------------------------------------------------------------
+# fetch_distinct_tickers
+# ---------------------------------------------------------------------------
+
+def _make_sd_for_distinct(ticker_rows):
+    sd = MagicMock()
+    sd.db.execute = AsyncMock(return_value=ticker_rows)
+    return sd
+
+
+@pytest.mark.asyncio
+async def test_fetch_distinct_tickers_returns_sorted_list():
+    sd = _make_sd_for_distinct([('MSFT',), ('AAPL',), ('GOOG',)])
+    result = await fetch_distinct_tickers(sd)
+    assert result == ['MSFT', 'AAPL', 'GOOG']
+
+
+@pytest.mark.asyncio
+async def test_fetch_distinct_tickers_empty():
+    sd = _make_sd_for_distinct([])
+    result = await fetch_distinct_tickers(sd)
+    assert result == []
+
+
+@pytest.mark.asyncio
+async def test_fetch_distinct_tickers_none_rows():
+    sd = _make_sd_for_distinct(None)
+    result = await fetch_distinct_tickers(sd)
+    assert result == []
+
+
+@pytest.mark.asyncio
+async def test_fetch_distinct_tickers_no_date_filter():
+    sd = _make_sd_for_distinct([('AAPL',)])
+    await fetch_distinct_tickers(sd)
+    query, params = sd.db.execute.call_args[0]
+    assert 'WHERE' not in query
+    assert params is None
+
+
+@pytest.mark.asyncio
+async def test_fetch_distinct_tickers_with_start_date():
+    sd = _make_sd_for_distinct([('AAPL',)])
+    start = datetime.date(2024, 1, 1)
+    await fetch_distinct_tickers(sd, start_date=start)
+    query, params = sd.db.execute.call_args[0]
+    assert 'WHERE' in query
+    assert start in params
+
+
+@pytest.mark.asyncio
+async def test_fetch_distinct_tickers_with_end_date():
+    sd = _make_sd_for_distinct([('AAPL',)])
+    end = datetime.date(2024, 6, 1)
+    await fetch_distinct_tickers(sd, end_date=end)
+    query, params = sd.db.execute.call_args[0]
+    assert 'WHERE' in query
+    # end_date becomes end_date + 1 day for exclusive upper bound
+    assert any(isinstance(p, datetime.date) and p > end for p in params)
