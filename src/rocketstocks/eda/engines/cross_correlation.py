@@ -17,7 +17,7 @@ per-row list, so peak RSS stays bounded regardless of universe size.
 import gc
 import logging
 import math
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
 import numpy as np
 import pandas as pd
@@ -183,7 +183,9 @@ async def run_cross_correlation(
             y_i = float(ret[i + 1])
             z_i = float(ret[i]) if not math.isnan(ret[i]) else 0.0
             n_reg += 1
-            sum_x += x_i;  sum_y += y_i;  sum_z += z_i
+            sum_x += x_i
+            sum_y += y_i
+            sum_z += z_i
             sum_xx += x_i * x_i
             sum_xz += x_i * z_i
             sum_zz += z_i * z_i

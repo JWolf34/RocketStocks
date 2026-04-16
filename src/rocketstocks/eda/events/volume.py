@@ -2,14 +2,17 @@
 
 Uses rolling z-score of volume relative to historical baseline.
 Source-agnostic: works with either daily or 5-minute price data.
+
+Memory model: streams price data one ticker at a time so peak RSS stays
+bounded regardless of universe size.
 """
-import datetime
+import gc
 import logging
 
 import numpy as np
 import pandas as pd
 
-from rocketstocks.eda.data_loader import load_daily_panel, load_intraday_panel
+from rocketstocks.eda.streaming import fetch_distinct_tickers, stream_tickers
 
 logger = logging.getLogger(__name__)
 
@@ -47,45 +50,43 @@ class VolumeDetector:
     ) -> pd.DataFrame:
         """Return events DataFrame in standard format.
 
+        Streams price data one ticker at a time — no full panel is built.
+
         'signal_value' holds the volume z-score at the time of the event.
         'source_detail' is 'volume_zscore>={threshold}'.
         """
-        if timeframe == 'daily':
-            panel, _ = await load_daily_panel(
-                stock_data, start_date, end_date, tickers
-            )
-            time_col = 'date'
-        else:
-            panel, _ = await load_intraday_panel(
-                stock_data, start_date, end_date, tickers
-            )
-            time_col = 'datetime'
+        time_col = 'date' if timeframe == 'daily' else 'datetime'
 
-        if panel.empty:
+        if tickers is None:
+            tickers = await fetch_distinct_tickers(stock_data, start_date, end_date)
+
+        if not tickers:
             return _empty_events()
 
         events_list: list[pd.DataFrame] = []
 
-        for ticker, grp in panel.groupby('ticker'):
-            grp = grp.sort_values(time_col).copy()
+        async for ticker, price_df, _pop_df in stream_tickers(
+            stock_data, tickers, timeframe, start_date, end_date
+        ):
+            gc.collect()
 
-            if 'volume' not in grp.columns or grp['volume'].isna().all():
+            if price_df.empty or time_col not in price_df.columns:
+                continue
+            if 'volume' not in price_df.columns or price_df['volume'].isna().all():
                 continue
 
+            grp = price_df.sort_values(time_col).copy()
             vol = grp['volume'].astype(float)
 
-            # Rolling z-score (shift by 1 to avoid lookahead)
-            roll_mean = vol.shift(1).rolling(self.lookback, min_periods=max(3, self.lookback // 2)).mean()
-            roll_std = vol.shift(1).rolling(self.lookback, min_periods=max(3, self.lookback // 2)).std()
+            # Rolling z-score (shift by 1 to avoid lookahead) — logic unchanged
+            min_win = max(3, self.lookback // 2)
+            roll_mean = vol.shift(1).rolling(self.lookback, min_periods=min_win).mean()
+            roll_std = vol.shift(1).rolling(self.lookback, min_periods=min_win).std()
             zscore = (vol - roll_mean) / roll_std.replace(0, np.nan)
 
             grp['_zscore'] = zscore
-            grp['_ticker'] = ticker
 
-            mask = (
-                (grp['_zscore'] >= self.zscore_threshold) &
-                (vol >= self.min_volume)
-            )
+            mask = (grp['_zscore'] >= self.zscore_threshold) & (vol >= self.min_volume)
             subset = grp[mask].copy()
             if subset.empty:
                 continue
