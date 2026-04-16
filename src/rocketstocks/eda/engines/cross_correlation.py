@@ -9,7 +9,12 @@ from -max_lag to +max_lag.  Positive lag means signal leads price.
 
 Also runs a simple panel regression to test whether the signal has
 cross-sectional predictive power for next-bar returns.
+
+Memory model: streams price + popularity data one ticker at a time.
+The regression accumulator uses running sums (10 scalars) rather than a
+per-row list, so peak RSS stays bounded regardless of universe size.
 """
+import gc
 import logging
 import math
 from dataclasses import dataclass, field
@@ -22,6 +27,7 @@ from rocketstocks.eda.formatting import (
     fmt_float, fmt_pvalue, significant_marker,
     print_table, print_separator,
 )
+from rocketstocks.eda.streaming import fetch_distinct_tickers, stream_tickers
 
 logger = logging.getLogger(__name__)
 
@@ -61,52 +67,85 @@ class CrossCorrelationResult:
     regression: RegressionResult | None
 
 
-def run_cross_correlation(
-    panel: pd.DataFrame,
+async def run_cross_correlation(
+    stock_data,
     signal_col: str,
     return_col: str,
+    tickers: list[str] | None,
     timeframe: str = 'daily',
+    start_date=None,
+    end_date=None,
     max_lag: int = 10,
     min_periods: int = 30,
 ) -> CrossCorrelationResult:
     """Compute cross-correlation between signal and price returns.
 
+    Streams price + popularity data one ticker at a time so peak RSS stays
+    bounded regardless of universe × history size.
+
     Args:
-        panel: Panel DataFrame with at least columns [ticker, signal_col,
-            return_col] plus either 'date' (daily) or 'datetime' (5m).
-        signal_col: Column name for the signal values (will be z-scored
-            per ticker before computing CCF).
-        return_col: Column name for price returns.
-        timeframe: 'daily' or '5m' — used only for labelling.
+        stock_data: StockData singleton with DB access.
+        signal_col: Signal column to analyse.  Computed on-the-fly from
+            the streamed data: 'mention_ratio', 'mention_delta', 'rank_change'
+            come from popularity; '_volume_zscore' from price; any column
+            already present in the price DataFrame is used directly (useful
+            for tests with pre-built data).
+        return_col: Return column name — 'daily_return' or 'bar_return'.
+            Computed as pct_change of close if not already present.
+        tickers: Explicit ticker list.  If None the engine queries all
+            distinct tickers in the popularity table for the date window.
+        timeframe: 'daily' or '5m'.
+        start_date: Earliest date for data queries.
+        end_date: Latest date for data queries.
         max_lag: Maximum lag in bars (both directions).
         min_periods: Minimum non-NaN observations per ticker.
 
     Returns:
         CrossCorrelationResult with per-lag statistics and regression.
     """
-    if panel.empty or signal_col not in panel.columns or return_col not in panel.columns:
-        logger.warning(f"cross_correlation: missing required columns ({signal_col}, {return_col})")
-        return _empty_result(signal_col, max_lag)
-
-    time_col = 'date' if timeframe == 'daily' else 'datetime'
     lags = list(range(-max_lag, max_lag + 1))
 
-    all_tickers = panel['ticker'].unique()
-    n_total = len(all_tickers)
-    print(f"Running cross-correlation on {n_total} tickers (min_periods={min_periods})...")
+    if tickers is None:
+        tickers = await fetch_distinct_tickers(stock_data, start_date, end_date)
 
-    # Per-ticker z-scored signal and return series
+    if not tickers:
+        logger.warning("cross_correlation: no tickers available")
+        return _empty_result(signal_col, max_lag)
+
+    n_total = len(tickers)
+    print(
+        f"Running cross-correlation on {n_total} tickers "
+        f"(signal={signal_col}, min_periods={min_periods})..."
+    )
+
+    # Per-ticker CCF accumulators
     ticker_corrs: dict[int, list[float]] = {lag: [] for lag in lags}
-    regression_rows: list[dict] = []
+
+    # Running-sum regression accumulators (model: y_{t+1} = b0 + b1*x_t + b2*y_t)
+    # x = z-scored signal, y = return, z = lagged return
+    n_reg = 0
+    sum_x = sum_y = sum_z = 0.0
+    sum_xx = sum_xz = sum_zz = 0.0
+    sum_xy = sum_zy = sum_yy = 0.0
+
     n_analyzed = 0
     n_skipped = 0
 
-    for ticker, grp in panel.groupby('ticker'):
-        grp = grp.sort_values(time_col).copy()
-        sig = grp[signal_col].values.astype(float)
-        ret = grp[return_col].values.astype(float)
+    async for ticker, price_df, pop_df in stream_tickers(
+        stock_data, tickers, timeframe, start_date, end_date
+    ):
+        gc.collect()
 
-        # Z-score the signal per ticker (NaN-safe)
+        df = _build_ticker_frame(price_df, pop_df, timeframe, signal_col, return_col)
+        if df is None or df.empty:
+            n_skipped += 1
+            continue
+
+        time_col = 'date' if timeframe == 'daily' else 'datetime'
+        df = df.sort_values(time_col)
+        sig = df[signal_col].values.astype(float)
+        ret = df[return_col].values.astype(float)
+
         valid = ~np.isnan(sig)
         if valid.sum() < min_periods:
             n_skipped += 1
@@ -117,16 +156,14 @@ def run_cross_correlation(
             print(f"  [{n_analyzed}/{n_total}] analyzed")
 
         sig_z = _zscore_series(sig)
+        n = len(sig_z)
 
         # CCF at each lag
-        n = len(sig_z)
         for lag in lags:
             if lag >= 0:
-                # signal at t, return at t+lag
                 s = sig_z[:n - lag] if lag > 0 else sig_z
                 r = ret[lag:] if lag > 0 else ret
             else:
-                # signal at t, return at t+lag (lag < 0 means price leads)
                 abs_lag = abs(lag)
                 s = sig_z[abs_lag:]
                 r = ret[:n - abs_lag]
@@ -138,18 +175,28 @@ def run_cross_correlation(
             if not math.isnan(corr):
                 ticker_corrs[lag].append(corr)
 
-        # Collect regression observations: (signal_t, return_{t+1}, return_t)
-        for i in range(len(sig_z) - 1):
-            if not math.isnan(sig_z[i]) and not math.isnan(ret[i + 1]):
-                regression_rows.append({
-                    'signal': sig_z[i],
-                    'next_return': ret[i + 1],
-                    'prev_return': ret[i] if not math.isnan(ret[i]) else 0.0,
-                })
+        # Update running regression sums
+        for i in range(n - 1):
+            if math.isnan(sig_z[i]) or math.isnan(ret[i + 1]):
+                continue
+            x_i = float(sig_z[i])
+            y_i = float(ret[i + 1])
+            z_i = float(ret[i]) if not math.isnan(ret[i]) else 0.0
+            n_reg += 1
+            sum_x += x_i;  sum_y += y_i;  sum_z += z_i
+            sum_xx += x_i * x_i
+            sum_xz += x_i * z_i
+            sum_zz += z_i * z_i
+            sum_xy += x_i * y_i
+            sum_zy += z_i * y_i
+            sum_yy += y_i * y_i
 
-    print(f"  {n_analyzed} tickers analyzed, {n_skipped} skipped (fewer than {min_periods} non-NaN signal values)")
+    print(
+        f"  {n_analyzed} tickers analyzed, {n_skipped} skipped "
+        f"(fewer than {min_periods} non-NaN signal values)"
+    )
     if n_analyzed == 0:
-        print(f"  Tip: lower --min-periods or use --signal-col mention_ratio for sparser data")
+        print("  Tip: lower --min-periods or use --signal-col mention_ratio for sparser data")
 
     # Aggregate CCF across tickers
     ccf_points: list[CCFPoint] = []
@@ -167,12 +214,7 @@ def run_cross_correlation(
             ci_high = mean_c + 1.96 * se
         else:
             ci_low = ci_high = float('nan')
-        ccf_points.append(CCFPoint(
-            lag=lag,
-            mean_corr=mean_c,
-            ci_low=ci_low,
-            ci_high=ci_high,
-        ))
+        ccf_points.append(CCFPoint(lag=lag, mean_corr=mean_c, ci_low=ci_low, ci_high=ci_high))
 
     # Peak lag (highest positive mean_corr at positive lags)
     positive_lags = [p for p in ccf_points if p.lag > 0 and not math.isnan(p.mean_corr)]
@@ -183,19 +225,16 @@ def run_cross_correlation(
         peak_lag = best.lag
         peak_corr = best.mean_corr
 
-    # Panel regression
-    regression = None
-    if regression_rows:
-        df_reg = pd.DataFrame(regression_rows).dropna()
-        if len(df_reg) >= 10:
-            regression = _run_regression(df_reg)
-
-    n_tickers = len([t for t in panel['ticker'].unique()
-                     if panel[panel['ticker'] == t][signal_col].notna().sum() >= min_periods])
+    # Panel regression from running sums
+    regression = _run_regression(
+        n_reg, sum_x, sum_y, sum_z,
+        sum_xx, sum_xz, sum_zz,
+        sum_xy, sum_zy, sum_yy,
+    )
 
     return CrossCorrelationResult(
         signal_name=signal_col,
-        n_tickers=n_tickers,
+        n_tickers=n_analyzed,
         min_periods=min_periods,
         max_lag=max_lag,
         ccf=ccf_points,
@@ -256,6 +295,93 @@ def print_results(result: CrossCorrelationResult) -> None:
 # Internal helpers
 # ---------------------------------------------------------------------------
 
+def _build_ticker_frame(
+    price_df: pd.DataFrame,
+    pop_df: pd.DataFrame,
+    timeframe: str,
+    signal_col: str,
+    return_col: str,
+) -> pd.DataFrame | None:
+    """Build a per-ticker DataFrame with signal and return columns for CCF.
+
+    Signal column resolution order:
+    1. Already present in price_df (useful for pre-computed test data).
+    2. '_volume_zscore' — rolling z-score computed from price_df volume.
+    3. 'mention_ratio', 'mention_delta', 'rank_change' — merged from pop_df.
+
+    Returns None if the requested signal cannot be computed.
+    """
+    if price_df.empty:
+        return None
+
+    time_col = 'date' if timeframe == 'daily' else 'datetime'
+    if time_col not in price_df.columns or 'close' not in price_df.columns:
+        return None
+
+    df = price_df.copy()
+    df = df.sort_values(time_col)
+    df[time_col] = pd.to_datetime(df[time_col].astype(str))
+
+    # Return column
+    if return_col not in df.columns:
+        df[return_col] = df['close'].pct_change() * 100.0
+
+    # Signal column
+    if signal_col in df.columns:
+        pass  # already present (test convenience or pre-computed)
+
+    elif signal_col == '_volume_zscore':
+        if 'volume' not in df.columns:
+            return None
+        vol = df['volume'].astype(float)
+        roll_mean = vol.shift(1).rolling(20, min_periods=3).mean()
+        roll_std = vol.shift(1).rolling(20, min_periods=3).std()
+        df['_volume_zscore'] = (vol - roll_mean) / roll_std.replace(0, float('nan'))
+
+    elif signal_col in ('mention_ratio', 'mention_delta', 'rank_change'):
+        if pop_df.empty:
+            return None
+        pop = pop_df.copy()
+        pop['datetime'] = pd.to_datetime(pop['datetime'])
+        pop['mention_ratio'] = (
+            pop['mentions'] / pop['mentions_24h_ago'].replace(0, float('nan'))
+        )
+        pop['rank_change'] = pop['rank_24h_ago'] - pop['rank']
+
+        if timeframe == 'daily':
+            pop['_date'] = pop['datetime'].dt.normalize()
+            pop_agg = (
+                pop.sort_values('mention_ratio', ascending=False, na_position='last')
+                .groupby('_date', sort=False)
+                .first()
+                .reset_index()
+                .rename(columns={'_date': time_col})
+            )
+            pop_agg[time_col] = pd.to_datetime(pop_agg[time_col])
+            merge_cols = [c for c in ('mention_ratio', 'rank_change', 'mentions')
+                          if c in pop_agg.columns]
+            df = df.merge(pop_agg[[time_col] + merge_cols], on=time_col, how='left')
+        else:
+            from rocketstocks.eda.data_loader import _merge_popularity_intraday
+            df = _merge_popularity_intraday(df, pop)
+
+        if signal_col == 'mention_delta' and 'mentions' in df.columns:
+            df['mention_delta'] = df['mentions'].diff()
+
+    else:
+        return None
+
+    if signal_col not in df.columns:
+        return None
+
+    needed = [time_col, signal_col, return_col]
+    missing = [c for c in needed if c not in df.columns]
+    if missing:
+        return None
+
+    return df[needed].dropna(subset=[return_col])
+
+
 def _zscore_series(arr: np.ndarray) -> np.ndarray:
     """Z-score a 1-D array, returning NaN where std is zero."""
     valid = ~np.isnan(arr)
@@ -270,40 +396,62 @@ def _zscore_series(arr: np.ndarray) -> np.ndarray:
     return result
 
 
-def _run_regression(df: pd.DataFrame) -> RegressionResult:
-    """OLS regression of next_return on signal + prev_return."""
-    X = np.column_stack([
-        np.ones(len(df)),
-        df['signal'].values,
-        df['prev_return'].values,
+def _run_regression(
+    n: int,
+    sum_x: float,
+    sum_y: float,
+    sum_z: float,
+    sum_xx: float,
+    sum_xz: float,
+    sum_zz: float,
+    sum_xy: float,
+    sum_zy: float,
+    sum_yy: float,
+) -> RegressionResult | None:
+    """OLS regression from aggregated normal-equation components.
+
+    Model: return_{t+1} = b0 + b1*signal_t + b2*return_t
+    X columns: [1 (intercept), signal (x), prev_return (z)]
+    y: next_return
+
+    Uses the identity e'e = y'y − 2β'(X'y) + β'(X'X)β to compute
+    residual SS without materialising the full N-row residual vector.
+    """
+    if n < 10:
+        return None
+
+    k = 3
+    XtX = np.array([
+        [float(n), sum_x,  sum_z ],
+        [sum_x,    sum_xx, sum_xz],
+        [sum_z,    sum_xz, sum_zz],
     ])
-    y = df['next_return'].values
+    XtY = np.array([sum_y, sum_xy, sum_zy])
 
     try:
-        coeffs, residuals, rank, sv = np.linalg.lstsq(X, y, rcond=None)
-        b0, b1, b2 = coeffs
+        coeffs = np.linalg.solve(XtX, XtY)
+        b0, b1, b2 = float(coeffs[0]), float(coeffs[1]), float(coeffs[2])
 
-        # Standard errors via OLS formula
-        y_hat = X @ coeffs
-        e = y - y_hat
-        n, k = X.shape
-        sigma2 = float(np.dot(e, e) / (n - k))
-        xtx_inv = np.linalg.inv(X.T @ X)
-        se = np.sqrt(np.diag(sigma2 * xtx_inv))
-        b1_se = float(se[1])
+        # Residual SS via quadratic form — no need to store residual vector
+        ss_res = float(sum_yy - 2.0 * float(np.dot(coeffs, XtY)) + float(coeffs @ XtX @ coeffs))
+        sigma2 = ss_res / max(n - k, 1)
+
+        xtx_inv = np.linalg.inv(XtX)
+        se_vec = np.sqrt(np.abs(np.diag(sigma2 * xtx_inv)))
+        b1_se = float(se_vec[1])
         b1_t = float(b1 / b1_se) if b1_se > 0 else float('nan')
         b1_p = float(2 * scipy_stats.t.sf(abs(b1_t), df=n - k))
 
-        ss_res = float(np.dot(e, e))
-        ss_tot = float(np.dot(y - y.mean(), y - y.mean()))
-        r2 = 1 - ss_res / ss_tot if ss_tot > 0 else float('nan')
+        y_mean = sum_y / n
+        ss_tot = float(sum_yy - n * y_mean ** 2)
+        r2 = 1.0 - ss_res / ss_tot if ss_tot > 0 else float('nan')
 
         return RegressionResult(
-            b0=float(b0), b1=float(b1), b2=float(b2),
+            b0=b0, b1=b1, b2=b2,
             b1_stderr=b1_se, b1_tstat=b1_t, b1_pvalue=b1_p,
             n_obs=n, r_squared=float(r2),
         )
-    except np.linalg.LinAlgError:
+    except (np.linalg.LinAlgError, ZeroDivisionError, ValueError):
         return None
 
 
@@ -314,7 +462,7 @@ def _empty_result(signal_name: str, max_lag: int) -> CrossCorrelationResult:
         n_tickers=0,
         min_periods=0,
         max_lag=max_lag,
-        ccf=[CCFPoint(l, float('nan'), float('nan'), float('nan')) for l in lags],
+        ccf=[CCFPoint(lag, float('nan'), float('nan'), float('nan')) for lag in lags],
         peak_lag=None,
         peak_corr=None,
         regression=None,
