@@ -41,7 +41,7 @@ class PopularityRepository:
         params: list = []
 
         if ticker:
-            logger.info(f"Retrieving historical popularity for {ticker} from database")
+            logger.debug(f"Retrieving historical popularity for {ticker} from database")
             conditions.append("ticker = %s")
             params.append(ticker)
         else:
