@@ -531,7 +531,12 @@ class Data(commands.Cog):
 
         data = QuoteData(tickers=tickers, quotes=quotes, invalid_tickers=invalid_tickers)
         embed = spec_to_embed(QuoteCard(data).build())
-        await interaction.followup.send(embed=embed, ephemeral=True)
+
+        filepath = f"{datapaths.attachments_path}/{'_'.join(tickers)}_quote.json"
+        await asyncio.to_thread(_write_json, filepath, quotes)
+        file = discord.File(filepath, filename=f"{'_'.join(tickers)}_quote.json")
+
+        await interaction.followup.send(embed=embed, file=file, ephemeral=True)
 
     @data_group.command(name="stats", description="See volatility, classification, Bollinger Bands, and return stats")
     @app_commands.describe(tickers="Tickers to return stats for (separated by spaces)")
