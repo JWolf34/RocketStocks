@@ -395,7 +395,7 @@ class TestDataTickers:
 
 class TestDataQuote:
     @pytest.mark.asyncio
-    async def test_valid_tickers_sends_embed(self):
+    async def test_valid_tickers_sends_embed_and_json_file(self):
         cog = _make_cog()
         interaction = _make_interaction()
         cog.stock_data.tickers.parse_valid_tickers = AsyncMock(return_value=(["AAPL"], []))
@@ -410,12 +410,16 @@ class TestDataQuote:
             }
         })
 
-        await cog.data_quote.callback(cog, interaction, tickers="AAPL")
+        with patch("rocketstocks.bot.cogs.data.asyncio.to_thread", new=AsyncMock()), \
+             patch("rocketstocks.bot.cogs.data.discord.File", return_value=MagicMock()) as mock_file:
+            await cog.data_quote.callback(cog, interaction, tickers="AAPL")
 
         interaction.followup.send.assert_called_once()
         call_kwargs = interaction.followup.send.call_args.kwargs
         assert "embed" in call_kwargs
+        assert "file" in call_kwargs
         assert call_kwargs.get("ephemeral") is True
+        mock_file.assert_called_once()
 
     @pytest.mark.asyncio
     async def test_schwab_token_error_returns_auth_message(self):
