@@ -43,16 +43,32 @@ class EventDetector(Protocol):
 
         Returns:
             DataFrame with columns: ticker, datetime, signal_value, source,
-            plus any source-specific metadata columns.  Never empty — returns
-            a zero-row DataFrame with at least the standard columns if nothing
-            is detected.
+            source_detail, plus any source-specific metadata columns.  Never
+            empty — returns a zero-row DataFrame with at least the standard
+            columns if nothing is detected.
         """
         ...
 
 
 def empty_events(source: str = '') -> pd.DataFrame:
-    """Return a zero-row events DataFrame with the standard columns."""
-    return pd.DataFrame(columns=list(EVENT_COLS) + (['source_detail'] if source else []))
+    """Return a zero-row events DataFrame with the standard columns.
+
+    Always includes 'source_detail' so callers can concat or assign
+    without worrying about column alignment.
+    """
+    return pd.DataFrame(columns=list(EVENT_COLS) + ['source_detail'])
+
+
+def _to_naive_utc(series: pd.Series) -> pd.Series:
+    """Coerce a datetime Series to tz-naive UTC.
+
+    Handles three cases:
+    - Already tz-naive — returned unchanged.
+    - tz-aware — converted to UTC then stripped of tzinfo.
+    - Object dtype (mixed strings/Timestamps) — parsed with utc=True then stripped.
+    """
+    converted = pd.to_datetime(series, utc=True, errors='coerce')
+    return converted.dt.tz_localize(None)
 
 
 def validate_events(df: pd.DataFrame) -> pd.DataFrame:
