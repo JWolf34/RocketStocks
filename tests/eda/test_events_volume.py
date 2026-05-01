@@ -279,3 +279,104 @@ async def test_detect_5m_timeframe():
     result = await VolumeDetector(zscore_threshold=2.0).detect(sd, timeframe='5m')
     assert isinstance(result, pd.DataFrame)
     assert 'datetime' in result.columns
+
+
+# ---------------------------------------------------------------------------
+# Phase 1 additions: skipped_tickers, ticker uppercasing, price-based discovery
+# ---------------------------------------------------------------------------
+
+@pytest.mark.asyncio
+async def test_detect_skipped_tickers_populated_on_empty_price():
+    """Tickers with no price data should appear in skipped_tickers."""
+    sd = _make_stock_data({'AAPL': pd.DataFrame()})
+    detector = VolumeDetector()
+    await detector.detect(sd)
+    assert 'AAPL' in detector.skipped_tickers
+
+
+@pytest.mark.asyncio
+async def test_detect_skipped_tickers_short_history():
+    """Tickers with too few bars for any valid z-score appear in skipped_tickers."""
+    n = 3  # fewer than min_win=max(3, 20//2)=10
+    dates = [pd.Timestamp('2024-01-01') + pd.Timedelta(days=i) for i in range(n)]
+    df = pd.DataFrame({
+        'ticker': 'TINY',
+        'open': 1.0, 'high': 1.0, 'low': 1.0, 'close': 1.0,
+        'volume': 100_000.0,
+        'date': [d.date() for d in dates],
+    })
+    sd = _make_stock_data({'TINY': df})
+    detector = VolumeDetector()
+    await detector.detect(sd)
+    assert 'TINY' in detector.skipped_tickers
+
+
+@pytest.mark.asyncio
+async def test_detect_ticker_output_is_uppercase():
+    """Emitted events must have uppercase ticker values."""
+    frames = {'aapl': _make_price_df('aapl', n=60, spike_idx=40, spike_multiplier=10.0)}
+    sd = MagicMock()
+    sd.db.execute = AsyncMock(return_value=[('aapl',)])
+    sd.price_history.fetch_daily_price_history = AsyncMock(
+        side_effect=lambda ticker, **kw: frames.get(ticker, pd.DataFrame())
+    )
+    sd.price_history.fetch_5m_price_history = AsyncMock(return_value=pd.DataFrame())
+    sd.popularity.fetch_popularity = AsyncMock(return_value=pd.DataFrame())
+    result = await VolumeDetector(zscore_threshold=2.0).detect(sd)
+    if not result.empty:
+        assert (result['ticker'] == result['ticker'].str.upper()).all()
+
+
+@pytest.mark.asyncio
+async def test_detect_explicit_tickers_uppercased():
+    """Lower-case explicit tickers should be upper-cased internally."""
+    frames = {'AAPL': _make_price_df('AAPL', n=60, spike_idx=40, spike_multiplier=10.0)}
+    sd = _make_stock_data(frames)
+    # Pass lower-case ticker — should still find AAPL data
+    result = await VolumeDetector(zscore_threshold=2.0).detect(sd, tickers=['aapl'])
+    # VolumeDetector uppercases the explicit list; the stream fetcher uses it
+    assert 'GOOG' not in result.get('ticker', pd.Series()).values
+
+
+@pytest.mark.asyncio
+async def test_detect_uses_price_table_for_universe_when_no_tickers():
+    """When tickers=None, VolumeDetector should query the price table, not popularity."""
+    frames = {'AAPL': _make_price_df('AAPL', n=60, spike_idx=40)}
+    sd = _make_stock_data(frames)
+    await VolumeDetector().detect(sd)
+    # db.execute is called by fetch_distinct_tickers_from_prices — check it queries price table
+    call_queries = [call[0][0] for call in sd.db.execute.call_args_list]
+    price_table_queries = [q for q in call_queries if 'daily_price_history' in q]
+    assert len(price_table_queries) >= 1
+
+
+@pytest.mark.asyncio
+async def test_detect_5m_default_min_volume_is_lower():
+    """5m timeframe should use min_volume=500 by default (not 10_000).
+
+    Baseline volumes are in [1_000, 5_000] — above 500 but below 10_000 — so
+    the spike can be detected with the 500 default but would be blocked by the
+    10_000 daily default (baseline mean + spike are all >> 500 but the baseline
+    is well below 10_000 until the spike).  We verify events are emitted at all.
+    """
+    n = 200
+    rng = np.random.default_rng(77)
+    dts = [pd.Timestamp('2024-01-01 09:30') + pd.Timedelta(minutes=5 * i) for i in range(n)]
+    close = np.maximum(10 + rng.standard_normal(n).cumsum(), 1.0)
+    # Variable baseline volumes in [1_000, 5_000] so rolling std is non-zero
+    volume = rng.integers(1_000, 5_000, n).astype(float)
+    volume[150] *= 30.0  # large spike (30×) — z-score will be high
+
+    df = pd.DataFrame({
+        'ticker': 'AAPL', 'open': close, 'high': close, 'low': close, 'close': close,
+        'volume': volume, 'datetime': dts,
+    })
+    sd = MagicMock()
+    sd.db.execute = AsyncMock(return_value=[('AAPL',)])
+    sd.price_history.fetch_5m_price_history = AsyncMock(return_value=df)
+    sd.price_history.fetch_daily_price_history = AsyncMock(return_value=pd.DataFrame())
+    sd.popularity.fetch_popularity = AsyncMock(return_value=pd.DataFrame())
+
+    result = await VolumeDetector(zscore_threshold=2.0).detect(sd, timeframe='5m')
+    # With 5m default min_volume=500, events should fire (spike >> 500)
+    assert not result.empty

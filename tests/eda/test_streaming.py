@@ -5,7 +5,12 @@ from unittest.mock import AsyncMock, MagicMock
 import pandas as pd
 import pytest
 
-from rocketstocks.eda.streaming import fetch_bar_counts, fetch_distinct_tickers, stream_tickers
+from rocketstocks.eda.streaming import (
+    fetch_bar_counts,
+    fetch_distinct_tickers,
+    fetch_distinct_tickers_from_prices,
+    stream_tickers,
+)
 
 
 # ---------------------------------------------------------------------------
@@ -215,3 +220,71 @@ async def test_fetch_distinct_tickers_with_end_date():
     assert 'WHERE' in query
     # end_date becomes end_date + 1 day for exclusive upper bound
     assert any(isinstance(p, datetime.date) and p > end for p in params)
+
+
+# ---------------------------------------------------------------------------
+# fetch_distinct_tickers_from_prices
+# ---------------------------------------------------------------------------
+
+def _make_sd_for_prices(ticker_rows):
+    sd = MagicMock()
+    sd.db.execute = AsyncMock(return_value=ticker_rows)
+    return sd
+
+
+@pytest.mark.asyncio
+async def test_fetch_distinct_tickers_from_prices_daily_table():
+    sd = _make_sd_for_prices([('AAPL',), ('MSFT',)])
+    result = await fetch_distinct_tickers_from_prices(sd, 'daily')
+    assert result == ['AAPL', 'MSFT']
+    query = sd.db.execute.call_args[0][0]
+    assert 'daily_price_history' in query
+
+
+@pytest.mark.asyncio
+async def test_fetch_distinct_tickers_from_prices_5m_table():
+    sd = _make_sd_for_prices([('TSLA',)])
+    result = await fetch_distinct_tickers_from_prices(sd, '5m')
+    assert result == ['TSLA']
+    query = sd.db.execute.call_args[0][0]
+    assert 'five_minute_price_history' in query
+
+
+@pytest.mark.asyncio
+async def test_fetch_distinct_tickers_from_prices_empty():
+    sd = _make_sd_for_prices([])
+    result = await fetch_distinct_tickers_from_prices(sd, 'daily')
+    assert result == []
+
+
+@pytest.mark.asyncio
+async def test_fetch_distinct_tickers_from_prices_daily_inclusive_bounds():
+    sd = _make_sd_for_prices([('AAPL',)])
+    start = datetime.date(2024, 1, 1)
+    end = datetime.date(2024, 6, 1)
+    await fetch_distinct_tickers_from_prices(sd, 'daily', start_date=start, end_date=end)
+    query, params = sd.db.execute.call_args[0]
+    assert 'date >= %s' in query
+    assert 'date <= %s' in query
+    assert start in params
+    assert end in params
+
+
+@pytest.mark.asyncio
+async def test_fetch_distinct_tickers_from_prices_5m_converts_dates_to_datetimes():
+    sd = _make_sd_for_prices([('AAPL',)])
+    start = datetime.date(2024, 1, 1)
+    end = datetime.date(2024, 6, 1)
+    await fetch_distinct_tickers_from_prices(sd, '5m', start_date=start, end_date=end)
+    _, params = sd.db.execute.call_args[0]
+    # params should be datetime objects, not dates
+    assert all(isinstance(p, datetime.datetime) for p in params)
+
+
+@pytest.mark.asyncio
+async def test_fetch_distinct_tickers_from_prices_no_dates_no_where():
+    sd = _make_sd_for_prices([('AAPL',)])
+    await fetch_distinct_tickers_from_prices(sd, 'daily')
+    query, params = sd.db.execute.call_args[0]
+    assert 'WHERE' not in query
+    assert params is None

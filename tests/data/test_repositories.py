@@ -609,7 +609,7 @@ class TestPriceHistoryRepository:
         await repo.fetch_daily_price_history_batch(['AAPL'], start_date=start)
         sql, params = db.execute.call_args[0]
         assert 'ANY(%s)' in sql
-        assert 'date > %s' in sql
+        assert 'date >= %s' in sql
         assert params[1] == start
 
     @pytest.mark.asyncio

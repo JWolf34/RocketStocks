@@ -4,6 +4,7 @@ import pandas as pd
 import pytest
 
 from rocketstocks.eda.events.base import (
+    _to_naive_utc,
     deduplicate_events,
     build_control_group,
     empty_events,
@@ -49,6 +50,17 @@ def test_empty_events_has_required_cols():
         assert col in df.columns
 
 
+def test_empty_events_always_has_source_detail():
+    """source_detail must be present even when source='' (empty string)."""
+    df = empty_events('')
+    assert 'source_detail' in df.columns
+
+
+def test_empty_events_with_source_has_source_detail():
+    df = empty_events('volume')
+    assert 'source_detail' in df.columns
+
+
 def test_validate_events_passes_valid():
     df = _make_events([{'ticker': 'AAPL', 'datetime': '2024-01-05'}])
     # Should not raise
@@ -59,6 +71,55 @@ def test_validate_events_raises_on_missing_col():
     df = pd.DataFrame({'ticker': ['AAPL'], 'datetime': ['2024-01-05']})
     with pytest.raises(ValueError, match='missing required columns'):
         validate_events(df)
+
+
+def test_validate_events_drops_nan_signal_value():
+    """Rows with NaN signal_value should be silently removed."""
+    df = _make_events([
+        {'ticker': 'AAPL', 'datetime': '2024-01-05', 'signal_value': float('nan')},
+        {'ticker': 'GOOG', 'datetime': '2024-01-05', 'signal_value': 2.0},
+    ])
+    result = validate_events(df)
+    assert len(result) == 1
+    assert result.iloc[0]['ticker'] == 'GOOG'
+
+
+def test_validate_events_normalizes_datetime_to_naive():
+    """tz-aware datetime column should be coerced to tz-naive."""
+    import pytz
+    df = _make_events([{'ticker': 'AAPL', 'datetime': '2024-01-05'}])
+    df['datetime'] = df['datetime'].dt.tz_localize('UTC')
+    result = validate_events(df)
+    assert result['datetime'].dt.tz is None
+
+
+def test_validate_events_empty_df_returns_empty():
+    df = empty_events('test')  # has the required columns, zero rows
+    result = validate_events(df)
+    assert result.empty
+
+
+# ---------------------------------------------------------------------------
+# _to_naive_utc
+# ---------------------------------------------------------------------------
+
+def test_to_naive_utc_naive_unchanged():
+    s = pd.to_datetime(pd.Series(['2024-01-01', '2024-06-01']))
+    result = _to_naive_utc(s)
+    assert result.dt.tz is None
+
+
+def test_to_naive_utc_aware_stripped():
+    s = pd.to_datetime(pd.Series(['2024-01-01', '2024-06-01'])).dt.tz_localize('UTC')
+    result = _to_naive_utc(s)
+    assert result.dt.tz is None
+
+
+def test_to_naive_utc_string_series():
+    s = pd.Series(['2024-01-01', '2024-06-01'])
+    result = _to_naive_utc(s)
+    assert pd.api.types.is_datetime64_any_dtype(result)
+    assert result.dt.tz is None
 
 
 # ---------------------------------------------------------------------------
@@ -181,3 +242,49 @@ def test_control_group_zero_bar_count_tickers_excluded():
     events = _make_events([{'ticker': 'AAPL', 'datetime': '2024-01-05'}])
     control = build_control_group(events, bar_counts, n_samples=10)
     assert 'GOOG' not in control['ticker'].values
+
+
+def test_control_group_deterministic_with_sorted_tickers():
+    """Control group must be reproducible regardless of dict insertion order."""
+    bar_counts_a = {'GOOG': 30, 'AAPL': 30}
+    bar_counts_b = {'AAPL': 30, 'GOOG': 30}
+    events = _make_events([{'ticker': 'AAPL', 'datetime': '2024-01-05'}])
+    ctrl_a = build_control_group(events, bar_counts_a, n_samples=20, seed=0)
+    ctrl_b = build_control_group(events, bar_counts_b, n_samples=20, seed=0)
+    # Same seed + sorted tickers → same sample
+    assert list(ctrl_a['ticker']) == list(ctrl_b['ticker'])
+    assert list(ctrl_a['_bar_offset']) == list(ctrl_b['_bar_offset'])
+
+
+# ---------------------------------------------------------------------------
+# deduplicate_events — Timedelta / string window
+# ---------------------------------------------------------------------------
+
+def test_dedup_accepts_timedelta_window():
+    """window_days can be a pd.Timedelta."""
+    events = _make_events([
+        {'ticker': 'AAPL', 'datetime': '2024-01-01'},
+        {'ticker': 'AAPL', 'datetime': '2024-01-02'},
+    ])
+    result = deduplicate_events(events, window_days=pd.Timedelta('5d'))
+    assert len(result) == 1
+
+
+def test_dedup_accepts_string_window():
+    """window_days can be a Timedelta string such as '1d'."""
+    events = _make_events([
+        {'ticker': 'AAPL', 'datetime': '2024-01-01'},
+        {'ticker': 'AAPL', 'datetime': '2024-01-02'},
+    ])
+    result = deduplicate_events(events, window_days='5d')
+    assert len(result) == 1
+
+
+def test_dedup_short_string_window_keeps_more():
+    """A '30min' window keeps events that are >30 min apart."""
+    events = _make_events([
+        {'ticker': 'AAPL', 'datetime': '2024-01-01 09:00:00'},
+        {'ticker': 'AAPL', 'datetime': '2024-01-01 09:35:00'},  # > 30 min later
+    ])
+    result = deduplicate_events(events, window_days='30min')
+    assert len(result) == 2
