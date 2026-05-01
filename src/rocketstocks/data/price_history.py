@@ -185,7 +185,7 @@ class PriceHistoryRepository:
         )
         params: list = [tickers]
         if start_date is not None:
-            query += " AND date > %s"
+            query += " AND date >= %s"
             params.append(start_date)
         if end_date is not None:
             query += " AND date <= %s"
@@ -216,10 +216,10 @@ class PriceHistoryRepository:
         )
         params = [ticker]
         if start_date is not None:
-            query += " AND date > %s"
+            query += " AND date >= %s"
             params.append(start_date)
         if end_date is not None:
-            query += " AND date < %s"
+            query += " AND date <= %s"
             params.append(end_date)
 
         rows = await self._db.execute(query, params)
