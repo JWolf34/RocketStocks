@@ -146,6 +146,53 @@ async def fetch_distinct_tickers(
     return [row[0] for row in rows] if rows else []
 
 
+async def fetch_distinct_tickers_from_prices(
+    stock_data,
+    timeframe: str,
+    start_date: datetime.date | None = None,
+    end_date: datetime.date | None = None,
+) -> list[str]:
+    """Return distinct tickers from the price-history table for the date window.
+
+    Used when the analysis source is volume-only or composite, where the
+    popularity table is an incomplete proxy for the available universe.
+
+    Args:
+        stock_data: StockData singleton.
+        timeframe: 'daily' or '5m'.
+        start_date: Earliest date to include (inclusive).
+        end_date: Latest date to include (inclusive).
+
+    Returns:
+        Sorted list of ticker strings.
+    """
+    if timeframe == 'daily':
+        table = _DAILY_PRICE_TABLE
+        conditions: list[str] = []
+        params: list = []
+        if start_date is not None:
+            conditions.append("date >= %s")
+            params.append(start_date)
+        if end_date is not None:
+            conditions.append("date <= %s")
+            params.append(end_date)
+    else:
+        table = _5M_PRICE_TABLE
+        conditions = []
+        params = []
+        if start_date is not None:
+            conditions.append("datetime >= %s")
+            params.append(datetime.datetime.combine(start_date, datetime.time.min))
+        if end_date is not None:
+            conditions.append("datetime <= %s")
+            params.append(datetime.datetime.combine(end_date, datetime.time.max))
+
+    where = f"WHERE {' AND '.join(conditions)}" if conditions else ""
+    query = f"SELECT DISTINCT ticker FROM {table} {where} ORDER BY ticker"
+    rows = await stock_data.db.execute(query, params or None)
+    return [row[0] for row in rows] if rows else []
+
+
 # ---------------------------------------------------------------------------
 # Internal helpers
 # ---------------------------------------------------------------------------
