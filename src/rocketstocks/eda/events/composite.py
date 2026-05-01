@@ -11,6 +11,8 @@ import logging
 
 import pandas as pd
 
+from rocketstocks.eda.events.base import _to_naive_utc
+
 logger = logging.getLogger(__name__)
 
 
@@ -68,6 +70,8 @@ class CompositeDetector:
         if self.mode == 'or':
             combined = pd.concat(all_events, ignore_index=True)
             combined['source'] = 'composite'
+            combined['datetime'] = _to_naive_utc(combined['datetime'])
+            combined['ticker'] = combined['ticker'].str.upper()
             return combined.sort_values(['ticker', 'datetime']).reset_index(drop=True)
 
         # AND mode: find ticker-days where all detectors fired within the window
@@ -122,6 +126,8 @@ class CompositeDetector:
             return _empty_events()
 
         result = pd.DataFrame(rows)
+        result['datetime'] = _to_naive_utc(result['datetime'])
+        result['ticker'] = result['ticker'].str.upper()
         logger.info(
             f"CompositeDetector (AND): {len(result)} co-occurring events "
             f"({result['ticker'].nunique()} tickers)"
