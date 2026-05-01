@@ -97,17 +97,19 @@ def validate_events(df: pd.DataFrame) -> pd.DataFrame:
 
 def deduplicate_events(
     events: pd.DataFrame,
-    window_days: int = 3,
+    window_days: 'int | pd.Timedelta | str' = 3,
 ) -> pd.DataFrame:
     """Keep only the first event per ticker within a rolling window.
 
     Prevents clustering bias when the same ticker fires multiple events
     close together.  For each ticker, events are kept only if they are
-    at least *window_days* calendar days after the most recently kept event.
+    at least *window_days* after the most recently kept event.
 
     Args:
         events: Events DataFrame in standard format.
-        window_days: Minimum calendar days between retained events per ticker.
+        window_days: Minimum gap between retained events per ticker.
+            Accepts an int (calendar days), a pd.Timedelta, or a Timedelta
+            string such as '30min' or '1d'.  Default is 3 days.
 
     Returns:
         Filtered events DataFrame, same columns, sorted by (ticker, datetime).
@@ -119,7 +121,13 @@ def deduplicate_events(
     events['datetime'] = pd.to_datetime(events['datetime'])
     events = events.sort_values(['ticker', 'datetime']).reset_index(drop=True)
 
-    window = pd.Timedelta(days=window_days)
+    if isinstance(window_days, (int, float)):
+        window = pd.Timedelta(days=int(window_days))
+    elif isinstance(window_days, str):
+        window = pd.Timedelta(window_days)
+    else:
+        window = window_days  # already a Timedelta
+
     keep_mask = pd.Series(True, index=events.index)
     last_kept: dict[str, pd.Timestamp] = {}
 
@@ -132,7 +140,7 @@ def deduplicate_events(
             last_kept[ticker] = dt
 
     filtered = events[keep_mask].reset_index(drop=True)
-    logger.debug(f"deduplicate_events: {len(events)} → {len(filtered)} events (window={window_days}d)")
+    logger.debug(f"deduplicate_events: {len(events)} → {len(filtered)} events (window={window})")
     return filtered
 
 
@@ -167,7 +175,7 @@ def build_control_group(
         ``_bar_offset`` is a zero-based index into the ticker's chronologically
         sorted price series.
     """
-    tickers = [t for t, c in bar_counts.items() if c > 0]
+    tickers = sorted(t for t, c in bar_counts.items() if c > 0)
     if not tickers:
         return _empty_control()
 
