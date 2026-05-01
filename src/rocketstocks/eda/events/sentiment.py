@@ -4,12 +4,12 @@ Uses raw popularity data from the `popularity` table.  Intentionally does NOT
 reuse evaluate_popularity_surge() so that we start analysis without the bias
 of existing surge-detection logic (thresholds, tier adjustments, etc.).
 """
-import datetime
 import logging
 
 import pandas as pd
 
 from rocketstocks.eda.data_loader import load_popularity_raw
+from rocketstocks.eda.events.base import _to_naive_utc
 
 logger = logging.getLogger(__name__)
 
@@ -25,7 +25,7 @@ class SentimentDetector:
     the snapshot level.  Event datetime is the popularity snapshot timestamp.
 
     For *daily* timeframe events are further reduced to one per ticker per
-    calendar day (highest mention_ratio wins).
+    calendar day (highest signal_value wins; ties broken by earliest datetime).
 
     Args:
         mention_thresholds: mention_ratio values that trigger an event.
@@ -34,6 +34,10 @@ class SentimentDetector:
         min_mentions: Minimum raw mention count; filters low-activity noise.
         mode: 'mention_ratio' | 'rank_change' | 'both'.  Controls which
             condition(s) to detect.
+
+    Attributes:
+        n_below_min_mentions: Number of snapshots filtered by min_mentions
+            during the most recent detect() call.
     """
 
     def __init__(
@@ -47,6 +51,7 @@ class SentimentDetector:
         self.rank_change_thresholds = rank_change_thresholds or _DEFAULT_RANK_CHANGE_THRESHOLDS
         self.min_mentions = min_mentions
         self.mode = mode
+        self.n_below_min_mentions: int = 0
 
     async def detect(
         self,
@@ -67,6 +72,12 @@ class SentimentDetector:
         callers should apply deduplicate_events() from events/base.py if
         they want to avoid clustering bias.
         """
+        self.n_below_min_mentions = 0
+
+        # Normalise explicit tickers to uppercase
+        if tickers is not None:
+            tickers = [t.upper() for t in tickers]
+
         pop = await load_popularity_raw(stock_data, start_date, end_date)
         if pop.empty:
             return _empty_events()
@@ -74,6 +85,9 @@ class SentimentDetector:
         pop = pop.copy()
         pop['mention_ratio'] = _safe_ratio(pop['mentions'], pop['mentions_24h_ago'])
         pop['rank_change'] = pop['rank_24h_ago'] - pop['rank']
+
+        # Track how many snapshots are filtered by min_mentions
+        self.n_below_min_mentions = int((pop['mentions'] < self.min_mentions).sum())
 
         # Base filter: minimum mentions
         pop = pop[pop['mentions'] >= self.min_mentions]
@@ -122,13 +136,21 @@ class SentimentDetector:
             return _empty_events()
 
         events = pd.concat(events_list, ignore_index=True)
-        events['datetime'] = pd.to_datetime(events['datetime'])
 
-        # For daily timeframe: reduce to one event per ticker per day
+        # Normalize datetime to tz-naive and uppercase tickers
+        events['datetime'] = _to_naive_utc(events['datetime'])
+        events['ticker'] = events['ticker'].str.upper()
+
+        # For daily timeframe: reduce to one event per ticker per day.
+        # Sort descending by signal_value, then ascending by datetime so the
+        # highest-value (earliest-in-case-of-tie) snapshot wins.
         if timeframe == 'daily':
             events['_date'] = events['datetime'].dt.date
             events = (
-                events.sort_values('signal_value', ascending=False)
+                events.sort_values(
+                    ['signal_value', 'datetime'],
+                    ascending=[False, True],
+                )
                 .groupby(['ticker', '_date', 'source_detail'], sort=False)
                 .first()
                 .reset_index()
