@@ -72,11 +72,27 @@ def _to_naive_utc(series: pd.Series) -> pd.Series:
 
 
 def validate_events(df: pd.DataFrame) -> pd.DataFrame:
-    """Raise ValueError if required columns are missing; return df unchanged."""
+    """Raise ValueError if required columns are missing.
+
+    Also normalizes the datetime column to tz-naive and drops rows where
+    signal_value is NaN so downstream engines receive clean input.
+    """
     missing = [c for c in EVENT_COLS if c not in df.columns]
     if missing:
         raise ValueError(f"Events DataFrame missing required columns: {missing}")
-    return df
+    if df.empty:
+        return df
+
+    df = df.copy()
+    df['datetime'] = _to_naive_utc(df['datetime'])
+
+    n_before = len(df)
+    df = df.dropna(subset=['signal_value'])
+    n_dropped = n_before - len(df)
+    if n_dropped:
+        logger.debug(f"validate_events: dropped {n_dropped} row(s) with NaN signal_value")
+
+    return df.reset_index(drop=True)
 
 
 def deduplicate_events(
