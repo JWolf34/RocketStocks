@@ -162,6 +162,7 @@ async def _handle_forward_returns(args, stock_data) -> int:
 
     start_date, end_date = _parse_dates(args)
     detector = _build_detector(args)
+    tickers = _normalize_tickers(args)
 
     print(f"Date window: {start_date or 'all'} → {end_date or 'all'}")
 
@@ -170,15 +171,22 @@ async def _handle_forward_returns(args, stock_data) -> int:
         timeframe=args.timeframe,
         start_date=start_date,
         end_date=end_date,
-        tickers=args.tickers,
+        tickers=tickers,
     )
     log_memory("after detect")
+    _print_skip_summary(detector)
 
     if events.empty:
         print("No events detected. Try lowering --mention-thresholds or --volume-threshold.")
         return 1
 
-    events = deduplicate_events(events, window_days=args.dedup_window)
+    # For 5m timeframe use a 1-day dedup window unless the user overrode it.
+    # The argparse default is 3 (days) regardless of timeframe, so we check
+    # whether the flag was explicitly supplied by comparing to the default.
+    dedup_window = args.dedup_window
+    if args.timeframe == '5m' and dedup_window == 3:
+        dedup_window = pd.Timedelta('1d')
+    events = deduplicate_events(events, window_days=dedup_window)
     n_event_tickers = events['ticker'].nunique()
     print(f"\nDetected {len(events)} events across {n_event_tickers} tickers")
 
@@ -201,6 +209,7 @@ async def _handle_lead_lag(args, stock_data) -> int:
     from rocketstocks.eda._memlog import log_memory
 
     start_date, end_date = _parse_dates(args)
+    tickers = _normalize_tickers(args)
 
     # Determine signal column
     signal_col = args.signal_col
@@ -221,7 +230,7 @@ async def _handle_lead_lag(args, stock_data) -> int:
         stock_data=stock_data,
         signal_col=signal_col,
         return_col=return_col,
-        tickers=args.tickers,
+        tickers=tickers,
         timeframe=args.timeframe,
         start_date=start_date,
         end_date=end_date,
@@ -240,6 +249,7 @@ async def _handle_regime(args, stock_data) -> int:
     from rocketstocks.eda._memlog import log_memory
 
     start_date, end_date = _parse_dates(args)
+    tickers = _normalize_tickers(args)
     print(f"Date window: {start_date or 'all'} → {end_date or 'all'}")
     detector = _build_detector(args)
 
@@ -248,9 +258,10 @@ async def _handle_regime(args, stock_data) -> int:
         timeframe=args.timeframe,
         start_date=start_date,
         end_date=end_date,
-        tickers=args.tickers,
+        tickers=tickers,
     )
     log_memory("after detect")
+    _print_skip_summary(detector)
 
     if events.empty:
         print("No events detected. Try lowering --mention-thresholds.")
@@ -290,6 +301,23 @@ def _parse_dates(args) -> tuple[datetime.date | None, datetime.date | None]:
     start = datetime.date.fromisoformat(args.start_date) if args.start_date else None
     end = datetime.date.fromisoformat(args.end_date) if args.end_date else None
     return start, end
+
+
+def _normalize_tickers(args) -> list[str] | None:
+    """Return --tickers uppercased, or None if not provided."""
+    return [t.upper() for t in args.tickers] if args.tickers else None
+
+
+def _print_skip_summary(detector) -> None:
+    """Print a compact skip-reason breakdown from a detector after detect()."""
+    if hasattr(detector, 'skipped_tickers') and detector.skipped_tickers:
+        by_reason: dict[str, int] = {}
+        for reason in detector.skipped_tickers.values():
+            by_reason[reason] = by_reason.get(reason, 0) + 1
+        parts = ', '.join(f'{r}: {n}' for r, n in sorted(by_reason.items()))
+        print(f"  Skipped {len(detector.skipped_tickers)} ticker(s): {parts}")
+    if hasattr(detector, 'n_below_min_mentions') and detector.n_below_min_mentions:
+        print(f"  {detector.n_below_min_mentions} snapshot(s) filtered by --min-mentions")
 
 
 def _parse_float_list(s: str) -> list[float]:
