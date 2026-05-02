@@ -5,6 +5,8 @@ import logging
 
 import pandas as pd
 
+from rocketstocks.api.batches import BatchAPI
+
 logger = logging.getLogger(__name__)
 
 
@@ -220,6 +222,7 @@ class DataAPI:
 
     def __init__(self, stock_data):
         self._sd = stock_data
+        self.batches = BatchAPI(self)
 
     @property
     def sync(self) -> _SyncWrapper:
