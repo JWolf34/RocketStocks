@@ -39,5 +39,8 @@ test = ["pytest", "pytest-asyncio", "pytest-cov"]
 testpaths = ["tests"]
 asyncio_mode = "auto"
 
+[project.scripts]
+rocketstocks-data = "rocketstocks.api.cli:main"
+
 [tool.setuptools.packages.find]
 where = ["src"]
