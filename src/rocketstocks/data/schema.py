@@ -358,6 +358,7 @@ CREATE TABLE IF NOT EXISTS options_chain_history (
     strike            float         NOT NULL,
     option_type       varchar(4)    NOT NULL,
     contract_symbol   varchar(32),
+    underlying_price  float,
     bid               float,
     ask               float,
     mark              float,
