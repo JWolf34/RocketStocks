@@ -1,4 +1,5 @@
 """DDL helpers — create/drop tables using a Postgres instance."""
+import datetime
 import logging
 
 logger = logging.getLogger(__name__)
@@ -356,6 +357,34 @@ CREATE TABLE IF NOT EXISTS paper_pending_orders (
     executed_at     TIMESTAMPTZ,
     execution_price FLOAT
 );
+
+-- One row per contract per snapshot day. Partitioned by snapshot_date.
+CREATE TABLE IF NOT EXISTS options_chain_history (
+    ticker            varchar(8)    NOT NULL,
+    snapshot_date     date          NOT NULL,
+    expiration_date   date          NOT NULL,
+    days_to_exp       int,
+    strike            float         NOT NULL,
+    option_type       varchar(4)    NOT NULL,
+    contract_symbol   varchar(32),
+    bid               float,
+    ask               float,
+    mark              float,
+    last              float,
+    volume            bigint,
+    open_interest     bigint,
+    delta             float,
+    gamma             float,
+    theta             float,
+    vega              float,
+    rho               float,
+    iv                float,
+    in_the_money      boolean,
+    PRIMARY KEY (ticker, snapshot_date, expiration_date, strike, option_type)
+) PARTITION BY RANGE (snapshot_date);
+
+CREATE INDEX IF NOT EXISTS idx_options_chain_history_ticker_expiration
+    ON options_chain_history (ticker, expiration_date, snapshot_date);
 """
 
 _DROP_ALL_SCRIPT = """
