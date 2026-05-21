@@ -222,15 +222,6 @@ CREATE TABLE IF NOT EXISTS earnings_results (
     PRIMARY KEY (date, ticker)
 );
 
-CREATE TABLE IF NOT EXISTS iv_history (
-    ticker          varchar(8)  NOT NULL,
-    date            date        NOT NULL,
-    iv              real,
-    atm_iv          real,
-    put_call_ratio  real,
-    PRIMARY KEY (ticker, date)
-);
-
 CREATE TABLE IF NOT EXISTS backtest_runs (
     run_id          SERIAL PRIMARY KEY,
     strategy_name   VARCHAR(64) NOT NULL,
