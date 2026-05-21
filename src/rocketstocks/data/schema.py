@@ -471,10 +471,37 @@ async def migrate_watchlists_metadata(db) -> None:
     logger.debug("Watchlist metadata migration completed.")
 
 
+def _first_of_next_month(d: datetime.date) -> datetime.date:
+    """Return the first day of the month following *d*."""
+    if d.month == 12:
+        return datetime.date(d.year + 1, 1, 1)
+    return datetime.date(d.year, d.month + 1, 1)
+
+
+async def _ensure_options_partitions(db) -> None:
+    """Create the current- and next-month partitions of options_chain_history.
+
+    Partition names and date bounds are derived from the server date (no user
+    input), so the f-string interpolation here is safe from SQL injection.
+    """
+    current_start = datetime.date.today().replace(day=1)
+    next_start = _first_of_next_month(current_start)
+    for start in (current_start, next_start):
+        end = _first_of_next_month(start)
+        part_name = f"options_chain_history_{start.year:04d}_{start.month:02d}"
+        await db.execute(
+            f"CREATE TABLE IF NOT EXISTS {part_name} "
+            "PARTITION OF options_chain_history "
+            f"FOR VALUES FROM ('{start.isoformat()}') TO ('{end.isoformat()}')"
+        )
+    logger.debug("Ensured options_chain_history partitions exist")
+
+
 async def create_tables(db) -> None:
     """Create all application tables (idempotent)."""
     logger.debug("Running script to create tables in database...")
     await db.execute(_CREATE_SCRIPT)
+    await _ensure_options_partitions(db)
     await migrate_tickers_schema(db)
     await migrate_watchlists_metadata(db)
     logger.debug("Create script completed successfully!")
