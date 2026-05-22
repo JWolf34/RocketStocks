@@ -757,8 +757,8 @@ class TestBuildOptionsReport:
         cog.stock_data.tickers.get_ticker_info = AsyncMock(return_value={'name': 'Apple Inc'})
         cog.stock_data.price_history = MagicMock()
         cog.stock_data.price_history.fetch_daily_price_history = AsyncMock(return_value=pd.DataFrame())
-        cog.stock_data.iv_history = MagicMock()
-        cog.stock_data.iv_history.get_iv_history = AsyncMock(return_value=pd.DataFrame())
+        cog.stock_data.options_chain_history = MagicMock()
+        cog.stock_data.options_chain_history.get_iv_history = AsyncMock(return_value=pd.DataFrame())
 
         result = await cog.build_options_report(ticker='AAPL')
         assert isinstance(result, OptionsReport)
@@ -775,8 +775,8 @@ class TestBuildOptionsReport:
         cog.stock_data.tickers.get_ticker_info = AsyncMock(return_value={})
         cog.stock_data.price_history = MagicMock()
         cog.stock_data.price_history.fetch_daily_price_history = AsyncMock(return_value=pd.DataFrame())
-        cog.stock_data.iv_history = MagicMock()
-        cog.stock_data.iv_history.get_iv_history = AsyncMock(return_value=pd.DataFrame())
+        cog.stock_data.options_chain_history = MagicMock()
+        cog.stock_data.options_chain_history.get_iv_history = AsyncMock(return_value=pd.DataFrame())
 
         result = await cog.build_options_report(ticker='AAPL')
         assert isinstance(result, OptionsReport)
