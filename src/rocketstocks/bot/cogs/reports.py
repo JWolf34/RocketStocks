@@ -1053,7 +1053,7 @@ class Reports(commands.Cog):
             self.stock_data.price_history.fetch_daily_price_history(ticker=ticker),
             self._fetch_options_chain(ticker),
             self._fetch_quote_safe(ticker, caller='build_options_report'),
-            self.stock_data.iv_history.get_iv_history(ticker=ticker, days=365),
+            self.stock_data.options_chain_history.get_iv_history(ticker=ticker, days=365),
         )
         return OptionsReport(data=OptionsReportData(
             ticker=ticker,

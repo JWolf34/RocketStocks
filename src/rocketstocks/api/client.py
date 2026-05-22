@@ -471,12 +471,12 @@ class DataAPI:
     async def get_iv_history(self, ticker: str, days: int = 365) -> pd.DataFrame:
         """Return the last *days* IV rows for *ticker* from the DB."""
         logger.debug(f"get_iv_history({ticker!r}, days={days})")
-        return await self._sd.iv_history.get_iv_history(ticker, days)
+        return await self._sd.options_chain_history.get_iv_history(ticker, days)
 
     async def get_latest_iv(self, ticker: str) -> float | None:
-        """Return the most recent root-level IV for *ticker*, or None."""
+        """Return the most recent ATM IV for *ticker*, or None."""
         logger.debug(f"get_latest_iv({ticker!r})")
-        return await self._sd.iv_history.get_latest_iv(ticker)
+        return await self._sd.options_chain_history.get_latest_iv(ticker)
 
     # ------------------------------------------------------------------
     # Sentiment & flow
