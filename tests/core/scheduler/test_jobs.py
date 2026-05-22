@@ -57,6 +57,16 @@ class TestRegisterJobs:
         job_names = [call.kwargs.get("name") for call in mock_sched.add_job.call_args_list]
         assert "Update politicians" in job_names
 
+    def test_collect_options_chain_history_job_registered(self):
+        from rocketstocks.core.scheduler.jobs import register_jobs
+        mock_sched = MagicMock()
+        sd = _make_stock_data()
+        emitter = _make_emitter()
+        register_jobs(mock_sched, sd, emitter)
+        job_names = [call.kwargs.get("name") for call in mock_sched.add_job.call_args_list]
+        assert "Collect options chain history" in job_names
+        assert "Collect IV history" not in job_names
+
     def test_check_schwab_token_expiry_job_registered(self):
         from rocketstocks.core.scheduler.jobs import register_jobs
         mock_sched = MagicMock()
