@@ -4,7 +4,6 @@ import json
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock
 
-import pandas as pd
 import pytest
 
 from rocketstocks.data.options_chain_history import (
