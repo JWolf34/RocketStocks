@@ -289,18 +289,18 @@ class TestGetOptionsChainsBatch:
 class TestGetIvHistory:
     async def test_returns_dataframe(self, api, mock_stock_data):
         result = await api.get_iv_history("AAPL", days=30)
-        mock_stock_data.iv_history.get_iv_history.assert_called_once_with("AAPL", 30)
+        mock_stock_data.options_chain_history.get_iv_history.assert_called_once_with("AAPL", 30)
         assert not result.empty
 
 
 class TestGetLatestIv:
     async def test_returns_float(self, api, mock_stock_data):
         result = await api.get_latest_iv("AAPL")
-        mock_stock_data.iv_history.get_latest_iv.assert_called_once_with("AAPL")
+        mock_stock_data.options_chain_history.get_latest_iv.assert_called_once_with("AAPL")
         assert result == pytest.approx(0.3)
 
     async def test_returns_none_when_absent(self, api, mock_stock_data):
-        mock_stock_data.iv_history.get_latest_iv = AsyncMock(return_value=None)
+        mock_stock_data.options_chain_history.get_latest_iv = AsyncMock(return_value=None)
         result = await api.get_latest_iv("ZZZZ")
         assert result is None
 
