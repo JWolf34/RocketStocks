@@ -60,7 +60,7 @@ class TestJobWrapper:
             return 42
 
         wrapped = emitter.job_wrapper("my_job", good_job)
-        asyncio.get_event_loop().run_until_complete(wrapped())
+        asyncio.run(wrapped())
 
         events = emitter.drain()
         assert len(events) == 1
@@ -74,7 +74,7 @@ class TestJobWrapper:
             pass
 
         wrapped = emitter.job_wrapper("timed_job", good_job)
-        asyncio.get_event_loop().run_until_complete(wrapped())
+        asyncio.run(wrapped())
 
         events = emitter.drain()
         assert events[0].elapsed_seconds is not None
@@ -88,7 +88,7 @@ class TestJobWrapper:
 
         wrapped = emitter.job_wrapper("fail_job", bad_job)
         with pytest.raises(ValueError, match="boom"):
-            asyncio.get_event_loop().run_until_complete(wrapped())
+            asyncio.run(wrapped())
 
         events = emitter.drain()
         assert len(events) == 1
@@ -104,7 +104,7 @@ class TestJobWrapper:
 
         wrapped = emitter.job_wrapper("tb_job", bad_job)
         with pytest.raises(RuntimeError):
-            asyncio.get_event_loop().run_until_complete(wrapped())
+            asyncio.run(wrapped())
 
         events = emitter.drain()
         assert events[0].traceback is not None
@@ -118,7 +118,7 @@ class TestJobWrapper:
 
         wrapped = emitter.job_wrapper("reraise_job", bad_job)
         with pytest.raises(TypeError, match="reraised"):
-            asyncio.get_event_loop().run_until_complete(wrapped())
+            asyncio.run(wrapped())
 
     def test_job_wrapper_returns_value_on_success(self):
         emitter = EventEmitter()
@@ -127,7 +127,7 @@ class TestJobWrapper:
             return 99
 
         wrapped = emitter.job_wrapper("value_job", value_job)
-        result = asyncio.get_event_loop().run_until_complete(wrapped())
+        result = asyncio.run(wrapped())
         assert result == 99
 
     def test_job_wrapper_handles_sync_function(self):
@@ -138,7 +138,7 @@ class TestJobWrapper:
             return 42
 
         wrapped = emitter.job_wrapper("sync_job", sync_job)
-        result = asyncio.get_event_loop().run_until_complete(wrapped())
+        result = asyncio.run(wrapped())
         assert result == 42
         events = emitter.drain()
         assert len(events) == 1
@@ -154,7 +154,7 @@ class TestJobWrapper:
 
         wrapped = emitter.job_wrapper("sync_fail_job", sync_job)
         with pytest.raises(ValueError, match="sync boom"):
-            asyncio.get_event_loop().run_until_complete(wrapped())
+            asyncio.run(wrapped())
 
         events = emitter.drain()
         assert len(events) == 1
@@ -172,7 +172,7 @@ class TestJobWrapper:
             thread_ids.append(threading.current_thread().ident)
 
         wrapped = emitter.job_wrapper("thread_job", sync_job)
-        asyncio.get_event_loop().run_until_complete(wrapped())
+        asyncio.run(wrapped())
         assert thread_ids[0] != threading.main_thread().ident
 
 
@@ -185,7 +185,7 @@ class TestTaskWrapper:
             pass
 
         mock_self = object()
-        asyncio.get_event_loop().run_until_complete(my_method(mock_self))
+        asyncio.run(my_method(mock_self))
 
         events = emitter.drain()
         assert len(events) == 1
@@ -201,7 +201,7 @@ class TestTaskWrapper:
 
         mock_self = object()
         with pytest.raises(ValueError, match="task failed"):
-            asyncio.get_event_loop().run_until_complete(failing_method(mock_self))
+            asyncio.run(failing_method(mock_self))
 
         events = emitter.drain()
         assert len(events) == 1
@@ -216,7 +216,7 @@ class TestTaskWrapper:
         async def my_method(cog_self):
             pass
 
-        asyncio.get_event_loop().run_until_complete(my_method(object()))
+        asyncio.run(my_method(object()))
         events = emitter.drain()
         assert events[0].elapsed_seconds is not None
         assert events[0].elapsed_seconds >= 0.0

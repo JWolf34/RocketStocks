@@ -7,7 +7,7 @@ from unittest.mock import MagicMock, AsyncMock, patch
 
 
 def _run(coro):
-    return asyncio.get_event_loop().run_until_complete(coro)
+    return asyncio.run(coro)
 
 
 # ---------------------------------------------------------------------------
@@ -34,7 +34,7 @@ class TestSchwab:
             token_store = AsyncMock()
             token_store.load_token.return_value = {"creation_timestamp": 1234567890, "token": {}}
             obj = Schwab(token_store=token_store)
-            asyncio.get_event_loop().run_until_complete(obj.init_client())
+            asyncio.run(obj.init_client())
             mock_schwab_pkg.auth.client_from_access_functions.assert_called_once()
             mock_schwab_pkg.auth.easy_client.assert_not_called()
 
@@ -44,7 +44,7 @@ class TestSchwab:
         token_store = AsyncMock()
         token_store.load_token.return_value = None
         obj = Schwab(token_store=token_store)
-        asyncio.get_event_loop().run_until_complete(obj.init_client())
+        asyncio.run(obj.init_client())
         assert obj.client is None
 
     @pytest.mark.asyncio
@@ -71,7 +71,7 @@ class TestSchwab:
         assert obj.client is None
         import asyncio
         with pytest.raises(SchwabTokenError):
-            asyncio.get_event_loop().run_until_complete(obj.get_quote('AAPL'))
+            asyncio.run(obj.get_quote('AAPL'))
 
     def test_oauth_error_disables_client(self):
         """OAuthError during an API call should set client=None and raise SchwabTokenError."""
@@ -81,7 +81,7 @@ class TestSchwab:
         obj.client.get_quote = AsyncMock(side_effect=OAuthError(error='invalid_token'))
         import asyncio
         with pytest.raises(SchwabTokenError):
-            asyncio.get_event_loop().run_until_complete(obj.get_quote('AAPL'))
+            asyncio.run(obj.get_quote('AAPL'))
         assert obj.client is None
         assert obj._token_invalid is True
 
@@ -97,7 +97,7 @@ class TestSchwab:
         inner_client.get_quote = AsyncMock(side_effect=OAuthError(error='invalid_token'))
         import asyncio
         with pytest.raises(SchwabTokenError):
-            asyncio.get_event_loop().run_until_complete(obj.get_quote('AAPL'))
+            asyncio.run(obj.get_quote('AAPL'))
         callback.assert_called_once()
 
     def test_on_token_invalid_defaults_to_none(self):
@@ -109,7 +109,7 @@ class TestSchwab:
         obj.client.get_quote = AsyncMock(side_effect=OAuthError(error='invalid_token'))
         import asyncio
         with pytest.raises(SchwabTokenError):
-            asyncio.get_event_loop().run_until_complete(obj.get_quote('AAPL'))
+            asyncio.run(obj.get_quote('AAPL'))
         # No error — callback absence is handled gracefully
 
     def test_no_import_time_datetime_default(self):
