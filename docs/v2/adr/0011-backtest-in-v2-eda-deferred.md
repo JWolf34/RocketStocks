@@ -1,8 +1,10 @@
 # ADR-0011: Backtest framework in v2; EDA deferred
 
-**Status**: Accepted
-**Date locked**: 2026-05-27
+**Status**: Accepted (**amended** 2026-06-05)
+**Date locked**: 2026-05-27 · **Amended**: 2026-06-05
 **Decision-maker**: John Wolf
+
+> **✎ AMENDED 2026-06-05** (ledger L5/L6, L16, L17). **Options backtest is forward-only** — option *chains aren't backfillable* (Schwab returns only the current chain), so the options-research window starts empty at cutover and grows; equity history *is* backfillable. **Backtest the underlying equity as the tradeable; options flow is the *predictor*** (option-leg P&L isn't reliably reconstructable from 5-min snapshots). **Event studies** (flow events → forward *equity* returns) are the day-one validation. **Selection bias:** the curated 5-min options tier is biased (universe chosen by the signals under test) → prefer the **EOD full-universe** tier for research conclusions. Backtest shares the **deterministic-replay machinery** (L16: event-source port + injected clock, same as warm-up/live) and runs signals **at the resolution they run live** (L17/L20). REST backfill seeds equity bars/earnings only — **not option chains**.
 
 ## Context
 
@@ -11,7 +13,7 @@ v1 has two research subsystems: a backtest framework (`backtest/`, built on back
 ## Decision
 
 - **Backtest framework is rebuilt in v2** on new data/logic models (not migrated from v1). It lives in `tools/backtest/` and consumes the `serve` API like any other client — making `serve` a three-consumer contract (bot, Cowork, backtest).
-- **REST backfill is in scope** (`tools/backfill/`) to seed historical bars/options/earnings for backtest windows, where upstream APIs sell history.
+- **REST backfill is in scope** (`tools/backfill/`) to seed historical equity bars + earnings for backtest windows, where upstream APIs sell history. *(Amended 2026-06-05: option chains are NOT backfillable — forward-only; see the amendment note above.)*
 - **Persistence is point-in-time queryable by mandate** — every persisted shape now has two consumers (live detection + replay), so immutability and `fetched_at`/`source_status` columns are hard requirements, not nice-to-haves.
 - **EDA stays deferred post-v2** — rebuilt on the new shapes once v2 is stable.
 
