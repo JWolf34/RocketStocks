@@ -1,8 +1,10 @@
 # ADR-0007: Three-layer options data pipeline
 
-**Status**: Accepted
-**Date locked**: 2026-05-27
+**Status**: **Superseded** by ADR-0020 (three datasets, REST-only options) — 2026-06-05
+**Date locked**: 2026-05-27 · **Superseded**: 2026-06-05
 **Decision-maker**: John Wolf
+
+> **⚠️ SUPERSEDED 2026-06-05** (ledger L5 / L6 / L12). The three-tier model is replaced. **Tier 1 (in-memory `level_one_option` streaming) is removed** — no options streaming in v2 (per-service stream budget; ADR-0006). The two surviving tiers are both **REST**: (1) **curated 5-min snapshots** (ATM±5, ≤30 DTE) for live alerts; (2) **EOD full-universe** chain pull for selection-bias-free swing backtests + day-over-day OI. Both **forward-only** (chains aren't backfillable). One `options_chain_snapshot` hypertable with a `tier` discriminator. See ADR-0020. Original retained below for history.
 
 ## Context
 
