@@ -1,8 +1,10 @@
 # ADR-0006: Schwab L1-only streaming scope
 
-**Status**: Accepted
-**Date locked**: 2026-05-27
+**Status**: **Superseded** by ADR-0019 (two-band universe) + ADR-0021 (bar-close detection) — 2026-06-05
+**Date locked**: 2026-05-27 · **Superseded**: 2026-06-05
 **Decision-maker**: John Wolf
+
+> **⚠️ SUPERSEDED 2026-06-05** (ledger L3 / L4 / L17). The v2 data-plane re-design removes **options streaming** entirely — there is **no `level_one_option` subscription** (the Schwab stream budget is per-service; even a few underlyings at ATM±5 / ≤30 DTE would exhaust it). Options flow is captured by **interval REST chain snapshots** (ADR-0020), not streaming. Equity streaming stays **L1-only** (`level_one_equity`, aggregated into bar-close events per ADR-0021; `screener_equity` retained for discovery); no L2 books, no `account_activity`. See ADR-0019 (universe, no options-streaming band) and ADR-0021. Original decision retained below for history.
 
 ## Context
 
