@@ -1,8 +1,10 @@
 # ADR-0005: Event bus shape (Bus 1 in-process + Bus 2 LISTEN/NOTIFY + outbox)
 
-**Status**: Accepted
-**Date locked**: 2026-05-27
+**Status**: Accepted (**amended** 2026-06-05)
+**Date locked**: 2026-05-27 · **Amended**: 2026-06-05
 **Decision-maker**: John Wolf
+
+> **✎ AMENDED 2026-06-05** (ledger L19, + L3/L16). **Bus 1 is a deterministic, synchronous, *ordered fan-out* — not a pub/sub framework.** Per `BarClosed`, `ingest` runs a fixed ordered handler list (persist → update cache → detect); required by L16's deterministic-replay mandate (a concurrent pub/sub would have to be crippled to pass replay tests) and justified by the small fixed subscriber set, while staying reversible to a registry if subscribers ever churn. **Options detection is a standalone linear pipeline** (5-min REST scan → `decide()` → write `alert`+`outbox`), not a Bus-1 subscriber. The **event-source port** (L16) is the *ingress* seam upstream of the fan-out (live aggregator in prod; recorded adapter for warm-up/backtest/test). **Bus 2 (LISTEN/NOTIFY + outbox) is unchanged** and is the single cross-process growth layer for all future consumers (serve push/dashboards, new clients, the post-v2 auto-trader + detection worker). Illustrative event names below are dated: `MinuteBar`→`BarClosed`; `FilingIngested`/SEC is out of v2 (ledger L8/L10).
 
 ## Context
 
