@@ -2,34 +2,33 @@
 
 > The single entry point for the v2 architecture. Read this first. Per-decision rationale lives in [adr/](./adr/); this brief summarizes and links out.
 >
-> **Status**: Stage 1 (foundational decisions) closed 2026-05-27. Stage 2 (domain modeling) is next.
+> **Status**: Stage 1 foundational decisions closed 2026-05-27; the data plane was re-designed and re-closed **2026-06-05** (new ADRs 0018–0027; supersedes 0006/0007/0009; amends 0005/0008/0011/0014). **Stage 2 (domain modeling) is next.**
 
 ---
 
 ## Why v2?
 
-v1 (`src/rocketstocks/`, ~1007 tests) works, but an architectural review of its data layer surfaced foundational limits that compose poorly with where the project is going:
+v1 (`src/rocketstocks/`, ~1007 tests) works, but an architectural review surfaced foundational *shape* limits that compose poorly with where the project is going. (Two framings from the first review were overstated and are corrected here: `StockData` is a ~99-line composition root, not a god-object; and the DB layer + Schwab client are already async — the loop is not broadly blocked. The real problems are structural:)
 
-- **God-object `StockData`** — a single singleton accreted every data concern, making boundaries and testing hard.
-- **Event-loop blocking** — synchronous API clients block the asyncio loop, capping concurrency and latency.
-- **Polling latency** — everything is poll-driven; there is no streaming path, so alerts lag the market.
-- **Append-only migrations** — schema changes only ever added; no principled migration story.
-- **No validation boundary** — external data enters the system unvalidated except for ad-hoc `_num`/`_bigint` coercion in one module.
+- **Poll-only, no streaming path** — everything is poll-driven, so alerts lag the market; there is no low-latency ingestion rail for an options-flow-first product.
+- **Append-only schema** — migrations only ever add; no principled migration story, and no separation of live-projection state from durable history.
+- **No validation boundary** — external data enters unvalidated except for ad-hoc `_num`/`_bigint` coercion in one module.
+- **Coupling** — detection runs inside the bot's `discord.ext.tasks` loops, binding "decide an alert" to "post to Discord," so detection can't run, scale, or be tested without the bot.
 
-These are not bugs to patch; they are shape problems. v2 is a from-scratch rewrite that fixes the shape: clear service boundaries, async-first I/O, a streaming ingestion path, principled migrations, and validation at the edges.
+These are shape problems, not bugs to patch. v2 is a from-scratch rewrite that fixes the shape: clear service boundaries, a **streaming ingestion rail** with a hot/cold temporal split (ADR-0018), detection separated into `ingest` (ADR-0008/0021), principled migrations, and **validation at the edges**.
 
 ---
 
 ## Scope discipline
 
-v2's north star is **functional parity with v1 plus the Cowork consumer, before any net-new features.** Three deliberate exceptions/cuts:
+v2's north star is **functional parity with v1 plus the Cowork consumer, before any net-new features.** Deliberate cuts/admissions:
 
-- **Auto-trader (foundation) is admitted** — it's a foundation, not a feature. Equity-only, rule-based, library-shaped. The engine (sizing, regime gates, ML) is deferred.
-- **Manual paper trading is admitted** — small addition riding on the same `paper_trades` store as the auto-trader.
-- **Backtest is rebuilt in v2** — on new data/logic models. It's the forcing function that proves the ingestion shape is right (point-in-time queryable, complete, immutable).
+- **Auto-trader is CUT from v2** — it is not v1 parity. It returns post-v2 as its own ground-up service; v2 only preserves the extraction seam (ADR-0027).
+- **Manual paper trading is admitted** — v1 parity, on the `holdings`/`transactions`/`portfolio_snapshots` store with a `source` discriminator.
+- **Backtest is rebuilt in v2** — on new data/logic models; the forcing function that proves the ingestion shape is right (point-in-time queryable, complete, immutable). Options backtest is forward-only (ADR-0020).
 - **EDA is deferred** post-v2 — rebuilt on the new data shapes once v2 is stable.
 
-Out of scope for v2 entirely: live broker integration, multi-leg options positions, ML signals, a web UI, ApeWisdom history preservation.
+Out of scope for v2 entirely: the auto-trader, live broker integration, multi-leg options positions, ML signals, a web UI, ApeWisdom history preservation, charting (ADR-0026), and options streaming (ADR-0019).
 
 ---
 
@@ -47,8 +46,8 @@ v2 splits into three deployable services, each its own container, sharing one `D
               writes alerts +     │              │             │  reads/writes
               NOTIFY              │              │             │  user state
                                   │              │             │
-   Schwab / Tiingo / ApeWisdom    │              │             │
-   SEC / News / TradingView ──►┌──┴────┐   ┌─────┴────┐   ┌────┴────┐
+                                  │              │             │
+Schwab / ApeWisdom / Nasdaq ──►┌──┴────┐   ┌─────┴────┐   ┌────┴────┐
                                │ ingest │   │  serve   │   │   bot   │
                                │(daemon)│   │ (FastAPI)│   │(discord)│
                                └────────┘   └────▲─────┘   └────▲────┘
@@ -60,9 +59,9 @@ v2 splits into three deployable services, each its own container, sharing one `D
                                     └────────────────┘
 ```
 
-- **`ingest`** — long-running daemon. Streams (Schwab L1) + polls (ApeWisdom/SEC/news) all sources, persists them, runs detection, writes `alerts` rows and `NOTIFY`s the bot.
-- **`serve`** — FastAPI read API. The contract surface for Cowork (external), backtest (internal CLI), and the bot (dogfoods the same API).
-- **`bot`** — discord.py presentation layer. LISTENs for alerts, renders embeds, posts; runs the auto-trader library; serves slash commands.
+- **`ingest`** — long-running daemon. Streams Schwab `level_one_equity` + polls ApeWisdom (popularity) and Nasdaq (earnings) + pulls REST options-chain snapshots, persists them, runs detection (bar-close + options scan), writes `alerts` rows and `NOTIFY`s the bot.
+- **`serve`** — FastAPI read API. The contract surface for Cowork (external), backtest (internal CLI), and the bot (dogfoods the same API). Read-mostly over Postgres with a thin Schwab read-through for current data (ADR-0024).
+- **`bot`** — discord.py presentation layer. LISTENs for alerts, renders embeds, posts; serves slash commands and manual paper trading. No detection logic and no auto-trader — both live elsewhere.
 
 Cowork.ai is a **real external consumer** at cutover (an LLM agent platform that pulls stock/industry data to build reports). It is the reason `serve` is a first-class, authenticated, versioned contract rather than an internal seam.
 
@@ -83,7 +82,7 @@ The monorepo restructure (see [ADR-0001](./adr/0001-monorepo-restructure.md)) us
 
 | Dir | Holds | Run behavior |
 |---|---|---|
-| `libs/` | shared libraries — `domain`, `persistence`, `observability`, `core` analysis, `auto_trader`, source adapters | imported, never run alone |
+| `libs/` | shared libraries — `domain`, `persistence`, `observability`, `core` analysis, source adapters | imported, never run alone |
 | `services/` | `ingest`, `serve`, `bot` | long-running daemons, have compose entries |
 | `tools/` | `migrate`, `backfill`, `backtest` | one-shot CLIs, invoked and exit |
 
@@ -95,7 +94,7 @@ Plus `legacy/` holding the old v1 `src/rocketstocks/` during the transition. (`l
 
 Two buses, one abstraction. See [ADR-0005](./adr/0005-event-bus-shape.md).
 
-- **Bus 1 — in-process pubsub inside `ingest`.** Carries source events (`QuoteTick`, `MinuteBar`, `MentionsIngested`, `FilingIngested`, …) and derived events (`SurgeDetected`, `MomentumConfirmed`, …). Subscribers: persister, cache_updater, detectors, alert_writer.
+- **Bus 1 — a deterministic, synchronous, *ordered fan-out* inside `ingest`** (not a pub/sub framework — required by the replay test strategy, ADR-0023). Per `BarClosed`, a fixed handler list runs in order: persister → cache_updater → detector. The options interval scan is a standalone linear pipeline, not a Bus-1 subscriber. See [ADR-0005](./adr/0005-event-bus-shape.md) / [ADR-0021](./adr/0021-intraday-persistence-and-bar-close-detection.md).
 - **Bus 2 — Postgres LISTEN/NOTIFY for cross-service signaling.** `ingest` writes an `alerts` row inside a transaction, then `NOTIFY`s. `bot` LISTENs and posts. On every reconnect the bot reconciles missed work via `SELECT ... WHERE posted_at IS NULL`.
 - **Transactional outbox** for durable event records, so a crash between "write alert" and "NOTIFY" is recoverable.
 - An **EventBus abstraction** lets the implementation swap without touching subscribers — the documented upgrade path is LISTEN/NOTIFY → Redis Streams if/when dashboards or other real-time external consumers arrive.
@@ -104,37 +103,37 @@ Two buses, one abstraction. See [ADR-0005](./adr/0005-event-bus-shape.md).
 
 ## Schwab + options pipeline
 
-**L1 only.** No L2 order books (`nasdaq_book`/`nyse_book`/`options_book`), no `account_activity` (live trading deferred), no forex/futures. See [ADR-0006](./adr/0006-schwab-l1-only-streaming-scope.md).
+**Equity L1 only; options are REST, not streamed.** No L2 order books, no `account_activity` (no live trading), no forex/futures, and **no `level_one_option` streaming** — the per-service stream budget makes it infeasible. See [ADR-0019](./adr/0019-two-band-universe-and-priority.md) (supersedes 0006).
 
-In scope: `level_one_equity` + `chart_equity` + `screener_equity` (full equity surface) and `level_one_option` for a curated chains universe (ATM ± N strikes, near-dated; underlying universe = watchlist + popular + active alert subjects + paper-trade positions). An **OptionsSubscriptionManager** owns add/unsub decisions and reconciles on a cadence.
+**Two-band universe** (ADR-0019): an **equity band** — `level_one_equity` (+ `screener_equity` for discovery), ≤ ~500 underlyings, the whole tracked universe — and an **options band** of **REST chain snapshots only**. A `UniverseManager` recomputes the subscription set from DB-backed sources on a cadence (priority: open positions → alert subjects → watchlists → screener top-10 → top-100 popularity → discovery) and is fully reconstructible on warm-up.
 
-The options data pipeline is three layers — see [ADR-0007](./adr/0007-options-data-pipeline-three-tiers.md):
+**Three datasets**, three purposes (ADR-0020, supersedes 0007):
 
-| Layer | What | Cadence | Universe | Purpose |
+| Dataset | Cadence | Universe | Backfillable | Purpose |
 |---|---|---|---|---|
-| **Tier 1** | in-memory current state | streaming, sub-second | curated | real-time alerts + auto-trader |
-| **Tier 2** | intraday snapshots → `options_chain_history` hypertable | 5-min market / hourly off | curated | intraday IV/volume-build signals |
-| **EOD full** | REST pull of all optionable underlyings | nightly | full market | market-wide OI/volume flow over time |
+| Equity OHLCV | daily + intraday bars | whole (≤500 streamed; backfill deep) | **Yes** | equity backtests + forward returns for event studies |
+| Options 5-min curated | 5-min REST scan | curated (ATM±5, ≤30 DTE) | **No (forward-only)** | live alerts + intraday event studies |
+| Options EOD full | nightly REST (off-hours) | whole ~5–6k | **No (forward-only)** | swing backtests + day-over-day OI; selection-bias-free |
 
-Off-hours fallback: REST polling for ApeWisdom/SEC/news + REST chain snapshots. REST backfill seeds historical data for backtest windows.
+Equity bars are built from the stream and written **bar-on-close** (default 5-minute; ADR-0021); **whole-universe 1-minute** OHLCV is retained via a nightly EOD backfill, with 5-minute/daily as lossless rollups under Timescale compression (ADR-0022). REST backfill seeds historical **equity** bars/earnings for backtest windows — option chains are **not** backfillable.
 
 ---
 
 ## Detection + alerts
 
-- **Detection lives in `ingest`** as Bus 1 subscribers. A detector consumes events, decides, writes an `alerts` row, and `NOTIFY`s. See [ADR-0008](./adr/0008-detection-in-ingest.md).
-- **`bot` is a thin presentation layer** — it LISTENs, renders the embed, posts. No detection logic in the bot. The `alerts` table is the contract between the detection writer and its consumers (bot + auto-trader).
+- **Detection lives in `ingest`**, behind an error boundary so a faulting `decide()` can't crash the capture pipeline. It is **hybrid by data type**: equity = **bar-close** evaluation on `BarClosed` (ADR-0021); options = interval REST scan. A detector decides, writes an `alerts` row (+ outbox) in a transaction, and `NOTIFY`s. Detection is held **extractable** post-v2 (consumes only via the event-source port; only writes `alert`+`outbox`). See [ADR-0008](./adr/0008-detection-in-ingest.md) / [ADR-0021](./adr/0021-intraday-persistence-and-bar-close-detection.md).
+- **`bot` is a thin presentation layer** — it LISTENs, renders the embed, posts. No detection logic in the bot. The `alerts` table is the contract; its sole v2 consumer is the `bot` (the auto-trader is cut — ADR-0027).
+- Detection runs against a durable, deterministic event log that is also the warm-up and backtest input — the basis of the replay test strategy ([ADR-0023](./adr/0023-test-strategy-deterministic-replay.md)).
 
 ---
 
-## Paper trading + auto-trader
+## Paper trading
 
-Paper trading is **two separate tracks**, distinguished by `paper_trades.source` (`manual` / `auto_trader`), with positions/P&L/stats computed per-track for clean attribution. See [ADR-0009](./adr/0009-paper-trading-and-auto-trader-scope.md).
+**Manual paper trading only in v2** — the auto-trader is cut and returns post-v2 as its own service (ADR-0027, supersedes 0009). Trades ride the `holdings`/`transactions`/`portfolio_snapshots` store with a `source` column (`manual` now; `auto_trader` reserved for the post-v2 service), so attribution stays clean when it returns.
 
-- **Auto-trader** is a pure library in `libs/auto_trader/`: `decide_entry` / `decide_exit`, equity-only, rule-based (fixed sizing, fixed stops, optional regime gates). The `bot` runs it on new-alert LISTEN/NOTIFY, writes `paper_trades` (`source=auto_trader`), and polls the cache every 5–30s for position management. Engine (sized positions, regime conditioning, A/B, ML) is deferred post-v2.
-- **Manual paper trading** rides the same store via slash commands (`source=manual`).
-
-Command surface (see Discord section): `/trade buy|sell <ticker> <qty> [limit]` (manual) and `/trade bot performance|positions|history|trade <id>|config` (auto-trader views + policy).
+- Entered via the alert's `💵 Trade` button (a manual paper BUY of the underlying into the clicker's portfolio) and `/trade buy|sell <ticker> <qty> [limit]`.
+- Open positions are streamed (universe priority #1, ADR-0019) for live portfolio marks.
+- The post-v2 auto-trader blueprint — pure library behind data-access ports, its own Bus-2 alert subscription, direct cache reads + trade writes, bot demoted to a serve-backed performance UI — is preserved in [ADR-0027](./adr/0027-manual-paper-trading-only.md) / the superseded ADR-0009.
 
 ---
 
@@ -151,7 +150,7 @@ Slash commands + interactive components (buttons, selects, modals). No `!` prefi
 
 Two command umbrellas (both respect Discord's 3-level nesting limit):
 
-- **`/trade`** — paper trading. `buy`/`sell` direct subcommands + a `bot` subcommand group for auto-trader views/config.
+- **`/trade`** — manual paper trading. `buy`/`sell` subcommands. (The `bot` auto-trader subcommand group is removed — ADR-0027.)
 - **`/setup`** — all admin config. `notifications`, `channels`, `roles` subcommand groups + `schwab` (re-auth) subcommand.
 
 ---
@@ -181,7 +180,7 @@ Per-source policy, freshness at the boundaries — industry "Pattern 2" (service
 
 ## Out of scope for v2
 
-EDA (deferred post-v2), live broker integration, multi-leg options positions, ML-based signals, web UI, ApeWisdom history preservation, auto-trader engine (sizing/regime/A-B/ML). Clean-slate data at cutover — users recreate watchlists; popularity-surge detection accepts a cold-start window. See [ADR-0010](./adr/0010-clean-slate-cutover-data.md) and [ADR-0011](./adr/0011-backtest-in-v2-eda-deferred.md).
+The **auto-trader** (post-v2, its own service — ADR-0027), EDA (deferred post-v2), options **streaming**, live broker integration, multi-leg options positions, ML-based signals, **charting** (ADR-0026), web UI, ApeWisdom history preservation. Clean-slate data at cutover — users recreate watchlists; popularity-surge detection accepts a cold-start window. See [ADR-0010](./adr/0010-clean-slate-cutover-data.md) and [ADR-0011](./adr/0011-backtest-in-v2-eda-deferred.md).
 
 ---
 
@@ -193,7 +192,8 @@ EDA (deferred post-v2), live broker integration, multi-leg options positions, ML
 | 4th external consumer / web UI delegated auth / leak-window concern | API keys → OAuth 2.0 ([ADR-0012](./adr/0012-serving-api-auth-keys-plus-rate-limits.md)) |
 | A source becomes chronically flaky (>N% failure over 24h for K days) | add per-source circuit breakers ([ADR-0017](./adr/0017-failure-mode-trimmed-a.md)) |
 | Web UI / non-Discord identity provider committed | retrofit `users` table ([ADR-0013](./adr/0013-identity-discord-id-only.md)) |
-| Live trading arrives | split auto-trader into its own service ([ADR-0009](./adr/0009-paper-trading-and-auto-trader-scope.md)) |
+| Post-v2: build the auto-trader | stand it up as its own service (Bus-2 alert subscription, data-access ports) ([ADR-0027](./adr/0027-manual-paper-trading-only.md)) |
+| A signal needs sub-minute latency | 1-min bars (config flip) or a tagged intrabar fast-path ([ADR-0021](./adr/0021-intraday-persistence-and-bar-close-detection.md)) |
 | Notification storm becomes painful | add ErrorAggregator + `error_history` ([ADR-0015](./adr/0015-observability-stack-personalized.md)) |
 
 ---
@@ -206,16 +206,26 @@ EDA (deferred post-v2), live broker integration, multi-leg options positions, ML
 | [0002](./adr/0002-three-services-topology.md) | Three-services topology (`ingest`/`serve`/`bot`) |
 | [0003](./adr/0003-postgres-only-timescale-cache.md) | Postgres-only + TimescaleDB + UNLOGGED cache |
 | [0004](./adr/0004-persistence-layer-shape.md) | SQLAlchemy 2.x async + separate Pydantic + Alembic |
-| [0005](./adr/0005-event-bus-shape.md) | Event bus shape (Bus 1 in-process + Bus 2 LISTEN/NOTIFY + outbox) |
-| [0006](./adr/0006-schwab-l1-only-streaming-scope.md) | Schwab L1-only streaming scope |
-| [0007](./adr/0007-options-data-pipeline-three-tiers.md) | Three-layer options data pipeline |
-| [0008](./adr/0008-detection-in-ingest.md) | Detection lives in `ingest`; `bot` is thin |
-| [0009](./adr/0009-paper-trading-and-auto-trader-scope.md) | Paper trading (two tracks) + auto-trader scope |
+| [0005](./adr/0005-event-bus-shape.md) | Event bus shape — *amended: Bus 1 = deterministic fan-out (0021)* |
+| [0006](./adr/0006-schwab-l1-only-streaming-scope.md) | Schwab L1-only streaming scope — **superseded by 0019** |
+| [0007](./adr/0007-options-data-pipeline-three-tiers.md) | Three-layer options data pipeline — **superseded by 0020** |
+| [0008](./adr/0008-detection-in-ingest.md) | Detection lives in `ingest`; `bot` is thin — *amended (0021)* |
+| [0009](./adr/0009-paper-trading-and-auto-trader-scope.md) | Paper trading + auto-trader scope — **superseded by 0027** |
 | [0010](./adr/0010-clean-slate-cutover-data.md) | Clean-slate data at cutover |
-| [0011](./adr/0011-backtest-in-v2-eda-deferred.md) | Backtest in v2; EDA deferred |
+| [0011](./adr/0011-backtest-in-v2-eda-deferred.md) | Backtest in v2; EDA deferred — *amended (forward-only options)* |
 | [0012](./adr/0012-serving-api-auth-keys-plus-rate-limits.md) | Serving API auth — API keys + rate limits |
 | [0013](./adr/0013-identity-discord-id-only.md) | Identity — Discord-ID-only |
-| [0014](./adr/0014-bot-interface-slash-plus-components.md) | Bot interface — slash + components, mobile-first |
+| [0014](./adr/0014-bot-interface-slash-plus-components.md) | Bot interface — slash + components — *amended (no `/trade bot`)* |
 | [0015](./adr/0015-observability-stack-personalized.md) | Observability stack (logs + Prom + notifications + native capture) |
 | [0016](./adr/0016-notifications-layer-db-routing.md) | Notifications layer + DB-table routing |
 | [0017](./adr/0017-failure-mode-trimmed-a.md) | Failure mode — per-source policy + boundary freshness |
+| [0018](./adr/0018-temporal-hot-cold-model-and-warmup.md) | Temporal hot/cold model + startup warm-up |
+| [0019](./adr/0019-two-band-universe-and-priority.md) | Two-band universe + priority/eviction (supersedes 0006) |
+| [0020](./adr/0020-three-datasets-and-backtest-constraints.md) | Three datasets + forward-only options backtest (supersedes 0007) |
+| [0021](./adr/0021-intraday-persistence-and-bar-close-detection.md) | Intraday persistence + bar-close detection |
+| [0022](./adr/0022-bar-retention-storage-compression.md) | Bar retention — whole-universe 1-min + compression |
+| [0023](./adr/0023-test-strategy-deterministic-replay.md) | Test strategy — deterministic replay |
+| [0024](./adr/0024-serve-read-model-boundary.md) | Serve read-model boundary (DB-read vs Schwab read-through) |
+| [0025](./adr/0025-live-source-set-schwab-apewisdom-nasdaq.md) | Live source set — Schwab + ApeWisdom + Nasdaq |
+| [0026](./adr/0026-charting-deprecation-and-reports.md) | Charting deprecated; alert embed + report surfaces |
+| [0027](./adr/0027-manual-paper-trading-only.md) | Manual paper trading only; auto-trader deferred (supersedes 0009) |
