@@ -1,8 +1,10 @@
 # ADR-0009: Paper trading (two tracks) + auto-trader scope
 
-**Status**: Accepted
-**Date locked**: 2026-05-27
+**Status**: **Superseded** by ADR-0027 (manual paper trading only; auto-trader deferred post-v2) — 2026-06-05
+**Date locked**: 2026-05-27 · **Superseded**: 2026-06-05
 **Decision-maker**: John Wolf
+
+> **⚠️ SUPERSEDED 2026-06-05** (ledger "Auto-trader scope cut"). The **auto-trader is cut from v2** — not v1 parity; it will be built ground-up post-v2 as its **own service**, not hosted in `bot`. **Manual paper trading stays** (v1 parity): the `paper_trades`/holdings/portfolio schema, the L13 `💵 Trade` button, and `/trade buy|sell`. The `source` discriminator stays (`manual` now; `auto_trader` returns with the post-v2 service). The **`/trade bot ...` command group is removed** (ADR-0014 amendment). The **post-v2 auto-trader blueprint is intentionally preserved in the Decision section below** (pure library behind data-access ports; own LISTEN/NOTIFY alert subscription; direct cache reads + trade writes; bot demoted to a serve-backed performance UI) — it seeds the post-v2 service. See ADR-0027. Original retained below for history.
 
 ## Context
 
