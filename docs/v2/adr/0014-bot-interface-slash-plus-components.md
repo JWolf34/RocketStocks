@@ -1,8 +1,10 @@
 # ADR-0014: Bot interface — slash commands + interactive components, mobile-first
 
-**Status**: Accepted
-**Date locked**: 2026-05-27
+**Status**: Accepted (**amended** 2026-06-05)
+**Date locked**: 2026-05-27 · **Amended**: 2026-06-05
 **Decision-maker**: John Wolf
+
+> **✎ AMENDED 2026-06-05** (ledger 'Auto-trader scope cut'; ADR-0009/0027). The **`/trade bot ...` command group is removed** — the auto-trader is cut from v2. `/trade` keeps only the manual **`buy`/`sell`** subcommands (manual paper trading, v1 parity). A post-v2 auto-trader service will reintroduce its own command surface.
 
 ## Context
 
@@ -12,12 +14,12 @@ v2's bot is the primary user surface, so its UX matters more than any other pres
 
 **Slash commands + interactive components (buttons, selects, modals). No `!` prefix.**
 
-- Slash commands are the entry points; buttons/selects/modals provide follow-up flows (e.g. "close position" buttons on a `/trade bot positions` view, watchlist-edit modals, channel-select menus).
+- Slash commands are the entry points; buttons/selects/modals provide follow-up flows (e.g. watchlist-edit modals, channel-select menus, position buttons on a manual `/portfolio` view).
 - **Mobile-first layout** — embed widths, buttons-per-row, and field counts are treated as mobile constraints, not desktop-first.
 - **Do not let v1 designs influence v2 designs.** Reason about the best modern Discord experience from scratch; cite v1 only to note a deliberate deviation.
 
 Two command umbrellas, both within Discord's 3-level nesting limit (`command → group → subcommand`):
-- **`/trade`** — paper trading: `buy`/`sell` direct subcommands + a `bot` subcommand group (auto-trader views + config). See ADR-0009.
+- **`/trade`** — manual paper trading: `buy`/`sell` subcommands. *(Amended 2026-06-05: the `bot` subcommand group is removed with the auto-trader — ADR-0009/0027.)*
 - **`/setup`** — all admin config: `notifications`, `channels`, `roles` subcommand groups + a `schwab` (re-auth) subcommand. See ADR-0016.
 
 ## Consequences
