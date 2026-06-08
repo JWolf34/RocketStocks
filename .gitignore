@@ -21,8 +21,7 @@ http_cache.sqlite
 logs/
 
 # Claude
-.claude/
-CLAUDE.md
+
 
 #setuptools-egg-info
 *.egg-info/
