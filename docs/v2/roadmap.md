@@ -46,18 +46,20 @@ Thinnest end-to-end path through all three services, deliberately routed through
 
 ## Phase 2 — Data plane *(appetite: 6–8 weeks; re-spec at midpoint)*
 
-Vertical detector slices + the horizontal capabilities that don't slice vertically. Each detector slice ships with a replay fixture and a parity check against its v1 doc (`docs/alerts/*.md`).
+**Opens with the detection-model design session** (just-in-time, ADR-0030): the novel options-flow detection model is designed against real payloads from the Phase-0 spike + Phase-1 skeleton, and closes as its own ADR/design note *before* detector slices start. v1's alert types are retired — nothing here is parity-checked against `docs/alerts/` (v1-historical). **Named session input:** whether the model fuses **equity-bar context** from `BarClosed` (underlying price/volume — e.g., unusual flow against a flat price) with the options scan; if yes, the single alert class makes the streaming→detection seam load-bearing for real.
 
 - **Horizontals:** `UniverseManager` (two-band, priority/eviction — ADR-0019; **requires a full design note, not a half-page spec**) · warm-up from durable log (ADR-0018) · nightly 1-min EOD backfill + 5-min/daily rollups + compression policies (ADR-0021/0022) · per-source `FreshnessPolicy` + staleness columns (ADR-0017) · notifications layer + routes table (ADR-0016) · ApeWisdom poller + popularity history · Nasdaq earnings poller · options 5-min curated REST scan + options EOD full scan (ADR-0020) · `tools/backfill` (equity history seed).
-- **Verticals (one slice each, replay-fixtured):** volume-accumulation · breakout · momentum-confirmation · watchlist-mover · earnings-mover · popularity-surge · options interval scan detector(s).
+- **Vertical:** the **options-flow detector** — v2's single alert class (ADR-0030) — co-developed with the replay harness, shipping with golden fixtures, the **config-version stamp** on alert rows, and the OI-confirmation update-in-place lifecycle (ADR-0026). Plus the **detector-framework extensibility seams**: detection port, generic alert taxonomy, per-detector config, pluggable rendering.
+- **Canary detector:** S003's skeleton threshold detector is **promoted, not deleted** — it stays in production as a **metrics-only canary on `BarClosed`** (consumes the real detection port, increments `canary_decisions_total`, writes no alert rows, touches no user surface). This keeps the streaming→detection seam production-hot and burn-in-observable until a real equity-bar detector ships; if the design session fuses bar context into the options-flow model, the canary demotes to a test fixture.
 
-**Exit:** full two-band universe streamed/scanned per ADR-0019; all three datasets writing per ADR-0020; warm-up proven by a mid-day restart on the dev box; every detector has a green replay fixture.
+**Exit:** full two-band universe streamed/scanned per ADR-0019; all three datasets writing per ADR-0020; warm-up proven by a mid-day restart on the dev box; the options-flow detector has green replay fixtures; extensibility proven in tests (a trivial second detector registers without pipeline changes).
 
 ## Phase 3 — Surfaces *(appetite: 4–6 weeks)*
 
 - **`serve` (contract-first):** OpenAPI authored + reviewed → endpoints by group (bars/quotes/movers, popularity, earnings, alerts, portfolio) → `service_clients` auth + per-consumer rate limits (ADR-0012) → the Cowork-shaped consumer test runs green against a live instance.
-- **`bot`:** slash + components per ADR-0014 (mobile-first; v1 designs do not anchor) — alert posting with `💵 Trade` button · `/trade buy|sell` manual paper trading (ADR-0027) · `/setup notifications|channels|roles|schwab` · watchlists · report surfaces (no charting — ADR-0026).
-- **`tools/backtest`:** rebuilt on the new datasets (ADR-0011/0020), consuming the same replay seam; options strategies forward-only.
+- **Report-design session** (just-in-time, deferred by ADR-0026): field sets, the top-3 contract ranking basis, and serve exposure for Cowork — closes before the report slices below.
+- **`bot`:** slash + components per ADR-0014 (mobile-first; v1 designs do not anchor) — alert posting with `💵 Trade` button · `/trade buy|sell` manual paper trading (ADR-0027) · `/setup notifications|channels|roles|schwab` · watchlists · report surfaces (no charting — ADR-0026). Bot code is performance-first (defer early; hot reads from the cache); **numeric latency budgets are deliberately deferred to this phase's planning** (ADR-0029).
+- **`tools/backtest`:** rebuilt on the new datasets as a **`serve` API consumer** (the three-consumer contract — ADR-0011), reusing the replay machinery; validates the options-flow signal via event studies (forward equity returns at 1d/3d/5d/10d — ADR-0020); options strategies forward-only.
 
 **Exit:** parity matrix (below) fully green or explicitly cut; bot dogfoods `serve` where the brief requires it.
 
@@ -83,7 +85,7 @@ Cutover proceeds only when **all** criteria hold:
 | G4 | Warm-up | Rehearsal #2 passed (replay state == live state) |
 | G5 | Bot reconcile | Rehearsal #3 passed (missed alerts = posted alerts, no dupes) |
 | G6 | Timescale jobs | Compression observed having compressed chunks; retention/rollup jobs observed firing (or proven by narrowing a policy window) |
-| G7 | Detection liveness | Every shipped detector fired ≥1 real alert during burn-in, or its silence is justified by a replay fixture demonstrating correct no-fire |
+| G7 | Detection liveness | The options-flow detector fired ≥1 real alert during burn-in, or its silence is justified by a replay fixture demonstrating correct no-fire |
 | G8 | Serve contract | Cowork-shaped consumer test green against the burn-in instance; rate limiting demonstrated (429 on burst past configured limit) |
 
 **Cutover:** point users at v2 per ADR-0010 clean slate (watchlists recreated; popularity cold-start accepted; burn-in data carries over by default — no preservation value either way). v1 stops but stays **dormant-restartable for 2 weeks** as the rollback hatch; then `legacy/` is deleted and the brief is updated to mark v2 live.
@@ -92,7 +94,7 @@ Cutover proceeds only when **all** criteria hold:
 
 | v1 capability | v2 disposition |
 |---|---|
-| Alerts: volume-accumulation, breakout, momentum-confirmation, watchlist-mover, earnings-mover, popularity-surge | Rebuilt in `ingest` detection (Phase 2), parity-checked against `docs/alerts/*.md` |
+| Alerts: all six v1 types (volume-accumulation, breakout, momentum-confirmation, watchlist-mover, earnings-mover, popularity-surge) | **Retired** (ADR-0030) — replaced by ONE novel options-flow alert class on an extensible detector framework |
 | Screeners / reports | Report surfaces in `bot` (Phase 3); charting **cut** (ADR-0026) |
 | Watchlists | Rebuilt (Phase 3); data not migrated (ADR-0010) |
 | Manual paper trading (`holdings`/`transactions`/`portfolio_snapshots`) | Rebuilt with `source` discriminator (ADR-0027, Phase 3) |
@@ -106,3 +108,4 @@ Cutover proceeds only when **all** criteria hold:
 ## Status log
 
 - 2026-06-11 — Roadmap created; strategy locked (ADR-0028); v1 code freeze in effect; Phase 0 ready to start.
+- 2026-06-12 — Philosophy review closed: product thesis stated (ADR-0029); detection re-derived — one options-flow alert class, extensible framework, PIT lean mandate (ADR-0030). Phase 2/3, gate G7, and the parity table updated accordingly.
