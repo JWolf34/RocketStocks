@@ -2,7 +2,7 @@
 
 > The single entry point for the v2 architecture. Read this first. Per-decision rationale lives in [adr/](./adr/); this brief summarizes and links out.
 >
-> **Status**: Stage 1 foundational decisions closed 2026-05-27; the data plane was re-designed and re-closed **2026-06-05** (new ADRs 0018–0027; supersedes 0006/0007/0009; amends 0005/0008/0011/0014). **Stage 2 (domain modeling) is next.**
+> **Status**: Stage 1 foundational decisions closed 2026-05-27; the data plane was re-designed and re-closed **2026-06-05** (new ADRs 0018–0027; supersedes 0006/0007/0009; amends 0005/0008/0011/0014). The execution strategy was locked **2026-06-11** (ADR-0028: all-in greenfield, linear build, terminal burn-in gate — see [roadmap.md](./roadmap.md)). **Stage 2 (domain modeling) proceeds as code per roadmap Phase 0; v1 is in code freeze.**
 
 ---
 
@@ -229,3 +229,4 @@ The **auto-trader** (post-v2, its own service — ADR-0027), EDA (deferred post-
 | [0025](./adr/0025-live-source-set-schwab-apewisdom-nasdaq.md) | Live source set — Schwab + ApeWisdom + Nasdaq |
 | [0026](./adr/0026-charting-deprecation-and-reports.md) | Charting deprecated; alert embed + report surfaces |
 | [0027](./adr/0027-manual-paper-trading-only.md) | Manual paper trading only; auto-trader deferred (supersedes 0009) |
+| [0028](./adr/0028-execution-strategy-greenfield-terminal-burn-in.md) | Execution strategy — all-in greenfield + terminal burn-in gate (amends delivery posture of 0001/0010) |
