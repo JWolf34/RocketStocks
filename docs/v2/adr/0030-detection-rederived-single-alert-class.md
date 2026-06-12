@@ -32,7 +32,7 @@ The brief's north star said "functional parity with v1," which implicitly includ
 
 - v2's detection scope shrinks to one signal designed once, well; replay fixtures, event studies, and the burn-in gate all concentrate on it.
 - Users lose the v1 alert types at cutover — a larger user-facing change than the clean slate alone (ADR-0010); communicate it at cutover.
-- v1's pure signal functions (carried to `libs/core/` per ADR-0008) become *available inputs* to the design session, not predestined components — the session decides what survives.
+- v1's pure signal functions (carried to `libs/analysis/` per ADR-0008, as amended) become *available inputs* to the design session, not predestined components — the session decides what survives.
 - Risk: the product rides on one signal's quality. Mitigated by event-study validation from day one and the extensibility requirement, which makes fast follow-on detectors cheap.
 - The brief's scope-discipline section, roadmap Phase 2, and the v1 alert docs (`docs/alerts/`, now historical) are updated to match.
 

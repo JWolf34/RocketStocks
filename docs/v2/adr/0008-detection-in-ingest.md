@@ -24,7 +24,7 @@ The **`alerts` table is the contract** between the detection writer (`ingest`) a
 - The bot can be restarted/redeployed without losing alerts — they're already persisted; the bot reconciles on reconnect.
 - *(Amended 2026-06-05: auto-trader cut from v2.)* In v2 the `bot` is the sole consumer of `alerts` rows — it posts the alert; the persisted row remains the single source of truth for any post-v2 consumer (detection worker / auto-trader) attaching via Bus 2.
 - Cost: detection logic that a contributor might expect "in the bot" is now in `ingest`; this ADR + the brief document that.
-- Pure signal functions (v1's `core/analysis/` style) carry over to `libs/core/` and are reused by detectors and by backtest (ADR-0011) unchanged.
+- Pure signal functions (v1's `core/analysis/` style) carry over to `libs/core/` and are reused by detectors and by backtest (ADR-0011) unchanged. *(Amended 2026-06-12: the member is named `libs/analysis` — ADR-0001 amendment.)*
 
 ## See also
 

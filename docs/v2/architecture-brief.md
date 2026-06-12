@@ -83,11 +83,13 @@ The monorepo restructure (see [ADR-0001](./adr/0001-monorepo-restructure.md)) us
 
 | Dir | Holds | Run behavior |
 |---|---|---|
-| `libs/` | shared libraries — `domain`, `persistence`, `observability`, `core` analysis, source adapters | imported, never run alone |
+| `libs/` | shared libraries — `domain`, `persistence`, `observability`, `analysis` (pure math), `sources` (Schwab/ApeWisdom/Nasdaq) | imported, never run alone |
 | `services/` | `ingest`, `serve`, `bot` | long-running daemons, have compose entries |
 | `tools/` | `migrate`, `backfill`, `backtest` | one-shot CLIs, invoked and exit |
 
 Plus `legacy/` holding the old v1 `src/rocketstocks/` during the transition. (`libs/services/tools` was chosen over the JS-monorepo-style `packages/services/apps` because `services` and `apps` are near-synonyms; `libs/daemon/CLI` is unambiguous.)
+
+Python packages follow one rule: **import name = `rs_` + member dir name** (`rs_domain`, `rs_analysis`, …) with src-layout and per-member packaging, so the layer rules are enforced by each member's dependency closure (ADR-0001 amendment; locked in [S001](./specs/S001-monorepo-restructure.md)).
 
 ---
 

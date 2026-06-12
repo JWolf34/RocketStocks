@@ -1,8 +1,10 @@
 # ADR-0001: Monorepo restructure (`libs` / `services` / `tools` / `legacy`)
 
-**Status**: Accepted
-**Date locked**: 2026-05-27
+**Status**: Accepted (**amended** 2026-06-12)
+**Date locked**: 2026-05-27 · **Amended**: 2026-06-12
 **Decision-maker**: John Wolf
+
+> **✎ AMENDED 2026-06-12** (S001 spec review). Package naming + member layout locked: import name = **`rs_` + member dir name, no exceptions** (`rs_domain`, `rs_persistence`, `rs_observability` — never abbreviated); distributions dashed (`rs-domain`); **src-layout with per-member packaging** (`<root>/<member>/pyproject.toml` + `src/rs_<member>/` + `tests/`), so layer rules are enforced by each member's dependency closure rather than convention. Member renames vs. the draft list below: **`core` → `analysis`** (pure math — indicators, z-scores, flow metrics; "core" is a grab-bag name that also collides with v1's different meaning of it) and the source-adapters member is named **`sources`**. Repo-dev helpers live in `scripts/`, not `tools/`; top-level `tests/` is reserved for cross-service e2e/replay; `rs_common`/`rs_utils` grab-bags are banned.
 
 ## Context
 
@@ -14,7 +16,7 @@ The JS/TS-monorepo convention is `packages/` (libraries) + `apps/` (deployables)
 
 Four top-level roots, each word mapping one-to-one to a category:
 
-- **`libs/`** — shared libraries: `domain`, `persistence`, `observability`, `core` (analysis), `auto_trader`, source adapters. Imported, never run alone.
+- **`libs/`** — shared libraries: `domain`, `persistence`, `observability`, `core` (analysis), `auto_trader`, source adapters. Imported, never run alone. *(Amended 2026-06-12: `core` → `analysis`; source adapters member named `sources`; `auto_trader` deferred with ADR-0027.)*
 - **`services/`** — long-running daemons: `ingest`, `serve`, `bot`. Have `docker-compose` entries; share one `Dockerfile`.
 - **`tools/`** — one-shot CLIs: `migrate`, `backfill`, `backtest`. Invoked, run, exit.
 - **`legacy/`** — the old v1 `src/rocketstocks/`, moved here during the transition (move happens at Stage 2 start, not now).

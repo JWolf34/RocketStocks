@@ -20,7 +20,7 @@ v1 has two research subsystems: a backtest framework (`backtest/`, built on back
 ## Consequences
 
 - Building backtest forces the ingestion shape to be right *by measurement*, not by hope — persistence gaps surface during v2 build, not six months later when history can't be backfilled.
-- Pure signal functions (`libs/core/`) are shared verbatim between live detectors (ADR-0008) and backtest — no adapters.
+- Pure signal functions (`libs/analysis/`, renamed from `libs/core/` — ADR-0001 amendment 2026-06-12) are shared verbatim between live detectors (ADR-0008) and backtest — no adapters.
 - Cost: ~25% scope increase vs cutting backtest; two evolving shapes (new ingestion + new backtest logic) interact during the rewrite.
 - Cost: backtest windows are short at cutover (clean-slate, ADR-0010) and grow as live data accumulates — acceptable; the framework's value is the forcing function and regression-smoke-testing, not deep history on day one.
 
