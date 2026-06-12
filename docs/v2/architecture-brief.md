@@ -2,7 +2,7 @@
 
 > The single entry point for the v2 architecture. Read this first. Per-decision rationale lives in [adr/](./adr/); this brief summarizes and links out.
 >
-> **Status**: Stage 1 foundational decisions closed 2026-05-27; the data plane was re-designed and re-closed **2026-06-05** (new ADRs 0018–0027; supersedes 0006/0007/0009; amends 0005/0008/0011/0014). The execution strategy was locked **2026-06-11** (ADR-0028: all-in greenfield, linear build, terminal burn-in gate — see [roadmap.md](./roadmap.md)). **Stage 2 (domain modeling) proceeds as code per roadmap Phase 0; v1 is in code freeze.**
+> **Status**: Stage 1 foundational decisions closed 2026-05-27; the data plane was re-designed and re-closed **2026-06-05** (new ADRs 0018–0027; supersedes 0006/0007/0009; amends 0005/0008/0011/0014). The execution strategy was locked **2026-06-11** (ADR-0028: all-in greenfield, linear build, terminal burn-in gate — see [roadmap.md](./roadmap.md)). The product thesis + detection scope closed **2026-06-12** (ADR-0029/0030: intraday→swing, options-flow-first; **one novel options-flow alert class — all six v1 alert types retired**). **Stage 2 (domain modeling) proceeds as code per roadmap Phase 0; v1 is in code freeze.**
 
 ---
 
@@ -21,14 +21,15 @@ These are shape problems, not bugs to patch. v2 is a from-scratch rewrite that f
 
 ## Scope discipline
 
-v2's north star is **functional parity with v1 plus the Cowork consumer, before any net-new features.** Deliberate cuts/admissions:
+v2's north star is **platform parity with v1 (watchlists, paper trading, reports, screeners, admin) plus the Cowork consumer, plus ONE novel options-flow alert class — before any further net-new features.** Detection is re-derived for v2, not ported (ADR-0029/0030). Deliberate cuts/admissions:
 
+- **All six v1 alert types are RETIRED** — popularity surge, momentum confirmation, volume accumulation, breakout, watchlist mover, earnings mover. v2's detection model is novel, designed just-in-time at Phase-2 start, on an extensible detector framework (ADR-0030). ApeWisdom/Nasdaq stay as universe/report/serve inputs, not alert sources.
 - **Auto-trader is CUT from v2** — it is not v1 parity. It returns post-v2 as its own ground-up service; v2 only preserves the extraction seam (ADR-0027).
 - **Manual paper trading is admitted** — v1 parity, on the `holdings`/`transactions`/`portfolio_snapshots` store with a `source` discriminator.
 - **Backtest is rebuilt in v2** — on new data/logic models; the forcing function that proves the ingestion shape is right (point-in-time queryable, complete, immutable). Options backtest is forward-only (ADR-0020).
 - **EDA is deferred** post-v2 — rebuilt on the new data shapes once v2 is stable.
 
-Out of scope for v2 entirely: the auto-trader, live broker integration, multi-leg options positions, ML signals, a web UI, ApeWisdom history preservation, charting (ADR-0026), and options streaming (ADR-0019).
+Out of scope for v2 entirely: the six v1 alert types (ADR-0030), the auto-trader, live broker integration, multi-leg options positions, ML signals, a web UI, ApeWisdom history preservation, charting (ADR-0026), and options streaming (ADR-0019).
 
 ---
 
@@ -122,6 +123,7 @@ Equity bars are built from the stream and written **bar-on-close** (default 5-mi
 ## Detection + alerts
 
 - **Detection lives in `ingest`**, behind an error boundary so a faulting `decide()` can't crash the capture pipeline. It is **hybrid by data type**: equity = **bar-close** evaluation on `BarClosed` (ADR-0021); options = interval REST scan. A detector decides, writes an `alerts` row (+ outbox) in a transaction, and `NOTIFY`s. Detection is held **extractable** post-v2 (consumes only via the event-source port; only writes `alert`+`outbox`). See [ADR-0008](./adr/0008-detection-in-ingest.md) / [ADR-0021](./adr/0021-intraday-persistence-and-bar-close-detection.md).
+- **One alert class ships in v2 — the options-flow alert** (ADR-0030). The detection model is novel, designed just-in-time at Phase-2 start; v1's six alert types are retired. Every alert row carries a **detector-config-version stamp**, and curated-snapshot presence doubles as the scan-membership record (the PIT lean mandate). The framework is extensible — detection port, generic alert taxonomy, per-detector config, pluggable rendering — so future detection models are additive.
 - **`bot` is a thin presentation layer** — it LISTENs, renders the embed, posts. No detection logic in the bot. The `alerts` table is the contract; its sole v2 consumer is the `bot` (the auto-trader is cut — ADR-0027).
 - Detection runs against a durable, deterministic event log that is also the warm-up and backtest input — the basis of the replay test strategy ([ADR-0023](./adr/0023-test-strategy-deterministic-replay.md)).
 
@@ -180,7 +182,7 @@ Per-source policy, freshness at the boundaries — industry "Pattern 2" (service
 
 ## Out of scope for v2
 
-The **auto-trader** (post-v2, its own service — ADR-0027), EDA (deferred post-v2), options **streaming**, live broker integration, multi-leg options positions, ML-based signals, **charting** (ADR-0026), web UI, ApeWisdom history preservation. Clean-slate data at cutover — users recreate watchlists; popularity-surge detection accepts a cold-start window. See [ADR-0010](./adr/0010-clean-slate-cutover-data.md) and [ADR-0011](./adr/0011-backtest-in-v2-eda-deferred.md).
+The **six v1 alert types** (retired — ADR-0030), the **auto-trader** (post-v2, its own service — ADR-0027), EDA (deferred post-v2), options **streaming**, live broker integration, multi-leg options positions, ML-based signals, **charting** (ADR-0026), web UI, ApeWisdom history preservation. Clean-slate data at cutover — users recreate watchlists; popularity-surge detection accepts a cold-start window. See [ADR-0010](./adr/0010-clean-slate-cutover-data.md) and [ADR-0011](./adr/0011-backtest-in-v2-eda-deferred.md).
 
 ---
 
@@ -230,3 +232,5 @@ The **auto-trader** (post-v2, its own service — ADR-0027), EDA (deferred post-
 | [0026](./adr/0026-charting-deprecation-and-reports.md) | Charting deprecated; alert embed + report surfaces |
 | [0027](./adr/0027-manual-paper-trading-only.md) | Manual paper trading only; auto-trader deferred (supersedes 0009) |
 | [0028](./adr/0028-execution-strategy-greenfield-terminal-burn-in.md) | Execution strategy — all-in greenfield + terminal burn-in gate (amends delivery posture of 0001/0010) |
+| [0029](./adr/0029-product-thesis-trade-horizon.md) | Product thesis — intraday detection of swing-relevant events; options-flow-first |
+| [0030](./adr/0030-detection-rederived-single-alert-class.md) | Detection re-derived — one alert class, extensible framework, PIT lean mandate (amends the parity north star) |
