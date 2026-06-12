@@ -1,3 +1,5 @@
+> **⚠️ v1-historical.** This documents the **v1** alert system, which remains in production (code-frozen) until v2 cutover. **None of these alert types ship in v2** — v2 detection is re-derived with a single options-flow alert class ([ADR-0030](../v2/adr/0030-detection-rederived-single-alert-class.md)). Retained while v1 runs.
+
 # Watchlist Mover Alert
 
 A Watchlist Mover alert fires when a stock on a user watchlist moves by a statistically unusual amount. Unlike the predictive alerts, this is a reactive alert — traders explicitly want to know when a ticker they're watching is moving right now. There is no leading indicator pipeline for watchlist tickers.

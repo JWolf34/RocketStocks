@@ -1,3 +1,5 @@
+> **⚠️ v1-historical.** This documents the **v1** alert system, which remains in production (code-frozen) until v2 cutover. **None of these alert types ship in v2** — v2 detection is re-derived with a single options-flow alert class ([ADR-0030](../v2/adr/0030-detection-rederived-single-alert-class.md)). Retained while v1 runs.
+
 # Volume Accumulation Alert
 
 A Volume Accumulation alert fires when a stock shows unusually high trading volume without a corresponding price move. This is a leading indicator — it signals that institutional accumulation or distribution may be underway before price has reacted. The [Breakout](breakout.md) alert is the follow-through signal that fires when price confirms the move.

@@ -1,3 +1,5 @@
+> **⚠️ v1-historical.** This documents the **v1** alert system, which remains in production (code-frozen) until v2 cutover. **None of these alert types ship in v2** — v2 detection is re-derived with a single options-flow alert class ([ADR-0030](../v2/adr/0030-detection-rederived-single-alert-class.md)). Retained while v1 runs.
+
 # Breakout Alert
 
 A Breakout alert fires when a stock that previously showed a [Volume Accumulation](volume_accumulation.md) signal has now moved significantly in price. It answers the question: "That stock had unusual volume — did price follow through?"

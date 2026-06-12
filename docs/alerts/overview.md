@@ -1,3 +1,5 @@
+> **⚠️ v1-historical.** This documents the **v1** alert system, which remains in production (code-frozen) until v2 cutover. **None of these alert types ship in v2** — v2 detection is re-derived with a single options-flow alert class ([ADR-0030](../v2/adr/0030-detection-rederived-single-alert-class.md)). Retained while v1 runs.
+
 # Alert System Overview
 
 RocketStocks monitors stocks and fires Discord alerts when statistically unusual activity is detected. The system is designed around **leading indicators** — alerts that fire before price moves, not after. Two independent signal pipelines (social traction, volume divergence) each produce a leading indicator alert followed by a confirmation alert when price follows through.

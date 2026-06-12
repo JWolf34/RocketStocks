@@ -1,3 +1,5 @@
+> **⚠️ v1-historical.** This documents the **v1** alert system, which remains in production (code-frozen) until v2 cutover. **None of these alert types ship in v2** — v2 detection is re-derived with a single options-flow alert class ([ADR-0030](../v2/adr/0030-detection-rederived-single-alert-class.md)). Retained while v1 runs.
+
 # Momentum Confirmation Alert
 
 A Momentum Confirmation alert is the price follow-through signal for a [Popularity Surge](popularity_surge.md). It answers the question: "That stock was lighting up Reddit — did the market actually respond after the surge was detected?"

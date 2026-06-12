@@ -1,3 +1,5 @@
+> **⚠️ v1-historical.** This documents the **v1** alert system, which remains in production (code-frozen) until v2 cutover. **None of these alert types ship in v2** — v2 detection is re-derived with a single options-flow alert class ([ADR-0030](../v2/adr/0030-detection-rederived-single-alert-class.md)). Retained while v1 runs.
+
 # Earnings Mover Alert
 
 An Earnings Mover alert fires when a stock that is scheduled to report earnings today moves by a statistically unusual amount. Earnings events are high-volatility moments — a company beats expectations and gaps up 15%, or misses and drops 20%. This pipeline isolates those tickers so their alerts include earnings context.

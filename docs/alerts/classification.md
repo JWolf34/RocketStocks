@@ -1,3 +1,5 @@
+> **⚠️ v1-historical.** This documents the **v1** alert system, which remains in production (code-frozen) until v2 cutover. **None of these alert types ship in v2** — v2 detection is re-derived with a single options-flow alert class ([ADR-0030](../v2/adr/0030-detection-rederived-single-alert-class.md)). Retained while v1 runs.
+
 # Stock Classification
 
 Every ticker tracked by RocketStocks is assigned a `StockClass` once per trading day. This classification drives **alert strategy** — which detection logic applies. A blue chip uses Bollinger Band analysis; all others use a dynamic z-score threshold that scales continuously with volatility.

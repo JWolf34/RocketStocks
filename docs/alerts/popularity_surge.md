@@ -1,3 +1,5 @@
+> **⚠️ v1-historical.** This documents the **v1** alert system, which remains in production (code-frozen) until v2 cutover. **None of these alert types ship in v2** — v2 detection is re-derived with a single options-flow alert class ([ADR-0030](../v2/adr/0030-detection-rederived-single-alert-class.md)). Retained while v1 runs.
+
 # Popularity Surge Alert
 
 A Popularity Surge alert fires when a stock shows an unusual spike in social media discussion on Reddit, primarily r/WallStreetBets. This is a leading indicator — it tells you that retail traders are talking about a stock before any significant price move has necessarily occurred. The [Momentum Confirmation](momentum_confirmation.md) alert is the follow-through signal that fires when price and volume validate the social interest.
