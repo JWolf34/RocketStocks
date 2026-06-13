@@ -8,6 +8,17 @@ After this slice the four top-level roots from ADR-0001 exist, v1 lives intact a
 
 ## Interface
 
+**Naming convention — locked at spec review 2026-06-12, binding for every member:**
+
+- Import name = **`rs_` + member directory name, no exceptions** (`libs/domain` → `rs_domain`; `libs/observability` → `rs_observability`, never `rs_obs`). Distribution names take dashes (`rs-domain` ↔ `rs_domain`).
+- **src-layout with per-member packaging:** every member is `<root>/<member>/` containing `pyproject.toml` + `src/rs_<member>/` + `tests/`. Each member's `pyproject.toml` declares its allowed dependencies — layer rules are enforced by the dependency closure, not by convention.
+- Tests live per member; top-level `tests/` is reserved for cross-service replay/e2e suites.
+- `libs/` members at creation: `domain`, `persistence`, `observability`, `analysis` (pure math — indicators, z-scores, flow metrics; renamed from ADR-0001's draft `core`), `sources` (Schwab/ApeWisdom/Nasdaq adapters).
+- Repo-dev helpers (lint gates, check scripts) live in `scripts/`, not `tools/` (`tools/` = shipped operational CLIs only).
+- **Banned, permanently:** any `rs_common`/`rs_utils` grab-bag. Shared code belongs to the lib it serves or to `domain`.
+
+Structural deliverables:
+
 - `libs/` · `services/` · `tools/` — created, each with a minimal placeholder package that imports cleanly.
 - `legacy/` — contains the entire current v1: `legacy/src/rocketstocks/`, `legacy/tests/`, `legacy/pyproject.toml` (moved, not rewritten).
 - Root `pyproject.toml` — becomes the workspace root for v2 packages.
@@ -33,13 +44,16 @@ No v2 functionality, no schema, no service code (S002/S003+). No changes to v1 b
 .venv/bin/pytest legacy/tests -q                    # v1 suite green from new path
 docker compose -f docker-compose.yml config -q       # compose still valid
 docker build -f Dockerfile .                         # v1 image builds
-python -c "import rs_domain"                         # v2 placeholder importable (name per decision below)
+python -c "import rs_domain"                         # v2 placeholder packages importable
 ```
 
 ## Open questions
 
-To resolve at spec review (each carries a recommendation):
+To resolve at spec review (each carries a recommendation). *(Package naming + member layout were resolved 2026-06-12 and folded into Interface.)*
 
-1. **v2 package naming.** `legacy/` owns the `rocketstocks` distribution/import name, and both stacks coexist in dev tooling until cutover. **Recommendation:** short `rs_*` prefix for v2 packages (`rs_domain`, `rs_persistence`, `rs_obs`, `rs_core`, services as `rs_ingest`/`rs_serve`/`rs_bot`); legacy stays untouched (mass-renaming frozen v1 violates the freeze).
-2. **Workspace tooling.** **Recommendation:** `uv` workspace at the root (one lockfile, per-package `pyproject.toml`s); fallback is plain editable installs of each package.
-3. **Dev environments.** One shared venv (simple, name-clash-safe under rec. 1) vs. separate venv for `legacy/`. **Recommendation:** one venv until it hurts.
+1. **Workspace tooling.** **Recommendation:** `uv` workspace at the root (one lockfile, per-member `pyproject.toml`s); fallback is plain editable installs of each member.
+2. **Dev environments.** One shared venv (simple, name-clash-safe under the `rs_*` prefix) vs. separate venv for `legacy/`. **Recommendation:** one venv until it hurts.
+
+## Decisions surfaced
+
+Filled during implementation.
