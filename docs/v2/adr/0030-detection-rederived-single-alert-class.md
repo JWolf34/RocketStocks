@@ -22,7 +22,7 @@ The brief's north star said "functional parity with v1," which implicitly includ
 
 - **All v2 detection is 100% replayable.** Already true for the shipping detector by construction: its inputs are options-chain snapshots (immutable, `fetched_at` + `quote_time` — ADR-0020) and equity bars (immutable, whole-universe, read-time-adjusted — ADR-0021/0022).
 - **Every alert row carries a detector-config-version stamp** (or a config JSON snapshot) — for auditability ("why didn't it fire on March 3?") and honest per-config-era live hit rates.
-- **Snapshot presence IS the scan-membership record**: which tickers were in the curated scan at time T = which tickers have `curated_5m` rows at T. No separate membership table.
+- **Snapshot presence IS the scan-membership record**: which tickers were in the curated scan at time T = which tickers have `curated_5m` rows at T. No separate membership table. Per-ticker fetch **failures write a tombstone row** (`source_status='failed'`, no payload) in the same hypertable, so membership stays truthful under failure and gaps remain auditable (gate G2; ADR-0017 amendment).
 - A **universe-membership history table is deferred** until an equity-bar detector ships and needs it.
 - ADR-0021/0022's tagged-non-replayable-overlay clause remains the documented, **unused** escape hatch; nothing feeding a future auto-trader may use it.
 

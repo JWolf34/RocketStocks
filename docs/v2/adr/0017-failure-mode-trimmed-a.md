@@ -1,8 +1,10 @@
 # ADR-0017: Failure mode — per-source policy + freshness at boundaries
 
-**Status**: Accepted
-**Date locked**: 2026-05-27
+**Status**: Accepted (**amended** 2026-06-12)
+**Date locked**: 2026-05-27 · **Amended**: 2026-06-12
 **Decision-maker**: John Wolf
+
+> **✎ AMENDED 2026-06-12** (freshness review). Four refinements. **(1) Two times, named apart:** the serve envelope carries `meta.as_of` (market/event time of the data) *and* `meta.fetched_at` (retrieval time); `meta.stale_since` appears only when a policy has degraded. `as_of` is what off-hours consumers (Cowork) actually need; `fetched_at` measures the pipeline. **(2) Freshness budgets:** each policy declaration carries a `max_age` per dataset (market-hours-scoped for market data) — the policy says *how* to degrade, the budget says *when* "stale" trips; without it every consumer invents its own threshold. **(3) Grain:** policies attach **per dataset (source × data-class), not per source** — Schwab alone spans the equity stream (STALE_OK at the cache), the 5-min curated scan (BEST_EFFORT + tombstones), the EOD full scan (BEST_EFFORT, retry-in-window, alarm on a missed night), and serve's read-through (effectively STRICT for reads — no stored fallback for arbitrary tickers, ADR-0024). Mutations failing loud remains an **invariant**, not a configurable policy. **(4)** `source_status` is row provenance with a small enum pinned at Stage 2 (`ok`/`partial`/`failed`; rename to `fetch_status` if ambiguity bites); failed per-ticker fetches write **tombstone rows** so scan membership stays truthful under failure (ADR-0030) and gate G2's gap audit has rows to count.
 
 ## Context
 
@@ -23,6 +25,20 @@ v2's failure surfaces are heterogeneous: a dropped Schwab stream can serve stale
   - Prometheus exposes `source_last_success_seconds{source=...}`
 - **Mutations fail-loud** — silent write failure is the worst class of bug.
 - Bus events (ADR-0005) carry data only.
+
+## Setting the `max_age` budgets
+
+Budgets are **derived, not invented** — an arbitrary threshold is worse than none (too tight cries wolf on healthy data; too loose green-lights data that already misleads). Each dataset's budget sits in a band between a mechanical floor and a product ceiling:
+
+- **Floor — cadence × miss-tolerance** (engineering). Data can't be fresher than its update cadence, so the budget must clear `cadence × N`, where N is how many consecutive update cycles may fail before it matters (N≈2 for *warn*, N≈3 for *critical*). A budget under the cadence fires constantly on a healthy source.
+- **Ceiling — value decay** (product). How fast the number stops being *true* for the consumer acting on it (an RTH quote in seconds; popularity in tens of minutes; an earnings date in days). Beyond this, the data misleads regardless of pipeline health.
+- **Squeeze check.** If `floor > ceiling`, the source can't deliver inside its useful life — that's a sourcing/product problem no `max_age` fixes, and the budget exercise is what surfaces it early.
+
+**Polled vs. streamed need different questions.** The floor formula applies only to *polled* sources (ApeWisdom, the options scans), which get a true **age budget**. The equity stream has no cadence — an illiquid ticker legitimately doesn't tick for minutes — so it gets a **stream-level liveness budget** ("no tick on *any* subscribed ticker in N seconds during RTH" → ops alarm) while per-ticker quote rows only expose `as_of` for the consumer to judge. Polled = age question; streamed = liveness question.
+
+**Procedure:** (1) write down cadence + decay ceiling; (2) provisional budget = `cadence × 2`, clamped under the ceiling, run the squeeze check; (3) **market-hours-scope** market-data budgets (the clock only runs during RTH, else overnight reads as falsely stale — `as_of` carries the off-hours explanation); (4) **calibrate at burn-in** — the `source_last_success_seconds` gauge already measures the healthy per-dataset distribution, so set each budget above the observed healthy p99 and below the decay ceiling. Provisional-from-theory is just the starting guess burn-in refines.
+
+Budgets are **config, not code** — they live in the `DatasetFreshness` declaration and tune without a deploy; treat the first burn-in window's values as provisional. The producer's budget is the *default stale flag + the ops trigger*, not the last word: a stricter/looser consumer (Cowork) reads `as_of` and applies its own tolerance at the boundary. Specific numbers live in the Stage-2 config table (dated, post-burn-in), not in this ADR.
 
 ## Consequences
 
