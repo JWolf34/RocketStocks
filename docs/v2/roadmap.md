@@ -71,6 +71,8 @@ The complete v2 stack runs unattended against the live market; alerts route to t
 2. One deliberate `ingest` restart mid-market-day: warm-up rebuilds state; replay-vs-live state assertion passes; no duplicate or missing alerts.
 3. One deliberate `bot` kill during market hours: on reconnect, the `posted_at IS NULL` reconcile posts exactly the missed alerts.
 
+**Finalize freshness budgets** (ADR-0017): provisional `max_age` budgets ship into burn-in from first principles (`cadence × 2`, clamped under value decay). During the window, read the per-dataset `source_last_success_seconds` distribution and set each budget above the observed healthy p99 and below its decay ceiling; write the finalized, dated values into the Stage-2 config table. Budgets are config — this tunes without a redeploy.
+
 Operator involvement otherwise limited to reading dashboards/notifications. Every unscheduled manual intervention is logged — they are gate inputs.
 
 ## Phase 5 — Cutover gate + cutover
