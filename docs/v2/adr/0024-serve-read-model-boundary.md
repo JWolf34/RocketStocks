@@ -1,10 +1,10 @@
 # ADR-0024: Serve read-model boundary — DB-read vs Schwab read-through
 
-**Status**: Accepted
-**Date locked**: 2026-06-05
+**Status**: Accepted (amended 2026-07-03)
+**Date locked**: 2026-06-05 · **Amended**: 2026-07-03
 **Decision-maker**: John Wolf
 
-*(Design ledger L15. Reconciles ADR-0012.)*
+*(Reconciles ADR-0012.)*
 
 ## Context
 
@@ -21,6 +21,8 @@
 
 **Reconciles ADR-0012:** because `serve` *can* trigger Schwab fetches on current-data endpoints, ADR-0012's per-consumer rate limits genuinely protect the shared Schwab budget. `serve` holds a Schwab client; `ingest` refreshes the token, `serve` reads it; the global REST budget is shared — coordinate simply, revisit if it bites.
 
+**Cowork consumer profile (stated 2026-07-03; an input to the REST budget):** off-hours operation, DB-history-mostly, read-through for **≤5–10 tickers per session**. The profile is *enforced*, not assumed — Cowork's `service_clients` rate limit (ADR-0012) is sized to it, so the RTH REST headroom (roadmap pre-flight) never budgets for Cowork. A legitimate change in Cowork's usage is a deliberate rate-limit change, reviewed against the budget table.
+
 **Bot read path:** alerts = direct DB (ADR-0008 LISTEN/NOTIFY + reconcile — the intentional event contract); all other reads via `serve` (the bot dogfoods Cowork's contract).
 
 **Deferred:** serving streamed-ticker currents from the UNLOGGED cache (a cache-from-stream optimization). Keeping open positions streamed (ADR-0019) revives a candidate consumer (portfolio P&L) — settle if/when it bites. Backtest reads history-only (no read-through) for point-in-time integrity.
@@ -30,6 +32,11 @@
 - Arbitrary off-hours ticker requests are served correctly without storing per-ticker "now" data.
 - The data contract is stable and predictable per endpoint (source fixed by nature, not by runtime state).
 - Cost: `serve` holds a Schwab client and shares the REST budget; bounded by ADR-0012 rate limits.
+
+## Change log
+
+- 2026-06-05 — locked.
+- 2026-07-03 — amended: Cowork consumer profile recorded and tied to its ADR-0012 rate limit as the enforcement mechanism (REST budget review).
 
 ## See also
 
