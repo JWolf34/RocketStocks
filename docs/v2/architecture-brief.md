@@ -2,13 +2,15 @@
 
 > The single entry point for the v2 architecture. Read this first. Per-decision rationale lives in [adr/](./adr/); this brief summarizes and links out.
 >
+> **Vocabulary**: *Stage 1* = the architecture-decision pass (closed; produced the ADR set). *Stage 2* = domain modeling, delivered **as code** in roadmap **Phase 0** ([S002](./specs/S002-domain-seed-and-persistence-rev-001.md)). "Stage" is design vocabulary; "Phase 0–5" is build vocabulary from [roadmap.md](./roadmap.md).
+>
 > **Status**: Stage 1 foundational decisions closed 2026-05-27; the data plane was re-designed and re-closed **2026-06-05** (new ADRs 0018–0027; supersedes 0006/0007/0009; amends 0005/0008/0011/0014). The execution strategy was locked **2026-06-11** (ADR-0028: all-in greenfield, linear build, terminal burn-in gate — see [roadmap.md](./roadmap.md)). The product thesis + detection scope closed **2026-06-12** (ADR-0029/0030: intraday→swing, options-flow-first; **one novel options-flow alert class — all six v1 alert types retired**). **Stage 2 (domain modeling) proceeds as code per roadmap Phase 0; v1 is in code freeze.**
 
 ---
 
 ## Why v2?
 
-v1 (`src/rocketstocks/`, ~1007 tests) works, but an architectural review surfaced foundational *shape* limits that compose poorly with where the project is going. (Two framings from the first review were overstated and are corrected here: `StockData` is a ~99-line composition root, not a god-object; and the DB layer + Schwab client are already async — the loop is not broadly blocked. The real problems are structural:)
+v1 (`src/rocketstocks/`, ~1007 tests) works, but an architectural review surfaced foundational *shape* limits that compose poorly with where the project is going. The real problems are structural:
 
 - **Poll-only, no streaming path** — everything is poll-driven, so alerts lag the market; there is no low-latency ingestion rail for an options-flow-first product.
 - **Append-only schema** — migrations only ever add; no principled migration story, and no separation of live-projection state from durable history.
@@ -76,6 +78,7 @@ Postgres is the only stateful infrastructure — no Redis. See [ADR-0003](./adr/
 - **UNLOGGED cache table** for hot reads (quote / movers / popularity / fundamentals) — fast, crash-disposable.
 - **SQLAlchemy 2.x async** for DB models (`libs/persistence/models/`); **separate Pydantic models** for domain/API (`libs/domain/`). Repositories convert between them — internal computation fields never leak through the public API. See [ADR-0004](./adr/0004-persistence-layer-shape.md).
 - **Alembic migrations** with autogeneration from SQLAlchemy models.
+- **Backups are operator infrastructure**, decoupled from the repo: block-level VM snapshots (daily/weekly, off-host), restore-rehearsed at burn-in; RPO ≤24h accepted; no in-repo backup tooling in v2. See [ADR-0031](./adr/0031-backup-dr-vm-snapshots.md).
 
 ### Directory layout
 
@@ -98,8 +101,8 @@ Python packages follow one rule: **import name = `rs_` + member dir name** (`rs_
 Two buses, one abstraction. See [ADR-0005](./adr/0005-event-bus-shape.md).
 
 - **Bus 1 — a deterministic, synchronous, *ordered fan-out* inside `ingest`** (not a pub/sub framework — required by the replay test strategy, ADR-0023). Per `BarClosed`, a fixed handler list runs in order: persister → cache_updater → detector. The options interval scan is a standalone linear pipeline, not a Bus-1 subscriber. See [ADR-0005](./adr/0005-event-bus-shape.md) / [ADR-0021](./adr/0021-intraday-persistence-and-bar-close-detection.md).
-- **Bus 2 — Postgres LISTEN/NOTIFY for cross-service signaling.** `ingest` writes an `alerts` row inside a transaction, then `NOTIFY`s. `bot` LISTENs and posts. On every reconnect the bot reconciles missed work via `SELECT ... WHERE posted_at IS NULL`.
-- **Transactional outbox** for durable event records, so a crash between "write alert" and "NOTIFY" is recoverable.
+- **Bus 2 — Postgres LISTEN/NOTIFY for cross-service signaling.** `ingest` writes the `alerts` row, the `outbox` row, and issues `NOTIFY` inside **one transaction** (transactional NOTIFY delivers at commit — write and signal are atomic). `bot` LISTENs and posts; per the **Bus-2 consumer contract** (ADR-0005) it reconciles missed work via `SELECT ... WHERE posted_at IS NULL` on every reconnect *and* on a periodic sweep — NOTIFY is the latency optimization, the sweep is the correctness mechanism.
+- **Transactional outbox** — an append-only durable event ledger and the attachment point for future Bus-2 consumers. **No relay ships in v2**; a producer-side relay arrives only with the external-broker migration (ADR-0005).
 - An **EventBus abstraction** lets the implementation swap without touching subscribers — the documented upgrade path is LISTEN/NOTIFY → Redis Streams if/when dashboards or other real-time external consumers arrive.
 
 ---
@@ -118,7 +121,7 @@ Two buses, one abstraction. See [ADR-0005](./adr/0005-event-bus-shape.md).
 | Options 5-min curated | 5-min REST scan | curated (ATM±5, ≤30 DTE) | **No (forward-only)** | live alerts + intraday event studies |
 | Options EOD full | nightly REST (off-hours) | whole ~5–6k | **No (forward-only)** | swing backtests + day-over-day OI; selection-bias-free |
 
-Equity bars are built from the stream and written **bar-on-close** (default 5-minute; ADR-0021); **whole-universe 1-minute** OHLCV is retained via a nightly EOD backfill, with 5-minute/daily as lossless rollups under Timescale compression (ADR-0022). REST backfill seeds historical **equity** bars/earnings for backtest windows — option chains are **not** backfillable.
+Equity bars live in **two families with two authorities** (ADR-0021/0022): the stream-built 5-minute **detection log** (written bar-on-close, immutable, never reconciled — the only thing replay/warm-up read) and the official **research history** — whole-universe 1-minute OHLCV via a nightly EOD backfill, with 5-minute/daily as lossless rollups under Timescale compression (read by serve/backtest/Cowork). REST backfill seeds historical **equity** data at daily depth for backtest windows (1-min only within Schwab's ~7-day window; historical 5m deliberately dropped behind a trigger condition — ADR-0022); option chains are **not** backfillable.
 
 ---
 
@@ -172,10 +175,10 @@ A four-layer stack, native-only (no external SaaS). See [ADR-0015](./adr/0015-ob
 
 ## Failure mode
 
-Per-source policy, freshness at the boundaries — industry "Pattern 2" (service-mesh / SRE style), not event-time watermarks. See [ADR-0017](./adr/0017-failure-mode-trimmed-a.md).
+Per-dataset policy, freshness at the boundaries — industry "Pattern 2" (service-mesh / SRE style), not event-time watermarks. See [ADR-0017](./adr/0017-failure-mode-trimmed-a.md).
 
-- Each source adapter declares a `FreshnessPolicy`: `STRICT` (raise), `STALE_OK` (serve last-known + flag), `BEST_EFFORT` (skip cycle, retry).
-- Freshness lives in **persistence rows** (`fetched_at`, `source_status`), the **cache** (`stale_since`), the **API response envelope** (`meta.fetched_at` / `meta.stale_since`), and **Prometheus** (`source_last_success_seconds`).
+- Each dataset (source × data-class) declares a `FreshnessPolicy` — `STRICT` (raise), `STALE_OK` (serve last-known + flag), `BEST_EFFORT` (skip cycle, retry) — plus a `max_age` budget saying when "stale" trips (finalized at burn-in; stored in a Postgres config table).
+- Freshness lives in **persistence rows** (`fetched_at`, `source_status`; failed per-ticker fetches write tombstone rows), the **cache** (`stale_since`), the **API response envelope** (`meta.as_of` + `meta.fetched_at`; `meta.stale_since` only when degraded), and **Prometheus** (`source_last_success_seconds`).
 - **Bus events stay clean** — no freshness propagation, because 90% of subscribers don't read it.
 - **Mutations fail-loud** — silent write failure is the worst class of bug.
 - Circuit breakers deferred behind documented trigger conditions.
@@ -184,7 +187,7 @@ Per-source policy, freshness at the boundaries — industry "Pattern 2" (service
 
 ## Out of scope for v2
 
-The **six v1 alert types** (retired — ADR-0030), the **auto-trader** (post-v2, its own service — ADR-0027), EDA (deferred post-v2), options **streaming**, live broker integration, multi-leg options positions, ML-based signals, **charting** (ADR-0026), web UI, ApeWisdom history preservation. Clean-slate data at cutover — users recreate watchlists; popularity-surge detection accepts a cold-start window. See [ADR-0010](./adr/0010-clean-slate-cutover-data.md) and [ADR-0011](./adr/0011-backtest-in-v2-eda-deferred.md).
+The **six v1 alert types** (retired — ADR-0030), the **auto-trader** (post-v2, its own service — ADR-0027), EDA (deferred post-v2), options **streaming**, **extended-hours market data** (RTH-only — ADR-0021), live broker integration, multi-leg options positions, ML-based signals, **charting** (ADR-0026), web UI, ApeWisdom history preservation. Clean-slate data at cutover — users recreate watchlists; popularity-surge detection accepts a cold-start window. See [ADR-0010](./adr/0010-clean-slate-cutover-data.md) and [ADR-0011](./adr/0011-backtest-in-v2-eda-deferred.md).
 
 ---
 
@@ -199,6 +202,7 @@ The **six v1 alert types** (retired — ADR-0030), the **auto-trader** (post-v2,
 | Post-v2: build the auto-trader | stand it up as its own service (Bus-2 alert subscription, data-access ports) ([ADR-0027](./adr/0027-manual-paper-trading-only.md)) |
 | A signal needs sub-minute latency | 1-min bars (config flip) or a tagged intrabar fast-path ([ADR-0021](./adr/0021-intraday-persistence-and-bar-close-detection.md)) |
 | Notification storm becomes painful | add ErrorAggregator + `error_history` ([ADR-0015](./adr/0015-observability-stack-personalized.md)) |
+| A restore in anger hurts at 24h RPO / a consumer depends on snapshot completeness | in-repo WAL archiving (pgBackRest) — post-v2 ([ADR-0031](./adr/0031-backup-dr-vm-snapshots.md)) |
 
 ---
 
@@ -207,10 +211,10 @@ The **six v1 alert types** (retired — ADR-0030), the **auto-trader** (post-v2,
 | ADR | Title |
 |---|---|
 | [0001](./adr/0001-monorepo-restructure.md) | Monorepo restructure (`libs`/`services`/`tools`/`legacy`) + `feat/v2-rewrite` branch |
-| [0002](./adr/0002-three-services-topology.md) | Three-services topology (`ingest`/`serve`/`bot`) |
+| [0002](./adr/0002-three-services-topology.md) | Three-services topology (`ingest`/`serve`/`bot`) — *amended: auto-trader refs updated (0027)* |
 | [0003](./adr/0003-postgres-only-timescale-cache.md) | Postgres-only + TimescaleDB + UNLOGGED cache |
 | [0004](./adr/0004-persistence-layer-shape.md) | SQLAlchemy 2.x async + separate Pydantic + Alembic |
-| [0005](./adr/0005-event-bus-shape.md) | Event bus shape — *amended: Bus 1 = deterministic fan-out (0021)* |
+| [0005](./adr/0005-event-bus-shape.md) | Event bus shape — *amended: deterministic fan-out (0021); no relay + consumer contract (2026-07-03)* |
 | [0006](./adr/0006-schwab-l1-only-streaming-scope.md) | Schwab L1-only streaming scope — **superseded by 0019** |
 | [0007](./adr/0007-options-data-pipeline-three-tiers.md) | Three-layer options data pipeline — **superseded by 0020** |
 | [0008](./adr/0008-detection-in-ingest.md) | Detection lives in `ingest`; `bot` is thin — *amended (0021)* |
@@ -222,17 +226,18 @@ The **six v1 alert types** (retired — ADR-0030), the **auto-trader** (post-v2,
 | [0014](./adr/0014-bot-interface-slash-plus-components.md) | Bot interface — slash + components — *amended (no `/trade bot`)* |
 | [0015](./adr/0015-observability-stack-personalized.md) | Observability stack (logs + Prom + notifications + native capture) |
 | [0016](./adr/0016-notifications-layer-db-routing.md) | Notifications layer + DB-table routing |
-| [0017](./adr/0017-failure-mode-trimmed-a.md) | Failure mode — per-source policy + boundary freshness |
+| [0017](./adr/0017-failure-mode-trimmed-a.md) | Failure mode — per-dataset policy + boundary freshness — *amended (freshness budgets, tombstones)* |
 | [0018](./adr/0018-temporal-hot-cold-model-and-warmup.md) | Temporal hot/cold model + startup warm-up |
 | [0019](./adr/0019-two-band-universe-and-priority.md) | Two-band universe + priority/eviction (supersedes 0006) |
-| [0020](./adr/0020-three-datasets-and-backtest-constraints.md) | Three datasets + forward-only options backtest (supersedes 0007) |
-| [0021](./adr/0021-intraday-persistence-and-bar-close-detection.md) | Intraday persistence + bar-close detection |
-| [0022](./adr/0022-bar-retention-storage-compression.md) | Bar retention — whole-universe 1-min + compression |
+| [0020](./adr/0020-three-datasets-and-backtest-constraints.md) | Three datasets + forward-only options backtest (supersedes 0007) — *amended (seeding policy; budget-derived curated size)* |
+| [0021](./adr/0021-intraday-persistence-and-bar-close-detection.md) | Intraday persistence + bar-close detection — *amended (detection log vs. research history)* |
+| [0022](./adr/0022-bar-retention-storage-compression.md) | Bar retention — whole-universe 1-min + compression — *amended (two families, seeding policy, 7-day bound)* |
 | [0023](./adr/0023-test-strategy-deterministic-replay.md) | Test strategy — deterministic replay |
-| [0024](./adr/0024-serve-read-model-boundary.md) | Serve read-model boundary (DB-read vs Schwab read-through) |
-| [0025](./adr/0025-live-source-set-schwab-apewisdom-nasdaq.md) | Live source set — Schwab + ApeWisdom + Nasdaq |
-| [0026](./adr/0026-charting-deprecation-and-reports.md) | Charting deprecated; alert embed + report surfaces |
+| [0024](./adr/0024-serve-read-model-boundary.md) | Serve read-model boundary (DB-read vs Schwab read-through) — *amended (Cowork profile + limit enforcement)* |
+| [0025](./adr/0025-live-source-set-schwab-apewisdom-nasdaq.md) | Live source set — Schwab + ApeWisdom + Nasdaq — *amended (corporate actions + symbol master)* |
+| [0026](./adr/0026-charting-deprecation-and-reports.md) | Charting deprecated; alert-presentation principles + report surfaces — *amended (field layout → presentation spec)* |
 | [0027](./adr/0027-manual-paper-trading-only.md) | Manual paper trading only; auto-trader deferred (supersedes 0009) |
 | [0028](./adr/0028-execution-strategy-greenfield-terminal-burn-in.md) | Execution strategy — all-in greenfield + terminal burn-in gate (amends delivery posture of 0001/0010) |
 | [0029](./adr/0029-product-thesis-trade-horizon.md) | Product thesis — intraday detection of swing-relevant events; options-flow-first |
 | [0030](./adr/0030-detection-rederived-single-alert-class.md) | Detection re-derived — one alert class, extensible framework, PIT lean mandate (amends the parity north star) |
+| [0031](./adr/0031-backup-dr-vm-snapshots.md) | Backup & DR — operator-level VM snapshots, restore-rehearsed; in-repo tooling post-v2 |
