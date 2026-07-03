@@ -1,10 +1,10 @@
 # ADR-0020: Three datasets, three purposes; options forward-only backtest
 
-**Status**: Accepted
-**Date locked**: 2026-06-05
+**Status**: Accepted (amended 2026-07-03)
+**Date locked**: 2026-06-05 · **Amended**: 2026-07-03
 **Decision-maker**: John Wolf
 
-*(Design ledger L5/L6. Supersedes ADR-0007; backtest specifics also amend ADR-0011.)*
+*(Supersedes ADR-0007; backtest specifics also amend ADR-0011.)*
 
 ## Context
 
@@ -16,11 +16,13 @@ Options data serves two different needs — live alerts (curated, intraday) and 
 
 | Dataset | Cadence | Universe | Backfillable | Purpose |
 |---|---|---|---|---|
-| Equity OHLCV | daily + intraday bars | whole (≤500 streamed live; backfill deep) | **Yes** | equity backtests (deep history); forward returns for event studies |
+| Equity OHLCV | daily + intraday bars | whole (≤500 streamed live; backfill deep) | **Yes** (daily deep; 1-min ≤7 days; historical 5m dropped — ADR-0022) | equity backtests (deep history); forward returns for event studies |
 | Options 5-min curated | 5-min REST scan | curated ~300–500 (ATM±5, ≤30 DTE) | **No (forward-only)** | live alerts + intraday event studies |
 | Options EOD full | nightly REST (~1h off-hours) | whole ~5–6k | **No (forward-only)** | daily swing backtests + day-over-day OI; selection-bias-free |
 
 All snapshots are immutable and point-in-time (`fetched_at`, `source_status`, per-contract `quote_time`), stored in one `options_chain_snapshot` hypertable with a `tier` discriminator (`curated_5m` / `eod_full`). (Full per-contract field schema is a Stage-2 domain-modeling artifact.)
+
+**The curated universe size is budget-derived, not fixed:** as many underlyings as the REST headroom rule allows at the 5-min cadence (roadmap pre-flight: RTH steady-state ≤ ~80% of the measured limit; at a working ~100/min that yields ~400 underlyings — the ~300–500 above is the working range). Overflow knobs in priority order: **shrink the curated universe first** (ADR-0019's priority/eviction order exists for exactly this); stretch the scan cadence only as a last resort (ADR-0029 ties the 5-minute cadence to the product thesis).
 
 **Backtest / research constraints:**
 
@@ -34,6 +36,11 @@ All snapshots are immutable and point-in-time (`fetched_at`, `source_status`, pe
 - Live alerts get curated intraday depth; research gets bias-free market-wide breadth.
 - The forward-only constraint makes capture-from-cutover the only irreversible task; the EOD-full tier is the primary bias-free research dataset.
 - Cost: deep options backtests are impossible until history accumulates; equity history covers the gap.
+
+## Change log
+
+- 2026-06-05 — locked.
+- 2026-07-03 — amended: equity "backfillable" qualified per the seeding policy (daily deep; 1-min ≤7 days; historical 5m dropped — ADR-0022); curated universe size made explicitly budget-derived with overflow-knob priority (REST budget review).
 
 ## See also
 
