@@ -2,6 +2,13 @@
 
 A Discord bot that delivers real-time stock market alerts and screener reports using technical analysis, sentiment data, and multiple financial APIs.
 
+## ⚠️ v2 rewrite in progress — read this first
+
+- **v1 (`src/rocketstocks/`) is in code freeze** (since 2026-06-11): bugfixes only, no feature work. It keeps serving users untouched until v2 cutover.
+- **All v2 work starts at [docs/v2/README.md](docs/v2/README.md)** → architecture brief (entry point), ADRs (decision rationale), roadmap (phases + gate criteria), specs (per-slice work items).
+- **v2 work is spec-driven**: every slice gets a spec in `docs/v2/specs/` reviewed *before* implementation. Do not write v2 code without one. If reality disagrees mid-build, update the spec in the same PR; architectural decisions are promoted to new ADRs.
+- **The rest of this file describes v1.** `docs/alerts/` is v1-historical — none of those alert types ship in v2 (ADR-0030).
+
 ## Tech Stack
 
 - **Language:** Python 3.12+
