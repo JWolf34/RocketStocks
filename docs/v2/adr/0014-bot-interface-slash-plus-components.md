@@ -4,7 +4,7 @@
 **Date locked**: 2026-05-27 · **Amended**: 2026-06-05
 **Decision-maker**: John Wolf
 
-> **✎ AMENDED 2026-06-05** (ledger 'Auto-trader scope cut'; ADR-0009/0027). The **`/trade bot ...` command group is removed** — the auto-trader is cut from v2. `/trade` keeps only the manual **`buy`/`sell`** subcommands (manual paper trading, v1 parity). A post-v2 auto-trader service will reintroduce its own command surface.
+> **✎ AMENDED 2026-06-05** (ADR-0009/0027). The **`/trade bot ...` command group is removed** — the auto-trader is cut from v2. `/trade` keeps only the manual **`buy`/`sell`** subcommands (manual paper trading, v1 parity). A post-v2 auto-trader service will reintroduce its own command surface.
 
 ## Context
 
@@ -35,4 +35,3 @@ Two command umbrellas, both within Discord's 3-level nesting limit (`command →
 - [architecture-brief.md § Discord surface](../architecture-brief.md#discord-surface)
 - [ADR-0009: Paper trading + auto-trader](./0009-paper-trading-and-auto-trader-scope.md)
 - [ADR-0016: Notifications layer](./0016-notifications-layer-db-routing.md)
-- [feedback_v2_design_philosophy memory] — mobile-first, no v1 influence
