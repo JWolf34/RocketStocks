@@ -4,7 +4,7 @@
 **Date locked**: 2026-06-05
 **Decision-maker**: John Wolf
 
-*(Design ledger L4. Supersedes the universe portions of ADR-0006.)*
+*(Supersedes the universe portions of ADR-0006.)*
 
 ## Context
 
@@ -21,7 +21,7 @@ Schwab's streaming budget is per-service and effectively bounded (the legacy "50
 
 1. paper-trade open positions → 2. active alert subjects → 3. watchlists → 4. screener top-10 (per sort combo) → 5. top-100 popularity → 6. discovery slots.
 
-A **`UniverseManager`** recomputes desired sets from DB-backed sources on a cadence, diffs against current subscriptions, ADD/UNSUBs, and evicts the lowest-priority members when over budget. It is fully reconstructible from Postgres on restart (ADR-0018).
+A **`UniverseManager`** recomputes desired sets from DB-backed sources on a cadence, diffs against current subscriptions, ADD/UNSUBs, and evicts the lowest-priority members when over budget. It is fully reconstructible from Postgres on restart (ADR-0018). The symbol master behind these sets is the Nasdaq Trader listing files (US-listed universe — ADR-0025); filter rules and the listing-lifecycle handling live in the `UniverseManager` design note (roadmap Phase 2).
 
 ## Consequences
 
