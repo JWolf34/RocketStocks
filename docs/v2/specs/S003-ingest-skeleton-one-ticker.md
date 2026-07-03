@@ -24,7 +24,7 @@ No universe manager (one hardcoded ticker), no options scans, no warm-up, no rea
 - [ ] Runs one full live market session on the dev box without operator intervention; disconnects are survived via reconnect and visible in logs/metrics.
 - [ ] Bars persisted for the session (RTH ≈ 78 five-minute bars; gaps allowed only where the stream was down — and then visible in logs).
 - [ ] Persisted bars sanity-check against Schwab REST price-history for the same day within a stated tolerance (stream-built vs. official bars need not be identical; the comparison + tolerance is part of the deliverable).
-- [ ] ≥1 alert written by the threshold detector; `outbox` row count equals `alerts` row count; alert write + outbox write share one transaction.
+- [ ] ≥1 alert written by the threshold detector; `outbox` row count equals `alerts` row count; alert write + outbox write + `NOTIFY` share one transaction (transactional NOTIFY, delivered at commit — ADR-0005).
 - [ ] A separate `psql` session holding `LISTEN` receives the notification for each alert.
 - [ ] A planted always-raises detector run shows capture continuing (error boundary proven), then is removed.
 - [ ] Session fixture recorded as JSONL; it parses back into domain events that re-sort to the identical order.
@@ -33,7 +33,7 @@ No universe manager (one hardcoded ticker), no options scans, no warm-up, no rea
 
 ```bash
 python -m rs_ingest                                  # run across a market session (dev box)
-psql "$DB" -c "SELECT count(*) FROM bars WHERE symbol='SPY' AND bucket::date = current_date"
+psql "$DB" -c "SELECT count(*) FROM stream_bars_5m WHERE symbol='SPY' AND bucket::date = current_date"
 psql "$DB" -c "SELECT (SELECT count(*) FROM alerts) = (SELECT count(*) FROM outbox)"
 psql "$DB" -c "LISTEN alerts;"                       # in a second session; observe NOTIFY on next alert
 .venv/bin/pytest libs/ services/ingest -q            # unit tests incl. fixture round-trip
@@ -46,7 +46,7 @@ To resolve at spec review (each carries a recommendation):
 
 1. **Schwab client.** Port v1's proven auth/token handling into a `libs/` source adapter vs. adopt `schwab-py`. **Recommendation:** decide after the Phase-0 streaming spike; default to porting v1's token flow (it works and the re-auth tooling exists) with the stream layer written fresh against the spike's payload samples.
 2. **v2 token storage** location/format (must serve the ADR-0016 expiry-notification path later).
-3. **Bar bucketing rule** — which timestamp closes a bar (event time vs. wall clock at close). May be finalized during implementation rather than at review, but it must come out of this slice explicitly documented, since detection, warm-up, and replay all hang off it.
+3. **Bar bucketing rule** — which timestamp closes a bar (event time vs. wall clock at close), plus the session boundaries (RTH-only per ADR-0021: day's first bar 09:30–09:35 ET; half-day handling). May be finalized during implementation rather than at review, but it must come out of this slice explicitly documented, since detection, warm-up, and replay all hang off it.
 
 ## Decisions surfaced
 
