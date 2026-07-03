@@ -4,8 +4,6 @@
 **Date locked**: 2026-06-05
 **Decision-maker**: John Wolf
 
-*(Design ledger L1/L2.)*
-
 ## Context
 
 The initial v2 plan leaned "store everything point-in-time and stream everything." Pressure-testing against the product (swing-trade horizon, options-flow-first, reliability as #1 goal) and Schwab's limits (per-service stream budget, REST ~100/min, option chains not backfillable) showed that detection *cadence* and persistence *granularity* are independent axes that were being conflated. We need an explicit temporal model that makes restart-safety and backtest-replay fall out for free rather than being bolted on.

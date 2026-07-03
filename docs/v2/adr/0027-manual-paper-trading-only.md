@@ -4,7 +4,7 @@
 **Date locked**: 2026-06-05
 **Decision-maker**: John Wolf
 
-*(Design ledger "Auto-trader scope cut." Supersedes ADR-0009.)*
+*(Supersedes ADR-0009.)*
 
 ## Context
 

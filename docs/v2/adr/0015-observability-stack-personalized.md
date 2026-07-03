@@ -32,4 +32,3 @@ Four independent layers, native-only:
 
 - [architecture-brief.md § Observability](../architecture-brief.md#observability)
 - [ADR-0016: Notifications layer](./0016-notifications-layer-db-routing.md)
-- [feedback_native_over_external_deps memory] — native over external SaaS

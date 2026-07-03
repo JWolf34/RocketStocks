@@ -4,8 +4,6 @@
 **Date locked**: 2026-06-05
 **Decision-maker**: John Wolf
 
-*(Design ledger L16.)*
-
 ## Context
 
 Reliability is v2's #1 goal, yet no test-strategy decision existed. The risk in this system is concentrated in the *temporal detection pipeline* (rolling windows, eviction, ordering, dedup, confirm-in-place, outbox writes) — exactly where unit tests are weakest. The temporal model (ADR-0018) already makes warm-up and backtest the *same replay over the durable log*, so deterministic replay-as-test is nearly free, and it directly addresses v1's worst flakiness (event-loop pollution, missing golden fixtures, a stale hardcoded date).
