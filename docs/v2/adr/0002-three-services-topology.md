@@ -1,6 +1,6 @@
 # ADR-0002: Three-services topology (`ingest` / `serve` / `bot`)
 
-**Status**: Accepted
+**Status**: Accepted (amended 2026-07-03)
 **Date locked**: 2026-05-27
 **Decision-maker**: John Wolf
 
@@ -14,7 +14,7 @@ Split into three deployable services, each its own container, sharing one `Docke
 
 - **`ingest`** — long-running daemon. Owns all source adapters (streaming + polling), persistence writes, the in-process event bus, detection, and alert writing. The only writer of source data and `alerts` rows.
 - **`serve`** — FastAPI read API. The authenticated, versioned contract surface consumed by Cowork (external), the backtest CLI (internal), and the bot (dogfoods it).
-- **`bot`** — discord.py presentation. LISTENs for alerts, renders/posts embeds, serves slash commands, runs the auto-trader library.
+- **`bot`** — discord.py presentation. LISTENs for alerts, renders/posts embeds, serves slash commands and manual paper trading. No detection logic and no auto-trader (cut from v2 — ADR-0027).
 
 ## Consequences
 
@@ -26,11 +26,17 @@ Split into three deployable services, each its own container, sharing one `Docke
 
 ## Trigger conditions for revisit
 
-- If live trading arrives, the auto-trader splits out of `bot` into its own service (see ADR-0009).
+- The post-v2 auto-trader arrives as its own (fourth) service, attaching via Bus 2 (ADR-0027) — not hosted in `bot`.
 - If `serve` read load or `ingest` write load diverge enough to need independent dependency sets, split the shared `Dockerfile`.
+
+## Change log
+
+- 2026-05-27 — locked.
+- 2026-07-03 — auto-trader references updated to match ADR-0027 (auto-trader cut from v2; originally the `bot` bullet said it "runs the auto-trader library" and the revisit trigger pointed at ADR-0009).
 
 ## See also
 
 - [architecture-brief.md § Three services](../architecture-brief.md#three-services)
 - [ADR-0005: Event bus shape](./0005-event-bus-shape.md)
 - [ADR-0008: Detection in ingest](./0008-detection-in-ingest.md)
+- [ADR-0027: Manual paper trading only](./0027-manual-paper-trading-only.md)
