@@ -1,10 +1,8 @@
 # ADR-0008: Detection lives in `ingest`; `bot` is a thin presentation layer
 
-**Status**: Accepted (**amended** 2026-06-05)
+**Status**: Accepted (amended 2026-06-05; amendments folded into body 2026-07-03)
 **Date locked**: 2026-05-27 · **Amended**: 2026-06-05
 **Decision-maker**: John Wolf
-
-> **✎ AMENDED 2026-06-05** (ledger L18, L3; ADR-0009 superseded). Detection **stays in `ingest`**, now wrapped in an **error boundary** — a faulting `decide()` is caught/logged and cannot crash the capture pipeline (capture is the irreplaceable asset; detection is replayable over the durable log). Detection is **extractable post-v2** as its own service, held open by two constraints: it consumes events *only* via the **event-source port** (L16) and its only outputs are `alert`+`outbox` rows; extraction = add a log-tailing source adapter + a deploy target (Bus-2 consumer), detector code unchanged. Detection is **hybrid by data type** (L3): equity = **bar-close** evaluation on `BarClosed` (L17); options = interval REST scan. The `alerts` table contract now has **one v2 consumer, `bot`** — the auto-trader is cut (ADR-0009/0027).
 
 ## Context
 
@@ -12,22 +10,36 @@ In v1, alert detection runs inside the bot via `discord.ext.tasks` loops — the
 
 ## Decision
 
-**Detection lives in `ingest`** as Bus 1 subscribers. A detector consumes source/derived events, decides, writes an `alerts` row (inside a transaction, with an outbox record), and the relay `NOTIFY`s the bot (ADR-0005).
+**Detection lives in `ingest`**, wrapped in an **error boundary**: a faulting `decide()` is caught, logged, and counted — it cannot crash the capture pipeline. Capture is the irreplaceable asset; detection is replayable over the durable log.
 
-**`bot` is a thin presentation layer**: LISTEN → fetch the alert row → render embed → post → mark `posted_at`. No detection logic in the bot.
+**Detection is hybrid by data type** (ADR-0021): equity = **bar-close** evaluation on `BarClosed` (a Bus-1 handler — ADR-0005); options = interval REST scan (a standalone linear pipeline). A detector consumes events, decides, writes an `alerts` row (inside a transaction, with an outbox record), and the bot is `NOTIFY`ed (ADR-0005).
 
-The **`alerts` table is the contract** between the detection writer (`ingest`) and its consumer (`bot` for posting). *(Amended 2026-06-05: the auto-trader consumer is cut from v2 — ADR-0009/0027; a post-v2 detection worker or auto-trader would attach as a Bus-2 consumer tailing the durable log.)*
+**`bot` is a thin presentation layer**: LISTEN → fetch the alert row → render embed → post → mark `posted_at`. No detection logic in the bot. Recovery follows the Bus-2 consumer contract (ADR-0005): the `posted_at IS NULL` reconcile runs on every reconnect **and on a periodic sweep while connected** — NOTIFY is the latency optimization, the sweep is the correctness mechanism.
+
+**The `alerts` table is the contract** between the detection writer (`ingest`) and its consumers. In v2 it has exactly one consumer: `bot` (the auto-trader is cut — ADR-0027). The persisted row remains the single source of truth for any post-v2 consumer (detection worker / auto-trader) attaching via Bus 2.
+
+**Detection is held extractable post-v2** as its own service, by two constraints: it consumes events *only* via the event-source port (ADR-0023), and its only outputs are `alert`+`outbox` rows. Extraction = add a log-tailing source adapter + a deploy target (Bus-2 consumer); detector code unchanged.
 
 ## Consequences
 
 - Detection runs at ingestion speed, independent of Discord I/O and bot uptime.
 - The bot can be restarted/redeployed without losing alerts — they're already persisted; the bot reconciles on reconnect.
-- *(Amended 2026-06-05: auto-trader cut from v2.)* In v2 the `bot` is the sole consumer of `alerts` rows — it posts the alert; the persisted row remains the single source of truth for any post-v2 consumer (detection worker / auto-trader) attaching via Bus 2.
+- The error boundary means a bad detector degrades detection only; data capture continues.
 - Cost: detection logic that a contributor might expect "in the bot" is now in `ingest`; this ADR + the brief document that.
-- Pure signal functions (v1's `core/analysis/` style) carry over to `libs/core/` and are reused by detectors and by backtest (ADR-0011) unchanged. *(Amended 2026-06-12: the member is named `libs/analysis` — ADR-0001 amendment.)*
+- Pure signal functions (v1's `core/analysis/` style) carry over to `libs/analysis/` (ADR-0001 amendment) and are available to detectors and to backtest (ADR-0011) — as inputs to the Phase-2 detection design session, not predestined components (ADR-0030).
+
+## Change log
+
+- 2026-05-27 — locked (detection in `ingest` as Bus-1 subscribers; `alerts` contract had two planned consumers: `bot` + auto-trader).
+- 2026-06-05 — amended: error boundary added; extractability constraints pinned; detection made hybrid by data type (bar-close + options scan); auto-trader consumer cut (ADR-0027), leaving `bot` the sole v2 consumer.
+- 2026-06-12 — `libs/core` renamed `libs/analysis` (ADR-0001 amendment).
+- 2026-07-03 — editorial: amendment banner folded into the body; no decision change.
+- 2026-07-03 — bot recovery aligned to the Bus-2 consumer contract (reconnect reconcile + periodic sweep — ADR-0005 amendment).
 
 ## See also
 
 - [architecture-brief.md § Detection + alerts](../architecture-brief.md#detection--alerts)
 - [ADR-0005: Event bus shape](./0005-event-bus-shape.md)
-- [ADR-0009: Paper trading + auto-trader](./0009-paper-trading-and-auto-trader-scope.md)
+- [ADR-0021: Intraday persistence + bar-close detection](./0021-intraday-persistence-and-bar-close-detection.md)
+- [ADR-0027: Manual paper trading only](./0027-manual-paper-trading-only.md)
+- [ADR-0030: Detection re-derived](./0030-detection-rederived-single-alert-class.md)
