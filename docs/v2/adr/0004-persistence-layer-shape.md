@@ -27,4 +27,3 @@ v1 accesses the DB through a single `Postgres` CRUD class with `%s` placeholders
 
 - [architecture-brief.md § Persistence](../architecture-brief.md#persistence)
 - [ADR-0003: Postgres-only + Timescale + cache](./0003-postgres-only-timescale-cache.md)
-- [project_cowork_consumer memory] — don't expose internal computation fields through the public API
