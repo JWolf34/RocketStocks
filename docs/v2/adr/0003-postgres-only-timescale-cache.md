@@ -20,7 +20,7 @@ v2 needs time-series storage (bars, options snapshots, popularity history), hot-
 ## Consequences
 
 - One thing to deploy, back up, and monitor. Matches project scale.
-- Everything composes cleanly: Timescale is an extension, LISTEN/NOTIFY and UNLOGGED tables are Postgres-native, the outbox is just another table + a relay worker.
+- Everything composes cleanly: Timescale is an extension, LISTEN/NOTIFY and UNLOGGED tables are Postgres-native, the outbox is just another table (an append-only event ledger — no relay worker in v2; ADR-0005).
 - Cost: Postgres LISTEN/NOTIFY has an 8KB payload limit and no consumer-group semantics — fine for "an alert was written, go look," not for high-fanout real-time streams. Documented upgrade path to Redis Streams in ADR-0005.
 - UNLOGGED cache loses contents on crash/restart — acceptable because it's recomputable from source-of-truth tables.
 
