@@ -1,6 +1,6 @@
 # S001 — Monorepo restructure: `libs`/`services`/`tools` roots, v1 → `legacy/`
 
-**Phase**: 1 · **Appetite**: 2 days · **Depends on**: — · **ADRs / notes**: [0001](../adr/0001-monorepo-restructure.md), [0028](../adr/0028-execution-strategy-greenfield-terminal-burn-in.md)
+**Phase**: 0 · **Appetite**: 2 days · **Depends on**: — · **ADRs / notes**: [0001](../adr/0001-monorepo-restructure.md), [0028](../adr/0028-execution-strategy-greenfield-terminal-burn-in.md)
 
 ## Goal
 
