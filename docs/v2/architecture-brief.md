@@ -64,7 +64,7 @@ Schwab / ApeWisdom / Nasdaq ──►┌──┴────┐   ┌───�
 
 - **`ingest`** — long-running daemon. Streams Schwab `level_one_equity` + polls ApeWisdom (popularity) and Nasdaq (earnings) + pulls REST options-chain snapshots, persists them, runs detection (bar-close + options scan), writes `alerts` rows and `NOTIFY`s the bot.
 - **`serve`** — FastAPI read API. The contract surface for Cowork (external), backtest (internal CLI), and the bot (dogfoods the same API). Read-mostly over Postgres with a thin Schwab read-through for current data (ADR-0024).
-- **`bot`** — discord.py presentation layer. LISTENs for alerts, renders embeds, posts; serves slash commands and manual paper trading. No detection logic and no auto-trader — both live elsewhere.
+- **`bot`** — discord.py presentation layer. LISTENs for alerts, renders embeds, posts; serves slash commands and manual paper trading. No detection logic and no auto-trader — both live elsewhere. All market data reaches it via `serve`; its direct DB access is only user/config state (sole writer) + alert rows (ADR-0024's access matrix).
 
 Cowork.ai is a **real external consumer** at cutover (an LLM agent platform that pulls stock/industry data to build reports). It is the reason `serve` is a first-class, authenticated, versioned contract rather than an internal seam.
 
@@ -199,6 +199,7 @@ The **six v1 alert types** (retired — ADR-0030), the **auto-trader** (post-v2,
 | 4th external consumer / web UI delegated auth / leak-window concern | API keys → OAuth 2.0 ([ADR-0012](./adr/0012-serving-api-auth-keys-plus-rate-limits.md)) |
 | A source becomes chronically flaky (>N% failure over 24h for K days) | add per-source circuit breakers ([ADR-0017](./adr/0017-failure-mode-trimmed-a.md)) |
 | Web UI / non-Discord identity provider committed | retrofit `users` table ([ADR-0013](./adr/0013-identity-discord-id-only.md)) |
+| Web UI / second user-facing write client | user-state writes move behind `serve` as a write API ([ADR-0024](./adr/0024-serve-read-model-boundary.md)) |
 | Post-v2: build the auto-trader | stand it up as its own service (Bus-2 alert subscription, data-access ports) ([ADR-0027](./adr/0027-manual-paper-trading-only.md)) |
 | A signal needs sub-minute latency | 1-min bars (config flip) or a tagged intrabar fast-path ([ADR-0021](./adr/0021-intraday-persistence-and-bar-close-detection.md)) |
 | Notification storm becomes painful | add ErrorAggregator + `error_history` ([ADR-0015](./adr/0015-observability-stack-personalized.md)) |
