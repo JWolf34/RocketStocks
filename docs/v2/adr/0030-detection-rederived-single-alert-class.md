@@ -12,7 +12,7 @@ The brief's north star said "functional parity with v1," which implicitly includ
 
 **Detection is re-derived from scratch for v2's infrastructure. v1's two-tier alert system is not used and v1 detectors are not ported.**
 
-- **v2 ships exactly ONE alert class: the options-flow alert.** Presentation *structure and principles* are pinned by ADR-0026 (four buttons, transparency/hierarchy principles, next-day OI-confirmation update-in-place — that lifecycle is intrinsic to this alert and survives); field-level embed layout is bound in the alert-presentation spec written after this session closes (ADR-0026, as amended 2026-07-03).
+- **v2 ships exactly ONE alert class: the options-flow alert.** Presentation *structure and principles* are pinned by ADR-0026 (four buttons, transparency/hierarchy principles, the threshold-escalation re-post lifecycle — ADR-0026 as amended 2026-07-03; day-2 OI's role within it is a design-session decision); field-level embed layout is bound in the alert-presentation spec written after this session closes (ADR-0026, as amended 2026-07-03).
 - **The detection model itself is designed in a dedicated just-in-time design session at Phase 2 start** (informed by real payloads from the Phase-0 spike and the Phase-1 skeleton), closing as its own ADR/design note before detector build slices begin.
 - **All six v1 alert types are retired**: popularity surge, momentum confirmation, volume accumulation, breakout, watchlist mover, earnings mover. ADR-0014's "v1 must not anchor v2" now explicitly extends from UX to detection.
 - **ApeWisdom and Nasdaq remain** — as universe-priority inputs (ADR-0019), report data, and serve datasets (ADR-0024/0025). They are not alert sources in v2.
@@ -35,6 +35,11 @@ The brief's north star said "functional parity with v1," which implicitly includ
 - v1's pure signal functions (carried to `libs/analysis/` per ADR-0008, as amended) become *available inputs* to the design session, not predestined components — the session decides what survives.
 - Risk: the product rides on one signal's quality. Mitigated by event-study validation from day one and the extensibility requirement, which makes fast follow-on detectors cheap.
 - The brief's scope-discipline section, roadmap Phase 2, and the v1 alert docs (`docs/alerts/`, now historical) are updated to match.
+
+## Change log
+
+- 2026-06-12 — locked.
+- 2026-07-03 — editorial: lifecycle reference aligned to ADR-0026 as amended (threshold-escalation re-posts replace OI-confirmation update-in-place); no decision change here — the lifecycle decision lives in ADR-0026.
 
 ## See also
 
