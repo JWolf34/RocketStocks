@@ -9,7 +9,7 @@ After this slice a long-running `ingest` daemon streams one hardcoded ticker (SP
 ## Interface
 
 - `services/ingest` — runnable daemon (`python -m rs_ingest`), config via pydantic-settings.
-- **Bus 1** — a fixed, ordered, synchronous handler list per `BarClosed`: `persister → cache_updater (no-op stub) → detector`. Plain code, not a pub/sub framework (binding per ADR-0005/0023).
+- **Bus 1** — a fixed, ordered, synchronous handler list per `BarClosed`: `persister → detector`. Plain code, not a pub/sub framework (binding per ADR-0005/0023). The list stays extensible; a `cache_updater` handler joins on the UNLOGGED cache's reintroduction (ADR-0003/0005).
 - **Detector port** — `decide(window) -> AlertDecision | None`, called behind an error boundary (a raising detector is logged + counted, never kills capture — ADR-0008). Skeleton detector: fixed volume threshold, tuned low enough to actually fire.
 - **Live `EventSource` adapter** — wraps the Schwab stream behind the S002 port; assigns `(event_time, sequence)`.
 - **Recorded fixture** — the session's normalized domain events written as JSONL (the recorded-adapter input for S007); raw payload samples kept alongside under `docs/v2/specs/fixtures/`.

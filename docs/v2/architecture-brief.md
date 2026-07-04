@@ -42,8 +42,8 @@ v2 splits into three deployable services, each its own container, sharing one `D
 ```
                           ┌─────────────────────────────────────────┐
                           │                Postgres                  │
-                          │   (TimescaleDB + UNLOGGED cache table     │
-                          │    + outbox + LISTEN/NOTIFY channel)      │
+                          │   (TimescaleDB + outbox                   │
+                          │    + LISTEN/NOTIFY channel)               │
                           └───────▲──────────────▲─────────────▲──────┘
                                   │              │             │
               writes alerts +     │              │             │  reads/writes
@@ -75,7 +75,7 @@ Cowork.ai is a **real external consumer** at cutover (an LLM agent platform that
 Postgres is the only stateful infrastructure — no Redis. See [ADR-0003](./adr/0003-postgres-only-timescale-cache.md).
 
 - **TimescaleDB extension** for time-series tables (bars, options snapshots, popularity history). Hypertables created via raw DDL inside Alembic revisions.
-- **UNLOGGED cache table** for hot reads (quote / movers / popularity / fundamentals) — fast, crash-disposable.
+- **UNLOGGED cache table — deferred out of v2** (ADR-0003 as amended 2026-07-03): after the serve read-model (ADR-0024) and bot data-access decisions, nothing reads it; reintroduced behind triggers (read-through cost bites / auto-trader arrives / outage-tolerant quote serving needed).
 - **SQLAlchemy 2.x async** for DB models (`libs/persistence/models/`); **separate Pydantic models** for domain/API (`libs/domain/`). Repositories convert between them — internal computation fields never leak through the public API. See [ADR-0004](./adr/0004-persistence-layer-shape.md).
 - **Alembic migrations** with autogeneration from SQLAlchemy models.
 - **Backups are operator infrastructure**, decoupled from the repo: block-level VM snapshots (daily/weekly, off-host), restore-rehearsed at burn-in; RPO ≤24h accepted; no in-repo backup tooling in v2. See [ADR-0031](./adr/0031-backup-dr-vm-snapshots.md).
@@ -100,7 +100,7 @@ Python packages follow one rule: **import name = `rs_` + member dir name** (`rs_
 
 Two buses, one abstraction. See [ADR-0005](./adr/0005-event-bus-shape.md).
 
-- **Bus 1 — a deterministic, synchronous, *ordered fan-out* inside `ingest`** (not a pub/sub framework — required by the replay test strategy, ADR-0023). Per `BarClosed`, a fixed handler list runs in order: persister → cache_updater → detector. The options interval scan is a standalone linear pipeline, not a Bus-1 subscriber. See [ADR-0005](./adr/0005-event-bus-shape.md) / [ADR-0021](./adr/0021-intraday-persistence-and-bar-close-detection.md).
+- **Bus 1 — a deterministic, synchronous, *ordered fan-out* inside `ingest`** (not a pub/sub framework — required by the replay test strategy, ADR-0023). Per `BarClosed`, a fixed handler list runs in order: persister → detector. The options interval scan is a standalone linear pipeline, not a Bus-1 subscriber. See [ADR-0005](./adr/0005-event-bus-shape.md) / [ADR-0021](./adr/0021-intraday-persistence-and-bar-close-detection.md).
 - **Bus 2 — Postgres LISTEN/NOTIFY for cross-service signaling.** `ingest` writes the `alerts` row, the `outbox` row, and issues `NOTIFY` inside **one transaction** (transactional NOTIFY delivers at commit — write and signal are atomic). `bot` LISTENs and posts; per the **Bus-2 consumer contract** (ADR-0005) it reconciles missed work via `SELECT ... WHERE posted_at IS NULL` on every reconnect *and* on a periodic sweep — NOTIFY is the latency optimization, the sweep is the correctness mechanism.
 - **Transactional outbox** — an append-only durable event ledger and the attachment point for future Bus-2 consumers. **No relay ships in v2**; a producer-side relay arrives only with the external-broker migration (ADR-0005).
 - An **EventBus abstraction** lets the implementation swap without touching subscribers — the documented upgrade path is LISTEN/NOTIFY → Redis Streams if/when dashboards or other real-time external consumers arrive.
@@ -139,7 +139,7 @@ Equity bars live in **two families with two authorities** (ADR-0021/0022): the s
 **Manual paper trading only in v2** — the auto-trader is cut and returns post-v2 as its own service (ADR-0027, supersedes 0009). Trades ride the `holdings`/`transactions`/`portfolio_snapshots` store with a `source` column (`manual` now; `auto_trader` reserved for the post-v2 service), so attribution stays clean when it returns.
 
 - Entered via the alert's `💵 Trade` button (a manual paper BUY of the underlying into the clicker's portfolio) and `/trade buy|sell <ticker> <qty> [limit]`.
-- Open positions are streamed (universe priority #1, ADR-0019) for live portfolio marks.
+- Open positions are streamed (universe priority #1, ADR-0019) for live portfolio marks (served via `serve` read-through until the UNLOGGED cache returns — ADR-0003/0024).
 - The post-v2 auto-trader blueprint — pure library behind data-access ports, its own Bus-2 alert subscription, direct cache reads + trade writes, bot demoted to a serve-backed performance UI — is preserved in [ADR-0027](./adr/0027-manual-paper-trading-only.md) / the superseded ADR-0009.
 
 ---
@@ -178,7 +178,7 @@ A four-layer stack, native-only (no external SaaS). See [ADR-0015](./adr/0015-ob
 Per-dataset policy, freshness at the boundaries — industry "Pattern 2" (service-mesh / SRE style), not event-time watermarks. See [ADR-0017](./adr/0017-failure-mode-trimmed-a.md).
 
 - Each dataset (source × data-class) declares a `FreshnessPolicy` — `STRICT` (raise), `STALE_OK` (serve last-known + flag), `BEST_EFFORT` (skip cycle, retry) — plus a `max_age` budget saying when "stale" trips (finalized at burn-in; stored in a Postgres config table).
-- Freshness lives in **persistence rows** (`fetched_at`, `source_status`; failed per-ticker fetches write tombstone rows), the **cache** (`stale_since`), the **API response envelope** (`meta.as_of` + `meta.fetched_at`; `meta.stale_since` only when degraded), and **Prometheus** (`source_last_success_seconds`).
+- Freshness lives in **persistence rows** (`fetched_at`, `source_status`; failed per-ticker fetches write tombstone rows), the **API response envelope** (`meta.as_of` + `meta.fetched_at`; `meta.stale_since` only when degraded), and **Prometheus** (`source_last_success_seconds`).
 - **Bus events stay clean** — no freshness propagation, because 90% of subscribers don't read it.
 - **Mutations fail-loud** — silent write failure is the worst class of bug.
 - Circuit breakers deferred behind documented trigger conditions.
@@ -204,6 +204,7 @@ The **six v1 alert types** (retired — ADR-0030), the **auto-trader** (post-v2,
 | A signal needs sub-minute latency | 1-min bars (config flip) or a tagged intrabar fast-path ([ADR-0021](./adr/0021-intraday-persistence-and-bar-close-detection.md)) |
 | Notification storm becomes painful | add ErrorAggregator + `error_history` ([ADR-0015](./adr/0015-observability-stack-personalized.md)) |
 | A restore in anger hurts at 24h RPO / a consumer depends on snapshot completeness | in-repo WAL archiving (pgBackRest) — post-v2 ([ADR-0031](./adr/0031-backup-dr-vm-snapshots.md)) |
+| Portfolio/watchlist read-through cost or latency bites, the auto-trader build starts, or outage-tolerant quote serving is needed | reintroduce the UNLOGGED cache ([ADR-0003](./adr/0003-postgres-only-timescale-cache.md)) |
 
 ---
 
@@ -213,7 +214,7 @@ The **six v1 alert types** (retired — ADR-0030), the **auto-trader** (post-v2,
 |---|---|
 | [0001](./adr/0001-monorepo-restructure.md) | Monorepo restructure (`libs`/`services`/`tools`/`legacy`) + `feat/v2-rewrite` branch |
 | [0002](./adr/0002-three-services-topology.md) | Three-services topology (`ingest`/`serve`/`bot`) — *amended: auto-trader refs updated (0027)* |
-| [0003](./adr/0003-postgres-only-timescale-cache.md) | Postgres-only + TimescaleDB + UNLOGGED cache |
+| [0003](./adr/0003-postgres-only-timescale-cache.md) | Postgres-only + TimescaleDB + UNLOGGED cache — *amended: cache deferred out of v2 (2026-07-03)* |
 | [0004](./adr/0004-persistence-layer-shape.md) | SQLAlchemy 2.x async + separate Pydantic + Alembic |
 | [0005](./adr/0005-event-bus-shape.md) | Event bus shape — *amended: deterministic fan-out (0021); no relay + consumer contract (2026-07-03)* |
 | [0006](./adr/0006-schwab-l1-only-streaming-scope.md) | Schwab L1-only streaming scope — **superseded by 0019** |

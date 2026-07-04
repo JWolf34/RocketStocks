@@ -6,13 +6,13 @@
 
 ## Context
 
-Two distinct messaging needs exist in v2: (1) inside `ingest`, source data and derived signals must fan out to several subscribers (persister, cache updater, detectors); (2) across services, `ingest` must tell `bot` "an alert was written, go post it." These have very different characteristics — (1) is high-frequency, in-process, low-latency; (2) is low-frequency, cross-process, durability-sensitive. One mechanism for both would over- or under-serve one of them. Postgres-only (ADR-0003) rules out Redis/Kafka.
+Two distinct messaging needs exist in v2: (1) inside `ingest`, source data and derived signals must fan out to several subscribers (persister, detectors); (2) across services, `ingest` must tell `bot` "an alert was written, go post it." These have very different characteristics — (1) is high-frequency, in-process, low-latency; (2) is low-frequency, cross-process, durability-sensitive. One mechanism for both would over- or under-serve one of them. Postgres-only (ADR-0003) rules out Redis/Kafka.
 
 ## Decision
 
 Two buses behind one abstraction:
 
-- **Bus 1 — a deterministic, synchronous, *ordered fan-out* inside `ingest`. Not a pub/sub framework.** Per `BarClosed`, a fixed ordered handler list runs: `persister → cache_updater → detector`. Determinism is required by the replay test strategy (ADR-0023 — a concurrent pub/sub would have to be crippled to pass replay tests) and justified by the small fixed subscriber set; it stays reversible to a subscriber registry if subscribers ever churn. Events carry data only — no freshness metadata (see ADR-0017).
+- **Bus 1 — a deterministic, synchronous, *ordered fan-out* inside `ingest`. Not a pub/sub framework.** Per `BarClosed`, a fixed ordered handler list runs: `persister → detector`. (A `cache_updater` handler joins the list if/when the UNLOGGED cache is reintroduced — ADR-0003 as amended; additive and replay-neutral, since cache writes never feed detection.) Determinism is required by the replay test strategy (ADR-0023 — a concurrent pub/sub would have to be crippled to pass replay tests) and justified by the small fixed subscriber set; it stays reversible to a subscriber registry if subscribers ever churn. Events carry data only — no freshness metadata (see ADR-0017).
 - The **event-source port** (ADR-0023) is the *ingress* seam upstream of the fan-out: a live aggregator adapter in production; a recorded adapter for warm-up, backtest, and tests.
 - **Options detection is a standalone linear pipeline** (5-min REST scan → `decide()` → write `alert`+`outbox`), not a Bus-1 subscriber (ADR-0021).
 - **Bus 2 — Postgres LISTEN/NOTIFY for cross-service signaling.** `ingest` writes the `alerts` row, the `outbox` row, and issues `NOTIFY` **all inside one transaction** — Postgres holds a transactional `NOTIFY` and delivers it at commit, so the write and the signal are atomic and no "crash between write and NOTIFY" window exists. `bot` LISTENs and posts. Bus 2 is the single cross-process growth layer for all future consumers (serve push/dashboards, new clients, the post-v2 auto-trader + detection worker).
@@ -39,6 +39,7 @@ Two buses behind one abstraction:
 - 2026-06-05 — amended: Bus 1 pinned to a deterministic ordered fan-out (replay mandate, ADR-0023); options detection moved to a standalone linear pipeline; event names updated (`MinuteBar` → `BarClosed`); SEC/news events out of v2 (ADR-0025); derived-event names retired with the v1 alert types (ADR-0030). Bus 2 unchanged.
 - 2026-07-03 — editorial: amendment banner folded into the body; no decision change.
 - 2026-07-03 — amended (outbox semantics): transactional NOTIFY pinned (write + signal atomic at commit); **no relay in v2** — the outbox is an append-only event ledger with no processed-marking; Bus-2 consumer contract defined (LISTEN + consumer-owned cursor + idempotent sweep, bot as reference implementation); relay construction tied to the external-broker migration trigger.
+- 2026-07-03 — amended: `cache_updater` removed from the Bus-1 handler list (UNLOGGED cache deferred out of v2 — ADR-0003 amendment); rejoins on the cache's reintroduction.
 
 ## See also
 

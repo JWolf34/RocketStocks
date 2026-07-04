@@ -6,7 +6,7 @@
 
 ## Context
 
-v2's failure surfaces are heterogeneous: a dropped Schwab stream can serve stale quotes; a failed ApeWisdom poll can skip a cycle harmlessly; but a failed `alerts` or `paper_trades` write must not vanish silently. We need a coherent policy. The question was also whether to propagate freshness metadata on every bus event (belt-and-suspenders) or only at boundaries. Carrying `FreshnessInfo` on every event was found to be noise — ~90% of subscribers (persister, detectors) don't read it; only the cache updater cares, and it can read source status elsewhere. This matches industry "Pattern 2" (service-mesh / SRE: freshness as source-health metrics + per-row columns + API headers) rather than "Pattern 1" (event-time watermarks, for big-data streaming).
+v2's failure surfaces are heterogeneous: a dropped Schwab stream can serve stale quotes; a failed ApeWisdom poll can skip a cycle harmlessly; but a failed `alerts` or `paper_trades` write must not vanish silently. We need a coherent policy. The question was also whether to propagate freshness metadata on every bus event (belt-and-suspenders) or only at boundaries. Carrying `FreshnessInfo` on every event was found to be noise — ~90% of subscribers (persister, detectors) don't read it; only a cache-updater-style boundary consumer would care, and it can read source status elsewhere. This matches industry "Pattern 2" (service-mesh / SRE: freshness as source-health metrics + per-row columns + API headers) rather than "Pattern 1" (event-time watermarks, for big-data streaming).
 
 ## Decision
 
@@ -14,13 +14,12 @@ v2's failure surfaces are heterogeneous: a dropped Schwab stream can serve stale
 
 - Each dataset declares a `FreshnessPolicy` saying *how* to degrade:
   - `STRICT` — raise on failure (e.g. serve's Schwab read-through: no stored fallback for arbitrary tickers — ADR-0024)
-  - `STALE_OK` — return last-known with a flag (e.g. quotes at the cache)
+  - `STALE_OK` — return last-known with a flag (e.g. popularity served from its last stored poll; quotes-at-the-cache returns as an instance if the UNLOGGED cache is reintroduced — ADR-0003)
   - `BEST_EFFORT` — skip this cycle, retry next (e.g. ApeWisdom mentions; the options scans)
-- **Grain: policies attach per dataset (source × data-class), not per source.** Schwab alone spans the equity stream (`STALE_OK` at the cache), the 5-min curated options scan (`BEST_EFFORT` + tombstones), the options EOD full scan (`BEST_EFFORT`, retry-in-window, alarm on a missed night), the nightly 1-min equity backfill (`BEST_EFFORT`, retry within Schwab's **7-day** 1-min window, alarm on a missed night — ADR-0022), and serve's read-through (effectively `STRICT` for reads).
+- **Grain: policies attach per dataset (source × data-class), not per source.** Schwab alone spans the equity stream (a stream-level **liveness** budget — below), the 5-min curated options scan (`BEST_EFFORT` + tombstones), the options EOD full scan (`BEST_EFFORT`, retry-in-window, alarm on a missed night), the nightly 1-min equity backfill (`BEST_EFFORT`, retry within Schwab's **7-day** 1-min window, alarm on a missed night — ADR-0022), and serve's read-through (effectively `STRICT` for reads).
 - **Mutations fail-loud is an invariant, not a configurable policy** — silent write failure is the worst class of bug.
 - Freshness lives at boundaries, **not on bus events** (ADR-0005 — events carry data only):
   - persistence rows carry `fetched_at` + `source_status` — row provenance with a small enum pinned at Stage 2 (`ok`/`partial`/`failed`; rename to `fetch_status` if ambiguity bites). Failed per-ticker fetches write **tombstone rows** (`source_status='failed'`, no payload), so scan membership stays truthful under failure (ADR-0030) and gate G2's gap audit has rows to count.
-  - the UNLOGGED cache carries `stale_since`
   - **the serve envelope carries two times, named apart:** `meta.as_of` (market/event time of the data) *and* `meta.fetched_at` (retrieval time); `meta.stale_since` appears only when a policy has degraded. `as_of` is what off-hours consumers (Cowork) actually need; `fetched_at` measures the pipeline.
   - Prometheus exposes `source_last_success_seconds{source=...}`
 
@@ -44,7 +43,7 @@ Budgets are **config, not code** — each dataset's `DatasetFreshness` declarati
 - Subscribers stay simple — they don't handle freshness.
 - Cowork sees freshness explicitly via the API envelope and can decide whether to trust stale data.
 - Industry-standard shape (Pattern 2) for a service-to-service system at this scale.
-- Cost: freshness is synthesized in two places (cache row + API envelope) rather than carried once on the event; accepted because it keeps the bus clean and matches who actually consumes freshness.
+- Cost: freshness is synthesized at the boundary (the API envelope; plus a `stale_since` cache column if the UNLOGGED cache returns — ADR-0003) rather than carried once on the event; accepted because it keeps the bus clean and matches who actually consumes freshness.
 
 ## Trigger conditions for revisit (→ circuit breakers)
 
@@ -56,6 +55,7 @@ Budgets are **config, not code** — each dataset's `DatasetFreshness` declarati
 - 2026-06-12 — amended (freshness review): (1) serve envelope splits `meta.as_of` from `meta.fetched_at`; (2) `max_age` budgets added per dataset, with the derivation procedure; (3) grain moved from per-source to per-dataset (source × data-class); (4) `source_status` enum pinned + tombstone rows for failed per-ticker fetches.
 - 2026-07-03 — editorial: amendment banner folded into the body; budget-storage wording disambiguated (Postgres config table read by `DatasetFreshness`); no decision change.
 - 2026-07-03 — grain examples extended with the nightly 1-min equity backfill and its 7-day recovery bound (ADR-0022 amendment).
+- 2026-07-03 — aligned with the ADR-0003 amendment (UNLOGGED cache deferred out of v2): cache `stale_since` removed from the freshness surfaces and the `STALE_OK` example re-pointed; the equity-stream grain example now cites the liveness budget directly. Semantics return with the cache.
 
 ## See also
 

@@ -16,7 +16,7 @@ ADR-0009 scoped an auto-trader hosted in `bot` (a pure library that runs on aler
 
 **Manual paper trading stays** (v1 parity): the `holdings` / `transactions` / `portfolio_snapshots` schema (with a `source` column — `manual` now; `auto_trader` returns with the post-v2 service), the `💵 Trade` button (ADR-0026), and `/trade buy|sell`. Open positions are streamed for live marks (ADR-0019). The **`/trade bot ...` command group is removed** (ADR-0014 amendment).
 
-**Post-v2 auto-trader blueprint** (preserved in the superseded ADR-0009 body, and here as the starting point): a pure library behind data-access **ports**, with its **own LISTEN/NOTIFY subscription** to the `alerts` table (Bus 2), **direct cache reads** for position marks and **direct trade writes**, and the `bot` demoted to a serve-backed performance UI. This is the symmetric mirror of the detection-extraction seam (ADR-0008): design the seam, defer the build.
+**Post-v2 auto-trader blueprint** (preserved in the superseded ADR-0009 body, and here as the starting point): a pure library behind data-access **ports**, with its **own LISTEN/NOTIFY subscription** to the `alerts` table (Bus 2), **direct cache reads** for position marks (the UNLOGGED cache is reintroduced with this service — its arrival is an ADR-0003 trigger) and **direct trade writes**, and the `bot` demoted to a serve-backed performance UI. This is the symmetric mirror of the detection-extraction seam (ADR-0008): design the seam, defer the build.
 
 ## Consequences
 

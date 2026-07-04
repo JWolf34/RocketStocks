@@ -22,7 +22,12 @@ The product thesis existed only as side-comments scattered across the data-plane
 - **Not long-horizon guidance**: fundamentals appear as report *context* (ADR-0025/0026), never as a signal class in v2.
 - **Advisory, human-filtered**: alerts inform a human decision; nothing is auto-executed in v2 (ADR-0027), which is also what licenses the latitude clauses in ADR-0021/0022.
 
-**Latency posture:** alert delivery is event-driven end to end (detection → outbox → NOTIFY → post) and needs no separate budget; bot interaction code is written performance-first (defer early, read hot paths from the cache), but **numeric interaction SLOs are deliberately deferred** to the bot-phase planning sessions.
+**Latency posture:** alert delivery is event-driven end to end (detection → outbox → NOTIFY → post) and needs no separate budget; bot interaction code is written performance-first (defer early; hot reads via `serve` — ADR-0024), but **numeric interaction SLOs are deliberately deferred** to the bot-phase planning sessions.
+
+## Change log
+
+- 2026-06-11 — locked.
+- 2026-07-03 — editorial: hot-read wording aligned to the bot data-access rule and the UNLOGGED-cache deferral (ADR-0024/0003 amendments); no thesis change.
 
 ## Consequences
 

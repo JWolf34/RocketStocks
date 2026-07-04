@@ -14,7 +14,7 @@ Scale check: single operator, one box, no HA requirement. RTO of hours-to-a-day 
 
 **Backup is operator infrastructure, decoupled from the repo.** The mechanism is the operator's existing **daily + weekly block-level VM disk snapshots**. No in-repo backup tooling (pgBackRest, WAL archiving, dump scripts) ships in v2 — that is a **post-v2 consideration** behind the triggers below.
 
-Why this is sound for Postgres: a block-level snapshot of a running instance is **crash-consistent** — restoring it is equivalent to a power pull, which Postgres recovers from by WAL replay at startup. The UNLOGGED cache is truncated during that recovery *by design* (warm-up rebuilds it — ADR-0018); the detection log and research history are logged tables and recover normally.
+Why this is sound for Postgres: a block-level snapshot of a running instance is **crash-consistent** — restoring it is equivalent to a power pull, which Postgres recovers from by WAL replay at startup. (If the UNLOGGED cache is reintroduced — ADR-0003 as amended — it is truncated during that recovery *by design*; warm-up rebuilds it — ADR-0018.) The detection log and research history are logged tables and recover normally.
 
 **Three conditions make "suffice" true** (verified as a Phase-0 pre-flight item):
 
@@ -24,7 +24,7 @@ Why this is sound for Postgres: a block-level snapshot of a running instance is 
 
 **Accepted RPO: ≤ 24 hours.** A box-loss event forfeits up to one trading day of options snapshots — permanently. This is the same loss class and comparable rarity as a tombstoned backfill gap (ADR-0022), already an accepted, audited outcome.
 
-**Post-restore recovery procedure** (documented with rehearsal #4): re-run the 1-min equity backfill for the lost window (the 7-day window covers a ≤24h restore comfortably — ADR-0022); the lost options snapshots are recorded as an audited hole; the bot's sweep and warm-up handle alert/cache state normally.
+**Post-restore recovery procedure** (documented with rehearsal #4): re-run the 1-min equity backfill for the lost window (the 7-day window covers a ≤24h restore comfortably — ADR-0022); the lost options snapshots are recorded as an audited hole; the bot's sweep and warm-up handle alert and detector state normally.
 
 ## Consequences
 
@@ -42,6 +42,6 @@ Why this is sound for Postgres: a block-level snapshot of a running instance is 
 ## See also
 
 - [ADR-0003: Postgres-only + Timescale + cache](./0003-postgres-only-timescale-cache.md)
-- [ADR-0018: Temporal model + warm-up](./0018-temporal-hot-cold-model-and-warmup.md) (UNLOGGED cache rebuild)
+- [ADR-0018: Temporal model + warm-up](./0018-temporal-hot-cold-model-and-warmup.md) (state recovery on restart)
 - [ADR-0020](./0020-three-datasets-and-backtest-constraints.md) / [ADR-0022](./0022-bar-retention-storage-compression.md) (what is and isn't reconstructable)
 - [roadmap.md](../roadmap.md) — pre-flight condition check, rehearsal #4, gate G9

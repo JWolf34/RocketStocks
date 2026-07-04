@@ -16,13 +16,18 @@ The initial v2 plan leaned "store everything point-in-time and stream everything
 
 **Persist at *strategy* granularity, not *alert* granularity.** Latency is a product/UX property, not a backtest input.
 
-**Startup warm-up (state recovery).** On `ingest` start, detectors are disabled and the stream unsubscribed until `warmup()` completes: (1) reconstruct the subscription universe from Postgres; (2) rebuild rolling windows by replaying recent hypertable rows (== a short backtest replay); (3) REST-reseed the current snapshot; (4) repopulate the UNLOGGED cache (also heals a Postgres-crash truncate); (5) load dedup/lifecycle state from Postgres — then subscribe and enable detectors. A warm-up delay (seconds–minutes) is accepted in exchange for never having a silent blind detection window; fine given the swing horizon.
+**Startup warm-up (state recovery).** On `ingest` start, detectors are disabled and the stream unsubscribed until `warmup()` completes: (1) reconstruct the subscription universe from Postgres; (2) rebuild rolling windows by replaying recent hypertable rows (== a short backtest replay); (3) REST-reseed the current snapshot; (4) load dedup/lifecycle state from Postgres — then subscribe and enable detectors. A warm-up delay (seconds–minutes) is accepted in exchange for never having a silent blind detection window; fine given the swing horizon. (If the UNLOGGED cache is reintroduced — ADR-0003 as amended — repopulating it slots back in as a warm-up step, healing a Postgres-crash truncate.)
 
 ## Consequences
 
 - Restart, warm-up, and backtest all ride one replay code path (ADR-0023) — the strongest reliability lever in the design.
-- The UNLOGGED cache (ADR-0003) can be crash-disposable precisely because warm-up rebuilds the hot path from the cold path; warm-up never reads the cache.
+- When the UNLOGGED cache is reintroduced (ADR-0003 as amended), it can be crash-disposable precisely because warm-up rebuilds the hot path from the cold path; warm-up never reads the cache.
 - Cost: a bounded startup delay before live detection; acceptable at swing horizon.
+
+## Change log
+
+- 2026-06-05 — locked.
+- 2026-07-03 — aligned with the ADR-0003 amendment: the repopulate-the-cache warm-up step is removed while the UNLOGGED cache is deferred; it returns with the cache. No change to the temporal model or the memory-is-a-projection invariant.
 
 ## See also
 

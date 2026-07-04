@@ -26,7 +26,7 @@ A **`UniverseManager`** recomputes desired sets from DB-backed sources on a cade
 ## Consequences
 
 - A bounded, explicit symbol budget that fits Schwab streamer limits and is rebuildable on warm-up.
-- Open paper positions stay streamed (priority #1) for live portfolio marks even though the auto-trader is cut (ADR-0009/0027) — manual positions still want live P&L.
+- Open paper positions stay streamed (priority #1) for live portfolio marks even though the auto-trader is cut (ADR-0009/0027) — manual positions still want live P&L. (Marks are served via `serve` read-through until the UNLOGGED cache returns — ADR-0003/0024; streaming held names also keeps them in the detection log.)
 - Cost: priority #4/#5 churn means periodic ADD/UNSUB traffic; the manager reconciles on a cadence rather than per-event.
 
 ## Trigger conditions for revisit

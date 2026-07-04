@@ -14,9 +14,9 @@ With options streaming removed (ADR-0019) and a "memory is a projection" tempora
 
 **Detection is hybrid by data type:** equity = event-driven on the equity stream; options = interval REST scan (ADR-0020), run as a standalone linear pipeline (ADR-0005).
 
-**Equity streaming write path:** `level_one_equity` quotes → an in-memory aggregator builds the current bar → on the bar boundary it emits a **`BarClosed`** event → a **deterministic Bus-1 fan-out** (ADR-0005) runs in fixed order (`persister → cache_updater → detector`): the persister writes a durable row to the intraday hypertable, the cache_updater writes the latest values, the detector folds the bar into its rolling window. Continuous quotes update only the detector state + the UNLOGGED cache — no durable write at quote rate.
+**Equity streaming write path:** `level_one_equity` quotes → an in-memory aggregator builds the current bar → on the bar boundary it emits a **`BarClosed`** event → a **deterministic Bus-1 fan-out** (ADR-0005) runs in fixed order (`persister → detector`): the persister writes a durable row to the intraday hypertable, the detector folds the bar into its rolling window. Continuous quotes update only the in-memory aggregator state — no durable write at quote rate. (A `cache_updater` handler rejoins the fan-out if the UNLOGGED cache is reintroduced — ADR-0003 as amended.)
 
-**Stream-built 5-minute bars form the detection log** (`stream_bars_5m`) — a durable (logged) hypertable, written bar-on-close, streamed tickers only. It records exactly what detection saw: **rows are immutable, never reconciled against official REST data, and its retention is independent of every other job** (compress old chunks; any future retention policy is a separate dial, never coupled to backfill success). Replay and warm-up read *only* this log. Durability here is also load-bearing operationally: it turns warm-up reseed from a full-day ×500-ticker REST storm into DB reads + a bounded gap fetch. The detection log is distinct from the UNLOGGED cache (latest-quote hot reads, crash-disposable) and from the **research history** (official whole-universe 1-min + derived rollups — ADR-0022).
+**Stream-built 5-minute bars form the detection log** (`stream_bars_5m`) — a durable (logged) hypertable, written bar-on-close, streamed tickers only. It records exactly what detection saw: **rows are immutable, never reconciled against official REST data, and its retention is independent of every other job** (compress old chunks; any future retention policy is a separate dial, never coupled to backfill success). Replay and warm-up read *only* this log. Durability here is also load-bearing operationally: it turns warm-up reseed from a full-day ×500-ticker REST storm into DB reads + a bounded gap fetch. The detection log is distinct from the **research history** (official whole-universe 1-min + derived rollups — ADR-0022).
 
 **Detection is bar-close only.** `decide()` evaluates *only* on `BarClosed`; alerts trigger at bar close, never against in-between-bar quotes. On restart the aggregator's partial bar rebuilds from the bounded REST gap; detection resumes at the next `BarClosed`. So the `BarClosed` log is the complete, exact detection input → replay reproduces every decision exactly. **No raw-tick log.**
 
@@ -29,7 +29,7 @@ With options streaming removed (ADR-0019) and a "memory is a projection" tempora
 ## Consequences
 
 - The bar-close log is an exact, replayable record of detection — the spine of the test strategy (ADR-0023).
-- Sub-bar latency is given up in v2; acceptable at swing horizon, and the stream still earns its keep (bar construction, live cache marks, and keeping the price firehose off the REST budget).
+- Sub-bar latency is given up in v2; acceptable at swing horizon, and the stream still earns its keep (bar construction and keeping the price firehose off the REST budget).
 - A future intrabar fast-path is additive (the partial bar already flows) and, when added, is an explicitly-tagged non-replayable overlay with bar-close as the system-of-record.
 
 ## Change log
@@ -37,6 +37,7 @@ With options streaming removed (ADR-0019) and a "memory is a projection" tempora
 - 2026-06-05 — locked. Originally said "EOD daily bar is authoritative for the daily table … tick-miss discrepancies reconcile in favor of EOD."
 - 2026-07-03 — amended (bar-dataset reconciliation with ADR-0022): the durable intraday hypertable is named the **detection log** (`stream_bars_5m`) — immutable, never reconciled, retention independent; authority split into detection log (what detection saw) vs. official research history (what serve/backtest read); discrepancies measured, not patched.
 - 2026-07-03 — amended: session scope pinned to RTH-only; extended-hours data deferred out of v2.
+- 2026-07-03 — amended: cache_updater removed from the write path (UNLOGGED cache deferred out of v2 — ADR-0003 amendment); continuous quotes now update aggregator state only. Also drops "live cache marks" from the stream's earn-its-keep list.
 
 ## See also
 
