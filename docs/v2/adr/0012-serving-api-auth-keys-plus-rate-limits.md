@@ -1,7 +1,7 @@
 # ADR-0012: Serving API auth — per-consumer API keys + rate limits
 
-**Status**: Accepted
-**Date locked**: 2026-05-27
+**Status**: Accepted (amended 2026-07-03)
+**Date locked**: 2026-05-27 · **Amended**: 2026-07-03
 **Decision-maker**: John Wolf
 
 ## Context
@@ -17,6 +17,8 @@ The `serve` API has three known consumers at cutover: `bot` (internal), `backtes
 - Rate limits enforced per consumer **from day one** — Cowork's agent fan-out could otherwise saturate the Schwab pull and starve bot alerts.
 - ~150 LOC of middleware.
 
+**Transport (amended 2026-07-03):** public ingress is the design posture (v2 is built to be self-hostable). `serve` assumes a **TLS-terminating reverse proxy upstream** — the proxy is operator infrastructure, decoupled from the repo (ADR-0031 style; the repo ships no proxy config). API keys must never traverse plaintext beyond the proxy hop; the Prometheus side-ports and metrics-scoped endpoints are never exposed publicly. `serve` stays proxy-friendly (honors forwarded headers where relevant; rate limiting keys on the API key, so client IP is not load-bearing). Verified as a Phase-0 pre-flight item; gate G8's consumer test runs through the real proxy URL.
+
 ## Consequences
 
 - Sufficient for the known consumer set; minimal code; instant revocation.
@@ -30,8 +32,14 @@ The `serve` API has three known consumers at cutover: `bot` (internal), `backtes
 - A web UI launches with **delegated** auth (Discord users authorizing Cowork to act on their behalf — full authorization-code flow, a different surface).
 - Credential-leak blast radius (long-lived keys) becomes a credible concern.
 
+## Change log
+
+- 2026-05-27 — locked.
+- 2026-07-03 — amended (transport): public-ingress posture pinned; TLS-terminating reverse proxy assumed upstream as operator infrastructure; metrics ports never public; Phase-0 pre-flight ingress check + G8-over-proxy added (final pre-implementation review).
+
 ## See also
 
 - [architecture-brief.md § Auth + identity](../architecture-brief.md#auth--identity)
 - [ADR-0013: Identity model](./0013-identity-discord-id-only.md)
 - [ADR-0015: Observability stack](./0015-observability-stack-personalized.md)
+- [ADR-0031: Backup & DR](./0031-backup-dr-vm-snapshots.md) (the operator-infrastructure precedent)
