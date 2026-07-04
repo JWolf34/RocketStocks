@@ -45,8 +45,8 @@ python -m rs_ingest.tools.compare_bars --date today  # stream-built vs REST bars
 To resolve at spec review (each carries a recommendation):
 
 1. **Schwab client.** Port v1's proven auth/token handling into a `libs/` source adapter vs. adopt `schwab-py`. **Recommendation:** decide after the Phase-0 streaming spike; default to porting v1's token flow (it works and the re-auth tooling exists) with the stream layer written fresh against the spike's payload samples.
-2. **v2 token storage** location/format (must serve the ADR-0016 expiry-notification path later).
-3. **Bar bucketing rule** — which timestamp closes a bar (event time vs. wall clock at close), plus the session boundaries (RTH-only per ADR-0021: day's first bar 09:30–09:35 ET; half-day handling). May be finalized during implementation rather than at review, but it must come out of this slice explicitly documented, since detection, warm-up, and replay all hang off it.
+2. **v2 token storage** location/format (must serve the ADR-0016 expiry-notification path later). The resolution must also state the sharing semantics with `serve` (ADR-0024): the single-writer rule (`ingest` refreshes) and how `serve` detects/handles a stale token read (e.g. re-read on 401).
+3. **Bar bucketing rule** — which timestamp closes a bar (event time vs. wall clock at close), plus the session boundaries (RTH-only per ADR-0021: day's first bar 09:30–09:35 ET; half-day handling). Session boundaries come from the `TradingCalendar` port (S002; `pandas-market-calendars`, XNYS) — note that unscheduled halts and surprise late opens are feed-observable only (ADR-0017 staleness covers them; the calendar cannot know them). May be finalized during implementation rather than at review, but it must come out of this slice explicitly documented, since detection, warm-up, and replay all hang off it.
 
 ## Decisions surfaced
 
