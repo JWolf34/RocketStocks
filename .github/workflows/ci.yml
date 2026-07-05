@@ -1,0 +1,63 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+      - feat/v2-rewrite
+
+jobs:
+  legacy:
+    name: legacy (v1 suite)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+
+      - name: Sync workspace from lockfile
+        run: uv sync --locked --all-packages
+
+      - name: Run v1 test suite from legacy/
+        run: uv run pytest legacy/tests -q
+
+  v2:
+    name: v2 (workspace members)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+
+      - name: Sync workspace from lockfile
+        run: uv sync --locked --all-packages
+
+      - name: Import placeholder packages
+        run: uv run python -c "import rs_domain, rs_persistence, rs_observability, rs_analysis, rs_sources, rs_ingest, rs_migrate"
+
+      - name: Run v2 member tests
+        run: uv run pytest libs/ services/ tools/ -q
+
+  docker:
+    name: docker (v1 image from legacy/)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Validate compose config
+        run: |
+          cp example.env .env
+          docker compose -f docker-compose.yml config -q
+
+      - name: Build v1 image
+        run: docker build -f Dockerfile .
