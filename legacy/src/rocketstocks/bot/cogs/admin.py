@@ -46,7 +46,7 @@ from rocketstocks.core.content.screeners.gainer_screener import GainerScreener
 from rocketstocks.core.content.screeners.popularity_screener import PopularityScreener
 from rocketstocks.core.content.screeners.volume_screener import VolumeScreener
 from rocketstocks.core.utils.dates import round_down_nearest_minute
-from src.rocketstocks.data.stockdata import StockData
+from rocketstocks.data.stockdata import StockData
 
 logger = logging.getLogger(__name__)
 

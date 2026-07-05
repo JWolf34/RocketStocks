@@ -9,7 +9,7 @@ import discord
 from discord import app_commands
 from discord.ext import commands, tasks
 
-from src.rocketstocks.data.stockdata import StockData
+from rocketstocks.data.stockdata import StockData
 from rocketstocks.data.channel_config import REPORTS, SCREENERS, ALERTS
 from rocketstocks.data.discord_state import DiscordState
 from rocketstocks.data.clients.schwab import SchwabTokenError, SchwabRateLimitError

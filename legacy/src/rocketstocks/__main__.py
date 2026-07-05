@@ -1,7 +1,7 @@
 import logging
 
 from rocketstocks.core.utils.logging_config import setup_logging
-from src.rocketstocks.data.stockdata import StockData
+from rocketstocks.data.stockdata import StockData
 from rocketstocks.bot import bot as Discord
 from rocketstocks.core.notifications import EventEmitter, NotificationConfig
 

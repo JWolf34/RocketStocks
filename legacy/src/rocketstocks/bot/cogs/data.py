@@ -3,7 +3,7 @@ import pandas as pd
 import discord
 from discord import app_commands
 from discord.ext import commands
-from src.rocketstocks.data.stockdata import StockData
+from rocketstocks.data.stockdata import StockData
 from rocketstocks.data.channel_config import REPORTS
 from rocketstocks.data.clients.schwab import SchwabTokenError, SchwabRateLimitError
 from rocketstocks.core.config.paths import datapaths
