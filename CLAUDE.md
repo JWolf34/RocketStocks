@@ -93,8 +93,11 @@ uv sync --all-packages
 # Run specific v1 test file
 .venv/bin/pytest legacy/tests/bot/cogs/test_alerts_cog.py -v
 
-# Run v2 member tests (also just `.venv/bin/pytest` — root testpaths cover libs/services/tools)
+# Run v2 member tests only (bare `.venv/bin/pytest` runs EVERYTHING: legacy + v2)
 .venv/bin/pytest libs/ services/ tools/ -q
+
+# Lint v2 members (legacy is never linted — code freeze)
+.venv/bin/ruff check libs services tools
 
 # Backtesting CLI
 .venv/bin/python -m rocketstocks.backtest run volume_accumulation --benchmark SPY

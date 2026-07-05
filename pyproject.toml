@@ -2,10 +2,19 @@
 members = ["libs/*", "services/*", "tools/*", "legacy"]
 
 [dependency-groups]
-dev = ["pytest", "pytest-asyncio", "pytest-cov"]
+dev = [
+    "pytest",
+    "pytest-asyncio",
+    "pytest-cov",
+    "ruff>=0.15.20",
+]
 
-# v2 members only; legacy/ has its own pytest config (rootdir=legacy/).
+# Bare `pytest` from the root runs everything — legacy suite included, so a
+# muscle-memory `pytest -q` after a v1 bugfix can never false-green on the
+# 7 placeholder tests alone. `pytest legacy/tests` still resolves to
+# legacy/pyproject.toml's own config (rootdir=legacy/).
 # importlib mode lets same-named test files coexist across members.
 [tool.pytest.ini_options]
-testpaths = ["libs", "services", "tools"]
+testpaths = ["legacy/tests", "libs", "services", "tools"]
 addopts = "--import-mode=importlib"
+asyncio_mode = "auto"
