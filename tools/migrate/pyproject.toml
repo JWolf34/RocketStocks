@@ -1,0 +1,13 @@
+[project]
+name = "rs-migrate"
+version = "0.1.0"
+description = "RocketStocks v2 schema migration CLI (Alembic)"
+authors = [
+    { name = "John Wolf", email = "johnmwolf34@gmail.com" }
+]
+requires-python = ">=3.13"
+dependencies = []
+
+[build-system]
+requires = ["uv_build>=0.11.26,<0.12.0"]
+build-backend = "uv_build"

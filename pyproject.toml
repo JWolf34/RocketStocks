@@ -1,0 +1,11 @@
+[tool.uv.workspace]
+members = ["libs/*", "services/*", "tools/*", "legacy"]
+
+[dependency-groups]
+dev = ["pytest", "pytest-asyncio", "pytest-cov"]
+
+# v2 members only; legacy/ has its own pytest config (rootdir=legacy/).
+# importlib mode lets same-named test files coexist across members.
+[tool.pytest.ini_options]
+testpaths = ["libs", "services", "tools"]
+addopts = "--import-mode=importlib"
