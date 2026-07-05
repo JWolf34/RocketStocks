@@ -4,23 +4,23 @@
 
 ```bash
 # Full suite
-.venv/bin/pytest tests/ -q
+.venv/bin/pytest legacy/tests/ -q
 
 # Single file
-.venv/bin/pytest tests/bot/cogs/test_alerts_cog.py -v
+.venv/bin/pytest legacy/tests/bot/cogs/test_alerts_cog.py -v
 
 # Single class
-.venv/bin/pytest tests/bot/cogs/test_alerts_cog.py::TestEarningsPipeline -v
+.venv/bin/pytest legacy/tests/bot/cogs/test_alerts_cog.py::TestEarningsPipeline -v
 ```
 
-Configuration in `pyproject.toml`: `testpaths = ["tests"]`, `asyncio_mode = "auto"`.
+Configuration in `legacy/pyproject.toml`: `testpaths = ["tests"]`, `asyncio_mode = "auto"`.
 
 ## Directory Structure
 
 Tests mirror the source tree:
 
 ```
-tests/
+legacy/tests/
 ├── conftest.py              # Root fixtures (mock_db, mock_stock_data, sample_df, env_override)
 ├── core/
 │   ├── analysis/            # Pure logic — test with real DataFrames, no mocking
@@ -43,7 +43,7 @@ tests/
     └── test_*.py            # One file per repository (surge_store, ticker_stats, etc.)
 ```
 
-## Root Fixtures (`tests/conftest.py`)
+## Root Fixtures (`legacy/tests/conftest.py`)
 
 | Fixture | Purpose |
 |---------|---------|
@@ -60,19 +60,19 @@ tests/
 Analysis modules (`core/analysis/`) are pure functions that take DataFrames and return results. Test them directly with synthetic data:
 
 ```python
-# tests/core/analysis/test_alert_strategy.py
+# legacy/tests/core/analysis/test_alert_strategy.py
 def _make_daily_prices(n=60, base=100.0, std_pct=2.0, seed=42) -> pd.DataFrame:
     # Build synthetic OHLCV data, call evaluate_price_alert() directly
 ```
 
-Content class tests verify `build()` returns correct `EmbedSpec` fields. Use fixtures from `tests/core/content/conftest.py` (`quote_up`, `quote_down`, `ticker_info`, `price_history`).
+Content class tests verify `build()` returns correct `EmbedSpec` fields. Use fixtures from `legacy/tests/core/content/conftest.py` (`quote_up`, `quote_down`, `ticker_info`, `price_history`).
 
 ### Bot Cogs (heavy mocking)
 
 Cogs start task loops on `__init__`, so construction requires patching loops and `DiscordState` **before** instantiation:
 
 ```python
-# tests/bot/cogs/test_alerts_cog.py:60-72
+# legacy/tests/bot/cogs/test_alerts_cog.py:60-72
 def _make_cog(earnings_df):
     bot = _make_bot()
     sd = _make_stock_data(earnings_df)
@@ -97,7 +97,7 @@ Each cog test file defines its own `_make_bot()`, `_make_stock_data()`, and `_ma
 Sender tests mock three things: the alert/content object, the discord channel, and `DiscordState`:
 
 ```python
-# tests/bot/senders/test_alert_sender.py:15-43
+# legacy/tests/bot/senders/test_alert_sender.py:15-43
 def _make_alert(ticker="AAPL", alert_type="VOLUME_MOVER"):
     alert = MagicMock()
     alert.build.return_value = EmbedSpec(...)
@@ -121,7 +121,7 @@ def _make_dstate(message_id=None, alert_data=None):
 Repository tests mock the `Postgres` instance and verify SQL/params:
 
 ```python
-# tests/data/test_surge_store.py:41-58
+# legacy/tests/data/test_surge_store.py:41-58
 def test_insert_surge_executes_sql(repo, mock_cursor):
     repo.insert_surge(ticker='GME', ...)
     mock_cursor.execute.assert_called_once()

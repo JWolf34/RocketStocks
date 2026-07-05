@@ -1,4 +1,4 @@
-# Backtesting System (`src/rocketstocks/backtest/`)
+# Backtesting System (`legacy/src/rocketstocks/backtest/`)
 
 Separate package for signal validation and strategy research. CLI entry: `python -m rocketstocks.backtest`. Uses the **backtesting.py** framework (chosen for simplicity and direct integration with existing pure signal functions — no adapters needed). See `backtesting_guide.md` for operational usage (CLI commands, filter options, interpreting results).
 

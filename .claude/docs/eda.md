@@ -1,4 +1,4 @@
-# EDA Framework (`src/rocketstocks/eda/`)
+# EDA Framework (`legacy/src/rocketstocks/eda/`)
 
 Standalone signal research tool for exploratory data analysis on stock events. CLI entry: `python -m rocketstocks.eda`. Decouples event detection (pluggable detectors) from statistical analysis (source-agnostic engines), enabling rapid hypothesis testing. Reads from the same DB as the production bot but has no dependency on `core/`, `bot/`, or `backtest/`.
 
@@ -165,7 +165,7 @@ All detectors return a DataFrame with this standard schema (plus optional source
 
 ---
 
-## Tests (`tests/eda/`)
+## Tests (`legacy/tests/eda/`)
 
 | File | Covers |
 |---|---|

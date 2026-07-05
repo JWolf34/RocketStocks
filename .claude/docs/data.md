@@ -1,4 +1,4 @@
-# Data Layer (`src/rocketstocks/data/`)
+# Data Layer (`legacy/src/rocketstocks/data/`)
 
 Data access. **No discord imports. No core imports** — the one exception is `db.py:7` which imports `settings` from `core/config/` for the connection string.
 

@@ -4,14 +4,14 @@ A Discord bot that delivers real-time stock market alerts and screener reports u
 
 ## ⚠️ v2 rewrite in progress — read this first
 
-- **v1 (`src/rocketstocks/`) is in code freeze** (since 2026-06-11): bugfixes only, no feature work. It keeps serving users untouched until v2 cutover.
+- **v1 (`legacy/src/rocketstocks/`) is in code freeze** (since 2026-06-11): bugfixes only, no feature work. It keeps serving users untouched until v2 cutover.
 - **All v2 work starts at [docs/v2/README.md](docs/v2/README.md)** → architecture brief (entry point), ADRs (decision rationale), roadmap (phases + gate criteria), specs (per-slice work items).
 - **v2 work is spec-driven**: every slice gets a spec in `docs/v2/specs/` reviewed *before* implementation. Do not write v2 code without one. If reality disagrees mid-build, update the spec in the same PR; architectural decisions are promoted to new ADRs.
 - **The rest of this file describes v1.** `docs/alerts/` is v1-historical — none of those alert types ship in v2 (ADR-0030).
 
 ## Tech Stack
 
-- **Language:** Python 3.12+
+- **Language:** Python 3.13 (pinned via `.python-version`; managed with uv)
 - **Bot Framework:** discord.py (cog-based extension system)
 - **Scheduler:** APScheduler (AsyncIOScheduler with cron triggers) + discord.ext.tasks loops
 - **Database:** PostgreSQL via psycopg3 (AsyncConnectionPool)
@@ -20,12 +20,25 @@ A Discord bot that delivers real-time stock market alerts and screener reports u
 - **Notifications:** EventEmitter (thread-safe Queue) for scheduler job status
 - **Infrastructure:** Docker + Docker Compose
 
-## Package Layout
+## Repo Layout (monorepo since S001, 2026-07-05)
 
-`src/` layout installed via `pyproject.toml`.
+uv workspace: root `pyproject.toml` lists the members, one `uv.lock`, one shared `.venv` (`uv sync --all-packages`). Python pinned to 3.13 (`.python-version`).
 
 ```
-src/rocketstocks/
+legacy/       # v1, moved intact (legacy/src/rocketstocks/, legacy/tests/, legacy/pyproject.toml)
+libs/         # v2 shared libraries: domain, persistence, observability, analysis, sources
+services/     # v2 long-running daemons (ingest; serve/bot come with their slices)
+tools/        # v2 one-shot CLIs (migrate; backfill/backtest come with their slices)
+```
+
+v2 naming rule (ADR-0001): import name = `rs_` + member dir (`libs/domain` → `rs_domain`); every member is `<root>/<member>/` with `pyproject.toml` + `src/rs_<member>/` + `tests/`. `rs_common`/`rs_utils` grab-bags are banned.
+
+## v1 Package Layout
+
+`src/` layout under `legacy/`, installed via `legacy/pyproject.toml`.
+
+```
+legacy/src/rocketstocks/
 ├── __main__.py       # Entry point
 ├── core/             # Business logic — ZERO discord imports
 ├── data/             # Data access — NO discord or core imports
@@ -68,20 +81,26 @@ data/ ✗ bot/        data/ ✗ core/
 ## Run / Test / Deploy
 
 ```bash
-# Run locally (after pip install -e .)
-python -m rocketstocks
+# Set up / update the shared venv (installs legacy + all v2 members editable)
+uv sync --all-packages
 
-# Run tests
-.venv/bin/pytest tests/ -q
+# Run v1 locally
+.venv/bin/python -m rocketstocks
 
-# Run specific test file
-.venv/bin/pytest tests/bot/cogs/test_alerts_cog.py -v
+# Run v1 tests
+.venv/bin/pytest legacy/tests -q
+
+# Run specific v1 test file
+.venv/bin/pytest legacy/tests/bot/cogs/test_alerts_cog.py -v
+
+# Run v2 member tests (also just `.venv/bin/pytest` — root testpaths cover libs/services/tools)
+.venv/bin/pytest libs/ services/ tools/ -q
 
 # Backtesting CLI
-python -m rocketstocks.backtest run volume_accumulation --benchmark SPY
+.venv/bin/python -m rocketstocks.backtest run volume_accumulation --benchmark SPY
 
-# Docker
-docker-compose up -d
+# Docker (v1 image builds from legacy/ via the root Dockerfile)
+docker compose up -d
 ```
 
 ## Environment Variables (`.env`)

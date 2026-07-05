@@ -1,4 +1,4 @@
-# Bot Layer (`src/rocketstocks/bot/`)
+# Bot Layer (`legacy/src/rocketstocks/bot/`)
 
 Presentation layer. **All discord-specific code lives here.** Imports freely from both `core/` and `data/`. Never imported by `core/` or `data/`.
 

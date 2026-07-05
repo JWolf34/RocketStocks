@@ -1,4 +1,4 @@
-# Core Layer (`src/rocketstocks/core/`)
+# Core Layer (`legacy/src/rocketstocks/core/`)
 
 Business logic. **Zero discord imports. Zero data-layer imports** — the one exception is `scheduler/jobs.py`, which imports `StockData` to wire up APScheduler jobs. All analysis functions are pure (no side effects, no DB).
 

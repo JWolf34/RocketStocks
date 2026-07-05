@@ -1,4 +1,4 @@
-# Public Data SDK (`src/rocketstocks/api/`)
+# Public Data SDK (`legacy/src/rocketstocks/api/`)
 
 Standalone data SDK for collecting stock market data outside the Discord bot. Intended for internal callers and external coworker projects that need OHLCV history, fundamentals, options, sentiment, and related data for analysis and report generation. **No discord imports.** Depends on `data/` (via `StockData`) and `core/config/` (for DB connection settings).
 
@@ -10,7 +10,7 @@ Standalone data SDK for collecting stock market data outside the Discord bot. In
 
 **Install** (from repo root, Python ≥3.13):
 ```
-pip install -e .
+uv sync --all-packages
 ```
 
 **Required env vars** (in `.env`):

@@ -32,11 +32,11 @@ No v2 functionality, no schema, no service code (S002/S003+). No changes to v1 b
 
 ## Acceptance criteria
 
-- [ ] Full v1 suite (~1,007 tests) passes from the new location.
-- [ ] v1 Docker image builds from `legacy/` and `docker-compose.yml` config validates.
-- [ ] Each v2 root contains one importable placeholder package; root workspace installs them in a fresh venv.
-- [ ] CI green with the two-job split (legacy / v2).
-- [ ] `git log --follow` traces history through the move (move via `git mv`).
+- [x] Full v1 suite (2,804 tests — the roadmap's ~1,007 was a stale estimate) passes from the new location.
+- [ ] v1 Docker image builds from `legacy/` and `docker-compose.yml` config validates. *(No Docker on the dev machine — verified by the `docker` CI job on the slice PR.)*
+- [x] Each v2 root contains one importable placeholder package; root workspace installs them in a fresh venv.
+- [ ] CI green with the two-job split (legacy / v2) — confirmed on the slice PR.
+- [x] `git log --follow` traces history through the move (move via `git mv`).
 
 ## Verification
 
@@ -49,11 +49,21 @@ python -c "import rs_domain"                         # v2 placeholder packages i
 
 ## Open questions
 
-To resolve at spec review (each carries a recommendation). *(Package naming + member layout were resolved 2026-06-12 and folded into Interface.)*
+*(Package naming + member layout were resolved 2026-06-12 and folded into Interface. Both remaining questions resolved at implementation review 2026-07-05:)*
 
-1. **Workspace tooling.** **Recommendation:** `uv` workspace at the root (one lockfile, per-member `pyproject.toml`s); fallback is plain editable installs of each member.
-2. **Dev environments.** One shared venv (simple, name-clash-safe under the `rs_*` prefix) vs. separate venv for `legacy/`. **Recommendation:** one venv until it hurts.
+1. **Workspace tooling — resolved: `uv` workspace** at the root (one `uv.lock`, per-member `pyproject.toml`s, `uv sync --all-packages`).
+2. **Dev environments — resolved: one shared venv** at the repo root; revisit only if legacy/v2 dependency conflicts actually appear.
 
 ## Decisions surfaced
 
-Filled during implementation.
+Implementation review + build, 2026-07-05:
+
+- **v1 dependency bug found and fixed (code-freeze bugfix):** `core/analysis/direction_model.py` imports scikit-learn, which was never declared in `pyproject.toml` (it existed only in the stale root `requirements.txt`). A fresh-venv baseline run failed 20 `test_direction_model` tests with `ModuleNotFoundError`. Blast radius: `backtest/` only (offline CLI), never the bot's live loop, so production carried it harmlessly. Fix: `scikit-learn` added to `legacy/pyproject.toml` dependencies (John approved 2026-07-05).
+- **`requirements.txt` deleted, not moved:** referenced nowhere in the repo (grep across Dockerfile, compose, CI, README, docs) and factually stale (`psycopg2-binary` vs the psycopg3 v1 uses) — though it was the only place the missing scikit-learn dep was recorded (see above).
+- **Dockerfile stays at repo root**, COPY paths point into `legacy/`; relocation deferred until v2's shared service Dockerfile exists and forces the question. Side effect: the old `COPY . .` (which could bake repo-root `.env` into images) is gone.
+- **Suite size correction:** the v1 suite is **2,804 tests**, not the ~1,007 the roadmap cited.
+- **Members created:** `libs/{domain,persistence,observability,analysis,sources}` (spec mandate) + `services/ingest` (S003's home) + `tools/migrate` (S002's home). `serve`, `bot`, `backfill`, `backtest` are minted by their own slices.
+- **Python pinned to 3.13** (`.python-version`) matching the `python:3.13-slim` production image; build backend for v2 members is `uv_build`.
+- **Root pytest config uses `--import-mode=importlib`** (testpaths: `libs`, `services`, `tools`) so same-named test files across members collect together; `legacy/` keeps its own pytest config (`rootdir=legacy/`).
+- **CI got a third job** beyond the spec's two-job split: `docker` (compose config check + image build) — the dev Mac has no Docker, so CI is the only place the image-build acceptance criterion can be verified. Triggers: `pull_request` (any target) + push to `feat/v2-rewrite`/`main`.
+- **Deferred checklist item for the eventual `feat/v2-rewrite` → `main` merge:** retag the current production image (`ghcr.io/jwolf34/rocketstocks:latest`) as `:pre-s001` before merging, so rollback from the relocated build is one compose edit. Nothing in this slice touches `main` or the published image.

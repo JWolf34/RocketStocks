@@ -10,7 +10,7 @@
 
 ## Why v2?
 
-v1 (`src/rocketstocks/`, ~1007 tests) works, but an architectural review surfaced foundational *shape* limits that compose poorly with where the project is going. The real problems are structural:
+v1 (`legacy/src/rocketstocks/`, 2,804 tests) works, but an architectural review surfaced foundational *shape* limits that compose poorly with where the project is going. The real problems are structural:
 
 - **Poll-only, no streaming path** — everything is poll-driven, so alerts lag the market; there is no low-latency ingestion rail for an options-flow-first product.
 - **Append-only schema** — migrations only ever add; no principled migration story, and no separation of live-projection state from durable history.
