@@ -22,8 +22,8 @@ No service code, no detection logic, no cache table, no options/popularity/earni
 
 ## Acceptance criteria
 
-- [ ] `alembic upgrade head` succeeds against a fresh TimescaleDB container; `stream_bars_5m` is a hypertable (verified via `timescaledb_information.hypertables`). *(Test written; runs in CI's service container and locally once Docker Desktop is installed.)*
-- [ ] Round-trip: insert a `Bar` via the async session, read it back, equality on all fields (plus float bit-exactness). *(Same gating as above.)*
+- [x] `alembic upgrade head` succeeds against a fresh TimescaleDB container; `stream_bars_5m` is a hypertable (verified via `timescaledb_information.hypertables`). *(CI service container + locally 2026-07-05 after Docker Desktop install: 41/41 lib tests green, `rs_migrate current` → `0001 (head)`, hypertable confirmed via psql.)*
+- [x] Round-trip: insert a `Bar` via the async session, read it back, equality on all fields (plus float bit-exactness). *(Same runs.)*
 - [x] `BarClosed` JSON round-trip is lossless; a shuffled list of events sorts deterministically by `(event_time, sequence)` — including same-`event_time` tie-breaking.
 - [x] Domain models reject malformed input (one negative test per model — the ADR-0004 validation boundary exists from day 1; naive/non-UTC datetimes are also rejected per the timezone convention).
 - [x] Clock-discipline grep gate runs in CI and fails on a planted violation (proven 2026-07-05: planted `datetime.now()` → exit 1 naming file:line; removed → exit 0).
