@@ -16,6 +16,7 @@ import gzip
 import json
 import sys
 import time
+from datetime import timedelta
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -26,6 +27,11 @@ FAST_TICKER = "SPY"  # 1-min cadence; the rest every SLOW_EVERY ticks
 SLOW_TICKERS = [t for t in TICKERS if t != FAST_TICKER]
 TICK_S = 60
 SLOW_EVERY = 5
+# Unbounded index-ETF chains 502 server-side (response ceiling, probed 2026-07-06:
+# SPY unfiltered → 502 in 8.5s; all strikes ≤45d → 200 in 1.6s). Bound expiries,
+# keep every strike — near-term flow incl. wings is the Phase-2 target.
+BOUNDED_TICKERS = {"SPY", "QQQ"}
+CHAIN_WINDOW_DAYS = 45
 SNAP_ROOT = REPO_ROOT / "data" / "chain-snapshots"
 RATELIMIT_HEADER_PREFIXES = ("x-ratelimit", "retry-after", "schwab")
 
@@ -41,8 +47,12 @@ def write_snapshot(ticker: str, day_tag: str, stamp: str, payload: dict) -> Path
 def pull_cycle(client, tickers: list[str], day_tag: str, header_log: Path) -> None:
     stamp = utc_now().strftime("%H%M")
     for ticker in tickers:
+        kwargs = {}
+        if ticker in BOUNDED_TICKERS:
+            today = utc_now().date()
+            kwargs = {"from_date": today, "to_date": today + timedelta(days=CHAIN_WINDOW_DAYS)}
         try:
-            resp = client.get_option_chain(ticker)
+            resp = client.get_option_chain(ticker, **kwargs)
         except Exception as exc:
             print(f"[{stamp}] {ticker}: request failed: {type(exc).__name__}: {exc}")
             continue
