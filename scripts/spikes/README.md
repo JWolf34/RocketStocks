@@ -24,7 +24,7 @@ the Phase-2 session confirms no re-runs are needed.
 
 ```bash
 .venv/bin/python scripts/spikes/stream_spike.py    # records SPY level-1 all session
-.venv/bin/python scripts/spikes/chain_spike.py     # 10 tickers' chains every 5 min
+.venv/bin/python scripts/spikes/chain_spike.py     # SPY chain every 1 min, 9 others every 5 min
 ```
 
 Both stop themselves at session close (calendar-derived). Watch for: reconnect lines

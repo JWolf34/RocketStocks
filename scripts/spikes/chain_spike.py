@@ -1,5 +1,7 @@
-"""Phase-0 chain-snapshot spike: pull full option chains for 10 liquid tickers
-every 5 minutes across the session; gzip each raw response locally.
+"""Phase-0 chain-snapshot spike: pull full option chains across the session;
+SPY every minute (finest cadence Phase-2 can ever analyze — downsample later,
+never the reverse), the other 9 liquid tickers every 5 minutes. Each raw
+response is gzipped locally.
 
 Full-day data stays under data/chain-snapshots/ (never committed — hundreds of
 MB); chain_diff.py later emits committed samples + findings. Rate-limit
@@ -20,7 +22,10 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from _common import REPO_ROOT, build_client, today_tag, todays_session_bounds, utc_now
 
 TICKERS = ["SPY", "QQQ", "AAPL", "NVDA", "TSLA", "MSFT", "AMZN", "META", "AMD", "GOOGL"]
-INTERVAL_S = 300
+FAST_TICKER = "SPY"  # 1-min cadence; the rest every SLOW_EVERY ticks
+SLOW_TICKERS = [t for t in TICKERS if t != FAST_TICKER]
+TICK_S = 60
+SLOW_EVERY = 5
 SNAP_ROOT = REPO_ROOT / "data" / "chain-snapshots"
 RATELIMIT_HEADER_PREFIXES = ("x-ratelimit", "retry-after", "schwab")
 
@@ -33,9 +38,9 @@ def write_snapshot(ticker: str, day_tag: str, stamp: str, payload: dict) -> Path
     return out
 
 
-def pull_cycle(client, day_tag: str, header_log: Path) -> None:
+def pull_cycle(client, tickers: list[str], day_tag: str, header_log: Path) -> None:
     stamp = utc_now().strftime("%H%M")
-    for ticker in TICKERS:
+    for ticker in tickers:
         try:
             resp = client.get_option_chain(ticker)
         except Exception as exc:
@@ -60,13 +65,19 @@ def run_live() -> int:
     header_log = SNAP_ROOT / day_tag / "ratelimit-headers.jsonl"
     header_log.parent.mkdir(parents=True, exist_ok=True)
     client = build_client()
-    print(f"snapshotting {len(TICKERS)} chains every {INTERVAL_S}s until {session_close:%H:%M:%S} UTC")
+    print(
+        f"snapshotting {FAST_TICKER} every {TICK_S}s, {len(SLOW_TICKERS)} others every "
+        f"{TICK_S * SLOW_EVERY}s, until {session_close:%H:%M:%S} UTC"
+    )
 
+    tick = 0
     while utc_now() < session_close:
         cycle_start = time.monotonic()
-        pull_cycle(client, day_tag, header_log)
+        batch = [FAST_TICKER] + (SLOW_TICKERS if tick % SLOW_EVERY == 0 else [])
+        pull_cycle(client, batch, day_tag, header_log)
+        tick += 1
         elapsed = time.monotonic() - cycle_start
-        time.sleep(max(0.0, INTERVAL_S - elapsed))
+        time.sleep(max(0.0, TICK_S - elapsed))
     print(f"session over — snapshots under {SNAP_ROOT / day_tag}")
     return 0
 
