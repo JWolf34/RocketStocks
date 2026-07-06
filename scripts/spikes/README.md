@@ -22,21 +22,32 @@ the Phase-2 session confirms no re-runs are needed.
 
 ## Monday, ~09:25 ET — start both, in two terminals
 
+`caffeinate -is` keeps the Mac awake for the full session — a lid-close or idle
+sleep would silently kill both recordings. Full day is the plan (machine stays up
+until ~15:02 CT); both scripts stop themselves at session close (calendar-derived).
+
 ```bash
-.venv/bin/python scripts/spikes/stream_spike.py    # records SPY level-1 all session
-.venv/bin/python scripts/spikes/chain_spike.py     # SPY chain every 1 min, 9 others every 5 min
+caffeinate -is .venv/bin/python scripts/spikes/stream_spike.py   # SPY level-1 + ~20 near-ATM option contracts, all session
+caffeinate -is .venv/bin/python scripts/spikes/chain_spike.py    # SPY chain every 1 min, 9 others every 5 min
 ```
 
-Both stop themselves at session close (calendar-derived). Watch for: reconnect lines
-in the stream log (survivable, counted), 429 lines in the chain log (rate-limit
-evidence — wanted for ADR-0020), snapshot sizes (~KB numbers each cycle).
+Watch for: reconnect lines in the stream log (survivable, counted), 429 lines in
+the chain log (rate-limit evidence — wanted for ADR-0020), snapshot sizes (~KB
+numbers each cycle).
 
 ## After the close
 
 ```bash
 .venv/bin/python scripts/spikes/stream_compare.py   # stream-built vs REST candles → comparison md
 .venv/bin/python scripts/spikes/chain_diff.py       # delta analysis → findings md
+.venv/bin/python scripts/spikes/burst_probe.py      # ramp quotes to first 429 → ADR-0020 evidence
 ```
+
+The burst probe runs AFTER the close only — never during RTH — so any rate-limit
+fallout can't hit the live v1 bot's market-hours calls (the script refuses to run
+while the session is open). Passive 429s during the day are unlikely: the chain
+cadence is ~120 requests/hour against a documented ~120/minute limit, which is
+exactly why the probe exists.
 
 Then commit the two findings docs under `docs/v2/specs/fixtures/` on this branch.
 Raw data (`data/spike-recordings/`, `data/chain-snapshots/`) lives on this machine
