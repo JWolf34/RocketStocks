@@ -99,6 +99,14 @@ uv sync --all-packages
 # Lint v2 members (legacy is never linted — code freeze)
 .venv/bin/ruff check libs services tools
 
+# Clock-discipline gate (no ambient time in domain code — ADR-0023)
+scripts/check_clock_discipline.sh
+
+# v2 DB tests need a TimescaleDB (skip visibly otherwise); spec container:
+#   docker run -d --rm -p 5499:5432 -e POSTGRES_PASSWORD=t timescale/timescaledb:latest-pg16
+# Override target with RS_TEST_DB_URL. Migrations CLI (DSN via RS_DB_URL):
+RS_DB_URL=postgresql+psycopg://... .venv/bin/python -m rs_migrate upgrade
+
 # Backtesting CLI
 .venv/bin/python -m rocketstocks.backtest run volume_accumulation --benchmark SPY
 

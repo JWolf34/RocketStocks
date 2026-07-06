@@ -22,24 +22,33 @@ No service code, no detection logic, no cache table, no options/popularity/earni
 
 ## Acceptance criteria
 
-- [ ] `alembic upgrade head` succeeds against a fresh TimescaleDB container; `stream_bars_5m` is a hypertable (verified via `timescaledb_information.hypertables`).
-- [ ] Round-trip: insert a `Bar` via the async session, read it back, equality on all fields.
-- [ ] `BarClosed` JSON round-trip is lossless; a shuffled list of events sorts deterministically by `(event_time, sequence)`.
-- [ ] Domain models reject malformed input (one negative test per model — the ADR-0004 validation boundary exists from day 1).
-- [ ] Clock-discipline grep gate runs in CI and fails on a planted violation (prove the gate, then remove the plant).
+- [ ] `alembic upgrade head` succeeds against a fresh TimescaleDB container; `stream_bars_5m` is a hypertable (verified via `timescaledb_information.hypertables`). *(Test written; runs in CI's service container and locally once Docker Desktop is installed.)*
+- [ ] Round-trip: insert a `Bar` via the async session, read it back, equality on all fields (plus float bit-exactness). *(Same gating as above.)*
+- [x] `BarClosed` JSON round-trip is lossless; a shuffled list of events sorts deterministically by `(event_time, sequence)` — including same-`event_time` tie-breaking.
+- [x] Domain models reject malformed input (one negative test per model — the ADR-0004 validation boundary exists from day 1; naive/non-UTC datetimes are also rejected per the timezone convention).
+- [x] Clock-discipline grep gate runs in CI and fails on a planted violation (proven 2026-07-05: planted `datetime.now()` → exit 1 naming file:line; removed → exit 0).
 
 ## Verification
 
 ```bash
 docker run -d --rm -p 5499:5432 -e POSTGRES_PASSWORD=t timescale/timescaledb:latest-pg16
-.venv/bin/pytest libs/ -q                            # domain + persistence tests (incl. ephemeral-DB round-trip)
-scripts/check_clock_discipline.sh                    # grep gate; exits non-zero on ambient time in domain code
+.venv/bin/pytest libs/ -q            # DB tests target RS_TEST_DB_URL (default = the container above); they skip visibly when unreachable
+scripts/check_clock_discipline.sh    # grep gate; exits non-zero on ambient time in domain code
+RS_DB_URL=... .venv/bin/python -m rs_migrate current
 ```
 
 ## Open questions
 
-Exact hypertable `chunk_time_interval` for `stream_bars_5m` — recommendation: start with Timescale's default; ADR-0022 tuning comes with the compression slice.
+*(Resolved at spec review 2026-07-05:)* Exact hypertable `chunk_time_interval` for `stream_bars_5m` — **resolved: Timescale's default** (7-day chunks); ADR-0022 tuning comes with the compression slice.
 
 ## Decisions surfaced
 
-Filled during implementation.
+Spec review + grilling, 2026-07-05 (all John-approved):
+
+- **Test-DB strategy:** John installs Docker Desktop on the dev Mac (no Docker/Homebrew existed) so the spec's `docker run` works locally; CI *also* runs a `timescale/timescaledb:latest-pg16` service container. Tests read `RS_TEST_DB_URL` (default = the spec container at `:5499`), create a throwaway database per session, migrate it to head, drop it after — and **skip visibly** when no DB is reachable.
+- **Driver: psycopg3** (`postgresql+psycopg`) over asyncpg — one driver family repo-wide while legacy and v2 coexist; Alembic runs plain-sync through the same driver (no async env.py boilerplate); asyncpg's bulk-fetch edge is irrelevant at detection-log volumes. Revisit is a one-line URL change behind SQLAlchemy.
+- **Calendar adapter home: `rs_sources`** — an exchange calendar is an external world-fact adapter; `rs_analysis` stays pure math.
+- **Prices are float64 / DOUBLE PRECISION** in `Bar` and `stream_bars_5m`: the wire delivers JSON floats and DOUBLE PRECISION round-trips them bit-exactly, which ADR-0023's replay property depends on. **NUMERIC/Decimal is explicitly reserved for future accounting-grade tables** (auto-trader-era orders/positions/fills) — do not inherit floats there by inertia.
+- **Timezone convention (binding, enforced):** every domain datetime is tz-aware UTC — `UtcDatetime` validators reject naive and non-UTC values at construction; all DB time columns are `timestamptz`; bar buckets are labeled by UTC start; ET exists only inside the TradingCalendar adapter and future presentation code; env `TZ` is inert by construction.
+- **`alerts.posted_at` ships in rev-001** — ADR-0005 pins it by name as the bot's Bus-2 cursor (contract, not speculation). Held out as speculative: retry/poison counters, dedup keys, sweep indexes, Discord artifacts — each waits for its consumer slice.
+- Implementation notes: Alembic env lives inside `rs_persistence` (`alembic.ini` at the member root, versions under `src/rs_persistence/migrations/`); `rs_migrate` is a thin `upgrade|downgrade|current` wrapper reading `RS_DB_URL`; the clock-gate script carries an extensible scope list (add `services/ingest` src when S003 lands).
