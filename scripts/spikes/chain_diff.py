@@ -3,8 +3,8 @@
 For each ticker: walk consecutive snapshots, per-contract deltas of
 totalVolume (cumulative daily → delta ≈ 5-min flow), openInterest (expected
 static intraday — measure whether that holds), and bid/ask drift. Emits
-docs/v2/specs/fixtures/chains/findings-<date>.md plus 3 committed sample
-snapshots per ticker (first / midday / last).
+docs/v2/specs/fixtures/chains/findings-<date>.md (the only committed artifact;
+raw snapshots stay local under data/chain-snapshots/).
 
     .venv/bin/python scripts/spikes/chain_diff.py [--date YYYY-MM-DD]
     .venv/bin/python scripts/spikes/chain_diff.py --dry-run   # synthetic two-snapshot diff
@@ -77,13 +77,7 @@ def analyze_ticker(ticker_dir: Path) -> list[tuple[str, str, dict]]:
     return results
 
 
-def emit(day_tag: str, per_ticker: dict[str, list], sample_sources: dict[str, list[Path]]) -> Path:
-    samples_dir = FIXTURES_DIR / "chains" / "samples" / day_tag
-    for ticker, paths in sample_sources.items():
-        (samples_dir / ticker).mkdir(parents=True, exist_ok=True)
-        for p in paths:
-            shutil.copy2(p, samples_dir / ticker / p.name)
-
+def emit(day_tag: str, per_ticker: dict[str, list]) -> Path:
     lines = [
         f"# Chain-snapshot delta findings — {day_tag}",
         "",
@@ -143,14 +137,12 @@ def main() -> int:
     day_dir = SNAP_ROOT / args.date
     if not day_dir.exists():
         sys.exit(f"no snapshots under {day_dir}")
-    per_ticker, samples = {}, {}
+    per_ticker = {}
     for ticker_dir in sorted(p for p in day_dir.iterdir() if p.is_dir()):
-        snaps = sorted(ticker_dir.glob("*.json.gz"))
-        if not snaps:
+        if not any(ticker_dir.glob("*.json.gz")):
             continue
         per_ticker[ticker_dir.name] = analyze_ticker(ticker_dir)
-        samples[ticker_dir.name] = [snaps[0], snaps[len(snaps) // 2], snaps[-1]]
-    out = emit(args.date, per_ticker, samples)
+    out = emit(args.date, per_ticker)
     print(f"findings → {out}")
     return 0
 

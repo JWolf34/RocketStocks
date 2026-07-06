@@ -12,7 +12,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from _common import FIXTURES_DIR, build_client, today_tag
+from _common import FIXTURES_DIR, SPIKE_DATA_DIR, build_client, today_tag
 
 BUCKET_MS = 5 * 60 * 1000
 
@@ -105,7 +105,7 @@ def main() -> int:
     parser.add_argument("--dry-run", action="store_true", help="build candles only; skip REST")
     args = parser.parse_args()
 
-    jsonl = args.jsonl or FIXTURES_DIR / "streaming" / f"spy-level1-{args.date}.jsonl"
+    jsonl = args.jsonl or SPIKE_DATA_DIR / f"spy-level1-{args.date}.jsonl"
     if not jsonl.exists():
         sys.exit(f"no recording at {jsonl}")
     stream_candles = build_candles(jsonl)

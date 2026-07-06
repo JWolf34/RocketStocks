@@ -1,8 +1,9 @@
 """Phase-0 streaming spike: record one full session of SPY level_one_equity.
 
 Every message schwab-py delivers is appended (with a UTC receive timestamp)
-to docs/v2/specs/fixtures/streaming/spy-level1-<date>.jsonl. Disconnects are
-survived with backoff and logged. Runs until session close + 2 minutes.
+to data/spike-recordings/spy-level1-<date>.jsonl (gitignored — raw recordings
+stay local). Disconnects are survived with backoff and logged. Runs until
+session close + 2 minutes.
 
     .venv/bin/python scripts/spikes/stream_spike.py            # live, during RTH
     .venv/bin/python scripts/spikes/stream_spike.py --dry-run  # writer/summary path, no network
@@ -16,7 +17,7 @@ from datetime import timedelta
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from _common import FIXTURES_DIR, build_client, today_tag, todays_session_bounds, utc_now
+from _common import SPIKE_DATA_DIR, build_client, today_tag, todays_session_bounds, utc_now
 
 GRACE = timedelta(minutes=2)
 SYMBOL = "SPY"
@@ -105,8 +106,7 @@ def main() -> int:
     parser.add_argument("--out", type=Path, default=None)
     args = parser.parse_args()
 
-    default_dir = FIXTURES_DIR / "streaming"
-    out = args.out or default_dir / f"spy-level1-{today_tag()}.jsonl"
+    out = args.out or SPIKE_DATA_DIR / f"spy-level1-{today_tag()}.jsonl"
     recorder = Recorder(out)
     try:
         if args.dry_run:

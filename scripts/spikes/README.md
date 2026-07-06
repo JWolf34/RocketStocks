@@ -1,9 +1,11 @@
 # Phase-0 Schwab spikes — Monday runbook
 
-Throwaway code (roadmap pre-flight). The deliverables are the **fixtures** under
-`docs/v2/specs/fixtures/` and the **findings docs** — inputs to S003's spec review
-(Schwab-client question) and the Phase-2 detection design session. These scripts are
-deleted once the Phase-2 session confirms no re-runs are needed.
+Throwaway code (roadmap pre-flight). The deliverables are the two **findings docs**
+committed under `docs/v2/specs/fixtures/` — inputs to S003's spec review (Schwab-client
+question) and the Phase-2 detection design session. **All raw recordings stay local**
+under the gitignored `data/` tree (stream JSONL in `data/spike-recordings/`, chain
+snapshots in `data/chain-snapshots/`) — never committed. These scripts are deleted once
+the Phase-2 session confirms no re-runs are needed.
 
 ## One-time setup (before Monday)
 
@@ -33,11 +35,12 @@ evidence — wanted for ADR-0020), snapshot sizes (~KB numbers each cycle).
 
 ```bash
 .venv/bin/python scripts/spikes/stream_compare.py   # stream-built vs REST candles → comparison md
-.venv/bin/python scripts/spikes/chain_diff.py       # delta analysis → findings md + committed samples
+.venv/bin/python scripts/spikes/chain_diff.py       # delta analysis → findings md
 ```
 
-Then commit `docs/v2/specs/fixtures/` on this branch. Raw full-day chain data stays
-local under `data/chain-snapshots/` — never in git.
+Then commit the two findings docs under `docs/v2/specs/fixtures/` on this branch.
+Raw data (`data/spike-recordings/`, `data/chain-snapshots/`) lives on this machine
+only — never in git.
 
 ## Dry runs (no market, no credentials)
 
