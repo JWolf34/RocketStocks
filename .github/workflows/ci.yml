@@ -29,6 +29,20 @@ jobs:
   v2:
     name: v2 (workspace members)
     runs-on: ubuntu-latest
+    services:
+      timescaledb:
+        image: timescale/timescaledb:latest-pg16
+        env:
+          POSTGRES_PASSWORD: t
+        ports:
+          - 5499:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      RS_TEST_DB_URL: postgresql+psycopg://postgres:t@localhost:5499/postgres
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -45,6 +59,9 @@ jobs:
 
       - name: Lint v2 members
         run: uv run ruff check libs services tools
+
+      - name: Clock-discipline gate
+        run: scripts/check_clock_discipline.sh
 
       # Per-member tests/test_import.py covers importability of every member.
       - name: Run v2 member tests
