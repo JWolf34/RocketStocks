@@ -1,11 +1,10 @@
 """Alembic environment. Runs sync via the same psycopg3 driver the app uses
 async (postgresql+psycopg handles both modes — S002 driver decision).
 
-DSN resolution: RS_DB_URL env var wins; falls back to -x db_url=... ;
-alembic.ini's placeholder is never a real target.
+The DSN arrives on the config's sqlalchemy.url, set by
+rs_persistence.migration_config() (rs_migrate CLI and tests both build
+their config through it).
 """
-
-import os
 
 from alembic import context
 from sqlalchemy import create_engine
@@ -17,9 +16,9 @@ target_metadata = Base.metadata
 
 
 def _database_url() -> str:
-    url = os.environ.get("RS_DB_URL") or context.get_x_argument(as_dictionary=True).get("db_url")
+    url = config.get_main_option("sqlalchemy.url")
     if not url:
-        raise RuntimeError("set RS_DB_URL (or -x db_url=...) to run migrations")
+        raise RuntimeError("no sqlalchemy.url — build the config via rs_persistence.migration_config()")
     return url
 
 

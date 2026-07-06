@@ -1,5 +1,5 @@
 """Operational migration CLI — a thin wrapper over Alembic against
-rs_persistence's config. DSN comes from RS_DB_URL.
+rs_persistence's in-package migrations. DSN comes from RS_DB_URL.
 
     python -m rs_migrate upgrade [revision=head]
     python -m rs_migrate downgrade <revision>
@@ -11,9 +11,8 @@ import os
 import sys
 
 from alembic import command
-from alembic.config import Config
 
-from rs_persistence import alembic_config_path
+from rs_persistence import migration_config
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -28,11 +27,12 @@ def main(argv: list[str] | None = None) -> int:
 
     args = parser.parse_args(argv)
 
-    if not os.environ.get("RS_DB_URL"):
+    db_url = os.environ.get("RS_DB_URL")
+    if not db_url:
         print("RS_DB_URL is not set", file=sys.stderr)
         return 2
 
-    config = Config(str(alembic_config_path()))
+    config = migration_config(db_url)
     if args.action == "upgrade":
         command.upgrade(config, args.revision)
     elif args.action == "downgrade":

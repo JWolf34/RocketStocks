@@ -12,12 +12,17 @@ def _require_utc(value: datetime) -> datetime:
     Binding convention (S002): every datetime in the domain is timezone-aware
     UTC. Eastern Time exists only inside the TradingCalendar adapter and
     presentation code.
+
+    Accepted values are normalized to `timezone.utc`: a zero-offset variable
+    zone (e.g. Europe/London in winter) passes the offset check but must not
+    survive as the tzinfo, or later wall-clock arithmetic could cross a DST
+    boundary and drift off the true instant.
     """
     if value.tzinfo is None:
         raise ValueError("naive datetime — domain datetimes must be tz-aware UTC")
     if value.utcoffset() != timezone.utc.utcoffset(None):
         raise ValueError(f"non-UTC datetime (offset {value.utcoffset()}) — convert to UTC at the edge")
-    return value
+    return value if value.tzinfo is timezone.utc else value.astimezone(timezone.utc)
 
 
 UtcDatetime = Annotated[datetime, AfterValidator(_require_utc)]

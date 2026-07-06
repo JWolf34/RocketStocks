@@ -5,7 +5,8 @@
 # is the sanctioned escape hatch there).
 #
 # Scope grows with the codebase: add detection-bearing directories here as
-# they appear (e.g. services/ingest src when S003 lands).
+# they appear (e.g. services/ingest src when S003 lands). A missing scope
+# directory is an ERROR, not a pass — the gate must never go silently dead.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
@@ -15,7 +16,23 @@ SCOPES=(
 ALLOWLIST_RE='rs_domain/clock\.py'
 PATTERN='datetime\.now\(|datetime\.utcnow\(|time\.time\('
 
-violations=$(grep -rnE "$PATTERN" "${SCOPES[@]}" --include='*.py' | grep -vE "$ALLOWLIST_RE" || true)
+for scope in "${SCOPES[@]}"; do
+  if [[ ! -d "$scope" ]]; then
+    echo "clock-discipline gate: scope directory missing: $scope (renamed? fix SCOPES)" >&2
+    exit 2
+  fi
+done
+
+set +e
+matches=$(grep -rnE "$PATTERN" "${SCOPES[@]}" --include='*.py')
+grep_status=$?
+set -e
+if (( grep_status > 1 )); then
+  echo "clock-discipline gate: grep failed with status $grep_status" >&2
+  exit 2
+fi
+
+violations=$(printf '%s' "$matches" | grep -vE "$ALLOWLIST_RE" || true)
 
 if [[ -n "$violations" ]]; then
   echo "clock-discipline violations (inject Clock instead — ADR-0023):" >&2

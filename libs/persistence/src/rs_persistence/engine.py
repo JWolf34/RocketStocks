@@ -1,12 +1,18 @@
 """Async engine + session factory. DSNs use the psycopg3 dialect
-(postgresql+psycopg://) — one driver family repo-wide (S002 decision)."""
+(postgresql+psycopg://) — one driver family repo-wide (S002 decision).
+
+The engine pins the session timezone to UTC: psycopg3 decodes timestamptz
+into the connection's TimeZone, so without the pin, reads from a server
+configured to any other zone would hand non-UTC datetimes to the domain
+validators. Correctness must not depend on ambient DB config.
+"""
 
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker, create_async_engine
 
 
-def create_engine(dsn: str) -> AsyncEngine:
-    return create_async_engine(dsn)
+def build_engine(dsn: str) -> AsyncEngine:
+    return create_async_engine(dsn, connect_args={"options": "-c timezone=UTC"})
 
 
-def create_session_factory(engine: AsyncEngine) -> async_sessionmaker[AsyncSession]:
+def build_session_factory(engine: AsyncEngine) -> async_sessionmaker[AsyncSession]:
     return async_sessionmaker(engine, expire_on_commit=False)

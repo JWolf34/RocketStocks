@@ -8,7 +8,7 @@ from sqlalchemy import create_engine as create_sync_engine
 from sqlalchemy import inspect, text
 
 from rs_domain import Bar
-from rs_persistence import BarRepository, create_engine, create_session_factory
+from rs_persistence import BarRepository, build_engine, build_session_factory
 
 BUCKET = datetime(2026, 7, 6, 13, 30, tzinfo=timezone.utc)
 
@@ -57,9 +57,9 @@ class TestBarRoundTrip:
             close=560.75,
             volume=1_200_000,
         )
-        engine = create_engine(migrated_db_url)
+        engine = build_engine(migrated_db_url)
         try:
-            factory = create_session_factory(engine)
+            factory = build_session_factory(engine)
             async with factory() as session:
                 async with session.begin():
                     await BarRepository(session).insert(bar)
@@ -74,9 +74,9 @@ class TestBarRoundTrip:
             assert getattr(restored, field).hex() == getattr(bar, field).hex()
 
     async def test_get_missing_returns_none(self, migrated_db_url):
-        engine = create_engine(migrated_db_url)
+        engine = build_engine(migrated_db_url)
         try:
-            factory = create_session_factory(engine)
+            factory = build_session_factory(engine)
             async with factory() as session:
                 missing = await BarRepository(session).get("MISSING", BUCKET)
         finally:
