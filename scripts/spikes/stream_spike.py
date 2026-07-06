@@ -62,28 +62,37 @@ async def run_live(recorder: Recorder) -> int:
     print(f"recording {SYMBOL} until {stop_at:%H:%M:%S} UTC → {recorder.path}")
 
     client = build_client(asyncio=True)
-    reconnects = -1  # first connect isn't a reconnect
+    total_reconnects = 0
+    consecutive_failures = 0  # resets once a connection survives 60s
 
     while utc_now() < stop_at:
-        reconnects += 1
-        if reconnects:
-            backoff = min(30, 2**reconnects)
-            print(f"[{utc_now():%H:%M:%S}] reconnect #{reconnects} in {backoff}s")
-            await asyncio.sleep(backoff)
+        connected_at = None
         try:
             stream = StreamClient(client)
             await stream.login()
             stream.add_level_one_equity_handler(recorder.record)
             await stream.level_one_equity_subs([SYMBOL])
-            print(f"[{utc_now():%H:%M:%S}] connected, subscribed {SYMBOL}")
+            connected_at = utc_now()
+            print(f"[{connected_at:%H:%M:%S}] connected, subscribed {SYMBOL}")
             while utc_now() < stop_at:
                 await asyncio.wait_for(stream.handle_message(), timeout=90)
         except TimeoutError:
             print(f"[{utc_now():%H:%M:%S}] 90s without any message — reconnecting")
         except Exception as exc:
             print(f"[{utc_now():%H:%M:%S}] stream dropped: {type(exc).__name__}: {exc}")
+        else:
+            break  # reached stop_at with the connection healthy
 
-    print("session over:", recorder.summary(max(reconnects, 0)))
+        was_stable = connected_at is not None and (utc_now() - connected_at).total_seconds() >= 60
+        consecutive_failures = 0 if was_stable else consecutive_failures + 1
+        total_reconnects += 1
+        if utc_now() >= stop_at:
+            break
+        backoff = min(30, 2**consecutive_failures)
+        print(f"[{utc_now():%H:%M:%S}] reconnect #{total_reconnects} in {backoff}s")
+        await asyncio.sleep(backoff)
+
+    print("session over:", recorder.summary(total_reconnects))
     return 0
 
 
@@ -106,6 +115,8 @@ def main() -> int:
     parser.add_argument("--out", type=Path, default=None)
     args = parser.parse_args()
 
+    if args.dry_run and args.out is None:
+        parser.error("--dry-run requires --out; refusing to append synthetic ticks to the real day-file")
     out = args.out or SPIKE_DATA_DIR / f"spy-level1-{today_tag()}.jsonl"
     recorder = Recorder(out)
     try:

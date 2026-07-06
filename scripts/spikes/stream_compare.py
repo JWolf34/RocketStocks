@@ -22,6 +22,9 @@ def _extract_ticks(jsonl_path: Path):
 
     Handles both schwab-py's relabeled field names and raw numeric keys
     (LAST_PRICE = field 3, TOTAL_VOLUME = field 8 in LEVELONE_EQUITIES).
+    Schwab streams only changed fields, so either value may be None —
+    volume-only updates must still flow through or their deltas smear
+    into later candles.
     """
     with jsonl_path.open(encoding="utf-8") as fh:
         for line in fh:
@@ -31,27 +34,44 @@ def _extract_ticks(jsonl_path: Path):
             for item in msg.get("content", []):
                 price = item.get("LAST_PRICE", item.get("3"))
                 volume = item.get("TOTAL_VOLUME", item.get("8"))
-                if ts is None or price is None:
+                if ts is None or (price is None and volume is None):
                     continue
-                yield ts, float(price), None if volume is None else float(volume)
+                yield (
+                    ts,
+                    None if price is None else float(price),
+                    None if volume is None else float(volume),
+                )
 
 
 def build_candles(jsonl_path: Path) -> dict[int, dict]:
-    """5-min OHLC + per-bucket volume (from cumulative TOTAL_VOLUME deltas)."""
+    """5-min OHLC + per-bucket volume (from cumulative TOTAL_VOLUME deltas).
+
+    Volume-only updates contribute to their own bucket without touching OHLC;
+    a bucket that got volume but never a price (unlikely for SPY in RTH) rolls
+    its volume forward into the next bucket that has a candle.
+    """
     candles: dict[int, dict] = {}
+    volumes: dict[int, float] = {}
     prev_cumulative = None
     for ts, price, cumulative in _extract_ticks(jsonl_path):
         bucket = ts - ts % BUCKET_MS
-        candle = candles.setdefault(
-            bucket, {"open": price, "high": price, "low": price, "close": price, "volume": 0.0}
-        )
-        candle["high"] = max(candle["high"], price)
-        candle["low"] = min(candle["low"], price)
-        candle["close"] = price
+        if price is not None:
+            candle = candles.setdefault(
+                bucket, {"open": price, "high": price, "low": price, "close": price, "volume": 0.0}
+            )
+            candle["high"] = max(candle["high"], price)
+            candle["low"] = min(candle["low"], price)
+            candle["close"] = price
         if cumulative is not None:
             if prev_cumulative is not None:
-                candle["volume"] += max(0.0, cumulative - prev_cumulative)
+                volumes[bucket] = volumes.get(bucket, 0.0) + max(0.0, cumulative - prev_cumulative)
             prev_cumulative = cumulative
+    pending = 0.0
+    for bucket in sorted(set(candles) | set(volumes)):
+        pending += volumes.get(bucket, 0.0)
+        if bucket in candles:
+            candles[bucket]["volume"] = pending
+            pending = 0.0
     return candles
 
 
