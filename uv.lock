@@ -2157,6 +2157,22 @@ requires-dist = [{ name = "pydantic", specifier = ">=2.13.4" }]
 name = "rs-ingest"
 version = "0.1.0"
 source = { editable = "services/ingest" }
+dependencies = [
+    { name = "pydantic-settings" },
+    { name = "rs-domain" },
+    { name = "rs-persistence" },
+    { name = "rs-sources" },
+    { name = "schwab-py" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "pydantic-settings", specifier = ">=2.6.0" },
+    { name = "rs-domain", editable = "libs/domain" },
+    { name = "rs-persistence", editable = "libs/persistence" },
+    { name = "rs-sources", editable = "libs/sources" },
+    { name = "schwab-py", specifier = ">=1.5.1" },
+]
 
 [[package]]
 name = "rs-migrate"
