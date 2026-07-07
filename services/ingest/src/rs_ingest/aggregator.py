@@ -82,6 +82,8 @@ class BarAggregator:
         self._bucket_start_ms: int | None = None  # open bucket, None if none
         self._bucket_baseline: int | None = None  # cumvol baseline of the open bucket
         self._ohlc: dict[str, float] | None = None  # None while open bucket has no trade tick
+        self._open_attr_ms = 0  # attribution of the earliest print (owns `open`)
+        self._close_attr_ms = 0  # attribution of the latest print (owns `close`)
         self._resolved_until_ms: int | None = None  # buckets ending <= this are settled
         self._degraded = False  # set by note_disconnect, cleared at next close
 
@@ -156,10 +158,18 @@ class BarAggregator:
             self._open_bucket(bucket_start)
         if self._ohlc is None:
             self._ohlc = {"open": tick.price, "high": tick.price, "low": tick.price, "close": tick.price}
+            self._open_attr_ms = self._close_attr_ms = tick.attribution_ms
         else:
+            # open/close follow attribution order, not arrival order, so an
+            # out-of-order print inside the open bucket can't corrupt them.
             self._ohlc["high"] = max(self._ohlc["high"], tick.price)
             self._ohlc["low"] = min(self._ohlc["low"], tick.price)
-            self._ohlc["close"] = tick.price
+            if tick.attribution_ms < self._open_attr_ms:
+                self._ohlc["open"] = tick.price
+                self._open_attr_ms = tick.attribution_ms
+            if tick.attribution_ms >= self._close_attr_ms:
+                self._ohlc["close"] = tick.price
+                self._close_attr_ms = tick.attribution_ms
         return bars
 
     # -- clock-driven closes (watchdog + session close) ----------------------
@@ -176,8 +186,11 @@ class BarAggregator:
         return []
 
     def note_disconnect(self) -> None:
-        """Mark the next closed bar as disconnect-scarred (its cumvol delta is
-        still exact; only OHLC may have missed prints). Logged, not schema'd."""
+        """Mark the next BUILT bar as disconnect-scarred (its cumvol delta is
+        still exact; only OHLC may have missed prints). The scar deliberately
+        survives gap/no-trade closes: buckets inside an outage produce no bars,
+        and the first bar built after reconnect is the potentially clipped one.
+        Logged + counted, not schema'd."""
         self._degraded = True
 
     # -- internals ------------------------------------------------------------
@@ -208,12 +221,9 @@ class BarAggregator:
         self._bucket_start_ms = self._bucket_baseline = self._ohlc = None
         self._resolved_until_ms = end
 
-        if ohlc is None:
-            # Volume moved but price never changed: no bar row (matches REST's
-            # omission of no-trade candles); the volume stays in the baseline.
-            self.counters["buckets_no_trade"] += 1
-            logger.info("%s bucket %s: no trades, no bar", self.symbol, _fmt(start))
-            return []
+        # Buckets only open on price ticks, so an open bucket always has OHLC;
+        # no-trade buckets never open and are counted in _open_bucket instead.
+        assert ohlc is not None
         if baseline is None:
             self.counters["buckets_gap_no_baseline"] += 1
             logger.warning("%s bucket %s: no cumvol baseline, gap (no bar)", self.symbol, _fmt(start))
