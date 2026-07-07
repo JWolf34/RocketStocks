@@ -57,3 +57,15 @@ class OutboxRow(Base):
     created_at: Mapped[datetime] = mapped_column(
         TIMESTAMP(timezone=True), server_default=text("now()")
     )
+
+
+class SchwabTokenRow(Base):
+    """Single-row (id = 1, CHECK-enforced) OAuth token store; rev-002."""
+
+    __tablename__ = "schwab_tokens"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    token_data: Mapped[dict[str, Any]] = mapped_column(JSONB)
+    updated_at: Mapped[datetime] = mapped_column(
+        TIMESTAMP(timezone=True), server_default=text("now()")
+    )
