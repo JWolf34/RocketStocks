@@ -5,8 +5,9 @@ from pathlib import Path
 from alembic.config import Config
 
 from rs_persistence.engine import build_engine, build_session_factory
-from rs_persistence.models import AlertRow, Base, OutboxRow, StreamBar5m
+from rs_persistence.models import AlertRow, Base, OutboxRow, SchwabTokenRow, StreamBar5m
 from rs_persistence.repository import BarRepository
+from rs_persistence.token_store import SchwabTokenStore
 
 
 def migration_config(db_url: str) -> Config:
@@ -27,6 +28,8 @@ __all__ = [
     "Base",
     "BarRepository",
     "OutboxRow",
+    "SchwabTokenRow",
+    "SchwabTokenStore",
     "StreamBar5m",
     "build_engine",
     "build_session_factory",
