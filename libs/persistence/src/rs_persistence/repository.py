@@ -18,7 +18,11 @@ from rs_persistence.models import AlertRow, OutboxRow, StreamBar5m
 
 _FIELDS = ("symbol", "bucket", "open", "high", "low", "close", "volume")
 
-NOTIFY_CHANNEL = "alerts"  # Bus-2 wire contract (ADR-0005); bot LISTENs here
+# Bus-2 wire contract (ADR-0005) — the single published source of truth for
+# the channel the bot LISTENs on and the outbox event vocabulary it matches.
+# Both are exported from rs_persistence; ingest (writer) and bot (reader) import
+# these rather than re-declaring the literals.
+NOTIFY_CHANNEL = "alerts"
 OUTBOX_EVENT_TYPE = "alert_created"  # snake_case ledger vocabulary (grilling #6)
 
 
@@ -47,18 +51,28 @@ class AlertRepository:
     #4/#6). NOTIFY is transactional: a LISTENer sees it only when the caller
     commits, so the alert, its ledger entry, and the wake-up land together or
     not at all. The caller owns the commit (the bar insert is a separate
-    transaction — grilling #4)."""
+    transaction — grilling #4).
+
+    Caller MUST commit: `insert` returns a live-looking alert id from the
+    flush, but with no subsequent commit the alerts row, the outbox row, AND
+    the NOTIFY all silently roll back on session close — a lost alert, not a
+    visible error."""
 
     def __init__(self, session: AsyncSession, notify_channel: str = NOTIFY_CHANNEL) -> None:
         self._session = session
         self._channel = notify_channel
 
     async def insert(self, alert: Alert) -> int:
+        # One JSON-safe dump feeds both JSONB copies: the alerts row and the
+        # outbox row store byte-identical payloads through the same serializer,
+        # and a payload value the raw json.dumps can't encode (a datetime, a
+        # Decimal) is coerced here rather than crashing the alerts insert.
+        dumped = alert.model_dump(mode="json")
         row = AlertRow(
             symbol=alert.symbol,
             alert_type=alert.alert_type,
             triggered_at=alert.triggered_at,
-            payload=alert.payload,
+            payload=dumped["payload"],
         )
         self._session.add(row)
         await self._session.flush()  # assigns the identity id
@@ -68,7 +82,7 @@ class AlertRepository:
         self._session.add(
             OutboxRow(
                 event_type=OUTBOX_EVENT_TYPE,
-                payload={"alert_id": alert_id, **alert.model_dump(mode="json")},
+                payload={"alert_id": alert_id, **dumped},
             )
         )
         # NOTIFY payload is the id only — a wake-up hint; the row is the truth.
