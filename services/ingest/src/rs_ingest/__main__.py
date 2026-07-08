@@ -16,6 +16,8 @@ from authlib.integrations.base_client import OAuthError
 from pydantic import ValidationError
 
 from rs_domain import SystemClock
+from rs_ingest.detector import ThresholdDetector
+from rs_ingest.pipeline import Pipeline
 from rs_ingest.schwab_client import TokenMissingError, build_schwab_client
 from rs_ingest.settings import IngestSettings
 from rs_ingest.sources.live import LiveEventSource
@@ -38,7 +40,8 @@ async def run_session(settings: IngestSettings) -> int:
 
     engine = build_engine(settings.rs_db_url)
     try:
-        token_store = SchwabTokenStore(build_session_factory(engine))
+        session_factory = build_session_factory(engine)
+        token_store = SchwabTokenStore(session_factory)
         try:
             client = await build_schwab_client(settings, token_store)
         except TokenMissingError as exc:
@@ -51,17 +54,9 @@ async def run_session(settings: IngestSettings) -> int:
             clock=SystemClock(),
             grace=timedelta(seconds=settings.watchdog_grace_seconds),
         )
+        pipeline = Pipeline(session_factory, [ThresholdDetector(settings.volume_threshold)])
         try:
-            async for event in source.events():
-                # B6 replaces this log with the Bus-1 fan-out (persister → detector).
-                logger.info(
-                    "BarClosed %s seq=%d %s close=%.2f volume=%d",
-                    event.event_time,
-                    event.sequence,
-                    event.bar.symbol,
-                    event.bar.close,
-                    event.bar.volume,
-                )
+            await pipeline.run(source)
         except OAuthError:
             # Refresh token expired (the weekly re-login chore, pinned #9). The
             # remedy was already logged loudly in the reconnect loop; exit 1
@@ -69,7 +64,8 @@ async def run_session(settings: IngestSettings) -> int:
             return 1
         await token_store.drain()  # a refresh scheduled near shutdown must not be lost
         if source.aggregator is not None:
-            logger.info("session counters: %s", source.aggregator.counters)
+            logger.info("aggregator counters: %s", source.aggregator.counters)
+        logger.info("pipeline counters: %s", pipeline.counters)
         return 0
     finally:
         await engine.dispose()
