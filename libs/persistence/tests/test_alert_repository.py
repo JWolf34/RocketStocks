@@ -1,0 +1,129 @@
+"""AlertRepository: the alerts row, its outbox ledger row, and the Bus-2
+NOTIFY are one atomic unit (grilling #4/#6). A raw LISTEN connection witnesses
+that the notify arrives only at commit, carrying the alert id."""
+
+from datetime import datetime, timezone
+
+import psycopg
+import pytest
+from sqlalchemy import func, select, text
+
+from rs_domain import Alert
+from rs_persistence import (
+    AlertRepository,
+    AlertRow,
+    OutboxRow,
+    build_engine,
+    build_session_factory,
+)
+
+ALERT = Alert(
+    symbol="SPY",
+    alert_type="volume_threshold",
+    triggered_at=datetime(2026, 7, 6, 14, 30, tzinfo=timezone.utc),
+    payload={"volume": 750_000, "threshold": 500_000},
+)
+
+
+@pytest.fixture
+async def session_factory(migrated_db_url):
+    # migrated_db_url is session-scoped and shared; truncate so each test starts
+    # from an empty alerts/outbox with a reset identity.
+    engine = build_engine(migrated_db_url)
+    factory = build_session_factory(engine)
+    async with factory() as s:
+        await s.execute(text("TRUNCATE alerts, outbox RESTART IDENTITY"))
+        await s.commit()
+    yield factory
+    await engine.dispose()
+
+
+async def _count(session_factory, model) -> int:
+    async with session_factory() as s:
+        return await s.scalar(select(func.count()).select_from(model))
+
+
+async def test_insert_writes_alert_and_outbox_atomically(session_factory):
+    async with session_factory() as s:
+        alert_id = await AlertRepository(s).insert(ALERT)
+        await s.commit()
+
+    assert await _count(session_factory, AlertRow) == 1
+    assert await _count(session_factory, OutboxRow) == 1
+    async with session_factory() as s:
+        alert = await s.get(AlertRow, alert_id)
+        outbox = await s.scalar(select(OutboxRow))
+    assert alert.symbol == "SPY"
+    assert alert.payload == {"volume": 750_000, "threshold": 500_000}
+    assert alert.posted_at is None  # the bot stamps this on delivery (S004)
+    # Ledger row stands alone: id + the full alert content, no join needed. The
+    # shape is pinned with literals (not re-derived from ALERT.model_dump) so a
+    # serialization change — e.g. triggered_at drifting off ISO-8601 — fails
+    # here instead of silently breaking the S004 bot that parses this ledger.
+    assert outbox.event_type == "alert_created"
+    assert outbox.payload == {
+        "alert_id": alert_id,
+        "symbol": "SPY",
+        "alert_type": "volume_threshold",
+        "triggered_at": "2026-07-06T14:30:00Z",
+        "payload": {"volume": 750_000, "threshold": 500_000},
+    }
+
+
+async def test_rollback_persists_neither_row(session_factory):
+    # A failure before commit must drop the alert AND its outbox row together.
+    async with session_factory() as s:
+        await AlertRepository(s).insert(ALERT)
+        await s.rollback()
+    assert await _count(session_factory, AlertRow) == 0
+    assert await _count(session_factory, OutboxRow) == 0
+
+
+async def test_listen_receives_notify_only_at_commit(session_factory, migrated_db_url):
+    raw_dsn = migrated_db_url.replace("+psycopg", "")
+    async with await psycopg.AsyncConnection.connect(raw_dsn, autocommit=True) as listener:
+        await listener.execute("LISTEN alerts")
+
+        async with session_factory() as s:
+            alert_id = await AlertRepository(s).insert(ALERT)
+            # NOTIFY is transactional — nothing may arrive before the commit.
+            assert [n async for n in listener.notifies(timeout=0.3, stop_after=1)] == []
+            await s.commit()
+
+        got = [n async for n in listener.notifies(timeout=5, stop_after=1)]
+
+    assert len(got) == 1
+    assert got[0].channel == "alerts"
+    assert got[0].payload == str(alert_id)  # id only; the row is the truth
+
+
+async def test_custom_channel_routes_the_notify(session_factory, migrated_db_url):
+    # The notify_channel seam must actually move the NOTIFY — guards against a
+    # regression that hard-codes 'alerts' into the pg_notify call.
+    raw_dsn = migrated_db_url.replace("+psycopg", "")
+    async with await psycopg.AsyncConnection.connect(raw_dsn, autocommit=True) as listener:
+        await listener.execute("LISTEN custom_alerts")
+        async with session_factory() as s:
+            alert_id = await AlertRepository(s, notify_channel="custom_alerts").insert(ALERT)
+            await s.commit()
+        got = [n async for n in listener.notifies(timeout=5, stop_after=1)]
+    assert [(n.channel, n.payload) for n in got] == [("custom_alerts", str(alert_id))]
+
+
+async def test_multiple_alerts_share_one_transaction(session_factory, migrated_db_url):
+    # The caller-commits design allows batching a session's alerts; each gets a
+    # distinct id, its own outbox row, and its own NOTIFY at the shared commit.
+    raw_dsn = migrated_db_url.replace("+psycopg", "")
+    async with await psycopg.AsyncConnection.connect(raw_dsn, autocommit=True) as listener:
+        await listener.execute("LISTEN alerts")
+        async with session_factory() as s:
+            repo = AlertRepository(s)
+            id_a = await repo.insert(ALERT)
+            id_b = await repo.insert(ALERT)
+            await s.commit()
+        got = [n async for n in listener.notifies(timeout=5, stop_after=2)]
+
+    assert id_a != id_b
+    assert await _count(session_factory, AlertRow) == 2
+    assert await _count(session_factory, OutboxRow) == 2
+    assert sorted(n.payload for n in got) == sorted([str(id_a), str(id_b)])
