@@ -12,6 +12,7 @@ cd "$(dirname "$0")/.."
 
 SCOPES=(
   "libs/domain/src"
+  "services/ingest/src"
 )
 ALLOWLIST_RE='rs_domain/clock\.py'
 PATTERN='datetime\.now\(|datetime\.utcnow\(|time\.time\('
