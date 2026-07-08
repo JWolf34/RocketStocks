@@ -1,7 +1,7 @@
 """rev-002 + SchwabTokenStore: single-row semantics, round-trip, and the
 sync schedule_save callback schwab-py fires from inside the event loop."""
 
-import asyncio
+import logging
 
 import pytest
 from sqlalchemy import create_engine as create_sync_engine
@@ -64,6 +64,28 @@ async def test_schedule_save_persists_from_sync_callback(store):
     # schwab-py calls token_write_func synchronously from within the loop,
     # passing extra kwargs on auto-refresh; both must be tolerated.
     store.schedule_save(TOKEN_A, refresh_token="r1")
-    pending = [t for t in asyncio.all_tasks() if t is not asyncio.current_task()]
-    await asyncio.gather(*pending)
+    await store.drain()
     assert await store.load() == TOKEN_A
+
+
+async def test_schedule_save_preserves_order(store):
+    # Back-to-back refreshes: the later token must win, never be clobbered
+    # by an earlier save landing late.
+    store.schedule_save(TOKEN_A)
+    store.schedule_save(TOKEN_B)
+    await store.drain()
+    assert await store.load() == TOKEN_B
+
+
+async def test_schedule_save_failure_is_logged(caplog):
+    store = SchwabTokenStore(session_factory=None)
+
+    async def boom(token):
+        raise RuntimeError("db down")
+
+    store.save = boom
+    with caplog.at_level(logging.ERROR, logger="rs_persistence.token_store"):
+        store.schedule_save(TOKEN_A)
+        await store.drain()
+    assert "token save failed" in caplog.text
+    assert not store._pending
