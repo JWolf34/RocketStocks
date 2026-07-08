@@ -6,7 +6,7 @@ from alembic.config import Config
 
 from rs_persistence.engine import build_engine, build_session_factory
 from rs_persistence.models import AlertRow, Base, OutboxRow, SchwabTokenRow, StreamBar5m
-from rs_persistence.repository import BarRepository
+from rs_persistence.repository import AlertRepository, BarRepository
 from rs_persistence.token_store import SchwabTokenStore
 
 
@@ -24,6 +24,7 @@ def migration_config(db_url: str) -> Config:
 
 
 __all__ = [
+    "AlertRepository",
     "AlertRow",
     "Base",
     "BarRepository",
