@@ -24,5 +24,7 @@ class IngestSettings(BaseSettings):
 
     symbol: str = Field("SPY", validation_alias="RS_INGEST_SYMBOL")
     volume_threshold: int = Field(500_000, validation_alias="RS_INGEST_VOLUME_THRESHOLD")
-    notify_channel: str = Field("alerts", validation_alias="RS_INGEST_NOTIFY_CHANNEL")
     watchdog_grace_seconds: float = Field(30.0, validation_alias="RS_INGEST_WATCHDOG_GRACE_SECONDS")
+    # The Bus-2 NOTIFY channel is intentionally NOT here: it is a pinned wire
+    # contract shared with the bot (ADR-0005), not a per-deployment tunable —
+    # rs_persistence.NOTIFY_CHANNEL is its single source of truth.

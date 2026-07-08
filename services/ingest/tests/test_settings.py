@@ -20,7 +20,6 @@ def test_defaults(monkeypatch):
     settings = IngestSettings(_env_file=None)
     assert settings.symbol == "SPY"
     assert settings.volume_threshold == 500_000
-    assert settings.notify_channel == "alerts"
     assert settings.watchdog_grace_seconds == 30.0
     assert settings.rs_db_url == REQUIRED["RS_DB_URL"]
 

@@ -19,7 +19,7 @@ from rs_domain import SystemClock
 from rs_ingest.schwab_client import TokenMissingError, build_schwab_client
 from rs_ingest.settings import IngestSettings
 from rs_ingest.sources.live import LiveEventSource
-from rs_persistence import SchwabTokenStore, build_engine, build_session_factory
+from rs_persistence import NOTIFY_CHANNEL, SchwabTokenStore, build_engine, build_session_factory
 from rs_sources import PandasMarketCalendar
 
 logger = logging.getLogger(__name__)
@@ -86,7 +86,7 @@ def main() -> int:
         "rs_ingest starting: symbol=%s threshold=%d channel=%s grace=%.0fs",
         settings.symbol,
         settings.volume_threshold,
-        settings.notify_channel,
+        NOTIFY_CHANNEL,
         settings.watchdog_grace_seconds,
     )
     return asyncio.run(run_session(settings))
