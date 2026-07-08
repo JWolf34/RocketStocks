@@ -4,11 +4,13 @@ These are orchestration tests — the repositories' DB behavior (atomic alert +
 outbox + NOTIFY, rollback) is proven in libs/persistence's test_alert_repository
 against a real database. Here BarRepository/AlertRepository are faked so we can
 pin the *ordering and failure semantics* the pipeline owns: persist-before-detect,
-two independent transactions per bar, the ADR-0008 detector error boundary, and
-crash-loud persistence. A shared Recorder captures the ordered sequence of DB
-operations across both transactions so the two-transaction structure is visible.
+two independent transactions per bar, the ADR-0008 error boundary (a raising
+detector and a failed alert write both tolerated), and crash-loud bar persistence.
+A shared Recorder captures the ordered sequence of DB operations across both
+transactions so the two-transaction structure is visible.
 """
 
+import logging
 from datetime import datetime, timedelta, timezone
 
 import pytest
@@ -172,7 +174,12 @@ async def test_alert_written_in_a_second_transaction_after_the_bar(rec):
     # Bar commits alone first; then the alert lands in a *separate* transaction.
     assert rec.log == [("bar", 750_000), "commit", ("alert", "SPY", 750_000), "commit"]
     assert rec.sessions_opened == 2
-    assert p.counters == {"bars_persisted": 1, "alerts_emitted": 1, "detector_errors": 0}
+    assert p.counters == {
+        "bars_persisted": 1,
+        "alerts_emitted": 1,
+        "detector_errors": 0,
+        "alerts_dropped": 0,
+    }
     assert rec.alert_channels == [NOTIFY_CHANNEL]  # Option A default threaded through
 
 
@@ -221,16 +228,23 @@ async def test_persister_failure_crashes_loud(rec, monkeypatch):
     assert p.counters["bars_persisted"] == 0
 
 
-async def test_alert_write_failure_crashes_loud_after_the_bar_commit(rec, monkeypatch):
-    # The narrow boundary: a genuine persistence failure on the alert write is
-    # NOT swallowed by the detector boundary — it crashes like the bar write.
+async def test_alert_write_failure_is_tolerated_and_capture_continues(rec, monkeypatch, caplog):
+    # Wide boundary (criticality tiering): a failed alert write is Tier-2 —
+    # tolerated, counted, and logged with its payload, never fatal to Tier-1 bar
+    # capture. Both bars stay durable and the second still flows after the first
+    # bar's alert write blows up.
     monkeypatch.setattr(pipeline_mod, "AlertRepository", RaisingAlertRepo)
     p = Pipeline(rec.factory, [ThresholdDetector(100_000)])
 
-    with pytest.raises(RuntimeError, match="alert insert failed"):
-        await p.handle(closed(bar(200_000)))
+    with caplog.at_level(logging.ERROR):
+        await p.run(FakeSource([closed(bar(200_000, i=0)), closed(bar(300_000, i=1))]))
 
-    assert rec.log == [("bar", 200_000), "commit"]  # bar already durable
-    assert p.counters["bars_persisted"] == 1
+    assert p.counters["bars_persisted"] == 2  # both bars durable
+    assert p.counters["alerts_dropped"] == 2  # both alert writes tolerated
     assert p.counters["alerts_emitted"] == 0
-    assert p.counters["detector_errors"] == 0  # not attributed to the detector
+    assert p.counters["detector_errors"] == 0  # decide() succeeded; the *write* failed
+    # each bar committed in its own transaction, independent of the alert failure
+    assert rec.log == [("bar", 200_000), "commit", ("bar", 300_000), "commit"]
+    # the drop is auditable, not silent: the payload lands in the ERROR log
+    assert "DROPPED" in caplog.text
+    assert "200000" in caplog.text and "300000" in caplog.text
