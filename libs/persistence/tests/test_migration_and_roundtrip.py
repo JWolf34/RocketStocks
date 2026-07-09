@@ -1,7 +1,7 @@
 """S002 acceptance: rev-001 migrates a fresh TimescaleDB, stream_bars_5m is a
 hypertable, and a domain Bar round-trips through the async session losslessly."""
 
-from datetime import datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 
 import pytest
 from sqlalchemy import create_engine as create_sync_engine
@@ -82,3 +82,34 @@ class TestBarRoundTrip:
         finally:
             await engine.dispose()
         assert missing is None
+
+    async def test_list_for_day_returns_ordered_utc_day_slice(self, migrated_db_url):
+        # Unique symbol + day so this never collides with other tests' inserts in
+        # the shared session DB (stream_bars_5m is not truncated between tests).
+        d0 = datetime(2026, 7, 7, 13, 30, tzinfo=timezone.utc)
+        rows = [
+            Bar(symbol="LFD", bucket=d0 + timedelta(minutes=10), open=1.0, high=1.0, low=1.0, close=1.0, volume=30),
+            Bar(symbol="LFD", bucket=d0, open=1.0, high=1.0, low=1.0, close=1.0, volume=10),
+            Bar(symbol="LFD", bucket=d0 + timedelta(minutes=5), open=1.0, high=1.0, low=1.0, close=1.0, volume=20),
+            Bar(symbol="LFD", bucket=d0 + timedelta(days=1), open=1.0, high=1.0, low=1.0, close=1.0, volume=99),
+            Bar(symbol="OTH", bucket=d0, open=1.0, high=1.0, low=1.0, close=1.0, volume=99),
+        ]
+        engine = build_engine(migrated_db_url)
+        try:
+            factory = build_session_factory(engine)
+            async with factory() as session:
+                async with session.begin():
+                    for bar in rows:
+                        await BarRepository(session).insert(bar)
+            async with factory() as session:
+                got = await BarRepository(session).list_for_day("LFD", date(2026, 7, 7))
+        finally:
+            await engine.dispose()
+
+        # symbol- and day-scoped, sorted by bucket: the out-of-order inserts come
+        # back ordered; the next-day LFD bar and the same-day OTH bar are excluded.
+        assert [(b.bucket, b.volume) for b in got] == [
+            (d0, 10),
+            (d0 + timedelta(minutes=5), 20),
+            (d0 + timedelta(minutes=10), 30),
+        ]
