@@ -33,12 +33,11 @@ No universe manager (one hardcoded ticker), no options scans, no warm-up, no rea
 ## Verification
 
 ```bash
-python -m rs_ingest                                  # run across a market session (dev box)
-psql "$DB" -c "SELECT count(*) FROM stream_bars_5m WHERE symbol='SPY' AND bucket::date = current_date"
-psql "$DB" -c "SELECT (SELECT count(*) FROM alerts) = (SELECT count(*) FROM outbox)"
-psql "$DB" -c "LISTEN alerts;"                       # in a second session; observe NOTIFY on next alert
-.venv/bin/pytest libs/ services/ingest -q            # unit tests incl. fixture round-trip
-python -m rs_ingest.tools.compare_bars --date today  # stream-built vs REST bars, prints max deviation
+.venv/bin/pytest libs/ services/ingest -q   # unit + DB: aggregator, pipeline/boundary, fixture round-trip, compare logic
+.venv/bin/ruff check libs services tools
+scripts/check_clock_discipline.sh           # no ambient time in ingest src (ADR-0023)
+# Live-session acceptance (≈78 bars, alert/outbox parity, LISTEN witness, compare_bars, fixture recording,
+# error-boundary proof) is the executable "Acceptance-run operations (B8 runbook)" section below.
 ```
 
 ## Open questions
@@ -73,13 +72,39 @@ To resolve at spec review (each carries a recommendation):
 The live acceptance run targets a **dedicated persistent TimescaleDB container** (named volume, port 5498 — separate from the disposable 5499 test container so pytest can never touch acceptance evidence). Operator (John) starts the run pre-open; starting *before* 09:30 ET is the recommended procedure (warms the cumvol baseline → first bar buildable):
 
 ```bash
+# 1. once — the persistent acceptance DB (separate from the 5499 pytest container)
 docker run -d --name rs-acceptance -p 5498:5432 -v rs-acceptance-data:/var/lib/postgresql/data \
-  -e POSTGRES_PASSWORD=<pw> timescale/timescaledb:latest-pg16      # once
+  -e POSTGRES_PASSWORD=<pw> timescale/timescaledb:latest-pg16
 RS_DB_URL=postgresql+psycopg://postgres:<pw>@localhost:5498/postgres .venv/bin/python -m rs_migrate upgrade
-.venv/bin/python -m rs_ingest 2>&1 | tee data/acceptance-run-$(date +%F).log
+
+# 2. pre-open — run the session; RS_INGEST_FIXTURE_PATH records the BarClosed fixture
+#    (gitignored data/; a curated excerpt is committed afterward). RS_DB_URL lives in .env.
+RS_INGEST_FIXTURE_PATH=data/session-fixture-$(date +%F).jsonl \
+  .venv/bin/python -m rs_ingest 2>&1 | tee data/acceptance-run-$(date +%F).log
+
+# 3. after close — validation (DATE = the session's UTC calendar day, YYYY-MM-DD)
+DB=postgresql://postgres:<pw>@localhost:5498/postgres
+psql "$DB" -c "SELECT count(*) FROM stream_bars_5m
+               WHERE symbol='SPY' AND bucket >= '<DATE> 00:00+00'
+                 AND bucket < '<DATE> 00:00+00'::timestamptz + interval '1 day'"      # ≈ 78
+psql "$DB" -c "SELECT (SELECT count(*) FROM alerts) = (SELECT count(*) FROM outbox) AS parity"   # t
+RS_DB_URL=postgresql+psycopg://postgres:<pw>@localhost:5498/postgres \
+  .venv/bin/python -m rs_ingest.tools.compare_bars --date <DATE>   # prices gated ≤ 0.25; volume + coverage reported
+wc -l data/session-fixture-$(date +%F).jsonl                       # ≈ bars persisted (round-trip is the unit test)
 ```
 
-`IngestSettings` reads the DSN as `RS_DB_URL` from `.env`. Post-session analysis (bar counts, alert/outbox parity, LISTEN witness, `compare_bars`) is delegated.
+During the session, a second shell holding `psql "$DB" -c "LISTEN alerts;"` (keep it open — e.g. append `\watch 5`) witnesses the transactional `NOTIFY` as each alert commits (criterion 29). The session-end log prints `pipeline counters`; on a clean run confirm `detector_errors: 0` and `alerts_dropped: 0` (no spurious ADR-0008 boundary or Tier-2 drop activity).
+
+**Error-boundary proof (criterion 30) — replay (chosen 2026-07-08).** After the run, replay the recorded fixture through the pipeline with a planted always-raising detector, into a throwaway DB the tool creates and drops — proving the ADR-0008 boundary on real session data with zero risk to the acceptance capture (it is also unit-proven by `test_pipeline` and the B6c/B7 real-Postgres verifications; this is the acceptance belt-and-suspenders):
+
+```bash
+.venv/bin/python -m rs_ingest.tools.replay --fixture data/session-fixture-<DATE>.jsonl --plant-raiser \
+  --admin-db postgresql+psycopg://postgres:<pw>@localhost:5498/postgres   # replay DB is separate + auto-dropped
+# -> "BOUNDARY HELD" (exit 0): bars_persisted == fixture length AND detector_errors == fixture length
+#    (every raise swallowed) AND alerts still emitted — capture never stopped for a detector fault.
+```
+
+Post-session analysis (interpreting counts / `compare_bars` deviations / coverage gaps, committing the fixture excerpt + findings) is delegated (pinned #13).
 
 ## Decisions surfaced
 
