@@ -15,12 +15,13 @@ from datetime import timedelta
 from authlib.integrations.base_client import OAuthError
 from pydantic import ValidationError
 
-from rs_domain import SystemClock
+from rs_domain import EventSource, SystemClock
 from rs_ingest.detector import ThresholdDetector
 from rs_ingest.pipeline import Pipeline
 from rs_ingest.schwab_client import TokenMissingError, build_schwab_client
 from rs_ingest.settings import IngestSettings
 from rs_ingest.sources.live import LiveEventSource
+from rs_ingest.sources.recording import FixtureRecorder, RecordingEventSource
 from rs_persistence import NOTIFY_CHANNEL, SchwabTokenStore, build_engine, build_session_factory
 from rs_sources import PandasMarketCalendar
 
@@ -47,13 +48,17 @@ async def run_session(settings: IngestSettings) -> int:
         except TokenMissingError as exc:
             logger.error("%s", exc)
             return 1
-        source = LiveEventSource(
+        live = LiveEventSource(
             symbol=settings.symbol,
             stream_factory=lambda: StreamClient(client),
             calendar=PandasMarketCalendar(),
             clock=SystemClock(),
             grace=timedelta(seconds=settings.watchdog_grace_seconds),
         )
+        source: EventSource = live
+        if settings.fixture_path is not None:
+            source = RecordingEventSource(live, FixtureRecorder(settings.fixture_path))
+            logger.info("recording session fixture to %s", settings.fixture_path)
         pipeline = Pipeline(session_factory, [ThresholdDetector(settings.volume_threshold)])
         try:
             await pipeline.run(source)
@@ -63,8 +68,8 @@ async def run_session(settings: IngestSettings) -> int:
             # without dumping a redundant traceback for an expected event.
             return 1
         await token_store.drain()  # a refresh scheduled near shutdown must not be lost
-        if source.aggregator is not None:
-            logger.info("aggregator counters: %s", source.aggregator.counters)
+        if live.aggregator is not None:
+            logger.info("aggregator counters: %s", live.aggregator.counters)
         logger.info("pipeline counters: %s", pipeline.counters)
         return 0
     finally:

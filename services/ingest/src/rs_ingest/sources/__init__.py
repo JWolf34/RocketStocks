@@ -1,2 +1,2 @@
-"""EventSource adapters behind the rs_domain port: live schwab-py streamer
-here; a recorded/replay adapter arrives with the fixture work (S003 B7+)."""
+"""EventSource adapters behind the rs_domain port: live schwab-py streamer in
+`live`; fixture recording (a source tee) and replay in `recording` (S003 B7)."""
