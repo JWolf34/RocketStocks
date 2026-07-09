@@ -1,3 +1,5 @@
+from pathlib import Path
+
 import pytest
 from pydantic import ValidationError
 
@@ -21,6 +23,7 @@ def test_defaults(monkeypatch):
     assert settings.symbol == "SPY"
     assert settings.volume_threshold == 500_000
     assert settings.watchdog_grace_seconds == 30.0
+    assert settings.fixture_path is None
     assert settings.rs_db_url == REQUIRED["RS_DB_URL"]
 
 
@@ -38,6 +41,13 @@ def test_env_overrides(monkeypatch):
     settings = IngestSettings(_env_file=None)
     assert settings.symbol == "QQQ"
     assert settings.volume_threshold == 250_000
+
+
+def test_fixture_path_resolves_from_env(monkeypatch):
+    _set_required(monkeypatch)
+    monkeypatch.setenv("RS_INGEST_FIXTURE_PATH", "data/spike-recordings/session.jsonl")
+    settings = IngestSettings(_env_file=None)
+    assert settings.fixture_path == Path("data/spike-recordings/session.jsonl")
 
 
 def test_missing_required_fails(monkeypatch):
