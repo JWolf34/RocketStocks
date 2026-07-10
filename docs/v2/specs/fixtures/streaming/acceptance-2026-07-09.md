@@ -1,10 +1,10 @@
-# S003 ingest acceptance run (B8) — 2026-07-09
+# S003 ingest acceptance run (B8) — 2026-07-09 (criterion 5 closed 2026-07-10)
 
 Live SPY session through the real `rs_ingest` daemon: Schwab L1 stream → 5-min bars →
 `BarClosed` → ordered fan-out (persist → threshold detector) → `alerts`+`outbox`+`NOTIFY`.
 Acceptance DB: dedicated persistent TimescaleDB, port 5498. Volume threshold 500,000.
 
-## Result — six of seven acceptance criteria closed on 7/9 artifacts
+## Result — all seven acceptance criteria closed (six on 7/9 artifacts, criterion 5 live on 7/10)
 
 | # | Criterion | 2026-07-09 |
 |---|---|---|
@@ -12,7 +12,7 @@ Acceptance DB: dedicated persistent TimescaleDB, port 5498. Volume threshold 500
 | 2 | RTH bars persisted (≈78) | **PASS** — 78 bars, no gaps |
 | 3 | Bars vs Schwab REST within tolerance | **intent met** (below) — provisional gate breached at one boundary bar; recalibration → Phase 2 |
 | 4 | ≥1 alert; `outbox` == `alerts`; one transaction | **PASS** — 12 = 12 |
-| 5 | Live `LISTEN` receives each `NOTIFY` | **deferred → 2026-07-10** (live-only) |
+| 5 | Live `LISTEN` receives each `NOTIFY` | **PASS (2026-07-10)** — 9/9 in the witnessed window, payload = alert id 1:1, in commit order (below) |
 | 6 | Planted always-raises → capture continues | **PASS** — replay BOUNDARY HELD |
 | 7 | Fixture JSONL round-trips to identical order | **PASS** — 78 lines |
 
@@ -57,15 +57,37 @@ on `open`:
    test in `services/ingest/tests/test_compare_bars.py`.
 2. **Provisional tolerance too tight at session boundaries** — see Criterion 3; recalibration is
    Phase-2 work.
+3. **psql `\watch` silently swallows notifications (found 2026-07-10).** The overnight witness held
+   `LISTEN alerts;` open via `SELECT … \watch 60`; the connection stayed up all night (zero
+   reconnects) and its heartbeat count tracked every commit, yet it printed **zero**
+   `Asynchronous notification` lines while 4 alerts fired — psql parks inside the `\watch` loop and
+   never reaches the code path that displays received notifications. Reproduced mid-session on a
+   scratch channel with the same client (psql 17.8): 2 `NOTIFY`s sent → 0 printed; the identical
+   test through psycopg's `notifies()` printed 2/2. Witness replaced mid-session with the psycopg
+   listener (11:15 CDT); the S003 B8 runbook guidance was corrected in the same change. Bearing on
+   S004: the bot is the production `LISTEN`er, and "held connection that silently misses
+   notifications" is precisely the failure mode its `posted_at IS NULL` reconcile sweep (ADR-0005)
+   must cover — this finding is a live demonstration of why that sweep is non-negotiable.
 
-## Deferred to 2026-07-10 (criterion 5)
+## Criterion 5 — live `LISTEN` witness (closed 2026-07-10)
 
-`NOTIFY` delivery to a live `LISTEN`er is observable only during a live session and cannot be
-reconstructed from 7/9's DB / fixture / log. It will be witnessed on the 7/10 ingest run: a
-`psql … LISTEN alerts;` session (tee'd to `data/listen-witness-2026-07-10.log`), with witnessed
-notification count == that day's alert count and each payload = an alert id. Outbox parity (12 = 12)
-and the unit tests already prove the write + single-transaction `NOTIFY`; the live witness proves
-end-to-end delivery on the real acceptance DB.
+Witnessed on the 2026-07-10 live ingest run (itself clean: 78/78 bars, 13 alerts, counters
+`bars_persisted 78, alerts_emitted 13, detector_errors 0, alerts_dropped 0`, outbox parity 25 = 25
+cumulative, fixture 78 lines).
+
+**Result — exact 1:1 parity over the witnessed window.** A psycopg listener
+(`data/listen-witness-fixed-2026-07-10.py`, log `data/listen-witness-fixed-2026-07-10.log`)
+established `LISTEN alerts` at **16:15:07 UTC** (baseline: 16 alert rows). From then to the close,
+**9 alerts committed (ids 17–25) and 9 notifications were received — payloads exactly 17…25, in
+commit order, on one connection (backend pid 11837), zero reconnects.** Each notification arrived
+within ~1 s of its alert's bar-close pipeline write.
+
+**Witnessed-window caveat.** The day's first 4 alerts (ids 13–16) predate the fixed listener and
+were not witnessed — a witness-tooling failure (Finding 3), not a delivery gap: their rows + outbox
+rows committed normally (the original witness's own 60 s count heartbeat recorded 12 → 16 while
+printing nothing), and `NOTIFY` is issued inside the same committed transaction
+(`AlertRepository.insert`). The criterion's substance — transactional end-to-end delivery of one
+notification per committed alert on the real acceptance DB — is proven by the 9/9 window.
 
 ## Artifacts
 
