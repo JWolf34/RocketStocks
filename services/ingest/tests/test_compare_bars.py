@@ -122,3 +122,21 @@ async def test_fetch_rest_candles_maps_epoch_ms_and_fields():
     assert rest == {B0: Ohlcv(1.0, 2.0, 0.5, 1.5, 100.0)}  # epoch ms -> UTC bucket, fields mapped
     assert client.calls[0][0] == "SPY"
     assert client.calls[0][1]["need_extended_hours_data"] is False  # RTH-only, matches the stream
+
+
+async def test_fetch_rest_candles_keeps_only_the_requested_day():
+    # Schwab returns adjacent sessions for a period=1-day request (observed 2026-07-09:
+    # a 7/9 query yields 7/8 + 7/9). fetch_rest_candles must keep only the requested UTC day,
+    # or prior-session candles leak in as bogus "rest-only" coverage.
+    prev = B0 - timedelta(days=1)
+    client = _FakeClient(
+        [
+            {"datetime": int(prev.timestamp() * 1000), "open": 9, "high": 9, "low": 9, "close": 9, "volume": 1},
+            {"datetime": int(B0.timestamp() * 1000), "open": 1.0, "high": 2.0, "low": 0.5, "close": 1.5, "volume": 100},
+        ]
+    )
+
+    rest = await fetch_rest_candles(client, "SPY", B0.date())
+
+    assert set(rest) == {B0}  # the prior-day candle is dropped
+    assert rest[B0] == Ohlcv(1.0, 2.0, 0.5, 1.5, 100.0)

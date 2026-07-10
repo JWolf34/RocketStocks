@@ -128,18 +128,22 @@ async def fetch_stream_bars(session_factory, symbol: str, day: date) -> dict[dat
 
 async def fetch_rest_candles(client, symbol: str, day: date) -> dict[datetime, Ohlcv]:
     start = datetime(day.year, day.month, day.day, tzinfo=timezone.utc)
+    end = start + timedelta(days=1)
     resp = await client.get_price_history_every_five_minutes(
         symbol,
         start_datetime=start,
-        end_datetime=start + timedelta(days=1) - timedelta(minutes=1),
+        end_datetime=end - timedelta(minutes=1),
         need_extended_hours_data=False,
     )
     resp.raise_for_status()
+    # Schwab honors periodType=day/period=1 loosely and can return adjacent sessions
+    # (observed 2026-07-09: a 7/9 request yielded 7/8 + 7/9 candles). Keep only the
+    # requested UTC day so coverage and the price gate compare the right session — the
+    # same half-open [start, start+1d) window fetch_stream_bars reads from the DB.
     return {
-        datetime.fromtimestamp(c["datetime"] / 1000, tz=timezone.utc): Ohlcv(
-            c["open"], c["high"], c["low"], c["close"], float(c["volume"])
-        )
+        ts: Ohlcv(c["open"], c["high"], c["low"], c["close"], float(c["volume"]))
         for c in resp.json()["candles"]
+        if start <= (ts := datetime.fromtimestamp(c["datetime"] / 1000, tz=timezone.utc)) < end
     }
 
 
