@@ -59,6 +59,24 @@ class OutboxRow(Base):
     )
 
 
+class ServiceClientRow(Base):
+    """One API consumer (ADR-0012); rev-003. Phase 1 reads only api_key_hash +
+    revoked_at; scopes and rate-limit columns are enforced from Phase 3."""
+
+    __tablename__ = "service_clients"
+
+    id: Mapped[int] = mapped_column(BigInteger, Identity(always=True), primary_key=True)
+    name: Mapped[str] = mapped_column(Text, unique=True)
+    api_key_hash: Mapped[str] = mapped_column(Text, unique=True)
+    scopes: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict)
+    rate_limit_rps: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    rate_limit_burst: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        TIMESTAMP(timezone=True), server_default=text("now()")
+    )
+    revoked_at: Mapped[datetime | None] = mapped_column(TIMESTAMP(timezone=True), nullable=True)
+
+
 class SchwabTokenRow(Base):
     """Single-row (id = 1, CHECK-enforced) OAuth token store; rev-002."""
 

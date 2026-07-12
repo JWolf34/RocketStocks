@@ -5,12 +5,20 @@ from pathlib import Path
 from alembic.config import Config
 
 from rs_persistence.engine import build_engine, build_session_factory
-from rs_persistence.models import AlertRow, Base, OutboxRow, SchwabTokenRow, StreamBar5m
+from rs_persistence.models import (
+    AlertRow,
+    Base,
+    OutboxRow,
+    SchwabTokenRow,
+    ServiceClientRow,
+    StreamBar5m,
+)
 from rs_persistence.repository import (
     NOTIFY_CHANNEL,
     OUTBOX_EVENT_TYPE,
     AlertRepository,
     BarRepository,
+    ServiceClientRepository,
 )
 from rs_persistence.token_store import SchwabTokenStore
 
@@ -38,6 +46,8 @@ __all__ = [
     "OutboxRow",
     "SchwabTokenRow",
     "SchwabTokenStore",
+    "ServiceClientRepository",
+    "ServiceClientRow",
     "StreamBar5m",
     "build_engine",
     "build_session_factory",
