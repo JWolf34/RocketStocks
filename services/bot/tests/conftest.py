@@ -10,7 +10,7 @@ from alembic import command
 from sqlalchemy import create_engine as create_sync_engine
 from sqlalchemy import text
 
-from rs_persistence import migration_config
+from rs_persistence import build_engine, build_session_factory, migration_config
 
 DEFAULT_URL = "postgresql+psycopg://postgres:t@localhost:5499/postgres"
 
@@ -48,3 +48,16 @@ def migrated_db_url():
         with admin_engine.connect() as conn:
             conn.execute(text(f'DROP DATABASE "{db_name}" WITH (FORCE)'))
         admin_engine.dispose()
+
+
+@pytest.fixture
+async def session_factory(migrated_db_url):
+    # migrated_db_url is session-scoped and shared; truncate so each test starts
+    # from an empty alerts/outbox with a reset identity.
+    engine = build_engine(migrated_db_url)
+    factory = build_session_factory(engine)
+    async with factory() as s:
+        await s.execute(text("TRUNCATE alerts, outbox RESTART IDENTITY"))
+        await s.commit()
+    yield factory
+    await engine.dispose()
