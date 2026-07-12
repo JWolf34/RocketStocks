@@ -10,7 +10,8 @@ repository honoring the same contract explicitly.
 
 from datetime import date, datetime, timedelta, timezone
 
-from sqlalchemy import func, select
+from pydantic import BaseModel, ConfigDict
+from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from rs_domain import Alert, Bar
@@ -65,6 +66,18 @@ class BarRepository:
         return Bar(**fields)
 
 
+class PendingAlert(BaseModel):
+    """Delivery envelope for one undelivered alert (S004 pin #10): the storage
+    id rides alongside the domain Alert instead of leaking into it (the alert
+    id is delivery bookkeeping, not part of the detection decision — S003 pin
+    #5). Future delivery-state fields (e.g. Phase-3 retry_count) land here."""
+
+    model_config = ConfigDict(frozen=True)
+
+    id: int
+    alert: Alert
+
+
 class AlertRepository:
     """Writes an alert as one atomic unit — the alerts row, its outbox ledger
     row, and the Bus-2 NOTIFY — all inside the caller's transaction (grilling
@@ -108,3 +121,39 @@ class AlertRepository:
         # NOTIFY payload is the id only — a wake-up hint; the row is the truth.
         await self._session.execute(select(func.pg_notify(self._channel, str(alert_id))))
         return alert_id
+
+    async def list_unposted(self) -> list[PendingAlert]:
+        """Every undelivered alert, id order, no LIMIT — the bot's sweep drains
+        fully (S004 pin #3). posted_at IS NULL is the consumer-owned cursor
+        (ADR-0005); rows are rebuilt as domain Alerts at the boundary
+        (UTC-normalized — ADR-0004)."""
+        rows = (
+            await self._session.scalars(
+                select(AlertRow).where(AlertRow.posted_at.is_(None)).order_by(AlertRow.id)
+            )
+        ).all()
+        return [
+            PendingAlert(
+                id=row.id,
+                alert=Alert(
+                    symbol=row.symbol,
+                    alert_type=row.alert_type,
+                    triggered_at=row.triggered_at.astimezone(timezone.utc),
+                    payload=row.payload,
+                ),
+            )
+            for row in rows
+        ]
+
+    async def mark_posted(self, alert_id: int) -> datetime | None:
+        """Stamp the delivery cursor with the DB-side clock (S004 pin #9 —
+        rs_bot holds no client clock; the returned stamp feeds the lag log).
+        The posted_at IS NULL guard makes it idempotent: None means the row
+        was already marked (or never existed) and the first stamp stands —
+        the caller warns rather than overwrites."""
+        return await self._session.scalar(
+            update(AlertRow)
+            .where(AlertRow.id == alert_id, AlertRow.posted_at.is_(None))
+            .values(posted_at=func.now())
+            .returning(AlertRow.posted_at)
+        )

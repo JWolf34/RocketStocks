@@ -11,6 +11,7 @@ from rs_persistence.repository import (
     OUTBOX_EVENT_TYPE,
     AlertRepository,
     BarRepository,
+    PendingAlert,
 )
 from rs_persistence.token_store import SchwabTokenStore
 
@@ -36,6 +37,7 @@ __all__ = [
     "Base",
     "BarRepository",
     "OutboxRow",
+    "PendingAlert",
     "SchwabTokenRow",
     "SchwabTokenStore",
     "StreamBar5m",
