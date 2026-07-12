@@ -45,6 +45,16 @@ class TestRev001Schema:
             "outbox must stay an append-only ledger without delivery state (ADR-0005)"
         )
 
+    def test_alerts_unposted_partial_index(self, sync_engine):
+        # rev-003: the bot cursor's operational index (S004 pin #10) — partial
+        # on posted_at IS NULL, so it stays near-empty in steady state.
+        with sync_engine.connect() as conn:
+            row = conn.execute(
+                text("SELECT indexdef FROM pg_indexes WHERE indexname = 'ix_alerts_unposted'")
+            ).one_or_none()
+        assert row is not None, "ix_alerts_unposted missing (rev-003)"
+        assert "WHERE (posted_at IS NULL)" in row[0]
+
 
 class TestBarRoundTrip:
     async def test_insert_then_get_equal_on_all_fields(self, migrated_db_url):
