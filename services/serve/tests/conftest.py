@@ -82,9 +82,16 @@ async def session_factory(migrated_db_url):
 
 
 @pytest.fixture
-async def client(migrated_db_url, session_factory):
+async def app(migrated_db_url, session_factory):
     app = create_app(ServeSettings(rs_db_url=migrated_db_url))
-    transport = httpx.ASGITransport(app=app)
+    yield app
+    await app.state.engine.dispose()
+
+
+@pytest.fixture
+async def client(app):
+    # raise_app_exceptions=False: Starlette's ServerErrorMiddleware re-raises
+    # after responding, and the 500-handler tests assert on the response.
+    transport = httpx.ASGITransport(app=app, raise_app_exceptions=False)
     async with httpx.AsyncClient(transport=transport, base_url="http://serve") as c:
         yield c
-    await app.state.engine.dispose()
