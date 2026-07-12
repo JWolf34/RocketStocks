@@ -43,7 +43,7 @@ Thinnest end-to-end path through all three services, deliberately routed through
 | S002 | Domain seed + persistence rev-001 (Phase-0 deliverable, listed for ordering) | [spec](./specs/S002-domain-seed-and-persistence-rev-001.md) |
 | S003 | `ingest` skeleton: Schwab L1 stream (1 ticker) → 5-min bar build → `BarClosed` → ordered fan-out (persist → hardcoded detector) → alert+outbox row → NOTIFY | [spec](./specs/S003-ingest-skeleton-one-ticker.md) |
 | S004 | `bot` skeleton: LISTEN, reconcile `posted_at IS NULL` on reconnect + periodic sweep (Bus-2 consumer contract — ADR-0005), render one minimal embed to the dev channel | TBD |
-| S005 | `serve` skeleton: FastAPI, one read endpoint (`/v1/bars/{ticker}`), API-key middleware stub, `/metrics` | TBD |
+| S005 | `serve` skeleton: FastAPI, authenticated range read (`/v1/bars/{ticker}?start=&end=`), API-key middleware stub, `/metrics` | [spec](./specs/S005-serve-skeleton.md) |
 | S006 | Spine: shared Dockerfile + compose entries for all three services; structlog JSON + `correlation_id`; CI (tests + lint + clock-grep) | TBD |
 | S007 | Replay harness v0: record S003's event stream to a fixture; replay through the real pipeline; assert identical semantic alert decisions | TBD |
 
