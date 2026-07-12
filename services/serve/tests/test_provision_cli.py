@@ -10,8 +10,6 @@ import re
 
 from rs_serve.tools.provision import main
 
-BARS_URL = "/v1/bars/SPY?start=2026-07-09T13:30:00Z&end=2026-07-09T20:00:00Z"
-
 
 def _printed_key(capsys) -> str:
     # The key is printed once, alone on its stdout line.
@@ -21,17 +19,17 @@ def _printed_key(capsys) -> str:
     return match.group(1)
 
 
-async def test_provision_revoke_round_trip(client, capsys, monkeypatch, migrated_db_url):
+async def test_provision_revoke_round_trip(client, capsys, monkeypatch, migrated_db_url, bars_url):
     monkeypatch.setenv("RS_DB_URL", migrated_db_url)
 
     assert await asyncio.to_thread(main, ["--name", "dev"]) == 0
     key = _printed_key(capsys)
 
-    ok = await client.get(BARS_URL, headers={"X-API-Key": key})
+    ok = await client.get(bars_url, headers={"X-API-Key": key})
     assert ok.status_code == 200
 
     assert await asyncio.to_thread(main, ["--revoke", "dev"]) == 0
-    gone = await client.get(BARS_URL, headers={"X-API-Key": key})
+    gone = await client.get(bars_url, headers={"X-API-Key": key})
     assert gone.status_code == 401
 
 

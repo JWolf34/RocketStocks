@@ -3,18 +3,15 @@ the SYSTEM_CRITICAL notification joins with ADR-0016 in Phase 2)."""
 
 import httpx
 
-API_KEY = "test-key-not-secret"
-HEADERS = {"X-API-Key": API_KEY}
 
-
-async def test_unhandled_error_returns_clean_json_and_logs_traceback(app, caplog):
+async def test_unhandled_error_returns_clean_json_and_logs_traceback(app, caplog, auth_headers):
     @app.get("/boom")
     async def boom():
         raise RuntimeError("planted failure: secret-internals-string")
 
     transport = httpx.ASGITransport(app=app, raise_app_exceptions=False)
     async with httpx.AsyncClient(transport=transport, base_url="http://serve") as client:
-        response = await client.get("/boom", headers=HEADERS)
+        response = await client.get("/boom", headers=auth_headers)
 
     assert response.status_code == 500
     assert response.json() == {"detail": "internal server error"}

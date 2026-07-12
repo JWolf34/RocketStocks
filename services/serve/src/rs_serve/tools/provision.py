@@ -14,6 +14,7 @@ import asyncio
 import secrets
 import sys
 
+from pydantic import ValidationError
 from sqlalchemy.exc import IntegrityError
 
 from rs_persistence import ServiceClientRepository, build_engine, build_session_factory
@@ -51,7 +52,12 @@ def main(argv: list[str] | None = None) -> int:
     group.add_argument("--revoke", metavar="NAME", help="revoke the named consumer's key")
     args = parser.parse_args(argv)
 
-    settings = ServeSettings()
+    try:
+        settings = ServeSettings()
+    except ValidationError as exc:
+        # Loud exit-1, never a silent default (settings convention).
+        print(f"invalid configuration: {exc}", file=sys.stderr)
+        return 1
     if args.revoke is not None:
         if not asyncio.run(_revoke(settings.rs_db_url, args.revoke)):
             print(f"no active client named '{args.revoke}'", file=sys.stderr)

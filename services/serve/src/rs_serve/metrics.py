@@ -56,10 +56,22 @@ class MetricsMiddleware(BaseHTTPMiddleware):
 
     async def dispatch(self, request: Request, call_next) -> Response:
         started = time.perf_counter()  # monotonic duration, not ambient wall time
-        response = await call_next(request)
-        route = request.scope.get("route")
-        path = route.path if route is not None else "unrouted"
-        labels = {"method": request.method, "path": path}
-        self._metrics.requests_total.labels(**labels, status=str(response.status_code)).inc()
-        self._metrics.request_duration.labels(**labels).observe(time.perf_counter() - started)
+        try:
+            response = await call_next(request)
+            status = response.status_code
+        except Exception:
+            # The catch-all 500 handler lives in Starlette's OUTERMOST
+            # ServerErrorMiddleware, so unhandled errors pass through here as
+            # exceptions — record them as the 500s they become, then re-raise
+            # for the handler to answer.
+            status = 500
+            raise
+        finally:
+            route = request.scope.get("route")
+            labels = {
+                "method": request.method,
+                "path": route.path if route is not None else "unrouted",
+            }
+            self._metrics.requests_total.labels(**labels, status=str(status)).inc()
+            self._metrics.request_duration.labels(**labels).observe(time.perf_counter() - started)
         return response

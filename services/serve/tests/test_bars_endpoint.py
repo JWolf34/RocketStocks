@@ -11,9 +11,6 @@ import pytest
 from rs_domain import Bar
 from rs_persistence import BarRepository
 
-API_KEY = "test-key-not-secret"
-HEADERS = {"X-API-Key": API_KEY}
-
 OPEN_0930 = datetime(2026, 7, 9, 13, 30, tzinfo=timezone.utc)  # 09:30 ET open
 
 
@@ -36,11 +33,11 @@ async def seeded(session_factory):
         await s.commit()
 
 
-async def test_happy_path_envelope_oldest_first(client, seeded):
+async def test_happy_path_envelope_oldest_first(client, seeded, auth_headers):
     response = await client.get(
         "/v1/bars/SPY",
         params={"start": "2026-07-09T13:30:00Z", "end": "2026-07-09T20:00:00Z"},
-        headers=HEADERS,
+        headers=auth_headers,
     )
     assert response.status_code == 200
     body = response.json()
@@ -78,29 +75,29 @@ async def test_happy_path_envelope_oldest_first(client, seeded):
     assert body["meta"] == {"as_of": "2026-07-09T13:45:00Z", "interval": "5m", "source": "stream"}
 
 
-async def test_range_is_half_open(client, seeded):
+async def test_range_is_half_open(client, seeded, auth_headers):
     response = await client.get(
         "/v1/bars/SPY",
         params={"start": "2026-07-09T13:35:00Z", "end": "2026-07-09T13:40:00Z"},
-        headers=HEADERS,
+        headers=auth_headers,
     )
     assert [bar["bucket"] for bar in response.json()["data"]] == ["2026-07-09T13:35:00Z"]
 
 
-async def test_ticker_is_case_insensitive(client, seeded):
+async def test_ticker_is_case_insensitive(client, seeded, auth_headers):
     response = await client.get(
         "/v1/bars/spy",
         params={"start": "2026-07-09T13:30:00Z", "end": "2026-07-09T20:00:00Z"},
-        headers=HEADERS,
+        headers=auth_headers,
     )
     assert len(response.json()["data"]) == 3
 
 
-async def test_empty_range_is_200_with_empty_data(client, seeded):
+async def test_empty_range_is_200_with_empty_data(client, seeded, auth_headers):
     response = await client.get(
         "/v1/bars/SPY",
         params={"start": "2026-08-01T00:00:00Z", "end": "2026-08-02T00:00:00Z"},
-        headers=HEADERS,
+        headers=auth_headers,
     )
     assert response.status_code == 200
     body = response.json()
@@ -119,6 +116,6 @@ async def test_empty_range_is_200_with_empty_data(client, seeded):
         {"start": "2026-07-09T13:30:00Z", "end": "2026-07-09T13:30:00Z"},  # start == end
     ],
 )
-async def test_invalid_ranges_are_422(client, seeded, params):
-    response = await client.get("/v1/bars/SPY", params=params, headers=HEADERS)
+async def test_invalid_ranges_are_422(client, seeded, params, auth_headers):
+    response = await client.get("/v1/bars/SPY", params=params, headers=auth_headers)
     assert response.status_code == 422

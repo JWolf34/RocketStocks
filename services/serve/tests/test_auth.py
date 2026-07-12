@@ -3,35 +3,32 @@ absent, unknown, and revoked keys are indistinguishable (uniform 401)."""
 
 from rs_persistence import ServiceClientRepository
 
-API_KEY = "test-key-not-secret"  # provisioned by the conftest session_factory
-BARS_URL = "/v1/bars/SPY?start=2026-07-09T13:30:00Z&end=2026-07-09T20:00:00Z"
 
-
-async def test_valid_key_passes(client):
-    response = await client.get(BARS_URL, headers={"X-API-Key": API_KEY})
+async def test_valid_key_passes(client, bars_url, auth_headers):
+    response = await client.get(bars_url, headers=auth_headers)
     assert response.status_code == 200
 
 
-async def test_absent_key_is_401(client):
-    response = await client.get(BARS_URL)
+async def test_absent_key_is_401(client, bars_url):
+    response = await client.get(bars_url)
     assert response.status_code == 401
 
 
-async def test_unknown_key_is_401_with_identical_body(client):
-    absent = await client.get(BARS_URL)
-    unknown = await client.get(BARS_URL, headers={"X-API-Key": "wrong"})
+async def test_unknown_key_is_401_with_identical_body(client, bars_url):
+    absent = await client.get(bars_url)
+    unknown = await client.get(bars_url, headers={"X-API-Key": "wrong"})
     assert unknown.status_code == 401
     # Uniform body: a caller can't distinguish "no such key" from "no key".
     assert unknown.json() == absent.json()
 
 
-async def test_revoked_key_is_401_on_next_request(client, session_factory):
-    before = await client.get(BARS_URL, headers={"X-API-Key": API_KEY})
+async def test_revoked_key_is_401_on_next_request(client, session_factory, bars_url, auth_headers):
+    before = await client.get(bars_url, headers=auth_headers)
     assert before.status_code == 200
 
     async with session_factory() as s:
         assert await ServiceClientRepository(s).revoke("test") is True
         await s.commit()
 
-    after = await client.get(BARS_URL, headers={"X-API-Key": API_KEY})
+    after = await client.get(bars_url, headers=auth_headers)
     assert after.status_code == 401
