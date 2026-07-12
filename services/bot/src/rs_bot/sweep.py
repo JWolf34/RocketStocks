@@ -103,10 +103,12 @@ class SweepWorker:
                 await session.commit()  # per-row commit: dupe window ≤ 1 alert
                 self.counters["discord_posts_total"] += 1
                 if posted_at is None:
+                    # message_id identifies the duplicate for the G5 audit.
                     logger.warning(
                         "alert id=%d was already marked posted — possible duplicate post "
-                        "(crash inside a previous send→commit gap)",
+                        "message_id=%d (crash inside a previous send→commit gap)",
                         item.id,
+                        message_id,
                     )
                 else:
                     # DB-derived lag (pin #9): posted_at − triggered_at, both
