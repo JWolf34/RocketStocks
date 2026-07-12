@@ -5,7 +5,6 @@ that the notify arrives only at commit, carrying the alert id."""
 from datetime import datetime, timezone
 
 import psycopg
-import pytest
 from sqlalchemy import func, select, text
 
 from rs_domain import Alert
@@ -13,8 +12,6 @@ from rs_persistence import (
     AlertRepository,
     AlertRow,
     OutboxRow,
-    build_engine,
-    build_session_factory,
 )
 
 ALERT = Alert(
@@ -27,19 +24,6 @@ ALERT = Alert(
 
 def _alert(symbol: str) -> Alert:
     return ALERT.model_copy(update={"symbol": symbol})
-
-
-@pytest.fixture
-async def session_factory(migrated_db_url):
-    # migrated_db_url is session-scoped and shared; truncate so each test starts
-    # from an empty alerts/outbox with a reset identity.
-    engine = build_engine(migrated_db_url)
-    factory = build_session_factory(engine)
-    async with factory() as s:
-        await s.execute(text("TRUNCATE alerts, outbox RESTART IDENTITY"))
-        await s.commit()
-    yield factory
-    await engine.dispose()
 
 
 async def _count(session_factory, model) -> int:
