@@ -9,11 +9,8 @@ the cursor semantics run against the real ephemeral Postgres (ADR-0023 tier)."""
 import asyncio
 from datetime import datetime, timezone
 
-import pytest
-from sqlalchemy import text
-
 from rs_domain import Alert
-from rs_persistence import AlertRepository, build_engine, build_session_factory
+from rs_persistence import AlertRepository
 
 from rs_bot.counters import new_counters
 from rs_bot.sweep import SweepWorker
@@ -43,17 +40,6 @@ class FakeSender:
         self.sent.append(embed)
         self._next_id += 1
         return self._next_id
-
-
-@pytest.fixture
-async def session_factory(migrated_db_url):
-    engine = build_engine(migrated_db_url)
-    factory = build_session_factory(engine)
-    async with factory() as s:
-        await s.execute(text("TRUNCATE alerts, outbox RESTART IDENTITY"))
-        await s.commit()
-    yield factory
-    await engine.dispose()
 
 
 async def _insert(session_factory, *alerts: Alert) -> list[int]:

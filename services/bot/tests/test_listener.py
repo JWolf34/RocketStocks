@@ -15,7 +15,7 @@ import pytest
 from sqlalchemy import text
 
 from rs_domain import Alert
-from rs_persistence import AlertRepository, build_engine, build_session_factory
+from rs_persistence import AlertRepository
 
 from rs_bot.counters import new_counters
 from rs_bot.listener import ListenLoop
@@ -26,17 +26,6 @@ ALERT = Alert(
     triggered_at=datetime(2026, 7, 6, 14, 30, tzinfo=timezone.utc),
     payload={"volume": 750_000, "threshold": 500_000},
 )
-
-
-@pytest.fixture
-async def session_factory(migrated_db_url):
-    engine = build_engine(migrated_db_url)
-    factory = build_session_factory(engine)
-    async with factory() as s:
-        await s.execute(text("TRUNCATE alerts, outbox RESTART IDENTITY"))
-        await s.commit()
-    yield factory
-    await engine.dispose()
 
 
 async def _wait_for(event: asyncio.Event, timeout: float = 5.0) -> None:
