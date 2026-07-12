@@ -47,9 +47,13 @@ Working estimates (basis stated):
 - (G8's consumer test runs through the real proxy URL — that part is burn-in, not
   Phase 0; this box is about the proxy existing.)
 
-## 4. Private dev channel (roadmap: "Private dev channel")
+## 4. Private dev channel + dev bot (roadmap: "Private dev channel")
 
 - [ ] Private Discord channel created for burn-in alert routing.
 - [ ] Its ID recorded as **`RS_DEV_CHANNEL_ID`** (env-var name pinned now; consumed by
-      S004's bot skeleton — record in the deploy box's `.env`, and in `.env.example`
-      when S004 creates one).
+      S004's bot skeleton — record in the deploy box's `.env`; `.env.example` already
+      exists (v1's) — S004 extends it with a v2 block).
+- [ ] The existing dev bot application invited to the channel (Send Messages + Embed
+      Links; no privileged intents) and its token recorded as **`RS_BOT_DISCORD_TOKEN`**
+      — deliberately not v1's `DISCORD_TOKEN`, so v2 can never read v1's credential
+      during burn-in coexistence (S004 grilling, 2026-07-11).
