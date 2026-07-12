@@ -9,7 +9,7 @@ After this slice a long-running `serve` daemon answers authenticated HTTP range 
 ## Interface
 
 - `services/serve` — runnable daemon (`python -m rs_serve`, uvicorn), config via pydantic-settings: `rs_db_url` (shared repo-wide variable), `RS_SERVE_`-prefixed tunables (`RS_SERVE_PORT`, default 8000). Engine/session from `rs_persistence.engine` (UTC-pinned).
-- **rev-003 migration** in `rs_persistence`: `service_clients(id, name UNIQUE, api_key_hash, scopes JSONB, rate_limit_rps, rate_limit_burst, created_at, revoked_at)` — full ADR-0012 shape now; **only `api_key_hash` + `revoked_at` are read in Phase 1** (scope/rate-limit enforcement is Phase 3, landing before any external key is provisioned — ADR-0012's "day one" = day one of external exposure).
+- **rev-004 migration** in `rs_persistence` (renumbered from rev-003 at the v2-rewrite merge — S004's alerts-index migration owns 0003): `service_clients(id, name UNIQUE, api_key_hash, scopes JSONB, rate_limit_rps, rate_limit_burst, created_at, revoked_at)` — full ADR-0012 shape now; **only `api_key_hash` + `revoked_at` are read in Phase 1** (scope/rate-limit enforcement is Phase 3, landing before any external key is provisioned — ADR-0012's "day one" = day one of external exposure).
 - **Auth middleware** — `X-API-Key` → SHA-256 → `service_clients` lookup. Absent, unknown, or revoked key → uniform `401` (no validity leak). Applies to every route, `/metrics` included (metrics-scope narrowing is Phase 3 — ADR-0015).
 - **`GET /v1/bars/{ticker}?start=&end=`** — range read, oldest-first. `start`/`end` required, ISO-8601 UTC (naive input rejected); `422` on missing/invalid/`start >= end`; empty range → `200` with empty `data`. Ticker uppercased. **No row cap** — the cap, its number, and pagination are a named **Phase-3 contract-review input**, decided together with rate-limit sizing (a cap multiplies consumer request counts; the two must be set knowing each other). Response envelope:
   `{"data": [{symbol, bucket, open, high, low, close, volume}, …], "meta": {"as_of": <newest bucket close, null if empty>, "interval": "5m", "source": "stream"}}`
@@ -45,7 +45,7 @@ scripts/check_clock_discipline.sh
 
 # Live runbook (~5 min, no market dependency; 5498 = the persistent S003 acceptance DB)
 export RS_DB_URL=postgresql+psycopg://postgres:<pw>@localhost:5498/postgres
-.venv/bin/python -m rs_migrate upgrade                                  # applies rev-003
+.venv/bin/python -m rs_migrate upgrade                                  # applies rev-004 (and rev-003 if absent)
 .venv/bin/python -m rs_serve.tools.provision --name dev                 # prints KEY once
 .venv/bin/python -m rs_serve &
 curl -s -H "X-API-Key: $KEY" \

@@ -1,9 +1,5 @@
-"""Shared DB-gated pytest fixture for every member's DB tests (S005 extraction
-— the serve conftest had copied this verbatim from libs/persistence, and
-gating semantics must not drift between members).
-
-Imports pytest/alembic at module import: only test conftests import this
-module, and both are dev dependencies of the workspace, never of runtime code.
+"""Shared pytest fixtures for DB-backed tests — the "5499 pattern", extracted
+once a second workspace member (rs_bot, S004) needed a verbatim copy.
 
 Target resolution: RS_TEST_DB_URL, defaulting to the spec's ephemeral
 container (docker run -d --rm -p 5499:5432 -e POSTGRES_PASSWORD=t
@@ -12,14 +8,19 @@ timescale/timescaledb:latest-pg16).
 Gating semantics: with no RS_TEST_DB_URL set and the default container absent,
 tests SKIP (visible, local-dev friendly). When RS_TEST_DB_URL is explicitly
 set — as CI does — an unreachable database FAILS the suite, so a port/env
-drift can never turn DB acceptance tests into silent green skips.
+drift can never turn the DB acceptance tests into silent green skips.
 
 Each test session creates a throwaway database, migrates it to head, and
 drops it afterward — reruns never see stale state.
 
-Usage (in a member's tests/conftest.py):
+Usage, from a member's tests/conftest.py (a plain import — pytest discovers
+fixtures by name in the conftest namespace; `pytest_plugins` would be rejected
+in a non-rootdir conftest):
 
-    from rs_persistence.testing import migrated_db_url  # noqa: F401
+    from rs_persistence.testing import migrated_db_url, session_factory  # noqa: F401
+
+Test-support only: pytest is a dev dependency, so this module must never be
+imported by runtime code.
 """
 
 import os
@@ -30,7 +31,7 @@ from alembic import command
 from sqlalchemy import create_engine as create_sync_engine
 from sqlalchemy import text
 
-from rs_persistence import migration_config
+from rs_persistence import build_engine, build_session_factory, migration_config
 
 DEFAULT_URL = "postgresql+psycopg://postgres:t@localhost:5499/postgres"
 
@@ -68,3 +69,17 @@ def migrated_db_url():
         with admin_engine.connect() as conn:
             conn.execute(text(f'DROP DATABASE "{db_name}" WITH (FORCE)'))
         admin_engine.dispose()
+
+
+@pytest.fixture
+async def session_factory(migrated_db_url):
+    """Async session factory over the migrated DB. migrated_db_url is
+    session-scoped and shared; this truncates so each test starts from an
+    empty alerts/outbox with a reset identity."""
+    engine = build_engine(migrated_db_url)
+    factory = build_session_factory(engine)
+    async with factory() as s:
+        await s.execute(text("TRUNCATE alerts, outbox RESTART IDENTITY"))
+        await s.commit()
+    yield factory
+    await engine.dispose()

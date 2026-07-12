@@ -14,6 +14,7 @@ resolution-markers = [
 members = [
     "rocketstocks",
     "rs-analysis",
+    "rs-bot",
     "rs-domain",
     "rs-ingest",
     "rs-migrate",
@@ -2177,6 +2178,25 @@ provides-extras = ["test"]
 name = "rs-analysis"
 version = "0.1.0"
 source = { editable = "libs/analysis" }
+
+[[package]]
+name = "rs-bot"
+version = "0.1.0"
+source = { editable = "services/bot" }
+dependencies = [
+    { name = "discord-py" },
+    { name = "pydantic-settings" },
+    { name = "rs-domain" },
+    { name = "rs-persistence" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "discord-py", specifier = ">=2.4" },
+    { name = "pydantic-settings", specifier = ">=2.6.0" },
+    { name = "rs-domain", editable = "libs/domain" },
+    { name = "rs-persistence", editable = "libs/persistence" },
+]
 
 [[package]]
 name = "rs-domain"

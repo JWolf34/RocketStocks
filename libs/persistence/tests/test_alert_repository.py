@@ -5,7 +5,6 @@ that the notify arrives only at commit, carrying the alert id."""
 from datetime import datetime, timezone
 
 import psycopg
-import pytest
 from sqlalchemy import func, select, text
 
 from rs_domain import Alert
@@ -13,8 +12,6 @@ from rs_persistence import (
     AlertRepository,
     AlertRow,
     OutboxRow,
-    build_engine,
-    build_session_factory,
 )
 
 ALERT = Alert(
@@ -25,17 +22,8 @@ ALERT = Alert(
 )
 
 
-@pytest.fixture
-async def session_factory(migrated_db_url):
-    # migrated_db_url is session-scoped and shared; truncate so each test starts
-    # from an empty alerts/outbox with a reset identity.
-    engine = build_engine(migrated_db_url)
-    factory = build_session_factory(engine)
-    async with factory() as s:
-        await s.execute(text("TRUNCATE alerts, outbox RESTART IDENTITY"))
-        await s.commit()
-    yield factory
-    await engine.dispose()
+def _alert(symbol: str) -> Alert:
+    return ALERT.model_copy(update={"symbol": symbol})
 
 
 async def _count(session_factory, model) -> int:
@@ -108,6 +96,66 @@ async def test_custom_channel_routes_the_notify(session_factory, migrated_db_url
             await s.commit()
         got = [n async for n in listener.notifies(timeout=5, stop_after=1)]
     assert [(n.channel, n.payload) for n in got] == [("custom_alerts", str(alert_id))]
+
+
+async def test_list_unposted_returns_pending_in_id_order(session_factory):
+    # The bot's sweep cursor (S004, ADR-0005): every row with posted_at IS NULL,
+    # id order, full drain — a posted row leaves the pending set.
+    async with session_factory() as s:
+        repo = AlertRepository(s)
+        id_a = await repo.insert(_alert("AAA"))
+        id_b = await repo.insert(_alert("BBB"))
+        id_c = await repo.insert(_alert("CCC"))
+        await s.commit()
+    async with session_factory() as s:
+        await s.execute(text("UPDATE alerts SET posted_at = now() WHERE id = :id"), {"id": id_b})
+        await s.commit()
+
+    async with session_factory() as s:
+        pending = await AlertRepository(s).list_unposted()
+
+    assert [(p.id, p.alert.symbol) for p in pending] == [(id_a, "AAA"), (id_c, "CCC")]
+    # The envelope carries the domain Alert reconstructed at the boundary
+    # (UTC-normalized, validated) — not a raw row.
+    assert pending[0].alert == _alert("AAA")
+
+
+async def test_mark_posted_stamps_dbside_and_clears_pending(session_factory):
+    async with session_factory() as s:
+        alert_id = await AlertRepository(s).insert(ALERT)
+        await s.commit()
+
+    async with session_factory() as s:
+        stamp = await AlertRepository(s).mark_posted(alert_id)
+        await s.commit()
+
+    # DB-side clock (S004 pin #9): the returned stamp is exactly what the row
+    # now holds, tz-aware, and the row has left the pending set.
+    assert stamp is not None and stamp.tzinfo is not None
+    async with session_factory() as s:
+        row = await s.get(AlertRow, alert_id)
+        assert row.posted_at == stamp
+        assert await AlertRepository(s).list_unposted() == []
+
+
+async def test_mark_posted_is_idempotent(session_factory):
+    # Already-marked and never-existed both return None (caller warns); the
+    # first stamp is never overwritten — the crash-dupe audit trail survives.
+    async with session_factory() as s:
+        alert_id = await AlertRepository(s).insert(ALERT)
+        await s.commit()
+
+    async with session_factory() as s:
+        repo = AlertRepository(s)
+        first = await repo.mark_posted(alert_id)
+        await s.commit()
+        assert await repo.mark_posted(alert_id) is None
+        assert await repo.mark_posted(alert_id + 999) is None
+        await s.commit()
+
+    async with session_factory() as s:
+        row = await s.get(AlertRow, alert_id)
+    assert row.posted_at == first
 
 
 async def test_multiple_alerts_share_one_transaction(session_factory, migrated_db_url):

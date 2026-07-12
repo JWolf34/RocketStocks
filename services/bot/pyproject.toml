@@ -1,0 +1,22 @@
+[project]
+name = "rs-bot"
+version = "0.1.0"
+description = "RocketStocks v2 bot service: Bus-2 consumer posting alerts to Discord"
+authors = [
+    { name = "John Wolf", email = "johnmwolf34@gmail.com" }
+]
+requires-python = ">=3.13"
+dependencies = [
+    "discord.py>=2.4",
+    "pydantic-settings>=2.6.0",
+    "rs-domain",
+    "rs-persistence",
+]
+
+[build-system]
+requires = ["uv_build>=0.11.26,<0.12.0"]
+build-backend = "uv_build"
+
+[tool.uv.sources]
+rs-domain = { workspace = true }
+rs-persistence = { workspace = true }

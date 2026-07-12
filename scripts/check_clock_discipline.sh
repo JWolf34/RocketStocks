@@ -4,14 +4,15 @@
 # Allowlisted: the Clock implementation itself. Tests are exempt (time-machine
 # is the sanctioned escape hatch there).
 #
-# Scope grows with the codebase: add detection-bearing directories here as
-# they appear (e.g. services/ingest src when S003 lands). A missing scope
-# directory is an ERROR, not a pass — the gate must never go silently dead.
+# Scope grows with the codebase: all v2 service/lib src roots go here as they
+# appear (broad reading — S004 pin #9). A missing scope directory is an ERROR,
+# not a pass — the gate must never go silently dead.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
 SCOPES=(
   "libs/domain/src"
+  "services/bot/src"
   "services/ingest/src"
   "services/serve/src"
 )

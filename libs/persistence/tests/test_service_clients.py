@@ -1,7 +1,7 @@
 """ServiceClientRepository: the auth storage seam (S005, ADR-0012).
 
 The repository speaks hashes only — key generation and hashing are rs_serve's
-concern. rev-003 is proven by the conftest's upgrade-to-head plus these
+concern. rev-004 is proven by the conftest's upgrade-to-head plus these
 round-trips against the real table.
 """
 
@@ -65,7 +65,7 @@ async def test_revoke_unknown_name_returns_false(session_factory):
 
 
 async def test_duplicate_name_rejected(session_factory):
-    # name is UNIQUE (rev-003): re-provisioning an existing consumer must fail
+    # name is UNIQUE (rev-004): re-provisioning an existing consumer must fail
     # loudly, not silently mint a second key row.
     async with session_factory() as s:
         repo = ServiceClientRepository(s)

@@ -1,20 +1,20 @@
-"""rev-003: service_clients — per-consumer API keys (ADR-0012, S005).
+"""rev-004: service_clients — per-consumer API keys (ADR-0012, S005).
 
 Full ADR-0012 column set now; Phase 1 reads only api_key_hash + revoked_at
 (scope/rate-limit enforcement is Phase 3). Rows are operator-provisioned via
 `python -m rs_serve.tools.provision`; revocation is an UPDATE of revoked_at.
 
-Revision ID: 0003
-Revises: 0002
-Create Date: 2026-07-12
+Revision ID: 0004
+Revises: 0003
+Create Date: 2026-07-12 (renumbered 0003->0004 same day: S004 owns rev-003)
 """
 
 import sqlalchemy as sa
 from alembic import op
 from sqlalchemy.dialects.postgresql import JSONB
 
-revision = "0003"
-down_revision = "0002"
+revision = "0004"
+down_revision = "0003"
 branch_labels = None
 depends_on = None
 

@@ -60,7 +60,7 @@ class OutboxRow(Base):
 
 
 class ServiceClientRow(Base):
-    """One API consumer (ADR-0012); rev-003. Phase 1 reads only api_key_hash +
+    """One API consumer (ADR-0012); rev-004. Phase 1 reads only api_key_hash +
     revoked_at; scopes and rate-limit columns are enforced from Phase 3."""
 
     __tablename__ = "service_clients"
