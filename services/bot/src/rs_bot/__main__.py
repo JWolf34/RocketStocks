@@ -21,6 +21,12 @@ import sys
 import discord
 from pydantic import ValidationError
 
+from rs_observability import (
+    DictCounterCollector,
+    configure_logging,
+    install_excepthooks,
+    start_metrics_server,
+)
 from rs_persistence import NOTIFY_CHANNEL, build_engine, build_session_factory
 
 from rs_bot.counters import new_counters
@@ -29,14 +35,6 @@ from rs_bot.settings import BotSettings
 from rs_bot.sweep import SweepWorker
 
 logger = logging.getLogger(__name__)
-
-
-def configure_logging() -> None:
-    logging.basicConfig(
-        level=logging.INFO,
-        format="%(asctime)s %(levelname)s %(name)s %(message)s",
-        stream=sys.stderr,
-    )
 
 
 def psycopg_conninfo(sqlalchemy_url: str) -> str:
@@ -58,12 +56,18 @@ class DiscordChannelSender:
 
 
 async def run_bot(settings: BotSettings) -> int:
+    install_excepthooks()  # the asyncio half — needs asyncio.run()'s loop
     engine = build_engine(settings.rs_db_url)
     counters = new_counters()
     # Default intents only — no privileged intents (spec pin #7).
     client = discord.Client(intents=discord.Intents.default())
-    listen_task = sweep_task = gateway_task = None
+    listen_task = sweep_task = gateway_task = metrics_server = None
     try:
+        # :9091 side-port (ADR-0015), up before Discord so a wedged login is
+        # scrapeable. namespace="" — the ADR names the vocabulary bare.
+        metrics_server, _ = start_metrics_server(
+            settings.metrics_port, [DictCounterCollector(counters, namespace="")]
+        )
         try:
             await client.login(settings.discord_token.get_secret_value())
         except discord.LoginFailure as exc:
@@ -125,12 +129,15 @@ async def run_bot(settings: BotSettings) -> int:
             with contextlib.suppress(asyncio.CancelledError, Exception):
                 await task
         logger.info("counters at shutdown: %s", counters)
+        if metrics_server is not None:
+            metrics_server.shutdown()
         await client.close()
         await engine.dispose()
 
 
 def main() -> int:
-    configure_logging()
+    configure_logging("bot")
+    install_excepthooks()  # sys/threading; the asyncio half joins in run_bot
     try:
         settings = BotSettings()
     except ValidationError as exc:
