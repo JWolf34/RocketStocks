@@ -12,6 +12,7 @@ dependencies = [
     "prometheus-client>=0.20",
     "pydantic-settings>=2.6.0",
     "rs-domain",
+    "rs-observability",
     "rs-persistence",
 ]
 
@@ -21,4 +22,5 @@ build-backend = "uv_build"
 
 [tool.uv.sources]
 rs-domain = { workspace = true }
+rs-observability = { workspace = true }
 rs-persistence = { workspace = true }

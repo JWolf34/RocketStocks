@@ -2290,6 +2290,7 @@ dependencies = [
     { name = "prometheus-client" },
     { name = "pydantic-settings" },
     { name = "rs-domain" },
+    { name = "rs-observability" },
     { name = "rs-persistence" },
     { name = "uvicorn" },
 ]
@@ -2300,6 +2301,7 @@ requires-dist = [
     { name = "prometheus-client", specifier = ">=0.20" },
     { name = "pydantic-settings", specifier = ">=2.6.0" },
     { name = "rs-domain", editable = "libs/domain" },
+    { name = "rs-observability", editable = "libs/observability" },
     { name = "rs-persistence", editable = "libs/persistence" },
     { name = "uvicorn", specifier = ">=0.30" },
 ]
