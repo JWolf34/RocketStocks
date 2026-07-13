@@ -1,0 +1,48 @@
+# One shared image for all three v2 services (ADR-0002, S006). No default
+# CMD — docker-compose.v2.yml supplies `command:` per service. The frozen v1
+# surface (Dockerfile, docker-compose.yml) is untouched.
+
+# --- builder: uv resolves the locked workspace into a self-contained venv ----
+FROM ghcr.io/astral-sh/uv:python3.13-bookworm-slim AS builder
+ENV UV_COMPILE_BYTECODE=1 UV_LINK_MODE=copy UV_PYTHON_DOWNLOADS=never
+WORKDIR /app
+
+# Dependency layer: only the lockfile + every member's pyproject (the
+# workspace graph needs them all), so third-party installs cache across
+# code-only rebuilds. --no-install-workspace defers the members themselves.
+COPY pyproject.toml uv.lock .python-version ./
+COPY legacy/pyproject.toml legacy/
+COPY libs/analysis/pyproject.toml libs/analysis/
+COPY libs/domain/pyproject.toml libs/domain/
+COPY libs/observability/pyproject.toml libs/observability/
+COPY libs/persistence/pyproject.toml libs/persistence/
+COPY libs/sources/pyproject.toml libs/sources/
+COPY services/bot/pyproject.toml services/bot/
+COPY services/ingest/pyproject.toml services/ingest/
+COPY services/serve/pyproject.toml services/serve/
+COPY tools/migrate/pyproject.toml tools/migrate/
+RUN --mount=type=cache,target=/root/.cache/uv \
+    uv sync --locked --all-packages --no-install-package rocketstocks \
+    --no-dev --no-editable --no-install-workspace
+
+# Member layer: real sources in, members built as wheels into the venv
+# (--no-editable → nothing outside .venv is needed at runtime). rocketstocks
+# (legacy v1) is excluded — it ships via the frozen v1 image.
+COPY libs/ libs/
+COPY services/ services/
+COPY tools/ tools/
+RUN --mount=type=cache,target=/root/.cache/uv \
+    uv sync --locked --all-packages --no-install-package rocketstocks \
+    --no-dev --no-editable
+
+# --- runtime: slim python + the venv, nothing else ---------------------------
+FROM python:3.13-slim
+RUN groupadd --system app && useradd --system --gid app --home-dir /app app
+WORKDIR /app
+COPY --from=builder /app/.venv /app/.venv
+ENV PATH="/app/.venv/bin:$PATH" PYTHONUNBUFFERED=1
+USER app
+# No default CMD (S006) — compose picks the daemon: python -m rs_ingest |
+# rs_serve | rs_bot | rs_migrate upgrade. CMD [] clears the base image's
+# `python3` REPL default so a bare `docker run` fails loudly instead.
+CMD []
