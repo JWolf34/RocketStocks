@@ -27,6 +27,8 @@ class IngestSettings(BaseSettings):
     symbol: str = Field("SPY", validation_alias="RS_INGEST_SYMBOL")
     volume_threshold: int = Field(500_000, validation_alias="RS_INGEST_VOLUME_THRESHOLD")
     watchdog_grace_seconds: float = Field(30.0, validation_alias="RS_INGEST_WATCHDOG_GRACE_SECONDS")
+    # Prometheus side-port (ADR-0015): compose publishes it 127.0.0.1-only.
+    metrics_port: int = Field(9090, validation_alias="RS_INGEST_METRICS_PORT")
     # When set, the session's BarClosed events are recorded to this JSONL fixture
     # (a source tee — orthogonal to persistence). Off by default; the B8 runbook
     # points it at a gitignored data/ path, then a curated excerpt is committed.
