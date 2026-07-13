@@ -1,0 +1,101 @@
+# v2 stack (S006): TimescaleDB + one-shot migrate gate + the three services,
+# one shared image (Dockerfile.v2). Lifecycle fully independent of the v1
+# stack (own project name, own volume, DB published on 5498) for burn-in
+# coexistence; at cutover this file renames to docker-compose.yml.
+#
+# Interpolated from .env: RS_DB_PASSWORD (composes the in-network RS_DB_URL;
+# the host-side RS_DB_URL in .env stays for local tools), SCHWAB_API_KEY,
+# SCHWAB_API_SECRET, RS_BOT_DISCORD_TOKEN, RS_DEV_CHANNEL_ID.
+#
+# Metrics side-ports (9090 ingest, 9091 bot) and serve's 8000 are published
+# 127.0.0.1-only: the operator scrapes/proxies from the host (ADR-0015; the
+# TLS reverse proxy is serve's public face — ADR-0012). Not scraped in-compose.
+
+name: rocketstocks-v2
+
+x-app: &app
+  build:
+    context: .
+    dockerfile: Dockerfile.v2
+  image: rocketstocks-v2
+  environment: &app-env
+    RS_DB_URL: postgresql+psycopg://postgres:${RS_DB_PASSWORD}@timescaledb:5432/rocketstocks
+    TZ: UTC
+  depends_on:
+    migrate:
+      condition: service_completed_successfully
+
+services:
+  timescaledb:
+    image: timescale/timescaledb:latest-pg16
+    restart: unless-stopped
+    environment:
+      POSTGRES_PASSWORD: ${RS_DB_PASSWORD}
+      POSTGRES_DB: rocketstocks
+      TZ: UTC
+    volumes:
+      - timescale_data:/var/lib/postgresql/data
+    # Takes over the manual acceptance container's role on 5498 (prior data
+    # disposable); host-side tools keep reaching it via .env's RS_DB_URL.
+    ports:
+      - "127.0.0.1:5498:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d rocketstocks"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  # One-shot gate: app services start only after the schema is at head.
+  migrate:
+    build:
+      context: .
+      dockerfile: Dockerfile.v2
+    image: rocketstocks-v2
+    command: ["python", "-m", "rs_migrate", "upgrade"]
+    environment: *app-env
+    restart: "no"
+    depends_on:
+      timescaledb:
+        condition: service_healthy
+
+  ingest:
+    <<: *app
+    command: ["python", "-m", "rs_ingest"]
+    # Interim policy (S006 pin #5): a transient crash resumes bar-writing,
+    # bounded poison-failure noise, quiet after a clean session exit. Flips
+    # to unless-stopped when ingest becomes the multi-session daemon
+    # (Phase-2 warm-up, ADR-0018).
+    restart: on-failure:3
+    environment:
+      <<: *app-env
+      SCHWAB_API_KEY: ${SCHWAB_API_KEY}
+      SCHWAB_API_SECRET: ${SCHWAB_API_SECRET}
+    ports:
+      - "127.0.0.1:9090:9090"
+
+  serve:
+    <<: *app
+    command: ["python", "-m", "rs_serve"]
+    # The container restart policy is the supervisor (S004/S005 stance).
+    restart: unless-stopped
+    environment:
+      <<: *app-env
+      # 0.0.0.0 in-container is deliberate (resolves the S005 host-binding
+      # pointer): publishing stays 127.0.0.1-only, the TLS proxy fronts it.
+      RS_SERVE_HOST: 0.0.0.0
+    ports:
+      - "127.0.0.1:8000:8000"
+
+  bot:
+    <<: *app
+    command: ["python", "-m", "rs_bot"]
+    restart: unless-stopped
+    environment:
+      <<: *app-env
+      RS_BOT_DISCORD_TOKEN: ${RS_BOT_DISCORD_TOKEN}
+      RS_DEV_CHANNEL_ID: ${RS_DEV_CHANNEL_ID}
+    ports:
+      - "127.0.0.1:9091:9091"
+
+volumes:
+  timescale_data:
