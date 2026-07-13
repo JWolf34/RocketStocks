@@ -63,4 +63,13 @@ python -m rs_ingest.tools.replay --live-db ... --expected ...   # S007 gate re-r
 
 ## Decisions surfaced
 
-*(empty at review; filled during implementation)*
+- **`unit_of_work` yields the correlation_id** — serve's middleware must echo it as `X-Correlation-ID`, so the context manager returns the fresh id to its caller.
+- **`install_excepthooks()` has a call-twice contract** — the asyncio handler can only attach to a live loop, and `asyncio.run()` creates one per call; each service calls the hook once at process start (sys/threading) and once inside the running loop (idempotent). serve's second call lives in the FastAPI lifespan.
+- **serve binds `route` as the concrete request path** (`/v1/bars/SPY`), not the route template: the cardinality constraint that forces templates onto metrics labels doesn't apply to log fields, and the raw path is what gets grepped. The template stays a metrics-only label.
+- **serve's 500 path carries the id via `request.state`** — the catch-all handler runs in Starlette's outermost `ServerErrorMiddleware`, after the unit_of_work context has exited, so the middleware stashes the id there and the handler stamps it onto the traceback record and the 500's response header.
+- **uvicorn's access log is off** (`access_log=False`): its line is emitted outside the bound context and would carry no id; `CorrelationMiddleware`'s one `request completed` record (method, route, status) is the access log.
+- **`namespace=""` at all DictCounterCollector call sites** — ADR-0015 names the counter vocabulary bare (`discord_posts_total`, …) and the acceptance greps expect it; scrape job labels, not name prefixes, distinguish services. The parameter stays for future collectors whose names would otherwise collide. Sample names are normalized to the `_total` convention at exposition (`bars_persisted` → `bars_persisted_total`), so the untouched S003 dicts still satisfy `rate()`/`increase()`.
+- **ingest's alert-insert log gained `alert_id`** (via `extra`) — pin #3's join key existed on the bot side only; the insert log now carries the id `AlertRepository.insert` returns.
+- **`Dockerfile.v2` sets `CMD []` explicitly** — the `python:3.13-slim` base leaks `CMD ["python3"]` (a REPL), which would silently violate the no-default-CMD pin; empty CMD makes a bare `docker run` fail loudly instead.
+- **`rs_observability.testing`** (`captured_json_stream`, `json_records`) is the sanctioned cross-member helper for asserting on rendered log records — correlation fields merge at format time, invisible to `caplog`/`capsys`.
+- **`rs_migrate` calls `configure_logging("migrate")`** (code-review finding) — alembic is in the interface's third-party logger list and migrate is a compose service, so its records join the JSON stream as `service: migrate`; the one-shot CLI keeps no unit_of_work/metrics.
