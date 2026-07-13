@@ -27,14 +27,14 @@ No Schwab client / read-through endpoints (Phase 3 — ADR-0024), no scope or ra
 
 ## Acceptance criteria
 
-- [ ] Auth: request with a provisioned key → 200; absent/unknown/revoked key → 401 (uniform body); revocation via CLI takes effect on the next request.
-- [ ] Range semantics: oldest-first ordering; empty range → 200 + `data: []`; 422 on missing param, non-ISO input, naive datetime, `start >= end`.
-- [ ] Envelope: response matches the shape above; `meta.as_of` equals the newest returned bar's bucket close; `null` when empty.
-- [ ] `/metrics`: 401 without key; with key, Prometheus text exposition containing `http_requests_total` that increases across requests.
-- [ ] 500 handler: a planted raising route returns JSON with no traceback; the traceback appears in the log.
-- [ ] Provisioning CLI round-trip proven in a test: provision → authenticated request succeeds → revoke → 401.
-- [ ] Live runbook (below) executed against the 5498 acceptance DB: real S003 session bars returned over HTTP by the daemon entry point.
-- [ ] ruff + clock-discipline gate green over `services/serve`.
+- [x] Auth: request with a provisioned key → 200; absent/unknown/revoked key → 401 (uniform body); revocation via CLI takes effect on the next request. *(pytest `test_auth`/`test_provision_cli`; witnessed live 2026-07-12: uniform `{"detail":"unauthorized"}` body, provision→200→revoke→401 on the acceptance box.)*
+- [x] Range semantics: oldest-first ordering; empty range → 200 + `data: []`; 422 on missing param, non-ISO input, naive datetime, `start >= end`. *(pytest `test_bars_endpoint`, 6-case 422 matrix.)*
+- [x] Envelope: response matches the shape above; `meta.as_of` equals the newest returned bar's bucket close; `null` when empty. *(pytest literal-envelope assertion; live 2026-07-12: `meta = {as_of: 2026-07-09T20:00:00Z, interval: 5m, source: stream}`.)*
+- [x] `/metrics`: 401 without key; with key, Prometheus text exposition containing `http_requests_total` that increases across requests. *(pytest `test_metrics` incl. unhandled-500 counting; live exposition 2026-07-12 shows process defaults + counters + latency histogram, route-template labels, and the bad-key 401 recorded under `path="unrouted"`.)*
+- [x] 500 handler: a planted raising route returns JSON with no traceback; the traceback appears in the log. *(pytest `test_error_handler`.)*
+- [x] Provisioning CLI round-trip proven in a test: provision → authenticated request succeeds → revoke → 401. *(pytest `test_provision_cli` incl. duplicate-name and unknown-revoke failures; repeated live 2026-07-12 with the `smoke` consumer.)*
+- [x] Live runbook (below) executed against the 5498 acceptance DB: real S003 session bars returned over HTTP by the daemon entry point. *(2026-07-12, operator box: rev-003+004 migrated, key provisioned via CLI, `python -m rs_serve` served **78/78** 2026-07-09 bars with the exact expected meta. One curl re-check misfired client-side (`000`, quoting); both behaviors it would have re-shown are proven above.)*
+- [x] ruff + clock-discipline gate green over `services/serve`. *(2026-07-12, post-v2-rewrite-merge: 176 tests, ruff clean, gate green over four scopes.)*
 
 ## Verification
 
