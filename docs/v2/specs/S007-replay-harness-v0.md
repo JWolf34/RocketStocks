@@ -36,7 +36,7 @@ After this slice, replaying a recorded session fixture through the real pipeline
 
 ## Acceptance criteria
 
-- [ ] **Live-vs-replay (the Phase-1 exit claim):** the comparator run on the 2026-07-09 fixture against the acceptance DB (5498 server) exits 0 with identical multisets (12 = 12). *(Fallback if the 7/9 artifacts are gone: record the next market day per the S003 runbook.)* The phase-exit re-run against the compose-assembled skeleton's full day is phase-gate work, not this slice.
+- [x] **Live-vs-replay (the Phase-1 exit claim):** the comparator run on the 2026-07-09 fixture against the acceptance DB (5498 server) exits 0 with identical multisets (12 = 12). *(2026-07-12: operator run on the dev box — 78 events replayed, `bars_persisted=78 alerts_emitted=12 detector_errors=0 alerts_dropped=0`, `baseline=12 decisions replay=12 decisions -> IDENTICAL`, threshold=500000 in the header, exit 0.)* The phase-exit re-run against the compose-assembled skeleton's full day is phase-gate work, not this slice.
 - [x] **Golden CI test green:** committed fixture → real `Pipeline` → CI DB → semantic Alerts == committed expectations JSONL. *(2026-07-12: `test_golden_replay.py` on the 7/9 four-bar excerpt; expectations hand-derived from the fixture bars vs the 500k threshold, cross-checked against `--export-decisions` output.)*
 - [x] **Negative proof:** one deliberately tampered expectations line makes the comparator exit 1, classifying the alert only-in-live / only-in-replay — the comparator demonstrably *can* fail. *(2026-07-12: volume 705817→705818 tamper → exit 1, one entry per bucket; also pinned as a unit test.)*
 - [x] Result header prints the threshold the replay ran. *(2026-07-12: witnessed in both CLI runs; pinned in `TestComparisonReport`.)*
