@@ -22,6 +22,8 @@ class BotSettings(BaseSettings):
     dev_channel_id: int = Field(validation_alias="RS_DEV_CHANNEL_ID")
     # Bounds only the lost-NOTIFY tail — 20% of one bar (spec pin #6).
     sweep_seconds: float = Field(60.0, validation_alias="RS_BOT_SWEEP_SECONDS")
+    # Prometheus side-port (ADR-0015): compose publishes it 127.0.0.1-only.
+    metrics_port: int = Field(9091, validation_alias="RS_BOT_METRICS_PORT")
     # The Bus-2 NOTIFY channel is intentionally NOT here: it is a pinned wire
     # contract shared with ingest (ADR-0005), not a per-deployment tunable —
     # rs_persistence.NOTIFY_CHANNEL is its single source of truth.
