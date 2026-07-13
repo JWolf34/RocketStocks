@@ -8,7 +8,7 @@ import threading
 import pytest
 
 from rs_observability import install_excepthooks
-from rs_observability.testing import captured_json_stream, json_records as json_lines
+from rs_observability.testing import captured_json_stream, json_records
 
 
 @pytest.fixture
@@ -34,7 +34,7 @@ def test_sys_excepthook_logs_full_traceback(stream):
     install_excepthooks()
     assert sys.excepthook is not sys.__excepthook__
     sys.excepthook(*planted_exc_info())
-    (record,) = json_lines(stream)
+    (record,) = json_records(stream)
     assert record["level"] == "error"
     assert "Traceback" in record["exception"]
     assert "ValueError: planted" in record["exception"]
@@ -60,7 +60,7 @@ def test_threading_excepthook_logs_full_traceback(stream):
     thread = threading.Thread(target=target, name="worker-1")
     thread.start()
     thread.join()
-    (record,) = json_lines(stream)
+    (record,) = json_records(stream)
     assert record["level"] == "error"
     assert "worker-1" in record["event"]
     assert "ValueError: planted in thread" in record["exception"]
@@ -76,7 +76,7 @@ async def test_asyncio_handler_logs_full_traceback(stream):
         loop.call_exception_handler(
             {"message": "task exception was never retrieved", "exception": exc}
         )
-    (record,) = json_lines(stream)
+    (record,) = json_records(stream)
     assert record["level"] == "error"
     assert "task exception was never retrieved" in record["event"]
     assert "ValueError: planted in task" in record["exception"]
@@ -85,7 +85,7 @@ async def test_asyncio_handler_logs_full_traceback(stream):
 async def test_asyncio_handler_without_exception_still_logs(stream):
     install_excepthooks()
     asyncio.get_running_loop().call_exception_handler({"message": "socket leak"})
-    (record,) = json_lines(stream)
+    (record,) = json_records(stream)
     assert "socket leak" in record["event"]
 
 
