@@ -7,13 +7,17 @@ Sender is faked at the send-protocol seam — these tests never touch Discord;
 the cursor semantics run against the real ephemeral Postgres (ADR-0023 tier)."""
 
 import asyncio
+import logging
 from datetime import datetime, timezone
+
+import pytest
 
 from rs_domain import Alert
 from rs_persistence import AlertRepository
 
 from rs_bot.counters import new_counters
 from rs_bot.sweep import SweepWorker
+from rs_observability.testing import captured_json_stream, json_records
 
 
 def _alert(symbol: str) -> Alert:
@@ -123,3 +127,64 @@ async def test_run_sweeps_on_wake_without_waiting_interval(session_factory):
         async with asyncio.timeout(5):
             await task
     assert await _unposted_ids(session_factory) == []
+
+
+# -- S006 unit of work: one posting attempt = one correlation_id ---------------
+
+
+@pytest.fixture
+def json_stream():
+    with captured_json_stream("bot") as buffer:
+        yield buffer
+
+
+class LoggingSender(FakeSender):
+    """Send-protocol fake that logs like discord.py's internals do — the
+    'retry internals group under the alert' claim needs a third-party-style
+    record emitted inside the attempt."""
+
+    async def send(self, embed):
+        logging.getLogger("discord.http").warning("rate limited, retrying")
+        return await super().send(embed)
+
+
+async def test_posting_attempt_records_share_one_correlation_id(session_factory, json_stream):
+    (alert_id,) = await _insert(session_factory, _alert("SPY"))
+    worker = SweepWorker(session_factory, LoggingSender(), sweep_seconds=60, counters=new_counters())
+
+    await worker.sweep()
+
+    records = json_records(json_stream)
+    (discord_record,) = [r for r in records if r["logger"] == "discord.http"]
+    (posted_record,) = [r for r in records if r["event"].startswith("posted alert")]
+    assert posted_record["alert_id"] == alert_id  # the cross-service join key
+    assert posted_record["correlation_id"]
+    # discord.py's record groups under the same attempt: same id, same alert.
+    assert discord_record["correlation_id"] == posted_record["correlation_id"]
+    assert discord_record["alert_id"] == alert_id
+    assert posted_record["service"] == "bot"
+
+
+async def test_each_posting_attempt_is_its_own_unit_of_work(session_factory, json_stream):
+    await _insert(session_factory, _alert("AAA"), _alert("BBB"))
+    worker = SweepWorker(session_factory, FakeSender(), sweep_seconds=60, counters=new_counters())
+
+    await worker.sweep()
+
+    first, second = [r for r in json_records(json_stream) if r["event"].startswith("posted alert")]
+    assert first["correlation_id"] != second["correlation_id"]
+    assert first["alert_id"] != second["alert_id"]
+
+
+async def test_send_failure_record_is_correlated_too(session_factory, json_stream):
+    (alert_id,) = await _insert(session_factory, _alert("SPY"))
+    sender = FakeSender(fail_when=lambda embed: True)
+    worker = SweepWorker(session_factory, sender, sweep_seconds=60, counters=new_counters())
+
+    await worker.sweep()
+
+    (record,) = [r for r in json_records(json_stream) if r["event"].startswith("send failed")]
+    assert record["level"] == "error"
+    assert record["alert_id"] == alert_id
+    assert record["correlation_id"]
+    assert "Traceback" in record["exception"]
