@@ -23,6 +23,7 @@ from typing import Protocol
 import discord
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from rs_observability import unit_of_work
 from rs_persistence import AlertRepository
 
 from rs_bot.counters import new_counters
@@ -83,41 +84,46 @@ class SweepWorker:
             for item in pending:
                 if self._stopping.is_set():
                     break
-                embed = render(item)
-                try:
-                    message_id = await self._sender.send(embed)
-                except Exception:
-                    self.counters["post_failures_total"] += 1
-                    logger.error(
-                        "send failed — skipped, retried next sweep: alert id=%d %s %s "
-                        "triggered_at=%s payload=%s",
-                        item.id,
-                        item.alert.alert_type,
-                        item.alert.symbol,
-                        item.alert.triggered_at,
-                        item.alert.payload,
-                        exc_info=True,
-                    )
-                    continue
-                posted_at = await repo.mark_posted(item.id)
-                await session.commit()  # per-row commit: dupe window ≤ 1 alert
-                self.counters["discord_posts_total"] += 1
-                if posted_at is None:
-                    # message_id identifies the duplicate for the G5 audit.
-                    logger.warning(
-                        "alert id=%d was already marked posted — possible duplicate post "
-                        "message_id=%d (crash inside a previous send→commit gap)",
-                        item.id,
-                        message_id,
-                    )
-                else:
-                    # DB-derived lag (pin #9): posted_at − triggered_at, both
-                    # server-side stamps — no client clock in rs_bot.
-                    logger.info(
-                        "posted alert id=%d message_id=%d lag=%.1fs",
-                        item.id,
-                        message_id,
-                        (posted_at - item.alert.triggered_at).total_seconds(),
-                    )
+                # One posting attempt = one unit of work (S006): discord.py's
+                # retry internals log inside it and group under the alert.
+                # alert_id is the cross-service join key (ingest's insert log
+                # carries the same field).
+                with unit_of_work(alert_id=item.id):
+                    embed = render(item)
+                    try:
+                        message_id = await self._sender.send(embed)
+                    except Exception:
+                        self.counters["post_failures_total"] += 1
+                        logger.error(
+                            "send failed — skipped, retried next sweep: alert id=%d %s %s "
+                            "triggered_at=%s payload=%s",
+                            item.id,
+                            item.alert.alert_type,
+                            item.alert.symbol,
+                            item.alert.triggered_at,
+                            item.alert.payload,
+                            exc_info=True,
+                        )
+                        continue
+                    posted_at = await repo.mark_posted(item.id)
+                    await session.commit()  # per-row commit: dupe window ≤ 1 alert
+                    self.counters["discord_posts_total"] += 1
+                    if posted_at is None:
+                        # message_id identifies the duplicate for the G5 audit.
+                        logger.warning(
+                            "alert id=%d was already marked posted — possible duplicate post "
+                            "message_id=%d (crash inside a previous send→commit gap)",
+                            item.id,
+                            message_id,
+                        )
+                    else:
+                        # DB-derived lag (pin #9): posted_at − triggered_at, both
+                        # server-side stamps — no client clock in rs_bot.
+                        logger.info(
+                            "posted alert id=%d message_id=%d lag=%.1fs",
+                            item.id,
+                            message_id,
+                            (posted_at - item.alert.triggered_at).total_seconds(),
+                        )
         if pending:
             logger.info("counters: %s", self.counters)
