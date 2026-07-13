@@ -8,6 +8,7 @@ authors = [
 requires-python = ">=3.13"
 dependencies = [
     "alembic>=1.18.5",
+    "rs-observability",
     "rs-persistence",
 ]
 
@@ -16,4 +17,5 @@ requires = ["uv_build>=0.11.26,<0.12.0"]
 build-backend = "uv_build"
 
 [tool.uv.sources]
+rs-observability = { workspace = true }
 rs-persistence = { workspace = true }

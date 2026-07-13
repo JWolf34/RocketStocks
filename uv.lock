@@ -2242,12 +2242,14 @@ version = "0.1.0"
 source = { editable = "tools/migrate" }
 dependencies = [
     { name = "alembic" },
+    { name = "rs-observability" },
     { name = "rs-persistence" },
 ]
 
 [package.metadata]
 requires-dist = [
     { name = "alembic", specifier = ">=1.18.5" },
+    { name = "rs-observability", editable = "libs/observability" },
     { name = "rs-persistence", editable = "libs/persistence" },
 ]
 
