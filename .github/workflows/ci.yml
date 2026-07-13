@@ -68,7 +68,7 @@ jobs:
         run: uv run pytest libs/ services/ tools/ -q
 
   docker:
-    name: docker (v1 image from legacy/)
+    name: docker (v1 + v2 images)
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
@@ -78,6 +78,9 @@ jobs:
         run: |
           cp .env.example .env
           docker compose -f docker-compose.yml config -q
+
+      - name: Validate v2 compose config
+        run: docker compose -f docker-compose.v2.yml config -q
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
@@ -89,3 +92,13 @@ jobs:
           push: false
           cache-from: type=gha
           cache-to: type=gha,mode=max
+
+      # Own cache scope so the two images never evict each other's layers.
+      - name: Build v2 image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: Dockerfile.v2
+          push: false
+          cache-from: type=gha,scope=v2
+          cache-to: type=gha,mode=max,scope=v2
