@@ -112,6 +112,12 @@ RS_DB_URL=postgresql+psycopg://... .venv/bin/python -m rs_migrate upgrade
 
 # Docker (v1 image builds from legacy/ via the root Dockerfile)
 docker compose up -d
+
+# v2 stack (S006): TimescaleDB (127.0.0.1:5498) + one-shot migrate gate +
+# ingest/serve/bot from the shared Dockerfile.v2 image; JSON logs with
+# correlation_id; metrics on 127.0.0.1:9090 (ingest) / :9091 (bot).
+# Needs RS_DB_PASSWORD + service credentials in .env.
+docker compose -f docker-compose.v2.yml up -d
 ```
 
 ## Environment Variables (`.env`)
