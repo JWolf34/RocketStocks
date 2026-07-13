@@ -52,3 +52,10 @@ def test_missing_required_fails(monkeypatch):
         monkeypatch.delenv(name, raising=False)
     with pytest.raises(ValidationError):
         BotSettings(_env_file=None)
+
+
+def test_metrics_port_default_and_override(monkeypatch):
+    _set_required(monkeypatch)
+    assert BotSettings(_env_file=None).metrics_port == 9091
+    monkeypatch.setenv("RS_BOT_METRICS_PORT", "9191")
+    assert BotSettings(_env_file=None).metrics_port == 9191
