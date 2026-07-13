@@ -12,6 +12,7 @@ import sys
 
 from alembic import command
 
+from rs_observability import configure_logging
 from rs_persistence import migration_config
 
 
@@ -26,6 +27,10 @@ def main(argv: list[str] | None = None) -> int:
     sub.add_parser("current", help="show current revision")
 
     args = parser.parse_args(argv)
+
+    # S006: alembic logs via stdlib logging — route it through the one JSON
+    # stream so the compose migrate service's records carry service/timestamp.
+    configure_logging("migrate")
 
     db_url = os.environ.get("RS_DB_URL")
     if not db_url:
