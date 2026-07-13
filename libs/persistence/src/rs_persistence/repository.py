@@ -8,6 +8,7 @@ boundary) — the engine already pins the session timezone, this is the
 repository honoring the same contract explicitly.
 """
 
+from collections.abc import Collection
 from datetime import date, datetime, timedelta, timezone
 
 from pydantic import BaseModel, ConfigDict
@@ -171,6 +172,34 @@ class AlertRepository:
         # NOTIFY payload is the id only — a wake-up hint; the row is the truth.
         await self._session.execute(select(func.pg_notify(self._channel, str(alert_id))))
         return alert_id
+
+    async def list_decisions(
+        self,
+        symbols: Collection[str] | None = None,
+        start: datetime | None = None,
+        end: datetime | None = None,
+    ) -> list[Alert]:
+        """Alert rows as domain Alerts (the semantic decisions — S007), id
+        order, optionally filtered to symbols and a [start, end) triggered_at
+        window. Delivery bookkeeping (id, posted_at) never leaves: the replay
+        comparator diffs decisions, not delivery state (ADR-0023)."""
+        query = select(AlertRow).order_by(AlertRow.id)
+        if symbols is not None:
+            query = query.where(AlertRow.symbol.in_(symbols))
+        if start is not None:
+            query = query.where(AlertRow.triggered_at >= start)
+        if end is not None:
+            query = query.where(AlertRow.triggered_at < end)
+        rows = (await self._session.scalars(query)).all()
+        return [
+            Alert(
+                symbol=row.symbol,
+                alert_type=row.alert_type,
+                triggered_at=row.triggered_at.astimezone(timezone.utc),
+                payload=row.payload,
+            )
+            for row in rows
+        ]
 
     async def list_unposted(self) -> list[PendingAlert]:
         """Every undelivered alert, id order, no LIMIT — the bot's sweep drains
