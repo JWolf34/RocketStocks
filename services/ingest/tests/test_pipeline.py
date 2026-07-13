@@ -10,15 +10,19 @@ A shared Recorder captures the ordered sequence of DB operations across both
 transactions so the two-transaction structure is visible.
 """
 
+import io
+import json
 import logging
 from datetime import datetime, timedelta, timezone
 
 import pytest
+import structlog
 
 import rs_ingest.pipeline as pipeline_mod
 from rs_domain import Bar, BarClosed
 from rs_ingest.detector import ThresholdDetector
 from rs_ingest.pipeline import Pipeline
+from rs_observability import configure_logging
 from rs_persistence import NOTIFY_CHANNEL
 
 BUCKET0 = datetime(2026, 7, 6, 13, 30, tzinfo=timezone.utc)
@@ -248,3 +252,63 @@ async def test_alert_write_failure_is_tolerated_and_capture_continues(rec, monke
     # the drop is auditable, not silent: the payload lands in the ERROR log
     assert "DROPPED" in caplog.text
     assert "200000" in caplog.text and "300000" in caplog.text
+
+
+# -- S006 unit of work: one event dispatch = one correlation_id ----------------
+
+
+@pytest.fixture
+def json_stream(monkeypatch):
+    """The service logging pipeline with the root handler on a StringIO (the
+    correlation fields merge at format time, so caplog can't see them)."""
+    monkeypatch.setenv("RS_LOG_FORMAT", "json")
+    monkeypatch.delenv("RS_LOG_LEVEL", raising=False)
+    root = logging.getLogger()
+    saved_handlers = root.handlers[:]
+    saved_level = root.level
+    configure_logging("ingest")
+    buffer = io.StringIO()
+    root.handlers[0].setStream(buffer)
+    yield buffer
+    root.handlers[:] = saved_handlers
+    root.setLevel(saved_level)
+    structlog.contextvars.clear_contextvars()
+    structlog.reset_defaults()
+
+
+def json_records(stream: io.StringIO) -> list[dict]:
+    return [json.loads(line) for line in stream.getvalue().strip().splitlines()]
+
+
+async def test_dispatch_records_carry_correlation_id_and_domain_keys(rec, json_stream):
+    p = Pipeline(rec.factory, [ThresholdDetector(100_000)])
+    await p.handle(closed(bar(200_000)))
+
+    (record,) = [r for r in json_records(json_stream) if r["event"].startswith("alert ")]
+    assert record["service"] == "ingest"
+    assert record["symbol"] == "SPY"
+    assert record["bucket"] == BUCKET0.isoformat()
+    assert record["correlation_id"]
+    # The cross-service join key (S006 pin #3): ingest's insert log carries the
+    # alert id the bot's post log will also carry — tracing joins on it.
+    assert record["alert_id"] == 3  # FakeAlertRepo returns len(rec.log)
+
+
+async def test_each_dispatch_is_its_own_unit_of_work(rec, json_stream):
+    p = Pipeline(rec.factory, [ThresholdDetector(100_000)])
+    await p.run(FakeSource([closed(bar(200_000, i=0)), closed(bar(300_000, i=1))]))
+
+    first, second = [r for r in json_records(json_stream) if r["event"].startswith("alert ")]
+    assert first["correlation_id"] != second["correlation_id"]
+    assert first["bucket"] != second["bucket"]
+
+
+async def test_dropped_alert_record_is_correlated_too(rec, monkeypatch, json_stream):
+    monkeypatch.setattr(pipeline_mod, "AlertRepository", RaisingAlertRepo)
+    p = Pipeline(rec.factory, [ThresholdDetector(100_000)])
+    await p.handle(closed(bar(200_000)))
+
+    (record,) = [r for r in json_records(json_stream) if "DROPPED" in r["event"]]
+    assert record["level"] == "error"
+    assert record["correlation_id"]
+    assert record["symbol"] == "SPY"
