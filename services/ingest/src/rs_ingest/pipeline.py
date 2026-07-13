@@ -42,6 +42,7 @@ from collections.abc import Sequence
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from rs_domain import Alert, Bar, BarClosed, Detector, EventSource
+from rs_observability import unit_of_work
 from rs_persistence import NOTIFY_CHANNEL, AlertRepository, BarRepository
 
 logger = logging.getLogger(__name__)
@@ -74,10 +75,14 @@ class Pipeline:
             await self.handle(event)
 
     async def handle(self, event: BarClosed) -> None:
-        await self._persist(event.bar)
-        self._window.append(event.bar)  # mirrors the log: append only post-commit
-        self.counters["bars_persisted"] += 1
-        await self._detect(event.bar)
+        # One event dispatch = one unit of work (S006): bar close → persist →
+        # detect → alert write → NOTIFY commit share a correlation_id, with the
+        # domain keys as first-class fields on every record.
+        with unit_of_work(symbol=event.bar.symbol, bucket=event.bar.bucket.isoformat()):
+            await self._persist(event.bar)
+            self._window.append(event.bar)  # mirrors the log: append only post-commit
+            self.counters["bars_persisted"] += 1
+            await self._detect(event.bar)
 
     async def _persist(self, bar: Bar) -> None:
         # Transaction 1 — the durable bar log, alone. Crash-loud: an exception
@@ -96,8 +101,7 @@ class Pipeline:
             # the bar commit, and reached only for a bar that is already durable.
             async with self._session_factory() as session:
                 repo = AlertRepository(session, self._notify_channel)
-                for alert in alerts:
-                    await repo.insert(alert)
+                inserted = [(await repo.insert(alert), alert) for alert in alerts]
                 await session.commit()
         except Exception:
             # Tier-2 reaction path: a failed alert write is tolerated so it can
@@ -116,8 +120,16 @@ class Pipeline:
                 )
         else:
             self.counters["alerts_emitted"] += len(alerts)
-            for alert in alerts:
-                logger.info("alert %s %s payload=%s", alert.alert_type, alert.symbol, alert.payload)
+            for alert_id, alert in inserted:
+                # alert_id is THE cross-service join key (S006 pin #3): this
+                # insert log and the bot's post log both carry it as a field.
+                logger.info(
+                    "alert %s %s payload=%s",
+                    alert.alert_type,
+                    alert.symbol,
+                    alert.payload,
+                    extra={"alert_id": alert_id},
+                )
 
     def _decide(self, bar: Bar) -> list[Alert]:
         # Detectors get an immutable snapshot (the port types it Sequence[Bar]): a
