@@ -2187,6 +2187,7 @@ dependencies = [
     { name = "discord-py" },
     { name = "pydantic-settings" },
     { name = "rs-domain" },
+    { name = "rs-observability" },
     { name = "rs-persistence" },
 ]
 
@@ -2195,6 +2196,7 @@ requires-dist = [
     { name = "discord-py", specifier = ">=2.4" },
     { name = "pydantic-settings", specifier = ">=2.6.0" },
     { name = "rs-domain", editable = "libs/domain" },
+    { name = "rs-observability", editable = "libs/observability" },
     { name = "rs-persistence", editable = "libs/persistence" },
 ]
 
