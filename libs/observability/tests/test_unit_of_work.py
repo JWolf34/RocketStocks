@@ -1,40 +1,21 @@
 """unit_of_work: fresh opaque correlation_id + domain keys as fields (S006
-pin #3). Asserted through the rendered stream — binding only matters if the
-records actually carry the fields. (That the stream targets stdout is
-test_logging.py's subject; here the root handler is pointed at a StringIO so
-the assertions don't depend on pytest's capture internals.)"""
+pin #3). Asserted through the rendered stream (rs_observability.testing) —
+binding only matters if the records actually carry the fields. That the
+stream targets stdout is test_logging.py's subject."""
 
-import io
-import json
 import logging
 import uuid
 
 import pytest
-import structlog
 
-from rs_observability import configure_logging, unit_of_work
+from rs_observability import unit_of_work
+from rs_observability.testing import captured_json_stream, json_records as json_lines
 
 
 @pytest.fixture
-def stream(monkeypatch):
-    """configure_logging("test") with the root handler feeding a StringIO."""
-    monkeypatch.setenv("RS_LOG_FORMAT", "json")
-    monkeypatch.delenv("RS_LOG_LEVEL", raising=False)
-    root = logging.getLogger()
-    saved_handlers = root.handlers[:]
-    saved_level = root.level
-    configure_logging("test")
-    buffer = io.StringIO()
-    root.handlers[0].setStream(buffer)
-    yield buffer
-    root.handlers[:] = saved_handlers
-    root.setLevel(saved_level)
-    structlog.contextvars.clear_contextvars()
-    structlog.reset_defaults()
-
-
-def json_lines(stream: io.StringIO) -> list[dict]:
-    return [json.loads(line) for line in stream.getvalue().strip().splitlines()]
+def stream():
+    with captured_json_stream("test") as buffer:
+        yield buffer
 
 
 def test_binds_fresh_uuid_and_domain_fields(stream):

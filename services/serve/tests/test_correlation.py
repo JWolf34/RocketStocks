@@ -1,41 +1,20 @@
 """Correlation middleware (S006): one HTTP request = one unit of work — a
 fresh X-Correlation-ID echoed to the caller and present on the request's log
-records. Asserted on the rendered JSON stream (the id is merged at format
-time, so caplog's raw records can't see it)."""
+records. Asserted on the rendered JSON stream (rs_observability.testing)."""
 
 import asyncio
-import io
-import json
-import logging
 import uuid
 
 import httpx
 import pytest
-import structlog
 
-from rs_observability import configure_logging
+from rs_observability.testing import captured_json_stream, json_records
 
 
 @pytest.fixture
-def json_stream(monkeypatch):
-    """The service logging pipeline with the root handler on a StringIO."""
-    monkeypatch.setenv("RS_LOG_FORMAT", "json")
-    monkeypatch.delenv("RS_LOG_LEVEL", raising=False)
-    root = logging.getLogger()
-    saved_handlers = root.handlers[:]
-    saved_level = root.level
-    configure_logging("serve")
-    buffer = io.StringIO()
-    root.handlers[0].setStream(buffer)
-    yield buffer
-    root.handlers[:] = saved_handlers
-    root.setLevel(saved_level)
-    structlog.contextvars.clear_contextvars()
-    structlog.reset_defaults()
-
-
-def json_records(stream: io.StringIO) -> list[dict]:
-    return [json.loads(line) for line in stream.getvalue().strip().splitlines()]
+def json_stream():
+    with captured_json_stream("serve") as buffer:
+        yield buffer
 
 
 async def test_response_echoes_id_and_request_records_carry_it(

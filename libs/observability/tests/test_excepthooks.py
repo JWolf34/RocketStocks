@@ -2,43 +2,25 @@
 with a full traceback (ADR-0015 native capture; S006 acceptance criterion)."""
 
 import asyncio
-import io
-import json
-import logging
 import sys
 import threading
 
 import pytest
-import structlog
 
-from rs_observability import configure_logging, install_excepthooks
+from rs_observability import install_excepthooks
+from rs_observability.testing import captured_json_stream, json_records as json_lines
 
 
 @pytest.fixture
-def stream(monkeypatch):
-    """configure_logging("test") with the root handler feeding a StringIO;
-    saves/restores the process-wide hooks the subject mutates."""
-    monkeypatch.setenv("RS_LOG_FORMAT", "json")
-    monkeypatch.delenv("RS_LOG_LEVEL", raising=False)
-    root = logging.getLogger()
-    saved_handlers = root.handlers[:]
-    saved_level = root.level
+def stream():
+    """The captured stream, plus save/restore of the process-wide hooks the
+    subject mutates."""
     saved_sys_hook = sys.excepthook
     saved_threading_hook = threading.excepthook
-    configure_logging("test")
-    buffer = io.StringIO()
-    root.handlers[0].setStream(buffer)
-    yield buffer
+    with captured_json_stream("test") as buffer:
+        yield buffer
     sys.excepthook = saved_sys_hook
     threading.excepthook = saved_threading_hook
-    root.handlers[:] = saved_handlers
-    root.setLevel(saved_level)
-    structlog.contextvars.clear_contextvars()
-    structlog.reset_defaults()
-
-
-def json_lines(stream: io.StringIO) -> list[dict]:
-    return [json.loads(line) for line in stream.getvalue().strip().splitlines()]
 
 
 def planted_exc_info():

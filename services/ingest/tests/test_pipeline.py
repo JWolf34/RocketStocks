@@ -10,19 +10,16 @@ A shared Recorder captures the ordered sequence of DB operations across both
 transactions so the two-transaction structure is visible.
 """
 
-import io
-import json
 import logging
 from datetime import datetime, timedelta, timezone
 
 import pytest
-import structlog
 
 import rs_ingest.pipeline as pipeline_mod
 from rs_domain import Bar, BarClosed
 from rs_ingest.detector import ThresholdDetector
 from rs_ingest.pipeline import Pipeline
-from rs_observability import configure_logging
+from rs_observability.testing import captured_json_stream, json_records
 from rs_persistence import NOTIFY_CHANNEL
 
 BUCKET0 = datetime(2026, 7, 6, 13, 30, tzinfo=timezone.utc)
@@ -258,26 +255,9 @@ async def test_alert_write_failure_is_tolerated_and_capture_continues(rec, monke
 
 
 @pytest.fixture
-def json_stream(monkeypatch):
-    """The service logging pipeline with the root handler on a StringIO (the
-    correlation fields merge at format time, so caplog can't see them)."""
-    monkeypatch.setenv("RS_LOG_FORMAT", "json")
-    monkeypatch.delenv("RS_LOG_LEVEL", raising=False)
-    root = logging.getLogger()
-    saved_handlers = root.handlers[:]
-    saved_level = root.level
-    configure_logging("ingest")
-    buffer = io.StringIO()
-    root.handlers[0].setStream(buffer)
-    yield buffer
-    root.handlers[:] = saved_handlers
-    root.setLevel(saved_level)
-    structlog.contextvars.clear_contextvars()
-    structlog.reset_defaults()
-
-
-def json_records(stream: io.StringIO) -> list[dict]:
-    return [json.loads(line) for line in stream.getvalue().strip().splitlines()]
+def json_stream():
+    with captured_json_stream("ingest") as buffer:
+        yield buffer
 
 
 async def test_dispatch_records_carry_correlation_id_and_domain_keys(rec, json_stream):
