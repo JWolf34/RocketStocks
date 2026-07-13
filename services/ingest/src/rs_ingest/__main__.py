@@ -10,36 +10,61 @@ later without redesign.
 import asyncio
 import logging
 import sys
+from collections.abc import Iterator, Mapping
 from datetime import timedelta
 
 from authlib.integrations.base_client import OAuthError
 from pydantic import ValidationError
 
 from rs_domain import EventSource, SystemClock
+from rs_ingest.aggregator import COUNTER_NAMES as AGGREGATOR_COUNTER_NAMES
 from rs_ingest.detector import ThresholdDetector
 from rs_ingest.pipeline import Pipeline
 from rs_ingest.schwab_client import TokenMissingError, build_schwab_client
 from rs_ingest.settings import IngestSettings
 from rs_ingest.sources.live import LiveEventSource
 from rs_ingest.sources.recording import FixtureRecorder, RecordingEventSource
+from rs_observability import (
+    DictCounterCollector,
+    configure_logging,
+    install_excepthooks,
+    start_metrics_server,
+)
 from rs_persistence import NOTIFY_CHANNEL, SchwabTokenStore, build_engine, build_session_factory
 from rs_sources import PandasMarketCalendar
 
 logger = logging.getLogger(__name__)
 
 
-def configure_logging() -> None:
-    logging.basicConfig(
-        level=logging.INFO,
-        format="%(asctime)s %(levelname)s %(name)s %(message)s",
-        stream=sys.stderr,
-    )
+class LiveAggregatorCounters(Mapping):
+    """Scrape-time view of the session aggregator's counters. The aggregator
+    exists only once a session opens (LiveEventSource creates it), so the view
+    serves zeros until then — every metric name is present from process start."""
+
+    def __init__(self, live: LiveEventSource) -> None:
+        self._live = live
+
+    def _counters(self) -> Mapping[str, int]:
+        if self._live.aggregator is None:
+            return dict.fromkeys(AGGREGATOR_COUNTER_NAMES, 0)
+        return self._live.aggregator.counters
+
+    def __getitem__(self, name: str) -> int:
+        return self._counters()[name]
+
+    def __iter__(self) -> Iterator[str]:
+        return iter(self._counters())
+
+    def __len__(self) -> int:
+        return len(self._counters())
 
 
 async def run_session(settings: IngestSettings) -> int:
     from schwab.streaming import StreamClient
 
+    install_excepthooks()  # the asyncio half — needs asyncio.run()'s loop
     engine = build_engine(settings.rs_db_url)
+    metrics_server = None
     try:
         session_factory = build_session_factory(engine)
         token_store = SchwabTokenStore(session_factory)
@@ -60,6 +85,16 @@ async def run_session(settings: IngestSettings) -> int:
             source = RecordingEventSource(live, FixtureRecorder(settings.fixture_path))
             logger.info("recording session fixture to %s", settings.fixture_path)
         pipeline = Pipeline(session_factory, [ThresholdDetector(settings.volume_threshold)])
+        # :9090 side-port (ADR-0015). namespace="" — the ADR names the metric
+        # vocabulary bare (bars_persisted_total, ...); scrape job labels, not
+        # name prefixes, distinguish services.
+        metrics_server, _ = start_metrics_server(
+            settings.metrics_port,
+            [
+                DictCounterCollector(pipeline.counters, namespace=""),
+                DictCounterCollector(LiveAggregatorCounters(live), namespace=""),
+            ],
+        )
         try:
             await pipeline.run(source)
         except OAuthError:
@@ -73,11 +108,14 @@ async def run_session(settings: IngestSettings) -> int:
         logger.info("pipeline counters: %s", pipeline.counters)
         return 0
     finally:
+        if metrics_server is not None:
+            metrics_server.shutdown()
         await engine.dispose()
 
 
 def main() -> int:
-    configure_logging()
+    configure_logging("ingest")
+    install_excepthooks()  # sys/threading; the asyncio half joins in run_session
     try:
         settings = IngestSettings()
     except ValidationError as exc:
