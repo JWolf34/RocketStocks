@@ -12,6 +12,7 @@ cd "$(dirname "$0")/.."
 
 SCOPES=(
   "libs/domain/src"
+  "libs/observability/src"
   "services/bot/src"
   "services/ingest/src"
   "services/serve/src"
