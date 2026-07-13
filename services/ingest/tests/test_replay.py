@@ -1,8 +1,14 @@
-"""replay tool (S003 criterion 30): the boundary-held invariant. The DB
-orchestration (create/migrate/replay/drop) is exercised end-to-end against a real
-fixture; here we pin the pass/fail logic that decides whether the boundary held."""
+"""replay tool: the pass/fail logic. The DB orchestration (create/migrate/
+replay/drop) is exercised end-to-end against a real fixture; here we pin the
+boundary-held invariant (S003 criterion 30) and the assertion mode's report +
+exit semantics (S007): exit 0 iff the semantic-decision multisets are
+identical, 1 on any difference — strict, no tolerance path."""
 
-from rs_ingest.tools.replay import boundary_held
+from datetime import UTC, datetime
+from pathlib import Path
+
+from rs_domain import Alert
+from rs_ingest.tools.replay import boundary_held, comparison_report
 
 
 def _counters(bars, errors, emitted=0, dropped=0):
@@ -36,3 +42,38 @@ def test_not_held_if_an_alert_write_was_dropped():
 def test_empty_fixture_proves_nothing():
     # a vacuous "all zero" is not a proof — the boundary was never exercised
     assert not boundary_held(_counters(bars=0, errors=0), 0)
+
+
+def _decision(minute: int = 30, volume: int = 1_681_435) -> Alert:
+    return Alert(
+        symbol="SPY",
+        alert_type="volume_threshold",
+        triggered_at=datetime(2026, 7, 9, 13, minute, tzinfo=UTC),
+        payload={"volume": volume, "threshold": 500_000},
+    )
+
+
+class TestComparisonReport:
+    def test_identical_exits_zero_with_header(self):
+        decisions = [_decision(30), _decision(35, volume=705_817)]
+        text, code = comparison_report(
+            Path("data/f.jsonl"), 500_000, "live-db", decisions, decisions
+        )
+        assert code == 0
+        assert "data/f.jsonl" in text
+        assert "500000" in text  # the threshold the replay ran — Q5's config pin
+        assert "baseline=2" in text and "replay=2" in text
+        assert "IDENTICAL" in text
+
+    def test_any_difference_exits_one_and_classifies_each_side(self):
+        live = [_decision(30)]
+        replayed = [_decision(30, volume=999_999)]
+        text, code = comparison_report(Path("f.jsonl"), 500_000, "expected", live, replayed)
+        assert code == 1
+        assert "DIFFERENT" in text
+        assert "only in live" in text and '"volume":1681435' in text
+        assert "only in replay" in text and '"volume":999999' in text
+
+    def test_baseline_label_names_what_was_compared_against(self):
+        text, _ = comparison_report(Path("f.jsonl"), 500_000, "live-db", [], [])
+        assert "live-db" in text
