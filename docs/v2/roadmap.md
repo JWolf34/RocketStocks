@@ -44,7 +44,7 @@ Thinnest end-to-end path through all three services, deliberately routed through
 | S003 | `ingest` skeleton: Schwab L1 stream (1 ticker) → 5-min bar build → `BarClosed` → ordered fan-out (persist → hardcoded detector) → alert+outbox row → NOTIFY | [spec](./specs/S003-ingest-skeleton-one-ticker.md) |
 | S004 | `bot` skeleton: LISTEN, reconcile `posted_at IS NULL` on reconnect + periodic sweep (Bus-2 consumer contract — ADR-0005), render one minimal embed to the dev channel | [spec](./specs/S004-bot-skeleton.md) |
 | S005 | `serve` skeleton: FastAPI, authenticated range read (`/v1/bars/{ticker}?start=&end=`), API-key middleware stub, `/metrics` | [spec](./specs/S005-serve-skeleton.md) |
-| S006 | Spine: shared Dockerfile + compose entries for all three services; structlog JSON + `correlation_id`; CI (tests + lint + clock-grep) | TBD |
+| S006 | Spine: shared Dockerfile + compose entries for all three services; structlog JSON + `correlation_id`; CI (tests + lint + clock-grep) | [spec](./specs/S006-spine.md) |
 | S007 | Replay harness v0: record S003's event stream to a fixture; replay through the real pipeline; assert identical semantic alert decisions | [spec](./specs/S007-replay-harness-v0.md) |
 
 **Exit:** the skeleton runs a full live market day on the dev box; S007 replays that day and reproduces identical alert decisions; all three services run under compose; CI green; skeleton merged to `main` (per ADR-0001).
