@@ -146,6 +146,11 @@ async def _run(
 ) -> int:
     events = load_events(fixture)
     n_events = len(events)
+    if n_events == 0:
+        # Same stance as boundary_held: an empty fixture proves nothing —
+        # refuse loudly rather than replay nothing and report success.
+        print(f"empty fixture — nothing to replay or assert: {fixture}")
+        return 1
     detectors: list[Detector] = [ThresholdDetector(threshold)]
     if plant_raiser:
         detectors.append(_AlwaysRaises())

@@ -8,7 +8,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 from rs_domain import Alert
-from rs_ingest.tools.replay import boundary_held, comparison_report
+from rs_ingest.tools.replay import _run, boundary_held, comparison_report
 
 
 def _counters(bars, errors, emitted=0, dropped=0):
@@ -77,3 +77,12 @@ class TestComparisonReport:
     def test_baseline_label_names_what_was_compared_against(self):
         text, _ = comparison_report(Path("f.jsonl"), 500_000, "live-db", [], [])
         assert "live-db" in text
+
+
+async def test_empty_fixture_cannot_be_asserted(tmp_path):
+    # Same stance as boundary_held: an empty fixture proves nothing. The
+    # assertion mode refuses it loudly instead of crashing in fixture_scope.
+    empty = tmp_path / "empty.jsonl"
+    empty.write_text("")
+    code = await _run(empty, 500_000, plant_raiser=False, admin_db="unused", live_db="unused")
+    assert code == 1

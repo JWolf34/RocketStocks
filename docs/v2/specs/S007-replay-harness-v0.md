@@ -37,10 +37,10 @@ After this slice, replaying a recorded session fixture through the real pipeline
 ## Acceptance criteria
 
 - [ ] **Live-vs-replay (the Phase-1 exit claim):** the comparator run on the 2026-07-09 fixture against the acceptance DB (5498 server) exits 0 with identical multisets (12 = 12). *(Fallback if the 7/9 artifacts are gone: record the next market day per the S003 runbook.)* The phase-exit re-run against the compose-assembled skeleton's full day is phase-gate work, not this slice.
-- [ ] **Golden CI test green:** committed fixture → real `Pipeline` → CI DB → semantic Alerts == committed expectations JSONL.
-- [ ] **Negative proof:** one deliberately tampered expectations line makes the comparator exit 1, classifying the alert only-in-live / only-in-replay — the comparator demonstrably *can* fail.
-- [ ] Result header prints the threshold the replay ran.
-- [ ] Comparator unit tests cover multiset edges: duplicate decisions, field mismatch landing one entry per side.
+- [x] **Golden CI test green:** committed fixture → real `Pipeline` → CI DB → semantic Alerts == committed expectations JSONL. *(2026-07-12: `test_golden_replay.py` on the 7/9 four-bar excerpt; expectations hand-derived from the fixture bars vs the 500k threshold, cross-checked against `--export-decisions` output.)*
+- [x] **Negative proof:** one deliberately tampered expectations line makes the comparator exit 1, classifying the alert only-in-live / only-in-replay — the comparator demonstrably *can* fail. *(2026-07-12: volume 705817→705818 tamper → exit 1, one entry per bucket; also pinned as a unit test.)*
+- [x] Result header prints the threshold the replay ran. *(2026-07-12: witnessed in both CLI runs; pinned in `TestComparisonReport`.)*
+- [x] Comparator unit tests cover multiset edges: duplicate decisions, field mismatch landing one entry per side. *(2026-07-12: `test_replay_check.py`, incl. JSONB payload key-order invariance.)*
 
 ## Verification
 
@@ -60,4 +60,6 @@ After this slice, replaying a recorded session fixture through the real pipeline
 
 ## Decisions surfaced
 
-*(Empty at review time; grilling decisions of 2026-07-12 are folded into the sections above.)*
+1. **Live-DB read landed as `AlertRepository.list_decisions`, not a raw-row read in `rs_ingest`** — the models docstring pins ADR-0004 (repositories convert; rows never leak to consumers), so the projection lives in `rs_persistence` and `replay_check.fetch_decisions` is a thin wrapper both the live-DB and replay-DB reads share. *(2026-07-12)*
+2. **Canonical decision serialization is sorted-keys JSON** — JSONB does not preserve payload key order, so multiset identity, the export format, and the diff display all use one sorted-keys serializer (`decision_line`); pinned by a key-order-invariance unit test. *(2026-07-12)*
+3. **`stream_bars_5m` joined the shared `session_factory` truncate** — the golden test replays bars into the per-package test DB; truncating bars alongside alerts/outbox keeps DB tests order-independent. *(2026-07-12)*
