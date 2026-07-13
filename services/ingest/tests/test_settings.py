@@ -55,3 +55,10 @@ def test_missing_required_fails(monkeypatch):
         monkeypatch.delenv(name, raising=False)
     with pytest.raises(ValidationError):
         IngestSettings(_env_file=None)
+
+
+def test_metrics_port_default_and_override(monkeypatch):
+    _set_required(monkeypatch)
+    assert IngestSettings(_env_file=None).metrics_port == 9090
+    monkeypatch.setenv("RS_INGEST_METRICS_PORT", "9190")
+    assert IngestSettings(_env_file=None).metrics_port == 9190
