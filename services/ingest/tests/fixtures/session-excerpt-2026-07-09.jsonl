@@ -1,0 +1,4 @@
+{"event_time":"2026-07-09T13:35:00Z","sequence":0,"bar":{"symbol":"SPY","bucket":"2026-07-09T13:30:00Z","open":747.16,"high":747.4499,"low":745.68,"close":747.34,"volume":1681435}}
+{"event_time":"2026-07-09T13:40:00Z","sequence":0,"bar":{"symbol":"SPY","bucket":"2026-07-09T13:35:00Z","open":747.36,"high":748.31,"low":747.15,"close":748.12,"volume":705817}}
+{"event_time":"2026-07-09T13:45:00Z","sequence":0,"bar":{"symbol":"SPY","bucket":"2026-07-09T13:40:00Z","open":748.23,"high":748.5012,"low":747.49,"close":748.352,"volume":461490}}
+{"event_time":"2026-07-09T13:50:00Z","sequence":0,"bar":{"symbol":"SPY","bucket":"2026-07-09T13:45:00Z","open":748.4,"high":748.7595,"low":747.78,"close":748.07,"volume":474041}}

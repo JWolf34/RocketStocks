@@ -74,12 +74,12 @@ def migrated_db_url():
 @pytest.fixture
 async def session_factory(migrated_db_url):
     """Async session factory over the migrated DB. migrated_db_url is
-    session-scoped and shared; this truncates so each test starts from an
-    empty alerts/outbox with a reset identity."""
+    session-scoped and shared; this truncates so each test starts from empty
+    alerts/outbox/bars with a reset identity."""
     engine = build_engine(migrated_db_url)
     factory = build_session_factory(engine)
     async with factory() as s:
-        await s.execute(text("TRUNCATE alerts, outbox RESTART IDENTITY"))
+        await s.execute(text("TRUNCATE alerts, outbox, stream_bars_5m RESTART IDENTITY"))
         await s.commit()
     yield factory
     await engine.dispose()
