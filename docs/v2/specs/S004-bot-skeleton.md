@@ -23,12 +23,14 @@ No slash commands, components, or `💵 Trade` button (Phase 3 — ADR-0014/0026
 
 ## Acceptance criteria
 
-- [ ] **Startup backlog reconcile**: first run against the acceptance DB (port 5498 — holds the S003-era alerts with `posted_at IS NULL`) posts every unposted alert to the dev channel in id order and stamps `posted_at`; an immediate restart posts zero.
-- [ ] **Live NOTIFY path**: an alert committed while the bot runs posts within seconds, and the log shows a notify-wake (not the interval timer).
-- [ ] **Severed LISTEN self-heals** *(the Finding-3 criterion)*: after `pg_terminate_backend` on the listener's connection, an alert committed during the outage still posts within one sweep interval; the reconnect is visible in logs/counters.
-- [ ] **Kill/restart (G5 prototype)**: SIGKILL the bot, commit ≥2 alerts while it is down, restart → exactly those alerts post once each, no duplicates (channel message count == row count).
-- [ ] **Poison skip (test)**: with a planted failing send, the sweep continues past the failing row, `post_failures_total` increments, healthy alerts still post.
-- [ ] Suite green: `pytest libs/ services/ -q` (LISTEN/cursor integration tests on real ephemeral Postgres — ADR-0023 tier rule, 5499 conftest pattern; render + sweep unit tests against the send protocol); ruff; clock-discipline gate with `services/bot/src` added to SCOPES.
+> **Accepted 2026-07-13** — all five live drills independently validated by the operator against the persistent 5498 DB + the dev channel; suite/lint/clock gate green in CI ([run 29292191663](https://github.com/JWolf34/RocketStocks/actions/runs/29292191663)). Recorded in the [Phase-1 acceptance plan](../phase1-acceptance-plan.md) (Part C) and the roadmap status log.
+
+- [x] **Startup backlog reconcile**: first run against the acceptance DB (port 5498 — holds the S003-era alerts with `posted_at IS NULL`) posts every unposted alert to the dev channel in id order and stamps `posted_at`; an immediate restart posts zero.
+- [x] **Live NOTIFY path**: an alert committed while the bot runs posts within seconds, and the log shows a notify-wake (not the interval timer).
+- [x] **Severed LISTEN self-heals** *(the Finding-3 criterion)*: after `pg_terminate_backend` on the listener's connection, an alert committed during the outage still posts within one sweep interval; the reconnect is visible in logs/counters.
+- [x] **Kill/restart (G5 prototype)**: SIGKILL the bot, commit ≥2 alerts while it is down, restart → exactly those alerts post once each, no duplicates (channel message count == row count).
+- [x] **Poison skip (test)**: with a planted failing send, the sweep continues past the failing row, `post_failures_total` increments, healthy alerts still post.
+- [x] Suite green: `pytest libs/ services/ -q` (LISTEN/cursor integration tests on real ephemeral Postgres — ADR-0023 tier rule, 5499 conftest pattern; render + sweep unit tests against the send protocol); ruff; clock-discipline gate with `services/bot/src` added to SCOPES.
 
 ## Verification
 
