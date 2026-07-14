@@ -47,13 +47,17 @@ notify() {
     osascript -e "display notification \"$1\" with title \"RocketStocks Phase-1\"" >/dev/null 2>&1 || true
 }
 
-# load RS_DB_PASSWORD (+ other vars) from .env without echoing secrets
+# load RS_DB_PASSWORD (+ other vars) from .env without echoing secrets.
+# Tolerates CRLF (.env authored on Windows) by stripping \r before sourcing.
 load_env() {
   [ -f "$REPO/.env" ] || fail ".env not found at $REPO/.env"
   set -a; # shellcheck disable=SC1091
-  source "$REPO/.env"; set +a
+  source <(sed 's/\r$//' "$REPO/.env"); set +a
   : "${RS_DB_PASSWORD:?RS_DB_PASSWORD missing from .env}"
 }
+
+# epoch -> UTC HH:MMZ, portable across GNU (WSL/Linux) and BSD (macOS) date
+fmt_epoch() { date -u -d "@$1" +%H:%MZ 2>/dev/null || date -u -r "$1" +%H:%MZ; }
 
 psql_q() {  # run a query inside the compose DB container, print raw scalar
   $COMPOSE exec -T -e PGPASSWORD="$RS_DB_PASSWORD" timescaledb \
@@ -225,8 +229,12 @@ preflight() {
 
 run() {
   log "=== RUN: autonomous market-day acceptance ==="
-  command -v caffeinate >/dev/null 2>&1 && [ -z "${_CAFFEINATED:-}" ] && \
+  if command -v caffeinate >/dev/null 2>&1; then
     log "TIP: launch under 'caffeinate -s' so the Mac doesn't sleep mid-session."
+  else
+    log "TIP: keep the host awake for the session — WSL: disable Windows sleep"
+    log "     (Settings ▸ Power) or run under 'systemd-inhibit --what=idle:sleep'."
+  fi
   load_env
   stack_up
   check_single_bot
@@ -235,11 +243,11 @@ run() {
   read -r OPEN CLOSE < <(next_session)
   local now; now=$(date +%s)
   if [ "$now" -lt "$OPEN" ]; then
-    log "next XNYS session opens $(date -u -r "$OPEN" +%H:%MZ), closes $(date -u -r "$CLOSE" +%H:%MZ)."
+    log "next XNYS session opens $(fmt_epoch "$OPEN"), closes $(fmt_epoch "$CLOSE")."
     log "sleeping $(( OPEN - now ))s until open…"
     sleep "$(( OPEN - now ))"
   else
-    log "already inside a session (opened $(date -u -r "$OPEN" +%H:%MZ)); starting now."
+    log "already inside a session (opened $(fmt_epoch "$OPEN")); starting now."
   fi
 
   run_session "$CLOSE"
