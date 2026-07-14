@@ -14,21 +14,22 @@
 
 ## ⏭️ What's left for market open tomorrow (read this first)
 
-Everything else is done or is off-hours desk work. The **only** items that need a live
-market session, in order:
+D1 is now done (fresh-volume migrate-gate + serve/bot verified 2026-07-14). Only **one**
+item genuinely needs a live market session:
 
-1. **D1** — fresh-volume `down -v` + `up` (clean setup) → migrate gate + serve/bot up.
-2. **D6** — start `ingest` under compose for one RTH session (bars written; any alert
-   posted by the compose bot). This is the roadmap "full live market day" evidence.
-3. **D5 (ingest half)** — while D6 runs, `curl 127.0.0.1:9090/metrics` (bot `:9091`
-   already validated).
-4. **D7** — S007 replay of the 2026-07-09 session against the compose stack → IDENTICAL.
+- **D6** — start `ingest` under compose for one RTH session (bars written; any alert
+  posted by the compose bot). This is the roadmap "full live market day" evidence.
+- **D5 (ingest half)** — while D6 runs, `curl 127.0.0.1:9090/metrics` (bot `:9091` ✅).
+
+**D7** (replay gate under compose) needs **no** market — run it tonight; the acceptance
+script's `preflight` mode does it. **Tonight's prep** (interactive, ~5 min): stop any
+other bot on the token → re-seed the Schwab token (`python -m rs_ingest.tools.login`,
+since the fresh `up` wiped `schwab_tokens`) → run `preflight` (validates + does D7).
 
 **Precondition (blocker):** exactly **one** bot instance may hold `RS_BOT_DISCORD_TOKEN`
-during the run. The compose bot on this box was logging repeated gateway
-*session-invalidations* (a second login elsewhere — likely the deploy VM — sharing the
-token). Stop the other instance before D6, or D6's "posted by the compose bot" evidence
-is contaminated.
+during the run. The compose bot was logging repeated gateway *session-invalidations* (a
+second login elsewhere — likely the deploy VM — sharing the token). Stop the other
+instance before D6, or D6's "posted by the compose bot" evidence is contaminated.
 
 Then off-hours: **E** (doc reconciliation) → **F** (merge to `main`) → **G** (sign-off).
 
@@ -101,11 +102,13 @@ independently validated by the operator, 2026-07-13.** (Spec-box ticking = Part 
 
 Ref [specs/S006-spine.md](./specs/S006-spine.md).
 
-- [ ] **D1. Fresh-volume compose up on the dev box.** ⏳ **market-morning setup.**
-  `docker compose -f docker-compose.v2.yml down -v && … up -d` → `migrate` runs to head
-  0004 and exits 0 **before** any app service; serve answers authed `/v1/bars`; bot
-  connects and sweeps. *(Deferred deliberately — `down -v` wipes the 5498 volume; do it
-  as the clean start of the D6 run.)*
+- [x] **D1. Fresh-volume compose up on the dev box.** ✅ 2026-07-14 (WSL box) — fresh
+  volume ran the full `base → 0001 → 0002 → 0003 → 0004` chain; migrate finished at
+  `04:03:10.795Z` and serve (`04:03:12.63Z`) + bot (`04:03:12.69Z`) started ~1.8s
+  **after** — and, gated by `service_completed_successfully`, their startup itself
+  proves migrate **exited 0**. serve reached "Application startup complete" / Uvicorn on
+  :8000; bot resolved the dev channel + `LISTEN established` + Gateway-connected.
+  *(Token must be re-seeded after this fresh `up` — `down -v` wiped `schwab_tokens`.)*
 - [x] **D2. Structured logs.** ✅ 2026-07-13 — compose logs are one-line JSON with
   `service`/`level`/UTC `timestamp`; `correlation_id` present in-context; third-party
   (discord.py) records render through the same JSON stream.
@@ -161,7 +164,7 @@ Ref [specs/S006-spine.md](./specs/S006-spine.md).
 |---|---|---|---|
 | 1 | Skeleton runs a full live market day on the dev box | D6 | ⏳ market hours |
 | 2 | S007 replays that day → identical alert decisions | D7 (under compose) | ⏳ market-day run |
-| 3 | All three services run under compose | D1 (serve+bot+ingest up, migrate gate) | ⏳ market-morning (serve/bot ✅ now; ingest pending) |
+| 3 | All three services run under compose | D1 (serve+bot+ingest up, migrate gate) | 🟡 migrate-gate + serve + bot ✅ 2026-07-14; ingest pending D6 |
 | 4 | CI green | A2 | ✅ run 29292191663 (HEAD, success) |
 | 5 | Skeleton merged to `main` (ADR-0001) | F1–F3 | ⏳ after A–E |
 | 6 | S004 bot acceptance (5 criteria) | C1–C5 | ✅ operator-validated 2026-07-13 |
