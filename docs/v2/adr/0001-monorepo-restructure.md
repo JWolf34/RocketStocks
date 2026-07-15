@@ -21,7 +21,7 @@ Four top-level roots, each word mapping one-to-one to a category:
 - **`tools/`** — one-shot CLIs: `migrate`, `backfill`, `backtest`. Invoked, run, exit.
 - **`legacy/`** — the old v1 `src/rocketstocks/`, moved here during the transition (move happens at Stage 2 start, not now).
 
-Initial restructure happens on a long-lived **`feat/v2-rewrite`** branch; merge to `main` once the structure stabilizes, then continue per-component PRs.
+The v2 rewrite lives on a long-lived **`feat/v2-rewrite`** trunk for its full duration (Phases 1–3): per-slice branches merge into the trunk, not `main`. The trunk merges to `dev` for the terminal burn-in (ADR-0028) and to `main` only at cutover — `main` keeps serving v1 untouched until then.
 
 ## Consequences
 
