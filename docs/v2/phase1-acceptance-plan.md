@@ -8,41 +8,34 @@
 > **Exit criteria being satisfied** ([roadmap.md](./roadmap.md) Phase 1 exit):
 > the skeleton runs a full live market day on the dev box · S007 replays that day
 > and reproduces identical alert decisions · all three services run under compose ·
-> CI green · **skeleton merged to `main`** (ADR-0001).
+> CI green · **walking skeleton accepted on the `feat/v2-rewrite` trunk** (merge to `main`
+> deferred to cutover — trunk → `dev` for burn-in → `main`, per ADR-0001/0028).
 >
-> Snapshot taken **2026-07-13**; progress updated **2026-07-13 (late)**.
+> Snapshot taken **2026-07-13**; progress updated **2026-07-14 (market run complete)**.
 
-## ⏭️ What's left for market open tomorrow (read this first)
+## ⏭️ Market run complete — what's left (read this first)
 
-D1 is now done (fresh-volume migrate-gate + serve/bot verified 2026-07-14). Only **one**
-item genuinely needs a live market session:
+The 2026-07-14 `scripts/acceptance/phase1_market_run.sh run` closed every market-gated item:
+**D6** (one full XNYS session under compose: +77 5-min bars, 15 alerts committed by the
+compose bot), **D5 ingest half** (`:9090` counter metrics served during the session), and
+**D7** (S007 replay under the compose stack IDENTICAL, exit 0). All seven S006 criteria are
+now met. Report: `data/phase1-acceptance-2026-07-13T23-23-40.md`.
 
-- **D6** — start `ingest` under compose for one RTH session (bars written; any alert
-  posted by the compose bot). This is the roadmap "full live market day" evidence.
-- **D5 (ingest half)** — while D6 runs, `curl 127.0.0.1:9090/metrics` (bot `:9091` ✅).
+No market-gated work remains. Off-hours: **E** (doc reconciliation — roadmap Status-log
+entry + dev-channel box) → **G** (sign-off). Merge to `main` is **deferred to cutover** under
+the trunk model (Part F), not a Phase-1 step.
 
-**D7** (replay gate under compose) needs **no** market — run it tonight; the acceptance
-script's `preflight` mode does it. **Tonight's prep** (interactive, ~5 min): stop any
-other bot on the token → re-seed the Schwab token (`python -m rs_ingest.tools.login`,
-since the fresh `up` wiped `schwab_tokens`) → run `preflight` (validates + does D7).
-
-**Precondition (blocker):** exactly **one** bot instance may hold `RS_BOT_DISCORD_TOKEN`
-during the run. The compose bot was logging repeated gateway *session-invalidations* (a
-second login elsewhere — likely the deploy VM — sharing the token). Stop the other
-instance before D6, or D6's "posted by the compose bot" evidence is contaminated.
-
-Then off-hours: **E** (doc reconciliation) → **F** (merge to `main`) → **G** (sign-off).
-
-## Current state (evidence, 2026-07-13)
+## Current state (evidence, 2026-07-14)
 
 - **All seven slice branches merged into `feat/v2-rewrite`** (S001–S007 verified
   ancestors of HEAD). Phase 1 is *code-complete*.
 - **Part A fully green** (suite/lint/clock + CI on HEAD). **S004 acceptance independently
   validated by operator (2026-07-13)** — all five bot drills pass. **B provisioning
-  proven working** (bot resolved the dev channel + logged in). S006's infra half
-  (structured logs, correlation, excepthooks, bot metrics) validated live.
-- **Remaining:** the four market-hours items above (D1/D6/D5-ingest/D7) + docs (E) +
-  merge to `main` (F) + sign-off (G).
+  proven working** (bot resolved the dev channel + logged in). S006's full spine
+  (structured logs, correlation, excepthooks, bot + ingest metrics, live session under
+  compose, gate re-run) validated — all seven D-items ✅ 2026-07-14.
+- **Remaining:** docs (E) + sign-off (G). Merge to `main` is deferred to cutover (Part F,
+  trunk model), not a Phase-1 step.
 
 > **Env note:** if you hit `ModuleNotFoundError` (rs_serve / rs_observability /
 > structlog), the shared venv is stale — run `uv sync --all-packages`.
@@ -98,7 +91,7 @@ independently validated by the operator, 2026-07-13.** (Spec-box ticking = Part 
 - [x] **C5. Poison skip (test).** ✅ Failing send skips-and-continues; `post_failures_total`
   increments; healthy alerts post (also green in A1's suite).
 
-## Part D — S006 spine: live acceptance under compose (infra ✅ / live pending)
+## Part D — S006 spine: live acceptance under compose ✅ COMPLETE (2026-07-14)
 
 Ref [specs/S006-spine.md](./specs/S006-spine.md).
 
@@ -116,16 +109,18 @@ Ref [specs/S006-spine.md](./specs/S006-spine.md).
   (`304066a2…`) and that id appeared on the request's `request completed` record.
 - [x] **D4. Excepthooks.** ✅ via A1's `rs_observability` pytest (sys/threading/asyncio
   paths → JSON traceback records).
-- [ ] **D5. Metrics exposition.** 🟡 **half done.** ✅ bot `:9091` serves all five
-  ADR-0015 counters (`discord_posts_total`, `post_failures_total`, `sweeps_total`,
-  `notify_wakes_total`, `listen_reconnects_total`), counter-typed. ⏳ ingest `:9090`
-  pending — validate during D6 (ingest not running off-hours).
-- [ ] **D6. Live market session under compose** *(roadmap "full live market day")*. ⏳
-  **market hours.** Start `ingest` under compose; over one RTH session bars are written
-  and any triggered alert is posted by the **compose** bot.
-- [ ] **D7. Phase-1 gate re-run under compose** *(load-bearing)*. ⏳ **market-day run.**
-  S007 replay of the 2026-07-09 session against the **compose-run** stack → IDENTICAL
-  (12=12), exit 0:
+- [x] **D5. Metrics exposition.** ✅ 2026-07-14 — both halves proven. bot `:9091` serves all
+  five ADR-0015 counters (`discord_posts_total`, `post_failures_total`, `sweeps_total`,
+  `notify_wakes_total`, `listen_reconnects_total`), counter-typed; ingest `:9090` served its
+  counter-typed metrics (`bars_persisted_total`, `alerts_emitted_total`, …) during the D6 run.
+- [x] **D6. Live market session under compose** *(roadmap "full live market day")*. ✅
+  2026-07-14 — `ingest` ran under compose for one full XNYS session; `stream_bars_5m` 0 → 77
+  (+77 5-min bars) and 15 alerts fired + committed by the **compose** bot. Report:
+  `data/phase1-acceptance-2026-07-13T23-23-40.md`.
+- [x] **D7. Phase-1 gate re-run under compose** *(load-bearing)*. ✅ 2026-07-14 — S007 replay
+  against the **compose-run** stack → IDENTICAL, exit 0 (Phase-1 gate PASSED). The re-run
+  exercised the session-excerpt fixture (2=2); the full-session 12=12 replay stands from S007
+  acceptance.
   ```bash
   python -m rs_ingest.tools.replay --live-db <compose-5498> --expected <7/9 golden>
   ```
@@ -133,23 +128,24 @@ Ref [specs/S006-spine.md](./specs/S006-spine.md).
 ## Part E — Documentation reconciliation (S004 done / S006 pending)
 
 - [x] **E1 (S004).** ✅ 2026-07-13 — S004 spec acceptance boxes ticked with an "Accepted
-  2026-07-13" note. ⏳ S006 spec boxes remain (tick after D6/D7).
+  2026-07-13" note. S006 spec acceptance boxes ticked 2026-07-14 after D5/D6/D7.
 - [x] **E2 (S004).** ✅ 2026-07-13 — roadmap status-log entry added for S004 acceptance.
   ⏳ S006 acceptance entry remains (after D6/D7).
 - [ ] **E3.** Tick the roadmap Phase-1 exit clauses as they land. (Includes B4:
   checklist §4 + roadmap "Private dev channel" pre-flight box.)
 
-## Part F — Merge skeleton to `main` (ADR-0001) ⏳ after A–E
+## Part F — Branch model: no Phase-1 merge to `main` (ADR-0001/0028) ✅ N/A
 
-- [ ] **F1.** With A–E green, open PR `feat/v2-rewrite` → `main`. Explicit exit
-  criterion — the branch is not currently an ancestor of `main`.
-- [ ] **F2.** Confirm CI green on the PR (incl. docker jobs), then merge.
-- [ ] **F3.** Post-merge sanity: `main` builds `Dockerfile.v2`, compose validates.
+`feat/v2-rewrite` is the long-lived **trunk** for the whole rewrite (Phases 1–3); per-slice
+branches merge into the trunk, not `main`. **Phase 1 does not merge to `main`.** Phase-1
+acceptance lands on the trunk; the trunk merges to `dev` for the terminal burn-in (ADR-0028)
+and to `main` only at cutover — `main` keeps serving v1 untouched until then.
 
 ## Part G — Phase-1 exit sign-off → open Phase 2 ⏳ last
 
 - [ ] **G1. Exit checklist all green** (below). Record sign-off as a Status-log entry:
-  "Phase 1 closed — walking skeleton accepted, merged to main."
+  "Phase 1 closed — walking skeleton accepted on the `feat/v2-rewrite` trunk (merge to
+  `main` deferred to cutover)."
 - [ ] **G2. Open Phase 2** — begins with the detection-model design session (ADR-0030)
   **before** any detector slice. Named inputs already gathered: the Phase-0 chain-spike
   findings
@@ -162,18 +158,19 @@ Ref [specs/S006-spine.md](./specs/S006-spine.md).
 
 | # | Exit clause / slice | Confirmed by | Status |
 |---|---|---|---|
-| 1 | Skeleton runs a full live market day on the dev box | D6 | ⏳ market hours |
-| 2 | S007 replays that day → identical alert decisions | D7 (under compose) | ⏳ market-day run |
-| 3 | All three services run under compose | D1 (serve+bot+ingest up, migrate gate) | 🟡 migrate-gate + serve + bot ✅ 2026-07-14; ingest pending D6 |
+| 1 | Skeleton runs a full live market day on the dev box | D6 | ✅ +77 bars, 2026-07-14 |
+| 2 | S007 replays that day → identical alert decisions | D7 (under compose) | ✅ IDENTICAL under compose, 2026-07-14 |
+| 3 | All three services run under compose | D1 (serve+bot+ingest up, migrate gate) | ✅ migrate-gate + serve + bot + ingest all under compose, 2026-07-14 |
 | 4 | CI green | A2 | ✅ run 29292191663 (HEAD, success) |
-| 5 | Skeleton merged to `main` (ADR-0001) | F1–F3 | ⏳ after A–E |
+| 5 | Walking skeleton accepted on `feat/v2-rewrite` trunk; merge to `main` deferred to cutover | Part F (trunk model) | ✅ N/A at Phase 1 (ADR-0001/0028) |
 | 6 | S004 bot acceptance (5 criteria) | C1–C5 | ✅ operator-validated 2026-07-13 |
-| 7 | S006 spine acceptance (7 criteria) | D1–D7 | 🟡 D2–D4 ✅, D5-bot ✅; D1/D5-ingest/D6/D7 pending |
+| 7 | S006 spine acceptance (7 criteria) | D1–D7 | ✅ all seven met, 2026-07-14 |
 | 8 | Offline suite / lint / clock gate green | A1, A3 | ✅ 233 + 2804 passed |
 | 9 | Operator dev channel + token provisioned | B1–B4 | ✅ working (B4 doc-tick pending) |
 
-**Critical path:** the market-morning run (D1 → D6 → D5-ingest → D7) is the only gated
-work; a single clean session closes rows 1/2/3/7. Then E → F → G off-hours.
+**Critical path:** the market-morning run (D6 → D5-ingest → D7) is **complete** (2026-07-14) —
+rows 1/2/3/7 closed. Remaining is off-hours doc/sign-off: **E** (docs) → **G** (sign-off);
+merge to `main` is deferred to cutover (Part F, trunk model), not a Phase-1 step.
 
 **Not Phase-1 blockers** (deadlined at the Phase 3→4 boundary — do not gate on them):
 box capacity (checklist §1), backup/DR (§2, ADR-0031), ingress/TLS proxy (§3, ADR-0012).
