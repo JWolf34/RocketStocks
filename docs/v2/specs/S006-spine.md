@@ -38,14 +38,14 @@ No DB roles/GRANTs (the S003-Q2 follow-on gets its own slice — condition met, 
 
 ## Acceptance criteria
 
-- [ ] Fresh-volume `docker compose -f docker-compose.v2.yml up` on the dev box: migrate runs to head 0004 and exits 0 before any app service starts; serve answers an authenticated `/v1/bars` request over `127.0.0.1:8000`; bot connects and sweeps.
-- [ ] Every service's compose logs are one-line JSON records carrying `service`, `level`, UTC `timestamp`; within a unit of work `correlation_id` is present — including on a third-party record (e.g. a discord.py or uvicorn line) emitted inside the bound context.
-- [ ] serve returns `X-Correlation-ID` and that id appears on the request's log records (pytest + live curl).
-- [ ] Planted unhandled exceptions on each hook path (sys / threading / asyncio-loop) each produce a JSON record with full traceback (pytest).
-- [ ] `curl 127.0.0.1:9091/metrics` (bot, after a staged-alert post) and `:9090` (ingest, during a run) serve Prometheus text with the ADR-0015 counter names as `counter`-typed samples plus process defaults.
-- [ ] CI green including the two new docker steps; v1 suite and v2 lint/clock-gate/tests untouched-green.
-- [ ] Phase-1 gate re-run: S007 replay of the 2026-07-09 session against the compose-run stack reports IDENTICAL (12=12).
-- [ ] One live market session ingested under compose (bars written, any alert posted by the compose bot) — the "full live market day under compose" exit evidence.
+- [x] Fresh-volume `docker compose -f docker-compose.v2.yml up` on the dev box: migrate runs to head 0004 and exits 0 before any app service starts; serve answers an authenticated `/v1/bars` request over `127.0.0.1:8000`; bot connects and sweeps.
+- [x] Every service's compose logs are one-line JSON records carrying `service`, `level`, UTC `timestamp`; within a unit of work `correlation_id` is present — including on a third-party record (e.g. a discord.py or uvicorn line) emitted inside the bound context.
+- [x] serve returns `X-Correlation-ID` and that id appears on the request's log records (pytest + live curl).
+- [x] Planted unhandled exceptions on each hook path (sys / threading / asyncio-loop) each produce a JSON record with full traceback (pytest).
+- [x] `curl 127.0.0.1:9091/metrics` (bot, after a staged-alert post) and `:9090` (ingest, during a run) serve Prometheus text with the ADR-0015 counter names as `counter`-typed samples plus process defaults.
+- [x] CI green including the two new docker steps; v1 suite and v2 lint/clock-gate/tests untouched-green.
+- [x] Phase-1 gate re-run: S007 replay of the 2026-07-09 session against the compose-run stack reports IDENTICAL (12=12).
+- [x] One live market session ingested under compose (bars written, any alert posted by the compose bot) — the "full live market day under compose" exit evidence.
 
 ## Verification
 
