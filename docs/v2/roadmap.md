@@ -47,7 +47,7 @@ Thinnest end-to-end path through all three services, deliberately routed through
 | S006 | Spine: shared Dockerfile + compose entries for all three services; structlog JSON + `correlation_id`; CI (tests + lint + clock-grep) | [spec](./specs/S006-spine.md) |
 | S007 | Replay harness v0: record S003's event stream to a fixture; replay through the real pipeline; assert identical semantic alert decisions | [spec](./specs/S007-replay-harness-v0.md) |
 
-**Exit:** the skeleton runs a full live market day on the dev box; S007 replays that day and reproduces identical alert decisions; all three services run under compose; CI green; skeleton merged to `main` (per ADR-0001).
+**Exit:** the skeleton runs a full live market day on the dev box; S007 replays that day and reproduces identical alert decisions; all three services run under compose; CI green; walking skeleton accepted on the `feat/v2-rewrite` trunk. (Merge to `main` is deferred to cutover — the trunk merges to `dev` for burn-in then `main`, per ADR-0001/0028; Phase 1 does not merge to `main`.)
 
 ## Phase 2 — Data plane *(appetite: 6–8 weeks; re-spec at midpoint)*
 
