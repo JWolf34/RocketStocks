@@ -12,8 +12,9 @@
 > replay-harness-first (every detection slice ships a golden fixture) · per-slice
 > branches merging into the `feat/v2-rewrite` trunk.
 >
-> Written **2026-07-15** at Phase-2 open. The slice table is a proposal: the two design
-> artifacts (§1, §2) may reshape the detection-side slices (S015–S017) — re-confirm the
+> Written **2026-07-15** at Phase-2 open; amended **2026-07-16** (see status log). The
+> slice table is a proposal: the two design artifacts (§1, §2) may reshape the
+> detection-side slices (S015–S017) and S008's capture parameters — re-confirm the
 > table when the detection-model ADR closes, and again at the midpoint re-spec.
 
 ## 0. Where Phase 2 starts from
@@ -38,7 +39,9 @@ v2's single alert class, the **options-flow detector** (ADR-0030).
 Per [ADR-0030](./adr/0030-detection-rederived-single-alert-class.md), the novel
 options-flow detection model is designed **just-in-time at Phase-2 open**, against real
 payloads, and **closes as its own ADR (next number: 0032) before any detector slice
-starts**. Horizontal slices (§3) do not wait on it.
+starts**. Horizontal slices (§3) do not wait on it — with one exception: the S008 spec
+waits for the session to pin the curated scan's **capture width** and **per-contract
+field schema** (see §3's sequencing driver).
 
 Agenda — the four named inputs from the roadmap, with their evidence:
 
@@ -71,8 +74,11 @@ Agenda — the four named inputs from the roadmap, with their evidence:
 
 **Session outputs:** the detection-model ADR · the alert-taxonomy fields (parent
 linkage, tier, detector-config-version stamp) as migration input for S016 · the warm-up
-state definition for S015 · the canary disposition (§4). Conducted as a dedicated
-working session — one design question at a time, decisions recorded as they close.
+state definition for S015 · the canary disposition (§4) · the curated scan's **capture
+width** (confirming or amending ADR-0020's ATM±5 / ≤30 DTE) and **per-contract field
+schema** (the "Stage-2 domain-modeling artifact" ADR-0020 defers) as spec input for
+S008. Conducted as a dedicated working session — one design question at a time,
+decisions recorded as they close.
 
 ## 2. Second design artifact — `UniverseManager` design note
 
@@ -87,15 +93,21 @@ with the early substrate slices. Gates S010.
 
 ## 3. Slice breakdown *(proposal — each slice gets a spec before build)*
 
-**Sequencing driver:** both options datasets are **forward-only**
-([ADR-0020](./adr/0020-three-datasets-and-backtest-constraints.md)) — no backfill
-exists; **every market day before the scan slices land is data permanently lost.** The
-scan substrate needs neither design artifact (its cycle model is already pinned in the
-roadmap), so it goes first.
+**Sequencing driver** *(amended 2026-07-16 — supersedes the data-loss driver)*: both
+options datasets are **forward-only**
+([ADR-0020](./adr/0020-three-datasets-and-backtest-constraints.md)), but pre-cutover
+capture has no product value — what matters is that the scan captures the **right**
+data from go-live onward. Two S008 parameters are detection-model outputs: the
+**capture width** (ADR-0020's ATM±5 / ≤30 DTE, which the §1 session confirms or
+amends) and the **per-contract field schema** (which fields the detector consumes —
+IV, greeks, bid/ask). So the §1 session goes first and the S008 spec follows it,
+written once, right-shaped. S008's *cycle model* (scan order, `cycle_id`, event-time
+rule, overrun/retry/stale policies) stays pre-pinned by the roadmap and is
+§1-independent.
 
 | Slice | Scope | ADRs | Depends on |
 |---|---|---|---|
-| **S008** | `options_chain_snapshot` hypertable (`tier` discriminator) + the **curated 5-min REST scan**. The spec must pin the **cycle model**: deterministic scan order, `cycle_id` on rows, per-row `fetched_at`/`quote_time` event-time rule, overrun policy (BEST_EFFORT skip, tombstone-visible), 502 retry-once-then-tombstone, stale-response guard (reject on `quote_time` regression). Bootstrap with a **static curated list** (the spike's 10 tickers or similar) until S010 supplies the real one. | 0020, 0017 | — |
+| **S008** | `options_chain_snapshot` hypertable (`tier` discriminator) + the **curated 5-min REST scan**. The spec must pin the **cycle model**: deterministic scan order, `cycle_id` on rows, per-row `fetched_at`/`quote_time` event-time rule, overrun policy (BEST_EFFORT skip, tombstone-visible), 502 retry-once-then-tombstone, stale-response guard (reject on `quote_time` regression). Bootstrap with a **static curated list** (the spike's 10 tickers or similar) until S010 supplies the real one. | 0020, 0017 | §1 ADR (0032) — capture width + field schema only; cycle model pre-pinned |
 | **S009** | **Options EOD full scan**: nightly, whole optionable universe (~5–6k), `tier=eod_full`, sequenced inside the REST budget ([schwab-rest-budget.md](./schwab-rest-budget.md)); establishes the day-over-day OI-diff basis (shared-roster netting). | 0020, 0025 | S008 (table) |
 | **S010** | **Symbol master + `UniverseManager`**: nightly Nasdaq Trader listing ingest, filter rules, listing/delisting/rename lifecycle, two-band desired-set computation (stream ≤ ~500 / curated ~400), diff → ADD/UNSUB, priority eviction, fully reconstructible from Postgres. Replaces S008's static list and the skeleton's one-ticker subscription. | 0019, 0025 | §2 design note |
 | **S011** | **Equity research history**: nightly 1-min EOD backfill (whole universe), 5-min + daily **continuous aggregates**, columnar **compression policies** (>~7d chunks), corporate-actions table + adjustment-at-read (`adjusted_through`), missed-night alarm + 7-day retry window; `tools/backfill` equity seed CLI (adjustment-basis stamped). | 0021, 0022, 0025 | — |
@@ -106,10 +118,10 @@ roadmap), so it goes first.
 | **S016** | **Detector-framework seams + canary promotion**: detection port, generic alert-type taxonomy migration (`parent_alert_id`, tier, **config-version stamp** per ADR-0030), per-detector config, pluggable per-type rendering; S003's `ThresholdDetector` promoted to a **metrics-only canary** (§4). Extensibility proven by a trivial second detector registering in tests without pipeline changes. | 0030, 0026, 0008 | §1 |
 | **S017** | **The options-flow detector** — the vertical. Co-developed with the replay harness; ships golden fixtures + semantic assertions, the escalation lifecycle (tier re-posts, parent-linked), config-stamped alert rows. | 0030, the §1 ADR (0032), 0026 | S008/S009, S015, S016 |
 
-Suggested wave order (dependencies permit overlap): **wave 1** S008 + §1 session + §2
-note (in parallel) → **wave 2** S009, S011, S012 → **wave 3** S010, S013, S014 →
-**wave 4** S015, S016 → **wave 5** S017. The midpoint re-spec (~week 3–4) falls around
-wave 3.
+Suggested wave order (dependencies permit overlap; amended 2026-07-16): **wave 1**
+§1 session + §2 note (in parallel) → **wave 2** S008 first, then S009, S011, S012 →
+**wave 3** S010, S013, S014 → **wave 4** S015, S016 → **wave 5** S017. The midpoint
+re-spec (~week 3–4) falls around wave 3.
 
 ## 4. Canary detector (roadmap clause, carried verbatim)
 
@@ -153,3 +165,9 @@ From [roadmap.md](./roadmap.md) §Phase 2 exit:
 - 2026-07-15 — Plan written at Phase-2 open (Phase 1 closed same day). Next action:
   schedule the detection-model design session (§1); §2 design note and S008 spec can
   start in parallel.
+- 2026-07-16 — **Wave 1 resequenced: §1 session first; S008 defers behind it** (moved
+  to the front of wave 2). The data-loss sequencing driver is retired by decision:
+  pre-cutover capture has no product value; the real driver is capturing the *right*
+  data from go-live, and S008's capture width + per-contract field schema are §1
+  outputs (added to §1's session-output list; S008's cycle model stays pre-pinned).
+  Next action: run the §1 session.
