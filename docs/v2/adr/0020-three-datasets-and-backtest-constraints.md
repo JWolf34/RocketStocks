@@ -17,10 +17,10 @@ Options data serves two different needs — live alerts (curated, intraday) and 
 | Dataset | Cadence | Universe | Backfillable | Purpose |
 |---|---|---|---|---|
 | Equity OHLCV | daily + intraday bars | whole (≤500 streamed live; backfill deep) | **Yes** (daily deep; 1-min ≤7 days; historical 5m dropped — ADR-0022) | equity backtests (deep history); forward returns for event studies |
-| Options 5-min curated | 5-min REST scan | curated ~300–500 (ATM±5, ≤30 DTE) | **No (forward-only)** | live alerts + intraday event studies |
+| Options 5-min curated | 5-min REST scan | curated ~300–500 (±10% moneyness config window, ≤30 DTE — ADR-0032 D7) | **No (forward-only)** | live alerts + intraday event studies |
 | Options EOD full | nightly REST (~1h off-hours) | whole ~5–6k | **No (forward-only)** | daily swing backtests + day-over-day OI; selection-bias-free |
 
-All snapshots are immutable and point-in-time (`fetched_at`, `source_status`, per-contract `quote_time`), stored in one `options_chain_snapshot` hypertable with a `tier` discriminator (`curated_5m` / `eod_full`). (Full per-contract field schema is a Stage-2 domain-modeling artifact.)
+All snapshots are immutable and point-in-time (`fetched_at`, `source_status`, per-contract `quote_time`), stored in one `options_chain_snapshot` hypertable with a `dataset` discriminator (`curated_5m` / `eod_full`; renamed from `tier` — ADR-0032 D5 reserves "tier" for alert escalation). (Full per-contract field schema is a Stage-2 domain-modeling artifact; pinned by ADR-0032.)
 
 **The curated universe size is budget-derived, not fixed:** as many underlyings as the REST headroom rule allows at the 5-min cadence (roadmap pre-flight: RTH steady-state ≤ ~80% of the measured limit; at a working ~100/min that yields ~400 underlyings — the ~300–500 above is the working range). Overflow knobs in priority order: **shrink the curated universe first** (ADR-0019's priority/eviction order exists for exactly this); stretch the scan cadence only as a last resort (ADR-0029 ties the 5-minute cadence to the product thesis).
 
@@ -41,6 +41,8 @@ All snapshots are immutable and point-in-time (`fetched_at`, `source_status`, pe
 
 - 2026-06-05 — locked.
 - 2026-07-03 — amended: equity "backfillable" qualified per the seeding policy (daily deep; 1-min ≤7 days; historical 5m dropped — ADR-0022); curated universe size made explicitly budget-derived with overflow-knob priority (REST budget review).
+- 2026-07-16 — editorial: discriminator column renamed `tier` → `dataset` (ADR-0032 D5; "tier" is reserved for alert escalation). No decision change.
+- 2026-07-16 — amended: curated capture width restated as a moneyness window (working ±10%, config) instead of ATM±5 strikes (ADR-0032 D7 — strike-count units are incoherent across strike spacings; dataset intent unchanged, ≤30 DTE stands).
 
 ## See also
 
