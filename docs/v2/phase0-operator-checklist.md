@@ -49,11 +49,15 @@ Working estimates (basis stated):
 
 ## 4. Private dev channel + dev bot (roadmap: "Private dev channel")
 
-- [ ] Private Discord channel created for burn-in alert routing.
-- [ ] Its ID recorded as **`RS_DEV_CHANNEL_ID`** (env-var name pinned now; consumed by
+- [x] Private Discord channel created for burn-in alert routing. *(Evidence: channel
+      "testing", id `710724925438033931` — resolved live by the compose bot, 2026-07-13.)*
+- [x] Its ID recorded as **`RS_DEV_CHANNEL_ID`** (env-var name pinned now; consumed by
       S004's bot skeleton — record in the deploy box's `.env`; `.env.example` already
-      exists (v1's) — S004 extends it with a v2 block).
-- [ ] The existing dev bot application invited to the channel (Send Messages + Embed
+      exists (v1's) — S004 extends it with a v2 block). *(Evidence: set in `.env`; bot
+      read + resolved it during the S004 drills and the 2026-07-14 market run.)*
+- [x] The existing dev bot application invited to the channel (Send Messages + Embed
       Links; no privileged intents) and its token recorded as **`RS_BOT_DISCORD_TOKEN`**
       — deliberately not v1's `DISCORD_TOKEN`, so v2 can never read v1's credential
-      during burn-in coexistence (S004 grilling, 2026-07-11).
+      during burn-in coexistence (S004 grilling, 2026-07-11). *(Evidence: bot logged in
+      with the v2 token and posted alerts to the channel — S004 drills 2026-07-13,
+      compose market run 2026-07-14.)*

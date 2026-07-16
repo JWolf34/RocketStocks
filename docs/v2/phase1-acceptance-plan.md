@@ -11,7 +11,8 @@
 > CI green · **walking skeleton accepted on the `feat/v2-rewrite` trunk** (merge to `main`
 > deferred to cutover — trunk → `dev` for burn-in → `main`, per ADR-0001/0028).
 >
-> Snapshot taken **2026-07-13**; progress updated **2026-07-14 (market run complete)**.
+> Snapshot taken **2026-07-13**; progress updated **2026-07-15 (Phase 1 CLOSED — all
+> parts complete; Phase 2 opened, see [phase2-plan.md](./phase2-plan.md))**.
 
 ## ⏭️ Market run complete — what's left (read this first)
 
@@ -21,9 +22,9 @@ compose bot), **D5 ingest half** (`:9090` counter metrics served during the sess
 **D7** (S007 replay under the compose stack IDENTICAL, exit 0). All seven S006 criteria are
 now met. Report: `data/phase1-acceptance-2026-07-13T23-23-40.md`.
 
-No market-gated work remains. Off-hours: **E** (doc reconciliation — roadmap Status-log
-entry + dev-channel box) → **G** (sign-off). Merge to `main` is **deferred to cutover** under
-the trunk model (Part F), not a Phase-1 step.
+No market-gated work remains. Off-hours items closed 2026-07-15: **E** (doc
+reconciliation) and **G** (sign-off) are done — **Phase 1 is closed.** Merge to `main` is
+**deferred to cutover** under the trunk model (Part F), not a Phase-1 step.
 
 ## Current state (evidence, 2026-07-14)
 
@@ -34,8 +35,8 @@ the trunk model (Part F), not a Phase-1 step.
   proven working** (bot resolved the dev channel + logged in). S006's full spine
   (structured logs, correlation, excepthooks, bot + ingest metrics, live session under
   compose, gate re-run) validated — all seven D-items ✅ 2026-07-14.
-- **Remaining:** docs (E) + sign-off (G). Merge to `main` is deferred to cutover (Part F,
-  trunk model), not a Phase-1 step.
+- **Remaining:** nothing — E + G closed 2026-07-15. Merge to `main` is deferred to
+  cutover (Part F, trunk model), not a Phase-1 step.
 
 > **Env note:** if you hit `ModuleNotFoundError` (rs_serve / rs_observability /
 > structlog), the shared venv is stale — run `uv sync --all-packages`.
@@ -73,8 +74,8 @@ v2 token, and established LISTEN on `alerts`.
 - [x] **B2.** ✅ `RS_DEV_CHANNEL_ID` set in `.env` (bot read + resolved it).
 - [x] **B3.** ✅ Dev-bot invited with post/embed permission; `RS_BOT_DISCORD_TOKEN` set
   (distinct from v1's `DISCORD_TOKEN`) — bot logged in successfully.
-- [ ] **B4.** Tick checklist §4 boxes + the roadmap "Private dev channel" pre-flight box.
-  *(Off-hours doc action — fold into Part E.)*
+- [x] **B4.** ✅ 2026-07-15 — checklist §4 boxes + the roadmap "Private dev channel"
+  pre-flight box ticked with live evidence.
 
 ## Part C — S004 bot skeleton: live acceptance drills ✅ VALIDATED (operator, 2026-07-13)
 
@@ -125,14 +126,15 @@ Ref [specs/S006-spine.md](./specs/S006-spine.md).
   python -m rs_ingest.tools.replay --live-db <compose-5498> --expected <7/9 golden>
   ```
 
-## Part E — Documentation reconciliation (S004 done / S006 pending)
+## Part E — Documentation reconciliation ✅ COMPLETE (2026-07-15)
 
 - [x] **E1 (S004).** ✅ 2026-07-13 — S004 spec acceptance boxes ticked with an "Accepted
   2026-07-13" note. S006 spec acceptance boxes ticked 2026-07-14 after D5/D6/D7.
 - [x] **E2 (S004).** ✅ 2026-07-13 — roadmap status-log entry added for S004 acceptance.
-  ⏳ S006 acceptance entry remains (after D6/D7).
-- [ ] **E3.** Tick the roadmap Phase-1 exit clauses as they land. (Includes B4:
-  checklist §4 + roadmap "Private dev channel" pre-flight box.)
+  ✅ 2026-07-15 — S006/market-run acceptance entry added (dated 2026-07-14).
+- [x] **E3.** ✅ 2026-07-15 — roadmap Phase-1 exit clauses reconciled: dev-channel
+  pre-flight box ticked (B4 done), S006 + Phase-1-close status-log entries added.
+  Exit evidence lives in the consolidated checklist below (all nine rows green).
 
 ## Part F — Branch model: no Phase-1 merge to `main` (ADR-0001/0028) ✅ N/A
 
@@ -141,16 +143,18 @@ branches merge into the trunk, not `main`. **Phase 1 does not merge to `main`.**
 acceptance lands on the trunk; the trunk merges to `dev` for the terminal burn-in (ADR-0028)
 and to `main` only at cutover — `main` keeps serving v1 untouched until then.
 
-## Part G — Phase-1 exit sign-off → open Phase 2 ⏳ last
+## Part G — Phase-1 exit sign-off → open Phase 2 ✅ SIGNED OFF (2026-07-15)
 
-- [ ] **G1. Exit checklist all green** (below). Record sign-off as a Status-log entry:
-  "Phase 1 closed — walking skeleton accepted on the `feat/v2-rewrite` trunk (merge to
-  `main` deferred to cutover)."
-- [ ] **G2. Open Phase 2** — begins with the detection-model design session (ADR-0030)
+- [x] **G1. Exit checklist all green** (below). ✅ 2026-07-15 — sign-off recorded as a
+  roadmap Status-log entry: "Phase 1 closed — walking skeleton accepted on the
+  `feat/v2-rewrite` trunk (merge to `main` deferred to cutover)."
+- [x] **G2. Open Phase 2** — begins with the detection-model design session (ADR-0030)
   **before** any detector slice. Named inputs already gathered: the Phase-0 chain-spike
   findings
   ([oi-change-2026-07-09-to-2026-07-10.md](./specs/fixtures/chains/oi-change-2026-07-09-to-2026-07-10.md)),
-  the scan-train reality, escalation semantics. This plan hands off there.
+  the scan-train reality, escalation semantics. ✅ 2026-07-15 — Phase 2 opened; the
+  operational work breakdown (design-session agenda, slice table, cut-first order,
+  exit mapping) is [phase2-plan.md](./phase2-plan.md). This plan hands off there.
 
 ---
 
@@ -166,11 +170,11 @@ and to `main` only at cutover — `main` keeps serving v1 untouched until then.
 | 6 | S004 bot acceptance (5 criteria) | C1–C5 | ✅ operator-validated 2026-07-13 |
 | 7 | S006 spine acceptance (7 criteria) | D1–D7 | ✅ all seven met, 2026-07-14 |
 | 8 | Offline suite / lint / clock gate green | A1, A3 | ✅ 233 + 2804 passed |
-| 9 | Operator dev channel + token provisioned | B1–B4 | ✅ working (B4 doc-tick pending) |
+| 9 | Operator dev channel + token provisioned | B1–B4 | ✅ working (B4 ticked 2026-07-15) |
 
-**Critical path:** the market-morning run (D6 → D5-ingest → D7) is **complete** (2026-07-14) —
-rows 1/2/3/7 closed. Remaining is off-hours doc/sign-off: **E** (docs) → **G** (sign-off);
-merge to `main` is deferred to cutover (Part F, trunk model), not a Phase-1 step.
+**Critical path:** complete. The market-morning run (D6 → D5-ingest → D7) closed
+2026-07-14; docs + sign-off (E, G) closed 2026-07-15. **All nine rows green — Phase 1 is
+closed.** Merge to `main` is deferred to cutover (Part F, trunk model), not a Phase-1 step.
 
 **Not Phase-1 blockers** (deadlined at the Phase 3→4 boundary — do not gate on them):
 box capacity (checklist §1), backup/DR (§2, ADR-0031), ingress/TLS proxy (§3, ADR-0012).
