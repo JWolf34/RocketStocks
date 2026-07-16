@@ -19,7 +19,7 @@ v2's failure surfaces are heterogeneous: a dropped Schwab stream can serve stale
 - **Grain: policies attach per dataset (source × data-class), not per source.** Schwab alone spans the equity stream (a stream-level **liveness** budget — below), the 5-min curated options scan (`BEST_EFFORT` + tombstones), the options EOD full scan (`BEST_EFFORT`, retry-in-window, alarm on a missed night), the nightly 1-min equity backfill (`BEST_EFFORT`, retry within Schwab's **7-day** 1-min window, alarm on a missed night — ADR-0022), and serve's read-through (effectively `STRICT` for reads).
 - **Mutations fail-loud is an invariant, not a configurable policy** — silent write failure is the worst class of bug.
 - Freshness lives at boundaries, **not on bus events** (ADR-0005 — events carry data only):
-  - persistence rows carry `fetched_at` + `source_status` — row provenance with a small enum pinned at Stage 2 (`ok`/`partial`/`failed`; rename to `fetch_status` if ambiguity bites). Failed per-ticker fetches write **tombstone rows** (`source_status='failed'`, no payload), so scan membership stays truthful under failure (ADR-0030) and gate G2's gap audit has rows to count.
+  - persistence rows carry `fetched_at` + `source_status` — row provenance with a small enum pinned at Stage 2 (`ok`/`partial`/`failed`, extended by S008 with `stale`/`skipped`; rename to `fetch_status` if ambiguity bites). Failed per-ticker fetches write **tombstone rows** (`source_status='failed'`, no payload), so scan membership stays truthful under failure (ADR-0030) and gate G2's gap audit has rows to count.
   - **the serve envelope carries two times, named apart:** `meta.as_of` (market/event time of the data) *and* `meta.fetched_at` (retrieval time); `meta.stale_since` appears only when a policy has degraded. `as_of` is what off-hours consumers (Cowork) actually need; `fetched_at` measures the pipeline.
   - Prometheus exposes `source_last_success_seconds{source=...}`
 
@@ -55,6 +55,7 @@ Budgets are **config, not code** — each dataset's `DatasetFreshness` declarati
 - 2026-06-12 — amended (freshness review): (1) serve envelope splits `meta.as_of` from `meta.fetched_at`; (2) `max_age` budgets added per dataset, with the derivation procedure; (3) grain moved from per-source to per-dataset (source × data-class); (4) `source_status` enum pinned + tombstone rows for failed per-ticker fetches.
 - 2026-07-03 — editorial: amendment banner folded into the body; budget-storage wording disambiguated (Postgres config table read by `DatasetFreshness`); no decision change.
 - 2026-07-03 — grain examples extended with the nightly 1-min equity backfill and its 7-day recovery bound (ADR-0022 amendment).
+- 2026-07-16 — editorial: `source_status` enum extended to `ok`/`partial`/`failed`/`stale`/`skipped` by the S008 spec review — `stale` marks stored rows rejected by the quote-time-regression guard; `skipped` marks overrun-skip tombstones, distinguishable from `failed` fetches ([S008](../specs/S008-options-chain-scan.md)). No decision change.
 - 2026-07-03 — aligned with the ADR-0003 amendment (UNLOGGED cache deferred out of v2): cache `stale_since` removed from the freshness surfaces and the `STALE_OK` example re-pointed; the equity-stream grain example now cites the liveness budget directly. Semantics return with the cache.
 
 ## See also
