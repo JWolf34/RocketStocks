@@ -1,6 +1,6 @@
 # ADR-0032: The options-flow detection model
 
-**Status**: **Draft — design session in progress** (opened 2026-07-16)
+**Status**: Accepted (2026-07-16)
 **Decision-maker**: John Wolf
 
 ## Context
@@ -226,6 +226,10 @@ Migration input for the generic alert taxonomy (exact DDL in the S016 spec):
   D6 day-2 verdict posts (confirm + deny) closed; D7 moneyness-window capture width
   closed (ADR-0020 amended); D8 broad typed row closed; D9 warm-up state + D10
   taxonomy fields derived. All agenda items resolved — pending review to Accepted.
+- 2026-07-16 — **Accepted** at the S008 spec review: the spec-grilling session
+  consumed D5/D7/D8 against the real chain captures and they held; only D7's cap
+  *value* moved (config, not ADR — re-sized to a 4,000 guard rail from fixture
+  evidence, see [S008](../specs/S008-options-chain-scan.md) §Decisions surfaced).
 
 ## See also
 
