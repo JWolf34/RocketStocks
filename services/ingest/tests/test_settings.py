@@ -3,7 +3,7 @@ from pathlib import Path
 import pytest
 from pydantic import ValidationError
 
-from rs_ingest.settings import IngestSettings
+from rs_ingest.settings import BOOTSTRAP_UNIVERSE, IngestSettings
 
 REQUIRED = {
     "RS_DB_URL": "postgresql+psycopg://u:p@localhost:5498/rs",
@@ -62,3 +62,26 @@ def test_metrics_port_default_and_override(monkeypatch):
     assert IngestSettings(_env_file=None).metrics_port == 9090
     monkeypatch.setenv("RS_INGEST_METRICS_PORT", "9190")
     assert IngestSettings(_env_file=None).metrics_port == 9190
+
+
+def test_chain_scan_defaults_match_spec(monkeypatch):
+    _set_required(monkeypatch)
+    settings = IngestSettings(_env_file=None)
+    assert settings.chain_scan_universe == BOOTSTRAP_UNIVERSE
+    assert len(settings.chain_scan_universe) == 10
+    assert settings.chain_scan_window == 0.10
+    assert settings.chain_scan_row_cap == 4000
+    assert settings.chain_scan_request_timeout_seconds == 30.0
+
+
+def test_chain_scan_universe_parses_comma_separated_env(monkeypatch):
+    _set_required(monkeypatch)
+    monkeypatch.setenv("RS_INGEST_CHAIN_SCAN_UNIVERSE", "spy, qqq ,IWM,")
+    settings = IngestSettings(_env_file=None)
+    assert settings.chain_scan_universe == ["SPY", "QQQ", "IWM"]
+
+
+def test_chain_scan_universe_empty_env_disables(monkeypatch):
+    _set_required(monkeypatch)
+    monkeypatch.setenv("RS_INGEST_CHAIN_SCAN_UNIVERSE", "")
+    assert IngestSettings(_env_file=None).chain_scan_universe == []
