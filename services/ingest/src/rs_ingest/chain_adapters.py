@@ -7,13 +7,10 @@ snapshot, so each snapshot is durable the moment its train step completes and
 a later failure in the same cycle cannot roll it back.
 """
 
-import logging
 from datetime import timedelta
 
 from rs_domain import ChainSnapshot, Clock, Dataset
 from rs_persistence import ChainSnapshotRepository
-
-logger = logging.getLogger(__name__)
 
 # The server-side expiry bound (ADR-0032 D7): <=30 DTE, the bound that avoids
 # the measured unfiltered-SPY/QQQ 502s. The client-side window/cap live in
