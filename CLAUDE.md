@@ -146,3 +146,13 @@ Auto-created on startup via `data/schema.py:34`. Tables: `tickers`, `ticker_stat
 | `api/` — public DataAPI facade, batch fetches, `rocketstocks-data` CLI | [.claude/docs/api.md](.claude/docs/api.md) |
 | `eda/` — exploratory signal research (event detectors + analysis engines) | [.claude/docs/eda.md](.claude/docs/eda.md) |
 | Test structure, fixtures & mocking patterns | [.claude/docs/tests.md](.claude/docs/tests.md) |
+
+## Agent skills
+
+### Issue tracker
+
+Issues/PRDs live in GitHub Issues (`JWolf34/RocketStocks`) via the `gh` CLI. Note v2 slice specs are a separate surface under `docs/v2/specs/`. See `docs/agents/issue-tracker.md`.
+
+### Domain docs
+
+Single-context: one root `CONTEXT.md`; ADRs live at `docs/v2/adr/` (**not** the default `docs/adr/`). See `docs/agents/domain.md`.
