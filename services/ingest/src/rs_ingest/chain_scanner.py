@@ -27,7 +27,7 @@ from collections.abc import Awaitable, Callable, Sequence
 from datetime import datetime, timedelta
 from typing import Protocol
 
-from rs_domain import ChainSnapshot, Clock, Dataset, SourceStatus, TradingCalendar, median_instant
+from rs_domain import ChainSnapshot, Clock, Dataset, SourceStatus, TradingCalendar
 from rs_ingest.chains import NormalizedChain, normalize_chain
 
 logger = logging.getLogger(__name__)
@@ -98,6 +98,10 @@ class ChainScanner:
         self.retries = 0
         self.scan_errors = 0
         self.last_success_at: datetime | None = None
+
+    @property
+    def cycle_interval(self) -> timedelta:
+        return self._interval
 
     async def run(self) -> None:
         """One session's scan train; returns when the session is over (or
@@ -179,19 +183,24 @@ class ChainScanner:
         )
         for underlying in self._universe:
             try:
-                await self._persist(
-                    ChainSnapshot(
-                        underlying=underlying,
-                        dataset=self._dataset,
-                        cycle_id=cycle_id,
-                        fetched_at=self._clock.now(),
-                        source_status=SourceStatus.SKIPPED,
-                    )
-                )
+                await self._persist(self._tombstone(underlying, cycle_id, SourceStatus.SKIPPED))
             except Exception:
                 self.scan_errors += 1
                 logger.exception("chain scan: tombstone failed for %s @ %s", underlying, cycle_id)
         self.cycle_outcomes["skipped"] += 1
+
+    def _tombstone(
+        self, underlying: str, cycle_id: datetime, status: SourceStatus
+    ) -> ChainSnapshot:
+        """Payload-less membership row (ADR-0030): a failed/skipped name still
+        appears in its cycle."""
+        return ChainSnapshot(
+            underlying=underlying,
+            dataset=self._dataset,
+            cycle_id=cycle_id,
+            fetched_at=self._clock.now(),
+            source_status=status,
+        )
 
     async def _scan_name(self, underlying: str, cycle_id: datetime) -> None:
         try:
@@ -203,13 +212,7 @@ class ChainScanner:
                 type(exc).__name__,
                 exc,
             )
-            snapshot = ChainSnapshot(
-                underlying=underlying,
-                dataset=self._dataset,
-                cycle_id=cycle_id,
-                fetched_at=self._clock.now(),
-                source_status=SourceStatus.FAILED,
-            )
+            snapshot = self._tombstone(underlying, cycle_id, SourceStatus.FAILED)
         else:
             fetched_at = self._clock.now()
             normalized = normalize_chain(payload, window=self._window, row_cap=self._row_cap)
@@ -225,17 +228,21 @@ class ChainScanner:
                 dataset=self._dataset,
                 cycle_id=cycle_id,
                 fetched_at=fetched_at,
-                source_status=self._assess(underlying, normalized),
+                source_status=SourceStatus.OK,
                 rows=normalized.rows,
             )
+            status = self._assess(underlying, normalized, snapshot.median_quote_time)
+            if status is not SourceStatus.OK:
+                snapshot = snapshot.model_copy(update={"source_status": status})
         await self._persist(snapshot)
 
-    def _assess(self, underlying: str, normalized: NormalizedChain) -> SourceStatus:
-        """Snapshot-grain status. Stale wins: a regressed median means the
-        whole response is a cached past, whatever else it looks like."""
-        median = median_instant(
-            q.quote_time for q in normalized.rows if q.quote_time is not None
-        )
+    def _assess(
+        self, underlying: str, normalized: NormalizedChain, median: datetime | None
+    ) -> SourceStatus:
+        """Snapshot-grain status; `median` is the snapshot's own
+        `median_quote_time` (the one shared definition). Stale wins: a
+        regressed median means the whole response is a cached past, whatever
+        else it looks like."""
         baseline = self._medians.get(underlying)
         if median is not None and baseline is not None and median < baseline:
             logger.warning(
