@@ -70,8 +70,9 @@ have their table and conventions to build on.
   ±10% moneyness window and the row cap applied client-side against the response's own
   `underlyingPrice` before persist. **Row cap: 4,000 rows/name/cycle (config), whole
   expiries nearest-first, nearest expiry always kept** — a pathology guard rail sized
-  from measured books to be non-binding (real SPY ±10%/≤30DTE book: 2,646 rows; see
-  Decisions surfaced).
+  from measured books to be non-binding (real SPY ±10%/≤30DTE book: ≈2,650 rows —
+  2,654 on the pinned 16:00 capture the tests assert; the count varies by capture
+  minute; see Decisions surfaced).
 - **Config** (pydantic-settings, `RS_INGEST_` prefix): moneyness window (±0.10), row
   cap (4000), request timeout, bootstrap universe = the spike's 10 tickers (static,
   replaced by S010).
@@ -112,6 +113,9 @@ changes.
 
 ```bash
 .venv/bin/pytest libs/persistence services/ingest -q   # unit + DB (Timescale on :5499, visible skip otherwise)
+# Measured-book tests (full real SPY/QQQ books through window+cap) are gated on
+# the local capture dir data/chain-snapshots/2026-07-06 (gitignored) and skip
+# visibly otherwise; the committed fixtures are pre-truncated to in-window rows.
 .venv/bin/ruff check libs services tools
 scripts/check_clock_discipline.sh                      # no ambient time in scanner code (ADR-0023)
 # Live acceptance (bootstrap list, one RTH session), then:
@@ -129,3 +133,19 @@ psql "$DB" -c "SELECT cycle_id, source_status, count(*) FROM options_chain_snaps
   volume; the two largest builds in the canonical OI fixture) and QQQ's 07-31 (its top
   four builds). Builds concentrate in weeklies/monthlies 1–4 weeks out, so the cap is
   a guard rail (4,000, non-binding on measured books), not a routine selector.
+- **Restart-state horizon (7 days)** — stale-guard baselines rebuild at scanner start
+  from each name's last accepted snapshot, looking back at most 7 days: older state is
+  meaningless to a 5-min regression guard, and the bound keeps the restart query in
+  uncompressed chunks.
+- **Missing/invalid `underlyingPrice` disables the moneyness window** for that
+  response — capture the whole expiry-bounded chain rather than guess a center (the
+  row cap still applies).
+- **Schwab sentinels stored as NULL** — `-999` greek values and non-positive
+  `quoteTimeInLong`/`tradeTimeInLong` epochs map to NULL columns, never sentinel
+  values in the dataset.
+- **`chain_scan_errors_total`** — an internal seventh metric counting scan-loop
+  exceptions (the ADR-0008 "logged + counted" counter), additive to the six-name S012
+  contract above.
+- **Universe env override** — `RS_INGEST_CHAIN_SCAN_UNIVERSE` (comma-separated)
+  overrides the bootstrap list; an empty value disables the scan (stream-only ops
+  mode). "Static" here means no universe management (S010's job), not unconfigurable.
