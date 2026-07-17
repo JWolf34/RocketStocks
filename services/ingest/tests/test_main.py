@@ -14,21 +14,22 @@ from prometheus_client import CollectorRegistry, Histogram, generate_latest
 from rs_domain import SourceStatus
 from rs_ingest.__main__ import (
     CYCLE_DURATION_BUCKETS,
-    LiveAggregatorCounters,
+    ScrapeTimeCounters,
     _run_chain_scanner,
     chain_scan_collectors,
+    live_aggregator_counters,
 )
 from rs_ingest.aggregator import COUNTER_NAMES
 
 
 def test_serves_all_zero_counters_before_the_session_starts():
-    view = LiveAggregatorCounters(SimpleNamespace(aggregator=None))
+    view = ScrapeTimeCounters(lambda: live_aggregator_counters(SimpleNamespace(aggregator=None)))
     assert dict(view) == dict.fromkeys(COUNTER_NAMES, 0)
 
 
 def test_reads_through_to_the_live_aggregator_at_scrape_time():
     live = SimpleNamespace(aggregator=None)
-    view = LiveAggregatorCounters(live)
+    view = ScrapeTimeCounters(lambda: live_aggregator_counters(live))
     live.aggregator = SimpleNamespace(counters={"bars_built": 7, "ticks_late_dropped": 1})
     assert dict(view) == {"bars_built": 7, "ticks_late_dropped": 1}
     live.aggregator.counters["bars_built"] += 1
@@ -86,12 +87,28 @@ class TestChainScanCollectors:
 
 
 class TestScannerGuard:
-    async def test_scanner_crash_is_swallowed_and_logged(self, caplog):
-        async def exploding_run():
-            raise RuntimeError("scanner bug")
+    async def test_crash_is_counted_and_scan_resumes_at_next_boundary(self, caplog):
+        """An escape from the cycle machinery costs one cycle, not the session
+        (spec: "logged + counted and the loop resumes at the next boundary")."""
+        runs = []
+        scanner = SimpleNamespace(scan_errors=0, cycle_interval=timedelta(minutes=5))
+
+        async def run_crashing_once():
+            runs.append(1)
+            if len(runs) == 1:
+                raise RuntimeError("scanner bug")
+
+        scanner.run = run_crashing_once
+        slept = []
+
+        async def sleep(seconds):
+            slept.append(seconds)
 
         with caplog.at_level("ERROR"):
-            await _run_chain_scanner(SimpleNamespace(run=exploding_run))
+            await _run_chain_scanner(scanner, sleep=sleep)
+        assert len(runs) == 2
+        assert scanner.scan_errors == 1
+        assert slept == [300.0]
         assert "stream capture continues" in caplog.text
 
     async def test_cancellation_passes_through(self):
