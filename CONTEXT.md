@@ -79,3 +79,14 @@ A cycle has an id and a nominal T, but per-row `fetched_at`/`quote_time` is the
 event-time rule — never the cycle's nominal T.
 _Avoid_: snapshot (a single underlying's rows within a cycle), scan (the ongoing
 activity)
+
+**Snapshot**:
+One underlying's rows within one cycle — the unit a single chain request produces,
+and the grain at which the stale guard accepts or rejects.
+_Avoid_: cycle (the full pass over all names), chain (the instrument universe itself)
+
+**Tombstone**:
+A payload-less snapshot row recording that a fetch did not produce data (failed after
+retry, or skipped by an overrun) — keeps scan membership truthful: every (cycle, name)
+pair has rows, real or tombstone.
+_Avoid_: gap (a tombstone is the *absence of a gap* in the membership record)

@@ -113,7 +113,7 @@ rule, overrun/retry/stale policies) stays pre-pinned by the roadmap and is
 
 | Slice | Scope | ADRs | Depends on |
 |---|---|---|---|
-| **S008** | `options_chain_snapshot` hypertable (`dataset` discriminator — ADR-0032 D5) + the **curated 5-min REST scan**. The spec must pin the **cycle model**: deterministic scan order, `cycle_id` on rows, per-row `fetched_at`/`quote_time` event-time rule, overrun policy (BEST_EFFORT skip, tombstone-visible), 502 retry-once-then-tombstone, stale-response guard (reject on `quote_time` regression). Bootstrap with a **static curated list** (the spike's 10 tickers or similar) until S010 supplies the real one. | 0020, 0017 | §1 ADR (0032) — capture width + field schema only; cycle model pre-pinned |
+| **S008** ([spec](./specs/S008-options-chain-scan.md)) | `options_chain_snapshot` hypertable (`dataset` discriminator — ADR-0032 D5) + the **curated 5-min REST scan**. The spec must pin the **cycle model**: deterministic scan order, `cycle_id` on rows, per-row `fetched_at`/`quote_time` event-time rule, overrun policy (BEST_EFFORT skip, tombstone-visible), 502 retry-once-then-tombstone, stale-response guard (reject on `quote_time` regression). Bootstrap with a **static curated list** (the spike's 10 tickers or similar) until S010 supplies the real one. | 0020, 0017 | §1 ADR (0032) — capture width + field schema only; cycle model pre-pinned |
 | **S009** | **Options EOD full scan**: nightly, whole optionable universe (~5–6k), `dataset=eod_full`, sequenced inside the REST budget ([schwab-rest-budget.md](./schwab-rest-budget.md)); establishes the day-over-day OI-diff basis (shared-roster netting). | 0020, 0025 | S008 (table) · S010's symbol-master increment ([design note](./universe-manager.md) D6 — supplies the optionable roster) |
 | **S010** | **Symbol master + `UniverseManager`**: nightly Nasdaq Trader listing ingest, filter rules, listing/delisting/rename lifecycle, optionability union (Nasdaq `options.txt` ∪ Cboe directory — note D5), two-band desired-set computation (stream ≤ ~500 / curated ~400), diff → ADD/UNSUB, priority eviction, fully reconstructible from Postgres. Replaces S008's static list and the skeleton's one-ticker subscription. **First increment (symbol master + optionability — note D1/D4/D5) lands before or with S009** (note D6). | 0019, 0025 | §2 design note |
 | **S011** | **Equity research history**: nightly 1-min EOD backfill (whole universe), 5-min + daily **continuous aggregates**, columnar **compression policies** (>~7d chunks), corporate-actions table + adjustment-at-read (`adjusted_through`), missed-night alarm + 7-day retry window; `tools/backfill` equity seed CLI (adjustment-basis stamped). | 0021, 0022, 0025 | — |
@@ -177,6 +177,12 @@ From [roadmap.md](./roadmap.md) §Phase 2 exit:
   data from go-live, and S008's capture width + per-contract field schema are §1
   outputs (added to §1's session-output list; S008's cycle model stays pre-pinned).
   Next action: run the §1 session.
+- 2026-07-16 — S008 spec drafted and reviewed
+  ([specs/S008-options-chain-scan.md](./specs/S008-options-chain-scan.md)); all its
+  open questions were resolved in the spec-grilling session (cycle model mechanics,
+  4,000-row guard-rail cap sized from the chain fixtures, 28-column list, stale-guard
+  disposition, Timescale policies, metrics names). Appetite 4 days. Next action:
+  implement S008 on `feat/spec-008`.
 - 2026-07-16 — §2 design session in progress ([universe-manager.md](./universe-manager.md)).
   Sequencing amendment from its D6: S009 additionally depends on S010's first
   increment (symbol master + optionability), which lands before or with it; slice

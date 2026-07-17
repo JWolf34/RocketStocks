@@ -12,12 +12,14 @@ from rs_persistence.models import (
     SchwabTokenRow,
     ServiceClientRow,
     StreamBar5m,
+    chain_snapshot_table,
 )
 from rs_persistence.repository import (
     NOTIFY_CHANNEL,
     OUTBOX_EVENT_TYPE,
     AlertRepository,
     BarRepository,
+    ChainSnapshotRepository,
     PendingAlert,
     ServiceClientRepository,
 )
@@ -44,6 +46,7 @@ __all__ = [
     "AlertRow",
     "Base",
     "BarRepository",
+    "ChainSnapshotRepository",
     "OutboxRow",
     "PendingAlert",
     "SchwabTokenRow",
@@ -53,5 +56,6 @@ __all__ = [
     "StreamBar5m",
     "build_engine",
     "build_session_factory",
+    "chain_snapshot_table",
     "migration_config",
 ]
