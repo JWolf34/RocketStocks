@@ -25,7 +25,7 @@ have their table and conventions to build on.
   Two enums: `dataset` = `curated_5m | eod_full` (ADR-0032 D5); `source_status` =
   `ok | partial | failed | stale | skipped` (extends ADR-0017's three — see Decisions
   surfaced). Rows are immutable/append-only.
-- **Columns (binding, 28)** — bound against
+- **Columns (binding, 30)** — bound against
   [excerpt-spy-chain-2026-07-06.json](fixtures/chains/excerpt-spy-chain-2026-07-06.json),
   D8's six groups:
   - *identity (5)*: `underlying` text · `option_symbol` text (OCC symbol — the S009
@@ -94,7 +94,7 @@ changes.
 
 - [ ] Migration 0005 applies on a TimescaleDB; `options_chain_snapshot` is a
       hypertable with 1-day chunks and the compression policy present.
-- [ ] Normalization maps a real captured chain response to exactly the 28 columns;
+- [ ] Normalization maps a real captured chain response to exactly the 30 columns;
       in-window/cap filtering reproduces measured counts on the real SPY book (whole
       expiries, nearest-first, cap non-binding at 4,000).
 - [ ] Deterministic scan-loop tests (fake clock/transport, no ambient time —
