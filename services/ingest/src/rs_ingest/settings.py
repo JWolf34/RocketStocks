@@ -11,9 +11,14 @@ exit-1, never a silent default.
 """
 
 from pathlib import Path
+from typing import Annotated
 
-from pydantic import Field, SecretStr
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic import Field, SecretStr, field_validator
+from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
+
+# The spike's 10 tickers (S008 bootstrap universe; static until S010's
+# universe management replaces it).
+BOOTSTRAP_UNIVERSE = ["AAPL", "AMD", "AMZN", "GOOGL", "META", "MSFT", "NVDA", "QQQ", "SPY", "TSLA"]
 
 
 class IngestSettings(BaseSettings):
@@ -36,3 +41,22 @@ class IngestSettings(BaseSettings):
     # The Bus-2 NOTIFY channel is intentionally NOT here: it is a pinned wire
     # contract shared with the bot (ADR-0005), not a per-deployment tunable —
     # rs_persistence.NOTIFY_CHANNEL is its single source of truth.
+
+    # Curated 5-min chain scan (S008). Universe is comma-separated in the env
+    # (NoDecode skips pydantic-settings' JSON parsing); empty -> scan disabled.
+    chain_scan_universe: Annotated[list[str], NoDecode] = Field(
+        default_factory=lambda: list(BOOTSTRAP_UNIVERSE),
+        validation_alias="RS_INGEST_CHAIN_SCAN_UNIVERSE",
+    )
+    chain_scan_window: float = Field(0.10, validation_alias="RS_INGEST_CHAIN_SCAN_WINDOW")
+    chain_scan_row_cap: int = Field(4000, validation_alias="RS_INGEST_CHAIN_SCAN_ROW_CAP")
+    chain_scan_request_timeout_seconds: float = Field(
+        30.0, validation_alias="RS_INGEST_CHAIN_SCAN_REQUEST_TIMEOUT_SECONDS"
+    )
+
+    @field_validator("chain_scan_universe", mode="before")
+    @classmethod
+    def _split_universe(cls, value):
+        if isinstance(value, str):
+            return [ticker.strip().upper() for ticker in value.split(",") if ticker.strip()]
+        return value
