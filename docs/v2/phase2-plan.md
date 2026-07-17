@@ -91,6 +91,12 @@ top-100 popularity → discovery) with eviction · the sizes glossary (~500 stre
 ~5–6k optionable / ~10k listed). Independent of §1 — can run in parallel with it or
 with the early substrate slices. Gates S010.
 
+**Done 2026-07-17** — [universe-manager.md](./universe-manager.md), D1–D11 (status:
+Draft, pending review). Covers all mandated topics plus optionability sourcing,
+band timing/headroom, and runtime/reconstructibility. Session amendments: ADR-0019
+(curated ⊆ streamed invariant), ADR-0025 (Cboe = fourth live source), this plan's
+slice table (D6 sequencing).
+
 ## 3. Slice breakdown *(proposal — each slice gets a spec before build)*
 
 **Sequencing driver** *(amended 2026-07-16 — supersedes the data-loss driver)*: both
@@ -108,8 +114,8 @@ rule, overrun/retry/stale policies) stays pre-pinned by the roadmap and is
 | Slice | Scope | ADRs | Depends on |
 |---|---|---|---|
 | **S008** | `options_chain_snapshot` hypertable (`dataset` discriminator — ADR-0032 D5) + the **curated 5-min REST scan**. The spec must pin the **cycle model**: deterministic scan order, `cycle_id` on rows, per-row `fetched_at`/`quote_time` event-time rule, overrun policy (BEST_EFFORT skip, tombstone-visible), 502 retry-once-then-tombstone, stale-response guard (reject on `quote_time` regression). Bootstrap with a **static curated list** (the spike's 10 tickers or similar) until S010 supplies the real one. | 0020, 0017 | §1 ADR (0032) — capture width + field schema only; cycle model pre-pinned |
-| **S009** | **Options EOD full scan**: nightly, whole optionable universe (~5–6k), `dataset=eod_full`, sequenced inside the REST budget ([schwab-rest-budget.md](./schwab-rest-budget.md)); establishes the day-over-day OI-diff basis (shared-roster netting). | 0020, 0025 | S008 (table) |
-| **S010** | **Symbol master + `UniverseManager`**: nightly Nasdaq Trader listing ingest, filter rules, listing/delisting/rename lifecycle, two-band desired-set computation (stream ≤ ~500 / curated ~400), diff → ADD/UNSUB, priority eviction, fully reconstructible from Postgres. Replaces S008's static list and the skeleton's one-ticker subscription. | 0019, 0025 | §2 design note |
+| **S009** | **Options EOD full scan**: nightly, whole optionable universe (~5–6k), `dataset=eod_full`, sequenced inside the REST budget ([schwab-rest-budget.md](./schwab-rest-budget.md)); establishes the day-over-day OI-diff basis (shared-roster netting). | 0020, 0025 | S008 (table) · S010's symbol-master increment ([design note](./universe-manager.md) D6 — supplies the optionable roster) |
+| **S010** | **Symbol master + `UniverseManager`**: nightly Nasdaq Trader listing ingest, filter rules, listing/delisting/rename lifecycle, optionability union (Nasdaq `options.txt` ∪ Cboe directory — note D5), two-band desired-set computation (stream ≤ ~500 / curated ~400), diff → ADD/UNSUB, priority eviction, fully reconstructible from Postgres. Replaces S008's static list and the skeleton's one-ticker subscription. **First increment (symbol master + optionability — note D1/D4/D5) lands before or with S009** (note D6). | 0019, 0025 | §2 design note |
 | **S011** | **Equity research history**: nightly 1-min EOD backfill (whole universe), 5-min + daily **continuous aggregates**, columnar **compression policies** (>~7d chunks), corporate-actions table + adjustment-at-read (`adjusted_through`), missed-night alarm + 7-day retry window; `tools/backfill` equity seed CLI (adjustment-basis stamped). | 0021, 0022, 0025 | — |
 | **S012** | **`FreshnessPolicy` + staleness**: per-dataset policy enum, `fetched_at`/`source_status` columns + tombstone rows as the scan-membership record, `max_age` budget **config table** (provisional cadence×2 values), `source_last_success_seconds` metrics, stream-level liveness budget. S008/S009 rows are the first consumers. | 0017 | S008 |
 | **S013** | **Notifications layer**: `NotificationBackend` protocol + Discord-webhook/ntfy backends, category routing (`alerts.market` … `system.critical`), `notification_routes` table seeded by migration; joins `rs_observability.hooks`' SYSTEM_CRITICAL half (token expiry → ntfy) and S011's missed-backfill alarm. | 0016, 0015 | — |
@@ -171,3 +177,11 @@ From [roadmap.md](./roadmap.md) §Phase 2 exit:
   data from go-live, and S008's capture width + per-contract field schema are §1
   outputs (added to §1's session-output list; S008's cycle model stays pre-pinned).
   Next action: run the §1 session.
+- 2026-07-16 — §2 design session in progress ([universe-manager.md](./universe-manager.md)).
+  Sequencing amendment from its D6: S009 additionally depends on S010's first
+  increment (symbol master + optionability), which lands before or with it; slice
+  table updated. ADR-0025 amended (Cboe directory = fourth live source).
+- 2026-07-17 — **§2 design session closed**: [universe-manager.md](./universe-manager.md)
+  complete (D1–D11, Draft pending review). S010 is ungated; its spec can be written
+  from the note alone. Next action: run wave 2 (S008 spec first, per the resequenced
+  order).
