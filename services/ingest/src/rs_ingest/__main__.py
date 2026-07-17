@@ -10,7 +10,7 @@ later without redesign.
 import asyncio
 import logging
 import sys
-from collections.abc import Iterator, Mapping
+from collections.abc import Awaitable, Callable, Iterator, Mapping
 from contextlib import suppress
 from datetime import timedelta
 
@@ -46,50 +46,39 @@ logger = logging.getLogger(__name__)
 CYCLE_DURATION_BUCKETS = (1.0, 2.5, 5.0, 10.0, 30.0, 60.0, 120.0, 180.0, 240.0, 300.0, 600.0)
 
 
-class LiveAggregatorCounters(Mapping):
-    """Scrape-time view of the session aggregator's counters. The aggregator
-    exists only once a session opens (LiveEventSource creates it), so the view
-    serves zeros until then — every metric name is present from process start."""
+class ScrapeTimeCounters(Mapping):
+    """Mapping view over a dict-returning callable, so collectors read live
+    counter values at each scrape instead of a snapshot from wiring time."""
 
-    def __init__(self, live: LiveEventSource) -> None:
-        self._live = live
-
-    def _counters(self) -> Mapping[str, int]:
-        if self._live.aggregator is None:
-            return dict.fromkeys(AGGREGATOR_COUNTER_NAMES, 0)
-        return self._live.aggregator.counters
+    def __init__(self, read: Callable[[], Mapping[str, int]]) -> None:
+        self._read = read
 
     def __getitem__(self, name: str) -> int:
-        return self._counters()[name]
+        return self._read()[name]
 
     def __iter__(self) -> Iterator[str]:
-        return iter(self._counters())
+        return iter(self._read())
 
     def __len__(self) -> int:
-        return len(self._counters())
+        return len(self._read())
 
 
-class ChainScanScalarCounters(Mapping):
-    """Scrape-time view of the scanner's unlabeled counters (bare names per
-    ADR-0015; the collector adds the _total sample suffix)."""
+def live_aggregator_counters(live: LiveEventSource) -> Mapping[str, int]:
+    """The session aggregator exists only once a session opens (LiveEventSource
+    creates it), so serve zeros until then — every metric name is present from
+    process start."""
+    if live.aggregator is None:
+        return dict.fromkeys(AGGREGATOR_COUNTER_NAMES, 0)
+    return live.aggregator.counters
 
-    def __init__(self, scanner: ChainScanner) -> None:
-        self._scanner = scanner
 
-    def _counters(self) -> dict[str, int]:
-        return {
-            "chain_scan_retries": self._scanner.retries,
-            "chain_scan_errors": self._scanner.scan_errors,
-        }
-
-    def __getitem__(self, name: str) -> int:
-        return self._counters()[name]
-
-    def __iter__(self) -> Iterator[str]:
-        return iter(self._counters())
-
-    def __len__(self) -> int:
-        return len(self._counters())
+def chain_scan_scalar_counters(scanner: ChainScanner) -> Mapping[str, int]:
+    """The scanner's unlabeled counters (bare names per ADR-0015; the collector
+    adds the _total sample suffix)."""
+    return {
+        "chain_scan_retries": scanner.retries,
+        "chain_scan_errors": scanner.scan_errors,
+    }
 
 
 # Spec-pinned label for the freshness gauge (S008 metrics contract; ADR-0017's
@@ -111,7 +100,9 @@ def chain_scan_collectors(scanner: ChainScanner, histogram: Histogram, clock: Sy
         LabeledDictCounterCollector(
             "chain_snapshot_rows_written", "source_status", scanner.rows_written
         ),
-        DictCounterCollector(ChainScanScalarCounters(scanner), namespace=""),
+        DictCounterCollector(
+            ScrapeTimeCounters(lambda: chain_scan_scalar_counters(scanner)), namespace=""
+        ),
         histogram,
         CallableGaugeCollector(
             "source_last_success_seconds",
@@ -122,16 +113,30 @@ def chain_scan_collectors(scanner: ChainScanner, histogram: Histogram, clock: Sy
     ]
 
 
-async def _run_chain_scanner(scanner: ChainScanner) -> None:
-    """Own fault boundary (ADR-0008): the scan train may fail independently but
-    can never take stream capture down — an escape is logged loudly, the task
-    ends, and the stream runs on."""
-    try:
-        await scanner.run()
-    except asyncio.CancelledError:
-        raise
-    except Exception:
-        logger.exception("chain scanner crashed — stream capture continues unaffected")
+async def _run_chain_scanner(
+    scanner: ChainScanner, sleep: Callable[[float], Awaitable[None]] = asyncio.sleep
+) -> None:
+    """Own fault boundary (ADR-0008): an exception escaping the cycle machinery
+    is logged + counted and the scan resumes at the next boundary — re-entering
+    run() recomputes the boundary grid from the clock and reloads stale-guard
+    baselines from the store, and run() returns normally once the session is
+    over, ending the loop. curated_5m is forward-only, so a transient failure
+    (e.g. a DB blip during the restart-state load) must cost one cycle, not the
+    session. Never takes stream capture down; cancellation (session teardown)
+    passes through, including during the between-attempts sleep."""
+    while True:
+        try:
+            await scanner.run()
+            return
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            scanner.scan_errors += 1
+            logger.exception(
+                "chain scanner crashed — resuming at the next boundary; "
+                "stream capture continues unaffected"
+            )
+        await sleep(scanner.cycle_interval.total_seconds())
 
 
 async def run_session(settings: IngestSettings) -> int:
@@ -168,7 +173,9 @@ async def run_session(settings: IngestSettings) -> int:
         # name prefixes, distinguish services.
         collectors = [
             DictCounterCollector(pipeline.counters, namespace=""),
-            DictCounterCollector(LiveAggregatorCounters(live), namespace=""),
+            DictCounterCollector(
+                ScrapeTimeCounters(lambda: live_aggregator_counters(live)), namespace=""
+            ),
         ]
         scanner = None
         if settings.chain_scan_universe:
