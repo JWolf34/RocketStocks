@@ -16,13 +16,85 @@ is the bot's pinned cursor column (ADR-0005 Bus-2 reference contract).
 from datetime import datetime
 from typing import Any
 
-from sqlalchemy import BigInteger, Identity, Text, text
-from sqlalchemy.dialects.postgresql import JSONB, TIMESTAMP
+from sqlalchemy import (
+    CHAR,
+    REAL,
+    BigInteger,
+    Boolean,
+    Column,
+    Date,
+    Identity,
+    Integer,
+    Numeric,
+    SmallInteger,
+    Table,
+    Text,
+    text,
+)
+from sqlalchemy.dialects.postgresql import ENUM, JSONB, TIMESTAMP
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
+
+from rs_domain import Dataset, SourceStatus
 
 
 class Base(DeclarativeBase):
     pass
+
+
+# options_chain_snapshot (rev-005, S008) is a Core Table, not an ORM class: the
+# hypertable has no primary key (append-only; tombstone rows carry NULL contract
+# identity), and the ORM refuses PK-less mappings / silently drops NULL-PK rows.
+# Numeric(asdecimal=False): reads come back float, matching the rs_domain shapes
+# (detection math is float64; NUMERIC storage keeps quotes exact decimals).
+chain_snapshot_table = Table(
+    "options_chain_snapshot",
+    Base.metadata,
+    # identity
+    Column("underlying", Text, nullable=False),
+    Column("option_symbol", Text),
+    Column("expiry", Date),
+    Column("strike", Numeric(asdecimal=False)),
+    Column("put_call", CHAR(1)),
+    # provenance — enum vocabularies come from the rs_domain StrEnums (values
+    # written/read as plain strings; rev-005 owns type creation)
+    Column(
+        "dataset",
+        ENUM(*(m.value for m in Dataset), name="dataset", create_type=False),
+        nullable=False,
+    ),
+    Column("cycle_id", TIMESTAMP(timezone=True), nullable=False),
+    Column("fetched_at", TIMESTAMP(timezone=True), nullable=False),
+    Column("quote_time", TIMESTAMP(timezone=True)),
+    Column(
+        "source_status",
+        ENUM(*(m.value for m in SourceStatus), name="source_status", create_type=False),
+        nullable=False,
+    ),
+    # quote
+    Column("bid", Numeric(asdecimal=False)),
+    Column("ask", Numeric(asdecimal=False)),
+    Column("last", Numeric(asdecimal=False)),
+    Column("mark", Numeric(asdecimal=False)),
+    Column("bid_size", Integer),
+    Column("ask_size", Integer),
+    Column("last_size", Integer),
+    Column("trade_time", TIMESTAMP(timezone=True)),
+    # flow
+    Column("volume", BigInteger),
+    Column("open_interest", BigInteger),
+    # risk
+    Column("iv", REAL),
+    Column("delta", REAL),
+    Column("gamma", REAL),
+    Column("theta", REAL),
+    Column("vega", REAL),
+    Column("rho", REAL),
+    # chain context
+    Column("underlying_price", Numeric(asdecimal=False)),
+    Column("multiplier", SmallInteger),
+    Column("expiration_type", CHAR(1)),
+    Column("non_standard", Boolean),
+)
 
 
 class StreamBar5m(Base):
