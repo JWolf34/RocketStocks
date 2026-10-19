@@ -6,6 +6,25 @@ Glossary only — decisions live in `docs/v2/adr/`.
 
 ## Language
 
+### Product
+
+**Data API**:
+The read-only, local-network interface through which clients John operates pull the data
+RocketStocks collects, to produce their own analyses. Exposes data, not features.
+_Avoid_: serve (a deployable, not the interface), public API
+
+**Research-grade**:
+The quality bar for what RocketStocks claims: signals carry a measured track record, and
+data is validated, gap-aware, and stamped with when it was fetched and how it was adjusted.
+_Avoid_: execution-grade (the post-v2 auto-trader bar)
+
+**Base rate**:
+A signal's historical outcome statistics - event count, hit rate, median forward return
+at fixed horizons - shown in each alert as its confidence.
+_Avoid_: confidence score, probability
+
+### Detection and data plane
+
 **Subject**:
 The thing one options-flow alert is about — an (underlying, side) pair. The grain for
 dedup, cooldown, tier escalation, parent linkage, and warm-up state.
