@@ -23,6 +23,17 @@ A signal's historical outcome statistics - event count, hit rate, median forward
 at fixed horizons - shown in each alert as its confidence.
 _Avoid_: confidence score, probability
 
+**Report**:
+An on-demand research read a server member pulls in Discord - one per subject kind
+(Stock Report, Options Report, Watchlist Report). The only pull surface; raw data pulls
+go through the Data API.
+_Avoid_: lookup, data card, `/data`
+
+**Watchlist**:
+A named list of tickers, shared server-wide or personal, that feeds the Watchlist Report
+and adds its tickers to what push alerts watch. Always user-curated.
+_Avoid_: system list, screener list (v1 lists the bot built itself; not in v2)
+
 ### Detection and data plane
 
 **Subject**:
