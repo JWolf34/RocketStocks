@@ -5,6 +5,9 @@ Scope: one private Discord server, non-commercial, John plus friends.
 Not legal advice.
 Confidence tags: (P) read on the primary source today, (S) secondary source, (U) unverified.
 
+> **Decision (2026-10-19, [Vendor stack](https://github.com/JWolf34/RocketStocks/issues/48)):** John rejected all paid services, Sharadar included.
+> Schwab is the spine; base rates carry a survivorship caveat until v2's alert log replaces them.
+
 ## Answer
 
 Run the whole launch on free sources plus one paid subscription: Sharadar Prices, Full History, for survivorship-free daily history.
