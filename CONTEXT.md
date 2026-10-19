@@ -23,6 +23,27 @@ A signal's historical outcome statistics - event count, hit rate, median forward
 at fixed horizons - shown in each alert as its confidence.
 _Avoid_: confidence score, probability
 
+**Alert**:
+A push post reporting that an event happened to one stock (attention surge, earnings
+reaction, large move), with the event type's measured base rate as context. Informational:
+it claims the event, not a direction. Posted once, never edited.
+_Avoid_: signal (reserved for an edge-backed claim), notification
+
+**Signal**:
+An alert type that also makes a directional claim, admitted only after its event study
+shows an edge. None at launch.
+_Avoid_: alert (the informational post), indicator
+
+**Digest**:
+A scheduled push post summarising a period (daily post-close digest, Monday earnings
+preview). Posted once, never edited.
+_Avoid_: screener (v1's edit-in-place lists), report (pull, not push)
+
+**Alert scope**:
+The stocks earnings-reaction and large-move alerts watch: a rule-based liquid band plus
+every watchlist ticker. Attention surges watch everything ApeWisdom tracks.
+_Avoid_: universe (everything collected), discovery (the v2 options-flow priority source)
+
 **Report**:
 An on-demand research read a server member pulls in Discord - one per subject kind
 (Stock Report, Options Report, Watchlist Report). The only pull surface; raw data pulls
