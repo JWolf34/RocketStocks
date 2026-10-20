@@ -17,6 +17,10 @@ dependencies = [
     "rs-query",
 ]
 
+[dependency-groups]
+# the tests apply the real service roles
+dev = ["rs-migrate"]
+
 [build-system]
 requires = ["uv_build>=0.11.26,<0.12.0"]
 build-backend = "uv_build"
@@ -24,6 +28,7 @@ build-backend = "uv_build"
 [tool.uv.sources]
 rs-analysis = { workspace = true }
 rs-domain = { workspace = true }
+rs-migrate = { workspace = true }
 rs-observability = { workspace = true }
 rs-persistence = { workspace = true }
 rs-query = { workspace = true }

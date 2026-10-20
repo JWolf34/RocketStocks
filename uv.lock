@@ -2687,6 +2687,11 @@ dependencies = [
     { name = "sqlalchemy", extra = ["asyncio"] },
 ]
 
+[package.dev-dependencies]
+dev = [
+    { name = "rs-migrate" },
+]
+
 [package.metadata]
 requires-dist = [
     { name = "numpy", specifier = ">=2.4.0" },
@@ -2698,6 +2703,9 @@ requires-dist = [
     { name = "rs-query", editable = "libs/query" },
     { name = "sqlalchemy", extras = ["asyncio"], specifier = ">=2" },
 ]
+
+[package.metadata.requires-dev]
+dev = [{ name = "rs-migrate", editable = "tools/migrate" }]
 
 [[package]]
 name = "rs-serve"

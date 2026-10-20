@@ -43,7 +43,7 @@ def python(code: str) -> list[str]:
 
 def test_registered_for_sunday_evening_chicago_without_schwab():
     cron = CronTable()
-    register_jobs(cron, Dependencies(session_factory=None, clock=None, schwab=None))  # type: ignore[arg-type]
+    register_jobs(cron, Dependencies(None, None, None, None, None))  # type: ignore[arg-type]
 
     [job] = [j for j in cron if j.name == JOB_NAME]
 
