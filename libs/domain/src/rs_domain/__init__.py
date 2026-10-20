@@ -20,10 +20,21 @@ from rs_domain.models import (
     UnpricedSymbol,
     median_instant,
 )
+from rs_domain.payloads import (
+    AttentionSurgePayload,
+    FactUnavailable,
+    FilingFact,
+    NextEarningsFact,
+    PriceMoveFact,
+    RecentFilingsFact,
+    SurgeFacts,
+    VolumeFact,
+)
 from rs_domain.ports import Clock, Detector, EventSource, TradingCalendar
 
 __all__ = [
     "Alert",
+    "AttentionSurgePayload",
     "AuthRequestState",
     "Bar",
     "BarClosed",
@@ -34,15 +45,22 @@ __all__ = [
     "Dataset",
     "Detector",
     "EventSource",
+    "FactUnavailable",
+    "FilingFact",
+    "NextEarningsFact",
     "OptionQuote",
     "PopularityOrigin",
     "PopularitySnapshot",
+    "PriceMoveFact",
+    "RecentFilingsFact",
     "SchwabAuthRequest",
     "SourceStatus",
     "StoredDailyBar",
+    "SurgeFacts",
     "SystemClock",
     "TradingCalendar",
     "UnpricedSymbol",
     "UtcDatetime",
+    "VolumeFact",
     "median_instant",
 ]
