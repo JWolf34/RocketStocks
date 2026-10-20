@@ -32,8 +32,10 @@ Out: see the end of this page.
 - Source (D-B, John 2026-10-20): one Schwab price-history call per symbol, the same call the seed uses, starting one stored session back so each update overlaps a bar already held (the split check, D-H).
   About 8,000 calls, about 80 minutes at 100 per minute, after the 17:30 ET close.
   Batch quotes (about 20 calls) were rejected: a quote's day fields are not the official candle, they carry no history to detect a split, and a missed night needs a history call anyway.
-- Deep seed: a symbol with no bars is seeded to Schwab's maximum daily depth (about 20 years) once, including every new span; it runs as a low-priority job that yields the limiter to the nightly scan **(open, D-C)**.
-  Recommendation: seed at most N symbols a night outside the scan window until the backlog is empty (about 8,000 calls, so a few nights), rather than one long first-night run.
+- Deep seed (D-C, John 2026-10-20): not a separate job.
+  `daily_bars` fetches a symbol with no bars from 1990-01-01 (Schwab serves about 30 years; the calendar starts in 1990), so a new span or relisted ticker seeds on its first night and an interrupted seed resumes on the next run.
+  The first night makes the same ~8,000 calls as any night, with larger responses (about 25M rows); the job runs at 17:30 ET with a 4-hour timeout, clear of the 22:00 CT scan.
+  Some seed rows land in already-compressed chunks (compression after 180 days); the build tests that path against the real hypertable settings.
 - Splits (D-H, John 2026-10-20): Schwab has no corporate-actions feed, so the history is the only split signal.
   A one-call probe (NVDA around its 2024-06-10 10:1 split) first establishes whether daily history is split- and dividend-adjusted; if split-adjusted, new rows are stamped `adjusted = true` and a migration restamps slice 1's rows.
   Each update's overlapping session is compared with the stored close; beyond a tolerance (0.5% working figure, raised above typical dividend moves if the probe shows dividend adjustment) the symbol's whole history is refetched and replaced in one transaction, logged and counted (`daily_bar_reseeds`).
@@ -76,7 +78,7 @@ Recommendation: measure the first recorded night's compressed size before choosi
 
 Grants: ingest writes `symbols`; bot, serve and research read it.
 
-**Jobs** added to `services/ingest/src/rs_ingest/jobs.py`: `symbol_master` (nightly, before the scan, not a Schwab job), `daily_bars` (replaces `surge_bars`), `daily_bar_seed` (low priority, Schwab), `eod_scan` (22:00 CT session days, Schwab).
+**Jobs** added to `services/ingest/src/rs_ingest/jobs.py`: `symbol_master` (nightly, before the scan, not a Schwab job), `daily_bars` (replaces `surge_bars`; seeds and updates, Schwab), `eod_scan` (22:00 CT session days, Schwab).
 
 ## Acceptance
 
