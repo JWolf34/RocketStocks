@@ -201,6 +201,12 @@ def test_unusable_rows_are_rejected_with_a_reason(row, reason):
     assert to_snapshot(row, "America/Chicago") == reason
 
 
+def test_v1_rows_are_normalised_like_live_ones():
+    snap = to_snapshot(replace(ROW, rank_24h_ago=0, upvotes=-3), "UTC")
+    assert not isinstance(snap, str)
+    assert (snap.rank_24h_ago, snap.upvotes) == (None, -3)
+
+
 async def test_a_missing_upvotes_value_is_imported_as_none():
     snap = to_snapshot(replace(ROW, upvotes=None), "UTC")
     assert not isinstance(snap, str) and snap.upvotes is None

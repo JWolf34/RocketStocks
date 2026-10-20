@@ -159,10 +159,14 @@ class TestPopularitySnapshot:
         snapshot = PopularitySnapshot(**self.fields(rank_24h_ago=None, mentions_24h_ago=None))
         assert snapshot.rank_24h_ago is None and snapshot.mentions_24h_ago is None
 
-    def test_upvotes_may_be_absent_but_not_negative(self):
+    def test_upvotes_may_be_absent_or_negative(self):
         assert PopularitySnapshot(**self.fields(upvotes=None)).upvotes is None
-        with pytest.raises(ValidationError):
-            PopularitySnapshot(**self.fields(upvotes=-1))
+        assert PopularitySnapshot(**self.fields(upvotes=-1)).upvotes == -1
+
+    def test_prior_rank_is_positive_or_absent(self):
+        for bad in (0, -1):
+            with pytest.raises(ValidationError):
+                PopularitySnapshot(**self.fields(rank_24h_ago=bad))
 
     def test_frozen(self):
         with pytest.raises(ValidationError):

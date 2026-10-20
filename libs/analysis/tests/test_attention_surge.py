@@ -100,6 +100,12 @@ class TestRankJump:
     def test_missing_prior_rank_cannot_jump(self):
         assert fired(snap(rank=5, rank_24h_ago=None)) == ()
 
+    def test_a_new_entrant_without_prior_rank_still_surges_on_mentions(self):
+        event = evaluate_latest(snap(rank=5, mentions=100, rank_24h_ago=None), [])
+        assert event is not None
+        assert event.fired == (SubRule.MENTION_SURGE,)
+        assert event.inputs.rank_gain is None
+
 
 class TestEvent:
     def test_both_rules_recorded_in_stable_order(self):
