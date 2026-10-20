@@ -3,20 +3,16 @@ Schwab token gate, the heartbeat and graceful shutdown. Time is virtual - the
 rig's sleep advances the clock - so hours of schedule run in milliseconds."""
 
 import asyncio
-import json
 from collections.abc import Callable
 from datetime import UTC, datetime, time, timedelta
 from zoneinfo import ZoneInfo
 
-import httpx
 import pytest
 from prometheus_client import CollectorRegistry
 
 from rs_ingest.cron import CronTable, Every, Job, Weekly
 from rs_ingest.daemon import Daemon, TokenGate
 from rs_ingest.metrics import DaemonMetrics
-from rs_observability import OpsSettings, configure_ops
-from rs_observability import ops as ops_module
 from rs_sources.schwab import SchwabAuthError
 
 START = datetime(2026, 10, 19, 12, 7, tzinfo=UTC)
@@ -107,27 +103,6 @@ class Recorder:
         outcome = self._script[min(len(self.started), len(self._script)) - 1]
         if outcome is not None:
             raise outcome
-
-
-@pytest.fixture
-def notices(monkeypatch: pytest.MonkeyPatch) -> list[str]:
-    """Ops notices the code under test sent (de-dup off so every send shows)."""
-    sent: list[str] = []
-
-    def handler(request: httpx.Request) -> httpx.Response:
-        sent.append(json.loads(request.content)["content"])
-        return httpx.Response(204)
-
-    monkeypatch.setattr(ops_module, "_notifier", None)
-    configure_ops(
-        OpsSettings(
-            _env_file=None,
-            rs_ops_webhook_url="https://discord.test/api/webhooks/1/secret",
-            rs_ops_dedup_window_seconds=0.0,
-        ),
-        transport=httpx.MockTransport(handler),
-    )
-    return sent
 
 
 @pytest.fixture

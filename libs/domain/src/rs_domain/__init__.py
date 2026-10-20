@@ -22,6 +22,7 @@ from rs_domain.models import (
 )
 from rs_domain.payloads import (
     AttentionSurgePayload,
+    BenchmarkFact,
     FactUnavailable,
     FilingFact,
     NextEarningsFact,
@@ -40,6 +41,7 @@ __all__ = [
     "BarClosed",
     "BaseRate",
     "BaseRateInput",
+    "BenchmarkFact",
     "ChainSnapshot",
     "Clock",
     "Dataset",

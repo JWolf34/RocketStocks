@@ -12,6 +12,7 @@ import logging
 import signal
 import sys
 
+import httpx
 from pydantic import ValidationError
 
 from rs_domain import SystemClock
@@ -49,6 +50,7 @@ async def run_daemon(settings: IngestSettings) -> int:
         metrics = DaemonMetrics()
         gate = TokenGate(token_store, schwab.reload, clock, metrics)
         cron = CronTable()
+        http = httpx.AsyncClient(timeout=15.0)
         register_jobs(
             cron,
             Dependencies(
@@ -57,6 +59,9 @@ async def run_daemon(settings: IngestSettings) -> int:
                 schwab=schwab,
                 schwab_limiter=RateLimiter(settings.schwab_calls_per_minute),
                 calendar=ExchangeCalendar(),
+                http=http,
+                edgar_user_agent=settings.rs_edgar_user_agent,
+                trip_token_gate=gate.trip,
             ),
         )
         daemon = Daemon(
@@ -67,7 +72,8 @@ async def run_daemon(settings: IngestSettings) -> int:
             failure_threshold=settings.job_failure_threshold,
             token_poll_seconds=settings.token_poll_seconds,
             shutdown_grace_seconds=settings.shutdown_grace_seconds,
-            finalizers=[token_store.drain],  # a refresh scheduled near shutdown must not be lost
+            # A refresh scheduled near shutdown must not be lost.
+            finalizers=[token_store.drain, http.aclose],
         )
         metrics_server, _ = start_metrics_server(settings.metrics_port, metrics.collectors())
         if not await schwab.load():

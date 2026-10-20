@@ -88,6 +88,7 @@ services:
       # The weekly base-rate job runs rs_research as a subprocess under its own
       # read-only role; the job passes this and nothing else of ingest's env.
       RS_RESEARCH_DB_URL: postgresql+psycopg://rs_research:${RS_DB_PASSWORD_RESEARCH}@timescaledb:5432/rocketstocks
+      RS_EDGAR_USER_AGENT: ${RS_EDGAR_USER_AGENT}
     ports:
       - "127.0.0.1:9090:9090"
 

@@ -43,7 +43,18 @@ def python(code: str) -> list[str]:
 
 def test_registered_for_sunday_evening_chicago_without_schwab():
     cron = CronTable()
-    register_jobs(cron, Dependencies(None, None, None, None, None))  # type: ignore[arg-type]
+    # Registration only builds clients; none of these collaborators is touched.
+    deps = Dependencies(
+        session_factory=None,  # type: ignore[arg-type]
+        clock=None,  # type: ignore[arg-type]
+        schwab=None,  # type: ignore[arg-type]
+        schwab_limiter=None,  # type: ignore[arg-type]
+        calendar=None,  # type: ignore[arg-type]
+        http=None,  # type: ignore[arg-type]
+        edgar_user_agent="RocketStocks test@example.com",
+        trip_token_gate=None,  # type: ignore[arg-type]
+    )
+    register_jobs(cron, deps)
 
     [job] = [j for j in cron if j.name == JOB_NAME]
 

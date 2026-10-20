@@ -30,6 +30,8 @@ class IngestSettings(BaseSettings):
     schwab_api_key: str
     schwab_api_secret: SecretStr
     schwab_callback_url: str = "https://127.0.0.1:8182"
+    # EDGAR requires a declared identity (e.g. "RocketStocks you@example.com").
+    rs_edgar_user_agent: str = Field(min_length=1)
 
     # The stream and chain-scan settings below are unused by the daemon until
     # slice 4 reshapes those modules.

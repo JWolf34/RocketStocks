@@ -48,6 +48,18 @@ class VolumeFact(BaseModel):
     intraday: bool
 
 
+class BenchmarkFact(BaseModel):
+    """The benchmark's price at alert time (SPY), so a later study can measure
+    the move against the market from the same instant as `alert_price`."""
+
+    model_config = ConfigDict(frozen=True)
+
+    status: Literal["ok"] = "ok"
+    symbol: str
+    price: float
+    quote_time: UtcDatetime
+
+
 class FilingFact(BaseModel):
     model_config = ConfigDict(frozen=True)
 
@@ -87,6 +99,7 @@ class SurgeFacts(BaseModel):
     volume: Annotated[VolumeFact | FactUnavailable, Field(discriminator="status")]
     recent_filings: Annotated[RecentFilingsFact | FactUnavailable, Field(discriminator="status")]
     next_earnings: Annotated[NextEarningsFact | FactUnavailable, Field(discriminator="status")]
+    benchmark: Annotated[BenchmarkFact | FactUnavailable, Field(discriminator="status")]
 
 
 class AttentionSurgePayload(BaseModel):

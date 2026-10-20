@@ -47,6 +47,11 @@ class DaemonProcess:
             "RS_DB_URL": db_url,
             "SCHWAB_API_KEY": "key",
             "SCHWAB_API_SECRET": "secret",
+            "RS_EDGAR_USER_AGENT": "RocketStocks test@example.com",
+            # The startup poll must never reach the real vendors: a refused proxy fails it fast.
+            "HTTPS_PROXY": "http://127.0.0.1:9",
+            "HTTP_PROXY": "http://127.0.0.1:9",
+            "NO_PROXY": "127.0.0.1,localhost",  # the healthcheck probe still reaches the metrics port
             "RS_INGEST_METRICS_PORT": str(self.port),
             "RS_INGEST_TOKEN_POLL_SECONDS": "0.2",
             "RS_LOG_FORMAT": "json",

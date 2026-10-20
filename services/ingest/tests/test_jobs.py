@@ -2,9 +2,10 @@
 
 from datetime import UTC, datetime, time, timedelta
 
+import httpx
 import pytest
 
-from rs_ingest.cron import CronTable, Daily
+from rs_ingest.cron import CronTable, Daily, Every
 from rs_ingest.jobs import Dependencies, register_jobs
 from rs_ingest.rate_limit import RateLimiter
 from rs_ingest.surge_bars import EASTERN, SurgeBarsError
@@ -34,6 +35,9 @@ class RecordingClient:
         raise RuntimeError("stop after the first call")
 
 
+async def _trip(reason: str) -> None: ...
+
+
 def _deps(session_factory, schwab) -> Dependencies:
     return Dependencies(
         session_factory=session_factory,
@@ -41,6 +45,9 @@ def _deps(session_factory, schwab) -> Dependencies:
         schwab=schwab,
         schwab_limiter=RateLimiter(6000),
         calendar=ExchangeCalendar(),
+        http=httpx.AsyncClient(),
+        edgar_user_agent="RocketStocks test@example.com",
+        trip_token_gate=_trip,
     )
 
 
@@ -53,6 +60,18 @@ async def test_surge_bars_runs_daily_after_the_close_and_once_at_startup(session
     assert job.schedule == Daily(time(17, 30), EASTERN)
     assert job.needs_schwab and job.run_on_start
     assert job.time_limit == timedelta(hours=3)
+
+
+async def test_the_poll_is_a_non_schwab_half_hourly_job_that_catches_up_at_start(session_factory):
+    cron = CronTable()
+    register_jobs(cron, _deps(session_factory, SwappableSession(RecordingClient())))
+
+    job = next(job for job in cron if job.name == "popularity_poll")
+
+    assert job.schedule == Every(30)
+    assert job.needs_schwab is False
+    assert job.run_on_start is True
+    assert job.time_limit < timedelta(minutes=30)
 
 
 async def test_a_run_uses_the_client_current_at_run_time_not_registration_time(session_factory):

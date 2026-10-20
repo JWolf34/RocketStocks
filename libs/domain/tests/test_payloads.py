@@ -6,6 +6,7 @@ from pydantic import ValidationError
 
 from rs_domain import (
     AttentionSurgePayload,
+    BenchmarkFact,
     FactUnavailable,
     FilingFact,
     NextEarningsFact,
@@ -38,12 +39,15 @@ def full_facts() -> SurgeFacts:
             ),
         ),
         next_earnings=NextEarningsFact(date=date(2026, 11, 3), estimated=True, time_of_day="pre_market"),
+        benchmark=BenchmarkFact(symbol="SPY", price=512.25, quote_time=POLLED_AT),
     )
 
 
 def unavailable_facts() -> SurgeFacts:
     reason = FactUnavailable(reason="Schwab token is dead")
-    return SurgeFacts(price_move=reason, volume=reason, recent_filings=reason, next_earnings=reason)
+    return SurgeFacts(
+        price_move=reason, volume=reason, recent_filings=reason, next_earnings=reason, benchmark=reason
+    )
 
 
 def payload(facts: SurgeFacts) -> AttentionSurgePayload:
