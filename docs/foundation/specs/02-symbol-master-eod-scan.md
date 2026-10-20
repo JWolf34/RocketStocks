@@ -59,7 +59,9 @@ Out: see the end of this page.
   Each underlying's rows (payload or tombstone) commit in one transaction, so a resumed scan recomputes the roster with the same query and skips names that already have a row; `symbol_master` never runs inside the window, and the cooling tail derives from earlier cycles, so the roster is the same.
   A separate non-Schwab `eod_scan_close` step runs at 03:00 CT, and at startup for the latest cycle past its deadline, writing a `skipped` tombstone for every roster name with no row; it is idempotent, so the deadline holds even when the scan is not running.
   The scan starts nothing new after the deadline; a name in flight finishes and is written.
-- Dead token mid-scan **(open, D-E)**: recommendation: the scan pauses with the token gate and resumes if the token is renewed before the deadline; anything unscanned at the deadline is `skipped`.
+- Dead token mid-scan (D-E, John 2026-10-20): the scan exits on `SchwabAuthError` like any Schwab job, and the slice-1 gate sends its one ops notice (no scan-specific notice; the token-age DMs already warn before the 7-day expiry).
+  A renewal before 03:00 CT clears the gate and the daemon restarts the scan through D-D's path; otherwise `eod_scan_close` writes the `skipped` tail.
+  `daily_bars` does not resume on renewal; it catches up on its next run.
 - Divergence cross-check, alarms only and never auto-mutation: a 400 rejection on a flagged name alarms on night 1; a flagged name `empty` for 3 sessions alarms; a live chain on an unflagged name is logged.
 - Reader rule, written into `rs_query`: a non-`ok` row means no observation, never zero.
 
