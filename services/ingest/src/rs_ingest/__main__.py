@@ -37,7 +37,7 @@ from rs_observability import (
     start_metrics_server,
 )
 from rs_persistence import NOTIFY_CHANNEL, SchwabTokenStore, build_engine, build_session_factory
-from rs_sources import PandasMarketCalendar
+from rs_sources import ExchangeCalendar
 
 logger = logging.getLogger(__name__)
 
@@ -155,7 +155,7 @@ async def run_session(settings: IngestSettings) -> int:
             logger.error("%s", exc)
             return 1
         clock = SystemClock()
-        calendar = PandasMarketCalendar()
+        calendar = ExchangeCalendar()
         live = LiveEventSource(
             symbol=settings.symbol,
             stream_factory=lambda: StreamClient(client),
