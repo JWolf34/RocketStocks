@@ -10,12 +10,28 @@ from rs_sources.schwab.client import (
     TokenStore,
     build_schwab_client,
 )
+from rs_sources.schwab.market_data import (
+    DailyBar,
+    DailyHistory,
+    Quote,
+    RejectedBar,
+    RejectReason,
+    SchwabMarketData,
+    SchwabResponseError,
+)
 
 __all__ = [
     "DTE_BOUND",
     "ChainFetchError",
+    "DailyBar",
+    "DailyHistory",
+    "Quote",
+    "RejectReason",
+    "RejectedBar",
     "SchwabAuthError",
     "SchwabChainFetch",
+    "SchwabMarketData",
+    "SchwabResponseError",
     "TokenMissingError",
     "TokenStore",
     "build_schwab_client",
