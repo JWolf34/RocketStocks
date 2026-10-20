@@ -89,7 +89,7 @@ class PopularityPoll:
             "popularity poll %s: %d rows fetched, %d stored, %d new surge event(s)",
             polled_at.isoformat(), len(rows), inserted, len(events),
         )
-        await self._write_alerts(events)
+        await self._write_alerts(events, polled_at)
 
     async def _fetch(self) -> list[ApeWisdomRow]:
         """The listing; a failed or empty fetch raises so the daemon logs and counts it."""
@@ -119,33 +119,48 @@ class PopularityPoll:
         return inserted
 
     async def _detect(self, polled_at: datetime) -> list[SurgeEvent]:
-        """Events for this boundary that have no alert yet, judged against the
-        stored snapshots and the alert log's 24h cooldown."""
+        """Events with no alert yet for this boundary and the one before it, judged
+        against the stored snapshots and the alert log's 24h cooldown. The earlier
+        boundary catches up an alert whose write failed or whose run was cut short;
+        it goes first so the cooldown sees it when judging this one."""
+        earlier = polled_at - POLL_INTERVAL
         async with self._session_factory() as session:
-            snapshots = await PopularityRepository(session).list_between(polled_at, polled_at + POLL_INTERVAL)
+            snapshots = await PopularityRepository(session).list_between(earlier, polled_at + POLL_INTERVAL)
             alerts = await AlertRepository(session).list_decisions(
-                start=polled_at - COOLDOWN, end=polled_at + POLL_INTERVAL
+                start=earlier - COOLDOWN, end=polled_at + POLL_INTERVAL
             )
         surge_alerts = [a for a in alerts if a.alert_type == ALERT_TYPE]
         written = {a.dedup_key for a in surge_alerts}
-        prior = [event for a in surge_alerts if a.triggered_at < polled_at and (event := _prior_event(a))]
-        events = (evaluate_latest(snapshot, prior) for snapshot in snapshots)
-        return [event for event in events if event is not None and dedup_key(event) not in written]
+        logged = [(a.triggered_at, event) for a in surge_alerts if (event := _prior_event(a))]
 
-    async def _write_alerts(self, events: Sequence[SurgeEvent]) -> None:
+        events: list[SurgeEvent] = []
+        for boundary in (earlier, polled_at):
+            # Imported history is never caught up: only a live poll can have missed its alert.
+            judged = [
+                s for s in snapshots
+                if s.polled_at == boundary and (boundary == polled_at or s.origin == PopularityOrigin.LIVE)
+            ]
+            # events found for the earlier boundary count as prior for this one
+            prior = [event for at, event in logged if at < boundary] + events
+            found = (evaluate_latest(snapshot, prior) for snapshot in judged)
+            fresh = [event for event in found if event is not None and dedup_key(event) not in written]
+            events.extend(fresh)
+        return events
+
+    async def _write_alerts(self, events: Sequence[SurgeEvent], current: datetime) -> None:
         gatherer = self._new_gatherer()
         gate = asyncio.Semaphore(WRITE_CONCURRENCY)
 
         async def one(event: SurgeEvent) -> None:
             async with gate:
-                await self._write_alert(event, gatherer)
+                await self._write_alert(event, gatherer, current)
 
         results = await asyncio.gather(*(one(event) for event in events), return_exceptions=True)
         failures = [r for r in results if isinstance(r, Exception)]
         if failures:
             raise ExceptionGroup(f"{len(failures)} of {len(events)} surge alert(s) not stored", failures)
 
-    async def _write_alert(self, event: SurgeEvent, gatherer: SurgeFactsGatherer) -> None:
+    async def _write_alert(self, event: SurgeEvent, gatherer: SurgeFactsGatherer, current: datetime) -> None:
         gathered = await gatherer.gather(event.ticker, self._clock.now())
         payload = _payload(event, gathered.facts)
         alert_id = await self._writer.write(
@@ -163,7 +178,8 @@ class PopularityPoll:
         if alert_id is None:
             logger.info("surge alert %s was already stored", dedup_key(event))
         else:
-            logger.info("surge alert %d stored for %s (%s)", alert_id, event.ticker, [r.value for r in event.fired])
+            late = f" late for boundary {event.polled_at.isoformat()}" if event.polled_at < current else ""
+            logger.info("surge alert %d stored%s for %s (%s)", alert_id, late, event.ticker, [r.value for r in event.fired])
 
 
 def _payload(event: SurgeEvent, facts: SurgeFacts) -> AttentionSurgePayload:
