@@ -5,7 +5,8 @@ Register a job with `CronTable.register(Job(...))`. The job's `run` is a
 zero-argument coroutine function; close over whatever it needs. A scheduled
 slot that passes while the daemon is down or the job is still running is
 skipped, never back-filled; set `run_on_start` for a job that must run once at
-startup to catch up (it still runs one time, not once per missed slot).
+startup to catch up (it still runs one time, not once per missed slot). A run
+that exceeds its `timeout` is cancelled and counts as a failure.
 """
 
 from collections.abc import Awaitable, Callable, Iterator
@@ -20,6 +21,11 @@ MINUTES_PER_DAY = 24 * 60
 class Schedule(Protocol):
     def next_after(self, now: datetime) -> datetime:
         """The first fire instant strictly after `now` (tz-aware UTC)."""
+        ...
+
+    @property
+    def default_timeout(self) -> timedelta | None:
+        """The run timeout a job gets when it sets none; None means it must."""
         ...
 
 
@@ -39,6 +45,10 @@ class Every:
         midnight = now.replace(hour=0, minute=0, second=0, microsecond=0)
         step = timedelta(minutes=self.minutes)
         return midnight + ((now - midnight) // step + 1) * step
+
+    @property
+    def default_timeout(self) -> timedelta:
+        return timedelta(minutes=self.minutes)
 
 
 @dataclass(frozen=True)
@@ -72,6 +82,10 @@ class Weekly:
                 return candidate
         raise AssertionError("unreachable: a weekly slot exists in every 8-day window")
 
+    @property
+    def default_timeout(self) -> None:
+        return None  # a weekly job has no natural bound, so the job must choose one
+
 
 @dataclass(frozen=True)
 class Job:
@@ -81,6 +95,23 @@ class Job:
     # Paused while the Schwab token is dead; non-Schwab jobs keep running.
     needs_schwab: bool = False
     run_on_start: bool = False
+    # Defaults to the interval for `Every`; required for `Weekly`.
+    timeout: timedelta | None = None
+
+    def __post_init__(self) -> None:
+        if self.timeout is None:
+            default = self.schedule.default_timeout
+            if default is None:
+                raise ValueError(f"job {self.name!r} needs an explicit timeout")
+            object.__setattr__(self, "timeout", default)
+        elif self.timeout <= timedelta(0):
+            raise ValueError(f"job {self.name!r} timeout must be positive")
+
+    @property
+    def time_limit(self) -> timedelta:
+        """The resolved timeout (`timeout` is None only before __post_init__)."""
+        assert self.timeout is not None
+        return self.timeout
 
 
 class CronTable:

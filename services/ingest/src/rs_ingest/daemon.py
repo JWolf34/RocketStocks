@@ -101,6 +101,7 @@ class _JobState:
     task: asyncio.Task[None] | None = None
     consecutive_failures: int = 0
     alerted: bool = False
+    deadline: datetime | None = None  # when the run in `task` times out
     # A run_on_start job that has not yet had its startup run (it waits out a dead token).
     start_pending: bool = False
 
@@ -147,6 +148,7 @@ class Daemon:
         self._finalizers = finalizers
         self._stop = asyncio.Event()
         self._inflight: set[asyncio.Task[None]] = set()
+        self._timed_out: set[asyncio.Task[None]] = set()
         self._gate_poll: asyncio.Task[None] | None = None
         self._next_gate_poll: datetime | None = None
 
@@ -160,6 +162,7 @@ class Daemon:
             while not self._stop.is_set():
                 now = self._clock.now()
                 self._metrics.loop_last_tick.set(now.timestamp())
+                self._expire_timeouts(states, now)
                 self._dispatch_due(states, now)
                 self._maybe_poll_gate(now)
                 await self._wait(self._time_to_next_event(states))
@@ -178,7 +181,7 @@ class Daemon:
         for state in states:
             if state.start_pending and not self._paused(state.job):
                 state.start_pending = False
-                state.task = self._spawn(self._execute(state), state.job.name)
+                self._start(state, now)
                 continue
             if state.next_fire > now:
                 continue
@@ -192,7 +195,25 @@ class Daemon:
                 logger.info("job %s skipped - Schwab token is dead", name)
                 self._metrics.job_runs.labels(name, Outcome.SKIPPED_TOKEN_DEAD).inc()
             else:
-                state.task = self._spawn(self._execute(state), name)
+                self._start(state, now)
+
+    def _start(self, state: _JobState, now: datetime) -> None:
+        state.deadline = now + state.job.time_limit
+        state.task = self._spawn(self._execute(state), state.job.name)
+
+    def _expire_timeouts(self, states: list[_JobState], now: datetime) -> None:
+        for state in states:
+            task = state.task
+            if task is None or task.done() or state.deadline is None or now < state.deadline:
+                continue
+            name = state.job.name
+            logger.error("job %s exceeded its %s timeout - cancelling", name, state.job.time_limit)
+            self._metrics.job_runs.labels(name, Outcome.TIMEOUT).inc()
+            self._timed_out.add(task)
+            task.cancel()
+            # The slot is free at once; the cancelled run unwinds on its own.
+            state.task = None
+            self._spawn(self._record_failure(state, TimeoutError()), f"{name}-timeout")
 
     def _paused(self, job: Job) -> bool:
         return job.needs_schwab and self._gate.dead
@@ -214,6 +235,8 @@ class Daemon:
         horizon = now + self._tick
         for state in states:
             horizon = min(horizon, state.next_fire)
+            if state.task is not None and not state.task.done() and state.deadline is not None:
+                horizon = min(horizon, state.deadline)
         if self._gate.dead and self._next_gate_poll is not None:
             horizon = min(horizon, self._next_gate_poll)
         return max(0.0, (horizon - now).total_seconds())
@@ -222,6 +245,7 @@ class Daemon:
         task = asyncio.create_task(coro, name=name)
         self._inflight.add(task)
         task.add_done_callback(self._inflight.discard)
+        task.add_done_callback(self._timed_out.discard)
         return task
 
     async def _wait(self, seconds: float) -> None:
@@ -243,6 +267,8 @@ class Daemon:
             try:
                 await job.run()
             except asyncio.CancelledError:
+                if asyncio.current_task() in self._timed_out:
+                    return  # cancelled by the timeout check, which already recorded it
                 raise
             except SchwabAuthError as exc:
                 self._metrics.job_runs.labels(job.name, Outcome.AUTH_ERROR).inc()

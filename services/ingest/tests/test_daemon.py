@@ -180,7 +180,7 @@ class TestDispatch:
         rig = Rig(start=datetime(2026, 3, 2, 14, 0, tzinfo=UTC))
         weekly = Recorder(rig.clock)
         monday_nine = Weekly(0, time(9, 0), ZoneInfo("America/Chicago"))
-        rig.cron.register(Job("research", monday_nine, weekly))
+        rig.cron.register(Job("research", monday_nine, weekly, timeout=timedelta(hours=1)))
         rig.build(tick_seconds=86_400.0)
 
         await rig.run_until(datetime(2026, 3, 9, 15, 0, tzinfo=UTC))
@@ -198,7 +198,7 @@ class TestDispatch:
             starts.append(rig.clock.now())
             await release.wait()
 
-        rig.cron.register(Job("slow", Every(30), slow))
+        rig.cron.register(Job("slow", Every(30), slow, timeout=timedelta(minutes=45)))
         rig.build()
         rig.when(at(13, 10), release.set)
 
@@ -273,6 +273,80 @@ class TestFaultIsolation:
 
         assert len(flaky.started) == 5
         assert notices == []
+
+
+class TestTimeout:
+    async def test_a_hung_run_is_cancelled_and_the_next_slot_runs(self, rig, notices):
+        cancelled: list[datetime] = []
+        starts: list[datetime] = []
+
+        async def hang_once() -> None:
+            starts.append(rig.clock.now())
+            if len(starts) > 1:
+                return
+            try:
+                await asyncio.Future()
+            except asyncio.CancelledError:
+                cancelled.append(rig.clock.now())
+                raise
+
+        rig.cron.register(Job("hang", Every(30), hang_once))  # timeout defaults to 30 minutes
+        rig.build()
+
+        await rig.run_until(at(13, 31))
+
+        assert cancelled == [at(13, 0)]
+        assert starts == [at(12, 30), at(13, 0), at(13, 30)]
+        assert rig.runs("hang", "timeout") == 1
+        assert rig.runs("hang", "success") == 2
+
+    async def test_timeouts_count_toward_the_failure_notice_and_recovery(self, rig, notices):
+        starts: list[datetime] = []
+
+        async def hang_then_recover() -> None:
+            starts.append(rig.clock.now())
+            if len(starts) <= 3:
+                await asyncio.Future()
+
+        rig.cron.register(Job("hang", Every(30), hang_then_recover))
+        rig.build(failure_threshold=3)
+
+        await rig.run_until(at(14, 31))  # timeouts at 13:00, 13:30, 14:00; success at 14:30
+
+        assert len(notices) == 2
+        assert "hang" in notices[0]
+        assert "3 times in a row" in notices[0]
+        assert "recovered" in notices[1]
+
+    async def test_a_run_within_its_timeout_still_skips_the_overlapping_slot(self, rig, notices):
+        starts: list[datetime] = []
+
+        async def hang() -> None:
+            starts.append(rig.clock.now())
+            await asyncio.Future()
+
+        rig.cron.register(Job("hang", Every(30), hang, timeout=timedelta(minutes=45)))
+        rig.build(shutdown_grace_seconds=0.0)
+
+        await rig.run_until(at(13, 31))
+
+        # 13:00 overlaps the 12:30 run (deadline 13:15); 13:30 follows its timeout.
+        assert starts == [at(12, 30), at(13, 30)]
+        assert rig.runs("hang", "skipped_overlap") == 1
+        assert rig.runs("hang", "timeout") == 1
+
+    async def test_the_cancelled_run_does_not_end_the_daemon_or_its_siblings(self, rig, notices):
+        async def hang() -> None:
+            await asyncio.Future()
+
+        good = Recorder(rig.clock)
+        rig.cron.register(Job("hang", Every(30), hang))
+        rig.cron.register(Job("good", Every(30), good))
+        rig.build(shutdown_grace_seconds=0.0)
+
+        await rig.run_until(at(14, 1))
+
+        assert good.started == [at(12, 30), at(13, 0), at(13, 30), at(14, 0)]
 
 
 class TestTokenGate:

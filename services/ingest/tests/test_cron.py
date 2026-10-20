@@ -1,6 +1,6 @@
 """Schedule arithmetic: UTC-aligned intervals and weekly slots in a named zone."""
 
-from datetime import UTC, datetime, time
+from datetime import UTC, datetime, time, timedelta
 from zoneinfo import ZoneInfo
 
 import pytest
@@ -87,6 +87,27 @@ class TestWeekly:
     def test_rejects_an_invalid_weekday(self, weekday):
         with pytest.raises(ValueError, match="weekday"):
             Weekly(weekday, time(9, 0), CHICAGO)
+
+
+class TestJobTimeout:
+    def test_an_interval_job_defaults_to_its_interval(self):
+        assert Job("poll", Every(30), noop).time_limit == timedelta(minutes=30)
+
+    def test_an_explicit_timeout_wins(self):
+        job = Job("poll", Every(30), noop, timeout=timedelta(minutes=5))
+        assert job.time_limit == timedelta(minutes=5)
+
+    def test_a_weekly_job_must_say_how_long_it_may_run(self):
+        weekly = Weekly(MONDAY, time(9, 0), CHICAGO)
+        with pytest.raises(ValueError, match="explicit timeout"):
+            Job("research", weekly, noop)
+        assert Job("research", weekly, noop, timeout=timedelta(hours=1)).time_limit == (
+            timedelta(hours=1)
+        )
+
+    def test_rejects_a_non_positive_timeout(self):
+        with pytest.raises(ValueError, match="positive"):
+            Job("poll", Every(30), noop, timeout=timedelta(0))
 
 
 class TestCronTable:

@@ -12,6 +12,7 @@ from prometheus_client.registry import Collector
 class Outcome(StrEnum):
     SUCCESS = "success"
     FAILURE = "failure"
+    TIMEOUT = "timeout"
     AUTH_ERROR = "auth_error"
     SKIPPED_TOKEN_DEAD = "skipped_token_dead"
     SKIPPED_OVERLAP = "skipped_overlap"
