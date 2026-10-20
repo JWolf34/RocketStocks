@@ -14,6 +14,7 @@ dependencies = [
     "pydantic-settings>=2.6.0",
     "schwab-py>=1.5.1",
     "sqlalchemy[asyncio]>=2",
+    "rs-analysis",
     "rs-domain",
     "rs-observability",
     "rs-persistence",
@@ -25,6 +26,7 @@ requires = ["uv_build>=0.11.26,<0.12.0"]
 build-backend = "uv_build"
 
 [tool.uv.sources]
+rs-analysis = { workspace = true }
 rs-domain = { workspace = true }
 rs-observability = { workspace = true }
 rs-persistence = { workspace = true }

@@ -32,6 +32,7 @@ def test_supervision_defaults_and_env_overrides(monkeypatch):
     settings = IngestSettings(_env_file=None)
     assert settings.job_failure_threshold == 3
     assert settings.token_poll_seconds == 60.0
+    assert settings.schwab_calls_per_minute == 100
     assert settings.shutdown_grace_seconds == 30.0
 
     monkeypatch.setenv("RS_INGEST_JOB_FAILURE_THRESHOLD", "5")

@@ -19,6 +19,7 @@ from rs_ingest.cron import CronTable
 from rs_ingest.daemon import Daemon, TokenGate
 from rs_ingest.jobs import Dependencies, register_jobs
 from rs_ingest.metrics import DaemonMetrics
+from rs_ingest.rate_limit import RateLimiter
 from rs_ingest.schwab_session import SchwabSession
 from rs_ingest.settings import LOGIN_HINT, IngestSettings
 from rs_observability import (
@@ -28,6 +29,7 @@ from rs_observability import (
     start_metrics_server,
 )
 from rs_persistence import SchwabTokenStore, build_engine, build_session_factory
+from rs_sources import ExchangeCalendar
 
 logger = logging.getLogger(__name__)
 
@@ -47,7 +49,16 @@ async def run_daemon(settings: IngestSettings) -> int:
         metrics = DaemonMetrics()
         gate = TokenGate(token_store, schwab.reload, clock, metrics)
         cron = CronTable()
-        register_jobs(cron, Dependencies(session_factory=session_factory, clock=clock, schwab=schwab))
+        register_jobs(
+            cron,
+            Dependencies(
+                session_factory=session_factory,
+                clock=clock,
+                schwab=schwab,
+                schwab_limiter=RateLimiter(settings.schwab_calls_per_minute),
+                calendar=ExchangeCalendar(),
+            ),
+        )
         daemon = Daemon(
             cron,
             gate,

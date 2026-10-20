@@ -50,6 +50,8 @@ class IngestSettings(BaseSettings):
     shutdown_grace_seconds: float = Field(
         30.0, ge=0, validation_alias="RS_INGEST_SHUTDOWN_GRACE_SECONDS"
     )
+    # Shared by every Schwab job through one limiter (Schwab allows ~120 market-data calls/min).
+    schwab_calls_per_minute: int = Field(100, ge=1, validation_alias="RS_INGEST_SCHWAB_CALLS_PER_MINUTE")
     # The Bus-2 NOTIFY channel is intentionally NOT here: it is a pinned wire
     # contract shared with the bot (ADR-0005), not a per-deployment tunable —
     # rs_persistence.NOTIFY_CHANNEL is its single source of truth.
