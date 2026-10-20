@@ -42,7 +42,8 @@ def translate_auth_errors() -> Iterator[None]:
     try:
         yield
     except OAuthError as exc:
-        raise SchwabAuthError(f"Schwab refresh token rejected: {exc}") from exc
+        # The code only: the description is vendor free text that lands in logs and ops notices.
+        raise SchwabAuthError(f"Schwab refresh token rejected: {exc.error}") from exc
 
 
 async def build_schwab_client(
