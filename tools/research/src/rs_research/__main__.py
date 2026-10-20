@@ -15,28 +15,33 @@ from collections.abc import Awaitable, Callable
 
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from rs_domain import Clock, SystemClock
+from rs_domain import Clock, SystemClock, TradingCalendar
 from rs_observability import configure_logging
 from rs_persistence import build_engine, build_session_factory
 from rs_research import attention_surge
+from rs_sources.calendar import ExchangeCalendar
 
 logger = logging.getLogger(__name__)
 
 DSN_VARIABLE = "RS_RESEARCH_DB_URL"
 
-Study = Callable[[async_sessionmaker[AsyncSession], Clock], Awaitable[object]]
+Study = Callable[[async_sessionmaker[AsyncSession], Clock, TradingCalendar], Awaitable[object]]
 STUDIES: dict[str, Study] = {attention_surge.ALERT_TYPE: attention_surge.run}
 
 
-async def _run(study: Study, dsn: str, clock: Clock) -> None:
+async def _run(study: Study, dsn: str, clock: Clock, calendar: TradingCalendar) -> None:
     engine = build_engine(dsn)
     try:
-        await study(build_session_factory(engine), clock)
+        await study(build_session_factory(engine), clock, calendar)
     finally:
         await engine.dispose()
 
 
-def main(argv: list[str] | None = None, clock: Clock | None = None) -> int:
+def main(
+    argv: list[str] | None = None,
+    clock: Clock | None = None,
+    calendar: TradingCalendar | None = None,
+) -> int:
     parser = argparse.ArgumentParser(prog="rs_research", description=__doc__)
     sub = parser.add_subparsers(dest="action", required=True)
     event_study = sub.add_parser("event-study", help="measure a signal and write its base rates")
@@ -49,7 +54,7 @@ def main(argv: list[str] | None = None, clock: Clock | None = None) -> int:
         print(f"{DSN_VARIABLE} is not set", file=sys.stderr)
         return 2
     try:
-        asyncio.run(_run(STUDIES[args.study], dsn, clock or SystemClock()))
+        asyncio.run(_run(STUDIES[args.study], dsn, clock or SystemClock(), calendar or ExchangeCalendar()))
     except Exception:
         logger.exception("event study %s failed", args.study)
         return 1

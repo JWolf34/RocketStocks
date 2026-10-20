@@ -10,9 +10,13 @@ rule version:
   Exits are the closes 1, 5 and 10 sessions after the last session that closed
   before the alert, so for an intraday alert the first horizon is that same day's
   close and for an after-hours or weekend alert the next session's. SPY is
-  measured from that previous close too, so its move before the alert is
-  subtracted from the excess: an approximation, since only daily bars are stored.
-  Alerts without a price are counted in `n_unpriced`.
+  entered at the quote the alert carried (its `benchmark` fact), the same instant
+  as the alert price. An alert without one falls back to SPY's previous close, so
+  its move before the alert is subtracted from the excess: an approximation the
+  caveat counts. Alerts without a price are counted in `n_unpriced`.
+
+Sessions come from the exchange calendar, not from SPY's stored bars: a missing
+SPY or ticker bar on a session is a missing exit, never a shifted horizon.
 
 Metrics (see rs_research.returns): returns at 1, 5 and 10 trading days, excess
 versus SPY over the same window, hit rate = share of events with a strictly
@@ -30,7 +34,18 @@ import pandas as pd
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from rs_analysis.attention_surge import RULE_VERSION, SurgeEvent, replay
-from rs_domain import BaseRate, BaseRateInput, Clock, PopularitySnapshot, StoredDailyBar
+from pydantic import ValidationError
+
+from rs_domain import (
+    Alert,
+    BaseRate,
+    BaseRateInput,
+    BenchmarkFact,
+    Clock,
+    PopularitySnapshot,
+    StoredDailyBar,
+    TradingCalendar,
+)
 from rs_persistence import BaseRateRepository
 from rs_query import AlertRecord, Page, daily_bars, popularity_between, recent_alerts
 from rs_research.returns import (
@@ -108,17 +123,24 @@ def _bar_windows(*groups: list[tuple[str, datetime]]) -> dict[str, tuple[date, d
     return {s: (lo - LOOKBACK, hi + LOOKAHEAD) for s, (lo, hi) in windows.items()}
 
 
-def _caveat(summary: Summary, total: int, what: str) -> str:
-    return (
+def _caveat(summary: Summary, total: int, what: str, benchmark_note: bool) -> str:
+    caveat = (
         f"{summary.n_unpriced} of {total} {what} could not be priced and are excluded; "
         "they are mostly delisted or renamed tickers, so results lean toward survivors. "
         f"{summary.n_missing_exit} matured outcomes had no exit price and are excluded too."
     )
+    if benchmark_note:
+        caveat += (
+            f" {summary.n_approx_benchmark} of {summary.n} measured {what} carried no "
+            "alert-time SPY quote, so SPY is measured from the previous close for them."
+        )
+    return caveat
 
 
 def _rate(
     kind: BaseRateInput, summary: Summary, total: int, what: str, computed_at: datetime
 ) -> BaseRate:
+    benchmark_note = kind is BaseRateInput.LOGGED
     return BaseRate(
         alert_type=ALERT_TYPE,
         rule_version=RULE_VERSION,
@@ -132,7 +154,7 @@ def _rate(
         median_excess_1d=summary.median_excess[1],
         median_excess_5d=summary.median_excess[5],
         median_excess_10d=summary.median_excess[10],
-        survivorship_caveat=_caveat(summary, total, what),
+        survivorship_caveat=_caveat(summary, total, what, benchmark_note),
     )
 
 
@@ -161,6 +183,17 @@ def reconstructed_summary(
     return measure(symbols, ref, price, sessions, spy_close, closes), len(symbols)
 
 
+def _benchmark_price(alert: Alert) -> float:
+    """SPY's price in the alert's benchmark fact, or NaN when it has none."""
+    facts = alert.payload.get("facts")
+    raw = facts.get("benchmark") if isinstance(facts, dict) else None
+    try:
+        fact = BenchmarkFact.model_validate(raw)
+    except ValidationError:
+        return np.nan
+    return fact.price if fact.symbol == BENCHMARK and fact.price > 0 else np.nan
+
+
 def logged_summary(
     alerts: list[AlertRecord], sessions: np.ndarray, spy_close: np.ndarray, closes: pd.Series
 ) -> Summary:
@@ -174,7 +207,10 @@ def logged_summary(
     # No bars at all for the symbol: nothing to measure the exit against.
     barred = set(closes.index.get_level_values("symbol"))
     price = np.where([a.alert.symbol not in barred for a in alerts], np.nan, price)
-    return measure([a.alert.symbol for a in alerts], ref, price, sessions, spy_close, closes)
+    spy_entry = np.array([_benchmark_price(a.alert) for a in alerts], dtype=float)
+    return measure(
+        [a.alert.symbol for a in alerts], ref, price, sessions, spy_close, closes, spy_entry
+    )
 
 
 @dataclass(frozen=True)
@@ -184,8 +220,23 @@ class StudyResult:
     alerts: int
 
 
+def _calendar_sessions(
+    calendar: TradingCalendar, spy: pd.Series
+) -> tuple[np.ndarray, np.ndarray]:
+    """Exchange sessions from the first to the last stored SPY bar, and SPY's
+    close on each (NaN where its bar is missing). A session after the last
+    stored bar is not matured, so it is left out rather than called missing."""
+    first, last = (date.fromordinal(int(spy.index[i])) for i in (0, -1))
+    try:
+        days = calendar.sessions_in_range(first, last)
+    except ValueError as error:
+        raise StudyError(f"SPY bars {first} to {last} are outside the trading calendar: {error}") from error
+    sessions = np.array([d.toordinal() for d in days], dtype=np.int64)
+    return sessions, spy.reindex(sessions).to_numpy(dtype=float)
+
+
 async def compute(
-    session_factory: async_sessionmaker[AsyncSession], clock: Clock
+    session_factory: async_sessionmaker[AsyncSession], clock: Clock, calendar: TradingCalendar
 ) -> StudyResult:
     """Read everything, measure both inputs and return the rows to write."""
     now = clock.now()
@@ -215,8 +266,7 @@ async def compute(
     if BENCHMARK not in closes.index.get_level_values("symbol"):
         raise StudyError(f"no {BENCHMARK} daily bars stored; the surge-bars job has not fetched the benchmark")
     spy = closes.xs(BENCHMARK, level="symbol").sort_index()
-    sessions = spy.index.to_numpy(dtype=np.int64)
-    spy_close = spy.to_numpy(dtype=float)
+    sessions, spy_close = _calendar_sessions(calendar, spy)
 
     rates: list[BaseRate] = []
     if events:
@@ -232,10 +282,12 @@ async def compute(
     return StudyResult(rates, len(events), len(alerts))
 
 
-async def run(session_factory: async_sessionmaker[AsyncSession], clock: Clock) -> StudyResult:
+async def run(
+    session_factory: async_sessionmaker[AsyncSession], clock: Clock, calendar: TradingCalendar
+) -> StudyResult:
     """Compute and append the base-rate rows (a rerun appends new rows; readers
     take the latest). Nothing is written when there is nothing to measure."""
-    result = await compute(session_factory, clock)
+    result = await compute(session_factory, clock, calendar)
     if not result.rates:
         logger.warning(
             "attention_surge event study measured nothing (%d events, %d alerts)",

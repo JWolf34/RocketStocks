@@ -2,12 +2,13 @@
 
 Definitions, shared by every study and quoted by the bot's label:
 
-- A horizon of `h` is `h` benchmark (SPY) sessions after the reference
-  session; the SPY session list is the trading calendar.
+- A horizon of `h` is `h` exchange-calendar sessions after the reference
+  session, never `h` stored SPY bars, so a missing bar cannot shift it.
 - Return is `close(exit) / entry_price - 1`; excess is the symbol's return minus
-  SPY's return from the reference session close to the exit close. A horizon
-  with no bar for the symbol on the exit session, or past the last stored
-  session, has no outcome for that event.
+  SPY's return from the SPY entry (by default the reference session close) to
+  the exit close. A horizon with no bar for the symbol or for SPY on the exit
+  session has no outcome for that event; one past the last session is not
+  matured yet.
 - Hit rate is the share of events with strictly positive excess return.
   Medians are of the excess return, as a fraction (0.01 = one percentage point).
 - N counts events with an entry price. Each horizon's hit rate and median use
@@ -45,6 +46,8 @@ class Summary:
     n_missing_exit: int
     hit_rate: dict[int, float | None]
     median_excess: dict[int, float | None]
+    # Measured events whose SPY entry fell back to the reference close.
+    n_approx_benchmark: int = 0
 
 
 def session_date(instant: datetime) -> date:
@@ -77,12 +80,15 @@ def excess_returns(
     sessions: np.ndarray,
     spy_close: np.ndarray,
     closes: pd.Series,
+    spy_entry: np.ndarray,
 ) -> pd.DataFrame:
     """Excess return per event (rows) and horizon (columns), NaN where there is
     no outcome. `ref_idx` indexes `sessions`/`spy_close` (the reference
-    session); `closes` is a symbol close Series indexed by (symbol, date ordinal)."""
+    session; `spy_close` is NaN on a session with no SPY bar); `spy_entry` is
+    SPY's price at entry; `closes` is a symbol close Series indexed by
+    (symbol, date ordinal)."""
     out: dict[int, np.ndarray] = {}
-    spy_ref = spy_close[ref_idx]
+    spy_ref = spy_entry
     for horizon in HORIZONS:
         exit_idx = ref_idx + horizon
         reached = exit_idx < len(sessions)
@@ -95,7 +101,9 @@ def excess_returns(
     return pd.DataFrame(out)
 
 
-def summarize(excess: pd.DataFrame, n_unpriced: int, n_missing_exit: int) -> Summary:
+def summarize(
+    excess: pd.DataFrame, n_unpriced: int, n_missing_exit: int, n_approx_benchmark: int = 0
+) -> Summary:
     hit_rate: dict[int, float | None] = {}
     median: dict[int, float | None] = {}
     for horizon in HORIZONS:
@@ -108,6 +116,7 @@ def summarize(excess: pd.DataFrame, n_unpriced: int, n_missing_exit: int) -> Sum
         n_missing_exit=n_missing_exit,
         hit_rate=hit_rate,
         median_excess=median,
+        n_approx_benchmark=n_approx_benchmark,
     )
 
 
@@ -118,19 +127,29 @@ def measure(
     sessions: np.ndarray,
     spy_close: np.ndarray,
     closes: pd.Series,
+    spy_entry: np.ndarray | None = None,
 ) -> Summary:
     """Summarise events by symbol, reference session index and entry price (NaN
-    when the event cannot be entered). Unpriced events are counted, then
-    excluded from every statistic."""
+    when the event cannot be entered). `spy_entry` overrides SPY's entry price
+    per event; NaN there (or no array) falls back to SPY's close on the
+    reference session. Unpriced events are counted, then excluded from every
+    statistic."""
     priced = np.isfinite(entry_price) & (entry_price > 0) & (ref_idx >= 0)
     kept = [s for s, ok in zip(symbols, priced, strict=True) if ok]
-    excess = excess_returns(
-        kept, ref_idx[priced], entry_price[priced], sessions, spy_close, closes
-    )
     ref = ref_idx[priced]
+    override = np.full(len(symbols), np.nan) if spy_entry is None else spy_entry
+    override = override[priced]
+    approximate = ~(np.isfinite(override) & (override > 0))
+    spy_start = np.where(approximate, spy_close[ref], override)
+    excess = excess_returns(kept, ref, entry_price[priced], sessions, spy_close, closes, spy_start)
     missing = sum(
         int(((ref + horizon < len(sessions)) & excess[horizon].isna().to_numpy()).sum())
         for horizon in HORIZONS
     )
-    return summarize(excess, n_unpriced=int((~priced).sum()), n_missing_exit=missing)
+    return summarize(
+        excess,
+        n_unpriced=int((~priced).sum()),
+        n_missing_exit=missing,
+        n_approx_benchmark=int(approximate.sum()),
+    )
 
