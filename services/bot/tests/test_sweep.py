@@ -1,22 +1,33 @@
 """SweepWorker: the single posting path (spec pins #3/#4). The sweep drains
 list_unposted in id order; per row render → send → mark_posted → commit. Send
-failures skip-and-continue with uncapped retry each sweep (pin #5b). The wake
+failures skip-and-continue and are retried each sweep up to a cap, then the
+alert is abandoned with one ops notice. The wake
 event triggers an off-interval sweep; NOTIFY itself never posts.
 
 Sender is faked at the send-protocol seam — these tests never touch Discord;
 the cursor semantics run against the real ephemeral Postgres (ADR-0023 tier)."""
 
 import asyncio
+import json
 import logging
 from datetime import UTC, datetime
 
+import httpx
 import pytest
 
 from rs_bot.counters import new_counters
 from rs_bot.sweep import SweepWorker
-from rs_domain import Alert
+from rs_domain import (
+    Alert,
+    AttentionSurgePayload,
+    BaseRate,
+    BaseRateInput,
+    FactUnavailable,
+    SurgeFacts,
+)
+from rs_observability import OpsSettings, configure_ops
 from rs_observability.testing import captured_json_stream, json_records
-from rs_persistence import AlertRepository
+from rs_persistence import AlertRepository, BaseRateRepository
 
 
 def _alert(symbol: str) -> Alert:
@@ -84,7 +95,9 @@ async def test_sweep_drains_backlog_in_id_order_and_stamps(session_factory):
 async def test_poison_send_skips_row_and_retries_next_sweep(session_factory):
     ids = await _insert(session_factory, _alert("AAA"), _alert("BAD"), _alert("CCC"))
     sender = FakeSender(fail_when=lambda e: "BAD" in e.title)
-    worker = SweepWorker(session_factory, sender, sweep_seconds=60, counters=new_counters())
+    worker = SweepWorker(
+        session_factory, sender, sweep_seconds=60, retry_gap_seconds=0, counters=new_counters()
+    )
 
     await worker.sweep()
 
@@ -95,13 +108,152 @@ async def test_poison_send_skips_row_and_retries_next_sweep(session_factory):
     ]
     assert worker.counters["post_failures_total"] == 1
     assert worker.counters["discord_posts_total"] == 2
-    # ...and stays on the cursor for the next sweep (uncapped retry).
+    # ...and stays on the cursor for the next sweep (retried while under the cap).
     assert await _unposted_ids(session_factory) == [ids[1]]
 
     sender.fail_when = None
     await worker.sweep()
     assert sender.sent[-1].title == "BAD · volume_threshold"
     assert await _unposted_ids(session_factory) == []
+
+
+@pytest.fixture
+def ops_messages():
+    messages: list[str] = []
+
+    def webhook(request: httpx.Request) -> httpx.Response:
+        messages.append(json.loads(request.content)["content"])
+        return httpx.Response(204)
+
+    settings = OpsSettings(_env_file=None, rs_ops_webhook_url="https://discord.test/api/webhooks/1/t")
+    configure_ops(settings, transport=httpx.MockTransport(webhook))
+    yield messages
+    configure_ops(OpsSettings(_env_file=None))
+
+
+async def test_deterministic_failure_stops_at_the_cap_with_one_ops_notice(
+    session_factory, ops_messages
+):
+    ids = await _insert(session_factory, _alert("BAD"), _alert("CCC"))
+    sender = FakeSender(fail_when=lambda e: "BAD" in e.title)
+    worker = SweepWorker(
+        session_factory,
+        sender,
+        sweep_seconds=60,
+        max_attempts=3,
+        retry_gap_seconds=0,
+        counters=new_counters(),
+    )
+
+    for _ in range(6):
+        await worker.sweep()
+
+    assert worker.counters["post_failures_total"] == 3  # not retried past the cap
+    assert worker.counters["posts_abandoned_total"] == 1
+    assert [e.title for e in sender.sent] == ["CCC · volume_threshold"]  # healthy row behind posts
+    assert len(ops_messages) == 1
+    assert f"#{ids[0]}" in ops_messages[0] and "BAD" in ops_messages[0]
+    # Out of the sweep, but never marked posted.
+    assert await _unposted_ids(session_factory) == [ids[0]]
+    async with session_factory() as s:
+        assert await AlertRepository(s).list_unposted(max_attempts=3) == []
+
+
+async def test_a_failed_row_is_not_retried_inside_the_retry_gap(session_factory):
+    (alert_id,) = await _insert(session_factory, _alert("BAD"))
+    sender = FakeSender(fail_when=lambda e: True)
+    worker = SweepWorker(session_factory, sender, sweep_seconds=60, counters=new_counters())
+
+    for _ in range(4):  # a NOTIFY burst: sweeps back to back
+        await worker.sweep()
+
+    assert worker.counters["post_failures_total"] == 1
+    assert await _unposted_ids(session_factory) == [alert_id]
+
+
+async def test_last_attempt_posts_the_plain_embed(session_factory):
+    await _insert(session_factory, _surge_alert())
+    shapes = []
+
+    class Rejecting(FakeSender):
+        async def send(self, embed):
+            shapes.append(bool(embed.fields))
+            if embed.fields:
+                raise RuntimeError("typed embed rejected")
+            return await super().send(embed)
+
+    worker = SweepWorker(
+        session_factory,
+        Rejecting(),
+        sweep_seconds=60,
+        max_attempts=2,
+        retry_gap_seconds=0,
+        counters=new_counters(),
+    )
+    await worker.sweep()
+    await worker.sweep()
+
+    assert shapes == [True, False]
+    assert await _unposted_ids(session_factory) == []
+
+
+def _surge_alert() -> Alert:
+    unavailable = FactUnavailable(reason="test")
+    payload = AttentionSurgePayload(
+        rule_version="1",
+        polled_at=datetime(2026, 7, 6, 14, 30, tzinfo=UTC),
+        fired=("rank_jump",),
+        rank=5,
+        mentions=100,
+        rank_24h_ago=80,
+        mentions_24h_ago=None,
+        rank_gain=75,
+        mention_ratio=None,
+        mention_multiplier=5.0,
+        mention_min_prior=15,
+        facts=SurgeFacts(
+            price_move=unavailable,
+            volume=unavailable,
+            recent_filings=unavailable,
+            next_earnings=unavailable,
+            benchmark=unavailable,
+        ),
+    )
+    return Alert(
+        symbol="GME",
+        alert_type="attention_surge",
+        triggered_at=datetime(2026, 7, 6, 14, 30, tzinfo=UTC),
+        payload=payload.model_dump(mode="json"),
+        rule_version="1",
+    )
+
+
+async def test_surge_alert_is_posted_with_the_current_base_rate(session_factory):
+    await _insert(session_factory, _surge_alert())
+    sender = FakeSender()
+    worker = SweepWorker(session_factory, sender, sweep_seconds=60, counters=new_counters())
+
+    await worker.sweep()
+    (before,) = sender.sent
+    assert "No base rate has been measured" in {f.name: f.value for f in before.fields}["Base rate"]
+
+    async with session_factory() as s:
+        await BaseRateRepository(s).insert(
+            BaseRate(
+                alert_type="attention_surge",
+                rule_version="1",
+                computed_at=datetime(2026, 7, 5, tzinfo=UTC),
+                input=BaseRateInput.RECONSTRUCTED,
+                n=77,
+                survivorship_caveat="caveat",
+            )
+        )
+        await s.commit()
+    await _insert(session_factory, _surge_alert().model_copy(update={"dedup_key": "again"}))
+    await worker.sweep()
+
+    after = {f.name: f.value for f in sender.sent[-1].fields}
+    assert "N=77" in after["Base rate"]
 
 
 async def test_run_sweeps_on_wake_without_waiting_interval(session_factory):
