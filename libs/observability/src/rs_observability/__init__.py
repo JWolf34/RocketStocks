@@ -8,13 +8,17 @@ from rs_observability.metrics import (
     LabeledDictCounterCollector,
     start_metrics_server,
 )
+from rs_observability.ops import OpsSettings, configure_ops, notify_ops
 
 __all__ = [
     "CallableGaugeCollector",
     "DictCounterCollector",
     "LabeledDictCounterCollector",
+    "OpsSettings",
     "configure_logging",
+    "configure_ops",
     "install_excepthooks",
+    "notify_ops",
     "start_metrics_server",
     "unit_of_work",
 ]

@@ -20,9 +20,9 @@ PHASES = [(1.0, 30), (0.5, 30), (0.25, 60)]  # (seconds between requests, count)
 
 
 def in_rth() -> bool:
-    from rs_sources import PandasMarketCalendar
+    from rs_sources import ExchangeCalendar
 
-    cal = PandasMarketCalendar()
+    cal = ExchangeCalendar()
     today = utc_now().date()
     return cal.is_session(today) and cal.session_open(today) <= utc_now() < cal.session_close(today)
 

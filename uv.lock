@@ -2178,6 +2178,16 @@ provides-extras = ["test"]
 name = "rs-analysis"
 version = "0.1.0"
 source = { editable = "libs/analysis" }
+dependencies = [
+    { name = "pydantic" },
+    { name = "rs-domain" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "pydantic", specifier = ">=2.13.4" },
+    { name = "rs-domain", editable = "libs/domain" },
+]
 
 [[package]]
 name = "rs-bot"
@@ -2258,13 +2268,21 @@ name = "rs-observability"
 version = "0.1.0"
 source = { editable = "libs/observability" }
 dependencies = [
+    { name = "httpx" },
     { name = "prometheus-client" },
+    { name = "pydantic" },
+    { name = "pydantic-settings" },
+    { name = "rs-domain" },
     { name = "structlog" },
 ]
 
 [package.metadata]
 requires-dist = [
+    { name = "httpx", specifier = ">=0.28" },
     { name = "prometheus-client" },
+    { name = "pydantic", specifier = ">=2.13.4" },
+    { name = "pydantic-settings", specifier = ">=2.6.0" },
+    { name = "rs-domain", editable = "libs/domain" },
     { name = "structlog" },
 ]
 
@@ -2317,15 +2335,15 @@ name = "rs-sources"
 version = "0.1.0"
 source = { editable = "libs/sources" }
 dependencies = [
+    { name = "exchange-calendars" },
     { name = "httpx" },
-    { name = "pandas-market-calendars" },
     { name = "rs-domain" },
 ]
 
 [package.metadata]
 requires-dist = [
-    { name = "httpx", specifier = ">=0.28" },
-    { name = "pandas-market-calendars", specifier = ">=5.4.0" },
+    { name = "exchange-calendars", specifier = ">=4.13.2" },
+    { name = "httpx", specifier = ">=0.28.1" },
     { name = "rs-domain", editable = "libs/domain" },
 ]
 

@@ -7,8 +7,8 @@ authors = [
 ]
 requires-python = ">=3.13"
 dependencies = [
-    "pandas-market-calendars>=5.4.0",
-    "httpx>=0.28",
+    "exchange-calendars>=4.13.2",
+    "httpx>=0.28.1",
     "rs-domain",
 ]
 
