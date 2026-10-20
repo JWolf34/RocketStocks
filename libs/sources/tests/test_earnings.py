@@ -1,7 +1,7 @@
 """Next-earnings resolution: hand-written fakes at the two source seams, plus one
 composition test through the real adapters."""
 
-from datetime import date, datetime, timezone
+from datetime import UTC, date, datetime
 
 import httpx
 import pytest
@@ -11,7 +11,7 @@ from rs_sources.edgar import EdgarClient, Filing8K
 from rs_sources.errors import SourceError
 from rs_sources.nasdaq import EarningsTime, NasdaqEarningsCalendar, ScheduledEarnings
 
-AS_OF = datetime(2026, 10, 19, 15, 0, tzinfo=timezone.utc)
+AS_OF = datetime(2026, 10, 19, 15, 0, tzinfo=UTC)
 
 
 class FakeNasdaq:
@@ -40,7 +40,7 @@ def eight_k(filed, items=("2.02", "9.01"), form="8-K"):
     return Filing8K(
         accession_number=f"acc-{filed}-{form}",
         filing_date=filed,
-        accepted_at=datetime.combine(filed, datetime.min.time(), tzinfo=timezone.utc),
+        accepted_at=datetime.combine(filed, datetime.min.time(), tzinfo=UTC),
         form=form,
         items=items,
         url="https://example.invalid/doc",
@@ -61,7 +61,7 @@ async def test_scan_starts_on_the_eastern_date():
     lookup = EarningsLookup(nasdaq, FakeFilings(), scan_weekdays=12)
 
     # 02:00 UTC on the 20th is still the evening of the 19th in New York.
-    await lookup.next_earnings("AAA", datetime(2026, 10, 20, 2, 0, tzinfo=timezone.utc))
+    await lookup.next_earnings("AAA", datetime(2026, 10, 20, 2, 0, tzinfo=UTC))
 
     assert nasdaq.calls == [("AAA", date(2026, 10, 19), 12)]
 
@@ -126,7 +126,7 @@ async def test_estimate_already_in_the_past_is_unknown():
 async def test_estimate_is_calendar_quarter_arithmetic_with_month_end_clamping(filed, expected):
     lookup = EarningsLookup(FakeNasdaq(error=True), FakeFilings([eight_k(filed)]))
 
-    result = await lookup.next_earnings("AAA", datetime.combine(filed, datetime.min.time(), tzinfo=timezone.utc))
+    result = await lookup.next_earnings("AAA", datetime.combine(filed, datetime.min.time(), tzinfo=UTC))
 
     assert result == NextEarnings(date=expected, estimated=True)
 

@@ -33,7 +33,10 @@ NOT_ATTR='(^|[^[:alnum:]_.])'
 PATTERN="datetime\.now\(|datetime\.utcnow\(|datetime\.today\(|date\.today\("
 PATTERN+="|${NOT_ATTR}time\.(time|monotonic)(_ns)?\("
 PATTERN+="|from[[:space:]]+time[[:space:]]+import[[:space:]].*(time|monotonic)"
-PATTERN+="|(^|[[:space:],(])(datetime|date|time|monotonic)[[:space:]]+as[[:space:]]"
+# Alias forms: on an import line, or alone on a parenthesised-import line
+# (prose like "date as of" must not trip it).
+PATTERN+="|^[[:space:]]*(import|from)[[:space:]].*(datetime|date|time|monotonic)[[:space:]]+as[[:space:]]"
+PATTERN+="|^[[:space:]]+(datetime|date|time|monotonic)[[:space:]]+as[[:space:]]+[A-Za-z_]+,?[[:space:]]*$"
 
 set +e
 matches=$(grep -rnE "$PATTERN" "${SCOPES[@]}" --include='*.py')

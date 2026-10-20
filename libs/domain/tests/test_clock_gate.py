@@ -54,6 +54,7 @@ def test_allowed_spellings_pass(tree):
         "import time\n"
         "started = time.perf_counter()\n"
         "t = datetime(2026, 7, 6, tzinfo=UTC).time()\n"
+        '"""The next earnings date as of the given day; time as of now."""\n'
         "clock.now()\n"
     )
     result = _run(tree)
