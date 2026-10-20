@@ -205,6 +205,10 @@ Done when a real surge posts.
 This is criterion 8.
 
 1. Leave the stack running with a valid token (section 3), the imported history (section 5) and bars loaded.
+   After the import, measure the base rate once rather than waiting for the Sunday job:
+   ```
+   $COMPOSE exec ingest python -m rs_research event-study attention_surge
+   ```
 2. Find the alert:
    ```
    psql -c "SELECT id, symbol, rule_version, alert_price, quote_time, triggered_at, posted_at, post_attempts FROM alerts WHERE alert_type = 'attention_surge' ORDER BY id DESC LIMIT 5"
@@ -243,11 +247,12 @@ Goal: bars pause, one ops notice goes out, polling continues, and recovery works
    schwab-py stores `{"creation_timestamp": ..., "token": {...}}`; check the shape first with `psql -c "SELECT jsonb_object_keys(token_data) FROM schwab_tokens"`.
    ```
    psql -c "UPDATE schwab_tokens SET token_data = jsonb_set(jsonb_set(token_data, '{token,refresh_token}', '\"expired\"'), '{token,expires_at}', '0')"
+   psql -c "DELETE FROM daily_bar WHERE symbol = 'SPY' AND session_date = (SELECT max(session_date) FROM daily_bar WHERE symbol = 'SPY')"
    $COMPOSE restart ingest
    ```
    The restart makes ingest reload the broken token; the zero `expires_at` forces a refresh on the first Schwab call.
-3. Wait for the next Schwab call.
-   The surge-bars job runs at startup, so this usually takes under a minute; otherwise it comes with the 17:30 Eastern run.
+   Deleting SPY's newest bar guarantees that call: the surge-bars job runs at startup but calls Schwab only for missing bars, and it refetches the deleted bar once the token is back.
+3. Wait for the Schwab call, which comes within a minute of the restart.
    Expect, in `$COMPOSE logs ingest`: `Schwab token dead - pausing Schwab jobs`.
    Expect in the ops channel: exactly one notice, "Schwab token is dead ...".
    Expect `schwab_token_dead 1` on the metrics port and `skipped_token_dead` outcomes for the Schwab jobs.
