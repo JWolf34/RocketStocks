@@ -1,14 +1,16 @@
 """S008 step-2: chain-response normalization + client-side window/cap filtering.
 
-Field mapping is bound against the committed excerpt fixture (the spec's binding
-artifact); window/cap semantics against synthetic chains; and — when the
-gitignored full-day captures are present locally — the whole pipeline against
-the measured real books (SPY 2,654 rows / 13 expiries at ±10%/≤30DTE, QQQ
+Field mapping is bound against a hand-built full-shape synthetic chain (every
+Schwab field present, invented values; no vendor data is committed);
+window/cap semantics against synthetic chains; and, when the gitignored
+full-day captures are present locally, the whole pipeline against the
+measured real books (SPY 2,654 rows / 13 expiries at ±10%/≤30DTE, QQQ
 2,600 / 13, cap 4,000 non-binding on every name)."""
 
 import gzip
 import json
 from datetime import date, datetime, timedelta, timezone
+from functools import partial
 from pathlib import Path
 
 import pytest
@@ -16,11 +18,26 @@ import pytest
 from rs_ingest.chains import normalize_chain
 
 REPO_ROOT = Path(__file__).parents[3]
-EXCERPT = REPO_ROOT / "docs/v2/specs/fixtures/chains/excerpt-spy-chain-2026-07-06.json"
 CAPTURES = REPO_ROOT / "data/chain-snapshots/2026-07-06"
 
 WINDOW = 0.10
 CAP = 4000
+
+# Overrides that give contract() the SYN full-shape payload used by synthetic_payload.
+SYN_SHAPE = {
+    "description": "SYN 07/06/2026 100.00 C",
+    "optionRoot": "SYN",
+    "expirationDate": "2026-07-06T20:00:00.000+00:00",
+    "daysToExpiration": 0,
+    "bidSize": 64,
+    "askSize": 62,
+    "bidAskSize": "64X62",
+    "lastSize": 2,
+    "gamma": 0.006,
+    "theta": -0.008,
+    "vega": 0.014,
+    "rho": 0.001,
+}
 
 needs_captures = pytest.mark.skipif(
     not CAPTURES.exists(),
@@ -29,8 +46,39 @@ needs_captures = pytest.mark.skipif(
 
 
 @pytest.fixture(scope="module")
-def excerpt_payload():
-    return json.loads(EXCERPT.read_text())
+def synthetic_payload():
+    """A synthetic SYN chain at 100.00: one expiry, two strikes per side, full
+    Schwab field shape. Deliberately built out of strike order."""
+    c = partial(contract, expiry_ms=1783382400000, **SYN_SHAPE)
+    calls = {
+        "2026-07-06:0": {
+            "99.0": [c("SYN   260706C00099000", 99.0, "CALL", bid=1.65, ask=1.79, last=1.77,
+                       totalVolume=2782, openInterest=8345, volatility=24.769, delta=0.959)],
+            "98.0": [c("SYN   260706C00098000", 98.0, "CALL", bid=2.68, ask=2.83, last=2.88,
+                       totalVolume=5805, openInterest=5190, volatility=22.867, delta=0.955)],
+        }
+    }
+    puts = {
+        "2026-07-06:0": {
+            "101.0": [c("SYN   260706P00101000", 101.0, "PUT", bid=1.4, ask=1.5, last=1.45,
+                        totalVolume=1200, openInterest=900, volatility=21.5, delta=-0.5)],
+            "102.0": [c("SYN   260706P00102000", 102.0, "PUT", bid=2.2, ask=2.3, last=2.25,
+                        totalVolume=800, openInterest=700, volatility=20.1, delta=-0.6)],
+        }
+    }
+    return {
+        "symbol": "SYN",
+        "status": "SUCCESS",
+        "strategy": "SINGLE",
+        "isDelayed": False,
+        "isIndex": False,
+        "underlyingPrice": 100.0,
+        "volatility": 29.0,
+        "numberOfContracts": 4,
+        "isChainTruncated": False,
+        "callExpDateMap": calls,
+        "putExpDateMap": puts,
+    }
 
 
 def contract(
@@ -40,19 +88,33 @@ def contract(
     expiry_ms=1784332800000,
     **overrides,
 ):
+    """A contract carrying the full Schwab field set (including fields the
+    normalizer ignores), with invented values. Keyword overrides replace any
+    field."""
+    bid = overrides.get("bid", 1.0)
+    ask = overrides.get("ask", 1.2)
+    last = overrides.get("last", 1.1)
     fields = {
         "putCall": put_call,
         "symbol": symbol,
-        "bid": 1.0,
-        "ask": 1.2,
-        "last": 1.1,
-        "mark": 1.1,
+        "description": f"XYZ 07/17/2026 {strike:.2f} {put_call[0]}",
+        "exchangeName": "OPR",
+        "bid": bid,
+        "ask": ask,
+        "last": last,
+        "mark": round((bid + ask) / 2, 2),
         "bidSize": 10,
         "askSize": 12,
+        "bidAskSize": "10X12",
         "lastSize": 1,
+        "highPrice": ask + 0.2,
+        "lowPrice": bid - 0.2,
+        "openPrice": bid,
+        "closePrice": bid,
         "totalVolume": 50,
         "tradeTimeInLong": 1783353653132,
         "quoteTimeInLong": 1783353656792,
+        "netChange": 0.5,
         "volatility": 25.0,
         "delta": 0.5,
         "gamma": 0.01,
@@ -60,11 +122,35 @@ def contract(
         "vega": 0.1,
         "rho": 0.03,
         "openInterest": 500,
+        "timeValue": 0.04,
+        "theoreticalOptionValue": last,
+        "theoreticalVolatility": 29.0,
+        "optionDeliverablesList": [
+            {"symbol": "XYZ", "assetType": "STOCK", "deliverableUnits": 100.0, "currencyType": None}
+        ],
         "strikePrice": strike,
+        "expirationDate": "2026-07-17T20:00:00.000+00:00",
+        "daysToExpiration": 11,
         "expirationType": "W",
         "lastTradingDay": expiry_ms,
         "multiplier": 100.0,
+        "settlementType": "P",
+        "deliverableNote": "100 XYZ",
+        "percentChange": 1.0,
+        "markChange": 0.5,
+        "markPercentChange": 1.0,
+        "intrinsicValue": 0.0,
+        "extrinsicValue": 0.0,
+        "optionRoot": "XYZ",
+        "exerciseType": "A",
+        "high52Week": 9.0,
+        "low52Week": 1.0,
+        "breakEven": 100.0,
+        "ssid": 1,
+        "inTheMoney": True,
+        "mini": False,
         "nonStandard": False,
+        "pennyPilot": True,
     }
     fields.update(overrides)
     return fields
@@ -89,22 +175,22 @@ def chain_payload(underlying_price, expiry_map):
 
 
 class TestFieldMapping:
-    def test_excerpt_maps_every_bound_field(self, excerpt_payload):
-        result = normalize_chain(excerpt_payload, window=WINDOW, row_cap=CAP)
-        assert result.underlying_price == 750.73
+    def test_full_shape_maps_every_bound_field(self, synthetic_payload):
+        result = normalize_chain(synthetic_payload, window=WINDOW, row_cap=CAP)
+        assert result.underlying_price == 100.0
         assert result.skipped_contracts == 0
         assert result.dropped_by_cap == 0
         assert len(result.rows) == 4
 
-        q = next(r for r in result.rows if r.option_symbol == "SPY   260706C00743000")
+        q = next(r for r in result.rows if r.option_symbol == "SYN   260706C00099000")
         assert q.expiry == date(2026, 7, 6)
-        assert q.strike == 743.0
+        assert q.strike == 99.0
         assert q.put_call == "C"
         assert q.quote_time == datetime.fromtimestamp(1783353656792 / 1000, tz=timezone.utc)
-        assert q.bid == 7.65
-        assert q.ask == 7.8
-        assert q.last == 7.77
-        assert q.mark == 7.73
+        assert q.bid == 1.65
+        assert q.ask == 1.79
+        assert q.last == 1.77
+        assert q.mark == 1.72
         assert q.bid_size == 64
         assert q.ask_size == 62
         assert q.last_size == 2
@@ -117,17 +203,17 @@ class TestFieldMapping:
         assert q.theta == -0.008
         assert q.vega == 0.014
         assert q.rho == 0.001
-        assert q.underlying_price == 750.73
+        assert q.underlying_price == 100.0
         assert q.multiplier == 100
         assert q.expiration_type == "W"
         assert q.non_standard is False
 
-    def test_excerpt_covers_both_sides(self, excerpt_payload):
-        rows = normalize_chain(excerpt_payload, window=WINDOW, row_cap=CAP).rows
+    def test_full_shape_covers_both_sides(self, synthetic_payload):
+        rows = normalize_chain(synthetic_payload, window=WINDOW, row_cap=CAP).rows
         assert {r.put_call for r in rows} == {"C", "P"}
 
-    def test_rows_ordered_by_expiry_strike_side(self, excerpt_payload):
-        rows = normalize_chain(excerpt_payload, window=WINDOW, row_cap=CAP).rows
+    def test_rows_ordered_by_expiry_strike_side(self, synthetic_payload):
+        rows = normalize_chain(synthetic_payload, window=WINDOW, row_cap=CAP).rows
         keys = [(r.expiry, r.strike, r.put_call) for r in rows]
         assert keys == sorted(keys)
 
@@ -142,7 +228,7 @@ class TestFieldMapping:
     def test_minus_999_greeks_are_null(self):
         # Schwab's documented "no value" sentinel for vol/greeks; a stored -999
         # would poison every aggregate over REAL columns. Never observed in the
-        # 2026-07-06 full-day captures, so this is a defensive mapping only.
+        # real full-day captures, so this is a defensive mapping only.
         payload = chain_payload(
             100.0,
             {"2026-07-17": [contract(volatility=-999.0, delta=-999.0, rho=-999.0)]},

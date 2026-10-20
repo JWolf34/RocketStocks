@@ -25,5 +25,5 @@ v1 accesses the DB through a single `Postgres` CRUD class with `%s` placeholders
 
 ## See also
 
-- [architecture-brief.md § Persistence](../architecture-brief.md#persistence)
+- [architecture.md § Storage](../../foundation/architecture.md#storage)
 - [ADR-0003: Postgres-only + Timescale + cache](./0003-postgres-only-timescale-cache.md)

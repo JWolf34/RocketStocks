@@ -1,10 +1,11 @@
 # Phase-0 Schwab spikes — Monday runbook
 
-Throwaway code (roadmap pre-flight). The deliverables are the two **findings docs**
-committed under `docs/v2/specs/fixtures/` — inputs to S003's spec review (Schwab-client
-question) and the Phase-2 detection design session. **All raw recordings stay local**
-under the gitignored `data/` tree (stream JSONL in `data/spike-recordings/`, chain
-snapshots in `data/chain-snapshots/`) — never committed. These scripts are deleted once
+Throwaway code (roadmap pre-flight). The outputs are two **findings docs**
+written under `data/spike-findings/` (gitignored, local-only, never committed). **All raw
+recordings stay local** under the same gitignored `data/` tree (stream JSONL in
+`data/spike-recordings/`, chain snapshots in `data/chain-snapshots/`) - never committed.
+Measured facts worth keeping are summarized by hand in
+`docs/foundation/research/vendor-stack.md` ("Measured Schwab facts"). These scripts are deleted once
 the Phase-2 session confirms no re-runs are needed.
 
 ## One-time setup (before Monday)
@@ -49,9 +50,10 @@ while the session is open). Passive 429s during the day are unlikely: the chain
 cadence is ~120 requests/hour against a documented ~120/minute limit, which is
 exactly why the probe exists.
 
-Then commit the two findings docs under `docs/v2/specs/fixtures/` on this branch.
-Raw data (`data/spike-recordings/`, `data/chain-snapshots/`) lives on this machine
-only — never in git.
+Then summarize anything durable in `docs/foundation/research/vendor-stack.md`
+("Measured Schwab facts"). Findings and raw data (`data/spike-findings/`,
+`data/spike-recordings/`, `data/chain-snapshots/`) live on this machine
+only - never in git (vendor-data rule).
 
 ## Dry runs (no market, no credentials)
 

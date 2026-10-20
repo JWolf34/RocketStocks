@@ -28,5 +28,4 @@ v2 user-keyed state (watchlists, paper trades, alert subscriptions, channel conf
 
 ## See also
 
-- [architecture-brief.md § Auth + identity](../architecture-brief.md#auth--identity)
-- [ADR-0012: Serving API auth](./0012-serving-api-auth-keys-plus-rate-limits.md)
+- [architecture.md § Processes](../../foundation/architecture.md#processes)

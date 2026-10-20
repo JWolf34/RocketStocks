@@ -12,7 +12,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from _common import FIXTURES_DIR, SPIKE_DATA_DIR, build_client, today_tag
+from _common import FINDINGS_DIR, SPIKE_DATA_DIR, build_client, today_tag
 
 BUCKET_MS = 5 * 60 * 1000
 
@@ -134,7 +134,7 @@ def main() -> int:
             print(datetime.fromtimestamp(bucket / 1000, tz=timezone.utc).strftime("%H:%M"), candle)
         return 0
     rest_candles = fetch_rest_candles(args.date)
-    compare(stream_candles, rest_candles, FIXTURES_DIR / "streaming" / f"comparison-{args.date}.md")
+    compare(stream_candles, rest_candles, FINDINGS_DIR / "streaming" / f"comparison-{args.date}.md")
     return 0
 
 

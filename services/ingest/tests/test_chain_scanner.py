@@ -1,12 +1,9 @@
 """S008 step-3: deterministic ChainScanner tests — fake clock, fake transport,
-fake store; no ambient time, no network, no DB. The real stale event (SPY
-17:48 -> 17:49 -> 17:50, 2026-07-06) replays from the committed fixtures."""
+fake store; no ambient time, no network, no DB. A synthetic stale-response
+sequence replays from builders."""
 
 import asyncio
-import gzip
-import json
 from datetime import date, datetime, timedelta, timezone
-from pathlib import Path
 
 from rs_domain import Dataset, SourceStatus
 from rs_ingest.chain_scanner import ChainScanner
@@ -14,7 +11,6 @@ from rs_ingest.chain_scanner import ChainScanner
 UTC = timezone.utc
 DAY = date(2026, 7, 6)
 OPEN = datetime(2026, 7, 6, 13, 30, tzinfo=UTC)
-FIXTURES = Path(__file__).parent / "fixtures" / "chains"
 
 
 class FakeClock:
@@ -384,31 +380,33 @@ class TestPartial:
         assert len(snapshot.rows) == 2
 
 
-class TestRealStalePair:
-    """The observed 2026-07-06 event, replayed from the committed truncated
-    captures: 17:49's HTTP-200 response is a coherent chain whose quotes are
-    ~14 minutes old; 17:50 recovers."""
+class TestStalePairReplay:
+    """A synthetic stale-response sequence: the second HTTP-200 response is a
+    coherent chain whose quotes are ~14 minutes older than the first; the third
+    recovers. Invented numbers, not vendor data."""
 
     @staticmethod
-    def load(hhmm):
-        with gzip.open(FIXTURES / f"spy-{hhmm}.json.gz") as f:
-            return json.load(f)
+    def chain(median_at: datetime) -> dict:
+        # three contracts quoted around the median; row count is what matters
+        return payload(quote_offsets_s=(-1.0, 0.0, 1.0), base=median_at)
 
-    async def test_stale_guard_replays_the_observed_event(self):
-        clock = FakeClock(datetime(2026, 7, 6, 17, 47, 30, tzinfo=UTC))
+    async def test_stale_guard_ok_stale_ok_sequence(self):
+        clock = FakeClock(datetime(2026, 7, 6, 15, 2, 30, tzinfo=UTC))
         store = FakeStore()
-        fetch = ScriptedFetch(
-            clock, {"SPY": [self.load("1748"), self.load("1749"), self.load("1750")]}
-        )
-        # Close at 18:02:30 leaves exactly three boundaries (17:50/17:55/18:00).
-        # The captures were taken at 17:48/17:49/17:50 — the cycle grid is
-        # irrelevant to the guard; what matters is response order.
+        medians_in = [
+            datetime(2026, 7, 6, 15, 3, 42, 250000, tzinfo=UTC),
+            datetime(2026, 7, 6, 14, 49, 42, 125000, tzinfo=UTC),
+            datetime(2026, 7, 6, 15, 5, 44, 500000, tzinfo=UTC),
+        ]
+        fetch = ScriptedFetch(clock, {"SYN": [self.chain(m) for m in medians_in]})
+        # Close at 15:17:30 leaves exactly three boundaries (15:05/15:10/15:15);
+        # the guard only cares about response order, not the cycle grid.
         scanner = make_scanner(
             clock,
             store,
             fetch,
-            close=datetime(2026, 7, 6, 18, 2, 30, tzinfo=UTC),
-            universe=("SPY",),
+            close=datetime(2026, 7, 6, 15, 17, 30, tzinfo=UTC),
+            universe=("SYN",),
         )
         await scanner.run()
 
@@ -417,11 +415,8 @@ class TestRealStalePair:
             SourceStatus.STALE,
             SourceStatus.OK,
         ]
-        medians = [s.median_quote_time for s in store.snapshots]
-        assert medians[0] == datetime(2026, 7, 6, 17, 48, 57, 537000, tzinfo=UTC)
-        assert medians[1] == datetime(2026, 7, 6, 17, 34, 57, 364000, tzinfo=UTC)
-        assert medians[2] == datetime(2026, 7, 6, 17, 50, 59, 789000, tzinfo=UTC)
-        assert all(len(s.rows) == 2654 for s in store.snapshots)
+        assert [s.median_quote_time for s in store.snapshots] == medians_in
+        assert all(len(s.rows) == 3 for s in store.snapshots)
 
 
 class TestObservability:

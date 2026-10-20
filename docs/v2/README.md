@@ -1,11 +1,6 @@
-# RocketStocks v2 Design Docs
+# docs/v2
 
-Start here: **[architecture-brief.md](./architecture-brief.md)** — the single entry point for the v2 architecture.
+The v2 plan now lives in [docs/foundation/](../foundation/README.md): charter, architecture, roadmap and slice specs.
 
-Per-decision rationale lives in **[adr/](./adr/)** (Architecture Decision Records).
-
-How it gets built: **[roadmap.md](./roadmap.md)** — phases, slices, burn-in gate criteria (strategy locked in ADR-0028).
-
-Per-slice work specs live in **[specs/](./specs/)** (format: [spec-template.md](./spec-template.md)).
-
-> Historical note: text in **superseded** ADRs may cite a "design ledger" (entries `L1`–`L20`) — pre-ADR working notes from the 2026-06-05 data-plane review that are **not in the repo**. The ADRs themselves are the authority; do not search for the ledger.
+This folder keeps only the surviving ADRs in [adr/](adr/).
+The pre-2026-10 plan (architecture brief, roadmap, phase plans, specs S001-S008 and the archived ADRs) is preserved under git tag `v2-plan-archive-2026-10`, per [Disposition of existing docs, ADRs and open maps](https://github.com/JWolf34/RocketStocks/issues/54).

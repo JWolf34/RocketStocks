@@ -24,7 +24,7 @@ from datetime import date
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from _common import FIXTURES_DIR
+from _common import FINDINGS_DIR
 from chain_diff import contracts, load
 from chain_spike import SNAP_ROOT
 
@@ -153,7 +153,7 @@ def main() -> int:
     p.add_argument("--early", help="earlier session, YYYY-MM-DD")
     p.add_argument("--late", help="later session, YYYY-MM-DD")
     p.add_argument("--dry-run", action="store_true")
-    p.add_argument("--stdout", action="store_true", help="print the report instead of writing the committed findings md")
+    p.add_argument("--stdout", action="store_true", help="print the report instead of writing the findings md under data/spike-findings/")
     a = p.parse_args()
     if a.dry_run:
         return run_dry()
@@ -163,7 +163,7 @@ def main() -> int:
     if a.stdout:
         print(report)
         return 0
-    out = FIXTURES_DIR / "chains" / f"oi-change-{a.early}-to-{a.late}.md"
+    out = FINDINGS_DIR / "chains" / f"oi-change-{a.early}-to-{a.late}.md"
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(report)
     print(f"findings → {out}")

@@ -3,8 +3,9 @@
 For each ticker: walk consecutive snapshots, per-contract deltas of
 totalVolume (cumulative daily → delta ≈ 5-min flow), openInterest (expected
 static intraday — measure whether that holds), and bid/ask drift. Emits
-docs/v2/specs/fixtures/chains/findings-<date>.md (the only committed artifact;
-raw snapshots stay local under data/chain-snapshots/).
+data/spike-findings/chains/findings-<date>.md. Both the findings and the raw snapshots
+stay gitignored-local (vendor-data rule); measured facts worth keeping are
+summarized by hand in docs/foundation/research/vendor-stack.md ("Measured Schwab facts").
 
     .venv/bin/python scripts/spikes/chain_diff.py [--date YYYY-MM-DD]
     .venv/bin/python scripts/spikes/chain_diff.py --dry-run   # synthetic two-snapshot diff
@@ -18,7 +19,7 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from _common import FIXTURES_DIR, today_tag
+from _common import FINDINGS_DIR, today_tag
 from chain_spike import SNAP_ROOT, write_snapshot
 
 
@@ -101,7 +102,7 @@ def emit(day_tag: str, per_ticker: dict[str, list]) -> Path:
             f"- negative volume deltas: {neg} {'(cumulative-volume assumption violated — investigate)' if neg else '(cumulative assumption holds)'}",
             "",
         ]
-    out = FIXTURES_DIR / "chains" / f"findings-{day_tag}.md"
+    out = FINDINGS_DIR / "chains" / f"findings-{day_tag}.md"
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text("\n".join(lines))
     return out

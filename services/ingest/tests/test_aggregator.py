@@ -1,18 +1,7 @@
-"""BarAggregator unit tests: synthetic tick sequences + a real-recording excerpt.
+"""BarAggregator unit tests over synthetic tick sequences (invented numbers;
+no vendor recordings are committed)."""
 
-The excerpt fixture (spy-level1-excerpt-2026-07-06.jsonl) is a slimmed slice of
-the 2026-07-06 live SPY session, 14:57-15:10:30 UTC: a mid-bucket start (the
-14:55 bucket must be discarded as a gap), two full buckets, and a partial tail
-(no close trigger, so no 15:10 bar). Expected values were cross-checked against
-scripts/spikes/stream_compare.py's candle builder on the same slice: 15:05 is
-bit-identical; 15:00 differs by one boundary print (open 750.28 vs 750.27,
-volume -0.03%) because the spike buckets by message timestamp while the spec
-rule buckets by TRADE_TIME_MILLIS.
-"""
-
-import json
 from datetime import datetime, timedelta, timezone
-from pathlib import Path
 
 from rs_ingest.aggregator import BUCKET_MS, BarAggregator
 
@@ -20,8 +9,6 @@ SESSION_OPEN = datetime(2026, 7, 6, 13, 30, tzinfo=timezone.utc)
 SESSION_CLOSE = datetime(2026, 7, 6, 20, 0, tzinfo=timezone.utc)
 OPEN_MS = int(SESSION_OPEN.timestamp() * 1000)
 CLOSE_MS = int(SESSION_CLOSE.timestamp() * 1000)
-
-FIXTURE = Path(__file__).parent / "fixtures" / "spy-level1-excerpt-2026-07-06.jsonl"
 
 
 def make_aggregator(**kwargs) -> BarAggregator:
@@ -270,21 +257,45 @@ def test_other_symbols_ignored():
     assert bars[0].volume == 10_000
 
 
-def test_real_recording_excerpt():
-    """Replay the committed live-session slice; pin the exact bars it builds."""
+def test_synthetic_multi_bucket_stream():
+    """A hand-built, clearly synthetic tick stream (invented prices, not market
+    data) through several buckets: a mid-bucket start (that bucket is a gap),
+    two full buckets with hand-derived OHLCV, and a partial tail (no close
+    trigger, so no bar)."""
+    # (offset into the bucket in ms, price, cumulative day volume)
+    script = {
+        3: [(120_000, 750.0, 8_000_000), (150_000, 750.5, 8_050_000)],  # partial start
+        4: [
+            (1_000, 750.2, 8_060_000),
+            (60_000, 751.0, 8_100_000),
+            (120_000, 749.8, 8_130_000),
+            (250_000, 750.6, 8_170_000),
+        ],
+        5: [
+            (500, 750.7, 8_180_000),
+            (100_000, 752.0, 8_230_000),
+            (200_000, 750.4, 8_260_000),
+            (299_000, 751.2, 8_300_000),
+        ],
+        6: [(1_000, 751.3, 8_310_000), (30_000, 751.1, 8_330_000)],  # partial tail
+    }
     agg = make_aggregator()
     bars = []
-    with FIXTURE.open() as fh:
-        for line in fh:
-            bars.extend(agg.process_message(json.loads(line)["msg"]))
+    for bucket, ticks in script.items():
+        for offset, price, cumvol in ticks:
+            t = OPEN_MS + bucket * BUCKET_MS + offset
+            bars.extend(agg.process_message(msg(t, item(price=price, vol=cumvol, tt=t))))
 
-    # Mid-bucket start: the 14:55 bucket is a gap, not a partial bar.
+    # Mid-bucket start: bucket 3 is a gap, not a partial bar.
     assert agg.counters["buckets_gap_no_baseline"] == 1
     assert agg.counters["ticks_late_dropped"] == 0
 
-    assert [b.bucket.strftime("%H:%M") for b in bars] == ["15:00", "15:05"]
-    b1500, b1505 = bars
-    assert (b1500.open, b1500.high, b1500.low, b1500.close) == (750.28, 750.406, 749.95, 750.18)
-    assert b1500.volume == 407_860
-    assert (b1505.open, b1505.high, b1505.low, b1505.close) == (750.14, 750.3, 749.995, 750.23)
-    assert b1505.volume == 304_880  # bit-identical to the spike candle builder
+    assert [b.bucket for b in bars] == [
+        SESSION_OPEN + timedelta(minutes=20),
+        SESSION_OPEN + timedelta(minutes=25),
+    ]
+    b4, b5 = bars
+    assert (b4.open, b4.high, b4.low, b4.close) == (750.2, 751.0, 749.8, 750.6)
+    assert b4.volume == 8_170_000 - 8_050_000
+    assert (b5.open, b5.high, b5.low, b5.close) == (750.7, 752.0, 750.4, 751.2)
+    assert b5.volume == 8_300_000 - 8_170_000

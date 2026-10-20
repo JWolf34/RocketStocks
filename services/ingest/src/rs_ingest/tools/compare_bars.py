@@ -27,7 +27,7 @@ from rs_persistence import BarRepository, SchwabTokenStore, build_engine, build_
 logger = logging.getLogger(__name__)
 
 # The Phase-0 stream-vs-REST spike measured a 0.17 max OHLC deviation on
-# 2026-07-06 (docs/v2/specs/fixtures/streaming/comparison-2026-07-06.md); 0.25
+# 2026-07-06 (see docs/foundation/research/vendor-stack.md, Measured Schwab facts); 0.25
 # gates with headroom above that observed noise floor.
 PRICE_TOLERANCE = 0.25
 PRICE_FIELDS = ("open", "high", "low", "close")

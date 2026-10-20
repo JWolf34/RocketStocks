@@ -36,7 +36,7 @@ COLUMNS = {
 
 
 def make_quote(**overrides) -> OptionQuote:
-    # Values shaped like the excerpt fixture (SPY 2026-07-06) — full payload so
+    # Values shaped like a full Schwab chain payload - full payload so
     # the round-trip exercises every nullable column with a real value.
     fields = dict(
         option_symbol="SPY   260717C00560000",

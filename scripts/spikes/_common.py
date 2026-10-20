@@ -16,8 +16,10 @@ from dotenv import load_dotenv
 REPO_ROOT = Path(__file__).resolve().parents[2]
 TOKEN_PATH = REPO_ROOT / "data" / "schwab-spike-token.json"
 CALLBACK_URL = "https://127.0.0.1:8182"
-# Committed findings docs only — raw recordings never go here (they stay in data/).
-FIXTURES_DIR = REPO_ROOT / "docs" / "v2" / "specs" / "fixtures"
+# Findings md written by the analysis scripts. Gitignored-local like the raw
+# recordings (vendor-data rule); keep durable facts by hand in
+# docs/foundation/research/vendor-stack.md ("Measured Schwab facts").
+FINDINGS_DIR = REPO_ROOT / "data" / "spike-findings"
 SPIKE_DATA_DIR = REPO_ROOT / "data" / "spike-recordings"
 
 

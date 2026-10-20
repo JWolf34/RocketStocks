@@ -28,5 +28,5 @@ log="data/spike-recordings/post-close-batch-$(date +%Y-%m-%d).log"
   $PY scripts/spikes/burst_probe.py
   echo "=== batch complete ($(date -u +%H:%M:%SZ)) ==="
 } 2>&1 | tee "$log"
-echo "outputs: docs/v2/specs/fixtures/ (two md files) + data/spike-recordings/ (burst probe log)"
+echo "outputs: docs/foundation/research/ (see vendor-stack.md) + data/spike-recordings/ (burst probe log)"
 echo "full log: $log"

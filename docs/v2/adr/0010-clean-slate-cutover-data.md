@@ -1,8 +1,10 @@
 # ADR-0010: Clean-slate data at cutover
 
-**Status**: Accepted
-**Date locked**: 2026-05-27
+**Status**: Accepted (amended 2026-10-19)
+**Date locked**: 2026-05-27 · **Amended**: 2026-10-19
 **Decision-maker**: John Wolf
+
+> **Amended 2026-10-19 (foundation re-plan, [#54](https://github.com/JWolf34/RocketStocks/issues/54)):** v1 popularity history is now imported to seed base rates ([#49](https://github.com/JWolf34/RocketStocks/issues/49)); daily bars, watchlists and user state are still not migrated.
 
 ## Context
 
@@ -10,22 +12,25 @@ v2 redesigns the schema freely (ADR-0004). The question is what, if anything, to
 
 ## Decision
 
-**Clean slate at cutover. Nothing is migrated, including ApeWisdom popularity history.**
+**Clean slate at cutover, with one exception: v1's ApeWisdom popularity history is imported to seed base rates** *(amended 2026-10-19)*.
 
 - Users recreate their watchlists after cutover.
+- Daily bars are rebought from Schwab, not migrated.
 - No user state is preserved.
-- Popularity-surge detection accepts a **cold-start window** after cutover: it produces no surge signals until enough fresh ApeWisdom polls accumulate to compute the 24h-ago baseline.
-- Historical data needed for backtest (ADR-0011) is rebuilt via REST backfill where the upstream APIs sell history (Schwab price history, etc.), not migrated from v1.
+- The imported popularity history (via the `backfill` tool) removes the popularity cold-start window and seeds base rates; see architecture.md.
+- Historical data needed for research is rebuilt via REST backfill where the upstream APIs sell history (Schwab price history, etc.), not migrated from v1.
 
 ## Consequences
 
-- Simplest possible cutover — no migration script, no row-count/sample-query verification harness, no schema-translation layer.
+- Simple cutover - one import for popularity history, no other migration script and no schema-translation layer.
 - The new schema owes nothing to v1's shape.
-- Cost: a popularity-surge blackout window immediately post-cutover (the most user-facing alert type starts cold). Bounded — it self-heals as polls accumulate.
-- Cost: backtest windows start short and grow as live data accumulates (accepted in ADR-0011).
+- Cost: research windows other than popularity start short and grow as live data accumulates.
+
+## Change log
+
+- 2026-10-19 - amended (foundation re-plan): popularity history imported; see the note above.
 
 ## See also
 
-- [architecture-brief.md § Out of scope for v2](../architecture-brief.md#out-of-scope-for-v2)
 - [ADR-0004: Persistence layer shape](./0004-persistence-layer-shape.md)
-- [ADR-0011: Backtest in v2](./0011-backtest-in-v2-eda-deferred.md)
+- [architecture.md § Module layout](../../foundation/architecture.md#module-layout) (the `backfill` tool)
