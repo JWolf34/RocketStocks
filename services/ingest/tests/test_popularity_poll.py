@@ -7,7 +7,7 @@ from typing import get_args, get_type_hints
 from zoneinfo import ZoneInfo
 
 import pytest
-from sqlalchemy import func, select
+from sqlalchemy import delete, func, insert, select
 
 from rs_analysis.attention_surge import RULE_VERSION, SubRule
 from rs_domain import (
@@ -257,6 +257,87 @@ class TestIdempotency:
 
         assert await healthy.snapshots() == 2
         assert [a.symbol for a in await healthy.alerts()] == ["SURGER"]
+
+
+T1 = T0 + timedelta(minutes=30)
+
+
+class TestCatchUp:
+    async def _miss_the_first_boundary(self, session_factory, calendar, sleeps, make_flaky) -> Rig:
+        broken = Rig(session_factory, calendar, sleeps, listing(), writer_factory=make_flaky(failures=99))
+        with pytest.raises(ExceptionGroup):
+            await broken.poll.run()
+        assert await broken.alerts() == []
+        return Rig(session_factory, calendar, sleeps, listing())
+
+    async def test_an_alert_whose_write_failed_is_written_at_the_next_boundary_once(
+        self, session_factory, calendar, sleeps, make_flaky, notices
+    ):
+        healthy = await self._miss_the_first_boundary(session_factory, calendar, sleeps, make_flaky)
+
+        await healthy.run_at(T1 + timedelta(seconds=20))
+        await healthy.run_at(T1 + timedelta(minutes=30, seconds=20))
+
+        [alert] = await healthy.alerts()
+        assert alert.triggered_at == T0
+        assert alert.dedup_key == f"attention_surge:{RULE_VERSION}:SURGER:20261019T1400Z"
+        assert AttentionSurgePayload.model_validate(alert.payload).polled_at == T0
+
+    async def test_a_ticker_caught_up_and_still_surging_alerts_once(
+        self, session_factory, calendar, sleeps, make_flaky, notices
+    ):
+        healthy = await self._miss_the_first_boundary(session_factory, calendar, sleeps, make_flaky)
+
+        await healthy.run_at(T1 + timedelta(seconds=20))
+
+        assert await healthy.snapshots() == 4  # SURGER qualifies at both boundaries
+        assert [a.triggered_at for a in await healthy.alerts()] == [T0]
+
+    async def test_a_ticker_that_only_surges_at_the_current_boundary_alerts_at_it(
+        self, session_factory, calendar, sleeps, notices
+    ):
+        healthy = Rig(session_factory, calendar, sleeps, [row("STEADY", 41, 25, mentions_24h_ago=24)])
+        await healthy.run_at(T0 + timedelta(seconds=20))
+        healthy.apewisdom.rows = listing()
+
+        await healthy.run_at(T1 + timedelta(seconds=20))
+
+        assert [(a.symbol, a.triggered_at) for a in await healthy.alerts()] == [("SURGER", T1)]
+
+    async def test_a_normal_run_with_nothing_missed_writes_nothing_extra(self, rig):
+        await rig.run_at(T0 + timedelta(seconds=20))
+        lookups = len(rig.quotes.symbols)
+        rig.apewisdom.rows = [row("STEADY", 41, 25, mentions_24h_ago=24)]
+
+        await rig.run_at(T1 + timedelta(seconds=20))
+
+        assert len(await rig.alerts()) == 1
+        assert len(rig.quotes.symbols) == lookups
+
+    async def test_snapshots_older_than_one_boundary_are_never_judged(self, rig):
+        await rig.run_at(T0 + timedelta(seconds=20))
+        async with rig.session_factory() as session:
+            await session.execute(delete(AlertRow))
+            await session.commit()
+
+        await rig.run_at(T0 + timedelta(hours=1, seconds=20))
+
+        assert [a.triggered_at for a in await rig.alerts()] == [T0 + timedelta(hours=1)]
+
+    async def test_imported_history_at_the_previous_boundary_is_not_caught_up(self, rig):
+        async with rig.session_factory() as session:
+            await session.execute(
+                insert(PopularitySnapshotRow).values(
+                    polled_at=T0, ticker="IMPORTED", rank=40, mentions=90, upvotes=180,
+                    rank_24h_ago=None, mentions_24h_ago=20, fetched_at=T0, origin="v1_import",
+                )
+            )
+            await session.commit()
+        rig.apewisdom.rows = [row("STEADY", 41, 25, mentions_24h_ago=24)]
+
+        await rig.run_at(T1 + timedelta(seconds=20))
+
+        assert await rig.alerts() == []
 
 
 class TestAlert:
