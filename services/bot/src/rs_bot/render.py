@@ -45,7 +45,7 @@ def render(
         logger.exception(
             "render failed for alert id=%d - posting the generic fallback embed", pending.id
         )
-        return _render_generic(pending)
+        return render_generic(pending)
 
 
 def _render_full(
@@ -53,7 +53,7 @@ def _render_full(
 ) -> discord.Embed:
     alert = pending.alert
     if alert.alert_type != ATTENTION_SURGE:
-        return _render_generic(pending)
+        return render_generic(pending)
     payload = AttentionSurgePayload.model_validate(alert.payload)
     # Most important first: the fit drops from the end.
     fields = [
@@ -77,7 +77,7 @@ def _render_full(
     return embed
 
 
-def _render_generic(pending: PendingAlert) -> discord.Embed:
+def render_generic(pending: PendingAlert) -> discord.Embed:
     # Deliberately dumb: no per-field iteration, payload as one text blob -
     # nothing here depends on the payload's shape.
     alert = pending.alert
@@ -174,6 +174,9 @@ def _filings_text(payload: AttentionSurgePayload) -> str:
         + f"]({f.url})"
         for f in fact.filings
     ]
+    if len(lines[0]) > MAX_VALUE:
+        # A cut link renders as raw text; show the filing unlinked instead.
+        lines[0] = f"{fact.filings[0].form} {fact.filings[0].filing_date:%Y-%m-%d}"
     shown: list[str] = []
     for index, line in enumerate(lines):
         # Reserve room for the "+N more" tail so the tail is never the part cut off.

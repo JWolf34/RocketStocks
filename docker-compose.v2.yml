@@ -115,6 +115,7 @@ services:
       RS_DB_URL: postgresql+psycopg://rs_bot:${RS_DB_PASSWORD_BOT}@timescaledb:5432/rocketstocks
       RS_BOT_DISCORD_TOKEN: ${RS_BOT_DISCORD_TOKEN}
       RS_BOT_ALERT_CHANNEL_ID: ${RS_BOT_ALERT_CHANNEL_ID}
+      RS_OPS_WEBHOOK_URL: ${RS_OPS_WEBHOOK_URL:-}
     ports:
       - "127.0.0.1:9091:9091"
 

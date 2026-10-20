@@ -248,3 +248,11 @@ def test_generic_embed_clips_a_huge_payload(size):
         alert=Alert(symbol="X", alert_type="t", triggered_at=T0, payload={"k": "v" * size}),
     )
     assert len(render(pending).description) <= 4096
+
+
+def test_first_filing_line_too_long_is_shown_unlinked_not_cut_mid_link():
+    long_filing = FilingFact(
+        form="8-K", filing_date=date(2026, 7, 1), items=(), url="https://example.test/" + "z" * 1200
+    )
+    facts = _facts(recent_filings=RecentFilingsFact(window_days=14, filings=(long_filing,)))
+    assert _fields(render(_pending(facts)))["Recent 8-Ks"] == "8-K 2026-07-01"

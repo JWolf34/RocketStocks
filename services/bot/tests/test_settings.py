@@ -59,3 +59,18 @@ def test_metrics_port_default_and_override(monkeypatch):
     assert BotSettings(_env_file=None).metrics_port == 9091
     monkeypatch.setenv("RS_BOT_METRICS_PORT", "9191")
     assert BotSettings(_env_file=None).metrics_port == 9191
+
+
+def test_post_max_attempts_default_and_override(monkeypatch):
+    _set_required(monkeypatch)
+    assert BotSettings(_env_file=None).post_max_attempts == 5
+    monkeypatch.setenv("RS_BOT_POST_MAX_ATTEMPTS", "2")
+    assert BotSettings(_env_file=None).post_max_attempts == 2
+
+
+def test_old_dev_channel_variable_is_not_read(monkeypatch):
+    _set_required(monkeypatch)
+    monkeypatch.delenv("RS_BOT_ALERT_CHANNEL_ID")
+    monkeypatch.setenv("RS_DEV_CHANNEL_ID", "1")
+    with pytest.raises(ValidationError):
+        BotSettings(_env_file=None)

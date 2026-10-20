@@ -25,9 +25,10 @@ import discord
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from rs_bot.counters import new_counters
-from rs_bot.render import render
+from rs_bot.render import ATTENTION_SURGE, render, render_generic
+from rs_domain import BaseRate
 from rs_observability import notify_ops, unit_of_work
-from rs_persistence import AlertRepository
+from rs_persistence import AlertRepository, PendingAlert
 from rs_query import current_base_rate
 
 logger = logging.getLogger(__name__)
@@ -48,15 +49,19 @@ class SweepWorker:
         *,
         sweep_seconds: float,
         max_attempts: int = 5,
+        retry_gap_seconds: float | None = None,
         counters: dict[str, int] | None = None,
     ) -> None:
         self._session_factory = session_factory
         self._sender = sender
         self._sweep_seconds = sweep_seconds
         self._max_attempts = max_attempts
+        self._retry_gap = sweep_seconds if retry_gap_seconds is None else retry_gap_seconds
         self.counters = counters if counters is not None else new_counters()
         # Set by the LISTEN loop on NOTIFY and on every (re)connect — so
         # "sweep on reconnect" is not a special case (spec Interface).
+        # Monotonic retry gate per alert id (in memory: a restart retries at once).
+        self._retry_not_before: dict[int, float] = {}
         self.wake = asyncio.Event()
         self._stopping = asyncio.Event()
 
@@ -77,6 +82,26 @@ class SweepWorker:
                 break
             await self.sweep()
 
+    async def _base_rate(
+        self,
+        session: AsyncSession,
+        item: PendingAlert,
+        cache: dict[tuple[str, str], tuple[BaseRate | None, bool]],
+    ) -> tuple[BaseRate | None, bool]:
+        """(base rate, read failed), read once per rule version per sweep."""
+        alert = item.alert
+        if alert.alert_type != ATTENTION_SURGE or alert.rule_version is None:
+            return None, False
+        key = (alert.alert_type, alert.rule_version)
+        if key not in cache:
+            try:
+                cache[key] = (await current_base_rate(session, *key), False)
+            except Exception:
+                logger.exception("base rate read failed for %s v%s", *key)
+                await session.rollback()
+                cache[key] = (None, True)
+        return cache[key]
+
     async def sweep(self) -> None:
         """One drain pass over the cursor: every posted_at IS NULL row, id
         order, no LIMIT (pin #10 — the sweep drains fully)."""
@@ -84,6 +109,8 @@ class SweepWorker:
         async with self._session_factory() as session:
             repo = AlertRepository(session)
             pending = await repo.list_unposted(self._max_attempts)
+            loop = asyncio.get_running_loop()
+            base_rates: dict[tuple[str, str], tuple[BaseRate | None, bool]] = {}
             for item in pending:
                 if self._stopping.is_set():
                     break
@@ -92,23 +119,21 @@ class SweepWorker:
                 # alert_id is the cross-service join key (ingest's insert log
                 # carries the same field).
                 with unit_of_work(alert_id=item.id):
-                    base_rate, base_rate_failed = None, False
-                    if item.alert.rule_version is not None:
-                        try:
-                            base_rate = await current_base_rate(
-                                session, item.alert.alert_type, item.alert.rule_version
-                            )
-                        except Exception:
-                            logger.exception("base rate read failed for alert id=%d", item.id)
-                            await session.rollback()
-                            base_rate_failed = True
-                    embed = render(item, base_rate, base_rate_failed=base_rate_failed)
+                    if self._retry_not_before.get(item.id, 0.0) > loop.time():
+                        continue  # failed moments ago; a NOTIFY burst must not burn the cap
+                    base_rate, base_rate_failed = await self._base_rate(session, item, base_rates)
+                    if item.post_attempts + 1 >= self._max_attempts:
+                        # Last try: the plain embed cannot be rejected for its shape.
+                        embed = render_generic(item)
+                    else:
+                        embed = render(item, base_rate, base_rate_failed=base_rate_failed)
                     try:
                         message_id = await self._sender.send(embed)
                     except Exception:
                         self.counters["post_failures_total"] += 1
                         attempts = await repo.increment_post_attempts(item.id)
                         await session.commit()
+                        self._retry_not_before[item.id] = loop.time() + self._retry_gap
                         logger.error(
                             "send failed (attempt %s of %d): alert id=%d %s %s "
                             "triggered_at=%s payload=%s",
