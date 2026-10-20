@@ -1,14 +1,14 @@
 """Schwab chain fetch over a fake schwab-py client: bounded params, non-OK
 raises, a dead refresh token surfaces as SchwabAuthError."""
 
-from datetime import date, datetime, timedelta, timezone
+from datetime import UTC, date, datetime, timedelta
 
 import pytest
 from authlib.integrations.base_client import OAuthError
 
 from rs_sources.schwab import ChainFetchError, SchwabAuthError, SchwabChainFetch
 
-NOW = datetime(2026, 7, 16, 14, 35, tzinfo=timezone.utc)
+NOW = datetime(2026, 7, 16, 14, 35, tzinfo=UTC)
 
 
 class FixedClock:

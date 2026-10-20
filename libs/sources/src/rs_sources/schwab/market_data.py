@@ -8,7 +8,7 @@ the adapter sends tz-aware ET bounds.
 
 import logging
 import math
-from datetime import date, datetime, time, timezone
+from datetime import UTC, date, datetime, time
 from enum import StrEnum
 from typing import Any
 from zoneinfo import ZoneInfo
@@ -92,7 +92,7 @@ class DailyHistory(BaseModel):
 
 
 def _utc_from_millis(millis: int) -> datetime:
-    return datetime.fromtimestamp(millis / 1000, tz=timezone.utc)
+    return datetime.fromtimestamp(millis / 1000, tz=UTC)
 
 
 class SchwabMarketData:

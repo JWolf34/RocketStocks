@@ -5,7 +5,7 @@ sessions; 2026-07-03 (Fri) is the Independence Day holiday; 2026-07-04/05 is
 a weekend.
 """
 
-from datetime import date, datetime, timezone
+from datetime import UTC, date, datetime
 from zoneinfo import ZoneInfo
 
 import pytest
@@ -84,7 +84,7 @@ class TestQuote:
         raw = {
             "lastPrice": 523.45,
             "closePrice": 520.1,
-            "quoteTime": int(datetime(2026, 7, 6, 15, 30, tzinfo=timezone.utc).timestamp() * 1000),
+            "quoteTime": int(datetime(2026, 7, 6, 15, 30, tzinfo=UTC).timestamp() * 1000),
             "totalVolume": 41_000_000,
         }
         return FakeResponse({"SPY": {"symbol": "SPY", "quote": {**raw, **overrides}}})
@@ -96,7 +96,7 @@ class TestQuote:
         assert quote.symbol == "SPY"
         assert quote.last_price == 523.45
         assert quote.previous_close == 520.1
-        assert quote.quote_time == datetime(2026, 7, 6, 15, 30, tzinfo=timezone.utc)
+        assert quote.quote_time == datetime(2026, 7, 6, 15, 30, tzinfo=UTC)
         assert quote.volume == 41_000_000
 
     async def test_unknown_symbol_is_none(self, calendar):
@@ -160,7 +160,7 @@ class TestDailyHistoryValidation:
 
     async def test_session_date_is_the_eastern_date(self, calendar):
         # 05:00 UTC in July is 01:00 ET the same calendar day.
-        stamp = int(datetime(2026, 7, 6, 5, tzinfo=timezone.utc).timestamp() * 1000)
+        stamp = int(datetime(2026, 7, 6, 5, tzinfo=UTC).timestamp() * 1000)
         data, _ = market(history_of([candle(date(2026, 7, 6), datetime=stamp)]), calendar)
         result = await data.daily_history("SPY", date(2026, 7, 6), date(2026, 7, 6))
         assert [b.session_date for b in result.bars] == [date(2026, 7, 6)]
