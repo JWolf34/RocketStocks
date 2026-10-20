@@ -1,31 +1,18 @@
 """daily_bar reads."""
 
-from datetime import UTC, date
+from datetime import date
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from rs_domain import StoredDailyBar
 from rs_persistence import DailyBarRow
+from rs_persistence.daily_bars import daily_bar_from_row
 from rs_query._page import Page, clamp_limit, decode_cursor, page_of
 
 DEFAULT_LIMIT = 500
 MAX_LIMIT = 1000
 _KIND = "daily_bars"
-
-
-def _to_bar(row: DailyBarRow) -> StoredDailyBar:
-    return StoredDailyBar(
-        symbol=row.symbol,
-        session_date=row.session_date,
-        open=row.open,
-        high=row.high,
-        low=row.low,
-        close=row.close,
-        volume=row.volume,
-        fetched_at=row.fetched_at.astimezone(UTC),
-        adjusted=row.adjusted,
-    )
 
 
 async def daily_bars(
@@ -54,4 +41,4 @@ async def daily_bars(
         after = decode_cursor(_KIND, cursor, date.fromisoformat)
         query = query.where(DailyBarRow.session_date > after)
     rows = list((await session.scalars(query)).all())
-    return page_of(rows, limit, _to_bar, lambda r: r.session_date.isoformat(), _KIND)
+    return page_of(rows, limit, daily_bar_from_row, lambda r: r.session_date.isoformat(), _KIND)

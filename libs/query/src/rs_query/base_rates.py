@@ -31,14 +31,14 @@ def _to_base_rate(row: BaseRateRow) -> BaseRate:
 
 
 async def _latest(
-    session: AsyncSession, alert_type: str, rule_version: str, kind: BaseRateInput
+    session: AsyncSession, alert_type: str, rule_version: str, source: BaseRateInput
 ) -> BaseRate | None:
     row = await session.scalar(
         select(BaseRateRow)
         .where(
             BaseRateRow.alert_type == alert_type,
             BaseRateRow.rule_version == rule_version,
-            BaseRateRow.input == kind.value,
+            BaseRateRow.input == source.value,
         )
         .order_by(BaseRateRow.computed_at.desc(), BaseRateRow.id.desc())
         .limit(1)

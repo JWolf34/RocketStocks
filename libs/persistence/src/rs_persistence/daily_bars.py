@@ -15,7 +15,7 @@ from rs_persistence.models import DailyBarRow, UnpricedSymbolRow
 _INSERT_CHUNK = 5000
 
 
-def _to_bar(row: DailyBarRow) -> StoredDailyBar:
+def daily_bar_from_row(row: DailyBarRow) -> StoredDailyBar:
     return StoredDailyBar(
         symbol=row.symbol,
         session_date=row.session_date,
@@ -63,7 +63,7 @@ class DailyBarRepository:
             )
             .order_by(DailyBarRow.session_date)
         )
-        return [_to_bar(row) for row in rows]
+        return [daily_bar_from_row(row) for row in rows]
 
     async def latest_session_dates(self, symbols: Collection[str]) -> dict[str, date]:
         """Newest stored session_date per symbol; symbols with no bars are absent."""

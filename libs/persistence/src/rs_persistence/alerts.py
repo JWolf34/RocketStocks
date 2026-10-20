@@ -32,7 +32,7 @@ class PendingAlert(BaseModel):
     post_attempts: int = 0
 
 
-def _to_alert(row: AlertRow) -> Alert:
+def alert_from_row(row: AlertRow) -> Alert:
     return Alert(
         symbol=row.symbol,
         alert_type=row.alert_type,
@@ -99,7 +99,7 @@ class AlertRepository:
         if end is not None:
             query = query.where(AlertRow.triggered_at < end)
         rows = (await self._session.scalars(query)).all()
-        return [_to_alert(row) for row in rows]
+        return [alert_from_row(row) for row in rows]
 
     async def list_unposted(self, max_attempts: int | None = None) -> list[PendingAlert]:
         """Every undelivered alert, id order, no LIMIT - the bot's sweep drains
@@ -111,7 +111,7 @@ class AlertRepository:
             query = query.where(AlertRow.post_attempts < max_attempts)
         rows = (await self._session.scalars(query)).all()
         return [
-            PendingAlert(id=row.id, alert=_to_alert(row), post_attempts=row.post_attempts)
+            PendingAlert(id=row.id, alert=alert_from_row(row), post_attempts=row.post_attempts)
             for row in rows
         ]
 

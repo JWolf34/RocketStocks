@@ -5,27 +5,14 @@ from datetime import UTC, datetime
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from rs_domain import PopularityOrigin, PopularitySnapshot
+from rs_domain import PopularitySnapshot
 from rs_persistence import PopularitySnapshotRow
+from rs_persistence.popularity import snapshot_from_row
 from rs_query._page import Page, clamp_limit, decode_cursor, page_of, require_utc
 
 DEFAULT_LIMIT = 500
 MAX_LIMIT = 2000
 _KIND = "popularity_history"
-
-
-def _to_snapshot(row: PopularitySnapshotRow) -> PopularitySnapshot:
-    return PopularitySnapshot(
-        polled_at=row.polled_at.astimezone(UTC),
-        ticker=row.ticker,
-        rank=row.rank,
-        mentions=row.mentions,
-        upvotes=row.upvotes,
-        rank_24h_ago=row.rank_24h_ago,
-        mentions_24h_ago=row.mentions_24h_ago,
-        fetched_at=row.fetched_at.astimezone(UTC),
-        origin=PopularityOrigin(row.origin),
-    )
 
 
 async def popularity_history(
@@ -56,5 +43,5 @@ async def popularity_history(
         query = query.where(PopularitySnapshotRow.polled_at > after)
     rows = list((await session.scalars(query)).all())
     return page_of(
-        rows, limit, _to_snapshot, lambda r: r.polled_at.astimezone(UTC).isoformat(), _KIND
+        rows, limit, snapshot_from_row, lambda r: r.polled_at.astimezone(UTC).isoformat(), _KIND
     )

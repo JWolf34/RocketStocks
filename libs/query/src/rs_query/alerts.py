@@ -8,6 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from rs_domain import Alert, UtcDatetime
 from rs_persistence import AlertRow
+from rs_persistence.alerts import alert_from_row
 from rs_query._page import Page, clamp_limit, decode_cursor, page_of
 
 DEFAULT_LIMIT = 50
@@ -29,16 +30,7 @@ class AlertRecord(BaseModel):
 def _to_record(row: AlertRow) -> AlertRecord:
     return AlertRecord(
         id=row.id,
-        alert=Alert(
-            symbol=row.symbol,
-            alert_type=row.alert_type,
-            triggered_at=row.triggered_at.astimezone(UTC),
-            payload=row.payload,
-            rule_version=row.rule_version,
-            alert_price=row.alert_price,
-            quote_time=None if row.quote_time is None else row.quote_time.astimezone(UTC),
-            dedup_key=row.dedup_key,
-        ),
+        alert=alert_from_row(row),
         posted_at=None if row.posted_at is None else row.posted_at.astimezone(UTC),
     )
 
