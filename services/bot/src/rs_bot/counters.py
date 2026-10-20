@@ -6,6 +6,7 @@ rs_observability) is deferred to the consolidated metrics spec (pin #8)."""
 COUNTER_NAMES = (
     "discord_posts_total",
     "post_failures_total",
+    "posts_abandoned_total",
     "sweeps_total",
     "notify_wakes_total",
     "listen_reconnects_total",

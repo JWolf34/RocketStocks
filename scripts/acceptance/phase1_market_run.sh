@@ -211,7 +211,7 @@ preflight() {
   stack_up
   [ -f "$FIXTURES/$FIXTURE_FILE" ] && ok "fixture present" || fail "fixture missing"
   [ -f "$FIXTURES/$EXPECTED_FILE" ] && ok "expected-decisions present" || fail "expected file missing"
-  : "${RS_BOT_DISCORD_TOKEN:?}"; : "${RS_DEV_CHANNEL_ID:?}"; ok ".env bot vars present"
+  : "${RS_BOT_DISCORD_TOKEN:?}"; : "${RS_BOT_ALERT_CHANNEL_ID:?}"; ok ".env bot vars present"
   : "${SCHWAB_API_KEY:?}"; : "${SCHWAB_API_SECRET:?}"; ok ".env Schwab keys present"
   local ntok
   ntok=$(psql_q "SELECT count(*) FROM schwab_tokens" 2>/dev/null || echo "?")

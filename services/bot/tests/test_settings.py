@@ -6,7 +6,7 @@ from rs_bot.settings import BotSettings
 REQUIRED = {
     "RS_DB_URL": "postgresql+psycopg://u:p@localhost:5498/rs",
     "RS_BOT_DISCORD_TOKEN": "hunter2",
-    "RS_DEV_CHANNEL_ID": "123456789012345678",
+    "RS_BOT_ALERT_CHANNEL_ID": "123456789012345678",
 }
 
 
@@ -19,7 +19,7 @@ def test_defaults(monkeypatch):
     _set_required(monkeypatch)
     settings = BotSettings(_env_file=None)
     assert settings.rs_db_url == REQUIRED["RS_DB_URL"]
-    assert settings.dev_channel_id == 123456789012345678
+    assert settings.alert_channel_id == 123456789012345678
     assert settings.sweep_seconds == 60.0
 
 

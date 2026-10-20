@@ -1,7 +1,7 @@
 """Entry point: `python -m rs_bot`.
 
 Lifecycle contract (spec): continuous daemon — connect Discord → resolve the
-dev channel (unresolvable/no-permission → loud exit 1) → start LISTEN →
+alert channel (unresolvable/no-permission → loud exit 1) → start LISTEN →
 unconditional initial sweep → run until SIGTERM (graceful: finish the
 in-flight post, exit 0).
 
@@ -43,7 +43,7 @@ def psycopg_conninfo(sqlalchemy_url: str) -> str:
 
 
 class DiscordChannelSender:
-    """EmbedSender backed by the resolved dev channel (full gateway client —
+    """EmbedSender backed by the resolved alert channel (full gateway client —
     spec pin #2). Returns the message id for the per-post G5 audit log."""
 
     def __init__(self, channel: discord.abc.Messageable) -> None:
@@ -74,28 +74,29 @@ async def run_bot(settings: BotSettings) -> int:
             return 1
         gateway_task = asyncio.create_task(client.connect(), name="gateway")
         try:
-            channel = await client.fetch_channel(settings.dev_channel_id)
+            channel = await client.fetch_channel(settings.alert_channel_id)
         except discord.DiscordException as exc:
             logger.error(
-                "cannot resolve dev channel %d — check RS_DEV_CHANNEL_ID and the bot's "
+                "cannot resolve alert channel %d — check RS_BOT_ALERT_CHANNEL_ID and the bot's "
                 "invite/permissions (operator checklist §4): %s",
-                settings.dev_channel_id,
+                settings.alert_channel_id,
                 exc,
             )
             return 1
         if not isinstance(channel, discord.abc.Messageable):
             logger.error(
-                "dev channel %d is not a messageable channel (%s)",
-                settings.dev_channel_id,
+                "alert channel %d is not a messageable channel (%s)",
+                settings.alert_channel_id,
                 type(channel).__name__,
             )
             return 1
-        logger.info("resolved dev channel %d (%s)", settings.dev_channel_id, channel)
+        logger.info("resolved alert channel %d (%s)", settings.alert_channel_id, channel)
 
         worker = SweepWorker(
             build_session_factory(engine),
             DiscordChannelSender(channel),
             sweep_seconds=settings.sweep_seconds,
+            max_attempts=settings.post_max_attempts,
             counters=counters,
         )
         listener = ListenLoop(psycopg_conninfo(settings.rs_db_url), worker.wake, counters=counters)
@@ -143,8 +144,8 @@ def main() -> int:
         logger.error("invalid configuration: %s", exc)
         return 1
     logger.info(
-        "rs_bot starting: dev_channel_id=%d sweep=%.0fs listen_channel=%s",
-        settings.dev_channel_id,
+        "rs_bot starting: alert_channel_id=%d sweep=%.0fs listen_channel=%s",
+        settings.alert_channel_id,
         settings.sweep_seconds,
         NOTIFY_CHANNEL,
     )

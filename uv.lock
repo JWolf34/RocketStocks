@@ -2520,6 +2520,7 @@ dependencies = [
     { name = "rs-domain" },
     { name = "rs-observability" },
     { name = "rs-persistence" },
+    { name = "rs-query" },
     { name = "sqlalchemy", extra = ["asyncio"] },
 ]
 
@@ -2532,6 +2533,7 @@ requires-dist = [
     { name = "rs-domain", editable = "libs/domain" },
     { name = "rs-observability", editable = "libs/observability" },
     { name = "rs-persistence", editable = "libs/persistence" },
+    { name = "rs-query", editable = "libs/query" },
     { name = "sqlalchemy", extras = ["asyncio"], specifier = ">=2" },
 ]
 
