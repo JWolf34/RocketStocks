@@ -56,6 +56,9 @@ class MetricsMiddleware(BaseHTTPMiddleware):
 
     async def dispatch(self, request: Request, call_next) -> Response:
         started = time.perf_counter()  # monotonic duration, not ambient wall time
+        # Pre-bound: a BaseException (CancelledError) skips both assignments
+        # below and must not turn into an UnboundLocalError in the finally.
+        status = 500
         try:
             response = await call_next(request)
             status = response.status_code

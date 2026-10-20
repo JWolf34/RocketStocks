@@ -161,6 +161,13 @@ def test_backoff_resets_after_stable_connection():
     assert policy.total_reconnects == 3
 
 
+def test_backoff_survives_a_very_long_outage():
+    # float(2**1024) overflows; the cap must hold well past that many failures.
+    policy = ReconnectPolicy()
+    policy.consecutive_failures = 1023
+    assert [policy.next_backoff(None) for _ in range(3)] == [30, 30, 30]
+
+
 def test_short_lived_connection_is_not_stable():
     policy = ReconnectPolicy()
     policy.next_backoff(None)
