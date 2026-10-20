@@ -9,7 +9,7 @@ For each BarClosed, in order (ADR-0005 Bus-1; grilling #4/#5):
      last). Appended only after the commit, so every bar a detector sees is
      already in the log — an alert's input bar always exists durably.
   3. Run detectors over the window and write any emitted alerts (alert row +
-     outbox row + NOTIFY) in a *second* transaction — the whole reaction stage
+     NOTIFY) in a *second* transaction — the whole reaction stage
      behind the ADR-0008 error boundary (scope below).
 
 Two transactions per bar (grilling #4): the bar commit and the alert commit are
@@ -28,7 +28,7 @@ failure still fails fast, because the *next* bar's persist is crash-loud within
 one bar interval. Crash-loud is a reliability strategy only with a supervisor to
 restart to a known-good state, and the skeleton has none (pinned #11), so a
 tolerable Tier-2 fault must not be fatal. v2 makes the drop recoverable (a
-dead-letter) and moves alerting out-of-band as an outbox/bar-log consumer, at
+dead-letter) and moves alerting out-of-band as a bar-log consumer, at
 which point its failures cannot touch capture at all.
 
 Session-scoped window: one Pipeline per run_session (pinned #11, one process =
@@ -96,12 +96,14 @@ class Pipeline:
         if not alerts:
             return
         try:
-            # Transaction 2 — every alert this bar produced, each one's outbox
-            # row, and each one's NOTIFY, atomically (grilling #6). Separate from
-            # the bar commit, and reached only for a bar that is already durable.
+            # Transaction 2 — every alert this bar produced and each one's NOTIFY,
+            # atomically (grilling #6). Separate from the bar commit, and reached
+            # only for a bar that is already durable.
             async with self._session_factory() as session:
                 repo = AlertRepository(session, self._notify_channel)
-                inserted = [(await repo.insert(alert), alert) for alert in alerts]
+                results = [(await repo.insert(alert), alert) for alert in alerts]
+                # None = deduplicated; streaming alerts carry no dedup_key, so none are.
+                inserted = [(alert_id, alert) for alert_id, alert in results if alert_id is not None]
                 await session.commit()
         except Exception:
             # Tier-2 reaction path: a failed alert write is tolerated so it can
@@ -119,7 +121,7 @@ class Pipeline:
                     alert.payload,
                 )
         else:
-            self.counters["alerts_emitted"] += len(alerts)
+            self.counters["alerts_emitted"] += len(inserted)
             for alert_id, alert in inserted:
                 # alert_id is THE cross-service join key (S006 pin #3): this
                 # insert log and the bot's post log both carry it as a field.

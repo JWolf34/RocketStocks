@@ -77,11 +77,16 @@ def migrated_db_url() -> Iterator[str]:
 async def session_factory(migrated_db_url: str) -> AsyncIterator[async_sessionmaker[AsyncSession]]:
     """Async session factory over the migrated DB. migrated_db_url is
     session-scoped and shared; this truncates so each test starts from empty
-    alerts/outbox/bars with a reset identity."""
+    slice-1 tables with a reset identity."""
     engine = build_engine(migrated_db_url)
     factory = build_session_factory(engine)
     async with factory() as s:
-        await s.execute(text("TRUNCATE alerts, outbox, stream_bars_5m RESTART IDENTITY"))
+        await s.execute(
+            text(
+                "TRUNCATE alerts, stream_bars_5m, popularity_snapshot, daily_bar,"
+                " unpriced_symbol, base_rate, schwab_auth_request RESTART IDENTITY"
+            )
+        )
         await s.commit()
     yield factory
     await engine.dispose()

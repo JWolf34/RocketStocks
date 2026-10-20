@@ -1,7 +1,7 @@
 """Pipeline: the Bus-1 persister -> detector fan-out (S003 B6c).
 
-These are orchestration tests — the repositories' DB behavior (atomic alert +
-outbox + NOTIFY, rollback) is proven in libs/persistence's test_alert_repository
+These are orchestration tests — the repositories' DB behavior (atomic alert row +
+NOTIFY, rollback) is proven in libs/persistence's test_alert_repository
 against a real database. Here BarRepository/AlertRepository are faked so we can
 pin the *ordering and failure semantics* the pipeline owns: persist-before-detect,
 two independent transactions per bar, the ADR-0008 error boundary (a raising
