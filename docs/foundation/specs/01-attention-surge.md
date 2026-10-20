@@ -86,6 +86,31 @@ Retries are capped and then call `notify_ops()`, and rendering respects Discord 
 | 10 | Ingest restart | Kill ingest mid-poll: no lost or duplicated rows or alerts after restart | Rehearsal |
 | 11 | Backup restore | Restore a snapshot to a scratch VM; row counts match | Rehearsal |
 
+## Deviations from the plan
+
+What was built differs from the sections above in these ways; the current runtime shape is in [architecture.md](../architecture.md).
+
+- Horizons of 1/5/10 trading days are counted in exchange-calendar sessions, and a horizon matures only up to the last stored SPY bar, so a missing bar is a missing exit and never shifts a horizon.
+- The `logged` base rate enters SPY at the alert's own benchmark quote (a new `benchmark` fact in the payload), with a counted fallback to SPY's previous close, so ticker and benchmark are measured from the same instant.
+- Hit rate is the share of events with strictly positive excess return, and no `base_rate` row is written when N is 0, so an empty row never replaces a stale one.
+- `base_rate` is append-only (readers take the latest per rule version and input), and matured horizons with no exit bar are counted in the caveat text rather than a column.
+- The `volume` fact needs all 20 stored bars and a newest bar within 7 days, otherwise it is unavailable with a reason, because a partial average would mislead; the first alert for a ticker therefore often has none.
+- Every fact is `ok` or `FactUnavailable(reason)`, so one failed vendor call never blocks an alert.
+- A dead Schwab token met inside the popularity poll also trips the daemon's token gate, so ops hears within one poll rather than only when a Schwab job next runs.
+- The daemon starts gated, not exited, when no token is stored, so `restart: unless-stopped` cannot crash-loop it.
+- The poll re-judges the previous boundary as well as its own (live snapshots only), so a failed alert write is caught up one boundary later; spec row 10 holds within that one-boundary limit.
+- `surge_bars` fetches from 30 sessions before the first event when a ticker has no bars, from the day after the newest otherwise, and back-fills when an older event predates stored bars; `adjusted` is stamped `False` until measured against a split ticker.
+- `unpriced_symbol` records a 400 or 404 only for a symbol with no bars; other failures make the job fail visibly instead.
+- `schwab_auth_request` has the states `requested`, `url_ready`, `callback_received`, `done`, `failed` and `expired`, and terminal states clear `callback_url` because it carries the OAuth code.
+- New tables beyond the list above: `import_verification` (the offset proof is stored with the database it was measured against) and `schwab_token_notice`, plus the `schwab_token_issue` view that lets the bot read token age without a grant on `schwab_tokens`.
+- `popularity_snapshot.upvotes` is nullable because v1's column was never `NOT NULL`; the live adapter still requires it.
+- The import's offset check needs at least 99% agreement and a 1000-row overlap; ties are resolved by the spring-forward evidence, otherwise the result is "ambiguous" and nothing is recorded.
+- Imported rows set `fetched_at = polled_at`, and rows in the spring-forward gap are rejected and counted, never guessed.
+- Roles: `upgrade` fails without the role passwords unless `--skip-roles` is passed, and passwords are restricted to `A-Za-z0-9._~-` (16+ characters) because compose cannot URL-encode them.
+- The bot's retry cap is 5 attempts at one sweep interval apart, kept in memory, and failed-to-post is `post_attempts` at the cap with `posted_at` NULL rather than a new column.
+- The bot DMs token-age notices at 24h and 6h and offers `/setup schwab`, which the spec's scope named but did not detail; the OAuth context lives in ingest memory, so a request open across an ingest restart must be redone.
+- `SchwabAuthError` carries only the OAuth error code, and the database engine hides bound parameters in error logs, because both reached logs and ops notices.
+
 ## Out of scope
 
 Symbol master and the optionable flag; streaming and 1-minute bars; earnings-reaction and large-move alerts; digests; any Report; watchlists and paper trading; `serve`, the Data API and MCP; LLM or Reddit explanations; v1 daily bars; other ApeWisdom filters; retiring v1 (an operator step once criterion 5 passes).

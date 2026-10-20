@@ -125,11 +125,16 @@ RS_DB_URL=postgresql+psycopg://... .venv/bin/python -m rs_migrate upgrade
 # Docker (v1 image builds from legacy/ via the root Dockerfile)
 docker compose up -d
 
-# v2 stack (S006): TimescaleDB (127.0.0.1:5498) + one-shot migrate gate +
+# v2 stack: TimescaleDB (127.0.0.1:5498) + one-shot migrate gate +
 # ingest/serve/bot from the shared Dockerfile.v2 image; JSON logs with
 # correlation_id; metrics on 127.0.0.1:9090 (ingest) / :9091 (bot).
 # Needs RS_DB_PASSWORD + service credentials in .env.
 docker compose -f docker-compose.v2.yml up -d
+
+# v2 operator tools (host-side, shared venv; exact procedures in docs/foundation/runbooks/slice-1.md)
+.venv/bin/python -m rs_backfill verify-offset --dump PATH   # then popularity-import --dump PATH --zone ZONE
+.venv/bin/python -m rs_ingest.tools.login                   # first Schwab login; later logins use /setup schwab
+RS_RESEARCH_DB_URL=... .venv/bin/python -m rs_research event-study attention_surge
 ```
 
 ## Environment Variables (`.env`)
