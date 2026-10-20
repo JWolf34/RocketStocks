@@ -14,8 +14,8 @@
 # .env or the shell, otherwise the service default applies.
 #
 # Metrics side-ports (9090 ingest, 9091 bot) and serve's 8000 are published
-# 127.0.0.1-only: the operator scrapes/proxies from the host (ADR-0015; the
-# TLS reverse proxy is serve's public face, ADR-0012). Not scraped in-compose.
+# 127.0.0.1-only: the operator scrapes/proxies from the host; the TLS reverse
+# proxy is serve's public face. Not scraped in-compose.
 
 name: rocketstocks-v2
 

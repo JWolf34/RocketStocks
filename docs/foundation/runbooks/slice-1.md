@@ -11,9 +11,16 @@ The criteria it serves are rows 5, 8, 9, 10 and 11 of the [slice 1 spec](../spec
 - `.env` holds the v2 variables listed in `.env.example`.
   Its `RS_DB_URL` is the superuser DSN on `127.0.0.1:5498`, used by host-side tools (`rs_migrate`, `rs_backfill`).
 - Host-side tools run from the shared venv: `uv sync --all-packages`, then `.venv/bin/python -m ...`.
-  Export the DSN into the shell first: `set -a; . ./.env; set +a`.
-- SQL snippets run through the database container: `$COMPOSE exec -T timescaledb psql -U postgres -d rocketstocks`.
-  Below this is shortened to `psql`.
+  Export the DSN into the shell first (do not source `.env`: it has unquoted spaces and CRLF line endings):
+  ```
+  export RS_DB_URL="$(grep '^RS_DB_URL=' .env | cut -d= -f2- | tr -d '\r')"
+  ```
+- SQL snippets run through the database container.
+  `psql` below is a shell function; define it once per shell, and note the `-X`, `-At` and heredoc uses pass extra flags to it:
+  ```
+  COMPOSE="docker compose -f docker-compose.v2.yml"
+  psql() { $COMPOSE exec -T timescaledb psql -U postgres -d rocketstocks "$@"; }
+  ```
 - Never paste real dumps, tokens or webhook URLs into the pull request or the repo.
   Record row counts, ids and timestamps only.
 
@@ -114,7 +121,7 @@ It passes text through the `schwab_auth_request` table and ingest does the OAuth
    The code is single-use and the URL is never logged or echoed.
 5. The bot reports the outcome.
    Ingest then logs `Schwab token renewed - resuming Schwab jobs` and sends one ops notice.
-   Confirm with `psql -c "SELECT updated_at FROM schwab_token_issue"`.
+   Confirm with `psql -c "SELECT issued_at FROM schwab_token_issue"`.
 
 If the request fails:
 
@@ -166,7 +173,6 @@ The import refuses to run until `verify-offset` records the zone against live da
    ```
 2. Find and record the zone (it needs at least 99% of the overlap to match one candidate):
    ```
-   set -a; . ./.env; set +a
    .venv/bin/python -m rs_backfill verify-offset --dump ~/popularity.sql
    ```
    Exit 0 prints the winning zone and records it.
@@ -177,12 +183,13 @@ The import refuses to run until `verify-offset` records the zone against live da
    ```
 4. Rerun the same import command.
    It must report `inserted 0`.
-5. Cross-check the daylight-saving cases from the spec:
+5. Cross-check the daylight-saving cases from the spec by listing the imported boundaries around each change:
    ```
-   psql -c "SELECT count(*) FROM popularity_snapshot WHERE origin = 'v1_import' AND polled_at >= '2026-03-08' AND polled_at < '2026-03-09'"
+   psql -c "SELECT DISTINCT polled_at FROM popularity_snapshot WHERE origin = 'v1_import' AND polled_at >= '2026-03-08 04:00+00' AND polled_at < '2026-03-08 12:00+00' ORDER BY 1"
+   psql -c "SELECT DISTINCT polled_at FROM popularity_snapshot WHERE origin = 'v1_import' AND polled_at >= '2025-11-02 03:00+00' AND polled_at < '2025-11-02 10:00+00' ORDER BY 1"
    ```
-   A local zone leaves no rows in the spring-forward hour of 2026-03-08 and loses the repeated hour on 2025-11-02 to v1's primary key.
-   The matched zone must be consistent with that.
+   A local zone leaves no rows in the spring-forward hour of 2026-03-08 (a one-hour gap in the first list) and loses the repeated hour on 2025-11-02 to v1's primary key (a one-hour gap in the second).
+   The matched zone must agree with what these lists show.
 
 Record in the pull request: the dump row count and range, the verify-offset report (overlap rows, matched rows, rate, zone), the first import's `parsed/inserted/rejected` line, and the rerun's `inserted 0`.
 Once this passes, retiring v1 is an operator step.

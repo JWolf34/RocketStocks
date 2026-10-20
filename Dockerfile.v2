@@ -1,4 +1,4 @@
-# One shared image for the v2 services and one-shot tools (ADR-0002). No default
+# One shared image for the v2 services and one-shot tools. No default
 # CMD: docker-compose.v2.yml supplies `command:` per service. The frozen v1
 # surface (Dockerfile, docker-compose.yml) is untouched.
 #
@@ -48,7 +48,7 @@ WORKDIR /app
 COPY --from=builder /app/.venv /app/.venv
 ENV PATH="/app/.venv/bin:$PATH" PYTHONUNBUFFERED=1
 USER app
-# No default CMD: compose picks the daemon: python -m rs_ingest |
+# No default CMD. Compose picks the daemon: python -m rs_ingest |
 # rs_serve | rs_bot | rs_migrate upgrade. CMD [] clears the base image's
 # `python3` REPL default so a bare `docker run` fails loudly instead.
 CMD []
