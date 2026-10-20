@@ -94,11 +94,20 @@ class AuthRequestHandler:
             for request in await repo.list_in_state(AuthRequestState.CALLBACK_RECEIVED):
                 await self._exchange(session, repo, request)
             # A request that expired or failed elsewhere leaves its context behind.
-            waiting = {r.id for r in await repo.list_in_state(AuthRequestState.URL_READY)}
-            self._contexts = {i: c for i, c in self._contexts.items() if i in waiting}
+            open_ids = {
+                r.id
+                for state in (AuthRequestState.URL_READY, AuthRequestState.CALLBACK_RECEIVED)
+                for r in await repo.list_in_state(state)
+            }
+            self._contexts = {i: c for i, c in self._contexts.items() if i in open_ids}
 
     async def _provide_url(self, repo: AuthRequestRepository, request: SchwabAuthRequest) -> None:
-        auth_url, context = self._oauth.begin()
+        try:
+            auth_url, context = self._oauth.begin()
+        except Exception as exc:
+            logger.error("schwab auth request %d: no sign-in URL (%s)", request.id, type(exc).__name__)
+            await repo.fail(request.id, UNEXPECTED)
+            return
         if await repo.set_auth_url(request.id, auth_url):
             self._contexts[request.id] = context
             logger.info("schwab auth request %d: sign-in URL ready", request.id)
@@ -122,9 +131,11 @@ class AuthRequestHandler:
             logger.error("schwab auth request %d failed (%s)", request.id, type(exc).__name__)
             await self._fail(session, repo, request.id, UNEXPECTED)
             return
-        await repo.complete(request.id)
+        if not await repo.complete(request.id):
+            # Closed by someone else mid-exchange; the token is stored all the same.
+            logger.warning("schwab auth request %d closed before its exchange finished", request.id)
         await session.commit()
-        logger.info("schwab auth request %d done: token stored", request.id)
+        logger.info("schwab auth request %d: token stored", request.id)
         try:
             await self._on_renewed()
         except Exception:

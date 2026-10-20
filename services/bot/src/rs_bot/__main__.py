@@ -35,15 +35,14 @@ from rs_observability import (
     install_excepthooks,
     start_metrics_server,
 )
-from rs_persistence import NOTIFY_CHANNEL, build_engine, build_session_factory
+from rs_persistence import (
+    NOTIFY_CHANNEL,
+    build_engine,
+    build_session_factory,
+    psycopg_conninfo,
+)
 
 logger = logging.getLogger(__name__)
-
-
-def psycopg_conninfo(sqlalchemy_url: str) -> str:
-    """RS_DB_URL is the shared SQLAlchemy DSN (postgresql+psycopg://); the
-    LISTEN connection is raw psycopg and wants the driverless form."""
-    return sqlalchemy_url.replace("+psycopg", "", 1)
 
 
 class DiscordChannelSender:
@@ -96,7 +95,7 @@ async def run_bot(settings: BotSettings) -> int:
         register_setup_commands(tree, SchwabAuthFlow(session_factory), settings.admin_user_id)
         try:
             await tree.sync()
-        except discord.DiscordException:
+        except Exception:  # alerts do not need the command, so a failed sync must not stop the bot
             logger.exception("could not sync slash commands - /setup schwab may be missing")
         gateway_task = asyncio.create_task(client.connect(), name="gateway")
         try:

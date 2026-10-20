@@ -14,7 +14,7 @@ from rs_persistence.base_rates import BaseRateRepository
 from rs_persistence.chains import ChainSnapshotRepository
 from rs_persistence.clients import ServiceClientRepository
 from rs_persistence.daily_bars import DailyBarRepository
-from rs_persistence.engine import build_engine, build_session_factory
+from rs_persistence.engine import build_engine, build_session_factory, psycopg_conninfo
 from rs_persistence.import_verification import (
     ImportVerification,
     ImportVerificationRepository,
@@ -84,6 +84,7 @@ __all__ = [
     "UnpricedSymbolRow",
     "build_engine",
     "build_session_factory",
+    "psycopg_conninfo",
     "chain_snapshot_table",
     "migration_config",
 ]

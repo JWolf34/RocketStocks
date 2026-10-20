@@ -15,6 +15,11 @@ from sqlalchemy.ext.asyncio import (
 )
 
 
+def psycopg_conninfo(sqlalchemy_url: str) -> str:
+    """The driverless DSN raw psycopg wants (LISTEN connections) from the shared SQLAlchemy one."""
+    return sqlalchemy_url.replace("+psycopg", "", 1)
+
+
 def build_engine(dsn: str) -> AsyncEngine:
     return create_async_engine(dsn, connect_args={"options": "-c timezone=UTC"})
 

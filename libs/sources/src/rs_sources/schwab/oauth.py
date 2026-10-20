@@ -7,6 +7,7 @@ error message: the errors raised are fixed, user-safe strings.
 """
 
 import asyncio
+import contextlib
 import logging
 from typing import Any
 
@@ -40,13 +41,16 @@ class SchwabOAuth:
         written: list[dict[str, Any]] = []
 
         def exchange_sync() -> None:
-            client_from_received_url(
+            client = client_from_received_url(
                 self._api_key,
                 self._api_secret,
                 context,
                 received_url,
                 lambda token, *args, **kwargs: written.append(token),
             )
+            # Only the token is wanted; release the client's connection pool.
+            with contextlib.suppress(Exception):
+                client.session.close()
 
         try:
             await asyncio.to_thread(exchange_sync)

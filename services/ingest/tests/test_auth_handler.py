@@ -6,6 +6,7 @@ in rs_sources); requests, the token row and the gate are real.
 
 import asyncio
 import logging
+from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
@@ -37,13 +38,19 @@ class FakeOAuth:
         self.begun = 0
         self.received: list[str] = []
         self.error: Exception | None = None
+        self.begin_error: Exception | None = None
+        self.during_exchange: Callable[[], Awaitable[None]] | None = None
 
     def begin(self) -> tuple[str, Any]:
+        if self.begin_error is not None:
+            raise self.begin_error
         self.begun += 1
         return AUTH_URL, f"context-{self.begun}"
 
     async def exchange(self, context: Any, received_url: str) -> dict[str, Any]:
         self.received.append(received_url)
+        if self.during_exchange is not None:
+            await self.during_exchange()
         if self.error is not None:
             raise self.error
         return TOKEN
@@ -214,3 +221,33 @@ async def test_notify_wakes_the_loop_without_waiting_for_the_poll(session_factor
         task.cancel()
         with pytest.raises(asyncio.CancelledError):
             await task
+
+
+async def test_a_sign_in_url_failure_fails_that_request_and_not_the_pass(rig):
+    broken = await rig.request()
+    rig.oauth.begin_error = RuntimeError("bad api key")
+    await rig.handler.process_once()
+    assert (await rig.get(broken)).state is AuthRequestState.FAILED
+    assert (await rig.get(broken)).error == UNEXPECTED
+
+    rig.oauth.begin_error = None
+    healthy = await rig.request()
+    await rig.handler.process_once()
+    assert (await rig.get(healthy)).state is AuthRequestState.URL_READY
+
+
+async def test_a_callback_pasted_during_another_exchange_keeps_its_context(rig):
+    first, second = await rig.request(), await rig.request()
+    await rig.handler.process_once()
+    await rig.paste(first)
+
+    async def paste_second_midway() -> None:
+        await rig.paste(second)
+
+    rig.oauth.during_exchange = paste_second_midway
+    await rig.handler.process_once()
+    rig.oauth.during_exchange = None
+    await rig.handler.process_once()
+
+    assert (await rig.get(first)).state is AuthRequestState.DONE
+    assert (await rig.get(second)).state is AuthRequestState.DONE

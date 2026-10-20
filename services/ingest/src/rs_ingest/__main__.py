@@ -31,7 +31,12 @@ from rs_observability import (
     install_excepthooks,
     start_metrics_server,
 )
-from rs_persistence import SchwabTokenStore, build_engine, build_session_factory
+from rs_persistence import (
+    SchwabTokenStore,
+    build_engine,
+    build_session_factory,
+    psycopg_conninfo,
+)
 from rs_sources import ExchangeCalendar
 from rs_sources.schwab import SchwabOAuth
 
@@ -101,7 +106,7 @@ async def run_daemon(settings: IngestSettings) -> int:
             ),
             clock,
             token_renewed,
-            conninfo=settings.rs_db_url.replace("+psycopg", "", 1),
+            conninfo=psycopg_conninfo(settings.rs_db_url),
             poll_seconds=settings.auth_poll_seconds,
         )
         auth_task = asyncio.create_task(auth_handler.run(), name="schwab-auth")
