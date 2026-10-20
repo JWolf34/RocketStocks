@@ -27,8 +27,8 @@ Out: see the end of this page.
 
 **Daily bars for every listing.**
 
-- Scope **(open, D-A)**: active spans of class common, ADR or ETF/ETN, plus every surge-event ticker (so slice 1's base rate keeps its bars).
-  Recommendation: yes; `surge_bars` is folded into this job.
+- Scope (D-A, John 2026-10-20): active spans of class common, ADR or ETF/ETN, plus every surge-event ticker and SPY, so slice 1's base rate keeps its bars; `surge_bars` is folded into this job.
+  This narrows issue #49's "every active listing": the other classes have no reader, and because `instrument_class` is stored for every span, widening the scope later is a config change plus a seed run.
 - Source **(open, D-B)**: one Schwab price-history call per symbol, fetching only the missing sessions.
   Recommendation: per-symbol price history, the same call the seed uses, over a batch-quote bar built from day OHLC (about 20 calls a night instead of about 8,000, but a different source than the history it extends).
 - Deep seed: a symbol with no bars is seeded to Schwab's maximum daily depth (about 20 years) once, including every new span; it runs as a low-priority job that yields the limiter to the nightly scan **(open, D-C)**.
