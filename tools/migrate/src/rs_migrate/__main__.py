@@ -1,7 +1,8 @@
 """Operational migration CLI — a thin wrapper over Alembic against
 rs_persistence's in-package migrations. DSN comes from RS_DB_URL.
 
-    python -m rs_migrate upgrade [revision=head]   (then applies the service roles)
+    python -m rs_migrate upgrade [revision=head] [--skip-roles]
+        (to head, then applies the service roles; --skip-roles is for bare dev databases)
     python -m rs_migrate roles
     python -m rs_migrate downgrade <revision>
     python -m rs_migrate current
@@ -16,10 +17,8 @@ import sys
 from alembic import command, util
 
 from rs_migrate.roles import (
-    SERVICES,
     RolesConfigError,
     apply_roles,
-    password_var,
     read_passwords,
 )
 from rs_observability import configure_logging
@@ -34,6 +33,11 @@ def main(argv: list[str] | None = None) -> int:
 
     upgrade = sub.add_parser("upgrade", help="migrate up (default: head)")
     upgrade.add_argument("revision", nargs="?", default="head")
+    # A flag, not an env var: an ambient variable could outlive its purpose and
+    # silently leave a prod deploy with ungranted tables.
+    upgrade.add_argument(
+        "--skip-roles", action="store_true", help="do not apply the service roles after upgrading"
+    )
     downgrade = sub.add_parser("downgrade", help="migrate down to a revision")
     downgrade.add_argument("revision")
     sub.add_parser("roles", help="create or update the per-service database roles and grants")
@@ -55,11 +59,14 @@ def main(argv: list[str] | None = None) -> int:
     if args.action == "upgrade":
         command.upgrade(config, args.revision)
         # Grants name every table, so they only apply to a fully migrated schema.
-        if args.revision == "head":
-            return _apply_roles(db_url, required=False)
-        logger.info("upgraded to %s, not head; skipping the service roles step", args.revision)
+        if args.revision != "head":
+            logger.info("upgraded to %s, not head; skipping the service roles step", args.revision)
+        elif args.skip_roles:
+            logger.warning("--skip-roles given; the service roles were not applied")
+        else:
+            return _apply_roles(db_url)
     elif args.action == "roles":
-        return _apply_roles(db_url, required=True)
+        return _apply_roles(db_url)
     elif args.action == "downgrade":
         command.downgrade(config, args.revision)
     elif args.action == "current":
@@ -73,13 +80,7 @@ def main(argv: list[str] | None = None) -> int:
     return 0
 
 
-def _apply_roles(db_url: str, *, required: bool) -> int:
-    """With `required` false (the post-upgrade step), no password variable at all
-    means roles are not configured here (a bare dev or CI database): skip loudly.
-    A partial or malformed set always fails, so a half-secured deploy cannot start."""
-    if not required and not any(os.environ.get(password_var(s)) for s in SERVICES):
-        logger.warning("no RS_DB_PASSWORD_* variables set; skipping the service roles step")
-        return 0
+def _apply_roles(db_url: str) -> int:
     try:
         apply_roles(db_url, read_passwords(os.environ))
     except RolesConfigError as exc:

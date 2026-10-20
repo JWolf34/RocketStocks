@@ -419,11 +419,17 @@ def test_roles_command_requires_the_passwords(monkeypatch, capsys, migrated_db_u
     assert "RS_DB_PASSWORD_INGEST" in capsys.readouterr().err
 
 
-def test_upgrade_skips_roles_when_no_passwords_are_configured(monkeypatch, migrated_db_url):
+def test_upgrade_fails_without_passwords_unless_roles_are_skipped(
+    monkeypatch, capsys, migrated_db_url
+):
     monkeypatch.setenv("RS_DB_URL", migrated_db_url)
     for service in SERVICES:
         monkeypatch.delenv(password_var(service), raising=False)
-    assert main(["upgrade"]) == 0
+    assert main(["upgrade"]) == 2
+    assert "RS_DB_PASSWORD_INGEST" in capsys.readouterr().err
+    assert main(["upgrade", "--skip-roles"]) == 0
+    assert main(["upgrade", "0003"]) == 0  # not head: no roles step either
+    assert main(["upgrade"]) == 2  # re-upgrade to head still demands the passwords
 
 
 def test_upgrade_fails_on_a_partial_password_set(monkeypatch, capsys, migrated_db_url):
