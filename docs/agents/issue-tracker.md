@@ -23,7 +23,7 @@ Run `gh issue view <number> --comments`.
 
 ## Relationship to v2 slice specs
 
-Note: v2 work is *spec-driven* (see `docs/v2/README.md`). Slice specs live as files under `docs/v2/specs/` per `docs/v2/spec-template.md` — that is a separate, repo-checked-in surface from the GitHub issue tracker described here. `/to-spec` writes those specs; the issue-tracker operations above are for issues/PRDs (`/to-tickets`, `/qa`).
+Note: each v2 slice ships a half-page spec in its implementing PR (see `docs/foundation/README.md`). Slice specs live under `docs/foundation/specs/` per `docs/foundation/specs/README.md` - a separate, repo-checked-in surface from the GitHub issue tracker described here. `/to-spec` writes those specs; the issue-tracker operations above are for issues/PRDs (`/to-tickets`, `/qa`).
 
 ## Wayfinding operations
 

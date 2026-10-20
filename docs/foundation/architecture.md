@@ -2,6 +2,7 @@
 
 The one-page runtime shape of v2.
 Each decision's rationale lives in the linked ticket on the [v2 foundation map](https://github.com/JWolf34/RocketStocks/issues/40); this page is the current truth and is edited in place as slices land.
+Surviving ADRs live in `docs/v2/adr/`; an archived ADR number cited in code resolves at git tag `v2-plan-archive-2026-10`.
 
 ## Processes
 
@@ -18,10 +19,12 @@ One TimescaleDB, a one-shot migrate gate, and three services from one shared ima
 ## Data flow
 
 - **Streamed:** Schwab level-one quotes for the ~500-name stream band (rule-based liquid band plus every watchlist ticker), aggregated to 1-minute bars and persisted going forward ([Data collection scope](https://github.com/JWolf34/RocketStocks/issues/49)).
-- **Nightly:** symbol master, daily bars for every active listing, then the options EOD full scan of the optionable universe (22:00 CT launch, 03:00 CT hard deadline).
+- **Nightly:** symbol master, daily bars for every active listing, then the options EOD full scan of the optionable universe (22:00 CT launch, 03:00 CT hard deadline; the scan's roster, retry/split ladder and tombstone decisions are on the superseded [S009 options EOD full scan map](https://github.com/JWolf34/RocketStocks/issues/6), restated by slice 2's spec).
 - **Frequent polls:** ApeWisdom, the Nasdaq earnings calendar, SEC EDGAR 8-Ks for names in scope.
 - **On demand:** the bot writes a collection request row; ingest fetches, validates and stores, then NOTIFYs; the bot reads the stored result through the query layer, falling back to the latest stored data labelled "as of" if ingest is down.
 - Every vendor payload is validated at the edge; bars off an `exchange_calendars` session and epoch-zero timestamps are rejected ([Signal evidence study](https://github.com/JWolf34/RocketStocks/issues/45)).
+- Stream bars are immutable once closed and never reconciled to REST bars; detection runs on bar close only.
+- In-memory state is a projection of the database, never a source of truth.
 - Detectors run on bar close and after each popularity poll and write an alert row with its alert-time price and rule version ([Launch push surfaces](https://github.com/JWolf34/RocketStocks/issues/46)).
 - Alert writes use idempotent keys and a durable retry, never swallow-and-count.
 - ingest wakes the bot with NOTIFY; the bot's `posted_at IS NULL` sweep is what makes delivery correct.
@@ -31,6 +34,7 @@ One TimescaleDB, a one-shot migrate gate, and three services from one shared ima
 
 - Postgres with Timescale, no Redis.
 - Hypertables for 1-minute bars, daily bars, options chain snapshots and popularity; plain tables for everything else.
+- Options chains are forward-only, immutable, stamped snapshots: never updated in place, never backfilled.
 - Compression by age on every hypertable and no retention policy, because forward-only data cannot be rebought; a disk alarm instead.
 - Continuous aggregates and freshness-policy tables are deferred until a reader needs them.
 
@@ -68,6 +72,6 @@ One TimescaleDB, a one-shot migrate gate, and three services from one shared ima
 
 ## Module layout
 
-- **libs:** `rs_domain`, `rs_persistence` (repositories by aggregate), `rs_query`, `rs_observability`, `rs_sources` (Schwab, ApeWisdom, EDGAR, Nasdaq, calendars; used by ingest and backfill only), `rs_analysis` (versioned event rules shared by detectors and research).
+- **libs:** `rs_domain`, `rs_persistence` (repositories by aggregate), `rs_query`, `rs_observability`, `rs_sources` (Schwab, ApeWisdom, EDGAR and its ticker-to-CIK map, Nasdaq, calendars; used by ingest only), `rs_analysis` (versioned event rules shared by detectors and research).
 - **services:** ingest, bot, serve.
-- **tools:** migrate, backfill (history plus the v1 popularity import), research.
+- **tools:** migrate, backfill (the v1 popularity import only; Schwab history backfills run as ingest jobs so ingest stays the only Schwab caller), research.
