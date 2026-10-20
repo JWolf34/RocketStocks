@@ -69,6 +69,9 @@ One TimescaleDB, a one-shot migrate gate, and three services from one shared ima
 - migrate owns the schema and is the only superuser path.
 - ingest writes market data, tokens and alerts; bot writes user state, `posted_at` and collection requests and cannot read tokens.
 - serve and research are read-only, except research's INSERT on the base-rates table; neither can read tokens.
+- Roles `rs_ingest`, `rs_bot`, `rs_serve` and `rs_research` are created and granted by `rs_migrate` after every `upgrade` (or alone with `rs_migrate roles`), with passwords from `RS_DB_PASSWORD_<SERVICE>`.
+- `GRANTS` in `tools/migrate/src/rs_migrate/roles.py` is the one table of decisions, and a test fails when a table has no entry.
+- The bot's UPDATE on `alerts` is limited to `posted_at` and `post_attempts`, and on `schwab_auth_request` to `state` and `callback_url`; the callback URL carries an OAuth code, so only the bot and ingest can read that table.
 
 ## Module layout
 

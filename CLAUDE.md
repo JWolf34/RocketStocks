@@ -115,7 +115,8 @@ RS_DB_URL=postgresql+psycopg://... .venv/bin/python -m rs_migrate check
 # v2 DB tests need a TimescaleDB (skip visibly otherwise); spec container:
 #   docker run -d --rm -p 5499:5432 -e POSTGRES_PASSWORD=t timescale/timescaledb:2.30.2-pg16
 # Set RS_TEST_DB_URL to make DB tests mandatory (unreachable = failure, as in CI).
-# Migrations CLI (DSN via RS_DB_URL):
+# Migrations CLI (DSN via RS_DB_URL; with RS_DB_PASSWORD_{INGEST,BOT,SERVE,RESEARCH}
+# set, upgrade also applies the per-service roles):
 RS_DB_URL=postgresql+psycopg://... .venv/bin/python -m rs_migrate upgrade
 
 # Backtesting CLI

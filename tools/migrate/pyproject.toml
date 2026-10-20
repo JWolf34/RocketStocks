@@ -8,8 +8,10 @@ authors = [
 requires-python = ">=3.13"
 dependencies = [
     "alembic>=1.18.5",
+    "psycopg[binary]>=3.3.4",
     "rs-observability",
     "rs-persistence",
+    "sqlalchemy>=2",
 ]
 
 [build-system]

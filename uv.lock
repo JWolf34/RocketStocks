@@ -2584,15 +2584,19 @@ version = "0.1.0"
 source = { editable = "tools/migrate" }
 dependencies = [
     { name = "alembic" },
+    { name = "psycopg", extra = ["binary"] },
     { name = "rs-observability" },
     { name = "rs-persistence" },
+    { name = "sqlalchemy" },
 ]
 
 [package.metadata]
 requires-dist = [
     { name = "alembic", specifier = ">=1.18.5" },
+    { name = "psycopg", extras = ["binary"], specifier = ">=3.3.4" },
     { name = "rs-observability", editable = "libs/observability" },
     { name = "rs-persistence", editable = "libs/persistence" },
+    { name = "sqlalchemy", specifier = ">=2" },
 ]
 
 [[package]]
