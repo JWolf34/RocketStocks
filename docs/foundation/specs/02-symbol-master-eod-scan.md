@@ -51,6 +51,10 @@ Out: see the end of this page.
 - Launch at 22:00 America/Chicago on each session day; hard deadline 03:00 America/Chicago.
   `cycle_id` is the nominal launch instant, so a restart lands in the same cycle.
 - Ladder per underlying: fetch; on a transport-class failure retry once; then split into three expiry buckets (with an open-ended tail) and retry each bucket once; then a `failed` tombstone.
+  A name costs at most 6 calls.
+- Split boundaries (D-J, John 2026-10-20): no unfiltered chain has ever been measured (the July captures were bounded), so a live probe ticket (unfiltered and bucketed chains for SPY, QQQ, IWM, TSLA, NVDA: status, size, contracts per expiry) sets the bucket boundaries as expiry-date ranges in config; it gates only that config.
+  A name the split rung leaves `partial` or `failed` on 3 consecutive sessions raises an ops notice that the boundaries need retuning.
+  Recursive halving was rejected: July's 4% sporadic 502s would turn noise into unbounded call trees.
 - Statuses gain `rejected` (a 400 symbol rejection) and `empty` (a 200 with no contracts), giving seven: `ok`, `partial`, `failed`, `stale`, `skipped`, `rejected`, `empty`.
 - Stale guard: a chain whose median non-null `quote_time` is before that session's open is stored whole as `stale`.
 - At the deadline every unscanned roster name gets a `skipped` tombstone; there is no catch-up the next morning.
