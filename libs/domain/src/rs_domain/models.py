@@ -11,7 +11,7 @@ from datetime import date, datetime
 from enum import StrEnum
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, NonNegativeInt
+from pydantic import BaseModel, ConfigDict, NonNegativeInt, PositiveInt
 
 from rs_domain._types import UtcDatetime
 
@@ -58,6 +58,32 @@ class SourceStatus(StrEnum):
     FAILED = "failed"
     STALE = "stale"
     SKIPPED = "skipped"
+
+
+class PopularityOrigin(StrEnum):
+    """Where a popularity row came from. Values are the DB column values."""
+
+    LIVE = "live"
+    V1_IMPORT = "v1_import"
+
+
+class PopularitySnapshot(BaseModel):
+    """One ticker's ApeWisdom standing at one poll boundary. `polled_at` is the
+    UTC half-hour boundary at or before the fetch; `fetched_at` is when the
+    response actually arrived. The 24h-ago fields are None when ApeWisdom has
+    no prior reading for the ticker."""
+
+    model_config = ConfigDict(frozen=True)
+
+    polled_at: UtcDatetime
+    ticker: str
+    rank: PositiveInt
+    mentions: NonNegativeInt
+    upvotes: NonNegativeInt
+    rank_24h_ago: NonNegativeInt | None = None
+    mentions_24h_ago: NonNegativeInt | None = None
+    fetched_at: UtcDatetime
+    origin: PopularityOrigin
 
 
 def median_instant(values: Iterable[datetime]) -> datetime | None:

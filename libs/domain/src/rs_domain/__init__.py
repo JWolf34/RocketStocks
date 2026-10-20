@@ -9,6 +9,8 @@ from rs_domain.models import (
     ChainSnapshot,
     Dataset,
     OptionQuote,
+    PopularityOrigin,
+    PopularitySnapshot,
     SourceStatus,
     median_instant,
 )
@@ -24,6 +26,8 @@ __all__ = [
     "Detector",
     "EventSource",
     "OptionQuote",
+    "PopularityOrigin",
+    "PopularitySnapshot",
     "SourceStatus",
     "SystemClock",
     "TradingCalendar",

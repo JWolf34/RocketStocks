@@ -11,6 +11,7 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 
 SCOPES=(
+  "libs/analysis/src"
   "libs/domain/src"
   "libs/observability/src"
   "services/bot/src"
