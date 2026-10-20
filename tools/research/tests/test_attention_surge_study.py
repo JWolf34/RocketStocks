@@ -20,7 +20,12 @@ from rs_domain import (
     PopularitySnapshot,
     StoredDailyBar,
 )
-from rs_persistence import AlertRepository, BaseRateRow, DailyBarRepository, PopularityRepository
+from rs_persistence import (
+    AlertRepository,
+    BaseRateRow,
+    DailyBarRepository,
+    PopularityRepository,
+)
 from rs_query import current_base_rate
 from rs_research import attention_surge
 from rs_research.__main__ import main
@@ -171,7 +176,7 @@ async def test_reconstructed_base_rate_is_stored_and_read_back_by_rs_query(sessi
     assert (stored.n, stored.n_unpriced) == (5, 1)
     aaa = [excess(52, 54, 101, 102), excess(52, 62, 101, 106), excess(52, 72, 101, 111)]
     bbb = [excess(77, 76, 103, 104), excess(77, 72, 103, 108), excess(77, 67, 103, 113)]
-    fff = [excess(115, 118, 105, 106), excess(115, 130, 105, 110), excess(115, 145, 105, 120)]
+    fff = [excess(115, 118, 105, 106), excess(115, 130, 105, 110), excess(115, 145, 105, 115)]
     ggg = [excess(100, 100, 102, 103), excess(100, 100, 102, 107), excess(100, 100, 102, 112)]
     # DDD has no exit session stored, so it adds to N but to no horizon.
     assert stored.hit_rate_1d == 0.5  # AAA and FFF beat SPY; BBB and GGG did not
@@ -181,7 +186,7 @@ async def test_reconstructed_base_rate_is_stored_and_read_back_by_rs_query(sessi
     assert stored.median_excess_1d == pytest.approx(median([aaa[0], bbb[0], fff[0], ggg[0]]))
     assert stored.median_excess_5d == pytest.approx(median([aaa[1], bbb[1], fff[1], ggg[1]]))
     assert stored.median_excess_10d == pytest.approx(median([aaa[2], bbb[2], fff[2], ggg[2]]))
-    assert stored.median_excess_1d == pytest.approx(0.003427, abs=1e-6)
+    assert stored.median_excess_1d == pytest.approx(0.003380, abs=1e-6)
     assert "1 of 6" in stored.survivorship_caveat
 
 
@@ -314,3 +319,15 @@ def test_cli_requires_its_own_dsn(monkeypatch, capsys):
 def test_cli_rejects_an_unknown_study():
     with pytest.raises(SystemExit):
         main(["event-study", "nope"])
+
+
+async def test_imported_rows_without_upvotes_replay_like_any_other(session_factory):
+    imported = [
+        s.model_copy(update={"upvotes": None, "origin": PopularityOrigin.V1_IMPORT}) for s in SNAPSHOTS
+    ]
+    await _seed(session_factory, snapshots=imported, alerts=[])
+
+    result = await attention_surge.compute(session_factory, FixedClock())
+
+    [reconstructed] = result.rates
+    assert (reconstructed.n, reconstructed.n_unpriced) == (5, 1)

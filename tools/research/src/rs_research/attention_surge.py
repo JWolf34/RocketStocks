@@ -18,7 +18,6 @@ whose ticker has no bars (or no price) and so could not be measured.
 """
 
 import logging
-from collections import defaultdict
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from datetime import UTC, date, datetime, timedelta
@@ -77,13 +76,11 @@ async def _load_bars(
     rows: list[StoredDailyBar] = []
     for symbol in sorted(windows):
         start, end = windows[symbol]
-        rows.extend(
-            await _drain(
-                lambda cursor, s=symbol, a=start, b=end: daily_bars(
-                    session, s, a, b, limit=PAGE_SIZE, cursor=cursor
-                )
-            )
-        )
+
+        async def fetch(cursor: str | None, symbol: str = symbol, start: date = start, end: date = end) -> Page[StoredDailyBar]:
+            return await daily_bars(session, symbol, start, end, limit=PAGE_SIZE, cursor=cursor)
+
+        rows.extend(await _drain(fetch))
     index = pd.MultiIndex.from_arrays(
         [[r.symbol for r in rows], [r.session_date.toordinal() for r in rows]],
         names=["symbol", "session"],
