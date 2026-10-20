@@ -1,125 +1,151 @@
-"""Entry-point metrics wiring (S006 + S008): the scrape-time views of the
-session aggregator's and chain scanner's counters. Both exist from process
-start, so every metric name is present before any session activity and
-rate() sees continuous series. The chain-scan collector set is the S012
-metrics contract — names asserted here exactly as the spec pins them."""
+"""The daemon as an operator runs it: a real `python -m rs_ingest` process
+against the test database, probed through its metrics port and healthcheck
+command, stopped with SIGTERM."""
 
 import asyncio
-from datetime import UTC, datetime, timedelta
-from types import SimpleNamespace
+import os
+import signal
+import socket
+import subprocess
+import sys
+import time
+import urllib.request
+from collections.abc import Callable, Iterator
+from pathlib import Path
 
 import pytest
-from prometheus_client import CollectorRegistry, Histogram, generate_latest
+from sqlalchemy import create_engine, text
 
-from rs_domain import SourceStatus
-from rs_ingest.__main__ import (
-    CYCLE_DURATION_BUCKETS,
-    ScrapeTimeCounters,
-    _run_chain_scanner,
-    chain_scan_collectors,
-    live_aggregator_counters,
-)
-from rs_ingest.aggregator import COUNTER_NAMES
+from rs_persistence import SchwabTokenStore, build_engine, build_session_factory
 
-
-def test_serves_all_zero_counters_before_the_session_starts():
-    view = ScrapeTimeCounters(lambda: live_aggregator_counters(SimpleNamespace(aggregator=None)))
-    assert dict(view) == dict.fromkeys(COUNTER_NAMES, 0)
-
-
-def test_reads_through_to_the_live_aggregator_at_scrape_time():
-    live = SimpleNamespace(aggregator=None)
-    view = ScrapeTimeCounters(lambda: live_aggregator_counters(live))
-    live.aggregator = SimpleNamespace(counters={"bars_built": 7, "ticks_late_dropped": 1})
-    assert dict(view) == {"bars_built": 7, "ticks_late_dropped": 1}
-    live.aggregator.counters["bars_built"] += 1
-    assert view["bars_built"] == 8
+# Shape schwab-py expects of a stored token; nothing here ever reaches Schwab.
+STORED_TOKEN = {
+    "creation_timestamp": 1_760_000_000,
+    "token": {
+        "access_token": "a",
+        "refresh_token": "r",
+        "expires_in": 1800,
+        "token_type": "Bearer",
+        "scope": "api",
+        "expires_at": 1_760_001_800,
+    },
+}
+WAIT_SECONDS = 30.0
 
 
-def scanner_stub(last_success_at=None):
-    """The attribute surface chain_scan_collectors reads (ChainScanner's
-    metric state, seeded exactly as the scanner seeds it)."""
-    return SimpleNamespace(
-        cycle_outcomes={"completed": 0, "skipped": 0},
-        fetch_outcomes={s.value: 0 for s in SourceStatus},
-        rows_written={s.value: 0 for s in SourceStatus},
-        retries=0,
-        scan_errors=0,
-        last_success_at=last_success_at,
-    )
+def free_port() -> int:
+    with socket.socket() as sock:
+        sock.bind(("127.0.0.1", 0))
+        return int(sock.getsockname()[1])
 
 
-class TestChainScanCollectors:
-    NOW = datetime(2026, 7, 16, 15, 0, tzinfo=UTC)
-
-    def scrape(self, scanner, clock=None):
-        histogram = Histogram(
-            "chain_scan_cycle_duration_seconds",
-            "test",
-            buckets=CYCLE_DURATION_BUCKETS,
-            registry=None,
+class DaemonProcess:
+    def __init__(self, db_url: str, workdir: Path) -> None:
+        self.port = free_port()
+        self.env = {key: value for key, value in os.environ.items() if not key.startswith("RS_")}
+        self.env |= {
+            "RS_DB_URL": db_url,
+            "SCHWAB_API_KEY": "key",
+            "SCHWAB_API_SECRET": "secret",
+            "RS_INGEST_METRICS_PORT": str(self.port),
+            "RS_INGEST_TOKEN_POLL_SECONDS": "0.2",
+            "RS_LOG_FORMAT": "json",
+        }
+        self.process = subprocess.Popen(
+            [sys.executable, "-m", "rs_ingest"],
+            env=self.env,
+            cwd=workdir,  # no .env here, so only the environment above applies
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
         )
-        registry = CollectorRegistry()
-        for collector in chain_scan_collectors(
-            scanner, histogram, clock or SimpleNamespace(now=lambda: self.NOW)
-        ):
-            registry.register(collector)
-        return generate_latest(registry).decode()
 
-    def test_every_pinned_metric_name_present_from_start(self):
-        text = self.scrape(scanner_stub())
-        assert 'chain_scan_cycles_total{outcome="completed"} 0.0' in text
-        assert 'chain_scan_cycles_total{outcome="skipped"} 0.0' in text
-        for status in ("ok", "partial", "failed", "stale", "skipped"):
-            assert f'chain_scan_fetches_total{{outcome="{status}"}} 0.0' in text
-            assert f'chain_snapshot_rows_written_total{{source_status="{status}"}} 0.0' in text
-        assert "chain_scan_retries_total 0.0" in text
-        assert "chain_scan_errors_total 0.0" in text
-        assert "# TYPE chain_scan_cycle_duration_seconds histogram" in text
-        # Freshness gauge: family declared, sample absent before first success.
-        assert "# TYPE source_last_success_seconds gauge" in text
-        assert 'source_last_success_seconds{source="options_curated_5m"}' not in text
+    def metrics(self) -> str:
+        with urllib.request.urlopen(f"http://127.0.0.1:{self.port}/metrics", timeout=2) as response:
+            return str(response.read().decode())
 
-    def test_freshness_gauge_measures_at_scrape_time(self):
-        scanner = scanner_stub(last_success_at=self.NOW - timedelta(seconds=42))
-        text = self.scrape(scanner)
-        assert 'source_last_success_seconds{source="options_curated_5m"} 42.0' in text
+    def healthcheck(self) -> int:
+        return subprocess.run(
+            [sys.executable, "-m", "rs_ingest.healthcheck"],
+            env=self.env,
+            capture_output=True,
+            timeout=15,
+        ).returncode
+
+    def wait_for(self, condition: Callable[[], bool]) -> None:
+        deadline = time.monotonic() + WAIT_SECONDS
+        while time.monotonic() < deadline:
+            if self.process.poll() is not None:
+                pytest.fail(f"daemon exited early ({self.process.returncode}): {self.output()}")
+            try:
+                if condition():
+                    return
+            except OSError:
+                pass
+            time.sleep(0.1)
+        pytest.fail(f"condition not met in {WAIT_SECONDS}s; output: {self.output()}")
+
+    def output(self) -> str:
+        if self.process.poll() is None:
+            return "(still running)"
+        return str(self.process.stdout.read()) if self.process.stdout else ""
+
+    def terminate(self) -> int:
+        self.process.send_signal(signal.SIGTERM)
+        return self.process.wait(timeout=WAIT_SECONDS)
 
 
-class TestScannerGuard:
-    async def test_crash_is_counted_and_scan_resumes_at_next_boundary(self, caplog):
-        """An escape from the cycle machinery costs one cycle, not the session
-        (spec: "logged + counted and the loop resumes at the next boundary")."""
-        runs = []
-        scanner = SimpleNamespace(scan_errors=0, cycle_interval=timedelta(minutes=5))
+def clear_token(db_url: str) -> None:
+    engine = create_engine(db_url)
+    try:
+        with engine.begin() as conn:
+            conn.execute(text("DELETE FROM schwab_tokens"))
+    finally:
+        engine.dispose()
 
-        async def run_crashing_once():
-            runs.append(1)
-            if len(runs) == 1:
-                raise RuntimeError("scanner bug")
 
-        scanner.run = run_crashing_once
-        slept = []
+@pytest.fixture
+def daemon(migrated_db_url: str, tmp_path: Path) -> Iterator[DaemonProcess]:
+    clear_token(migrated_db_url)  # the DB is shared across the session; start token-less
+    running = DaemonProcess(migrated_db_url, tmp_path)
+    yield running
+    if running.process.poll() is None:
+        running.process.kill()
+        running.process.wait()
 
-        async def sleep(seconds):
-            slept.append(seconds)
 
-        with caplog.at_level("ERROR"):
-            await _run_chain_scanner(scanner, sleep=sleep)
-        assert len(runs) == 2
-        assert scanner.scan_errors == 1
-        assert slept == [300.0]
-        assert "stream capture continues" in caplog.text
+def store_token(db_url: str) -> None:
+    async def save() -> None:
+        engine = build_engine(db_url)
+        try:
+            await SchwabTokenStore(build_session_factory(engine)).save(STORED_TOKEN)
+        finally:
+            await engine.dispose()
 
-    async def test_cancellation_passes_through(self):
-        started = asyncio.Event()
+    asyncio.run(save())
 
-        async def hanging_run():
-            started.set()
-            await asyncio.Future()
 
-        task = asyncio.create_task(_run_chain_scanner(SimpleNamespace(run=hanging_run)))
-        await started.wait()
-        task.cancel()
-        with pytest.raises(asyncio.CancelledError):
-            await task
+def test_daemon_without_a_token_stays_up_gated_and_exits_zero_on_sigterm(daemon):
+    daemon.wait_for(lambda: daemon.healthcheck() == 0)
+    daemon.wait_for(lambda: "schwab_token_dead 1.0" in daemon.metrics())
+
+    assert daemon.terminate() == 0
+    output = daemon.process.stdout.read()
+    assert "no Schwab token stored" in output
+    assert "rs_ingest daemon stopped" in output
+
+
+def test_a_token_stored_after_startup_resumes_the_gate(daemon, migrated_db_url):
+    daemon.wait_for(lambda: "schwab_token_dead 1.0" in daemon.metrics())
+
+    store_token(migrated_db_url)
+
+    daemon.wait_for(lambda: "schwab_token_dead 0.0" in daemon.metrics())
+    assert daemon.terminate() == 0
+
+
+def test_healthcheck_fails_when_the_daemon_is_not_running(daemon):
+    daemon.wait_for(lambda: daemon.healthcheck() == 0)
+    daemon.terminate()
+
+    assert daemon.healthcheck() == 1

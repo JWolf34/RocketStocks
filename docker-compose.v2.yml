@@ -62,11 +62,17 @@ services:
   ingest:
     <<: *app
     command: ["python", "-m", "rs_ingest"]
-    # Interim policy (S006 pin #5): a transient crash resumes bar-writing,
-    # bounded poison-failure noise, quiet after a clean session exit. Flips
-    # to unless-stopped when ingest becomes the multi-session daemon
-    # (Phase-2 warm-up, ADR-0018).
-    restart: on-failure:3
+    # Multi-session daemon: the container restart policy backs up its own
+    # supervisor, and the heartbeat healthcheck catches a hung (not crashed) loop.
+    restart: unless-stopped
+    # Must exceed RS_INGEST_SHUTDOWN_GRACE_SECONDS (30) so SIGTERM can drain.
+    stop_grace_period: 45s
+    healthcheck:
+      test: ["CMD", "python", "-m", "rs_ingest.healthcheck"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
     environment:
       <<: *app-env
       SCHWAB_API_KEY: ${SCHWAB_API_KEY}

@@ -27,6 +27,20 @@ def test_defaults(monkeypatch):
     assert settings.rs_db_url == REQUIRED["RS_DB_URL"]
 
 
+def test_supervision_defaults_and_env_overrides(monkeypatch):
+    _set_required(monkeypatch)
+    settings = IngestSettings(_env_file=None)
+    assert settings.job_failure_threshold == 3
+    assert settings.token_poll_seconds == 60.0
+    assert settings.shutdown_grace_seconds == 30.0
+
+    monkeypatch.setenv("RS_INGEST_JOB_FAILURE_THRESHOLD", "5")
+    monkeypatch.setenv("RS_INGEST_SHUTDOWN_GRACE_SECONDS", "10")
+    settings = IngestSettings(_env_file=None)
+    assert settings.job_failure_threshold == 5
+    assert settings.shutdown_grace_seconds == 10.0
+
+
 def test_secret_not_leaked_in_repr(monkeypatch):
     _set_required(monkeypatch)
     settings = IngestSettings(_env_file=None)
