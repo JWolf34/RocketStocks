@@ -11,6 +11,7 @@ from datetime import time, timedelta
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from rs_domain import Clock, TradingCalendar
+from rs_ingest.base_rate import base_rate_job
 from rs_ingest.cron import CronTable, Daily, Job
 from rs_ingest.rate_limit import RateLimiter
 from rs_ingest.schwab_session import SchwabSession
@@ -29,7 +30,7 @@ class Dependencies:
 
 
 def register_jobs(cron: CronTable, deps: Dependencies) -> None:
-    """The popularity poll and alert writer arrive here beside surge_bars."""
+    """The popularity poll and alert writer arrive here beside surge_bars and the base-rate study."""
 
     async def surge_bars() -> None:
         await sync_surge_bars(
@@ -52,3 +53,4 @@ def register_jobs(cron: CronTable, deps: Dependencies) -> None:
             timeout=timedelta(hours=3),
         )
     )
+    cron.register(base_rate_job())

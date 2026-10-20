@@ -23,6 +23,7 @@ COPY services/ingest/pyproject.toml services/ingest/
 COPY services/serve/pyproject.toml services/serve/
 COPY tools/backfill/pyproject.toml tools/backfill/
 COPY tools/migrate/pyproject.toml tools/migrate/
+COPY tools/research/pyproject.toml tools/research/
 RUN --mount=type=cache,target=/root/.cache/uv \
     uv sync --locked --all-packages --no-install-package rocketstocks \
     --no-dev --no-editable --no-install-workspace

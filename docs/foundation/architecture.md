@@ -49,6 +49,8 @@ One TimescaleDB, a one-shot migrate gate, and three services from one shared ima
 
 - ingest's in-process cron table owns every Schwab-touching job against one rate budget: symbol master, daily bars, options EOD scan, popularity, calendar and EDGAR polls.
 - The weekly base-rate rerun runs `rs_research` as a subprocess of the same image.
+  The `base_rate_weekly` job fires Sunday 20:00 America/Chicago and runs `python -m rs_research event-study attention_surge` with only `RS_RESEARCH_DB_URL` (the `rs_research` role) of ingest's environment.
+  A non-zero exit calls `notify_ops()`.
 - The bot schedules its own digests (daily post-close, Monday earnings preview), which only read the database.
 
 ## Notifications and observability
