@@ -54,7 +54,11 @@ Out: see the end of this page.
 - Statuses gain `rejected` (a 400 symbol rejection) and `empty` (a 200 with no contracts), giving seven: `ok`, `partial`, `failed`, `stale`, `skipped`, `rejected`, `empty`.
 - Stale guard: a chain whose median non-null `quote_time` is before that session's open is stored whole as `stale`.
 - At the deadline every unscanned roster name gets a `skipped` tombstone; there is no catch-up the next morning.
-- Restart mid-scan **(open, D-D)**: recommendation: resume the same cycle, skipping names that already have a row for it, until the deadline.
+- Restart mid-scan (D-D, John 2026-10-20): resume the same cycle.
+  The scan is a window job: the daemon starts it at launch, at startup inside an open window (launch to deadline, cycle unfinished), and when the token gate clears inside one; this is a generic daemon extension.
+  Each underlying's rows (payload or tombstone) commit in one transaction, so a resumed scan recomputes the roster with the same query and skips names that already have a row; `symbol_master` never runs inside the window, and the cooling tail derives from earlier cycles, so the roster is the same.
+  A separate non-Schwab `eod_scan_close` step runs at 03:00 CT, and at startup for the latest cycle past its deadline, writing a `skipped` tombstone for every roster name with no row; it is idempotent, so the deadline holds even when the scan is not running.
+  The scan starts nothing new after the deadline; a name in flight finishes and is written.
 - Dead token mid-scan **(open, D-E)**: recommendation: the scan pauses with the token gate and resumes if the token is renewed before the deadline; anything unscanned at the deadline is `skipped`.
 - Divergence cross-check, alarms only and never auto-mutation: a 400 rejection on a flagged name alarms on night 1; a flagged name `empty` for 3 sessions alarms; a live chain on an unflagged name is logged.
 - Reader rule, written into `rs_query`: a non-`ok` row means no observation, never zero.
@@ -78,7 +82,7 @@ Recommendation: measure the first recorded night's compressed size before choosi
 
 Grants: ingest writes `symbols`; bot, serve and research read it.
 
-**Jobs** added to `services/ingest/src/rs_ingest/jobs.py`: `symbol_master` (nightly, before the scan, not a Schwab job), `daily_bars` (replaces `surge_bars`; seeds and updates, Schwab), `eod_scan` (22:00 CT session days, Schwab).
+**Jobs** added to `services/ingest/src/rs_ingest/jobs.py`: `symbol_master` (nightly, before the scan, not a Schwab job), `daily_bars` (replaces `surge_bars`; seeds and updates, Schwab), `eod_scan` (window job from 22:00 CT on session days, Schwab), `eod_scan_close` (03:00 CT and at startup, not a Schwab job).
 
 ## Acceptance
 
