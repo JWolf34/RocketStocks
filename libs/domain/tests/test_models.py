@@ -3,7 +3,16 @@ from datetime import date, datetime, timedelta, timezone
 import pytest
 from pydantic import ValidationError
 
-from rs_domain import Alert, ChainSnapshot, Dataset, OptionQuote, SourceStatus, median_instant
+from rs_domain import (
+    Alert,
+    ChainSnapshot,
+    Dataset,
+    OptionQuote,
+    PopularityOrigin,
+    PopularitySnapshot,
+    SourceStatus,
+    median_instant,
+)
 
 UTC_NOON = datetime(2026, 7, 6, 16, 0, tzinfo=timezone.utc)
 
@@ -124,3 +133,44 @@ class TestChainSnapshot:
     def test_enum_values_are_db_and_metric_vocabulary(self):
         assert [d.value for d in Dataset] == ["curated_5m", "eod_full"]
         assert [s.value for s in SourceStatus] == ["ok", "partial", "failed", "stale", "skipped"]
+
+
+class TestPopularitySnapshot:
+    def fields(self, **overrides):
+        base = dict(
+            polled_at=UTC_NOON,
+            ticker="ABC",
+            rank=12,
+            mentions=40,
+            upvotes=90,
+            rank_24h_ago=30,
+            mentions_24h_ago=15,
+            fetched_at=UTC_NOON + timedelta(seconds=12),
+            origin="live",
+        )
+        base.update(overrides)
+        return base
+
+    def test_valid_snapshot_builds_with_origin_enum(self):
+        snapshot = PopularitySnapshot(**self.fields())
+        assert snapshot.origin is PopularityOrigin.LIVE
+
+    def test_prior_day_fields_are_optional(self):
+        snapshot = PopularitySnapshot(**self.fields(rank_24h_ago=None, mentions_24h_ago=None))
+        assert snapshot.rank_24h_ago is None and snapshot.mentions_24h_ago is None
+
+    def test_frozen(self):
+        with pytest.raises(ValidationError):
+            PopularitySnapshot(**self.fields()).rank = 1
+
+    def test_rejects_unknown_origin(self):
+        with pytest.raises(ValidationError):
+            PopularitySnapshot(**self.fields(origin="legacy"))
+
+    def test_rejects_naive_polled_at(self):
+        with pytest.raises(ValidationError, match="naive"):
+            PopularitySnapshot(**self.fields(polled_at=datetime(2026, 7, 6, 16, 0)))
+
+    def test_rejects_rank_zero(self):
+        with pytest.raises(ValidationError):
+            PopularitySnapshot(**self.fields(rank=0))
