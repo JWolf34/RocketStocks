@@ -46,8 +46,8 @@ logger = logging.getLogger(__name__)
 
 
 class DiscordChannelSender:
-    """EmbedSender backed by the resolved alert channel (full gateway client -
-    spec pin #2). Returns the message id for the per-post G5 audit log."""
+    """EmbedSender backed by the resolved alert channel (full gateway client).
+    Returns the message id for the per-post audit log."""
 
     def __init__(self, channel: discord.abc.Messageable) -> None:
         self._channel = channel
@@ -76,7 +76,7 @@ async def run_bot(settings: BotSettings) -> int:
     install_excepthooks()  # the asyncio half — needs asyncio.run()'s loop
     engine = build_engine(settings.rs_db_url)
     counters = new_counters()
-    # Default intents only — no privileged intents (spec pin #7).
+    # Default intents only - no privileged intents.
     client = discord.Client(intents=discord.Intents.default())
     tree = app_commands.CommandTree(client)
     listen_task = sweep_task = gateway_task = notice_task = metrics_server = None

@@ -204,7 +204,7 @@ class OptionQuote(BaseModel):
 
     model_config = ConfigDict(frozen=True)
 
-    # identity — option_symbol is the OCC symbol, S009's day-over-day OI-join key
+    # identity - option_symbol is the OCC symbol, the day-over-day open-interest join key
     option_symbol: str
     expiry: date
     strike: float

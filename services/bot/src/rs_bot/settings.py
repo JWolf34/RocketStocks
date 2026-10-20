@@ -2,7 +2,7 @@
 
 RS_DB_URL is the same variable ingest and rs_migrate consume. The Discord
 credential is RS_BOT_DISCORD_TOKEN — deliberately not v1's DISCORD_TOKEN, so
-v2 can never read v1's credential during burn-in coexistence (spec pin #7).
+v2 can never read v1's credential during burn-in coexistence.
 Bot tunables carry an RS_BOT_ prefix so a stray shell export can
 never silently reconfigure the daemon.
 
@@ -25,7 +25,7 @@ class BotSettings(BaseSettings):
     # Who may run /setup schwab (besides the guild owner) and gets token-expiry DMs;
     # unset, only the guild owner may and the DMs go to the application's owner.
     admin_user_id: int | None = Field(None, validation_alias="RS_BOT_ADMIN_USER_ID")
-    # Bounds only the lost-NOTIFY tail — 20% of one bar (spec pin #6).
+    # Bounds only the lost-NOTIFY tail - 20% of one bar.
     sweep_seconds: float = Field(60.0, validation_alias="RS_BOT_SWEEP_SECONDS")
     # Failed sends allowed per alert before it is abandoned and ops is told.
     post_max_attempts: int = Field(5, ge=1, validation_alias="RS_BOT_POST_MAX_ATTEMPTS")

@@ -1,7 +1,7 @@
 """ADR-0015 counter vocabulary for the bot. In-memory dict, logged on every
 sweep that did work and at shutdown — the bot never exits daily, so
 shutdown-only logging would be blind. Exposition (:9091, registry,
-rs_observability) is deferred to the consolidated metrics spec (pin #8)."""
+rs_observability) is deferred."""
 
 COUNTER_NAMES = (
     "discord_posts_total",

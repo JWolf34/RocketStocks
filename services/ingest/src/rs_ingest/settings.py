@@ -18,7 +18,7 @@ from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
 LOGIN_HINT = "run /setup schwab in Discord, or: python -m rs_ingest.tools.login"
 
-# The spike's 10 tickers (S008 bootstrap universe; static until S010's
+# The spike's 10 tickers (the bootstrap universe; static until a later slice's
 # universe management replaces it).
 BOOTSTRAP_UNIVERSE = ["AAPL", "AMD", "AMZN", "GOOGL", "META", "MSFT", "NVDA", "QQQ", "SPY", "TSLA"]
 
