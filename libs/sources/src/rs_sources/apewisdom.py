@@ -18,6 +18,7 @@ logger = logging.getLogger(__name__)
 _PAGE_URL = "https://apewisdom.io/api/v1.0/filter/all-stocks/page/{page}"
 # The live listing is about 10 pages; far more means the envelope is garbage.
 _MAX_PAGES = 100
+_REASON_EXAMPLES = 3
 _RETRYABLE_STATUS = frozenset({429, 500, 502, 503, 504})
 
 
@@ -26,16 +27,24 @@ class ApeWisdomError(Exception):
 
 
 class ApeWisdomRow(BaseModel):
-    """One validated ticker row; `name` is dropped, the 24h-ago fields may be null."""
+    """One validated ticker row; `name` is dropped, the 24h-ago fields may be null.
+
+    `upvotes` is a net score and can be negative. ApeWisdom encodes "not ranked
+    24 hours ago" as rank_24h_ago 0, which becomes None (no prior reading)."""
 
     model_config = ConfigDict(frozen=True)
 
     rank: int = Field(gt=0)
     ticker: str = Field(min_length=1)
     mentions: int = Field(ge=0)
-    upvotes: int = Field(ge=0)
+    upvotes: int
     rank_24h_ago: int | None = Field(default=None, gt=0)
     mentions_24h_ago: int | None = Field(default=None, ge=0)
+
+    @field_validator("rank_24h_ago", mode="before")
+    @classmethod
+    def _zero_means_unranked(cls, value: Any) -> Any:
+        return None if value == "0" or (type(value) is int and value == 0) else value
 
     @field_validator("ticker", mode="before")
     @classmethod
@@ -74,19 +83,21 @@ class ApeWisdomClient:
             envelopes.append(await self._get_page(page))
 
         rows: dict[str, ApeWisdomRow] = {}
-        rejected = 0
+        rejected: list[str] = []
         for envelope in envelopes:
             for raw in envelope["results"]:
                 try:
                     row = ApeWisdomRow.model_validate(raw)
                 except ValidationError as exc:
-                    rejected += 1
-                    logger.warning("rejected ApeWisdom row %r: %s", raw, exc.errors(include_url=False))
+                    reasons = exc.errors(include_url=False)
+                    rejected.append(_reason(reasons))
+                    logger.debug("rejected ApeWisdom row %r: %s", raw, reasons)
                     continue
                 # Rankings shift between page requests, so a ticker can repeat.
                 rows.setdefault(row.ticker, row)
         if rejected:
-            logger.warning("ApeWisdom: kept %d rows, rejected %d", len(rows), rejected)
+            examples = sorted(set(rejected))[:_REASON_EXAMPLES]
+            logger.warning("ApeWisdom: kept %d rows, rejected %d (e.g. %s)", len(rows), len(rejected), "; ".join(examples))
         return list(rows.values())
 
     async def _get_page(self, page: int) -> dict[str, Any]:
@@ -109,6 +120,11 @@ class ApeWisdomClient:
             except ValueError as exc:
                 failure = exc
         raise ApeWisdomError(f"page {page} failed after {self._max_attempts} attempts: {failure}") from failure
+
+
+def _reason(errors: list[Any]) -> str:
+    first = errors[0]
+    return f"{'.'.join(str(part) for part in first['loc'])}: {first['msg']}"
 
 
 def _check_envelope(body: Any) -> dict[str, Any]:

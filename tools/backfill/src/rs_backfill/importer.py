@@ -52,7 +52,7 @@ def to_snapshot(row: V1Row, zone_name: str) -> PopularitySnapshot | str:
             rank=row.rank,
             mentions=row.mentions,
             upvotes=row.upvotes,
-            rank_24h_ago=row.rank_24h_ago,
+            rank_24h_ago=row.rank_24h_ago or None,
             mentions_24h_ago=row.mentions_24h_ago,
             fetched_at=polled_at,
             origin=PopularityOrigin.V1_IMPORT,

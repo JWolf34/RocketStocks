@@ -99,6 +99,7 @@ What was built differs from the sections above in these ways; the current runtim
 - A dead Schwab token met inside the popularity poll also trips the daemon's token gate, so ops hears within one poll rather than only when a Schwab job next runs.
 - The daemon starts gated, not exited, when no token is stored, so `restart: unless-stopped` cannot crash-loop it.
 - The poll re-judges the previous boundary as well as its own (live snapshots only), so a failed alert write is caught up one boundary later; spec row 10 holds within that one-boundary limit.
+- ApeWisdom encodes "not ranked 24 hours ago" as `rank_24h_ago` 0 and upvotes are a net score that can be negative, so the adapter and the v1 import map a zero prior rank to none and keep negative upvotes.
 - `surge_bars` fetches from 30 sessions before the first event when a ticker has no bars, from the day after the newest otherwise, and back-fills when an older event predates stored bars; `adjusted` is stamped `False` until measured against a split ticker.
 - `unpriced_symbol` records a 400 or 404 only for a symbol with no bars; other failures make the job fail visibly instead.
 - `schwab_auth_request` has the states `requested`, `url_ready`, `callback_received`, `done`, `failed` and `expired`, and terminal states clear `callback_url` because it carries the OAuth code.

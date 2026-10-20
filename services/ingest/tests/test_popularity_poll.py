@@ -200,6 +200,20 @@ class TestStoringSnapshots:
         assert {s.fetched_at for s in stored} == {T0 + timedelta(seconds=20)}
         assert {s.origin for s in stored} == {"live"}
 
+    async def test_new_entrants_and_negative_upvotes_are_stored(self, session_factory, calendar, sleeps, notices):
+        rows = [
+            ApeWisdomRow(rank=1, ticker="NEWB", mentions=30, upvotes=-1, rank_24h_ago=None, mentions_24h_ago=None),
+            ApeWisdomRow(rank=2, ticker="DOWN", mentions=25, upvotes=-40, rank_24h_ago=3, mentions_24h_ago=24),
+        ]
+        rig = Rig(session_factory, calendar, sleeps, rows)
+
+        await rig.poll.run()
+
+        async with rig.session_factory() as session:
+            stored = {s.ticker: s for s in (await session.scalars(select(PopularitySnapshotRow))).all()}
+        assert (stored["NEWB"].upvotes, stored["NEWB"].rank_24h_ago) == (-1, None)
+        assert stored["DOWN"].upvotes == -40
+
     async def test_a_failed_fetch_stores_nothing_and_surfaces_the_error(self, session_factory, calendar, sleeps, notices):
         rig = Rig(session_factory, calendar, sleeps, ApeWisdomError("page 2 failed after 3 attempts"))
 

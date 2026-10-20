@@ -4,6 +4,8 @@ Payloads are synthetic: the real API returns numbers as strings, so rows use
 strings where the live shape does.
 """
 
+import logging
+
 import httpx
 import pytest
 
@@ -98,9 +100,10 @@ async def test_normalises_ticker_and_tolerates_null_24h_fields():
         raw(0, "ZERO"),
         raw(-3, "NEG"),
         raw(5, "BADM", mentions="-1"),
-        raw(5, "BADU", upvotes="-2"),
         raw(5, "BADH", mentions_24h_ago="-4"),
-        raw(5, "BADR", rank_24h_ago="0"),
+        raw(5, "BADR", rank_24h_ago="-1"),
+        raw(5, "BADS", rank_24h_ago="x"),
+        raw(5, "BADV", upvotes="x"),
         raw(5, ""),
         raw(5, "NOMEN", mentions=None),
         raw("x", "JUNK"),
@@ -113,6 +116,31 @@ async def test_malformed_row_is_rejected_and_the_rest_kept(bad):
     rows = await make_client(fake).fetch_all()
 
     assert [r.ticker for r in rows] == ["AMD", "GME"]
+
+
+async def test_unranked_24h_ago_and_negative_upvotes_are_kept():
+    entrant = raw(2, "NEWB", upvotes="-1", rank_24h_ago="0", mentions_24h_ago=None)
+    fake = FakeApeWisdom(page1=[ok(page([raw(1, "AMD"), entrant, raw(3, "GME", rank_24h_ago=0)]))])
+
+    rows = {r.ticker: r for r in await make_client(fake).fetch_all()}
+
+    assert set(rows) == {"AMD", "NEWB", "GME"}
+    assert (rows["NEWB"].rank_24h_ago, rows["NEWB"].upvotes, rows["NEWB"].mentions_24h_ago) == (None, -1, None)
+    assert rows["GME"].rank_24h_ago is None
+
+
+async def test_rejects_are_one_warning_per_fetch_with_row_detail_at_debug(caplog):
+    bad = [raw(0, f"B{i}") for i in range(50)] + [raw(5, "NOMEN", mentions=None)]
+    fake = FakeApeWisdom(page1=[ok(page([raw(1, "AMD"), *bad]))])
+
+    with caplog.at_level(logging.DEBUG, logger="rs_sources.apewisdom"):
+        rows = await make_client(fake).fetch_all()
+
+    assert [r.ticker for r in rows] == ["AMD"]
+    warnings = [r for r in caplog.records if r.levelno == logging.WARNING]
+    assert len(warnings) == 1
+    assert "rejected 51" in warnings[0].getMessage() and "rank" in warnings[0].getMessage()
+    assert sum(r.levelno == logging.DEBUG for r in caplog.records) == 51
 
 
 async def test_duplicate_ticker_across_pages_keeps_first():
