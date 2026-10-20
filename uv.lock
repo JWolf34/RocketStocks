@@ -2317,13 +2317,15 @@ name = "rs-sources"
 version = "0.1.0"
 source = { editable = "libs/sources" }
 dependencies = [
-    { name = "pandas-market-calendars" },
+    { name = "exchange-calendars" },
+    { name = "httpx" },
     { name = "rs-domain" },
 ]
 
 [package.metadata]
 requires-dist = [
-    { name = "pandas-market-calendars", specifier = ">=5.4.0" },
+    { name = "exchange-calendars", specifier = ">=4.13.2" },
+    { name = "httpx", specifier = ">=0.28.1" },
     { name = "rs-domain", editable = "libs/domain" },
 ]
 
