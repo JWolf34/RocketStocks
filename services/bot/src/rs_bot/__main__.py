@@ -18,9 +18,9 @@ import logging
 import signal
 import sys
 
+import discord
 from pydantic import ValidationError
 
-import discord
 from rs_bot.counters import new_counters
 from rs_bot.listener import ListenLoop
 from rs_bot.settings import BotSettings

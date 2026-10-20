@@ -20,9 +20,9 @@ import logging
 from contextlib import suppress
 from typing import Protocol
 
+import discord
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-import discord
 from rs_bot.counters import new_counters
 from rs_bot.render import render
 from rs_observability import unit_of_work
