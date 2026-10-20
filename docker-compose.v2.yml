@@ -85,6 +85,9 @@ services:
       RS_DB_URL: postgresql+psycopg://rs_ingest:${RS_DB_PASSWORD_INGEST}@timescaledb:5432/rocketstocks
       SCHWAB_API_KEY: ${SCHWAB_API_KEY}
       SCHWAB_API_SECRET: ${SCHWAB_API_SECRET}
+      # The weekly base-rate job runs rs_research as a subprocess under its own
+      # read-only role; the job passes this and nothing else of ingest's env.
+      RS_RESEARCH_DB_URL: postgresql+psycopg://rs_research:${RS_DB_PASSWORD_RESEARCH}@timescaledb:5432/rocketstocks
     ports:
       - "127.0.0.1:9090:9090"
 
