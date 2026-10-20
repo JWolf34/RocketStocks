@@ -43,7 +43,7 @@ def psycopg_conninfo(sqlalchemy_url: str) -> str:
 
 
 class DiscordChannelSender:
-    """EmbedSender backed by the resolved alert channel (full gateway client —
+    """EmbedSender backed by the resolved alert channel (full gateway client -
     spec pin #2). Returns the message id for the per-post G5 audit log."""
 
     def __init__(self, channel: discord.abc.Messageable) -> None:
@@ -77,7 +77,7 @@ async def run_bot(settings: BotSettings) -> int:
             channel = await client.fetch_channel(settings.alert_channel_id)
         except discord.DiscordException as exc:
             logger.error(
-                "cannot resolve alert channel %d — check RS_BOT_ALERT_CHANNEL_ID and the bot's "
+                "cannot resolve alert channel %d - check RS_BOT_ALERT_CHANNEL_ID and the bot's "
                 "invite/permissions (operator checklist §4): %s",
                 settings.alert_channel_id,
                 exc,
