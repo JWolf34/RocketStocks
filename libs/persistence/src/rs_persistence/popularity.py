@@ -3,7 +3,7 @@
 from collections.abc import Sequence
 from datetime import UTC, datetime
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -48,6 +48,17 @@ class PopularityRepository:
             )
             inserted += len(result.all())
         return inserted
+
+    async def extent(self, origin: PopularityOrigin) -> tuple[datetime, datetime] | None:
+        """Earliest and latest polled_at among one origin's rows, None when it has none."""
+        result = await self._session.execute(
+            select(func.min(PopularitySnapshotRow.polled_at), func.max(PopularitySnapshotRow.polled_at))
+            .where(PopularitySnapshotRow.origin == origin.value)
+        )
+        first, last = result.one()
+        if first is None or last is None:
+            return None
+        return first.astimezone(UTC), last.astimezone(UTC)
 
     async def list_for_ticker(
         self, ticker: str, start: datetime, end: datetime
