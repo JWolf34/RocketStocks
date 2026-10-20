@@ -30,9 +30,11 @@ from rs_query import current_base_rate
 from rs_research import attention_surge
 from rs_research.__main__ import main
 from rs_research.attention_surge import StudyError
+from rs_sources.calendar import ExchangeCalendar
 
 AUG_3 = date(2026, 8, 3)
 NOW = datetime(2026, 9, 1, 12, 0, tzinfo=UTC)
+CALENDAR = ExchangeCalendar()
 
 
 class FixedClock:
@@ -165,7 +167,7 @@ def _by_input(rates: list[BaseRate]) -> dict[BaseRateInput, BaseRate]:
 async def test_reconstructed_base_rate_is_stored_and_read_back_by_rs_query(session_factory):
     await _seed(session_factory)
 
-    result = await attention_surge.run(session_factory, FixedClock())
+    result = await attention_surge.run(session_factory, FixedClock(), CALENDAR)
 
     async with session_factory() as s:
         stored = await current_base_rate(s, "attention_surge", "1")
@@ -193,7 +195,7 @@ async def test_reconstructed_base_rate_is_stored_and_read_back_by_rs_query(sessi
 async def test_logged_base_rate_enters_at_the_alert_price(session_factory):
     await _seed(session_factory)
 
-    result = await attention_surge.run(session_factory, FixedClock())
+    result = await attention_surge.run(session_factory, FixedClock(), CALENDAR)
 
     logged = _by_input(result.rates)[BaseRateInput.LOGGED]
     assert (logged.n, logged.n_unpriced) == (3, 2)  # a missing alert price, and a symbol with no bars
@@ -207,11 +209,63 @@ async def test_logged_base_rate_enters_at_the_alert_price(session_factory):
     assert logged.median_excess_1d == pytest.approx(-0.022625, abs=1e-6)
     assert logged.median_excess_10d == pytest.approx(0.149460, abs=1e-6)
     assert "2 of 5" in logged.survivorship_caveat
+    assert "3 of 3 measured posted alerts carried no alert-time SPY quote" in logged.survivorship_caveat
+
+
+def _with_benchmark(price: float) -> dict[str, object]:
+    return {
+        "facts": {
+            "benchmark": {
+                "status": "ok",
+                "symbol": "SPY",
+                "price": price,
+                "quote_time": _utc(3, 15).isoformat(),
+            }
+        }
+    }
+
+
+async def test_logged_excess_uses_the_alert_time_spy_quote_and_counts_the_fallbacks(session_factory):
+    # AAA at 11:00 ET Monday (SPY traded at 100.5 then, against Friday's close of 99).
+    with_quote = _alert("AAA", _utc(3, 15), 51.0, payload=_with_benchmark(100.5))
+    without = _alert("BBB", _utc(5, 21), 78.0)
+    await _seed(session_factory, snapshots=[], alerts=[with_quote, without])
+
+    result = await attention_surge.compute(session_factory, FixedClock(), CALENDAR)
+
+    logged = _by_input(result.rates)[BaseRateInput.LOGGED]
+    aaa = [excess(51, 50, 100.5, 100), excess(51, 58, 100.5, 104), excess(51, 68, 100.5, 109)]
+    bbb = [excess(78, 77, 102, 103), excess(78, 73, 102, 107), excess(78, 68, 102, 112)]
+    for k, day in enumerate((1, 5, 10)):
+        assert getattr(logged, f"median_excess_{day}d") == pytest.approx((aaa[k] + bbb[k]) / 2)
+    assert "1 of 2 measured posted alerts carried no alert-time SPY quote" in logged.survivorship_caveat
+
+
+async def test_a_missing_spy_bar_is_a_missing_exit_not_a_shifted_horizon(session_factory):
+    # Drop SPY's Wed Aug 5 (i = 2) bar: AAA enters at Friday's close (i = -1) and
+    # its 5-session exit (Fri Aug 7, i = 4) is unaffected, but BBB's 1-session
+    # exit is the deleted bar and so is missing.
+    bars = [b for b in _bars() if not (b.symbol == "SPY" and b.session_date == SESSIONS[2])]
+    alerts = [_alert("AAA", _utc(3, 15), 51.0), _alert("BBB", _utc(4, 21), 79.0)]  # BBB: ref i = 1
+    await _seed(session_factory, snapshots=[], alerts=alerts, bars=bars)
+
+    result = await attention_surge.compute(session_factory, FixedClock(), CALENDAR)
+
+    logged = _by_input(result.rates)[BaseRateInput.LOGGED]
+    assert (logged.n, logged.n_unpriced) == (2, 0)
+    assert "1 matured outcomes had no exit price" in logged.survivorship_caveat
+    # 1d: only AAA (BBB's exit session has no SPY bar); with the old SPY-session
+    # horizons BBB would have been exited a session late.
+    assert logged.median_excess_1d == pytest.approx(excess(51, 50, 99, 100))
+    # 5d and 10d: both alerts, exits unchanged by the deleted bar.
+    assert logged.median_excess_5d == pytest.approx(
+        (excess(51, 58, 99, 104) + excess(79, 74, 101, 106)) / 2
+    )
 
 
 async def test_a_logged_row_is_only_shown_once_it_has_enough_alerts(session_factory):
     await _seed(session_factory)
-    await attention_surge.run(session_factory, FixedClock())
+    await attention_surge.run(session_factory, FixedClock(), CALENDAR)
 
     inputs = [row.input for row in await _rows(session_factory)]
 
@@ -225,8 +279,8 @@ async def test_a_logged_row_is_only_shown_once_it_has_enough_alerts(session_fact
 async def test_the_same_database_and_clock_give_the_same_rows(session_factory):
     await _seed(session_factory)
 
-    first = await attention_surge.compute(session_factory, FixedClock())
-    second = await attention_surge.compute(session_factory, FixedClock())
+    first = await attention_surge.compute(session_factory, FixedClock(), CALENDAR)
+    second = await attention_surge.compute(session_factory, FixedClock(), CALENDAR)
 
     assert first == second
 
@@ -234,8 +288,8 @@ async def test_the_same_database_and_clock_give_the_same_rows(session_factory):
 async def test_a_rerun_appends_rows_and_readers_take_the_latest(session_factory):
     await _seed(session_factory)
 
-    await attention_surge.run(session_factory, FixedClock())
-    await attention_surge.run(session_factory, FixedClock())
+    await attention_surge.run(session_factory, FixedClock(), CALENDAR)
+    await attention_surge.run(session_factory, FixedClock(), CALENDAR)
 
     assert len(await _rows(session_factory)) == 4
 
@@ -244,7 +298,7 @@ async def test_events_whose_ticker_has_no_bars_are_counted_not_dropped(session_f
     spy_only = [b for b in _bars() if b.symbol == "SPY"]
     await _seed(session_factory, alerts=[], bars=spy_only)
 
-    result = await attention_surge.compute(session_factory, FixedClock())
+    result = await attention_surge.compute(session_factory, FixedClock(), CALENDAR)
 
     # Every replayed event is unpriced, so nothing is measured and nothing is written.
     assert result.rates == []
@@ -255,14 +309,14 @@ async def test_an_event_before_the_stored_benchmark_history_is_unpriced(session_
     early = _surge("AAA", _utc(1, 15, month=7))  # three weeks before the first stored SPY session
     await _seed(session_factory, snapshots=[early, *SNAPSHOTS], alerts=[])
 
-    result = await attention_surge.compute(session_factory, FixedClock())
+    result = await attention_surge.compute(session_factory, FixedClock(), CALENDAR)
 
     [reconstructed] = result.rates
     assert (reconstructed.n, reconstructed.n_unpriced) == (5, 2)
 
 
 async def test_nothing_is_written_when_there_is_nothing_to_measure(session_factory):
-    result = await attention_surge.run(session_factory, FixedClock())
+    result = await attention_surge.run(session_factory, FixedClock(), CALENDAR)
 
     assert result.rates == []
     assert await _rows(session_factory) == []
@@ -272,7 +326,7 @@ async def test_missing_benchmark_bars_fail_loudly(session_factory):
     await _seed(session_factory, bars=[b for b in _bars() if b.symbol != "SPY"])
 
     with pytest.raises(StudyError, match="SPY"):
-        await attention_surge.run(session_factory, FixedClock())
+        await attention_surge.run(session_factory, FixedClock(), CALENDAR)
     assert await _rows(session_factory) == []
 
 
@@ -283,7 +337,7 @@ async def test_snapshots_after_the_clock_are_not_replayed(session_factory):
         def now(self) -> datetime:
             return _utc(4, 12)  # only AAA's Aug 3 events exist yet
 
-    result = await attention_surge.compute(session_factory, EarlyClock())
+    result = await attention_surge.compute(session_factory, EarlyClock(), CALENDAR)
 
     assert result.events == 1
 
@@ -292,7 +346,7 @@ async def test_cli_runs_the_study_and_exits_zero(session_factory, migrated_db_ur
     await _seed(session_factory)
     monkeypatch.setenv("RS_RESEARCH_DB_URL", migrated_db_url)
 
-    code = await asyncio.to_thread(main, ["event-study", "attention_surge"], FixedClock())
+    code = await asyncio.to_thread(main, ["event-study", "attention_surge"], FixedClock(), CALENDAR)
 
     assert code == 0
     assert [row.input for row in await _rows(session_factory)] == ["reconstructed", "logged"]
@@ -302,7 +356,7 @@ async def test_cli_exits_one_when_the_study_fails(session_factory, migrated_db_u
     await _seed(session_factory, bars=[])
     monkeypatch.setenv("RS_RESEARCH_DB_URL", migrated_db_url)
 
-    code = await asyncio.to_thread(main, ["event-study", "attention_surge"], FixedClock())
+    code = await asyncio.to_thread(main, ["event-study", "attention_surge"], FixedClock(), CALENDAR)
 
     assert code == 1
     assert await _rows(session_factory) == []
@@ -327,7 +381,7 @@ async def test_imported_rows_without_upvotes_replay_like_any_other(session_facto
     ]
     await _seed(session_factory, snapshots=imported, alerts=[])
 
-    result = await attention_surge.compute(session_factory, FixedClock())
+    result = await attention_surge.compute(session_factory, FixedClock(), CALENDAR)
 
     [reconstructed] = result.rates
     assert (reconstructed.n, reconstructed.n_unpriced) == (5, 1)
@@ -339,7 +393,7 @@ async def test_the_study_runs_under_the_least_privilege_research_role(
     await _seed(session_factory)
     monkeypatch.setenv("RS_RESEARCH_DB_URL", research_url)
 
-    code = await asyncio.to_thread(main, ["event-study", "attention_surge"], FixedClock())
+    code = await asyncio.to_thread(main, ["event-study", "attention_surge"], FixedClock(), CALENDAR)
 
     assert code == 0
     async with session_factory() as s:

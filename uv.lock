@@ -2686,6 +2686,7 @@ dependencies = [
     { name = "rs-observability" },
     { name = "rs-persistence" },
     { name = "rs-query" },
+    { name = "rs-sources" },
     { name = "sqlalchemy", extra = ["asyncio"] },
 ]
 
@@ -2703,6 +2704,7 @@ requires-dist = [
     { name = "rs-observability", editable = "libs/observability" },
     { name = "rs-persistence", editable = "libs/persistence" },
     { name = "rs-query", editable = "libs/query" },
+    { name = "rs-sources", editable = "libs/sources" },
     { name = "sqlalchemy", extras = ["asyncio"], specifier = ">=2" },
 ]
 

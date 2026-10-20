@@ -15,6 +15,7 @@ dependencies = [
     "rs-observability",
     "rs-persistence",
     "rs-query",
+    "rs-sources",
 ]
 
 [dependency-groups]
@@ -32,3 +33,4 @@ rs-migrate = { workspace = true }
 rs-observability = { workspace = true }
 rs-persistence = { workspace = true }
 rs-query = { workspace = true }
+rs-sources = { workspace = true }
