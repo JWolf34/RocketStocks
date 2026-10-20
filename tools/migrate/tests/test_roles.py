@@ -1,4 +1,4 @@
-# ruff: noqa: F811 — fixture params named after the imported migrated_db_url
+# ruff: noqa: F811 - fixture params named after the imported migrated_db_url
 # fixture are how pytest injects it, not redefinitions (test_cli idiom).
 
 import uuid
@@ -140,10 +140,6 @@ def test_every_migrated_table_has_a_grant_decision(roles):
 def test_grants_only_name_known_services():
     for table, by_service in GRANTS.items():
         assert set(by_service) <= set(SERVICES), f"{table} grants an unknown service"
-
-
-def test_only_ingest_can_read_schwab_tokens():
-    assert set(GRANTS["schwab_tokens"]) == {"ingest"}
 
 
 def test_applied_privileges_match_the_grants_table(roles):

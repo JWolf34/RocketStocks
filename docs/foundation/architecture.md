@@ -72,6 +72,7 @@ One TimescaleDB, a one-shot migrate gate, and three services from one shared ima
 - Roles `rs_ingest`, `rs_bot`, `rs_serve` and `rs_research` are created and granted by `rs_migrate` after every `upgrade` (or alone with `rs_migrate roles`), with passwords from `RS_DB_PASSWORD_<SERVICE>`.
 - `GRANTS` in `tools/migrate/src/rs_migrate/roles.py` is the one table of decisions, and a test fails when a table has no entry.
 - The bot's UPDATE on `alerts` is limited to `posted_at` and `post_attempts`, and on `schwab_auth_request` to `state` and `callback_url`; the callback URL carries an OAuth code, so only the bot and ingest can read that table.
+- Operator CLIs that write beyond a service's grants (`rs_serve.tools.provision`, `rs_bot.tools.stage_alert`) run from the host with the migrate DSN in `.env`, not from inside the service container.
 
 ## Module layout
 

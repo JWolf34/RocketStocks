@@ -15,7 +15,13 @@ import sys
 
 from alembic import command, util
 
-from rs_migrate.roles import RolesConfigError, apply_roles, read_passwords
+from rs_migrate.roles import (
+    SERVICES,
+    RolesConfigError,
+    apply_roles,
+    password_var,
+    read_passwords,
+)
 from rs_observability import configure_logging
 from rs_persistence import migration_config
 
@@ -51,6 +57,7 @@ def main(argv: list[str] | None = None) -> int:
         # Grants name every table, so they only apply to a fully migrated schema.
         if args.revision == "head":
             return _apply_roles(db_url, required=False)
+        logger.info("upgraded to %s, not head; skipping the service roles step", args.revision)
     elif args.action == "roles":
         return _apply_roles(db_url, required=True)
     elif args.action == "downgrade":
@@ -70,8 +77,7 @@ def _apply_roles(db_url: str, *, required: bool) -> int:
     """With `required` false (the post-upgrade step), no password variable at all
     means roles are not configured here (a bare dev or CI database): skip loudly.
     A partial or malformed set always fails, so a half-secured deploy cannot start."""
-    environ = {k: v for k, v in os.environ.items() if k.startswith("RS_DB_PASSWORD_")}
-    if not required and not environ:
+    if not required and not any(os.environ.get(password_var(s)) for s in SERVICES):
         logger.warning("no RS_DB_PASSWORD_* variables set; skipping the service roles step")
         return 0
     try:

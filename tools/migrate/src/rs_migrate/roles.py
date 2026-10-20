@@ -24,7 +24,7 @@ SERVICES = ("ingest", "bot", "serve", "research")
 ROLE_PREFIX = "rs_"
 
 # Compose interpolates these passwords into DSNs unencoded, so reject characters
-# that would silently break the URL (audit H4) instead of encoding them.
+# that would silently break the URL instead of encoding them.
 _URL_SAFE_PASSWORD = re.compile(r"[A-Za-z0-9._~-]{16,}")
 
 _SELECT = ("SELECT",)
