@@ -70,6 +70,7 @@ root_packages = [
     "rs_migrate",
     "rs_observability",
     "rs_persistence",
+    "rs_query",
     "rs_serve",
     "rs_sources",
 ]
@@ -85,6 +86,7 @@ forbidden_modules = [
     "rs_migrate",
     "rs_observability",
     "rs_persistence",
+    "rs_query",
     "rs_serve",
     "rs_sources",
 ]
@@ -99,6 +101,7 @@ forbidden_modules = [
     "rs_migrate",
     "rs_observability",
     "rs_persistence",
+    "rs_query",
     "rs_serve",
     "rs_sources",
 ]
@@ -111,6 +114,7 @@ source_modules = [
     "rs_domain",
     "rs_observability",
     "rs_persistence",
+    "rs_query",
     "rs_sources",
 ]
 forbidden_modules = ["rs_bot", "rs_ingest", "rs_migrate", "rs_serve"]
@@ -125,3 +129,17 @@ name = "rs_bot and rs_serve never import rs_sources"
 type = "forbidden"
 source_modules = ["rs_bot", "rs_serve"]
 forbidden_modules = ["rs_sources"]
+
+[[tool.importlinter.contracts]]
+name = "rs_query reads through rs_domain and rs_persistence only"
+type = "forbidden"
+source_modules = ["rs_query"]
+forbidden_modules = [
+    "rs_analysis",
+    "rs_bot",
+    "rs_ingest",
+    "rs_migrate",
+    "rs_observability",
+    "rs_serve",
+    "rs_sources",
+]

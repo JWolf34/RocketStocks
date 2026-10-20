@@ -23,6 +23,7 @@ members = [
     "rs-migrate",
     "rs-observability",
     "rs-persistence",
+    "rs-query",
     "rs-serve",
     "rs-sources",
 ]
@@ -2628,6 +2629,25 @@ requires-dist = [
     { name = "sqlalchemy", extras = ["asyncio"], specifier = ">=2" },
 ]
 provides-extras = ["testing"]
+
+[[package]]
+name = "rs-query"
+version = "0.1.0"
+source = { editable = "libs/query" }
+dependencies = [
+    { name = "pydantic" },
+    { name = "rs-domain" },
+    { name = "rs-persistence" },
+    { name = "sqlalchemy", extra = ["asyncio"] },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "pydantic", specifier = ">=2.13.4" },
+    { name = "rs-domain", editable = "libs/domain" },
+    { name = "rs-persistence", editable = "libs/persistence" },
+    { name = "sqlalchemy", extras = ["asyncio"], specifier = ">=2" },
+]
 
 [[package]]
 name = "rs-serve"
