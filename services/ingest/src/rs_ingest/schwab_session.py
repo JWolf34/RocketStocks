@@ -1,4 +1,4 @@
-"""The daemon's ONE schwab-py client (token single-writer, ADR-0024), rebuilt
+"""The daemon's ONE schwab-py client (one refresher, so one writer of the token), rebuilt
 when the stored token is renewed.
 
 schwab-py holds the token in memory, so after a re-login the old client keeps

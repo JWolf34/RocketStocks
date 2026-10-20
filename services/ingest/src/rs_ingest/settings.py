@@ -31,6 +31,8 @@ class IngestSettings(BaseSettings):
     schwab_api_secret: SecretStr
     schwab_callback_url: str = "https://127.0.0.1:8182"
 
+    # The stream and chain-scan settings below are unused by the daemon until
+    # slice 4 reshapes those modules.
     symbol: str = Field("SPY", validation_alias="RS_INGEST_SYMBOL")
     volume_threshold: int = Field(500_000, validation_alias="RS_INGEST_VOLUME_THRESHOLD")
     watchdog_grace_seconds: float = Field(30.0, validation_alias="RS_INGEST_WATCHDOG_GRACE_SECONDS")

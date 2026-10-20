@@ -3,11 +3,19 @@ job labels distinguish services); the label is `job_name` because `job` is
 the scrape target's own label."""
 
 from collections.abc import Iterable
+from enum import StrEnum
 
 from prometheus_client import Counter, Gauge
 from prometheus_client.registry import Collector
 
-OUTCOMES = ("success", "failure", "auth_error", "skipped_token_dead", "skipped_overlap")
+
+class Outcome(StrEnum):
+    SUCCESS = "success"
+    FAILURE = "failure"
+    AUTH_ERROR = "auth_error"
+    SKIPPED_TOKEN_DEAD = "skipped_token_dead"
+    SKIPPED_OVERLAP = "skipped_overlap"
+
 
 LOOP_TICK_METRIC = "daemon_loop_last_tick_timestamp_seconds"
 
@@ -40,7 +48,7 @@ class DaemonMetrics:
 
     def register_job(self, name: str) -> None:
         """Create the job's counter series up front so rate() sees them from start."""
-        for outcome in OUTCOMES:
+        for outcome in Outcome:
             self.job_runs.labels(name, outcome)
 
     def collectors(self) -> Iterable[Collector]:

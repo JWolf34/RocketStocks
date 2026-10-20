@@ -15,7 +15,7 @@ from typing import Any, Protocol
 
 from rs_domain import Clock
 from rs_ingest.cron import CronTable, Job
-from rs_ingest.metrics import DaemonMetrics
+from rs_ingest.metrics import DaemonMetrics, Outcome
 from rs_observability import notify_ops, unit_of_work
 from rs_sources.schwab import SchwabAuthError
 
@@ -101,6 +101,23 @@ class _JobState:
     task: asyncio.Task[None] | None = None
     consecutive_failures: int = 0
     alerted: bool = False
+    # A run_on_start job that has not yet had its startup run (it waits out a dead token).
+    start_pending: bool = False
+
+    def note_failure(self, threshold: int) -> bool:
+        """True exactly once per streak: when it reaches the threshold."""
+        self.consecutive_failures += 1
+        if self.consecutive_failures != threshold:
+            return False
+        self.alerted = True
+        return True
+
+    def note_success(self) -> bool:
+        """True when this success ends a streak that had been reported."""
+        was_alerted = self.alerted
+        self.consecutive_failures = 0
+        self.alerted = False
+        return was_alerted
 
 
 class Daemon:
@@ -154,12 +171,15 @@ class Daemon:
         states = []
         for job in self._cron:
             self._metrics.register_job(job.name)
-            first = now if job.run_on_start else job.schedule.next_after(now)
-            states.append(_JobState(job, first))
+            states.append(_JobState(job, job.schedule.next_after(now), start_pending=job.run_on_start))
         return states
 
     def _dispatch_due(self, states: list[_JobState], now: datetime) -> None:
         for state in states:
+            if state.start_pending and not self._paused(state.job):
+                state.start_pending = False
+                state.task = self._spawn(self._execute(state), state.job.name)
+                continue
             if state.next_fire > now:
                 continue
             # Slots missed while down or busy are dropped, not replayed.
@@ -167,12 +187,15 @@ class Daemon:
             name = state.job.name
             if state.task is not None and not state.task.done():
                 logger.warning("job %s still running at its next slot - skipping", name)
-                self._metrics.job_runs.labels(name, "skipped_overlap").inc()
-            elif state.job.needs_schwab and self._gate.dead:
+                self._metrics.job_runs.labels(name, Outcome.SKIPPED_OVERLAP).inc()
+            elif self._paused(state.job):
                 logger.info("job %s skipped - Schwab token is dead", name)
-                self._metrics.job_runs.labels(name, "skipped_token_dead").inc()
+                self._metrics.job_runs.labels(name, Outcome.SKIPPED_TOKEN_DEAD).inc()
             else:
                 state.task = self._spawn(self._execute(state), name)
+
+    def _paused(self, job: Job) -> bool:
+        return job.needs_schwab and self._gate.dead
 
     def _maybe_poll_gate(self, now: datetime) -> None:
         if not self._gate.dead:
@@ -222,22 +245,20 @@ class Daemon:
             except asyncio.CancelledError:
                 raise
             except SchwabAuthError as exc:
-                self._metrics.job_runs.labels(job.name, "auth_error").inc()
+                self._metrics.job_runs.labels(job.name, Outcome.AUTH_ERROR).inc()
                 await self._gate.trip(f"job {job.name}: {exc}")
             except Exception as exc:
                 logger.exception("job %s failed", job.name)
-                self._metrics.job_runs.labels(job.name, "failure").inc()
+                self._metrics.job_runs.labels(job.name, Outcome.FAILURE).inc()
                 await self._record_failure(state, exc)
             else:
-                self._metrics.job_runs.labels(job.name, "success").inc()
+                self._metrics.job_runs.labels(job.name, Outcome.SUCCESS).inc()
                 self._metrics.job_last_success.labels(job.name).set(self._clock.now().timestamp())
                 await self._record_success(state)
 
     async def _record_failure(self, state: _JobState, exc: Exception) -> None:
-        state.consecutive_failures += 1
-        if state.consecutive_failures != self._failure_threshold:
+        if not state.note_failure(self._failure_threshold):
             return
-        state.alerted = True
         name = state.job.name
         # The type only: exception text can carry URLs or credentials.
         await notify_ops(
@@ -247,10 +268,7 @@ class Daemon:
         )
 
     async def _record_success(self, state: _JobState) -> None:
-        was_alerted = state.alerted
-        state.consecutive_failures = 0
-        state.alerted = False
-        if was_alerted:
+        if state.note_success():
             name = state.job.name
             await notify_ops(f"Ingest job {name} recovered.", key=f"job-recovered:{name}")
 

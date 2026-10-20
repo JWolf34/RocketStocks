@@ -154,6 +154,18 @@ class TestDispatch:
 
         assert catch_up.started == [START, at(12, 30), at(13, 0)]
 
+    async def test_a_schwab_catch_up_job_runs_at_start_once_the_token_is_back(self, rig, notices):
+        catch_up = Recorder(rig.clock)
+        rig.cron.register(Job("catch_up", Every(1440), catch_up, needs_schwab=True, run_on_start=True))
+        rig.build()
+        await rig.gate.trip("no Schwab token stored")
+        rig.when(at(12, 20), lambda: setattr(rig, "token_updated_at", at(12, 15)))
+
+        await rig.run_until(at(12, 40))
+
+        assert len(catch_up.started) == 1
+        assert at(12, 20) <= catch_up.started[0] <= at(12, 22)
+
     async def test_a_late_start_does_not_back_fill_missed_slots(self, notices):
         rig = Rig(start=at(12, 59))
         poll = Recorder(rig.clock)

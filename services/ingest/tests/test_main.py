@@ -39,7 +39,7 @@ def free_port() -> int:
         return int(sock.getsockname()[1])
 
 
-class Daemon:
+class DaemonProcess:
     def __init__(self, db_url: str, workdir: Path) -> None:
         self.port = free_port()
         self.env = {key: value for key, value in os.environ.items() if not key.startswith("RS_")}
@@ -105,9 +105,9 @@ def clear_token(db_url: str) -> None:
 
 
 @pytest.fixture
-def daemon(migrated_db_url: str, tmp_path: Path) -> Iterator[Daemon]:
+def daemon(migrated_db_url: str, tmp_path: Path) -> Iterator[DaemonProcess]:
     clear_token(migrated_db_url)  # the DB is shared across the session; start token-less
-    running = Daemon(migrated_db_url, tmp_path)
+    running = DaemonProcess(migrated_db_url, tmp_path)
     yield running
     if running.process.poll() is None:
         running.process.kill()

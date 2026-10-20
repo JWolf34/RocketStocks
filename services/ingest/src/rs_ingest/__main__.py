@@ -38,9 +38,9 @@ async def run_daemon(settings: IngestSettings) -> int:
     configure_ops(clock=clock)
     engine = build_engine(settings.rs_db_url)
     metrics_server = None
+    session_factory = build_session_factory(engine)
+    token_store = SchwabTokenStore(session_factory)
     try:
-        session_factory = build_session_factory(engine)
-        token_store = SchwabTokenStore(session_factory)
         schwab = SchwabSession(
             settings.schwab_api_key, settings.schwab_api_secret.get_secret_value(), token_store
         )
@@ -69,6 +69,8 @@ async def run_daemon(settings: IngestSettings) -> int:
         logger.info("rs_ingest daemon stopped")
         return 0
     finally:
+        # The daemon drains on its own exit; this covers a failure before it started.
+        await token_store.drain()
         if metrics_server is not None:
             metrics_server.shutdown()
         await engine.dispose()
