@@ -31,7 +31,9 @@ class Bar(BaseModel):
 
 
 class Alert(BaseModel):
-    """A detection decision to announce. Minimum shape S003 needs; grows later."""
+    """A detection decision to announce. The versioned-rule fields are optional so
+    streaming detectors without a rule version keep working; a `dedup_key` makes
+    the write idempotent (the same key is stored once)."""
 
     model_config = ConfigDict(frozen=True)
 
@@ -39,6 +41,10 @@ class Alert(BaseModel):
     alert_type: str
     triggered_at: UtcDatetime
     payload: dict = {}
+    rule_version: str | None = None
+    alert_price: float | None = None
+    quote_time: UtcDatetime | None = None
+    dedup_key: str | None = None
 
 
 class Dataset(StrEnum):
@@ -84,6 +90,96 @@ class PopularitySnapshot(BaseModel):
     mentions_24h_ago: NonNegativeInt | None = None
     fetched_at: UtcDatetime
     origin: PopularityOrigin
+
+
+class DailyBar(BaseModel):
+    """One stored daily candle. `session_date` is the exchange session (Eastern)
+    date; `fetched_at` stamps when the vendor answered and `adjusted` records
+    whether the prices are split/dividend adjusted."""
+
+    model_config = ConfigDict(frozen=True)
+
+    symbol: str
+    session_date: date
+    open: float
+    high: float
+    low: float
+    close: float
+    volume: NonNegativeInt
+    fetched_at: UtcDatetime
+    adjusted: bool
+
+
+class UnpricedSymbol(BaseModel):
+    """A symbol the price vendor cannot price, kept so it is counted in the base
+    rate's survivorship caveat and retried slowly instead of in a hot loop."""
+
+    model_config = ConfigDict(frozen=True)
+
+    symbol: str
+    first_seen: UtcDatetime
+    last_attempt: UtcDatetime
+    reason: str
+
+
+class BaseRateInput(StrEnum):
+    """What a base rate was measured from. Values are the DB column values."""
+
+    RECONSTRUCTED = "reconstructed"
+    LOGGED = "logged"
+
+
+class BaseRate(BaseModel):
+    """A signal's measured outcome statistics for one rule version. Hit rate is
+    the share of events with a positive excess return versus SPY; both are None
+    for a horizon with no priced events. `n_unpriced` counts events dropped
+    because the vendor could not price the symbol."""
+
+    model_config = ConfigDict(frozen=True)
+
+    alert_type: str
+    rule_version: str
+    computed_at: UtcDatetime
+    input: BaseRateInput
+    n: NonNegativeInt
+    n_unpriced: NonNegativeInt = 0
+    hit_rate_1d: float | None = None
+    hit_rate_5d: float | None = None
+    hit_rate_10d: float | None = None
+    median_excess_1d: float | None = None
+    median_excess_5d: float | None = None
+    median_excess_10d: float | None = None
+    survivorship_caveat: str
+
+
+class AuthRequestState(StrEnum):
+    """Lifecycle of a Schwab re-auth request. Values are the DB enum values.
+
+    requested -> url_ready (ingest filled the auth URL) -> callback_received (the
+    bot stored the pasted callback URL) -> done | failed (ingest exchanged the
+    code); any non-terminal state can become expired."""
+
+    REQUESTED = "requested"
+    URL_READY = "url_ready"
+    CALLBACK_RECEIVED = "callback_received"
+    DONE = "done"
+    FAILED = "failed"
+    EXPIRED = "expired"
+
+
+class SchwabAuthRequest(BaseModel):
+    """One `/setup schwab` request, shared between the bot and ingest."""
+
+    model_config = ConfigDict(frozen=True)
+
+    id: int
+    created_at: UtcDatetime
+    requested_by: int
+    state: AuthRequestState
+    auth_url: str | None = None
+    callback_url: str | None = None
+    error: str | None = None
+    completed_at: UtcDatetime | None = None
 
 
 def median_instant(values: Iterable[datetime]) -> datetime | None:
