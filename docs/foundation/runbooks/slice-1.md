@@ -268,11 +268,13 @@ Goal: no lost or duplicated rows or alerts after a restart.
    ```
 2. Kill ingest hard while a poll is running.
    Polls fire on the :00 and :30 UTC boundaries.
-   Watch with `$COMPOSE logs -f ingest` and run, right after a boundary:
+   A poll takes a few seconds, so kill within about two seconds of the boundary.
+   Kill the container's main process from the host, which Docker treats as a crash:
    ```
-   $COMPOSE kill -s SIGKILL ingest
+   sudo kill -9 "$(docker inspect -f '{{.State.Pid}}' rocketstocks-v2-ingest-1)"
    ```
-3. Let the restart policy bring it back, or run `$COMPOSE up -d ingest`.
+   Do not use `$COMPOSE kill` here: Docker treats it as a manual stop, and the restart policy never brings the container back.
+3. Confirm the restart policy brought ingest back (`$COMPOSE ps` shows it up again, with a fresh start time).
    Ingest runs the poll at startup, so it finishes the interrupted boundary.
 4. Repeat the count query.
    Expect: snapshot rows for the interrupted boundary are present exactly once (the key is `polled_at, ticker` with `ON CONFLICT DO NOTHING`), `alerts` equals `distinct_keys`, and a rerun of the same boundary added no alert.
