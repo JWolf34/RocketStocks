@@ -99,10 +99,9 @@ async def test_a_cancelled_run_kills_the_subprocess(tmp_path):
     pid_file = tmp_path / "pid"
     code = f"import os, time; open({str(pid_file)!r}, 'w').write(str(os.getpid())); time.sleep(60)"
     task = asyncio.create_task(run_event_study(python(code), {}))
-    for _ in range(200):
-        if pid_file.exists() and pid_file.read_text():
-            break
-        await asyncio.sleep(0.05)
+    async with asyncio.timeout(10):
+        while not (pid_file.exists() and pid_file.read_text()):
+            await asyncio.sleep(0.05)
     pid = int(pid_file.read_text())
 
     task.cancel()

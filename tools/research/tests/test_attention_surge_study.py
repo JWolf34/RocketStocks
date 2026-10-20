@@ -331,3 +331,18 @@ async def test_imported_rows_without_upvotes_replay_like_any_other(session_facto
 
     [reconstructed] = result.rates
     assert (reconstructed.n, reconstructed.n_unpriced) == (5, 1)
+
+
+async def test_the_study_runs_under_the_least_privilege_research_role(
+    session_factory, research_url, monkeypatch
+):
+    await _seed(session_factory)
+    monkeypatch.setenv("RS_RESEARCH_DB_URL", research_url)
+
+    code = await asyncio.to_thread(main, ["event-study", "attention_surge"], FixedClock())
+
+    assert code == 0
+    async with session_factory() as s:
+        stored = await current_base_rate(s, "attention_surge", "1")
+    assert stored is not None and stored.n == 5
+    assert sorted(row.input for row in await _rows(session_factory)) == ["logged", "reconstructed"]

@@ -209,7 +209,7 @@ async def compute(
         closes = await _load_bars(session, windows)
 
     if BENCHMARK not in closes.index.get_level_values("symbol"):
-        raise StudyError(f"no {BENCHMARK} daily bars stored; run the surge-bars job first")
+        raise StudyError(f"no {BENCHMARK} daily bars stored; the surge-bars job has not fetched the benchmark")
     spy = closes.xs(BENCHMARK, level="symbol").sort_index()
     sessions = spy.index.to_numpy(dtype=np.int64)
     spy_close = spy.to_numpy(dtype=float)

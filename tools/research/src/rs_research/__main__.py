@@ -1,6 +1,6 @@
 """Research CLI: `python -m rs_research event-study attention_surge`.
 
-Connects as the read-only `rs_research` role (INSERT on base_rate only); the
+Connects as the `rs_research` role (read-only apart from INSERT on base_rate); the
 DSN comes from RS_RESEARCH_DB_URL, never RS_DB_URL, so a misconfigured
 container cannot run it with a wider role. Exit 0 on success (including
 "nothing to measure"), 1 when the study fails, 2 on bad configuration.

@@ -2677,6 +2677,7 @@ name = "rs-research"
 version = "0.1.0"
 source = { editable = "tools/research" }
 dependencies = [
+    { name = "numpy" },
     { name = "pandas" },
     { name = "rs-analysis" },
     { name = "rs-domain" },
@@ -2688,6 +2689,7 @@ dependencies = [
 
 [package.metadata]
 requires-dist = [
+    { name = "numpy", specifier = ">=2.4.0" },
     { name = "pandas", specifier = ">=3.0" },
     { name = "rs-analysis", editable = "libs/analysis" },
     { name = "rs-domain", editable = "libs/domain" },
