@@ -40,6 +40,14 @@ class IngestSettings(BaseSettings):
     # (a source tee — orthogonal to persistence). Off by default; the B8 runbook
     # points it at a gitignored data/ path, then a curated excerpt is committed.
     fixture_path: Path | None = Field(None, validation_alias="RS_INGEST_FIXTURE_PATH")
+    # Daemon supervision: consecutive failures before one ops notice, how often
+    # a dead Schwab token is checked for renewal, and the bound on in-flight
+    # jobs at SIGTERM (compose stop_grace_period must exceed it).
+    job_failure_threshold: int = Field(3, ge=1, validation_alias="RS_INGEST_JOB_FAILURE_THRESHOLD")
+    token_poll_seconds: float = Field(60.0, gt=0, validation_alias="RS_INGEST_TOKEN_POLL_SECONDS")
+    shutdown_grace_seconds: float = Field(
+        30.0, ge=0, validation_alias="RS_INGEST_SHUTDOWN_GRACE_SECONDS"
+    )
     # The Bus-2 NOTIFY channel is intentionally NOT here: it is a pinned wire
     # contract shared with the bot (ADR-0005), not a per-deployment tunable —
     # rs_persistence.NOTIFY_CHANNEL is its single source of truth.
