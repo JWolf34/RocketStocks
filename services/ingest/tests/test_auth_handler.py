@@ -6,11 +6,13 @@ in rs_sources); requests, the token row and the gate are real.
 
 import asyncio
 import logging
+import traceback
 from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
 import pytest
+from sqlalchemy import text
 
 from rs_domain import AuthRequestState
 from rs_ingest.auth_handler import LOST_CONTEXT, UNEXPECTED, AuthRequestHandler
@@ -38,6 +40,7 @@ class FakeOAuth:
         self.begun = 0
         self.received: list[str] = []
         self.error: Exception | None = None
+        self.exchange_result: dict[str, Any] = TOKEN
         self.begin_error: Exception | None = None
         self.during_exchange: Callable[[], Awaitable[None]] | None = None
 
@@ -53,7 +56,7 @@ class FakeOAuth:
             await self.during_exchange()
         if self.error is not None:
             raise self.error
-        return TOKEN
+        return self.exchange_result
 
 
 class Rig:
@@ -160,6 +163,60 @@ async def test_an_unexpected_error_is_reported_without_its_text(rig, caplog):
     failed = await rig.get(request_id)
     assert (failed.state, failed.error) == (AuthRequestState.FAILED, UNEXPECTED)
     assert "SECRETCODE" not in caplog.text
+
+
+# Short on purpose: SQLAlchemy truncates long parameter reprs in error text.
+POISON_TOKEN = {"r": "S3CR3T"}
+
+
+@pytest.fixture
+async def failing_token_writes(session_factory):
+    """Every write to the token row fails in the database, with the token bound."""
+    async with session_factory() as s:
+        await s.execute(text(
+            "CREATE FUNCTION reject_token() RETURNS trigger LANGUAGE plpgsql AS"
+            " $$ BEGIN RAISE EXCEPTION 'token writes are down'; END $$"
+        ))
+        await s.execute(text(
+            "CREATE TRIGGER reject_token BEFORE INSERT ON schwab_tokens"
+            " FOR EACH ROW EXECUTE FUNCTION reject_token()"
+        ))
+        await s.commit()
+    yield
+    async with session_factory() as s:
+        await s.execute(text("DROP TRIGGER reject_token ON schwab_tokens"))
+        await s.execute(text("DROP FUNCTION reject_token()"))
+        await s.commit()
+
+
+def _assert_no_secret_in_records(caplog) -> None:
+    assert "S3CR3T" not in caplog.text
+    for record in caplog.records:
+        assert "S3CR3T" not in record.getMessage()
+        if record.exc_info:
+            assert "S3CR3T" not in "".join(traceback.format_exception(*record.exc_info))
+
+
+async def test_a_failed_token_write_during_sign_in_logs_no_token_value(rig, failing_token_writes, caplog):
+    rig.oauth.exchange_result = POISON_TOKEN
+    request_id = await rig.request()
+    await rig.handler.process_once()
+    await rig.paste(request_id)
+
+    with caplog.at_level(logging.DEBUG):
+        await rig.handler.process_once()
+
+    assert (await rig.get(request_id)).state is AuthRequestState.FAILED
+    _assert_no_secret_in_records(caplog)
+
+
+async def test_a_failed_token_refresh_write_logs_no_token_value(rig, failing_token_writes, caplog):
+    with caplog.at_level(logging.DEBUG):
+        rig.store.schedule_save(POISON_TOKEN)
+        await rig.store.drain()
+
+    assert any(r.levelno >= logging.ERROR for r in caplog.records)
+    _assert_no_secret_in_records(caplog)
 
 
 async def test_a_request_left_open_expires_and_gets_no_url(rig):

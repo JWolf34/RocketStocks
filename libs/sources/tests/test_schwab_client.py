@@ -2,6 +2,7 @@
 bound to schedule_save, and a clear failure when no token exists."""
 
 import pytest
+from authlib.integrations.base_client.errors import OAuthError
 
 import rs_sources.schwab.client as schwab_client
 from rs_sources.schwab import TokenMissingError, build_schwab_client
@@ -50,3 +51,12 @@ async def test_client_wired_to_store(monkeypatch):
     assert captured["read"]() == TOKEN
     captured["write"](TOKEN, refresh_token="r")
     assert store.saved == [TOKEN]
+
+
+def test_a_rejected_refresh_keeps_the_oauth_code_and_drops_the_description():
+    with pytest.raises(schwab_client.SchwabAuthError) as caught:
+        with schwab_client.translate_auth_errors():
+            raise OAuthError(error="invalid_grant", description="token S3CR3T expired")
+
+    assert "invalid_grant" in str(caught.value)
+    assert "S3CR3T" not in str(caught.value)
