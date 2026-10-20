@@ -64,6 +64,7 @@ known-first-party = ["rs_*"]
 [tool.importlinter]
 root_packages = [
     "rs_analysis",
+    "rs_backfill",
     "rs_bot",
     "rs_domain",
     "rs_ingest",
@@ -80,6 +81,7 @@ type = "forbidden"
 source_modules = ["rs_domain"]
 forbidden_modules = [
     "rs_analysis",
+    "rs_backfill",
     "rs_bot",
     "rs_ingest",
     "rs_migrate",
@@ -94,6 +96,7 @@ name = "rs_analysis imports only rs_domain"
 type = "forbidden"
 source_modules = ["rs_analysis"]
 forbidden_modules = [
+    "rs_backfill",
     "rs_bot",
     "rs_ingest",
     "rs_migrate",
@@ -113,7 +116,7 @@ source_modules = [
     "rs_persistence",
     "rs_sources",
 ]
-forbidden_modules = ["rs_bot", "rs_ingest", "rs_migrate", "rs_serve"]
+forbidden_modules = ["rs_backfill", "rs_bot", "rs_ingest", "rs_migrate", "rs_serve"]
 
 [[tool.importlinter.contracts]]
 name = "services never import each other"
