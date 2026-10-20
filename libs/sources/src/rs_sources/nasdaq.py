@@ -93,9 +93,10 @@ class NasdaqEarningsCalendar:
             if self._fresh(day, refresh_after):
                 continue
             try:
-                await self._day(day, refresh_after)
-            except SourceError:
-                logger.warning("Nasdaq earnings warm failed for %s", day, exc_info=True)
+                await self._fetch_day(day)
+            except SourceError as exc:
+                # No traceback: a dead endpoint fails every day, and the run raises one at the end.
+                logger.warning("Nasdaq earnings warm failed for %s: %s", day, exc)
                 failed.append(day)
             else:
                 fetched += 1
@@ -107,11 +108,14 @@ class NasdaqEarningsCalendar:
         cached = self._days.get(day)
         return cached is not None and self._clock.now() - cached[0] < max_age
 
-    async def _day(self, day: date, max_age: timedelta | None = None) -> dict[str, ScheduledEarnings]:
-        now = self._clock.now()
+    async def _day(self, day: date) -> dict[str, ScheduledEarnings]:
         cached = self._days.get(day)
-        if cached is not None and now - cached[0] < (max_age or self._cache_ttl):
+        if cached is not None and self._clock.now() - cached[0] < self._cache_ttl:
             return cached[1]
+        return await self._fetch_day(day)
+
+    async def _fetch_day(self, day: date) -> dict[str, ScheduledEarnings]:
+        now = self._clock.now()
         await self._limiter.wait()
         payload = await get_json(
             self._http,
