@@ -11,7 +11,7 @@ that exceeds its `timeout` is cancelled and counts as a failure.
 
 from collections.abc import Awaitable, Callable, Iterator
 from dataclasses import dataclass
-from datetime import UTC, datetime, time, timedelta
+from datetime import UTC, date, datetime, time, timedelta
 from typing import Protocol
 from zoneinfo import ZoneInfo
 
@@ -51,6 +51,42 @@ class Every:
         return timedelta(minutes=self.minutes)
 
 
+def _wall_time_utc(day: date, at: time, zone: ZoneInfo) -> datetime:
+    """The instant of wall-clock `at` on `day` in `zone`. A time the zone skips
+    resolves to the equivalent instant after the gap; a repeated one to its first occurrence."""
+    return datetime.combine(day, at, tzinfo=zone).astimezone(UTC)
+
+
+@dataclass(frozen=True)
+class Daily:
+    """Every day at the wall-clock time `at` in `zone` (DST rules as for `Weekly`).
+
+    Every calendar day, sessions or not: a job that must act only after a
+    session works out from the exchange calendar what is due, so a weekend or
+    holiday run finds nothing to do.
+    """
+
+    at: time
+    zone: ZoneInfo
+
+    def __post_init__(self) -> None:
+        if self.at.tzinfo is not None:
+            raise ValueError("`at` is wall-clock time in `zone`; pass it without a tzinfo")
+
+    def next_after(self, now: datetime) -> datetime:
+        today = now.astimezone(self.zone).date()
+        # A candidate on `today` can already be past; tomorrow's never is.
+        for offset in range(2):
+            candidate = _wall_time_utc(today + timedelta(days=offset), self.at, self.zone)
+            if candidate > now:
+                return candidate
+        raise AssertionError("unreachable: a daily slot exists in every 2-day window")
+
+    @property
+    def default_timeout(self) -> None:
+        return None  # a daily job has no natural bound, so the job must choose one
+
+
 @dataclass(frozen=True)
 class Weekly:
     """Weekly on `weekday` (Monday = 0) at the wall-clock time `at` in `zone`.
@@ -77,7 +113,7 @@ class Weekly:
             day = today + timedelta(days=offset)
             if day.weekday() != self.weekday:
                 continue
-            candidate = datetime.combine(day, self.at, tzinfo=self.zone).astimezone(UTC)
+            candidate = _wall_time_utc(day, self.at, self.zone)
             if candidate > now:
                 return candidate
         raise AssertionError("unreachable: a weekly slot exists in every 8-day window")
@@ -95,7 +131,7 @@ class Job:
     # Paused while the Schwab token is dead; non-Schwab jobs keep running.
     needs_schwab: bool = False
     run_on_start: bool = False
-    # Defaults to the interval for `Every`; required for `Weekly`.
+    # Defaults to the interval for `Every`; required for `Daily` and `Weekly`.
     timeout: timedelta | None = None
 
     def __post_init__(self) -> None:

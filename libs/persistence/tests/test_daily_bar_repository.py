@@ -95,6 +95,22 @@ async def test_latest_session_dates_and_missing_symbols(session_factory):
         assert await repo.missing_symbols([]) == []
 
 
+async def test_session_bounds_give_oldest_and_newest_per_symbol(session_factory):
+    async with session_factory() as s:
+        await DailyBarRepository(s).insert_many(
+            [_bar("AAA", D0 + timedelta(days=3)), _bar("AAA"), _bar("AAA", D0 + timedelta(days=1)), _bar("BBB")]
+        )
+        await s.commit()
+
+    async with session_factory() as s:
+        repo = DailyBarRepository(s)
+        assert await repo.session_bounds(["AAA", "BBB", "ZZZ"]) == {
+            "AAA": (D0, D0 + timedelta(days=3)),
+            "BBB": (D0, D0),
+        }
+        assert await repo.session_bounds([]) == {}
+
+
 async def test_record_unpriced_keeps_first_seen_and_advances_last_attempt(session_factory):
     first = datetime(2026, 7, 7, 22, 0, tzinfo=UTC)
     later = first + timedelta(days=7)

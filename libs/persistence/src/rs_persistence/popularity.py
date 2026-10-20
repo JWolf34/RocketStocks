@@ -60,6 +60,11 @@ class PopularityRepository:
             return None
         return first.astimezone(UTC), last.astimezone(UTC)
 
+    async def earliest_polled_at(self) -> datetime | None:
+        """The oldest stored boundary across all tickers, or None when empty."""
+        earliest = await self._session.scalar(select(func.min(PopularitySnapshotRow.polled_at)))
+        return None if earliest is None else earliest.astimezone(UTC)
+
     async def list_for_ticker(
         self, ticker: str, start: datetime, end: datetime
     ) -> list[PopularitySnapshot]:
