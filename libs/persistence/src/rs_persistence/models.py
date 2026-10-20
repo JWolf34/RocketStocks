@@ -113,7 +113,7 @@ class StreamBar5m(Base):
 class AlertRow(Base):
     __tablename__ = "alerts"
     __table_args__ = (
-        # The bot's delivery cursor: only undelivered rows (rev-003).
+        # The bot's delivery cursor: a partial index holding only undelivered rows.
         Index("ix_alerts_unposted", "id", postgresql_where=text("posted_at IS NULL")),
     )
 

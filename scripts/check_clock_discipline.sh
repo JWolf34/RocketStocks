@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Clock-discipline gate (ADR-0023): domain/detection code never reads ambient
+# Clock-discipline gate: domain/detection code never reads ambient
 # time - it receives an injected Clock or concrete event timestamps.
 # Allowlisted: the Clock implementation itself. Tests are exempt (time-machine
 # is the sanctioned escape hatch there).
@@ -47,7 +47,7 @@ fi
 violations=$(printf '%s' "$matches" | grep -vE "$ALLOWLIST_RE" || true)
 
 if [[ -n "$violations" ]]; then
-  echo "clock-discipline violations (inject Clock instead - ADR-0023):" >&2
+  echo "clock-discipline violations (inject Clock instead):" >&2
   echo "$violations" >&2
   exit 1
 fi

@@ -66,6 +66,16 @@ def test_threading_excepthook_logs_full_traceback(stream):
     assert "ValueError: planted in thread" in record["exception"]
 
 
+def test_threading_excepthook_tolerates_a_missing_exception_value(stream):
+    install_excepthooks()
+    threading.excepthook(
+        threading.ExceptHookArgs((ValueError, None, None, threading.current_thread()))
+    )
+    (record,) = json_records(stream)
+    assert record["level"] == "error"
+    assert "exception" not in record
+
+
 async def test_asyncio_handler_logs_full_traceback(stream):
     install_excepthooks()  # inside a running loop → wires the loop handler too
     loop = asyncio.get_running_loop()
