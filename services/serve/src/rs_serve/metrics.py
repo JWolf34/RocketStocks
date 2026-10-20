@@ -15,13 +15,16 @@ from prometheus_client import (
     CONTENT_TYPE_LATEST,
     CollectorRegistry,
     Counter,
+    GCCollector,
     Histogram,
+    PlatformCollector,
+    ProcessCollector,
     generate_latest,
 )
-from prometheus_client import GCCollector, PlatformCollector, ProcessCollector
-from starlette.middleware.base import BaseHTTPMiddleware
+from starlette.middleware.base import BaseHTTPMiddleware, RequestResponseEndpoint
 from starlette.requests import Request
 from starlette.responses import Response
+from starlette.types import ASGIApp
 
 
 class HttpMetrics:
@@ -50,12 +53,15 @@ class HttpMetrics:
 class MetricsMiddleware(BaseHTTPMiddleware):
     """Outermost middleware: counts every request, including auth rejections."""
 
-    def __init__(self, app, metrics: HttpMetrics) -> None:
+    def __init__(self, app: ASGIApp, metrics: HttpMetrics) -> None:
         super().__init__(app)
         self._metrics = metrics
 
-    async def dispatch(self, request: Request, call_next) -> Response:
+    async def dispatch(self, request: Request, call_next: RequestResponseEndpoint) -> Response:
         started = time.perf_counter()  # monotonic duration, not ambient wall time
+        # Pre-bound: a BaseException (CancelledError) skips both assignments
+        # below and must not turn into an UnboundLocalError in the finally.
+        status = 500
         try:
             response = await call_next(request)
             status = response.status_code

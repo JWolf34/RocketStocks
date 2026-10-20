@@ -1,5 +1,5 @@
 import random
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 import pytest
 
@@ -13,7 +13,7 @@ from rs_analysis.attention_surge import (
 )
 from rs_domain import PopularityOrigin, PopularitySnapshot
 
-T0 = datetime(2026, 7, 6, 14, 0, tzinfo=timezone.utc)
+T0 = datetime(2026, 7, 6, 14, 0, tzinfo=UTC)
 
 
 def snap(

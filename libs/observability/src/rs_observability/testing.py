@@ -15,6 +15,7 @@ import logging
 import os
 from collections.abc import Iterator
 from contextlib import contextmanager
+from typing import Any, cast
 
 import structlog
 
@@ -32,7 +33,7 @@ def captured_json_stream(service: str) -> Iterator[io.StringIO]:
     saved_level = root.level
     configure_logging(service)
     buffer = io.StringIO()
-    root.handlers[0].setStream(buffer)
+    cast(logging.StreamHandler[Any], root.handlers[0]).setStream(buffer)
     try:
         yield buffer
     finally:

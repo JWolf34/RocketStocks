@@ -1,4 +1,4 @@
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 import pytest
 
@@ -16,4 +16,4 @@ class FixedClock:
 
 @pytest.fixture
 def clock() -> FixedClock:
-    return FixedClock(datetime(2026, 10, 19, 15, 0, tzinfo=timezone.utc))
+    return FixedClock(datetime(2026, 10, 19, 15, 0, tzinfo=UTC))

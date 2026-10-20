@@ -1,6 +1,6 @@
 """EDGAR adapter tests over httpx.MockTransport. Payloads are synthetic."""
 
-from datetime import date, datetime, timedelta, timezone
+from datetime import UTC, date, datetime, timedelta
 
 import httpx
 import pytest
@@ -8,7 +8,7 @@ import pytest
 from rs_sources.edgar import EdgarClient
 from rs_sources.errors import SourceError
 
-AS_OF = datetime(2026, 10, 19, 15, 0, tzinfo=timezone.utc)
+AS_OF = datetime(2026, 10, 19, 15, 0, tzinfo=UTC)
 USER_AGENT = "RocketStocksTest ops@example.invalid"
 
 TICKERS = {
@@ -102,7 +102,7 @@ async def test_filing_carries_items_dates_and_document_link(clock):
 
     assert results.items == ("2.02", "9.01")
     assert results.filing_date == date(2026, 10, 14)
-    assert results.accepted_at == datetime(2026, 10, 14, 20, 30, tzinfo=timezone.utc)
+    assert results.accepted_at == datetime(2026, 10, 14, 20, 30, tzinfo=UTC)
     assert results.url == "https://www.sec.gov/Archives/edgar/data/111/000000011126000004/q3.htm"
 
 
@@ -125,7 +125,7 @@ async def test_limit_keeps_the_newest(clock):
 async def test_filings_accepted_after_as_of_are_excluded(clock):
     client = make_client(FakeEdgar(), clock)
 
-    filings = await client.recent_8ks("AAA", datetime(2026, 10, 14, 20, 29, tzinfo=timezone.utc))
+    filings = await client.recent_8ks("AAA", datetime(2026, 10, 14, 20, 29, tzinfo=UTC))
 
     assert [f.accession_number for f in filings] == ["0000000111-26-000002", "0000000111-26-000001"]
 

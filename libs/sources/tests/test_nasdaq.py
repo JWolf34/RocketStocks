@@ -126,6 +126,6 @@ async def test_day_requests_are_spaced_by_the_minimum_interval(clock):
 
     await calendar.next_for("AAA", date(2026, 10, 20), max_weekdays=4)
 
-    gaps = [b - a for a, b in zip(stamps, stamps[1:])]
+    gaps = [b - a for a, b in zip(stamps, stamps[1:], strict=False)]
     assert len(stamps) == 4
     assert all(gap >= 0.04 for gap in gaps)

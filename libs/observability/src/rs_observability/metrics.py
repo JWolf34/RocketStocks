@@ -9,12 +9,18 @@ registry behind API-key auth (S005) stands.
 """
 
 import threading
-from collections.abc import Callable, Iterable, Mapping
+from collections.abc import Callable, Iterable, Iterator, Mapping
 from wsgiref.simple_server import WSGIServer
 
-from prometheus_client import CollectorRegistry, start_http_server
-from prometheus_client import GCCollector, PlatformCollector, ProcessCollector
+from prometheus_client import (
+    CollectorRegistry,
+    GCCollector,
+    PlatformCollector,
+    ProcessCollector,
+    start_http_server,
+)
 from prometheus_client.core import CounterMetricFamily, GaugeMetricFamily
+from prometheus_client.metrics_core import Metric
 from prometheus_client.registry import Collector
 
 
@@ -33,7 +39,7 @@ class DictCounterCollector(Collector):
         self._counters = counters
         self._namespace = namespace
 
-    def collect(self):
+    def collect(self) -> Iterator[Metric]:
         for name, value in self._counters.items():
             full_name = f"{self._namespace}_{name}" if self._namespace else name
             yield CounterMetricFamily(
@@ -53,7 +59,7 @@ class LabeledDictCounterCollector(Collector):
         self._label_name = label_name
         self._counters = counters
 
-    def collect(self):
+    def collect(self) -> Iterator[Metric]:
         family = CounterMetricFamily(
             self._name,
             f"Value of the {self._name} counter, read at scrape time",
@@ -83,7 +89,7 @@ class CallableGaugeCollector(Collector):
         self._labels = dict(labels)
         self._value_fn = value_fn
 
-    def collect(self):
+    def collect(self) -> Iterator[Metric]:
         family = GaugeMetricFamily(
             self._name, self._documentation, labels=list(self._labels.keys())
         )

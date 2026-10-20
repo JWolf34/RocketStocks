@@ -2,16 +2,20 @@
 raises) and the session-per-snapshot store (commits are real — visible from a
 fresh session; DB-gated on the 5499 Timescale)."""
 
-from datetime import date, datetime, timedelta, timezone
+from datetime import UTC, date, datetime, timedelta
 
 import pytest
 from sqlalchemy import func, select
 
 from rs_domain import ChainSnapshot, Dataset, OptionQuote, SourceStatus
-from rs_ingest.chain_adapters import ChainFetchError, SchwabChainFetch, SessionSnapshotStore
+from rs_ingest.chain_adapters import (
+    ChainFetchError,
+    SchwabChainFetch,
+    SessionSnapshotStore,
+)
 from rs_persistence import build_engine, build_session_factory, chain_snapshot_table
 
-NOW = datetime(2026, 7, 16, 14, 35, tzinfo=timezone.utc)
+NOW = datetime(2026, 7, 16, 14, 35, tzinfo=UTC)
 
 
 class FixedClock:

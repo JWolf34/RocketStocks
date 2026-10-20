@@ -1,7 +1,7 @@
 """BarRepository.list_range: the serve read seam (S005) — half-open [start, end),
 oldest-first, symbol-scoped."""
 
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 import pytest
 from sqlalchemy import text
@@ -9,7 +9,7 @@ from sqlalchemy import text
 from rs_domain import Bar
 from rs_persistence import BarRepository, build_engine, build_session_factory
 
-T0 = datetime(2026, 7, 9, 13, 30, tzinfo=timezone.utc)  # RTH open, 2026-07-09
+T0 = datetime(2026, 7, 9, 13, 30, tzinfo=UTC)  # RTH open, 2026-07-09
 
 
 def _bar(symbol: str, minutes_after_open: int) -> Bar:

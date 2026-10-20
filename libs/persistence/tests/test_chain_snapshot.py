@@ -3,7 +3,7 @@ hypertable with the pinned compression policy and no retention, a ChainSnapshot
 round-trips (payload rows and tombstones), and the stale-guard restart query
 rebuilds per-name medians from the last accepted snapshot only."""
 
-from datetime import date, datetime, timedelta, timezone
+from datetime import UTC, date, datetime, timedelta
 
 import pytest
 from sqlalchemy import create_engine as create_sync_engine
@@ -17,7 +17,7 @@ from rs_persistence import (
     chain_snapshot_table,
 )
 
-CYCLE = datetime(2026, 7, 6, 14, 35, tzinfo=timezone.utc)
+CYCLE = datetime(2026, 7, 6, 14, 35, tzinfo=UTC)
 
 COLUMNS = {
     # identity

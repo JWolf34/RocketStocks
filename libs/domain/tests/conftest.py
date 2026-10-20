@@ -1,13 +1,13 @@
 """Shared canonical-object builders for the rs_domain suites (as fixtures —
 importlib mode makes sibling-module imports unreliable, fixtures always work)."""
 
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 import pytest
 
 from rs_domain import Bar, BarClosed
 
-SESSION_OPEN = datetime(2026, 7, 6, 13, 30, tzinfo=timezone.utc)
+SESSION_OPEN = datetime(2026, 7, 6, 13, 30, tzinfo=UTC)
 
 
 @pytest.fixture

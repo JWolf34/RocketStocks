@@ -1,4 +1,4 @@
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 import time_machine
 
@@ -10,9 +10,9 @@ def test_system_clock_returns_aware_utc():
     assert now.utcoffset() == timedelta(0)
 
 
-@time_machine.travel(datetime(2026, 7, 6, 16, 0, tzinfo=timezone.utc), tick=False)
+@time_machine.travel(datetime(2026, 7, 6, 16, 0, tzinfo=UTC), tick=False)
 def test_system_clock_is_time_machine_controllable():
-    assert SystemClock().now() == datetime(2026, 7, 6, 16, 0, tzinfo=timezone.utc)
+    assert SystemClock().now() == datetime(2026, 7, 6, 16, 0, tzinfo=UTC)
 
 
 def test_system_clock_satisfies_protocol():

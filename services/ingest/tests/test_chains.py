@@ -9,7 +9,7 @@ measured real books (SPY 2,654 rows / 13 expiries at ±10%/≤30DTE, QQQ
 
 import gzip
 import json
-from datetime import date, datetime, timedelta, timezone
+from datetime import UTC, date, datetime, timedelta
 from functools import partial
 from pathlib import Path
 
@@ -186,7 +186,7 @@ class TestFieldMapping:
         assert q.expiry == date(2026, 7, 6)
         assert q.strike == 99.0
         assert q.put_call == "C"
-        assert q.quote_time == datetime.fromtimestamp(1783353656792 / 1000, tz=timezone.utc)
+        assert q.quote_time == datetime.fromtimestamp(1783353656792 / 1000, tz=UTC)
         assert q.bid == 1.65
         assert q.ask == 1.79
         assert q.last == 1.77
@@ -194,7 +194,7 @@ class TestFieldMapping:
         assert q.bid_size == 64
         assert q.ask_size == 62
         assert q.last_size == 2
-        assert q.trade_time == datetime.fromtimestamp(1783353653132 / 1000, tz=timezone.utc)
+        assert q.trade_time == datetime.fromtimestamp(1783353653132 / 1000, tz=UTC)
         assert q.volume == 2782
         assert q.open_interest == 8345
         assert q.iv == 24.769  # Schwab's `volatility`, stored as-received (percent)
@@ -279,7 +279,7 @@ class TestRowCap:
                     contract(strike=95.0 + i, symbol=f"XYZ {e} {i}")
                     for i in range(n)
                 ]
-                for e, n in zip(expiries, rows_per_expiry)
+                for e, n in zip(expiries, rows_per_expiry, strict=True)
             },
         )
 

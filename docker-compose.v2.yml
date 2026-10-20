@@ -27,7 +27,8 @@ x-app: &app
 
 services:
   timescaledb:
-    image: timescale/timescaledb:latest-pg16
+    # Pinned (not latest-pg16); bump deliberately, together with .github/workflows/ci.yml.
+    image: timescale/timescaledb:2.30.2-pg16
     restart: unless-stopped
     environment:
       POSTGRES_PASSWORD: ${RS_DB_PASSWORD}

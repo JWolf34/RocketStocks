@@ -15,7 +15,7 @@ import json
 from collections import Counter
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 from rs_domain import Alert, BarClosed
@@ -70,8 +70,8 @@ class DecisionScope:
 def fixture_scope(events: Sequence[BarClosed]) -> DecisionScope:
     buckets = [event.bar.bucket for event in events]
     first, last = min(buckets), max(buckets)
-    start = datetime(first.year, first.month, first.day, tzinfo=timezone.utc)
-    end = datetime(last.year, last.month, last.day, tzinfo=timezone.utc) + timedelta(days=1)
+    start = datetime(first.year, first.month, first.day, tzinfo=UTC)
+    end = datetime(last.year, last.month, last.day, tzinfo=UTC) + timedelta(days=1)
     return DecisionScope(
         symbols=frozenset(event.bar.symbol for event in events), start=start, end=end
     )

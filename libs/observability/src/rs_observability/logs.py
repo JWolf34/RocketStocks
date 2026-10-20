@@ -16,8 +16,10 @@ import sys
 import uuid
 from collections.abc import Callable, Iterator
 from contextlib import contextmanager
+from typing import Any
 
 import structlog
+from structlog.typing import EventDict, Processor
 
 _FORMATS = ("json", "console", "auto")
 
@@ -25,8 +27,8 @@ _FORMATS = ("json", "console", "auto")
 _URL_LOGGING_LIBRARIES = ("httpx", "httpcore")
 
 
-def _add_service(service: str) -> Callable:
-    def processor(logger, method_name, event_dict):
+def _add_service(service: str) -> Callable[[Any, str, EventDict], EventDict]:
+    def processor(logger: Any, method_name: str, event_dict: EventDict) -> EventDict:
         event_dict["service"] = service
         return event_dict
 
@@ -54,7 +56,7 @@ def configure_logging(service: str) -> None:
 
     # Runs on every record: in-pipeline for structlog-native entries, as the
     # foreign_pre_chain for stdlib ones — so both carry the same fields.
-    shared = [
+    shared: list[Processor] = [
         structlog.contextvars.merge_contextvars,
         structlog.stdlib.add_logger_name,
         structlog.stdlib.add_log_level,
@@ -65,7 +67,10 @@ def configure_logging(service: str) -> None:
     if fmt == "json":
         # ConsoleRenderer formats exc_info itself; JSONRenderer needs the
         # traceback flattened into an `exception` field first.
-        renderers = [structlog.processors.format_exc_info, structlog.processors.JSONRenderer()]
+        renderers: list[Processor] = [
+            structlog.processors.format_exc_info,
+            structlog.processors.JSONRenderer(),
+        ]
     else:
         renderers = [structlog.dev.ConsoleRenderer()]
     formatter = structlog.stdlib.ProcessorFormatter(
@@ -94,7 +99,7 @@ def configure_logging(service: str) -> None:
 
 
 @contextmanager
-def unit_of_work(**fields) -> Iterator[str]:
+def unit_of_work(**fields: Any) -> Iterator[str]:
     """Bind a fresh opaque UUID as `correlation_id` plus the given domain-key
     fields onto every record logged inside the block — from any logger,
     third-party retry internals included (S006 pin #3).

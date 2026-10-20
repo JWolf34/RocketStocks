@@ -3,7 +3,7 @@ once a second workspace member (rs_bot, S004) needed a verbatim copy.
 
 Target resolution: RS_TEST_DB_URL, defaulting to the spec's ephemeral
 container (docker run -d --rm -p 5499:5432 -e POSTGRES_PASSWORD=t
-timescale/timescaledb:latest-pg16).
+timescale/timescaledb:2.30.2-pg16).
 
 Gating semantics: with no RS_TEST_DB_URL set and the default container absent,
 tests SKIP (visible, local-dev friendly). When RS_TEST_DB_URL is explicitly
@@ -25,11 +25,13 @@ imported by runtime code.
 
 import os
 import uuid
+from collections.abc import AsyncIterator, Iterator
 
 import pytest
 from alembic import command
 from sqlalchemy import create_engine as create_sync_engine
 from sqlalchemy import text
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from rs_persistence import build_engine, build_session_factory, migration_config
 
@@ -48,7 +50,7 @@ def _reachable(url: str) -> bool:
 
 
 @pytest.fixture(scope="session")
-def migrated_db_url():
+def migrated_db_url() -> Iterator[str]:
     explicit_url = os.environ.get("RS_TEST_DB_URL")
     admin_url = explicit_url or DEFAULT_URL
     if not _reachable(admin_url):
@@ -72,7 +74,7 @@ def migrated_db_url():
 
 
 @pytest.fixture
-async def session_factory(migrated_db_url):
+async def session_factory(migrated_db_url: str) -> AsyncIterator[async_sessionmaker[AsyncSession]]:
     """Async session factory over the migrated DB. migrated_db_url is
     session-scoped and shared; this truncates so each test starts from empty
     alerts/outbox/bars with a reset identity."""

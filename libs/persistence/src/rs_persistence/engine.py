@@ -7,7 +7,12 @@ configured to any other zone would hand non-UTC datetimes to the domain
 validators. Correctness must not depend on ambient DB config.
 """
 
-from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker, create_async_engine
+from sqlalchemy.ext.asyncio import (
+    AsyncEngine,
+    AsyncSession,
+    async_sessionmaker,
+    create_async_engine,
+)
 
 
 def build_engine(dsn: str) -> AsyncEngine:

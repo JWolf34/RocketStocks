@@ -5,7 +5,7 @@ rate() sees continuous series. The chain-scan collector set is the S012
 metrics contract — names asserted here exactly as the spec pins them."""
 
 import asyncio
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
 
 import pytest
@@ -50,7 +50,7 @@ def scanner_stub(last_success_at=None):
 
 
 class TestChainScanCollectors:
-    NOW = datetime(2026, 7, 16, 15, 0, tzinfo=timezone.utc)
+    NOW = datetime(2026, 7, 16, 15, 0, tzinfo=UTC)
 
     def scrape(self, scanner, clock=None):
         histogram = Histogram(

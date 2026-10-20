@@ -5,9 +5,8 @@ LISTEN connection, same as the acceptance drills rely on."""
 
 import psycopg
 
-from rs_persistence import AlertRepository
-
 from rs_bot.tools.stage_alert import stage
+from rs_persistence import AlertRepository
 
 
 async def test_stage_commits_an_unposted_marked_alert_with_notify(migrated_db_url, session_factory):

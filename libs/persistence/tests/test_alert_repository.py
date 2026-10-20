@@ -2,7 +2,7 @@
 NOTIFY are one atomic unit (grilling #4/#6). A raw LISTEN connection witnesses
 that the notify arrives only at commit, carrying the alert id."""
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 import psycopg
 from sqlalchemy import func, select, text
@@ -17,7 +17,7 @@ from rs_persistence import (
 ALERT = Alert(
     symbol="SPY",
     alert_type="volume_threshold",
-    triggered_at=datetime(2026, 7, 6, 14, 30, tzinfo=timezone.utc),
+    triggered_at=datetime(2026, 7, 6, 14, 30, tzinfo=UTC),
     payload={"volume": 750_000, "threshold": 500_000},
 )
 

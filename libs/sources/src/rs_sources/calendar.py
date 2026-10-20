@@ -6,7 +6,7 @@ S002 convention). Scheduled facts only - unscheduled halts and surprise
 late opens are feed-observable, not calendar-knowable (ADR-0017).
 """
 
-from datetime import date, datetime, timezone
+from datetime import UTC, date, datetime
 
 import exchange_calendars as xcals
 
@@ -33,10 +33,10 @@ class ExchangeCalendar:
         return bool(self._calendar.is_session(day.isoformat()))
 
     def session_open(self, day: date) -> datetime:
-        return self._calendar.session_open(day.isoformat()).to_pydatetime().astimezone(timezone.utc)
+        return self._calendar.session_open(day.isoformat()).to_pydatetime().astimezone(UTC)
 
     def session_close(self, day: date) -> datetime:
-        return self._calendar.session_close(day.isoformat()).to_pydatetime().astimezone(timezone.utc)
+        return self._calendar.session_close(day.isoformat()).to_pydatetime().astimezone(UTC)
 
     def sessions_in_range(self, start: date, end: date) -> list[date]:
         sessions = self._calendar.sessions_in_range(start.isoformat(), end.isoformat())

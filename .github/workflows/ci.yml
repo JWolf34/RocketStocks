@@ -31,7 +31,8 @@ jobs:
     runs-on: ubuntu-latest
     services:
       timescaledb:
-        image: timescale/timescaledb:latest-pg16
+        # Pinned (not latest-pg16); bump deliberately, together with docker-compose.v2.yml.
+        image: timescale/timescaledb:2.30.2-pg16
         env:
           POSTGRES_PASSWORD: t
         ports:
@@ -60,8 +61,22 @@ jobs:
       - name: Lint v2 members
         run: uv run ruff check libs services tools
 
+      - name: Type-check v2 members
+        run: uv run mypy
+
+      - name: Import-layer contracts
+        run: uv run lint-imports
+
       - name: Clock-discipline gate
         run: scripts/check_clock_discipline.sh
+
+      # Hand-written migrations vs the ORM models: fails on any drift.
+      - name: Migrations match models (alembic check)
+        env:
+          RS_DB_URL: postgresql+psycopg://postgres:t@localhost:5499/postgres
+        run: |
+          uv run python -m rs_migrate upgrade
+          uv run python -m rs_migrate check
 
       # Per-member tests/test_import.py covers importability of every member.
       - name: Run v2 member tests

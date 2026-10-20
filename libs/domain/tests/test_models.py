@@ -1,4 +1,4 @@
-from datetime import date, datetime, timedelta, timezone
+from datetime import UTC, date, datetime, timedelta, timezone
 
 import pytest
 from pydantic import ValidationError
@@ -14,7 +14,7 @@ from rs_domain import (
     median_instant,
 )
 
-UTC_NOON = datetime(2026, 7, 6, 16, 0, tzinfo=timezone.utc)
+UTC_NOON = datetime(2026, 7, 6, 16, 0, tzinfo=UTC)
 
 
 class TestBar:
@@ -44,7 +44,7 @@ class TestBar:
         # A zero-offset non-UTC tzinfo passes validation but must not survive:
         # variable zones would make later wall-clock arithmetic DST-hazardous.
         bar = make_bar(bucket=datetime(2026, 7, 6, 16, 0, tzinfo=timezone(timedelta(0))))
-        assert bar.bucket.tzinfo is timezone.utc
+        assert bar.bucket.tzinfo is UTC
         assert bar.bucket == UTC_NOON
 
 

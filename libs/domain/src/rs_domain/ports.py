@@ -4,9 +4,9 @@ Implementations live outside rs_domain: live/recorded event sources come with
 S003; the exchange_calendars adapter lives in rs_sources.
 """
 
-from collections.abc import Sequence
+from collections.abc import AsyncIterator, Sequence
 from datetime import date, datetime
-from typing import AsyncIterator, Protocol
+from typing import Protocol
 
 from rs_domain.events import BarClosed
 from rs_domain.models import Alert, Bar

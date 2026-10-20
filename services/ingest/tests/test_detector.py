@@ -1,11 +1,11 @@
 """ThresholdDetector: level-trigger on the newest bar's volume."""
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from rs_domain import Bar
 from rs_ingest.detector import ALERT_TYPE, ThresholdDetector
 
-BUCKET = datetime(2026, 7, 6, 14, 30, tzinfo=timezone.utc)
+BUCKET = datetime(2026, 7, 6, 14, 30, tzinfo=UTC)
 
 
 def bar(volume: int, *, symbol: str = "SPY", bucket: datetime = BUCKET) -> Bar:
@@ -35,7 +35,7 @@ def test_above_threshold_fires_with_semantic_payload():
 
 
 def test_decides_on_newest_bar_only():
-    older = bar(900_000, bucket=datetime(2026, 7, 6, 14, 25, tzinfo=timezone.utc))
+    older = bar(900_000, bucket=datetime(2026, 7, 6, 14, 25, tzinfo=UTC))
     newest = bar(100_000, bucket=BUCKET)
     # An earlier bar over the line does not fire; only window[-1] is judged.
     assert ThresholdDetector(500_000).decide([older, newest]) is None

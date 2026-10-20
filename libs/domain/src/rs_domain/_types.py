@@ -1,6 +1,6 @@
 """Shared annotated types enforcing the v2 domain conventions."""
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Annotated
 
 from pydantic import AfterValidator
@@ -20,9 +20,9 @@ def _require_utc(value: datetime) -> datetime:
     """
     if value.tzinfo is None:
         raise ValueError("naive datetime — domain datetimes must be tz-aware UTC")
-    if value.utcoffset() != timezone.utc.utcoffset(None):
+    if value.utcoffset() != UTC.utcoffset(None):
         raise ValueError(f"non-UTC datetime (offset {value.utcoffset()}) — convert to UTC at the edge")
-    return value if value.tzinfo is timezone.utc else value.astimezone(timezone.utc)
+    return value if value.tzinfo is UTC else value.astimezone(UTC)
 
 
 UtcDatetime = Annotated[datetime, AfterValidator(_require_utc)]

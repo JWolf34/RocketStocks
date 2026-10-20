@@ -9,21 +9,20 @@ transactional path."""
 
 import asyncio
 import contextlib
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 import pytest
 from sqlalchemy import text
 
-from rs_domain import Alert
-from rs_persistence import AlertRepository
-
 from rs_bot.counters import new_counters
 from rs_bot.listener import ListenLoop
+from rs_domain import Alert
+from rs_persistence import AlertRepository
 
 ALERT = Alert(
     symbol="SPY",
     alert_type="volume_threshold",
-    triggered_at=datetime(2026, 7, 6, 14, 30, tzinfo=timezone.utc),
+    triggered_at=datetime(2026, 7, 6, 14, 30, tzinfo=UTC),
     payload={"volume": 750_000, "threshold": 500_000},
 )
 

@@ -9,10 +9,12 @@ repository honoring the same contract explicitly.
 """
 
 from collections.abc import Collection
-from datetime import date, datetime, timedelta, timezone
+from datetime import UTC, date, datetime, timedelta
+from typing import Any, cast
 
 from pydantic import BaseModel, ConfigDict
 from sqlalchemy import func, insert, select, update
+from sqlalchemy.engine import CursorResult
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from rs_domain import Alert, Bar, ChainSnapshot, Dataset, SourceStatus, median_instant
@@ -52,7 +54,7 @@ class BarRepository:
         """Every bar for a symbol on one UTC calendar day, ordered by bucket. The
         engine pins the session TZ to UTC, so [start, start+1d) is a UTC-day slice
         — the shape compare_bars reconciles against a day of REST candles."""
-        start = datetime(day.year, day.month, day.day, tzinfo=timezone.utc)
+        start = datetime(day.year, day.month, day.day, tzinfo=UTC)
         rows = (
             await self._session.scalars(
                 select(StreamBar5m)
@@ -86,7 +88,7 @@ class BarRepository:
     @staticmethod
     def _to_bar(row: StreamBar5m) -> Bar:
         fields = {name: getattr(row, name) for name in _FIELDS}
-        fields["bucket"] = fields["bucket"].astimezone(timezone.utc)
+        fields["bucket"] = fields["bucket"].astimezone(UTC)
         return Bar(**fields)
 
 
@@ -152,7 +154,7 @@ class ChainSnapshotRepository:
         )
         times: dict[str, list[datetime]] = {}
         for underlying, quote_time in result:
-            times.setdefault(underlying, []).append(quote_time.astimezone(timezone.utc))
+            times.setdefault(underlying, []).append(quote_time.astimezone(UTC))
         medians = {}
         for underlying, values in times.items():
             median = median_instant(values)
@@ -191,7 +193,8 @@ class ServiceClientRepository:
             .where(ServiceClientRow.name == name, ServiceClientRow.revoked_at.is_(None))
             .values(revoked_at=func.now())
         )
-        return result.rowcount == 1
+        # execute() is typed as the generic Result; an UPDATE yields a CursorResult.
+        return cast(CursorResult[Any], result).rowcount == 1
 
 
 class PendingAlert(BaseModel):
@@ -272,7 +275,7 @@ class AlertRepository:
             Alert(
                 symbol=row.symbol,
                 alert_type=row.alert_type,
-                triggered_at=row.triggered_at.astimezone(timezone.utc),
+                triggered_at=row.triggered_at.astimezone(UTC),
                 payload=row.payload,
             )
             for row in rows
@@ -294,7 +297,7 @@ class AlertRepository:
                 alert=Alert(
                     symbol=row.symbol,
                     alert_type=row.alert_type,
-                    triggered_at=row.triggered_at.astimezone(timezone.utc),
+                    triggered_at=row.triggered_at.astimezone(UTC),
                     payload=row.payload,
                 ),
             )

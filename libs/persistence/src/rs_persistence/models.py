@@ -24,6 +24,7 @@ from sqlalchemy import (
     Column,
     Date,
     Identity,
+    Index,
     Integer,
     Numeric,
     SmallInteger,
@@ -111,6 +112,10 @@ class StreamBar5m(Base):
 
 class AlertRow(Base):
     __tablename__ = "alerts"
+    __table_args__ = (
+        # The bot's delivery cursor: a partial index holding only undelivered rows.
+        Index("ix_alerts_unposted", "id", postgresql_where=text("posted_at IS NULL")),
+    )
 
     id: Mapped[int] = mapped_column(BigInteger, Identity(always=True), primary_key=True)
     symbol: Mapped[str] = mapped_column(Text)

@@ -9,9 +9,14 @@ requires-python = ">=3.13"
 dependencies = [
     "alembic>=1.18.5",
     "psycopg[binary]>=3.3.4",
+    "pydantic>=2.13.4",
     "rs-domain",
     "sqlalchemy[asyncio]>=2",
 ]
+
+# rs_persistence.testing (shared DB fixtures) imports pytest; the runtime never does.
+[project.optional-dependencies]
+testing = ["pytest"]
 
 [build-system]
 requires = ["uv_build>=0.11.26,<0.12.0"]

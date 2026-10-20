@@ -36,7 +36,12 @@ from rs_observability import (
     install_excepthooks,
     start_metrics_server,
 )
-from rs_persistence import NOTIFY_CHANNEL, SchwabTokenStore, build_engine, build_session_factory
+from rs_persistence import (
+    NOTIFY_CHANNEL,
+    SchwabTokenStore,
+    build_engine,
+    build_session_factory,
+)
 from rs_sources import ExchangeCalendar
 
 logger = logging.getLogger(__name__)
