@@ -120,3 +120,29 @@ async def test_list_in_state_is_oldest_first(session_factory):
         assert [r.id for r in await repo.list_in_state(AuthRequestState.REQUESTED)] == [a.id, c.id]
         assert [r.id for r in await repo.list_in_state(AuthRequestState.URL_READY)] == [b.id]
         assert await repo.list_in_state(AuthRequestState.DONE) == []
+
+
+async def test_create_and_callback_notify_the_ingest_channel(migrated_db_url):
+    import psycopg
+
+    from rs_persistence import AUTH_NOTIFY_CHANNEL, build_engine, build_session_factory
+
+    conninfo = migrated_db_url.replace("+psycopg", "", 1)
+    engine = build_engine(migrated_db_url)
+    try:
+        async with await psycopg.AsyncConnection.connect(conninfo, autocommit=True) as listener:
+            await listener.execute(f'LISTEN "{AUTH_NOTIFY_CHANNEL}"')
+            async with build_session_factory(engine)() as s:
+                repo = AuthRequestRepository(s)
+                request = await repo.create(ADMIN)
+                await s.commit()  # one transaction would collapse the identical notifies
+                await repo.set_auth_url(request.id, "https://schwab.example/auth")
+                await repo.set_callback_url(request.id, "https://127.0.0.1/?code=abc")
+                await s.commit()
+            payloads = []
+            async for note in listener.notifies(timeout=2, stop_after=2):
+                payloads.append(note.payload)
+    finally:
+        await engine.dispose()
+
+    assert payloads == [str(request.id), str(request.id)]

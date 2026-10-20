@@ -72,6 +72,10 @@ GRANTS: dict[str, dict[str, tuple[str, ...]]] = {
     "schwab_tokens": {
         "ingest": ("SELECT", "INSERT", "UPDATE"),
     },
+    # Which expiry DMs went out for which token issue; no secret in it.
+    "schwab_token_notice": {
+        "bot": _SELECT_INSERT,
+    },
     "service_clients": {
         "serve": _SELECT,
     },
@@ -85,6 +89,12 @@ GRANTS: dict[str, dict[str, tuple[str, ...]]] = {
         "serve": _SELECT,
         "research": _SELECT,
     },
+}
+
+# view -> service -> privileges. schwab_token_issue exposes only when the token was
+# issued, so the bot can time its expiry notices without ever reading schwab_tokens.
+VIEW_GRANTS: dict[str, dict[str, tuple[str, ...]]] = {
+    "schwab_token_issue": {"bot": _SELECT},
 }
 
 
@@ -157,7 +167,7 @@ def _grant(conn: psycopg.Connection, role: str, service: str) -> None:
     name = sql.Identifier(role)
     conn.execute(sql.SQL("REVOKE ALL ON ALL TABLES IN SCHEMA public FROM {}").format(name))
     conn.execute(sql.SQL("GRANT USAGE ON SCHEMA public TO {}").format(name))
-    for table, by_service in GRANTS.items():
+    for table, by_service in (GRANTS | VIEW_GRANTS).items():
         privileges = by_service.get(service)
         if privileges:
             conn.execute(
