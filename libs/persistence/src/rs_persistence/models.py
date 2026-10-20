@@ -150,7 +150,7 @@ class PopularitySnapshotRow(Base):
     ticker: Mapped[str] = mapped_column(Text, primary_key=True)
     rank: Mapped[int] = mapped_column(Integer)
     mentions: Mapped[int] = mapped_column(Integer)
-    upvotes: Mapped[int] = mapped_column(Integer)
+    upvotes: Mapped[int | None] = mapped_column(Integer)
     rank_24h_ago: Mapped[int | None] = mapped_column(Integer)
     mentions_24h_ago: Mapped[int | None] = mapped_column(Integer)
     fetched_at: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True))
@@ -208,6 +208,22 @@ class BaseRateRow(Base):
     median_excess_5d: Mapped[float | None] = mapped_column(Double)
     median_excess_10d: Mapped[float | None] = mapped_column(Double)
     survivorship_caveat: Mapped[str] = mapped_column(Text)
+
+
+class ImportVerificationRow(Base):
+    """import_verification: one passed `verify-offset` run (append-only); the
+    zone is a candidate name such as "America/Chicago" or "-06:00"."""
+
+    __tablename__ = "import_verification"
+
+    id: Mapped[int] = mapped_column(BigInteger, Identity(always=True), primary_key=True)
+    verified_at: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True))
+    zone: Mapped[str] = mapped_column(Text)
+    overlap_rows: Mapped[int] = mapped_column(Integer)
+    matched_rows: Mapped[int] = mapped_column(Integer)
+    match_rate: Mapped[float] = mapped_column(Double)
+    overlap_start: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True))
+    overlap_end: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True))
 
 
 class SchwabAuthRequestRow(Base):

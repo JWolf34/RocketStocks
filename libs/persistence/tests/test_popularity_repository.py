@@ -152,3 +152,31 @@ async def test_db_origin_enum_matches_the_domain_vocabulary(session_factory):
             .all()
         )
     assert labels == [m.value for m in PopularityOrigin]
+
+
+async def test_upvotes_may_be_absent_on_imported_rows(session_factory):
+    snap = _snap("AAA", upvotes=None, origin=PopularityOrigin.V1_IMPORT)
+    async with session_factory() as s:
+        assert await PopularityRepository(s).insert_many([snap]) == 1
+        await s.commit()
+    async with session_factory() as s:
+        assert await PopularityRepository(s).list_between(T0, T0 + timedelta(minutes=30)) == [snap]
+
+
+async def test_extent_is_per_origin_and_none_when_empty(session_factory):
+    later = T0 + timedelta(hours=2)
+    async with session_factory() as s:
+        repo = PopularityRepository(s)
+        assert await repo.extent(PopularityOrigin.LIVE) is None
+        await repo.insert_many(
+            [
+                _snap("AAA"),
+                _snap("AAA", later),
+                _snap("BBB", T0 - timedelta(days=1), origin=PopularityOrigin.V1_IMPORT),
+            ]
+        )
+        await s.commit()
+    async with session_factory() as s:
+        repo = PopularityRepository(s)
+        assert await repo.extent(PopularityOrigin.LIVE) == (T0, later)
+        assert await repo.extent(PopularityOrigin.V1_IMPORT) == (T0 - timedelta(days=1),) * 2

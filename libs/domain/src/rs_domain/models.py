@@ -77,7 +77,8 @@ class PopularitySnapshot(BaseModel):
     """One ticker's ApeWisdom standing at one poll boundary. `polled_at` is the
     UTC half-hour boundary at or before the fetch; `fetched_at` is when the
     response actually arrived. The 24h-ago fields are None when ApeWisdom has
-    no prior reading for the ticker."""
+    no prior reading for the ticker; `upvotes` is None only on imported v1 rows
+    that never carried it."""
 
     model_config = ConfigDict(frozen=True)
 
@@ -85,7 +86,7 @@ class PopularitySnapshot(BaseModel):
     ticker: str
     rank: PositiveInt
     mentions: NonNegativeInt
-    upvotes: NonNegativeInt
+    upvotes: NonNegativeInt | None = None
     rank_24h_ago: NonNegativeInt | None = None
     mentions_24h_ago: NonNegativeInt | None = None
     fetched_at: UtcDatetime
