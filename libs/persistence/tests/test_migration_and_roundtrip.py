@@ -23,7 +23,8 @@ def sync_engine(migrated_db_url):
 class TestRev001Schema:
     def test_all_tables_created(self, sync_engine):
         tables = set(inspect(sync_engine).get_table_names())
-        assert {"stream_bars_5m", "alerts", "outbox"} <= tables
+        assert {"stream_bars_5m", "alerts"} <= tables
+        assert "outbox" not in tables
 
     def test_stream_bars_is_hypertable(self, sync_engine):
         with sync_engine.connect() as conn:
@@ -37,13 +38,19 @@ class TestRev001Schema:
 
     def test_alerts_has_posted_at_cursor(self, sync_engine):
         columns = {c["name"] for c in inspect(sync_engine).get_columns("alerts")}
-        assert columns == {"id", "symbol", "alert_type", "triggered_at", "payload", "posted_at"}
-
-    def test_outbox_is_minimal_ledger(self, sync_engine):
-        columns = {c["name"] for c in inspect(sync_engine).get_columns("outbox")}
-        assert columns == {"id", "event_type", "payload", "created_at"}, (
-            "outbox must stay an append-only ledger without delivery state (ADR-0005)"
-        )
+        assert columns == {
+            "id",
+            "symbol",
+            "alert_type",
+            "triggered_at",
+            "payload",
+            "posted_at",
+            "rule_version",
+            "alert_price",
+            "quote_time",
+            "dedup_key",
+            "post_attempts",
+        }
 
     def test_alerts_unposted_partial_index(self, sync_engine):
         # rev-003: the bot cursor's operational index (S004 pin #10) — partial

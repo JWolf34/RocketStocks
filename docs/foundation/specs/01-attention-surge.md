@@ -26,8 +26,10 @@ The migrate gate creates one role per service (ingest, bot, serve, research); on
 |---|---|
 | `popularity_snapshot` (hypertable) | `polled_at` (UTC boundary), `ticker`, `rank`, `mentions`, `upvotes`, `rank_24h_ago`, `mentions_24h_ago`, `fetched_at`, `origin` (`live` or `v1_import`); key (`polled_at`, `ticker`), insert is `ON CONFLICT DO NOTHING` |
 | `daily_bar` (hypertable) | `symbol`, `session_date`, OHLCV, `fetched_at`, `adjusted`; rejected unless `exchange_calendars` lists the session |
-| `alerts` (extended) | adds `rule_version`, `alert_price`, `quote_time`, unique `dedup_key` |
-| `base_rate` | `alert_type`, `rule_version`, `computed_at`, `input` (`reconstructed` or `logged`), N, hit rate and median excess vs SPY at 1/5/10 trading days, `survivorship_caveat` |
+| `alerts` (extended) | adds `rule_version`, `alert_price`, `quote_time`, unique `dedup_key`, `post_attempts` (the bot's capped retry) |
+| `base_rate` | `alert_type`, `rule_version`, `computed_at`, `input` (`reconstructed` or `logged`), N, hit rate and median excess vs SPY at 1/5/10 trading days, `survivorship_caveat`, `n_unpriced` |
+| `unpriced_symbol` | `symbol`, `first_seen`, `last_attempt`, `reason`: tickers Schwab cannot price |
+| `schwab_auth_request` | `id`, `created_at`, `requested_by` (Discord id), `state`, `auth_url`, `callback_url`, `error`, `completed_at`: the `/setup schwab` handshake |
 
 **Surge rule** (`rs_analysis.attention_surge`, `RULE_VERSION = "1"`), a pure function over one ticker's snapshots.
 Derived from `evaluate_popularity_surge` in `legacy/src/rocketstocks/core/analysis/popularity_signals.py`.
