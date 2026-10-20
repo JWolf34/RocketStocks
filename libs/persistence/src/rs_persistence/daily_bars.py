@@ -74,6 +74,15 @@ class DailyBarRepository:
         )
         return {symbol: latest for symbol, latest in result}
 
+    async def session_bounds(self, symbols: Collection[str]) -> dict[str, tuple[date, date]]:
+        """Oldest and newest stored session_date per symbol; symbols with no bars are absent."""
+        result = await self._session.execute(
+            select(DailyBarRow.symbol, func.min(DailyBarRow.session_date), func.max(DailyBarRow.session_date))
+            .where(DailyBarRow.symbol.in_(symbols))
+            .group_by(DailyBarRow.symbol)
+        )
+        return {symbol: (first, last) for symbol, first, last in result}
+
     async def missing_symbols(self, symbols: Collection[str]) -> list[str]:
         """The given symbols that have no stored bars at all, sorted."""
         have = await self.latest_session_dates(symbols)

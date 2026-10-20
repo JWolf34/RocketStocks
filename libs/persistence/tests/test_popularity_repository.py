@@ -122,6 +122,17 @@ async def test_list_for_ticker_is_half_open_ordered_and_scoped(session_factory):
     ]
 
 
+async def test_earliest_polled_at_is_the_oldest_boundary_or_none(session_factory):
+    async with session_factory() as s:
+        assert await PopularityRepository(s).earliest_polled_at() is None
+        later = T0 + timedelta(hours=2)
+        await PopularityRepository(s).insert_many([_snap("AAA", later), _snap("BBB"), _snap("AAA", T0 + timedelta(hours=1))])
+        await s.commit()
+
+    async with session_factory() as s:
+        assert await PopularityRepository(s).earliest_polled_at() == T0
+
+
 async def test_list_between_filters_by_origin(session_factory):
     async with session_factory() as s:
         await PopularityRepository(s).insert_many(
