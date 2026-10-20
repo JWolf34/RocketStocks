@@ -2178,6 +2178,16 @@ provides-extras = ["test"]
 name = "rs-analysis"
 version = "0.1.0"
 source = { editable = "libs/analysis" }
+dependencies = [
+    { name = "pydantic" },
+    { name = "rs-domain" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "pydantic", specifier = ">=2.13.4" },
+    { name = "rs-domain", editable = "libs/domain" },
+]
 
 [[package]]
 name = "rs-bot"
