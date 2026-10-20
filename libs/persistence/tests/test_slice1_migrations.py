@@ -95,7 +95,7 @@ def test_market_tables_are_compressed_hypertables_without_retention(sync_engine,
     assert "policy_retention" not in jobs
 
 
-def test_primary_keys_match_the_spec(sync_engine):
+def test_market_tables_are_keyed_by_symbol_and_time(sync_engine):
     insp = inspect(sync_engine)
     assert insp.get_pk_constraint("popularity_snapshot")["constrained_columns"] == ["polled_at", "ticker"]
     assert insp.get_pk_constraint("daily_bar")["constrained_columns"] == ["symbol", "session_date"]

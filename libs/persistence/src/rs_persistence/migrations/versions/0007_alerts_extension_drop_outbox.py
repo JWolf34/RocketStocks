@@ -1,4 +1,4 @@
-"""rev-007: alerts gains rule_version, alert_price, quote_time, dedup_key and
+"""alerts gains rule_version, alert_price, quote_time, dedup_key and
 post_attempts; the outbox table is dropped.
 
 dedup_key is unique but nullable (streaming alerts without a rule carry none;

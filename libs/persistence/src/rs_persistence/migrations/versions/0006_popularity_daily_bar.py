@@ -1,4 +1,4 @@
-"""rev-006: popularity_snapshot and daily_bar hypertables, unpriced_symbol.
+"""popularity_snapshot and daily_bar hypertables, unpriced_symbol.
 
 popularity_snapshot is keyed (polled_at, ticker): re-polling a boundary or
 re-importing v1 history is `ON CONFLICT DO NOTHING`. daily_bar is keyed

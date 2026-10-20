@@ -2,7 +2,7 @@
 
 An alert is one row plus a transactional NOTIFY, inside the caller's
 transaction. NOTIFY is only a wake-up hint (payload = the alert id); the
-`posted_at IS NULL` sweep is what makes delivery correct (ADR-0005).
+`posted_at IS NULL` sweep is what makes delivery correct.
 """
 
 from collections.abc import Collection

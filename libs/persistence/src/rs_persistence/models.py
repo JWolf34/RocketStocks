@@ -8,8 +8,8 @@ against official REST data, hypertable (created via raw DDL in rev-001).
 Prices are DOUBLE PRECISION — bit-exact float64 round-trip for replay
 (S002 decision); NUMERIC is reserved for future accounting-grade tables.
 
-alerts.posted_at is the bot's delivery cursor (ADR-0005 Bus-2 reference
-contract); post_attempts caps its retries.
+alerts.posted_at is the bot's delivery cursor (its `posted_at IS NULL` sweep);
+post_attempts caps its retries.
 """
 
 from datetime import date, datetime
@@ -140,7 +140,7 @@ class AlertRow(Base):
 
 
 class PopularitySnapshotRow(Base):
-    """popularity_snapshot hypertable (rev-006); `origin` shares its vocabulary
+    """popularity_snapshot hypertable; `origin` shares its vocabulary
     with rs_domain.PopularityOrigin."""
 
     __tablename__ = "popularity_snapshot"
@@ -160,7 +160,7 @@ class PopularitySnapshotRow(Base):
 
 
 class DailyBarRow(Base):
-    """daily_bar hypertable (rev-006), partitioned by session_date."""
+    """daily_bar hypertable, partitioned by session_date."""
 
     __tablename__ = "daily_bar"
 
@@ -185,7 +185,7 @@ class UnpricedSymbolRow(Base):
 
 
 class BaseRateRow(Base):
-    """base_rate (rev-008): append-only, one row per study run."""
+    """base_rate: append-only, one row per study run."""
 
     __tablename__ = "base_rate"
     __table_args__ = (
@@ -211,7 +211,7 @@ class BaseRateRow(Base):
 
 
 class SchwabAuthRequestRow(Base):
-    """schwab_auth_request (rev-008): the `/setup schwab` handshake. The callback
+    """schwab_auth_request: the `/setup schwab` handshake. The callback
     URL carries an OAuth code - treat it as a secret and never log it."""
 
     __tablename__ = "schwab_auth_request"

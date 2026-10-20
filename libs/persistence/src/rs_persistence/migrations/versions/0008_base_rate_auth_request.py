@@ -1,4 +1,4 @@
-"""rev-008: base_rate (versioned event-study outcomes) and schwab_auth_request
+"""base_rate (versioned event-study outcomes) and schwab_auth_request
 (the bot/ingest handshake behind `/setup schwab`).
 
 base_rate rows are append-only: each study run inserts a new row and readers
