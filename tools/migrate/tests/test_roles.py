@@ -22,6 +22,7 @@ from rs_migrate.__main__ import main
 from rs_migrate.roles import (
     GRANTS,
     SERVICES,
+    VIEW_GRANTS,
     RolesConfigError,
     apply_roles,
     password_var,
@@ -36,6 +37,7 @@ from rs_persistence import (
     BaseRateRepository,
     PopularityRepository,
     SchwabTokenStore,
+    TokenNoticeRepository,
     build_engine,
     build_session_factory,
 )
@@ -84,7 +86,7 @@ def _clear_data(r: Roles) -> None:
     with r.admin() as conn:
         conn.execute(
             "TRUNCATE alerts, base_rate, popularity_snapshot, schwab_auth_request,"
-            " schwab_tokens RESTART IDENTITY"
+            " schwab_tokens, schwab_token_notice RESTART IDENTITY"
         )
 
 
@@ -137,8 +139,16 @@ def test_every_migrated_table_has_a_grant_decision(roles):
     )
 
 
+def test_every_migrated_view_has_a_grant_decision(roles):
+    with roles.admin() as conn:
+        views = {
+            name for (name,) in conn.execute("SELECT viewname FROM pg_views WHERE schemaname = 'public'")
+        }
+    assert views == VIEW_GRANTS.keys()
+
+
 def test_grants_only_name_known_services():
-    for table, by_service in GRANTS.items():
+    for table, by_service in (GRANTS | VIEW_GRANTS).items():
         assert set(by_service) <= set(SERVICES), f"{table} grants an unknown service"
 
 
@@ -186,6 +196,38 @@ def test_only_ingest_reads_schwab_tokens(roles, service):
         _denied(conn, "SELECT * FROM schwab_tokens")
         _denied(conn, "SELECT token_data FROM schwab_tokens")
         _denied(conn, "INSERT INTO schwab_tokens (id, token_data) VALUES (1, '{}')")
+
+
+def test_bot_reads_token_age_but_never_the_token(roles):
+    with roles.admin() as conn:
+        conn.execute(
+            "INSERT INTO schwab_tokens (id, token_data) VALUES"
+            " (1, '{\"creation_timestamp\": 1760443200, \"token\": {\"refresh_token\": \"secret\"}}')"
+        )
+    with roles.connect("bot") as conn:
+        cursor = conn.execute("SELECT * FROM schwab_token_issue")
+        assert [c.name for c in cursor.description] == ["issued_at"]
+        assert cursor.fetchone() == (datetime(2025, 10, 14, 12, 0, tzinfo=UTC),)
+        _denied(conn, "SELECT * FROM schwab_tokens")
+        _denied(conn, "SELECT token_data FROM schwab_tokens")
+        (can_write,) = conn.execute(
+            "SELECT has_table_privilege(current_user, 'schwab_token_issue', 'INSERT, UPDATE, DELETE')"
+        ).fetchone()
+        assert can_write is False
+
+
+@pytest.mark.parametrize("service", ["ingest", "serve", "research"])
+def test_only_the_bot_reads_token_age(roles, service):
+    with roles.connect(service) as conn:
+        _denied(conn, "SELECT * FROM schwab_token_issue")
+
+
+def test_bot_records_notices_but_cannot_rewrite_them(roles):
+    with roles.connect("bot") as conn:
+        conn.execute("INSERT INTO schwab_token_notice (issued_at, threshold_hours) VALUES (now(), 24)")
+        conn.execute("SELECT * FROM schwab_token_notice")
+        _denied(conn, "UPDATE schwab_token_notice SET threshold_hours = 6")
+        _denied(conn, "DELETE FROM schwab_token_notice")
 
 
 def test_ingest_reads_and_writes_schwab_tokens(roles):
@@ -299,6 +341,13 @@ async def test_services_run_their_real_repositories_under_their_roles(roles):
         await s.commit()
     await SchwabTokenStore(ingest).save({"refresh_token": "r"})
     assert await SchwabTokenStore(ingest).load() == {"refresh_token": "r"}
+
+    # bot: token-age notice bookkeeping.
+    async with bot() as s:
+        await TokenNoticeRepository(s).record(NOW, 24)
+        await s.commit()
+    async with bot() as s:
+        assert await TokenNoticeRepository(s).sent_thresholds(NOW) == {24}
 
     # bot: sweep, retry bookkeeping, mark posted.
     async with bot() as s:

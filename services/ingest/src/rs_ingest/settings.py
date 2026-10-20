@@ -16,7 +16,7 @@ from typing import Annotated, Any
 from pydantic import Field, SecretStr, field_validator
 from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
-LOGIN_HINT = "run: python -m rs_ingest.tools.login"
+LOGIN_HINT = "run /setup schwab in Discord, or: python -m rs_ingest.tools.login"
 
 # The spike's 10 tickers (S008 bootstrap universe; static until S010's
 # universe management replaces it).
@@ -52,6 +52,8 @@ class IngestSettings(BaseSettings):
     shutdown_grace_seconds: float = Field(
         30.0, ge=0, validation_alias="RS_INGEST_SHUTDOWN_GRACE_SECONDS"
     )
+    # Fallback poll for `/setup schwab` requests; NOTIFY normally wakes the handler at once.
+    auth_poll_seconds: float = Field(15.0, gt=0, validation_alias="RS_INGEST_AUTH_POLL_SECONDS")
     # Shared by every Schwab job through one limiter; the default sits under Schwab's per-minute cap.
     schwab_calls_per_minute: int = Field(100, ge=1, validation_alias="RS_INGEST_SCHWAB_CALLS_PER_MINUTE")
     # The Bus-2 NOTIFY channel is intentionally NOT here: it is a pinned wire

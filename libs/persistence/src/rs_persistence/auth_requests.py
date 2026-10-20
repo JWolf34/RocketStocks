@@ -12,7 +12,7 @@ The callback URL carries a single-use OAuth code: it is cleared when the request
 reaches a terminal state, and callers must never log it.
 """
 
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from sqlalchemy import func, select, update
@@ -20,6 +20,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from rs_domain import AuthRequestState, SchwabAuthRequest
 from rs_persistence.models import SchwabAuthRequestRow
+
+# Wakes ingest when a request needs work; the payload is the request id, and ingest
+# also polls, so a lost NOTIFY only delays it.
+AUTH_NOTIFY_CHANNEL = "schwab_auth"
+# How long a request may stay open; the bot stops waiting and ingest expires it after this.
+AUTH_REQUEST_WINDOW = timedelta(minutes=10)
 
 _OPEN = (
     AuthRequestState.REQUESTED,
@@ -53,6 +59,7 @@ class AuthRequestRepository:
         self._session.add(row)
         await self._session.flush()
         await self._session.refresh(row)
+        await self._notify(row.id)
         return _to_request(row)
 
     async def get(self, request_id: int) -> SchwabAuthRequest | None:
@@ -77,12 +84,15 @@ class AuthRequestRepository:
         )
 
     async def set_callback_url(self, request_id: int, callback_url: str) -> bool:
-        return await self._move(
+        moved = await self._move(
             request_id,
             (AuthRequestState.URL_READY,),
             AuthRequestState.CALLBACK_RECEIVED,
             callback_url=callback_url,
         )
+        if moved:
+            await self._notify(request_id)
+        return moved
 
     async def complete(self, request_id: int) -> bool:
         return await self._move(
@@ -122,6 +132,9 @@ class AuthRequestRepository:
             .returning(SchwabAuthRequestRow.id)
         )
         return len(expired.all())
+
+    async def _notify(self, request_id: int) -> None:
+        await self._session.execute(select(func.pg_notify(AUTH_NOTIFY_CHANNEL, str(request_id))))
 
     async def _move(
         self,

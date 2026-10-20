@@ -20,18 +20,22 @@ from rs_sources.schwab.market_data import (
     SchwabMarketData,
     SchwabResponseError,
 )
+from rs_sources.schwab.oauth import CallbackRejected, ExchangeFailed, SchwabOAuth
 
 __all__ = [
     "DTE_BOUND",
+    "CallbackRejected",
     "ChainFetchError",
     "DailyBar",
     "DailyHistory",
+    "ExchangeFailed",
     "Quote",
     "RejectReason",
     "RejectedBar",
     "SchwabAuthError",
     "SchwabChainFetch",
     "SchwabMarketData",
+    "SchwabOAuth",
     "SchwabResponseError",
     "TokenMissingError",
     "TokenStore",

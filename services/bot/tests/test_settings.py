@@ -74,3 +74,12 @@ def test_old_dev_channel_variable_is_not_read(monkeypatch):
     monkeypatch.setenv("RS_DEV_CHANNEL_ID", "1")
     with pytest.raises(ValidationError):
         BotSettings(_env_file=None)
+
+
+def test_admin_user_id_is_optional_and_blank_means_unset(monkeypatch):
+    _set_required(monkeypatch)
+    assert BotSettings(_env_file=None).admin_user_id is None
+    monkeypatch.setenv("RS_BOT_ADMIN_USER_ID", "")
+    assert BotSettings(_env_file=None).admin_user_id is None
+    monkeypatch.setenv("RS_BOT_ADMIN_USER_ID", "123456789012345678")
+    assert BotSettings(_env_file=None).admin_user_id == 123456789012345678

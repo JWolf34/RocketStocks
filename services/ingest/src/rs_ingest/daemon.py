@@ -64,7 +64,7 @@ class TokenGate:
         logger.error("Schwab token dead - pausing Schwab jobs: %s", reason)
         await notify_ops(
             f"Schwab token is dead ({reason}). Schwab jobs are paused and other jobs keep "
-            "running. Re-authenticate to resume.",
+            "running. Run /setup schwab in Discord to resume.",
             key="schwab-token-dead",
         )
 

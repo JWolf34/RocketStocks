@@ -247,6 +247,18 @@ class SchwabAuthRequestRow(Base):
     completed_at: Mapped[datetime | None] = mapped_column(TIMESTAMP(timezone=True))
 
 
+class SchwabTokenNoticeRow(Base):
+    """schwab_token_notice: which expiry thresholds were already DM'd for a token issue."""
+
+    __tablename__ = "schwab_token_notice"
+
+    issued_at: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), primary_key=True)
+    threshold_hours: Mapped[int] = mapped_column(Integer, primary_key=True)
+    sent_at: Mapped[datetime] = mapped_column(
+        TIMESTAMP(timezone=True), server_default=text("now()")
+    )
+
+
 class ServiceClientRow(Base):
     """One API consumer (ADR-0012); rev-004. Phase 1 reads only api_key_hash +
     revoked_at; scopes and rate-limit columns are enforced from Phase 3."""
