@@ -16,6 +16,8 @@ from typing import Annotated, Any
 from pydantic import Field, SecretStr, field_validator
 from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
+LOGIN_HINT = "run: python -m rs_ingest.tools.login"
+
 # The spike's 10 tickers (S008 bootstrap universe; static until S010's
 # universe management replaces it).
 BOOTSTRAP_UNIVERSE = ["AAPL", "AMD", "AMZN", "GOOGL", "META", "MSFT", "NVDA", "QQQ", "SPY", "TSLA"]
