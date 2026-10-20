@@ -1,0 +1,4 @@
+{"event_time":"2026-01-05T13:35:00Z","sequence":0,"bar":{"symbol":"SYN","bucket":"2026-01-05T13:30:00Z","open":100.0,"high":101.5,"low":99.0,"close":101.0,"volume":1200000}}
+{"event_time":"2026-01-05T13:40:00Z","sequence":0,"bar":{"symbol":"SYN","bucket":"2026-01-05T13:35:00Z","open":101.0,"high":102.0,"low":100.5,"close":101.8,"volume":650000}}
+{"event_time":"2026-01-05T13:45:00Z","sequence":0,"bar":{"symbol":"SYN","bucket":"2026-01-05T13:40:00Z","open":101.8,"high":102.2,"low":101.4,"close":101.9,"volume":420000}}
+{"event_time":"2026-01-05T13:50:00Z","sequence":0,"bar":{"symbol":"SYN","bucket":"2026-01-05T13:45:00Z","open":101.9,"high":102.0,"low":101.2,"close":101.5,"volume":380000}}

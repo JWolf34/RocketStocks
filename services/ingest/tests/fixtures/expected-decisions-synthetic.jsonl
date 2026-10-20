@@ -1,0 +1,2 @@
+{"alert_type":"volume_threshold","payload":{"threshold":500000,"volume":1200000},"symbol":"SYN","triggered_at":"2026-01-05T13:30:00Z"}
+{"alert_type":"volume_threshold","payload":{"threshold":500000,"volume":650000},"symbol":"SYN","triggered_at":"2026-01-05T13:35:00Z"}
