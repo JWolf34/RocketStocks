@@ -31,11 +31,10 @@ from datetime import UTC, date, datetime, timedelta
 
 import numpy as np
 import pandas as pd
+from pydantic import ValidationError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from rs_analysis.attention_surge import RULE_VERSION, SurgeEvent, replay
-from pydantic import ValidationError
-
 from rs_domain import (
     Alert,
     BaseRate,

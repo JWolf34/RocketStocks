@@ -61,3 +61,32 @@ def test_a_matured_horizon_without_an_exit_bar_is_counted_not_hidden():
     assert summary.n == 1
     assert summary.n_missing_exit == 1  # the 1-day horizon; 5 and 10 have not matured
     assert summary.hit_rate[1] is None
+
+
+def test_a_spy_entry_override_replaces_the_reference_close_and_nan_falls_back():
+    closes = pd.Series(
+        [10.0, 10.0, 11.0, 11.0],
+        index=pd.MultiIndex.from_arrays([["AAA"] * 2 + ["BBB"] * 2, np.tile(SESSIONS[:2], 2)], names=["symbol", "session"]),
+    )
+    spy = np.array([100.0, 110.0, 100.0, 100.0])
+
+    summary = measure(
+        ["AAA", "BBB"], np.array([0, 0]), np.array([10.0, 10.0]), SESSIONS, spy, closes, np.array([110.0, np.nan])
+    )
+
+    # AAA: flat, SPY from 110 to 110 is flat too; BBB: +10%, SPY +10% from its close.
+    assert summary.n_approx_benchmark == 1
+    assert summary.median_excess[1] == pytest.approx(0.0)
+
+
+def test_a_session_without_a_spy_bar_is_a_missing_exit():
+    closes = pd.Series(
+        [10.0, 11.0],
+        index=pd.MultiIndex.from_arrays([["AAA", "AAA"], SESSIONS[:2]], names=["symbol", "session"]),
+    )
+    spy = np.array([100.0, np.nan, 100.0, 100.0])
+
+    summary = measure(["AAA"], np.array([0]), np.array([10.0]), SESSIONS, spy, closes)
+
+    assert summary.n_missing_exit == 1
+    assert summary.hit_rate[1] is None

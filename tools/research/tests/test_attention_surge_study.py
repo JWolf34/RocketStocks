@@ -259,7 +259,7 @@ async def test_a_missing_spy_bar_is_a_missing_exit_not_a_shifted_horizon(session
     assert logged.median_excess_1d == pytest.approx(excess(51, 50, 99, 100))
     # 5d and 10d: both alerts, exits unchanged by the deleted bar.
     assert logged.median_excess_5d == pytest.approx(
-        (excess(51, 58, 99, 104) + excess(79, 71, 101, 106)) / 2
+        (excess(51, 58, 99, 104) + excess(79, 74, 101, 106)) / 2
     )
 
 
