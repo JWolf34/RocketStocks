@@ -185,3 +185,11 @@ async def test_implausible_page_count_fails_the_fetch(pages):
 
     with pytest.raises(ApeWisdomError):
         await make_client(fake).fetch_all()
+
+
+async def test_undecodable_response_is_retried():
+    fake = FakeApeWisdom(page1=[httpx.DecodingError("bad gzip"), ok(page([raw(1, "AMD")]))])
+
+    rows = await make_client(fake).fetch_all()
+
+    assert [r.ticker for r in rows] == ["AMD"]

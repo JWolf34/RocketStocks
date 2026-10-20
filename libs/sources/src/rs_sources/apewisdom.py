@@ -96,7 +96,7 @@ class ApeWisdomClient:
                 await self._sleep(self._backoff * 2 ** (attempt - 2))
             try:
                 response = await self._client.get(_PAGE_URL.format(page=page), timeout=self._timeout)
-            except httpx.TransportError as exc:
+            except httpx.RequestError as exc:
                 failure = exc
                 continue
             if response.status_code in _RETRYABLE_STATUS:
