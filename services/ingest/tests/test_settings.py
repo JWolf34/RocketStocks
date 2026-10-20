@@ -9,6 +9,7 @@ REQUIRED = {
     "RS_DB_URL": "postgresql+psycopg://u:p@localhost:5498/rs",
     "SCHWAB_API_KEY": "key",
     "SCHWAB_API_SECRET": "hunter2",
+    "RS_EDGAR_USER_AGENT": "RocketStocks test@example.com",
 }
 
 
@@ -70,6 +71,25 @@ def test_missing_required_fails(monkeypatch):
         monkeypatch.delenv(name, raising=False)
     with pytest.raises(ValidationError):
         IngestSettings(_env_file=None)
+
+
+def test_edgar_identity_is_required(monkeypatch):
+    _set_required(monkeypatch)
+    monkeypatch.delenv("RS_EDGAR_USER_AGENT")
+    with pytest.raises(ValidationError, match="rs_edgar_user_agent"):
+        IngestSettings(_env_file=None)
+
+
+def test_edgar_identity_cannot_be_blank(monkeypatch):
+    _set_required(monkeypatch)
+    monkeypatch.setenv("RS_EDGAR_USER_AGENT", "")
+    with pytest.raises(ValidationError, match="rs_edgar_user_agent"):
+        IngestSettings(_env_file=None)
+
+
+def test_edgar_identity_is_read_from_env(monkeypatch):
+    _set_required(monkeypatch)
+    assert IngestSettings(_env_file=None).rs_edgar_user_agent == REQUIRED["RS_EDGAR_USER_AGENT"]
 
 
 def test_metrics_port_default_and_override(monkeypatch):
