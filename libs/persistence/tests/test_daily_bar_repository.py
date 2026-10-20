@@ -4,14 +4,14 @@ from datetime import UTC, date, datetime, timedelta
 
 from sqlalchemy import func, select
 
-from rs_domain import DailyBar
+from rs_domain import StoredDailyBar
 from rs_persistence import DailyBarRepository, DailyBarRow
 
 FETCHED = datetime(2026, 7, 7, 21, 0, tzinfo=UTC)
 D0 = date(2026, 7, 6)
 
 
-def _bar(symbol: str, session_date: date = D0, **overrides) -> DailyBar:
+def _bar(symbol: str, session_date: date = D0, **overrides) -> StoredDailyBar:
     fields = {
         "symbol": symbol,
         "session_date": session_date,
@@ -23,7 +23,7 @@ def _bar(symbol: str, session_date: date = D0, **overrides) -> DailyBar:
         "fetched_at": FETCHED,
         "adjusted": True,
     }
-    return DailyBar(**(fields | overrides))
+    return StoredDailyBar(**(fields | overrides))
 
 
 async def _count(session_factory) -> int:
