@@ -6,7 +6,7 @@ A real attention-surge alert, with a facts block and its measured base rate, rea
 
 ## Scope
 
-In: ApeWisdom ingest, the v1 popularity import, daily bars for surge names, the surge rule, the facts block, one event study, posting and the alert log.
+In: ApeWisdom ingest, the v1 popularity import, daily bars for surge names, the surge rule, the facts block, one event study, posting and the alert log, plus the Schwab re-auth path: a `/setup schwab` paste in Discord becomes a request that ingest carries out, so the token-expiry rehearsal can recover ([Architecture one-pager](https://github.com/JWolf34/RocketStocks/issues/52)).
 Out: see the end of this page.
 
 ## Interface

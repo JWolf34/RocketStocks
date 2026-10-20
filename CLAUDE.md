@@ -137,6 +137,7 @@ Auto-created on startup via `data/schema.py:34`. Tables: `tickers`, `ticker_stat
 
 | Topic | File |
 |-------|------|
+| **v2** foundation plan - charter, architecture, roadmap, slice specs | [docs/foundation/README.md](docs/foundation/README.md) |
 | Architectural patterns & cross-cutting design | [.claude/docs/architectural_patterns.md](.claude/docs/architectural_patterns.md) |
 | `core/` — analysis, content classes, scheduler, notifications | [.claude/docs/core.md](.claude/docs/core.md) |
 | `data/` — DB wrapper, repositories, API clients | [.claude/docs/data.md](.claude/docs/data.md) |

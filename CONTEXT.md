@@ -75,7 +75,7 @@ _Avoid_: listing (ambiguous with the event), symbol lifetime
 
 **Liquid band**:
 The rule-based set of the most liquid stocks - top ~500 by 20-day dollar volume with
-price above $5 - rebuilt weekly from Schwab daily bars. One half of the Alert scope.
+price above $5 - rebuilt from Schwab daily bars (cadence set by slice 4's spec). One half of the Alert scope.
 _Avoid_: curated list, universe (use band)
 
 **Stream band**:
