@@ -22,7 +22,7 @@ from rs_ingest.schwab_session import SchwabSession
 from rs_ingest.surge_bars import EASTERN, sync_surge_bars
 from rs_ingest.surge_facts import SurgeFactsGatherer
 from rs_sources import ApeWisdomClient
-from rs_sources.earnings import EarningsLookup
+from rs_sources.earnings import SCAN_WEEKDAYS, EarningsLookup
 from rs_sources.edgar import EdgarClient
 from rs_sources.nasdaq import NasdaqEarningsCalendar
 from rs_sources.schwab import SchwabMarketData
@@ -65,16 +65,33 @@ def register_jobs(cron: CronTable, deps: Dependencies) -> None:
         )
     )
     cron.register(base_rate_job())
-    poll = _popularity_poll(deps)
+    # One calendar for the warm job and the poll's lookups, so they share a cache.
+    nasdaq = NasdaqEarningsCalendar(deps.http, deps.clock)
+
+    async def warm_earnings_calendar() -> None:
+        await nasdaq.warm(deps.clock.now().astimezone(EASTERN).date(), SCAN_WEEKDAYS)
+
+    cron.register(
+        Job(
+            "earnings_calendar_warm",
+            # Under the 6h cache TTL, so the window is refreshed before it lapses.
+            Every(120),
+            warm_earnings_calendar,
+            run_on_start=True,
+            # 30 days at 0.25s spacing plus latency; a hung endpoint must not hold the slot.
+            timeout=timedelta(minutes=10),
+        )
+    )
+    poll = _popularity_poll(deps, nasdaq)
     # Runs at startup too: a restart mid-boundary finishes that boundary's alerts.
     cron.register(
         Job("popularity_poll", Every(POLL_MINUTES), poll.run, run_on_start=True, timeout=timedelta(minutes=20))
     )
 
 
-def _popularity_poll(deps: Dependencies) -> PopularityPoll:
+def _popularity_poll(deps: Dependencies, nasdaq: NasdaqEarningsCalendar) -> PopularityPoll:
     edgar = EdgarClient(deps.http, deps.edgar_user_agent, deps.clock)
-    earnings = EarningsLookup(NasdaqEarningsCalendar(deps.http, deps.clock), edgar)
+    earnings = EarningsLookup(nasdaq, edgar)
     return PopularityPoll(
         source=ApeWisdomClient(deps.http),
         session_factory=deps.session_factory,

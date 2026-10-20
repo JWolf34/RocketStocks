@@ -22,7 +22,8 @@ One TimescaleDB, a one-shot migrate gate, and three services from one shared ima
 - **Streamed (slice 4):** Schwab level-one quotes for the ~500-name stream band (rule-based liquid band plus every watchlist ticker), aggregated to 1-minute bars and persisted going forward ([Data collection scope](https://github.com/JWolf34/RocketStocks/issues/49)).
 - **Nightly (later slices):** symbol master, daily bars for every active listing, then the options EOD full scan of the optionable universe (22:00 CT launch, 03:00 CT hard deadline; the scan's roster, retry/split ladder and tombstone decisions are on the superseded [options EOD full scan map](https://github.com/JWolf34/RocketStocks/issues/6), restated by slice 2's spec).
 - **Frequent polls:** ApeWisdom every 30 minutes (live in slice 1).
-  The Nasdaq earnings calendar and SEC EDGAR 8-Ks are read per alert for its facts block, not polled on a schedule.
+  SEC EDGAR 8-Ks are read per alert for its facts block, not polled on a schedule.
+  The Nasdaq earnings calendar is read ahead by the `earnings_calendar_warm` job, so an alert's lookup is normally memory-only.
 - **On demand:** the bot writes a collection request row; ingest fetches, validates and stores, then NOTIFYs; the bot reads the stored result through the query layer, falling back to the latest stored data labelled "as of" if ingest is down.
 - Every vendor payload is validated at the edge; bars off an `exchange_calendars` session and epoch-zero timestamps are rejected ([Signal evidence study](https://github.com/JWolf34/RocketStocks/issues/45)).
 - Stream bars are immutable once closed and never reconciled to REST bars; detection runs on bar close only.
@@ -64,6 +65,7 @@ One TimescaleDB, a one-shot migrate gate, and three services from one shared ima
 | Job | Schedule | Needs Schwab | Notes |
 |---|---|---|---|
 | `popularity_poll` | every 30 minutes on the UTC :00 and :30 boundary | no | stores the ApeWisdom snapshot, judges the surge rule, writes alerts with their facts; 20 minute timeout |
+| `earnings_calendar_warm` | every 2 hours on the UTC even-hour boundary, plus once at startup | no | reads the next 30 weekdays of Nasdaq's earnings calendar into the cache the poll's lookups share, skipping days younger than 3 hours; any failed day fails the run; 10 minute timeout |
 | `surge_bars` | daily 17:30 America/New_York, plus once at startup | yes | daily bars for surge names and SPY; weekends and holidays find nothing due; 3 hour timeout |
 | `base_rate_weekly` | Sunday 20:00 America/Chicago | no | runs `python -m rs_research event-study attention_surge` as a subprocess of the same image, with only `RS_RESEARCH_DB_URL` (the `rs_research` role) and logging settings of ingest's environment; a non-zero exit calls `notify_ops()`; 2 hour timeout |
 

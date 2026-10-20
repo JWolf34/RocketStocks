@@ -129,3 +129,48 @@ async def test_day_requests_are_spaced_by_the_minimum_interval(clock):
     gaps = [b - a for a, b in zip(stamps, stamps[1:], strict=False)]
     assert len(stamps) == 4
     assert all(gap >= 0.04 for gap in gaps)
+
+
+async def test_warm_fills_the_cache_so_a_late_listing_is_found_without_requests(clock):
+    fake = FakeNasdaq({"2026-11-02": day_payload(("LATE", "time-pre-market"))})
+    calendar = make_calendar(fake, clock)
+
+    fetched = await calendar.warm(date(2026, 10, 20), max_weekdays=10)
+    requests_after_warm = len(fake.requests)
+    found = await calendar.next_for("late", date(2026, 10, 20), max_weekdays=10)
+    absent = await calendar.next_for("none", date(2026, 10, 20), max_weekdays=10)
+
+    assert fetched == 10
+    assert found is not None
+    assert found.date == date(2026, 11, 2)
+    assert absent is None
+    assert len(fake.requests) == requests_after_warm
+
+
+async def test_warm_skips_days_younger_than_half_the_ttl_and_refreshes_older_ones(clock):
+    fake = FakeNasdaq()
+    calendar = make_calendar(fake, clock, cache_ttl=timedelta(hours=6))
+    await calendar.warm(date(2026, 10, 20), max_weekdays=3)
+
+    clock.advance(timedelta(hours=2))
+    assert await calendar.warm(date(2026, 10, 20), max_weekdays=3) == 0
+    assert len(fake.requests) == 3
+
+    clock.advance(timedelta(hours=2))
+    assert await calendar.warm(date(2026, 10, 20), max_weekdays=3) == 3
+    assert len(fake.requests) == 6
+
+
+async def test_warm_tries_every_day_then_raises_and_keeps_the_good_days(clock):
+    fake = FakeNasdaq({"2026-10-22": day_payload(("AAA", None))}, failing={"2026-10-21"})
+    calendar = make_calendar(fake, clock)
+
+    with pytest.raises(SourceError):
+        await calendar.warm(date(2026, 10, 20), max_weekdays=3)
+
+    assert fake.dates() == ["2026-10-20", "2026-10-21", "2026-10-22"]
+    count = len(fake.requests)
+    # The failed day is still unknown, so "not listed" is not provable from the cache.
+    with pytest.raises(SourceError):
+        await calendar.next_for("zzz", date(2026, 10, 20), max_weekdays=3)
+    assert fake.dates()[count:] == ["2026-10-21"]

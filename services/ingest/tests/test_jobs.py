@@ -87,3 +87,14 @@ async def test_a_run_uses_the_client_current_at_run_time_not_registration_time(s
 
     assert old.symbols == []
     assert rebuilt.symbols == ["SPY"]
+
+
+async def test_earnings_calendar_warm_runs_at_startup_and_often_enough_to_beat_the_cache_ttl(session_factory):
+    cron = CronTable()
+    register_jobs(cron, _deps(session_factory, SwappableSession(RecordingClient())))
+
+    job = next(job for job in cron if job.name == "earnings_calendar_warm")
+
+    assert job.schedule == Every(120)
+    assert job.run_on_start
+    assert not job.needs_schwab

@@ -95,6 +95,7 @@ What was built differs from the sections above in these ways; the current runtim
 - Hit rate is the share of events with strictly positive excess return, and no `base_rate` row is written when N is 0, so an empty row never replaces a stale one.
 - `base_rate` is append-only (readers take the latest per rule version and input), and matured horizons with no exit bar are counted in the caveat text rather than a column.
 - The `volume` fact needs all 20 stored bars and a newest bar within 7 days, otherwise it is unavailable with a reason, because a partial average would mislead; the first alert for a ticker therefore often has none.
+- The Nasdaq calendar is read ahead by the `earnings_calendar_warm` job (the cold 30-day scan did not fit the 20 second fact budget), and a lookup that still misses the cache stops its Nasdaq scan after 8 seconds and falls back to the EDGAR estimate.
 - Every fact is `ok` or `FactUnavailable(reason)`, so one failed vendor call never blocks an alert.
 - A dead Schwab token met inside the popularity poll also trips the daemon's token gate, so ops hears within one poll rather than only when a Schwab job next runs.
 - The daemon starts gated, not exited, when no token is stored, so `restart: unless-stopped` cannot crash-loop it.
