@@ -1,5 +1,6 @@
 """Nasdaq earnings-calendar adapter tests over httpx.MockTransport. Payloads are synthetic."""
 
+import asyncio
 from datetime import date, timedelta
 
 import httpx
@@ -112,3 +113,19 @@ async def test_request_uses_a_browser_user_agent(clock):
     await make_calendar(fake, clock).next_for("AAA", date(2026, 10, 20), max_weekdays=1)
 
     assert fake.requests[0].headers["user-agent"].startswith("Mozilla/5.0")
+
+
+async def test_day_requests_are_spaced_by_the_minimum_interval(clock):
+    loop = asyncio.get_running_loop()
+    stamps: list[float] = []
+    fake = FakeNasdaq()
+    http = httpx.AsyncClient(
+        transport=httpx.MockTransport(lambda request: (stamps.append(loop.time()), fake.handler(request))[1])
+    )
+    calendar = NasdaqEarningsCalendar(http, clock, min_interval=0.05)
+
+    await calendar.next_for("AAA", date(2026, 10, 20), max_weekdays=4)
+
+    gaps = [b - a for a, b in zip(stamps, stamps[1:])]
+    assert len(stamps) == 4
+    assert all(gap >= 0.04 for gap in gaps)

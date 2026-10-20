@@ -6,7 +6,7 @@ from datetime import date, datetime, timezone
 import httpx
 import pytest
 
-from rs_sources.earnings import EarningsLookup, NextEarnings, _add_quarter
+from rs_sources.earnings import EarningsLookup, NextEarnings
 from rs_sources.edgar import EdgarClient, Filing8K
 from rs_sources.errors import SourceError
 from rs_sources.nasdaq import EarningsTime, NasdaqEarningsCalendar, ScheduledEarnings
@@ -115,7 +115,7 @@ async def test_estimate_already_in_the_past_is_unknown():
 
 
 @pytest.mark.parametrize(
-    ("day", "expected"),
+    ("filed", "expected"),
     [
         (date(2026, 7, 30), date(2026, 10, 30)),
         (date(2026, 11, 30), date(2027, 2, 28)),
@@ -123,8 +123,19 @@ async def test_estimate_already_in_the_past_is_unknown():
         (date(2026, 12, 15), date(2027, 3, 15)),
     ],
 )
-def test_add_quarter_is_calendar_arithmetic_with_month_end_clamping(day, expected):
-    assert _add_quarter(day) == expected
+async def test_estimate_is_calendar_quarter_arithmetic_with_month_end_clamping(filed, expected):
+    lookup = EarningsLookup(FakeNasdaq(error=True), FakeFilings([eight_k(filed)]))
+
+    result = await lookup.next_earnings("AAA", datetime.combine(filed, datetime.min.time(), tzinfo=timezone.utc))
+
+    assert result == NextEarnings(date=expected, estimated=True)
+
+
+async def test_naive_as_of_is_refused():
+    lookup = EarningsLookup(FakeNasdaq(), FakeFilings())
+
+    with pytest.raises(ValueError, match="timezone-aware"):
+        await lookup.next_earnings("AAA", datetime(2026, 10, 19, 15, 0))
 
 
 async def test_composed_through_real_adapters_nasdaq_outage_yields_estimate(clock):

@@ -58,7 +58,7 @@ class NasdaqEarningsCalendar:
         clock: Clock,
         *,
         cache_ttl: timedelta = timedelta(hours=6),
-        min_interval: float = 0.5,
+        min_interval: float = 0.25,
     ) -> None:
         self._http = http
         self._clock = clock

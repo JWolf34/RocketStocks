@@ -196,3 +196,10 @@ async def test_stale_ticker_map_keeps_serving_when_refresh_fails(clock):
     clock.advance(timedelta(hours=2))
 
     assert await client.cik("AAA") == 111
+
+
+async def test_naive_as_of_is_refused(clock):
+    client = make_client(FakeEdgar(), clock)
+
+    with pytest.raises(ValueError, match="timezone-aware"):
+        await client.recent_8ks("AAA", datetime(2026, 10, 19, 15, 0))

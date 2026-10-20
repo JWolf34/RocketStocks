@@ -6,15 +6,16 @@ operations) plus one quarter, labelled `estimated`. With neither, the answer
 is an explicit unknown (date None), never a guess.
 """
 
-import calendar
 import logging
+from calendar import monthrange
 from datetime import date, datetime
 from typing import Protocol
 from zoneinfo import ZoneInfo
 
 from pydantic import BaseModel, ConfigDict
 
-from rs_sources.edgar import RESULTS_OF_OPERATIONS_ITEM, Filing8K
+from rs_sources._http import require_aware
+from rs_sources.edgar import EIGHT_K_FORM, RESULTS_OF_OPERATIONS_ITEM, Filing8K
 from rs_sources.errors import SourceError
 from rs_sources.nasdaq import EarningsTime, ScheduledEarnings
 
@@ -56,6 +57,7 @@ class EarningsLookup:
 
     async def next_earnings(self, ticker: str, as_of: datetime) -> NextEarnings:
         """The ticker's next earnings date as of `as_of` (tz-aware); never raises on source failure."""
+        require_aware(as_of)
         today = as_of.astimezone(_MARKET_ZONE).date()
         try:
             scheduled = await self._nasdaq.next_for(ticker, today, self._scan_weekdays)
@@ -74,7 +76,7 @@ class EarningsLookup:
             return NextEarnings.unknown()
         # Original 8-Ks only: an 8-K/A is filed later and would skew the cadence.
         last_results = next(
-            (f for f in filings if f.form == "8-K" and RESULTS_OF_OPERATIONS_ITEM in f.items), None
+            (f for f in filings if f.form == EIGHT_K_FORM and RESULTS_OF_OPERATIONS_ITEM in f.items), None
         )
         if last_results is None:
             return NextEarnings.unknown()
@@ -90,4 +92,4 @@ def _add_quarter(day: date) -> date:
     """Three calendar months later, clamped to the month's last day (Nov 30 -> Feb 28)."""
     month_index = day.month - 1 + 3
     year, month = day.year + month_index // 12, month_index % 12 + 1
-    return date(year, month, min(day.day, calendar.monthrange(year, month)[1]))
+    return date(year, month, min(day.day, monthrange(year, month)[1]))

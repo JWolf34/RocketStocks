@@ -15,7 +15,7 @@ import httpx
 from pydantic import BaseModel, ConfigDict
 
 from rs_domain import Clock, UtcDatetime
-from rs_sources._http import get_json
+from rs_sources._http import get_json, require_aware
 from rs_sources._ratelimit import MinInterval
 from rs_sources.errors import SourceError
 
@@ -25,7 +25,8 @@ TICKERS_URL = "https://www.sec.gov/files/company_tickers.json"
 SUBMISSIONS_URL = "https://data.sec.gov/submissions/CIK{cik:010d}.json"
 ARCHIVE_URL = "https://www.sec.gov/Archives/edgar/data/{cik}/{accession}/{document}"
 
-EIGHT_K_FORMS = frozenset({"8-K", "8-K/A"})
+EIGHT_K_FORM = "8-K"
+EIGHT_K_FORMS = frozenset({EIGHT_K_FORM, "8-K/A"})
 RESULTS_OF_OPERATIONS_ITEM = "2.02"
 
 
@@ -60,7 +61,7 @@ class EdgarClient:
         min_interval: float = 0.125,
     ) -> None:
         if not user_agent.strip():
-            raise ValueError("EDGAR requires a declared User-Agent (RS_EDGAR_USER_AGENT)")
+            raise ValueError("EDGAR requires a declared User-Agent")
         self._http = http
         self._headers = {"User-Agent": user_agent.strip(), "Accept-Encoding": "gzip, deflate"}
         self._clock = clock
@@ -85,6 +86,7 @@ class EdgarClient:
         An unlisted ticker yields an empty list; a failed call raises SourceError.
         `limit=None` returns every 8-K in the submissions `recent` block.
         """
+        require_aware(as_of)
         cik = await self.cik(ticker)
         if cik is None:
             return []
