@@ -3,8 +3,10 @@
 # stack (own project name, own volume, DB published on 5498) for burn-in
 # coexistence; at cutover this file renames to docker-compose.yml.
 #
-# Interpolated from .env: RS_DB_PASSWORD (composes the in-network RS_DB_URL;
-# the host-side RS_DB_URL in .env stays for local tools), SCHWAB_API_KEY,
+# Interpolated from .env: RS_DB_PASSWORD (the superuser; migrate only, and the
+# host-side RS_DB_URL in .env for local tools), RS_DB_PASSWORD_INGEST / _BOT /
+# _SERVE / _RESEARCH (per-service roles, created by migrate; URL-safe because
+# they are interpolated into DSNs unencoded), SCHWAB_API_KEY,
 # SCHWAB_API_SECRET, RS_BOT_DISCORD_TOKEN, RS_DEV_CHANNEL_ID.
 #
 # Metrics side-ports (9090 ingest, 9091 bot) and serve's 8000 are published
@@ -53,7 +55,12 @@ services:
       dockerfile: Dockerfile.v2
     image: rocketstocks-v2
     command: ["python", "-m", "rs_migrate", "upgrade"]
-    environment: *app-env
+    environment:
+      <<: *app-env
+      RS_DB_PASSWORD_INGEST: ${RS_DB_PASSWORD_INGEST}
+      RS_DB_PASSWORD_BOT: ${RS_DB_PASSWORD_BOT}
+      RS_DB_PASSWORD_SERVE: ${RS_DB_PASSWORD_SERVE}
+      RS_DB_PASSWORD_RESEARCH: ${RS_DB_PASSWORD_RESEARCH}
     restart: "no"
     depends_on:
       timescaledb:
@@ -75,6 +82,7 @@ services:
       start_period: 30s
     environment:
       <<: *app-env
+      RS_DB_URL: postgresql+psycopg://rs_ingest:${RS_DB_PASSWORD_INGEST}@timescaledb:5432/rocketstocks
       SCHWAB_API_KEY: ${SCHWAB_API_KEY}
       SCHWAB_API_SECRET: ${SCHWAB_API_SECRET}
     ports:
@@ -87,6 +95,7 @@ services:
     restart: unless-stopped
     environment:
       <<: *app-env
+      RS_DB_URL: postgresql+psycopg://rs_serve:${RS_DB_PASSWORD_SERVE}@timescaledb:5432/rocketstocks
       # 0.0.0.0 in-container is deliberate (resolves the S005 host-binding
       # pointer): publishing stays 127.0.0.1-only, the TLS proxy fronts it.
       RS_SERVE_HOST: 0.0.0.0
@@ -99,6 +108,7 @@ services:
     restart: unless-stopped
     environment:
       <<: *app-env
+      RS_DB_URL: postgresql+psycopg://rs_bot:${RS_DB_PASSWORD_BOT}@timescaledb:5432/rocketstocks
       RS_BOT_DISCORD_TOKEN: ${RS_BOT_DISCORD_TOKEN}
       RS_DEV_CHANNEL_ID: ${RS_DEV_CHANNEL_ID}
     ports:
