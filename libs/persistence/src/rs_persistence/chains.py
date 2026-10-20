@@ -11,8 +11,8 @@ from rs_persistence.models import chain_snapshot_table
 
 class ChainSnapshotRepository:
     """Append-only writer for options_chain_snapshot (rev-005, S008). One
-    ChainSnapshot persists as its payload rows, or — when it has none (a
-    tombstone: failed/skipped fetch) — as a single payload-less membership row,
+    ChainSnapshot persists as its payload rows, or - when it has none (a
+    tombstone: failed/skipped fetch) - as a single payload-less membership row,
     so every (cycle, name) pair has rows either way (ADR-0030). Rows are
     immutable; there is no update path by design. Caller owns the commit."""
 
@@ -43,9 +43,9 @@ class ChainSnapshotRepository:
         self, dataset: Dataset, now: datetime
     ) -> dict[str, datetime]:
         """Stale-guard restart state (S008): per underlying, the median
-        quote_time of the most recent *accepted* (ok/partial — never stale;
+        quote_time of the most recent *accepted* (ok/partial - never stale;
         tombstones carry no quote_time) snapshot within RESTART_STATE_HORIZON
-        of `now`. `now` comes from the caller's Clock — no ambient time in
+        of `now`. `now` comes from the caller's Clock - no ambient time in
         persistence (ADR-0023). Median = rs_domain.median_instant, the same
         definition the scan loop applies to fresh responses."""
         t = chain_snapshot_table

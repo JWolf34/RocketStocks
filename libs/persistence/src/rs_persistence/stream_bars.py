@@ -3,7 +3,7 @@
 Column names deliberately mirror Bar's field names, so the conversions are
 model_dump()-shaped rather than two hand-maintained field lists. Reads
 normalize the bucket to UTC before validation (ADR-0004: coerce at the
-boundary) — the engine already pins the session timezone, this is the
+boundary) - the engine already pins the session timezone, this is the
 repository honoring the same contract explicitly.
 """
 
@@ -35,7 +35,7 @@ class BarRepository:
     async def list_for_day(self, symbol: str, day: date) -> list[Bar]:
         """Every bar for a symbol on one UTC calendar day, ordered by bucket. The
         engine pins the session TZ to UTC, so [start, start+1d) is a UTC-day slice
-        — the shape compare_bars reconciles against a day of REST candles."""
+        - the shape compare_bars reconciles against a day of REST candles."""
         start = datetime(day.year, day.month, day.day, tzinfo=UTC)
         rows = (
             await self._session.scalars(
@@ -51,7 +51,7 @@ class BarRepository:
         return [self._to_bar(row) for row in rows]
 
     async def list_range(self, symbol: str, start: datetime, end: datetime) -> list[Bar]:
-        """Bars in the half-open [start, end), oldest-first — the serve read
+        """Bars in the half-open [start, end), oldest-first - the serve read
         (S005). No row cap by design: cap/pagination are a Phase-3
         contract-review input (S005 spec)."""
         rows = (

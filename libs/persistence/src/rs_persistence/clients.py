@@ -10,7 +10,7 @@ from rs_persistence.models import ServiceClientRow
 
 
 class ServiceClientRepository:
-    """API-consumer rows (ADR-0012, rev-003). Speaks key HASHES only — key
+    """API-consumer rows (ADR-0012, rev-003). Speaks key HASHES only - key
     generation and hashing live in rs_serve; this layer never sees a raw key.
     Caller owns the commit (same convention as AlertRepository)."""
 

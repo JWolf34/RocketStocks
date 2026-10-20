@@ -1,8 +1,8 @@
 """Dev tool: `python -m rs_bot.tools.stage_alert`.
 
 Commits one clearly-marked test alert through the real AlertRepository insert
-path — alerts row + transactional NOTIFY, exactly what
-ingest produces — so the acceptance drills (live notify-wake, severed LISTEN,
+path - alerts row + transactional NOTIFY, exactly what
+ingest produces - so the acceptance drills (live notify-wake, severed LISTEN,
 kill/restart) stage their inputs on the real Bus-2 write path (spec pin #11).
 """
 
@@ -21,7 +21,7 @@ logger = logging.getLogger(__name__)
 
 
 class _StageSettings(BaseSettings):
-    """Only the DSN — staging an alert must not require the Discord credential."""
+    """Only the DSN - staging an alert must not require the Discord credential."""
 
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
