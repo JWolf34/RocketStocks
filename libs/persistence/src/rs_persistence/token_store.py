@@ -8,6 +8,7 @@ legacy/src/rocketstocks/data/schwab_token_store.py.
 
 import asyncio
 import logging
+from datetime import datetime
 from typing import Any
 
 from sqlalchemy import func
@@ -33,6 +34,12 @@ class SchwabTokenStore:
         async with self._session_factory() as session:
             row = await session.get(SchwabTokenRow, _ROW_ID)
             return None if row is None else row.token_data
+
+    async def updated_at(self) -> datetime | None:
+        """When the row was last written, or None before the first login."""
+        async with self._session_factory() as session:
+            row = await session.get(SchwabTokenRow, _ROW_ID)
+            return None if row is None else row.updated_at
 
     async def save(self, token: dict[str, Any]) -> None:
         async with self._save_lock:
