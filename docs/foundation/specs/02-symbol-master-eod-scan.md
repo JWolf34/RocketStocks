@@ -1,7 +1,6 @@
 # Slice 2 - Symbol master and options EOD scan
 
-Status: draft for review.
-Decisions marked **(open)** need John's call; each carries a recommendation.
+Status: decisions closed 2026-10-20 (D-A to D-J, grilled with John); awaiting John's approval to build.
 
 ## Goal
 
@@ -9,7 +8,7 @@ Every night, v2 knows which US listings exist and which are optionable, stores a
 
 ## Scope
 
-In: the symbol master with listing spans and an optionable flag, daily bars for every in-scope listing (a deep seed plus a nightly update), the options EOD full scan with its roster, retry and split ladder, deadline and tombstones, the ops alarms these need, a disk alarm, and a slice-2 runbook.
+In: the symbol master with listing spans and an optionable flag, daily bars for every in-scope listing (a deep seed plus a nightly update), the options EOD full scan with its roster, retry and split ladder, deadline and tombstones, the ops alarms these need, two live probes (bar adjustment, chain size), and a slice-2 runbook.
 Out: see the end of this page.
 
 ## Interface
@@ -22,7 +21,7 @@ Out: see the end of this page.
 - A rename is a delist plus an add; no stitching.
 - `instrument_class` is computed at ingest (common, ADR, ETF/ETN, preferred, warrant, right, unit, test, other) and filtered at read; financial status is stored, never filtered.
 - `optionable` = in `options.txt` or in the Cboe directory, joined to active spans, with symbol-convention normalisation (`BRK.B` and `BRKB`).
-- A failed fetch keeps yesterday's spans and raises staleness; a file that would delist more than a threshold of active spans aborts the diff and alarms instead.
+- A failed fetch keeps yesterday's spans and raises staleness; a file that would delist more than 5% of active spans (config) aborts the diff and alarms instead.
 - Pre-go-live delistings are out of scope (universe-note D3); the survivorship caveat stays.
 
 **Daily bars for every listing.**
@@ -45,8 +44,8 @@ Out: see the end of this page.
 
 **Options EOD full scan** (carries the decisions on the superseded options EOD scan map, #6-#11).
 
-- Roster: active ∩ optionable ∩ not test, plus a cooling tail of names that left the roster within the last K sessions, frozen at train start and scanned in lexicographic order.
-  A roster that shrinks past a threshold alarms but proceeds.
+- Roster: active ∩ optionable ∩ not test, plus a cooling tail of names that left the roster within the last K sessions (config, default 5), frozen at train start and scanned in lexicographic order.
+  A roster more than 5% smaller than the previous night's (config) alarms but proceeds.
 - Index underlyings (D-I, John 2026-10-20): a configured list (`$SPX`, `$NDX`, `$RUT`, `$VIX`, `$XSP`) joins the roster, because index chains are forward-only and the Options Report (slice 6) is their named reader.
   They are not listings, so they bypass the span join; they are stored under Schwab's `$` symbol so they never collide with an equity ticker, and get the same ladder, statuses and divergence alarms.
   `$SPX` and `$NDX` join D-J's probe, since SPX's chain is the largest and likeliest to break the buckets.
@@ -80,10 +79,12 @@ A failed or stale symbol master blocks nothing: bars and the scan run on yesterd
 Schwab showed no ceiling up to 240 per minute, so the remainder covers the popularity poll's quotes, ladder retries and `/setup`.
 v1's 21:30 CT and 03:00-04:00 CT Schwab jobs fall outside the scan window, and v1 should be retired before slice 2 deploys.
 
-**Storage and disk.**
+**Storage and disk** (D-G, John 2026-10-20).
 Chains compress after 3 days, with no retention policy.
-A `disk_free_bytes` gauge and an ops notice below a threshold **(open, D-G)**.
-Recommendation: measure the first recorded night's compressed size before choosing the threshold, and record the per-night growth in this spec.
+Estimate: about 1.5M contract rows a night, roughly 400 MB uncompressed and 20-40 MB compressed, so about 5-10 GB a year; the bar seed adds about 3 GB before compression.
+The disk alarm is host-level, not in the app: John's VM monitoring already alerts on disk, which also covers images, logs and backups, and an app-level check would duplicate it while coupling ingest to the database volume.
+The runbook step: confirm the host alert covers the filesystem holding the Timescale volume.
+The recorded night (criterion 7) measures actual per-night growth with TimescaleDB's size functions and records it here.
 
 **Tables** (migrations from 0012).
 
@@ -104,11 +105,12 @@ Grants: ingest writes `symbols`; bot, serve and research read it.
 | 1 | Gates pass | the slice-1 gate set | CI green |
 | 2 | Spans are right | Synthetic files: a recycled ticker opens a second span; a missing symbol closes its span; a truncated file aborts and alarms | CI green |
 | 3 | Optionable union | Synthetic `options.txt` and Cboe files: the flag is their union after normalisation | CI green |
-| 4 | Bars are clean | A non-session date and an epoch-zero timestamp are rejected; the update fetches only missing sessions | CI green |
-| 5 | Ladder and statuses | A fake chain source reaches each of the seven statuses, the split rung and the deadline `skipped` tail | CI green |
-| 6 | Restart-deterministic | Kill the scan mid-train against a fake clock and source: the same `cycle_id`, no underlying scanned twice | CI green |
-| 7 | A real night | A recorded nightly run finishes before 03:00 CT with tombstones for failures; no non-session bar stored; counts per status recorded | Live run |
-| 8 | Token expiry | Expire the token before or during the scan: the scan pauses, one ops notice, recovery before the deadline resumes it | Rehearsal |
+| 4 | Bars are clean | A non-session date and an epoch-zero timestamp are rejected; a symbol with no bars fetches from 1990-01-01, others from one stored session back; an overlap mismatch beyond tolerance replaces the symbol's history | CI green |
+| 5 | Ladder and statuses | A fake chain source reaches each of the seven statuses, the split rung, the 3-session retune notice and the deadline `skipped` tail; configured index underlyings join the roster | CI green |
+| 6 | Restart-deterministic | Kill the scan mid-train against a fake clock and source: the same `cycle_id`, no underlying scanned twice; `eod_scan_close` tombstones the tail when the scan is not running | CI green |
+| 7a | Probes | The NVDA split probe records whether history is split- and dividend-adjusted; the chain probe records sizes and sets the bucket boundaries | Probe notes in the PR |
+| 7 | A real night | A recorded nightly run finishes before 03:00 CT with tombstones for failures; no non-session bar stored; counts per status and per-night growth recorded | Live run |
+| 8 | Token expiry | Kill the token during the scan: the scan stops, one ops notice, `/setup schwab` before the deadline resumes the same cycle | Rehearsal |
 | 9 | Ingest restart | Kill ingest mid-scan: it resumes the same cycle with no duplicate underlyings | Rehearsal |
 | 10 | Backup restore | Restore a snapshot that includes chain data to a scratch VM; row counts match | Rehearsal |
 

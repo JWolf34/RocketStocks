@@ -38,7 +38,7 @@ One TimescaleDB, a one-shot migrate gate, and three services from one shared ima
 - Postgres with Timescale, no Redis.
 - Hypertables for 1-minute bars, daily bars, options chain snapshots and popularity; plain tables for everything else.
 - Options chains are forward-only, immutable, stamped snapshots: never updated in place, never backfilled.
-- Compression by age on every hypertable and no retention policy, because forward-only data cannot be rebought; a disk alarm instead.
+- Compression by age on every hypertable and no retention policy, because forward-only data cannot be rebought; a host-level disk alert on the VM instead (slice 2, D-G).
 - Continuous aggregates and freshness-policy tables are deferred until a reader needs them.
 
 ## Query layer and readers
