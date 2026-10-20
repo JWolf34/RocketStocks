@@ -99,12 +99,23 @@ uv sync --all-packages
 # Lint v2 members (legacy is never linted — code freeze)
 .venv/bin/ruff check libs services tools
 
-# Clock-discipline gate (no ambient time in domain code — ADR-0023)
+# Type-check v2 members (mypy + pydantic plugin; config in root pyproject.toml)
+.venv/bin/mypy
+
+# Import-layer contracts (import-linter; contracts in root pyproject.toml).
+# A new member needs a line in root_packages and in each contract that covers it.
+.venv/bin/lint-imports
+
+# Clock-discipline gate (no ambient time in v2 src - ADR-0023)
 scripts/check_clock_discipline.sh
 
+# Migrations vs ORM models (run against a migrated DB; fails on drift)
+RS_DB_URL=postgresql+psycopg://... .venv/bin/python -m rs_migrate check
+
 # v2 DB tests need a TimescaleDB (skip visibly otherwise); spec container:
-#   docker run -d --rm -p 5499:5432 -e POSTGRES_PASSWORD=t timescale/timescaledb:latest-pg16
-# Override target with RS_TEST_DB_URL. Migrations CLI (DSN via RS_DB_URL):
+#   docker run -d --rm -p 5499:5432 -e POSTGRES_PASSWORD=t timescale/timescaledb:2.30.2-pg16
+# Set RS_TEST_DB_URL to make DB tests mandatory (unreachable = failure, as in CI).
+# Migrations CLI (DSN via RS_DB_URL):
 RS_DB_URL=postgresql+psycopg://... .venv/bin/python -m rs_migrate upgrade
 
 # Backtesting CLI
