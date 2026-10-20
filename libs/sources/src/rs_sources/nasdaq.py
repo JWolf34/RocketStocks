@@ -80,11 +80,42 @@ class NasdaqEarningsCalendar:
                 return listing
         return None
 
-    async def _day(self, day: date) -> dict[str, ScheduledEarnings]:
-        now = self._clock.now()
+    async def warm(self, start: date, max_weekdays: int) -> int:
+        """Read the window into the cache so lookups are memory-only; returns days fetched.
+
+        Days younger than half the TTL are skipped, so a run on a cadence under
+        the TTL refreshes each day before it lapses and a fresh window costs no
+        requests. Every day is tried; any failures raise one SourceError at the end.
+        """
+        refresh_after = self._cache_ttl / 2
+        fetched, failed = 0, []
+        for day in _weekdays(start, max_weekdays):
+            if self._fresh(day, refresh_after):
+                continue
+            try:
+                await self._fetch_day(day)
+            except SourceError as exc:
+                # No traceback: a dead endpoint fails every day, and the run raises one at the end.
+                logger.warning("Nasdaq earnings warm failed for %s: %s", day, exc)
+                failed.append(day)
+            else:
+                fetched += 1
+        if failed:
+            raise SourceError(f"Nasdaq earnings warm failed for {len(failed)} day(s), first {failed[0]}")
+        return fetched
+
+    def _fresh(self, day: date, max_age: timedelta) -> bool:
         cached = self._days.get(day)
-        if cached is not None and now - cached[0] < self._cache_ttl:
+        return cached is not None and self._clock.now() - cached[0] < max_age
+
+    async def _day(self, day: date) -> dict[str, ScheduledEarnings]:
+        cached = self._days.get(day)
+        if cached is not None and self._clock.now() - cached[0] < self._cache_ttl:
             return cached[1]
+        return await self._fetch_day(day)
+
+    async def _fetch_day(self, day: date) -> dict[str, ScheduledEarnings]:
+        now = self._clock.now()
         await self._limiter.wait()
         payload = await get_json(
             self._http,

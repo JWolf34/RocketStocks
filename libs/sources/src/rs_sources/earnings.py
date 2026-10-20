@@ -6,9 +6,10 @@ operations) plus one quarter, labelled `estimated`. With neither, the answer
 is an explicit unknown (date None), never a guess.
 """
 
+import asyncio
 import logging
 from calendar import monthrange
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from typing import Protocol
 from zoneinfo import ZoneInfo
 
@@ -23,6 +24,11 @@ logger = logging.getLogger(__name__)
 
 # Nasdaq lists dates on the US market calendar, so "today" is the Eastern date.
 _MARKET_ZONE = ZoneInfo("America/New_York")
+
+
+SCAN_WEEKDAYS = 30
+# A cold Nasdaq scan stops here so the EDGAR estimate still fits the caller's budget.
+NASDAQ_BUDGET = timedelta(seconds=8)
 
 
 class NextEarnings(BaseModel):
@@ -49,20 +55,29 @@ class FilingSource(Protocol):
 
 class EarningsLookup:
     def __init__(
-        self, nasdaq: EarningsCalendar, filings: FilingSource, *, scan_weekdays: int = 30
+        self,
+        nasdaq: EarningsCalendar,
+        filings: FilingSource,
+        *,
+        scan_weekdays: int = SCAN_WEEKDAYS,
+        nasdaq_budget: timedelta = NASDAQ_BUDGET,
     ) -> None:
         self._nasdaq = nasdaq
         self._filings = filings
         self._scan_weekdays = scan_weekdays
+        self._nasdaq_budget = nasdaq_budget.total_seconds()
 
     async def next_earnings(self, ticker: str, as_of: datetime) -> NextEarnings:
         """The ticker's next earnings date as of `as_of` (tz-aware); never raises on source failure."""
         require_aware(as_of)
         today = as_of.astimezone(_MARKET_ZONE).date()
         try:
-            scheduled = await self._nasdaq.next_for(ticker, today, self._scan_weekdays)
+            async with asyncio.timeout(self._nasdaq_budget):
+                scheduled = await self._nasdaq.next_for(ticker, today, self._scan_weekdays)
         except SourceError:
             logger.warning("Nasdaq earnings lookup failed for %s; estimating from EDGAR", ticker, exc_info=True)
+        except TimeoutError:
+            logger.warning("Nasdaq earnings scan for %s ran past its budget; estimating from EDGAR", ticker)
         else:
             if scheduled is not None:
                 return NextEarnings(date=scheduled.date, time_of_day=scheduled.time_of_day)

@@ -1,7 +1,8 @@
 """Next-earnings resolution: hand-written fakes at the two source seams, plus one
 composition test through the real adapters."""
 
-from datetime import UTC, date, datetime
+import asyncio
+from datetime import UTC, date, datetime, timedelta
 
 import httpx
 import pytest
@@ -167,5 +168,19 @@ async def test_composed_through_real_adapters_nasdaq_outage_yields_estimate(cloc
     )
 
     result = await lookup.next_earnings("AAA", AS_OF)
+
+    assert result == NextEarnings(date=date(2026, 10, 30), estimated=True)
+
+
+class SlowNasdaq:
+    async def next_for(self, ticker, start, max_weekdays):
+        await asyncio.sleep(3600)
+
+
+async def test_a_cold_nasdaq_scan_stops_at_its_budget_and_leaves_room_for_the_edgar_estimate():
+    filings = FakeFilings([eight_k(date(2026, 7, 30))])
+    lookup = EarningsLookup(SlowNasdaq(), filings, nasdaq_budget=timedelta(milliseconds=20))
+
+    result = await asyncio.wait_for(lookup.next_earnings("AAA", AS_OF), timeout=5)
 
     assert result == NextEarnings(date=date(2026, 10, 30), estimated=True)
