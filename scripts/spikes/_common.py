@@ -49,9 +49,9 @@ def build_client(asyncio: bool = False):
 
 def todays_session_bounds() -> tuple[datetime, datetime]:
     """(open, close) UTC instants for today's XNYS session; exits if closed."""
-    from rs_sources import PandasMarketCalendar
+    from rs_sources import ExchangeCalendar
 
-    cal = PandasMarketCalendar()
+    cal = ExchangeCalendar()
     today = datetime.now(timezone.utc).date()
     if not cal.is_session(today):
         sys.exit(f"{today} is not a trading session — nothing to record")
