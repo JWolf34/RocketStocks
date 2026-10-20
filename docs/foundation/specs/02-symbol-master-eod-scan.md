@@ -34,6 +34,10 @@ Out: see the end of this page.
   Batch quotes (about 20 calls) were rejected: a quote's day fields are not the official candle, they carry no history to detect a split, and a missed night needs a history call anyway.
 - Deep seed: a symbol with no bars is seeded to Schwab's maximum daily depth (about 20 years) once, including every new span; it runs as a low-priority job that yields the limiter to the nightly scan **(open, D-C)**.
   Recommendation: seed at most N symbols a night outside the scan window until the backlog is empty (about 8,000 calls, so a few nights), rather than one long first-night run.
+- Splits (D-H, John 2026-10-20): Schwab has no corporate-actions feed, so the history is the only split signal.
+  A one-call probe (NVDA around its 2024-06-10 10:1 split) first establishes whether daily history is split- and dividend-adjusted; if split-adjusted, new rows are stamped `adjusted = true` and a migration restamps slice 1's rows.
+  Each update's overlapping session is compared with the stored close; beyond a tolerance (0.5% working figure, raised above typical dividend moves if the probe shows dividend adjustment) the symbol's whole history is refetched and replaced in one transaction, logged and counted (`daily_bar_reseeds`).
+  This is the only path that rewrites a bar; it also absorbs Schwab data corrections.
 - Every bar stays rejected unless `exchange_calendars` lists its session, and an epoch-zero timestamp is rejected.
 - A symbol Schwab cannot price is recorded in `unpriced_symbol` and retried on the slice-1 cadence.
 
