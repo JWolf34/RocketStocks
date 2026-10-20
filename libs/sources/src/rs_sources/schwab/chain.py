@@ -9,6 +9,7 @@ from datetime import timedelta
 from typing import Any
 
 from rs_domain import Clock
+from rs_sources.errors import SourceError
 from rs_sources.schwab.client import translate_auth_errors
 
 # The server-side expiry bound (ADR-0032 D7): <=30 DTE, the bound that avoids
@@ -17,7 +18,7 @@ from rs_sources.schwab.client import translate_auth_errors
 DTE_BOUND = timedelta(days=30)
 
 
-class ChainFetchError(RuntimeError):
+class ChainFetchError(SourceError):
     """Non-OK chain response (the scanner retries once, then tombstones)."""
 
 

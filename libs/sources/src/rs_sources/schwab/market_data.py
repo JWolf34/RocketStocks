@@ -1,11 +1,9 @@
 """Schwab market-data calls slice 1 needs: a quote and daily price history.
 
-Both are validated at the edge. Neither reads the clock: the caller stamps
-fetched_at. Request bounds follow the measured price-history behaviour
-(vendor-stack "Measured Schwab facts"): Schwab floors bounds to Eastern
-calendar days, so callers pass ET session dates and the adapter derives
-tz-aware ET bounds from them; naive datetimes would be read in the process's
-local zone, so none is ever sent.
+Both are validated at the edge, and neither reads the clock (the caller stamps
+fetched_at). Schwab floors history bounds to Eastern days and reads naive
+datetimes in the process's local zone, so callers pass ET session dates and
+the adapter sends tz-aware ET bounds.
 """
 
 import logging
@@ -18,6 +16,7 @@ from zoneinfo import ZoneInfo
 from pydantic import BaseModel, ConfigDict, Field, NonNegativeInt, ValidationError
 
 from rs_domain import TradingCalendar, UtcDatetime
+from rs_sources.errors import SourceError
 from rs_sources.schwab.client import translate_auth_errors
 
 logger = logging.getLogger(__name__)
@@ -25,7 +24,7 @@ logger = logging.getLogger(__name__)
 _EASTERN = ZoneInfo("America/New_York")
 
 
-class SchwabResponseError(RuntimeError):
+class SchwabResponseError(SourceError):
     """A non-OK or unusable Schwab response; `status_code` is set for the former."""
 
     def __init__(self, message: str, status_code: int | None = None) -> None:
