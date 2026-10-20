@@ -33,6 +33,9 @@ STORED_TOKEN = {
 WAIT_SECONDS = 30.0
 
 
+PROXY_VARIABLES = {"http_proxy", "https_proxy", "all_proxy", "no_proxy"}
+
+
 def free_port() -> int:
     with socket.socket() as sock:
         sock.bind(("127.0.0.1", 0))
@@ -42,7 +45,12 @@ def free_port() -> int:
 class DaemonProcess:
     def __init__(self, db_url: str, workdir: Path) -> None:
         self.port = free_port()
-        self.env = {key: value for key, value in os.environ.items() if not key.startswith("RS_")}
+        self.env = {
+            key: value
+            for key, value in os.environ.items()
+            # lowercase proxy variables take precedence over the overrides below, so drop them
+            if not key.startswith("RS_") and key.lower() not in PROXY_VARIABLES
+        }
         self.env |= {
             "RS_DB_URL": db_url,
             "SCHWAB_API_KEY": "key",
