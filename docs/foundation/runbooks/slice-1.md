@@ -131,11 +131,16 @@ If the request fails:
   A rejected exchange needs a fresh `/setup schwab`.
 - A request left open longer than 10 minutes expires; run the command again.
 
-The local fallback, when Discord or the bot is down, is the browser flow from the host:
+The local fallback, when Discord or the bot is down, is a login from the host.
+On a host with a browser:
 ```
 .venv/bin/python -m rs_ingest.tools.login
 ```
-It needs `SCHWAB_API_KEY`, `SCHWAB_API_SECRET`, `RS_EDGAR_USER_AGENT` and a superuser or ingest `RS_DB_URL` in the environment.
+On a headless host (the deploy VM), the manual flow prints the sign-in URL and takes the pasted callback URL at the prompt:
+```
+.venv/bin/python scripts/acceptance/schwab_manual_login.py
+```
+Both need `SCHWAB_API_KEY`, `SCHWAB_API_SECRET`, `RS_EDGAR_USER_AGENT` and a superuser or ingest `RS_DB_URL` in the environment.
 Ingest notices the newer token on its next token poll (`RS_INGEST_TOKEN_POLL_SECONDS`).
 
 The Schwab refresh token lives seven days.
