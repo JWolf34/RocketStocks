@@ -1,9 +1,8 @@
 """Attention-surge rule: pure, deterministic detection over ApeWisdom popularity snapshots.
 
-`evaluate_latest` is the live entry point and `replay` the research one; replay
-is defined as evaluate_latest applied snapshot by snapshot, so the two cannot
-disagree. Changing any threshold below changes what the rule detects: bump
-RULE_VERSION with it.
+`evaluate_latest` is the live entry point and `replay` the research one (it loops
+evaluate_latest, so they cannot disagree). Changing any threshold below bumps
+RULE_VERSION.
 """
 
 from collections.abc import Iterable, Sequence
@@ -21,8 +20,9 @@ MIN_MENTIONS = 15
 MENTION_MULTIPLIER = 3.0
 MENTION_MULTIPLIER_TOP = 5.0
 TOP_RANK = 25
-MENTION_MIN_BASE = 15
-MENTION_MIN_BASE_TAIL = 10
+# minimum mentions_24h_ago for mention_surge
+MENTION_MIN_PRIOR = 15
+MENTION_MIN_PRIOR_TAIL = 10
 TAIL_RANK = 500
 
 RANK_JUMP_MIN_GAIN = 50
@@ -37,8 +37,7 @@ class SubRule(StrEnum):
 
 
 class SurgeInputs(BaseModel):
-    """The numbers the decision was made on, including the tier-dependent
-    thresholds in force, so an event explains itself without re-running the rule."""
+    """What the decision was made on, including the rank-tier thresholds in force."""
 
     model_config = ConfigDict(frozen=True)
 
@@ -49,7 +48,7 @@ class SurgeInputs(BaseModel):
     rank_gain: int | None
     mention_ratio: float | None
     mention_multiplier: float
-    mention_min_base: int
+    mention_min_prior: int
 
 
 class SurgeEvent(BaseModel):
@@ -71,13 +70,13 @@ def evaluate_latest(snapshot: PopularitySnapshot, prior_events: Sequence[SurgeEv
 
     rank = snapshot.rank
     multiplier = MENTION_MULTIPLIER_TOP if rank <= TOP_RANK else MENTION_MULTIPLIER
-    min_base = MENTION_MIN_BASE_TAIL if rank > TAIL_RANK else MENTION_MIN_BASE
+    min_prior = MENTION_MIN_PRIOR_TAIL if rank > TAIL_RANK else MENTION_MIN_PRIOR
     prev_mentions = snapshot.mentions_24h_ago
     prev_rank = snapshot.rank_24h_ago
     gain = None if prev_rank is None else prev_rank - rank
 
     fired: list[SubRule] = []
-    if prev_mentions is not None and prev_mentions >= min_base and snapshot.mentions >= multiplier * prev_mentions:
+    if prev_mentions is not None and prev_mentions >= min_prior and snapshot.mentions >= multiplier * prev_mentions:
         fired.append(SubRule.MENTION_SURGE)
     if gain is not None and gain >= RANK_JUMP_MIN_GAIN and gain >= RANK_JUMP_MIN_RATIO * rank:
         fired.append(SubRule.RANK_JUMP)
@@ -98,9 +97,9 @@ def evaluate_latest(snapshot: PopularitySnapshot, prior_events: Sequence[SurgeEv
             rank_24h_ago=prev_rank,
             mentions_24h_ago=prev_mentions,
             rank_gain=gain,
-            mention_ratio=None if not prev_mentions else snapshot.mentions / prev_mentions,
+            mention_ratio=snapshot.mentions / prev_mentions if prev_mentions else None,
             mention_multiplier=multiplier,
-            mention_min_base=min_base,
+            mention_min_prior=min_prior,
         ),
     )
 

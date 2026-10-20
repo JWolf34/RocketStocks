@@ -114,14 +114,14 @@ class TestEvent:
         inputs = event.inputs
         assert (inputs.rank, inputs.rank_24h_ago, inputs.rank_gain) == (40, 100, 60)
         assert (inputs.mentions, inputs.mentions_24h_ago, inputs.mention_ratio) == (60, 20, 3.0)
-        assert (inputs.mention_multiplier, inputs.mention_min_base) == (3.0, 15)
+        assert (inputs.mention_multiplier, inputs.mention_min_prior) == (3.0, 15)
 
     def test_inputs_record_tier_thresholds(self):
         top = evaluate_latest(snap(rank=5, rank_24h_ago=200), [])
         tail = evaluate_latest(snap(rank=600, mentions=40, mentions_24h_ago=10), [])
         assert top is not None and tail is not None
-        assert (top.inputs.mention_multiplier, top.inputs.mention_min_base) == (5.0, 15)
-        assert (tail.inputs.mention_multiplier, tail.inputs.mention_min_base) == (3.0, 10)
+        assert (top.inputs.mention_multiplier, top.inputs.mention_min_prior) == (5.0, 15)
+        assert (tail.inputs.mention_multiplier, tail.inputs.mention_min_prior) == (3.0, 10)
 
 
 class TestCooldown:
