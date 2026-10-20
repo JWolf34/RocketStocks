@@ -2,12 +2,12 @@
 
 A Discord bot that delivers real-time stock market alerts and screener reports using technical analysis, sentiment data, and multiple financial APIs.
 
-## ⚠️ v2 rewrite in progress — read this first
+## v2 rewrite in progress - read this first
 
-- **v1 (`legacy/src/rocketstocks/`) is in code freeze** (since 2026-06-11): bugfixes only, no feature work. It keeps serving users untouched until v2 cutover.
-- **All v2 work starts at [docs/v2/README.md](docs/v2/README.md)** → architecture brief (entry point), ADRs (decision rationale), roadmap (phases + gate criteria), specs (per-slice work items).
-- **v2 work is spec-driven**: every slice gets a spec in `docs/v2/specs/` reviewed *before* implementation. Do not write v2 code without one. If reality disagrees mid-build, update the spec in the same PR; architectural decisions are promoted to new ADRs.
-- **The rest of this file describes v1.** `docs/alerts/` is v1-historical — none of those alert types ship in v2 (ADR-0030).
+- **v1 (`legacy/src/rocketstocks/`) is in code freeze** (since 2026-06-11): bugfixes only, no feature work. In prod it runs muted (Discord posting silenced), collecting only ApeWisdom popularity until v2 slice 1 takes over; then it is retired.
+- **All v2 work starts at [docs/foundation/README.md](docs/foundation/README.md)** - charter, [architecture](docs/foundation/architecture.md) (current truth), roadmap, current slice spec. Decisions live on the [v2 foundation map](https://github.com/JWolf34/RocketStocks/issues/40) tickets and the surviving ADRs in `docs/v2/adr/`; the pre-2026-10 plan is archived under git tag `v2-plan-archive-2026-10`.
+- **Each slice ships a half-page spec in its implementing PR** (template: `docs/foundation/specs/README.md`) and must meet the definition of done in `docs/foundation/README.md`. Keep `architecture.md` current in the same PR; a new ADR only for a contested decision.
+- **The rest of this file describes v1.** `docs/alerts/` is v1-historical reference; v2 folds those alert types into three informational alerts (attention surge, earnings reaction, large move).
 
 ## Tech Stack
 
@@ -26,9 +26,9 @@ uv workspace: root `pyproject.toml` lists the members, one `uv.lock`, one shared
 
 ```
 legacy/       # v1, moved intact (legacy/src/rocketstocks/, legacy/tests/, legacy/pyproject.toml)
-libs/         # v2 shared libraries: domain, persistence, observability, analysis, sources
+libs/         # v2 shared libraries: domain, persistence, query, observability, analysis, sources
 services/     # v2 long-running daemons (ingest; serve/bot come with their slices)
-tools/        # v2 one-shot CLIs (migrate; backfill/backtest come with their slices)
+tools/        # v2 one-shot CLIs (migrate; backfill/research come with their slices)
 ```
 
 v2 naming rule (ADR-0001): import name = `rs_` + member dir (`libs/domain` → `rs_domain`); every member is `<root>/<member>/` with `pyproject.toml` + `src/rs_<member>/` + `tests/`. `rs_common`/`rs_utils` grab-bags are banned.
@@ -151,7 +151,7 @@ Auto-created on startup via `data/schema.py:34`. Tables: `tickers`, `ticker_stat
 
 ### Issue tracker
 
-Issues/PRDs live in GitHub Issues (`JWolf34/RocketStocks`) via the `gh` CLI. Note v2 slice specs are a separate surface under `docs/v2/specs/`. See `docs/agents/issue-tracker.md`.
+Issues/PRDs live in GitHub Issues (`JWolf34/RocketStocks`) via the `gh` CLI. Note v2 slice specs are a separate surface under `docs/foundation/specs/`. See `docs/agents/issue-tracker.md`.
 
 ### Domain docs
 
