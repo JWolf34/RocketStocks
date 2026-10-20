@@ -1,6 +1,6 @@
 """verify-offset and popularity-import on synthetic data only: a planted zone is
 converted into v1-style naive rows and mirrored as v2 live rows."""
-# ruff: noqa: F811 — fixture params named after imported fixtures are how pytest injects them.
+# ruff: noqa: F811 - fixture params named after imported fixtures are how pytest injects them.
 
 from dataclasses import replace
 from datetime import UTC, datetime, timedelta
@@ -194,6 +194,7 @@ def test_to_snapshot_maps_v1_to_utc_and_marks_the_origin():
         (replace(ROW, rank=0), "value out of range"),
         (replace(ROW, mentions=-1), "value out of range"),
         (replace(ROW, at=datetime(2026, 3, 8, 2, 30)), "wall-clock time does not exist in the zone"),
+        (replace(ROW, at=datetime(2026, 10, 1, 7, 31)), "not on a half-hour boundary"),
     ],
 )
 def test_unusable_rows_are_rejected_with_a_reason(row, reason):

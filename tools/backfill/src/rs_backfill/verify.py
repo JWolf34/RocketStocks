@@ -64,7 +64,7 @@ class Candidate:
 
 @dataclass(frozen=True)
 class DstCrossCheck:
-    """What the dump says about the two DST days named in the spec."""
+    """What the dump says about the two DST days that tell a local zone from a fixed offset."""
 
     spring_covered: bool
     spring_forward_rows: int  # distinct v1 timestamps in 02:00-03:00 on 2026-03-08

@@ -9,7 +9,7 @@ from pydantic import ValidationError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from rs_backfill.dump import V1Row
-from rs_backfill.zones import naive_to_utc, resolve_zone
+from rs_backfill.zones import floor_bucket, naive_to_utc, resolve_zone
 from rs_domain import PopularityOrigin, PopularitySnapshot
 from rs_persistence import PopularityRepository
 
@@ -43,6 +43,8 @@ def to_snapshot(row: V1Row, zone_name: str) -> PopularitySnapshot | str:
     polled_at = naive_to_utc(row.at, resolve_zone(zone_name))
     if polled_at is None:
         return "wall-clock time does not exist in the zone"
+    if floor_bucket(polled_at) != polled_at:
+        return "not on a half-hour boundary"
     try:
         return PopularitySnapshot(
             polled_at=polled_at,
