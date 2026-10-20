@@ -65,9 +65,13 @@ Out: see the end of this page.
 - Divergence cross-check, alarms only and never auto-mutation: a 400 rejection on a flagged name alarms on night 1; a flagged name `empty` for 3 sessions alarms; a live chain on an unflagged name is logged.
 - Reader rule, written into `rs_query`: a non-`ok` row means no observation, never zero.
 
-**Rate budget** **(open, D-F)**.
-Recommendation: keep the one shared Schwab limiter at 100 calls per minute, the scan's pacing comes from it (dropping S008's own 0.625s constant), and the nightly order is symbol master (no Schwab), daily-bar update after the 17:30 ET close, deep seed, then the scan with priority from 22:00 CT.
-At about 6,500 chain requests the scan takes about 65-70 minutes, well inside the deadline.
+**Rate budget** (D-F, John 2026-10-20).
+One shared Schwab limiter at 100 calls per minute (`RS_INGEST_SCHWAB_CALLS_PER_MINUTE`); the scan's pacing comes from it, and S008's own 0.625s constant is dropped.
+The order is set by clock time, with no priority mechanism and no orchestrator: `symbol_master` 17:00 ET (no Schwab), `daily_bars` 17:30 ET (~8,000 calls, ~80 minutes, 4-hour timeout), the `eod_scan` window from 22:00 CT (~6,500 calls, ~65-70 minutes), `eod_scan_close` 03:00 CT.
+An overrunning `daily_bars` would only slow the scan to about 50 calls per minute (~130 minutes), still inside the deadline.
+A failed or stale symbol master blocks nothing: bars and the scan run on yesterday's spans, and `eod_scan_roster_age_sessions` shows the age.
+Schwab showed no ceiling up to 240 per minute, so the remainder covers the popularity poll's quotes, ladder retries and `/setup`.
+v1's 21:30 CT and 03:00-04:00 CT Schwab jobs fall outside the scan window, and v1 should be retired before slice 2 deploys.
 
 **Storage and disk.**
 Chains compress after 3 days, with no retention policy.
