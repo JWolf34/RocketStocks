@@ -16,6 +16,7 @@ COPY libs/analysis/pyproject.toml libs/analysis/
 COPY libs/domain/pyproject.toml libs/domain/
 COPY libs/observability/pyproject.toml libs/observability/
 COPY libs/persistence/pyproject.toml libs/persistence/
+COPY libs/query/pyproject.toml libs/query/
 COPY libs/sources/pyproject.toml libs/sources/
 COPY services/bot/pyproject.toml services/bot/
 COPY services/ingest/pyproject.toml services/ingest/

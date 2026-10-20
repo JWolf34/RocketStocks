@@ -14,7 +14,7 @@ from rs_persistence.models import PopularitySnapshotRow
 _INSERT_CHUNK = 5000
 
 
-def _to_snapshot(row: PopularitySnapshotRow) -> PopularitySnapshot:
+def snapshot_from_row(row: PopularitySnapshotRow) -> PopularitySnapshot:
     return PopularitySnapshot(
         polled_at=row.polled_at.astimezone(UTC),
         ticker=row.ticker,
@@ -73,7 +73,7 @@ class PopularityRepository:
             )
             .order_by(PopularitySnapshotRow.polled_at)
         )
-        return [_to_snapshot(row) for row in rows]
+        return [snapshot_from_row(row) for row in rows]
 
     async def list_between(
         self, start: datetime, end: datetime, origin: PopularityOrigin | None = None
@@ -88,4 +88,4 @@ class PopularityRepository:
         )
         if origin is not None:
             query = query.where(PopularitySnapshotRow.origin == origin.value)
-        return [_to_snapshot(row) for row in await self._session.scalars(query)]
+        return [snapshot_from_row(row) for row in await self._session.scalars(query)]
