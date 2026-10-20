@@ -47,12 +47,15 @@ Out: see the end of this page.
 
 - Roster: active ∩ optionable ∩ not test, plus a cooling tail of names that left the roster within the last K sessions, frozen at train start and scanned in lexicographic order.
   A roster that shrinks past a threshold alarms but proceeds.
+- Index underlyings (D-I, John 2026-10-20): a configured list (`$SPX`, `$NDX`, `$RUT`, `$VIX`, `$XSP`) joins the roster, because index chains are forward-only and the Options Report (slice 6) is their named reader.
+  They are not listings, so they bypass the span join; they are stored under Schwab's `$` symbol so they never collide with an equity ticker, and get the same ladder, statuses and divergence alarms.
+  `$SPX` and `$NDX` join D-J's probe, since SPX's chain is the largest and likeliest to break the buckets.
 - One chain per underlying, every expiry and strike (no DTE bound), into `options_chain_snapshot` with `dataset = 'eod_full'`.
 - Launch at 22:00 America/Chicago on each session day; hard deadline 03:00 America/Chicago.
   `cycle_id` is the nominal launch instant, so a restart lands in the same cycle.
 - Ladder per underlying: fetch; on a transport-class failure retry once; then split into three expiry buckets (with an open-ended tail) and retry each bucket once; then a `failed` tombstone.
   A name costs at most 6 calls.
-- Split boundaries (D-J, John 2026-10-20): no unfiltered chain has ever been measured (the July captures were bounded), so a live probe ticket (unfiltered and bucketed chains for SPY, QQQ, IWM, TSLA, NVDA: status, size, contracts per expiry) sets the bucket boundaries as expiry-date ranges in config; it gates only that config.
+- Split boundaries (D-J, John 2026-10-20): no unfiltered chain has ever been measured (the July captures were bounded), so a live probe ticket (unfiltered and bucketed chains for SPY, QQQ, IWM, TSLA, NVDA, `$SPX`, `$NDX`: status, size, contracts per expiry) sets the bucket boundaries as expiry-date ranges in config; it gates only that config.
   A name the split rung leaves `partial` or `failed` on 3 consecutive sessions raises an ops notice that the boundaries need retuning.
   Recursive halving was rejected: July's 4% sporadic 502s would turn noise into unbounded call trees.
 - Statuses gain `rejected` (a 400 symbol rejection) and `empty` (a 200 with no contracts), giving seven: `ok`, `partial`, `failed`, `stale`, `skipped`, `rejected`, `empty`.
