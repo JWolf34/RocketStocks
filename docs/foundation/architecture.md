@@ -62,7 +62,8 @@ One TimescaleDB, a one-shot migrate gate, and three services from one shared ima
 
 ## Operations
 
-- Deploy is docker compose on the home-lab VM: build, migrate gate, up, with pinned base images and Timescale tag.
+- Deploy is docker compose on the home-lab VM: build, migrate gate, up, with base images and the Timescale image pinned by tag and digest; every long-running service has a healthcheck.
+- The [slice 1 runbook](./runbooks/slice-1.md) holds the exact commands for first deploy, `/setup schwab`, the v1 import, the live run and the rehearsals.
 - Backups are off-host VM block snapshots; John verifies the ADR-0031 conditions explicitly.
 - Unattended trust needs three rehearsals: token expiry, ingest restart, restore ([Build process and cutover](https://github.com/JWolf34/RocketStocks/issues/53)).
 
