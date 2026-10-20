@@ -4,7 +4,7 @@ never the reverse), the other 9 liquid tickers every 5 minutes. Each raw
 response is gzipped locally.
 
 Full-day data stays under data/chain-snapshots/ (never committed — hundreds of
-MB); chain_diff.py later emits committed samples + findings. Rate-limit
+MB); chain_diff.py later emits a local findings md. Rate-limit
 response headers and any 429s are logged (ADR-0020 budget measurement input).
 
     .venv/bin/python scripts/spikes/chain_spike.py            # live, during RTH

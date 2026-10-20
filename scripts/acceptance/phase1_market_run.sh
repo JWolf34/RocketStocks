@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
 #
 # Phase-1 autonomous market-day acceptance run (D6 / D5-ingest / D7).
-# See docs/v2/phase1-acceptance-plan.md — this automates the deterministic
+# See docs/foundation/README.md (definition of done) - this automates the deterministic
 # half of the market-gated items. It does NOT do D1 (`down -v`) or the Schwab
 # login: those are interactive and MUST be done tonight (see `preflight`).
 #
 # What it certifies unattended:
-#   D7  replay of the 2026-07-09 session against the compose stack == IDENTICAL
+#   D7  replay of the synthetic session fixture against the compose stack == IDENTICAL
 #   D6  bars written during one live RTH session under compose
 #   D5  ingest :9090 exposes counter-typed metrics during the run
 # What it can only observe (never a hard pass — Phase-4/G7 concern):
@@ -111,7 +111,7 @@ check_single_bot() {
 
 # ---- D7: replay gate under compose (needs no market) -----------------------
 run_d7() {
-  log "── D7: S007 replay of 2026-07-09 against the compose stack ──"
+  log "── D7: S007 replay of the synthetic session against the compose stack ──"
   [ -f "$FIXTURES/$FIXTURE_FILE" ]  || fail "fixture missing: $FIXTURES/$FIXTURE_FILE"
   [ -f "$FIXTURES/$EXPECTED_FILE" ] || fail "expected file missing: $FIXTURES/$EXPECTED_FILE"
   # Runs inside the composed image, on the composed DB server, in a throwaway

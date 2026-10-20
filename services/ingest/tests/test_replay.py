@@ -1,5 +1,5 @@
 """replay tool: the pass/fail logic. The DB orchestration (create/migrate/
-replay/drop) is exercised end-to-end against a real fixture; here we pin the
+replay/drop) is exercised end-to-end against a synthetic fixture; here we pin the
 boundary-held invariant (S003 criterion 30) and the assertion mode's report +
 exit semantics (S007): exit 0 iff the semantic-decision multisets are
 identical, 1 on any difference — strict, no tolerance path."""

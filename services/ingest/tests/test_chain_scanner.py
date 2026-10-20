@@ -1,6 +1,6 @@
 """S008 step-3: deterministic ChainScanner tests — fake clock, fake transport,
 fake store; no ambient time, no network, no DB. A synthetic stale-response
-sequence (modelled on an observed 2026-07-06 event) replays from builders."""
+sequence replays from builders."""
 
 import asyncio
 from datetime import date, datetime, timedelta, timezone
@@ -381,31 +381,31 @@ class TestPartial:
 
 
 class TestStalePairReplay:
-    """A synthetic stale-response sequence shaped like the observed July 2026
-    event: the second HTTP-200 response is a coherent chain whose quotes are
-    ~14 minutes old; the third recovers. Invented numbers, not vendor data."""
+    """A synthetic stale-response sequence: the second HTTP-200 response is a
+    coherent chain whose quotes are ~14 minutes older than the first; the third
+    recovers. Invented numbers, not vendor data."""
 
     @staticmethod
     def chain(median_at: datetime) -> dict:
         # three contracts quoted around the median; row count is what matters
         return payload(quote_offsets_s=(-1.0, 0.0, 1.0), base=median_at)
 
-    async def test_stale_guard_replays_the_observed_shape(self):
-        clock = FakeClock(datetime(2026, 7, 6, 17, 47, 30, tzinfo=UTC))
+    async def test_stale_guard_ok_stale_ok_sequence(self):
+        clock = FakeClock(datetime(2026, 7, 6, 15, 2, 30, tzinfo=UTC))
         store = FakeStore()
         medians_in = [
-            datetime(2026, 7, 6, 17, 48, 57, 537000, tzinfo=UTC),
-            datetime(2026, 7, 6, 17, 34, 57, 364000, tzinfo=UTC),
-            datetime(2026, 7, 6, 17, 50, 59, 789000, tzinfo=UTC),
+            datetime(2026, 7, 6, 15, 3, 42, 250000, tzinfo=UTC),
+            datetime(2026, 7, 6, 14, 49, 42, 125000, tzinfo=UTC),
+            datetime(2026, 7, 6, 15, 5, 44, 500000, tzinfo=UTC),
         ]
         fetch = ScriptedFetch(clock, {"SYN": [self.chain(m) for m in medians_in]})
-        # Close at 18:02:30 leaves exactly three boundaries (17:50/17:55/18:00);
+        # Close at 15:17:30 leaves exactly three boundaries (15:05/15:10/15:15);
         # the guard only cares about response order, not the cycle grid.
         scanner = make_scanner(
             clock,
             store,
             fetch,
-            close=datetime(2026, 7, 6, 18, 2, 30, tzinfo=UTC),
+            close=datetime(2026, 7, 6, 15, 17, 30, tzinfo=UTC),
             universe=("SYN",),
         )
         await scanner.run()
