@@ -21,6 +21,9 @@ import structlog
 
 _FORMATS = ("json", "console", "auto")
 
+# httpx logs every request URL at INFO, and a Discord webhook URL is a credential.
+_URL_LOGGING_LIBRARIES = ("httpx", "httpcore")
+
 
 def _add_service(service: str) -> Callable:
     def processor(logger, method_name, event_dict):
@@ -86,6 +89,8 @@ def configure_logging(service: str) -> None:
     root = logging.getLogger()
     root.handlers[:] = [handler]
     root.setLevel(level)
+    for name in _URL_LOGGING_LIBRARIES:
+        logging.getLogger(name).setLevel(max(level, logging.WARNING))
 
 
 @contextmanager

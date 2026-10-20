@@ -24,9 +24,12 @@ def _isolated_logging(monkeypatch):
     root = logging.getLogger()
     saved_handlers = root.handlers[:]
     saved_level = root.level
+    saved_lib_levels = {n: logging.getLogger(n).level for n in ("httpx", "httpcore")}
     yield
     root.handlers[:] = saved_handlers
     root.setLevel(saved_level)
+    for name, lib_level in saved_lib_levels.items():
+        logging.getLogger(name).setLevel(lib_level)
     structlog.contextvars.clear_contextvars()
     structlog.reset_defaults()
 
@@ -108,6 +111,15 @@ def test_default_level_is_info_and_rs_log_level_overrides(monkeypatch, capsys):
     logging.getLogger("m").debug("shown")
     (record,) = json_lines(capsys)
     assert record["event"] == "shown"
+
+
+def test_http_client_request_logs_are_not_emitted_at_info(monkeypatch, capsys):
+    monkeypatch.setenv("RS_LOG_FORMAT", "json")
+    configure_logging("ingest")
+    logging.getLogger("httpx").info('HTTP Request: POST https://discord.test/webhooks/1/token')
+    logging.getLogger("httpx").warning("kept")
+    (record,) = json_lines(capsys)
+    assert record["event"] == "kept"
 
 
 def test_reconfigure_replaces_the_root_handler(monkeypatch, capsys):
