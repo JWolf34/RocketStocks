@@ -20,12 +20,11 @@ from pydantic import ValidationError
 
 from rs_domain import Dataset, EventSource, SystemClock
 from rs_ingest.aggregator import COUNTER_NAMES as AGGREGATOR_COUNTER_NAMES
-from rs_ingest.chain_adapters import SchwabChainFetch, SessionSnapshotStore
+from rs_ingest.chain_adapters import SessionSnapshotStore
 from rs_ingest.chain_scanner import ChainScanner
 from rs_ingest.detector import ThresholdDetector
 from rs_ingest.pipeline import Pipeline
-from rs_ingest.schwab_client import TokenMissingError, build_schwab_client
-from rs_ingest.settings import IngestSettings
+from rs_ingest.settings import LOGIN_HINT, IngestSettings
 from rs_ingest.sources.live import LiveEventSource
 from rs_ingest.sources.recording import FixtureRecorder, RecordingEventSource
 from rs_observability import (
@@ -43,6 +42,7 @@ from rs_persistence import (
     build_session_factory,
 )
 from rs_sources import ExchangeCalendar
+from rs_sources.schwab import SchwabChainFetch, TokenMissingError, build_schwab_client
 
 logger = logging.getLogger(__name__)
 
@@ -155,9 +155,11 @@ async def run_session(settings: IngestSettings) -> int:
         session_factory = build_session_factory(engine)
         token_store = SchwabTokenStore(session_factory)
         try:
-            client = await build_schwab_client(settings, token_store)
+            client = await build_schwab_client(
+                settings.schwab_api_key, settings.schwab_api_secret.get_secret_value(), token_store
+            )
         except TokenMissingError as exc:
-            logger.error("%s", exc)
+            logger.error("%s - %s", exc, LOGIN_HINT)
             return 1
         clock = SystemClock()
         calendar = ExchangeCalendar()

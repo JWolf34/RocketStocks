@@ -2665,16 +2665,20 @@ name = "rs-sources"
 version = "0.1.0"
 source = { editable = "libs/sources" }
 dependencies = [
+    { name = "authlib" },
     { name = "exchange-calendars" },
     { name = "httpx" },
     { name = "rs-domain" },
+    { name = "schwab-py" },
 ]
 
 [package.metadata]
 requires-dist = [
+    { name = "authlib", specifier = ">=1.3" },
     { name = "exchange-calendars", specifier = ">=4.13.2" },
     { name = "httpx", specifier = ">=0.28.1" },
     { name = "rs-domain", editable = "libs/domain" },
+    { name = "schwab-py", specifier = ">=1.5.1" },
 ]
 
 [[package]]

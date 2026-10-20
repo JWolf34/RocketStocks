@@ -22,14 +22,14 @@ from typing import Any, NamedTuple
 
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from rs_ingest.schwab_client import TokenMissingError, build_schwab_client
-from rs_ingest.settings import IngestSettings
+from rs_ingest.settings import LOGIN_HINT, IngestSettings
 from rs_persistence import (
     BarRepository,
     SchwabTokenStore,
     build_engine,
     build_session_factory,
 )
+from rs_sources.schwab import TokenMissingError, build_schwab_client
 
 logger = logging.getLogger(__name__)
 
@@ -161,9 +161,13 @@ async def _run(settings: IngestSettings, symbol: str, day: date) -> int:
     try:
         session_factory = build_session_factory(engine)
         try:
-            client = await build_schwab_client(settings, SchwabTokenStore(session_factory))
+            client = await build_schwab_client(
+                settings.schwab_api_key,
+                settings.schwab_api_secret.get_secret_value(),
+                SchwabTokenStore(session_factory),
+            )
         except TokenMissingError as exc:
-            logger.error("%s", exc)
+            logger.error("%s - %s", exc, LOGIN_HINT)
             return 1
         stream = await fetch_stream_bars(session_factory, symbol, day)
         rest = await fetch_rest_candles(client, symbol, day)
