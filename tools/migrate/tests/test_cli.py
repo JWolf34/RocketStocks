@@ -6,6 +6,7 @@ import logging
 
 import pytest
 import structlog
+from sqlalchemy import create_engine, text
 
 from rs_migrate.__main__ import main
 from rs_persistence.testing import migrated_db_url  # noqa: F401
@@ -45,3 +46,22 @@ def test_alembic_records_render_on_the_json_stream(monkeypatch, capsys, migrated
         root.handlers[:] = saved_handlers
         root.setLevel(saved_level)
         structlog.reset_defaults()
+
+
+def test_check_passes_on_a_migrated_database(monkeypatch, migrated_db_url):
+    monkeypatch.setenv("RS_DB_URL", migrated_db_url)
+    assert main(["check"]) == 0
+
+
+def test_check_fails_on_schema_drift(monkeypatch, capsys, migrated_db_url):
+    monkeypatch.setenv("RS_DB_URL", migrated_db_url)
+    engine = create_engine(migrated_db_url, isolation_level="AUTOCOMMIT")
+    with engine.connect() as conn:
+        conn.execute(text("ALTER TABLE base_rate ADD COLUMN drifted integer"))
+    try:
+        assert main(["check"]) == 1
+        assert "drift" in capsys.readouterr().err
+    finally:
+        with engine.connect() as conn:
+            conn.execute(text("ALTER TABLE base_rate DROP COLUMN drifted"))
+        engine.dispose()

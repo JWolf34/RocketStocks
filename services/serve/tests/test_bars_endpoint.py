@@ -4,14 +4,14 @@ Expected values are independent literals (the seeded fixture bars), never
 recomputed through the code under test.
 """
 
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 import pytest
 
 from rs_domain import Bar
 from rs_persistence import BarRepository
 
-OPEN_0930 = datetime(2026, 7, 9, 13, 30, tzinfo=timezone.utc)  # 09:30 ET open
+OPEN_0930 = datetime(2026, 7, 9, 13, 30, tzinfo=UTC)  # 09:30 ET open
 
 
 @pytest.fixture

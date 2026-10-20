@@ -6,7 +6,7 @@ from rs_bot.settings import BotSettings
 REQUIRED = {
     "RS_DB_URL": "postgresql+psycopg://u:p@localhost:5498/rs",
     "RS_BOT_DISCORD_TOKEN": "hunter2",
-    "RS_DEV_CHANNEL_ID": "123456789012345678",
+    "RS_BOT_ALERT_CHANNEL_ID": "123456789012345678",
 }
 
 
@@ -19,7 +19,7 @@ def test_defaults(monkeypatch):
     _set_required(monkeypatch)
     settings = BotSettings(_env_file=None)
     assert settings.rs_db_url == REQUIRED["RS_DB_URL"]
-    assert settings.dev_channel_id == 123456789012345678
+    assert settings.alert_channel_id == 123456789012345678
     assert settings.sweep_seconds == 60.0
 
 
@@ -59,3 +59,27 @@ def test_metrics_port_default_and_override(monkeypatch):
     assert BotSettings(_env_file=None).metrics_port == 9091
     monkeypatch.setenv("RS_BOT_METRICS_PORT", "9191")
     assert BotSettings(_env_file=None).metrics_port == 9191
+
+
+def test_post_max_attempts_default_and_override(monkeypatch):
+    _set_required(monkeypatch)
+    assert BotSettings(_env_file=None).post_max_attempts == 5
+    monkeypatch.setenv("RS_BOT_POST_MAX_ATTEMPTS", "2")
+    assert BotSettings(_env_file=None).post_max_attempts == 2
+
+
+def test_old_dev_channel_variable_is_not_read(monkeypatch):
+    _set_required(monkeypatch)
+    monkeypatch.delenv("RS_BOT_ALERT_CHANNEL_ID")
+    monkeypatch.setenv("RS_DEV_CHANNEL_ID", "1")
+    with pytest.raises(ValidationError):
+        BotSettings(_env_file=None)
+
+
+def test_admin_user_id_is_optional_and_blank_means_unset(monkeypatch):
+    _set_required(monkeypatch)
+    assert BotSettings(_env_file=None).admin_user_id is None
+    monkeypatch.setenv("RS_BOT_ADMIN_USER_ID", "")
+    assert BotSettings(_env_file=None).admin_user_id is None
+    monkeypatch.setenv("RS_BOT_ADMIN_USER_ID", "123456789012345678")
+    assert BotSettings(_env_file=None).admin_user_id == 123456789012345678

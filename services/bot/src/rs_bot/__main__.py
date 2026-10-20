@@ -1,7 +1,7 @@
 """Entry point: `python -m rs_bot`.
 
 Lifecycle contract (spec): continuous daemon — connect Discord → resolve the
-dev channel (unresolvable/no-permission → loud exit 1) → start LISTEN →
+alert channel (unresolvable/no-permission → loud exit 1) → start LISTEN →
 unconditional initial sweep → run until SIGTERM (graceful: finish the
 in-flight post, exit 0).
 
@@ -19,33 +19,35 @@ import signal
 import sys
 
 import discord
+from discord import app_commands
 from pydantic import ValidationError
 
+from rs_bot.counters import new_counters
+from rs_bot.listener import ListenLoop
+from rs_bot.schwab_auth import SchwabAuthFlow, register_setup_commands
+from rs_bot.settings import BotSettings
+from rs_bot.sweep import SweepWorker
+from rs_bot.token_notices import TokenAgeNotifier
+from rs_domain import SystemClock
 from rs_observability import (
     DictCounterCollector,
     configure_logging,
     install_excepthooks,
     start_metrics_server,
 )
-from rs_persistence import NOTIFY_CHANNEL, build_engine, build_session_factory
-
-from rs_bot.counters import new_counters
-from rs_bot.listener import ListenLoop
-from rs_bot.settings import BotSettings
-from rs_bot.sweep import SweepWorker
+from rs_persistence import (
+    NOTIFY_CHANNEL,
+    build_engine,
+    build_session_factory,
+    psycopg_conninfo,
+)
 
 logger = logging.getLogger(__name__)
 
 
-def psycopg_conninfo(sqlalchemy_url: str) -> str:
-    """RS_DB_URL is the shared SQLAlchemy DSN (postgresql+psycopg://); the
-    LISTEN connection is raw psycopg and wants the driverless form."""
-    return sqlalchemy_url.replace("+psycopg", "", 1)
-
-
 class DiscordChannelSender:
-    """EmbedSender backed by the resolved dev channel (full gateway client —
-    spec pin #2). Returns the message id for the per-post G5 audit log."""
+    """EmbedSender backed by the resolved alert channel (full gateway client).
+    Returns the message id for the per-post audit log."""
 
     def __init__(self, channel: discord.abc.Messageable) -> None:
         self._channel = channel
@@ -55,13 +57,29 @@ class DiscordChannelSender:
         return message.id
 
 
+class AdminDirectMessenger:
+    """DMs the admin user, or the application's owner when none is configured."""
+
+    def __init__(self, client: discord.Client, admin_user_id: int | None) -> None:
+        self._client = client
+        self._admin_user_id = admin_user_id
+
+    async def send_dm(self, text: str) -> None:
+        if self._admin_user_id is not None:
+            user = await self._client.fetch_user(self._admin_user_id)
+        else:
+            user = (await self._client.application_info()).owner
+        await user.send(text)
+
+
 async def run_bot(settings: BotSettings) -> int:
     install_excepthooks()  # the asyncio half — needs asyncio.run()'s loop
     engine = build_engine(settings.rs_db_url)
     counters = new_counters()
-    # Default intents only — no privileged intents (spec pin #7).
+    # Default intents only - no privileged intents.
     client = discord.Client(intents=discord.Intents.default())
-    listen_task = sweep_task = gateway_task = metrics_server = None
+    tree = app_commands.CommandTree(client)
+    listen_task = sweep_task = gateway_task = notice_task = metrics_server = None
     try:
         # :9091 side-port (ADR-0015), up before Discord so a wedged login is
         # scrapeable. namespace="" — the ADR names the vocabulary bare.
@@ -73,34 +91,45 @@ async def run_bot(settings: BotSettings) -> int:
         except discord.LoginFailure as exc:
             logger.error("Discord login failed — check RS_BOT_DISCORD_TOKEN: %s", exc)
             return 1
+        session_factory = build_session_factory(engine)
+        register_setup_commands(tree, SchwabAuthFlow(session_factory), settings.admin_user_id)
+        try:
+            await tree.sync()
+        except Exception:  # alerts do not need the command, so a failed sync must not stop the bot
+            logger.exception("could not sync slash commands - /setup schwab may be missing")
         gateway_task = asyncio.create_task(client.connect(), name="gateway")
         try:
-            channel = await client.fetch_channel(settings.dev_channel_id)
+            channel = await client.fetch_channel(settings.alert_channel_id)
         except discord.DiscordException as exc:
             logger.error(
-                "cannot resolve dev channel %d — check RS_DEV_CHANNEL_ID and the bot's "
+                "cannot resolve alert channel %d - check RS_BOT_ALERT_CHANNEL_ID and the bot's "
                 "invite/permissions (operator checklist §4): %s",
-                settings.dev_channel_id,
+                settings.alert_channel_id,
                 exc,
             )
             return 1
         if not isinstance(channel, discord.abc.Messageable):
             logger.error(
-                "dev channel %d is not a messageable channel (%s)",
-                settings.dev_channel_id,
+                "alert channel %d is not a messageable channel (%s)",
+                settings.alert_channel_id,
                 type(channel).__name__,
             )
             return 1
-        logger.info("resolved dev channel %d (%s)", settings.dev_channel_id, channel)
+        logger.info("resolved alert channel %d (%s)", settings.alert_channel_id, channel)
 
         worker = SweepWorker(
-            build_session_factory(engine),
+            session_factory,
             DiscordChannelSender(channel),
             sweep_seconds=settings.sweep_seconds,
+            max_attempts=settings.post_max_attempts,
             counters=counters,
         )
         listener = ListenLoop(psycopg_conninfo(settings.rs_db_url), worker.wake, counters=counters)
         listen_task = asyncio.create_task(listener.run(), name="listen")
+        notifier = TokenAgeNotifier(
+            session_factory, AdminDirectMessenger(client, settings.admin_user_id), SystemClock()
+        )
+        notice_task = asyncio.create_task(notifier.run(), name="token-notices")
 
         loop = asyncio.get_running_loop()
         for sig in (signal.SIGTERM, signal.SIGINT):
@@ -112,8 +141,8 @@ async def run_bot(settings: BotSettings) -> int:
         done, _ = await asyncio.wait({sweep_task, gateway_task}, return_when=asyncio.FIRST_COMPLETED)
 
         if sweep_task in done:
-            if (exc := sweep_task.exception()) is not None:
-                logger.error("sweep worker crashed", exc_info=exc)
+            if (sweep_exc := sweep_task.exception()) is not None:
+                logger.error("sweep worker crashed", exc_info=sweep_exc)
                 return 1
             logger.info("shutdown requested — in-flight post finished")
             return 0
@@ -122,7 +151,7 @@ async def run_bot(settings: BotSettings) -> int:
         logger.error("Discord gateway ended unexpectedly", exc_info=gateway_task.exception())
         return 1
     finally:
-        for task in (listen_task, sweep_task, gateway_task):
+        for task in (listen_task, sweep_task, gateway_task, notice_task):
             if task is None:
                 continue
             task.cancel()
@@ -144,8 +173,8 @@ def main() -> int:
         logger.error("invalid configuration: %s", exc)
         return 1
     logger.info(
-        "rs_bot starting: dev_channel_id=%d sweep=%.0fs listen_channel=%s",
-        settings.dev_channel_id,
+        "rs_bot starting: alert_channel_id=%d sweep=%.0fs listen_channel=%s",
+        settings.alert_channel_id,
         settings.sweep_seconds,
         NOTIFY_CHANNEL,
     )

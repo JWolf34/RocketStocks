@@ -3,7 +3,7 @@ round-trip through JSONL preserving the (event_time, sequence) Bus-1 order, and
 the recording tee passes events through unchanged."""
 
 import logging
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 from rs_domain import Bar, BarClosed
 from rs_ingest.sources.recording import (
@@ -13,7 +13,7 @@ from rs_ingest.sources.recording import (
     load_events,
 )
 
-BUCKET0 = datetime(2026, 7, 6, 13, 30, tzinfo=timezone.utc)
+BUCKET0 = datetime(2026, 7, 6, 13, 30, tzinfo=UTC)
 
 
 def closed(i: int, volume: int, close: float, sequence: int = 0) -> BarClosed:

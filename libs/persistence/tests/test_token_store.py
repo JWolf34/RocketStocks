@@ -36,6 +36,18 @@ async def test_load_returns_none_before_first_save(store):
     assert await store.load() is None
 
 
+async def test_updated_at_tracks_saves(store):
+    assert await store.updated_at() is None
+
+    await store.save(TOKEN_A)
+    first = await store.updated_at()
+    await store.save(TOKEN_B)
+    second = await store.updated_at()
+
+    assert first is not None and second is not None
+    assert second > first
+
+
 async def test_save_load_roundtrip_and_upsert(store):
     await store.save(TOKEN_A)
     assert await store.load() == TOKEN_A

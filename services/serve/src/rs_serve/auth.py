@@ -12,7 +12,7 @@ the hash only keeps a DB leak from disclosing usable keys.
 
 import hashlib
 
-from starlette.middleware.base import BaseHTTPMiddleware
+from starlette.middleware.base import BaseHTTPMiddleware, RequestResponseEndpoint
 from starlette.requests import Request
 from starlette.responses import JSONResponse, Response
 
@@ -28,7 +28,7 @@ def hash_api_key(key: str) -> str:
 
 
 class ApiKeyMiddleware(BaseHTTPMiddleware):
-    async def dispatch(self, request: Request, call_next) -> Response:
+    async def dispatch(self, request: Request, call_next: RequestResponseEndpoint) -> Response:
         key = request.headers.get("X-API-Key")
         if key is None:
             return JSONResponse(_UNAUTHORIZED, status_code=401)

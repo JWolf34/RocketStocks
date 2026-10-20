@@ -1,7 +1,7 @@
 """S002 acceptance: rev-001 migrates a fresh TimescaleDB, stream_bars_5m is a
 hypertable, and a domain Bar round-trips through the async session losslessly."""
 
-from datetime import date, datetime, timedelta, timezone
+from datetime import UTC, date, datetime, timedelta
 
 import pytest
 from sqlalchemy import create_engine as create_sync_engine
@@ -10,7 +10,7 @@ from sqlalchemy import inspect, text
 from rs_domain import Bar
 from rs_persistence import BarRepository, build_engine, build_session_factory
 
-BUCKET = datetime(2026, 7, 6, 13, 30, tzinfo=timezone.utc)
+BUCKET = datetime(2026, 7, 6, 13, 30, tzinfo=UTC)
 
 
 @pytest.fixture(scope="session")
@@ -23,7 +23,8 @@ def sync_engine(migrated_db_url):
 class TestRev001Schema:
     def test_all_tables_created(self, sync_engine):
         tables = set(inspect(sync_engine).get_table_names())
-        assert {"stream_bars_5m", "alerts", "outbox"} <= tables
+        assert {"stream_bars_5m", "alerts"} <= tables
+        assert "outbox" not in tables
 
     def test_stream_bars_is_hypertable(self, sync_engine):
         with sync_engine.connect() as conn:
@@ -37,13 +38,19 @@ class TestRev001Schema:
 
     def test_alerts_has_posted_at_cursor(self, sync_engine):
         columns = {c["name"] for c in inspect(sync_engine).get_columns("alerts")}
-        assert columns == {"id", "symbol", "alert_type", "triggered_at", "payload", "posted_at"}
-
-    def test_outbox_is_minimal_ledger(self, sync_engine):
-        columns = {c["name"] for c in inspect(sync_engine).get_columns("outbox")}
-        assert columns == {"id", "event_type", "payload", "created_at"}, (
-            "outbox must stay an append-only ledger without delivery state (ADR-0005)"
-        )
+        assert columns == {
+            "id",
+            "symbol",
+            "alert_type",
+            "triggered_at",
+            "payload",
+            "posted_at",
+            "rule_version",
+            "alert_price",
+            "quote_time",
+            "dedup_key",
+            "post_attempts",
+        }
 
     def test_alerts_unposted_partial_index(self, sync_engine):
         # rev-003: the bot cursor's operational index (S004 pin #10) — partial
@@ -96,7 +103,7 @@ class TestBarRoundTrip:
     async def test_list_for_day_returns_ordered_utc_day_slice(self, migrated_db_url):
         # Unique symbol + day so this never collides with other tests' inserts in
         # the shared session DB (stream_bars_5m is not truncated between tests).
-        d0 = datetime(2026, 7, 7, 13, 30, tzinfo=timezone.utc)
+        d0 = datetime(2026, 7, 7, 13, 30, tzinfo=UTC)
         rows = [
             Bar(symbol="LFD", bucket=d0 + timedelta(minutes=10), open=1.0, high=1.0, low=1.0, close=1.0, volume=30),
             Bar(symbol="LFD", bucket=d0, open=1.0, high=1.0, low=1.0, close=1.0, volume=10),

@@ -8,12 +8,11 @@ against official REST data, hypertable (created via raw DDL in rev-001).
 Prices are DOUBLE PRECISION — bit-exact float64 round-trip for replay
 (S002 decision); NUMERIC is reserved for future accounting-grade tables.
 
-outbox is an append-only durable event ledger with NO processed-marking —
-delivery state belongs to each consumer's cursor (ADR-0005). alerts.posted_at
-is the bot's pinned cursor column (ADR-0005 Bus-2 reference contract).
+alerts.posted_at is the bot's delivery cursor (its `posted_at IS NULL` sweep);
+post_attempts caps its retries.
 """
 
-from datetime import datetime
+from datetime import date, datetime
 from typing import Any
 
 from sqlalchemy import (
@@ -23,18 +22,27 @@ from sqlalchemy import (
     Boolean,
     Column,
     Date,
+    Double,
     Identity,
+    Index,
     Integer,
     Numeric,
     SmallInteger,
     Table,
     Text,
+    UniqueConstraint,
     text,
 )
 from sqlalchemy.dialects.postgresql import ENUM, JSONB, TIMESTAMP
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
-from rs_domain import Dataset, SourceStatus
+from rs_domain import (
+    AuthRequestState,
+    BaseRateInput,
+    Dataset,
+    PopularityOrigin,
+    SourceStatus,
+)
 
 
 class Base(DeclarativeBase):
@@ -111,6 +119,12 @@ class StreamBar5m(Base):
 
 class AlertRow(Base):
     __tablename__ = "alerts"
+    __table_args__ = (
+        # The bot's delivery cursor: a partial index holding only undelivered rows.
+        Index("ix_alerts_unposted", "id", postgresql_where=text("posted_at IS NULL")),
+        # Idempotent writes: a NULL key (streaming alerts) never conflicts.
+        UniqueConstraint("dedup_key", name="uq_alerts_dedup_key"),
+    )
 
     id: Mapped[int] = mapped_column(BigInteger, Identity(always=True), primary_key=True)
     symbol: Mapped[str] = mapped_column(Text)
@@ -118,15 +132,129 @@ class AlertRow(Base):
     triggered_at: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True))
     payload: Mapped[dict[str, Any]] = mapped_column(JSONB)
     posted_at: Mapped[datetime | None] = mapped_column(TIMESTAMP(timezone=True), nullable=True)
+    rule_version: Mapped[str | None] = mapped_column(Text)
+    alert_price: Mapped[float | None] = mapped_column(Double)
+    quote_time: Mapped[datetime | None] = mapped_column(TIMESTAMP(timezone=True))
+    dedup_key: Mapped[str | None] = mapped_column(Text)
+    post_attempts: Mapped[int] = mapped_column(Integer, server_default=text("0"))
 
 
-class OutboxRow(Base):
-    __tablename__ = "outbox"
+class PopularitySnapshotRow(Base):
+    """popularity_snapshot hypertable; `origin` shares its vocabulary
+    with rs_domain.PopularityOrigin."""
+
+    __tablename__ = "popularity_snapshot"
+    __table_args__ = (Index("ix_popularity_snapshot_ticker_polled_at", "ticker", "polled_at"),)
+
+    polled_at: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), primary_key=True)
+    ticker: Mapped[str] = mapped_column(Text, primary_key=True)
+    rank: Mapped[int] = mapped_column(Integer)
+    mentions: Mapped[int] = mapped_column(Integer)
+    upvotes: Mapped[int | None] = mapped_column(Integer)
+    rank_24h_ago: Mapped[int | None] = mapped_column(Integer)
+    mentions_24h_ago: Mapped[int | None] = mapped_column(Integer)
+    fetched_at: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True))
+    origin: Mapped[str] = mapped_column(
+        ENUM(*(m.value for m in PopularityOrigin), name="popularity_origin", create_type=False)
+    )
+
+
+class DailyBarRow(Base):
+    """daily_bar hypertable, partitioned by session_date."""
+
+    __tablename__ = "daily_bar"
+
+    symbol: Mapped[str] = mapped_column(Text, primary_key=True)
+    session_date: Mapped[date] = mapped_column(Date, primary_key=True)
+    open: Mapped[float] = mapped_column(Double)
+    high: Mapped[float] = mapped_column(Double)
+    low: Mapped[float] = mapped_column(Double)
+    close: Mapped[float] = mapped_column(Double)
+    volume: Mapped[int] = mapped_column(BigInteger)
+    fetched_at: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True))
+    adjusted: Mapped[bool] = mapped_column(Boolean)
+
+
+class UnpricedSymbolRow(Base):
+    __tablename__ = "unpriced_symbol"
+
+    symbol: Mapped[str] = mapped_column(Text, primary_key=True)
+    first_seen: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True))
+    last_attempt: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True))
+    reason: Mapped[str] = mapped_column(Text)
+
+
+class BaseRateRow(Base):
+    """base_rate: append-only, one row per study run."""
+
+    __tablename__ = "base_rate"
+    __table_args__ = (
+        Index("ix_base_rate_lookup", "alert_type", "rule_version", "input", "computed_at"),
+    )
 
     id: Mapped[int] = mapped_column(BigInteger, Identity(always=True), primary_key=True)
-    event_type: Mapped[str] = mapped_column(Text)
-    payload: Mapped[dict[str, Any]] = mapped_column(JSONB)
+    alert_type: Mapped[str] = mapped_column(Text)
+    rule_version: Mapped[str] = mapped_column(Text)
+    computed_at: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True))
+    input: Mapped[str] = mapped_column(
+        ENUM(*(m.value for m in BaseRateInput), name="base_rate_input", create_type=False)
+    )
+    n: Mapped[int] = mapped_column(Integer)
+    n_unpriced: Mapped[int] = mapped_column(Integer, server_default=text("0"))
+    hit_rate_1d: Mapped[float | None] = mapped_column(Double)
+    hit_rate_5d: Mapped[float | None] = mapped_column(Double)
+    hit_rate_10d: Mapped[float | None] = mapped_column(Double)
+    median_excess_1d: Mapped[float | None] = mapped_column(Double)
+    median_excess_5d: Mapped[float | None] = mapped_column(Double)
+    median_excess_10d: Mapped[float | None] = mapped_column(Double)
+    survivorship_caveat: Mapped[str] = mapped_column(Text)
+
+
+class ImportVerificationRow(Base):
+    """import_verification: one passed `verify-offset` run (append-only); the
+    zone is a candidate name such as "America/Chicago" or "-06:00"."""
+
+    __tablename__ = "import_verification"
+
+    id: Mapped[int] = mapped_column(BigInteger, Identity(always=True), primary_key=True)
+    verified_at: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True))
+    zone: Mapped[str] = mapped_column(Text)
+    overlap_rows: Mapped[int] = mapped_column(Integer)
+    matched_rows: Mapped[int] = mapped_column(Integer)
+    match_rate: Mapped[float] = mapped_column(Double)
+    overlap_start: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True))
+    overlap_end: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True))
+
+
+class SchwabAuthRequestRow(Base):
+    """schwab_auth_request: the `/setup schwab` handshake. The callback
+    URL carries an OAuth code - treat it as a secret and never log it."""
+
+    __tablename__ = "schwab_auth_request"
+
+    id: Mapped[int] = mapped_column(BigInteger, Identity(always=True), primary_key=True)
     created_at: Mapped[datetime] = mapped_column(
+        TIMESTAMP(timezone=True), server_default=text("now()")
+    )
+    requested_by: Mapped[int] = mapped_column(BigInteger)
+    state: Mapped[str] = mapped_column(
+        ENUM(*(m.value for m in AuthRequestState), name="auth_request_state", create_type=False),
+        server_default=text("'requested'"),
+    )
+    auth_url: Mapped[str | None] = mapped_column(Text)
+    callback_url: Mapped[str | None] = mapped_column(Text)
+    error: Mapped[str | None] = mapped_column(Text)
+    completed_at: Mapped[datetime | None] = mapped_column(TIMESTAMP(timezone=True))
+
+
+class SchwabTokenNoticeRow(Base):
+    """schwab_token_notice: which expiry thresholds were already DM'd for a token issue."""
+
+    __tablename__ = "schwab_token_notice"
+
+    issued_at: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), primary_key=True)
+    threshold_hours: Mapped[int] = mapped_column(Integer, primary_key=True)
+    sent_at: Mapped[datetime] = mapped_column(
         TIMESTAMP(timezone=True), server_default=text("now()")
     )
 

@@ -118,3 +118,15 @@ The version stamp of the event rule that fired an alert, stored on the alert row
 its alert-time price so base rates are always computed against the rule that produced
 the alert.
 _Avoid_: model version, config hash
+
+**Poll boundary**:
+The UTC :00 or :30 instant a popularity snapshot is stored under; the floor of the fetch time, and part of an attention-surge alert's dedup key.
+_Avoid_: poll time (the fetch instant), tick
+
+**Token gate**:
+The shared state in ingest that says the Schwab token is dead; while it is tripped, Schwab jobs are skipped and other jobs keep running, and it clears when a newer token is stored.
+_Avoid_: circuit breaker (it trips on one dead token, not an error rate)
+
+**Failed-to-post**:
+An alert whose `post_attempts` reached the bot's cap with `posted_at` still NULL; it stays in the alerts table and an operator re-queues it by hand.
+_Avoid_: dead letter, outbox

@@ -7,15 +7,15 @@ reproducible without a socket. Session bounds match the aggregator tests:
 """
 
 import asyncio
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 import pytest
 from authlib.integrations.base_client import OAuthError
 
 from rs_ingest.sources.live import LiveEventSource, ReconnectPolicy
 
-OPEN = datetime(2026, 7, 6, 13, 30, tzinfo=timezone.utc)
-CLOSE = datetime(2026, 7, 6, 20, 0, tzinfo=timezone.utc)
+OPEN = datetime(2026, 7, 6, 13, 30, tzinfo=UTC)
+CLOSE = datetime(2026, 7, 6, 20, 0, tzinfo=UTC)
 GRACE = timedelta(seconds=30)
 AFTER_STOP = CLOSE + GRACE + timedelta(seconds=1)
 
@@ -159,6 +159,13 @@ def test_backoff_resets_after_stable_connection():
     policy.next_backoff(None)
     assert policy.next_backoff(120.0) == 1.0  # survived >= 60s → counter reset
     assert policy.total_reconnects == 3
+
+
+def test_backoff_survives_a_very_long_outage():
+    # float(2**1024) overflows; the cap must hold well past that many failures.
+    policy = ReconnectPolicy()
+    policy.consecutive_failures = 1023
+    assert [policy.next_backoff(None) for _ in range(3)] == [30, 30, 30]
 
 
 def test_short_lived_connection_is_not_stable():

@@ -1,12 +1,12 @@
 """Ports — the binding replay seams (ADR-0023) and the calendar seam (S002).
 
 Implementations live outside rs_domain: live/recorded event sources come with
-S003; the pandas-market-calendars adapter lives in rs_sources.
+S003; the exchange_calendars adapter lives in rs_sources.
 """
 
-from collections.abc import Sequence
+from collections.abc import AsyncIterator, Sequence
 from datetime import date, datetime
-from typing import AsyncIterator, Protocol
+from typing import Protocol
 
 from rs_domain.events import BarClosed
 from rs_domain.models import Alert, Bar
@@ -63,10 +63,6 @@ class TradingCalendar(Protocol):
         """Close instant for a session day — early closes included; raises if not a session."""
         ...
 
-    def next_session(self, day: date) -> date:
-        """First session day strictly after `day`."""
-        ...
-
-    def previous_session(self, day: date) -> date:
-        """Last session day strictly before `day`."""
+    def sessions_in_range(self, start: date, end: date) -> Sequence[date]:
+        """Session days from `start` to `end`, both inclusive, in order."""
         ...

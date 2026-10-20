@@ -18,9 +18,9 @@ owns observability and turns the returned counts into metrics/status.
 """
 
 from dataclasses import dataclass
-from datetime import date, datetime, timezone
+from datetime import UTC, date, datetime
 from itertools import groupby
-from typing import Any
+from typing import Any, Literal
 
 from rs_domain import OptionQuote
 
@@ -96,6 +96,9 @@ def _apply_row_cap(rows: list[OptionQuote], row_cap: int) -> tuple[list[OptionQu
     return kept, len(rows) - len(kept)
 
 
+_PUT_CALL: dict[str, Literal["C", "P"]] = {"CALL": "C", "PUT": "P"}
+
+
 def _parse_contract(
     expiry: date, contract: dict[str, Any], underlying_price: float | None
 ) -> OptionQuote:
@@ -104,7 +107,7 @@ def _parse_contract(
         option_symbol=contract["symbol"],
         expiry=expiry,
         strike=contract["strikePrice"],
-        put_call={"CALL": "C", "PUT": "P"}[contract["putCall"]],
+        put_call=_PUT_CALL[contract["putCall"]],
         quote_time=_from_epoch_ms(contract.get("quoteTimeInLong")),
         bid=contract.get("bid"),
         ask=contract.get("ask"),
@@ -133,7 +136,7 @@ def _from_epoch_ms(value: Any) -> datetime | None:
     """Epoch-ms wire timestamps; <=0 (never quoted/traded) is absence, not 1970."""
     if not isinstance(value, int | float) or value <= 0:
         return None
-    return datetime.fromtimestamp(value / 1000, tz=timezone.utc)
+    return datetime.fromtimestamp(value / 1000, tz=UTC)
 
 
 def _greek(value: Any) -> float | None:

@@ -17,12 +17,19 @@ import asyncio
 import logging
 import sys
 from dataclasses import dataclass
-from datetime import date, datetime, timedelta, timezone
-from typing import NamedTuple
+from datetime import UTC, date, datetime, timedelta
+from typing import Any, NamedTuple
 
-from rs_ingest.schwab_client import TokenMissingError, build_schwab_client
-from rs_ingest.settings import IngestSettings
-from rs_persistence import BarRepository, SchwabTokenStore, build_engine, build_session_factory
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
+
+from rs_ingest.settings import LOGIN_HINT, IngestSettings
+from rs_persistence import (
+    BarRepository,
+    SchwabTokenStore,
+    build_engine,
+    build_session_factory,
+)
+from rs_sources.schwab import TokenMissingError, build_schwab_client
 
 logger = logging.getLogger(__name__)
 
@@ -73,7 +80,7 @@ class Comparison:
 
     @property
     def max_price_dev(self) -> float:
-        return max((d.price_dev for d in self.matched), default=0.0)
+        return max((d.price_dev for d in self.matched if d.price_dev is not None), default=0.0)
 
     def within_tolerance(self, tol: float = PRICE_TOLERANCE) -> bool:
         # Gate on price (the plan's acceptance criterion); coverage gaps are
@@ -110,7 +117,7 @@ def format_report(result: Comparison, symbol: str, day: date) -> str:
         f"  matched {len(result.matched)}  stream-only {len(result.stream_only)}  rest-only {len(result.rest_only)}",
         f"  max price deviation {result.max_price_dev:.4f}  (tolerance {PRICE_TOLERANCE})  -> {verdict}",
     ]
-    for d in sorted(result.matched, key=lambda d: d.price_dev, reverse=True)[:5]:
+    for d in sorted(result.matched, key=lambda d: d.price_dev or 0.0, reverse=True)[:5]:
         vol = "n/a" if d.volume_pct is None else f"{d.volume_pct:+.1f}%"
         lines.append(f"    {d.bucket:%H:%M}  dev {d.price_dev:.4f} ({d.worst_field})  vol {vol}")
     for bucket in result.rest_only:
@@ -120,14 +127,16 @@ def format_report(result: Comparison, symbol: str, day: date) -> str:
     return "\n".join(lines)
 
 
-async def fetch_stream_bars(session_factory, symbol: str, day: date) -> dict[datetime, Ohlcv]:
+async def fetch_stream_bars(
+    session_factory: async_sessionmaker[AsyncSession], symbol: str, day: date
+) -> dict[datetime, Ohlcv]:
     async with session_factory() as session:
         bars = await BarRepository(session).list_for_day(symbol, day)
     return {b.bucket: Ohlcv(b.open, b.high, b.low, b.close, float(b.volume)) for b in bars}
 
 
-async def fetch_rest_candles(client, symbol: str, day: date) -> dict[datetime, Ohlcv]:
-    start = datetime(day.year, day.month, day.day, tzinfo=timezone.utc)
+async def fetch_rest_candles(client: Any, symbol: str, day: date) -> dict[datetime, Ohlcv]:
+    start = datetime(day.year, day.month, day.day, tzinfo=UTC)
     end = start + timedelta(days=1)
     resp = await client.get_price_history_every_five_minutes(
         symbol,
@@ -143,7 +152,7 @@ async def fetch_rest_candles(client, symbol: str, day: date) -> dict[datetime, O
     return {
         ts: Ohlcv(c["open"], c["high"], c["low"], c["close"], float(c["volume"]))
         for c in resp.json()["candles"]
-        if start <= (ts := datetime.fromtimestamp(c["datetime"] / 1000, tz=timezone.utc)) < end
+        if start <= (ts := datetime.fromtimestamp(c["datetime"] / 1000, tz=UTC)) < end
     }
 
 
@@ -152,9 +161,13 @@ async def _run(settings: IngestSettings, symbol: str, day: date) -> int:
     try:
         session_factory = build_session_factory(engine)
         try:
-            client = await build_schwab_client(settings, SchwabTokenStore(session_factory))
+            client = await build_schwab_client(
+                settings.schwab_api_key,
+                settings.schwab_api_secret.get_secret_value(),
+                SchwabTokenStore(session_factory),
+            )
         except TokenMissingError as exc:
-            logger.error("%s", exc)
+            logger.error("%s - %s", exc, LOGIN_HINT)
             return 1
         stream = await fetch_stream_bars(session_factory, symbol, day)
         rest = await fetch_rest_candles(client, symbol, day)

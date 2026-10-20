@@ -1,23 +1,19 @@
-"""AlertRepository: the alerts row, its outbox ledger row, and the Bus-2
-NOTIFY are one atomic unit (grilling #4/#6). A raw LISTEN connection witnesses
-that the notify arrives only at commit, carrying the alert id."""
+"""AlertRepository: the alerts row and the Bus-2 NOTIFY are one atomic unit
+(grilling #4/#6). A raw LISTEN connection witnesses that the notify arrives only
+at commit, carrying the alert id."""
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 import psycopg
 from sqlalchemy import func, select, text
 
 from rs_domain import Alert
-from rs_persistence import (
-    AlertRepository,
-    AlertRow,
-    OutboxRow,
-)
+from rs_persistence import AlertRepository, AlertRow
 
 ALERT = Alert(
     symbol="SPY",
     alert_type="volume_threshold",
-    triggered_at=datetime(2026, 7, 6, 14, 30, tzinfo=timezone.utc),
+    triggered_at=datetime(2026, 7, 6, 14, 30, tzinfo=UTC),
     payload={"volume": 750_000, "threshold": 500_000},
 )
 
@@ -31,40 +27,71 @@ async def _count(session_factory, model) -> int:
         return await s.scalar(select(func.count()).select_from(model))
 
 
-async def test_insert_writes_alert_and_outbox_atomically(session_factory):
+async def test_insert_writes_the_alert_row(session_factory):
     async with session_factory() as s:
         alert_id = await AlertRepository(s).insert(ALERT)
         await s.commit()
 
     assert await _count(session_factory, AlertRow) == 1
-    assert await _count(session_factory, OutboxRow) == 1
     async with session_factory() as s:
-        alert = await s.get(AlertRow, alert_id)
-        outbox = await s.scalar(select(OutboxRow))
-    assert alert.symbol == "SPY"
-    assert alert.payload == {"volume": 750_000, "threshold": 500_000}
-    assert alert.posted_at is None  # the bot stamps this on delivery (S004)
-    # Ledger row stands alone: id + the full alert content, no join needed. The
-    # shape is pinned with literals (not re-derived from ALERT.model_dump) so a
-    # serialization change — e.g. triggered_at drifting off ISO-8601 — fails
-    # here instead of silently breaking the S004 bot that parses this ledger.
-    assert outbox.event_type == "alert_created"
-    assert outbox.payload == {
-        "alert_id": alert_id,
-        "symbol": "SPY",
-        "alert_type": "volume_threshold",
-        "triggered_at": "2026-07-06T14:30:00Z",
-        "payload": {"volume": 750_000, "threshold": 500_000},
-    }
+        row = await s.get(AlertRow, alert_id)
+    assert row.symbol == "SPY"
+    assert row.payload == {"volume": 750_000, "threshold": 500_000}
+    assert row.posted_at is None  # the bot stamps this on delivery (S004)
+    assert row.post_attempts == 0
+    assert (row.rule_version, row.alert_price, row.quote_time, row.dedup_key) == (None,) * 4
 
 
-async def test_rollback_persists_neither_row(session_factory):
-    # A failure before commit must drop the alert AND its outbox row together.
+async def test_insert_stores_the_rule_fields(session_factory):
+    quote_time = datetime(2026, 7, 6, 14, 29, 58, tzinfo=UTC)
+    versioned = ALERT.model_copy(
+        update={
+            "rule_version": "1",
+            "alert_price": 123.45,
+            "quote_time": quote_time,
+            "dedup_key": "attention_surge:1:SPY:20260706T1430Z",
+        }
+    )
+    async with session_factory() as s:
+        await AlertRepository(s).insert(versioned)
+        await s.commit()
+
+    async with session_factory() as s:
+        assert await AlertRepository(s).list_decisions() == [versioned]
+
+
+async def test_same_dedup_key_inserts_once_and_notifies_once(session_factory, migrated_db_url):
+    keyed = ALERT.model_copy(update={"dedup_key": "k1"})
+    raw_dsn = migrated_db_url.replace("+psycopg", "")
+    async with await psycopg.AsyncConnection.connect(raw_dsn, autocommit=True) as listener:
+        await listener.execute("LISTEN alerts")
+        async with session_factory() as s:
+            first = await AlertRepository(s).insert(keyed)
+            await s.commit()
+        async with session_factory() as s:
+            second = await AlertRepository(s).insert(keyed)
+            await s.commit()
+        got = [n async for n in listener.notifies(timeout=1, stop_after=2)]
+
+    assert first is not None and second is None
+    assert await _count(session_factory, AlertRow) == 1
+    assert [n.payload for n in got] == [str(first)]
+
+
+async def test_alerts_without_dedup_key_never_conflict(session_factory):
+    async with session_factory() as s:
+        repo = AlertRepository(s)
+        ids = [await repo.insert(ALERT), await repo.insert(ALERT)]
+        await s.commit()
+    assert None not in ids
+    assert await _count(session_factory, AlertRow) == 2
+
+
+async def test_rollback_persists_nothing(session_factory):
     async with session_factory() as s:
         await AlertRepository(s).insert(ALERT)
         await s.rollback()
     assert await _count(session_factory, AlertRow) == 0
-    assert await _count(session_factory, OutboxRow) == 0
 
 
 async def test_listen_receives_notify_only_at_commit(session_factory, migrated_db_url):
@@ -160,7 +187,7 @@ async def test_mark_posted_is_idempotent(session_factory):
 
 async def test_multiple_alerts_share_one_transaction(session_factory, migrated_db_url):
     # The caller-commits design allows batching a session's alerts; each gets a
-    # distinct id, its own outbox row, and its own NOTIFY at the shared commit.
+    # distinct id and its own NOTIFY at the shared commit.
     raw_dsn = migrated_db_url.replace("+psycopg", "")
     async with await psycopg.AsyncConnection.connect(raw_dsn, autocommit=True) as listener:
         await listener.execute("LISTEN alerts")
@@ -173,5 +200,39 @@ async def test_multiple_alerts_share_one_transaction(session_factory, migrated_d
 
     assert id_a != id_b
     assert await _count(session_factory, AlertRow) == 2
-    assert await _count(session_factory, OutboxRow) == 2
     assert sorted(n.payload for n in got) == sorted([str(id_a), str(id_b)])
+
+
+async def test_increment_post_attempts_counts_and_caps_the_sweep(session_factory):
+    async with session_factory() as s:
+        repo = AlertRepository(s)
+        id_a = await repo.insert(_alert("AAA"))
+        id_b = await repo.insert(_alert("BBB"))
+        await s.commit()
+
+    async with session_factory() as s:
+        repo = AlertRepository(s)
+        assert await repo.increment_post_attempts(id_a) == 1
+        assert await repo.increment_post_attempts(id_a) == 2
+        await s.commit()
+
+    async with session_factory() as s:
+        repo = AlertRepository(s)
+        pending = await repo.list_unposted()
+        assert [(p.id, p.post_attempts) for p in pending] == [(id_a, 2), (id_b, 0)]
+        # At the cap the alert leaves the sweep but stays unposted.
+        assert [p.id for p in await repo.list_unposted(max_attempts=2)] == [id_b]
+        assert [p.id for p in await repo.list_unposted(max_attempts=3)] == [id_a, id_b]
+
+
+async def test_increment_post_attempts_ignores_posted_and_unknown(session_factory):
+    async with session_factory() as s:
+        repo = AlertRepository(s)
+        alert_id = await repo.insert(ALERT)
+        await repo.mark_posted(alert_id)
+        await s.commit()
+
+    async with session_factory() as s:
+        repo = AlertRepository(s)
+        assert await repo.increment_post_attempts(alert_id) is None
+        assert await repo.increment_post_attempts(alert_id + 999) is None

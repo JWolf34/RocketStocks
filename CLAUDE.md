@@ -99,12 +99,24 @@ uv sync --all-packages
 # Lint v2 members (legacy is never linted — code freeze)
 .venv/bin/ruff check libs services tools
 
-# Clock-discipline gate (no ambient time in domain code — ADR-0023)
+# Type-check v2 members (mypy + pydantic plugin; config in root pyproject.toml)
+.venv/bin/mypy
+
+# Import-layer contracts (import-linter; contracts in root pyproject.toml).
+# A new member needs a line in root_packages and in each contract that covers it.
+.venv/bin/lint-imports
+
+# Clock-discipline gate (no ambient time in v2 src - ADR-0023)
 scripts/check_clock_discipline.sh
 
+# Migrations vs ORM models (run against a migrated DB; fails on drift)
+RS_DB_URL=postgresql+psycopg://... .venv/bin/python -m rs_migrate check
+
 # v2 DB tests need a TimescaleDB (skip visibly otherwise); spec container:
-#   docker run -d --rm -p 5499:5432 -e POSTGRES_PASSWORD=t timescale/timescaledb:latest-pg16
-# Override target with RS_TEST_DB_URL. Migrations CLI (DSN via RS_DB_URL):
+#   docker run -d --rm -p 5499:5432 -e POSTGRES_PASSWORD=t timescale/timescaledb:2.30.2-pg16
+# Set RS_TEST_DB_URL to make DB tests mandatory (unreachable = failure, as in CI).
+# Migrations CLI (DSN via RS_DB_URL; upgrade also applies the per-service roles and
+# needs RS_DB_PASSWORD_{INGEST,BOT,SERVE,RESEARCH}, or pass --skip-roles on a bare dev DB):
 RS_DB_URL=postgresql+psycopg://... .venv/bin/python -m rs_migrate upgrade
 
 # Backtesting CLI
@@ -113,11 +125,16 @@ RS_DB_URL=postgresql+psycopg://... .venv/bin/python -m rs_migrate upgrade
 # Docker (v1 image builds from legacy/ via the root Dockerfile)
 docker compose up -d
 
-# v2 stack (S006): TimescaleDB (127.0.0.1:5498) + one-shot migrate gate +
+# v2 stack: TimescaleDB (127.0.0.1:5498) + one-shot migrate gate +
 # ingest/serve/bot from the shared Dockerfile.v2 image; JSON logs with
 # correlation_id; metrics on 127.0.0.1:9090 (ingest) / :9091 (bot).
 # Needs RS_DB_PASSWORD + service credentials in .env.
 docker compose -f docker-compose.v2.yml up -d
+
+# v2 operator tools (host-side, shared venv; exact procedures in docs/foundation/runbooks/slice-1.md)
+.venv/bin/python -m rs_backfill verify-offset --dump PATH   # then popularity-import --dump PATH --zone ZONE
+.venv/bin/python -m rs_ingest.tools.login                   # first Schwab login; later logins use /setup schwab
+RS_RESEARCH_DB_URL=... .venv/bin/python -m rs_research event-study attention_surge
 ```
 
 ## Environment Variables (`.env`)

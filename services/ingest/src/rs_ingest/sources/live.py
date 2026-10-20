@@ -74,7 +74,9 @@ class ReconnectPolicy:
         )
         self.consecutive_failures = 0 if was_stable else self.consecutive_failures + 1
         self.total_reconnects += 1
-        return min(self.cap_seconds, float(2**self.consecutive_failures))
+        # Exponent clamped: float(2**1024) overflows, and anything past ~16 is
+        # far above every sane cap anyway.
+        return min(self.cap_seconds, 2.0 ** min(self.consecutive_failures, 16))
 
 
 class LiveEventSource:

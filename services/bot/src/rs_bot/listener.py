@@ -1,7 +1,7 @@
 """The LISTEN half of Bus-2 (ADR-0005): a dedicated psycopg AsyncConnection in
 autocommit holds LISTEN and turns every NOTIFY into a wake of the sweep worker.
 The payload (alert id) is logged, never consumed as the work item — the row
-is the truth, the sweep is the consumer (spec pin #3).
+is the truth, the sweep is the consumer.
 
 Finding-3 cover is structural: a dropped connection reconnects with capped
 backoff, and EVERY (re)connect sets the wake event, so "sweep on reconnect"

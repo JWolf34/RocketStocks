@@ -1,7 +1,7 @@
 """Pipeline: the Bus-1 persister -> detector fan-out (S003 B6c).
 
-These are orchestration tests — the repositories' DB behavior (atomic alert +
-outbox + NOTIFY, rollback) is proven in libs/persistence's test_alert_repository
+These are orchestration tests - the repositories' DB behavior (atomic alert row +
+NOTIFY, rollback) is proven in libs/persistence's test_alert_repository
 against a real database. Here BarRepository/AlertRepository are faked so we can
 pin the *ordering and failure semantics* the pipeline owns: persist-before-detect,
 two independent transactions per bar, the ADR-0008 error boundary (a raising
@@ -11,7 +11,7 @@ transactions so the two-transaction structure is visible.
 """
 
 import logging
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 import pytest
 
@@ -22,7 +22,7 @@ from rs_ingest.pipeline import Pipeline
 from rs_observability.testing import captured_json_stream, json_records
 from rs_persistence import NOTIFY_CHANNEL
 
-BUCKET0 = datetime(2026, 7, 6, 13, 30, tzinfo=timezone.utc)
+BUCKET0 = datetime(2026, 7, 6, 13, 30, tzinfo=UTC)
 
 
 def bar(volume: int, *, i: int = 0, close: float = 100.0) -> Bar:
@@ -208,7 +208,7 @@ async def test_detector_error_is_swallowed_and_capture_continues(rec):
     await p.run(FakeSource([closed(bar(10, i=0)), closed(bar(20, i=1))]))
 
     # Both bars still persist; the raising detector is logged + counted, never
-    # fatal — capture is not stopped by a misbehaving rule.
+    # fatal - capture is not stopped by a misbehaving rule.
     assert p.counters["bars_persisted"] == 2
     assert p.counters["detector_errors"] == 2
     assert p.counters["alerts_emitted"] == 0
@@ -230,7 +230,7 @@ async def test_persister_failure_crashes_loud(rec, monkeypatch):
 
 
 async def test_alert_write_failure_is_tolerated_and_capture_continues(rec, monkeypatch, caplog):
-    # Wide boundary (criticality tiering): a failed alert write is Tier-2 —
+    # Wide boundary (criticality tiering): a failed alert write is Tier-2 -
     # tolerated, counted, and logged with its payload, never fatal to Tier-1 bar
     # capture. Both bars stay durable and the second still flows after the first
     # bar's alert write blows up.
@@ -270,7 +270,7 @@ async def test_dispatch_records_carry_correlation_id_and_domain_keys(rec, json_s
     assert record["bucket"] == BUCKET0.isoformat()
     assert record["correlation_id"]
     # The cross-service join key (S006 pin #3): ingest's insert log carries the
-    # alert id the bot's post log will also carry — tracing joins on it.
+    # alert id the bot's post log will also carry - tracing joins on it.
     assert record["alert_id"] == 3  # FakeAlertRepo returns len(rec.log)
 
 

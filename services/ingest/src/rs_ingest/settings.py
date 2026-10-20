@@ -11,12 +11,14 @@ exit-1, never a silent default.
 """
 
 from pathlib import Path
-from typing import Annotated
+from typing import Annotated, Any
 
 from pydantic import Field, SecretStr, field_validator
 from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
-# The spike's 10 tickers (S008 bootstrap universe; static until S010's
+LOGIN_HINT = "run /setup schwab in Discord, or: python -m rs_ingest.tools.login"
+
+# The spike's 10 tickers (the bootstrap universe; static until a later slice's
 # universe management replaces it).
 BOOTSTRAP_UNIVERSE = ["AAPL", "AMD", "AMZN", "GOOGL", "META", "MSFT", "NVDA", "QQQ", "SPY", "TSLA"]
 
@@ -28,7 +30,11 @@ class IngestSettings(BaseSettings):
     schwab_api_key: str
     schwab_api_secret: SecretStr
     schwab_callback_url: str = "https://127.0.0.1:8182"
+    # EDGAR requires a declared identity (e.g. "RocketStocks you@example.com").
+    rs_edgar_user_agent: str = Field(min_length=1)
 
+    # The stream and chain-scan settings below are unused by the daemon until
+    # slice 4 reshapes those modules.
     symbol: str = Field("SPY", validation_alias="RS_INGEST_SYMBOL")
     volume_threshold: int = Field(500_000, validation_alias="RS_INGEST_VOLUME_THRESHOLD")
     watchdog_grace_seconds: float = Field(30.0, validation_alias="RS_INGEST_WATCHDOG_GRACE_SECONDS")
@@ -38,6 +44,18 @@ class IngestSettings(BaseSettings):
     # (a source tee — orthogonal to persistence). Off by default; the B8 runbook
     # points it at a gitignored data/ path, then a curated excerpt is committed.
     fixture_path: Path | None = Field(None, validation_alias="RS_INGEST_FIXTURE_PATH")
+    # Daemon supervision: consecutive failures before one ops notice, how often
+    # a dead Schwab token is checked for renewal, and the bound on in-flight
+    # jobs at SIGTERM (compose stop_grace_period must exceed it).
+    job_failure_threshold: int = Field(3, ge=1, validation_alias="RS_INGEST_JOB_FAILURE_THRESHOLD")
+    token_poll_seconds: float = Field(60.0, gt=0, validation_alias="RS_INGEST_TOKEN_POLL_SECONDS")
+    shutdown_grace_seconds: float = Field(
+        30.0, ge=0, validation_alias="RS_INGEST_SHUTDOWN_GRACE_SECONDS"
+    )
+    # Fallback poll for `/setup schwab` requests; NOTIFY normally wakes the handler at once.
+    auth_poll_seconds: float = Field(15.0, gt=0, validation_alias="RS_INGEST_AUTH_POLL_SECONDS")
+    # Shared by every Schwab job through one limiter; the default sits under Schwab's per-minute cap.
+    schwab_calls_per_minute: int = Field(100, ge=1, validation_alias="RS_INGEST_SCHWAB_CALLS_PER_MINUTE")
     # The Bus-2 NOTIFY channel is intentionally NOT here: it is a pinned wire
     # contract shared with the bot (ADR-0005), not a per-deployment tunable —
     # rs_persistence.NOTIFY_CHANNEL is its single source of truth.
@@ -56,7 +74,7 @@ class IngestSettings(BaseSettings):
 
     @field_validator("chain_scan_universe", mode="before")
     @classmethod
-    def _split_universe(cls, value):
+    def _split_universe(cls, value: Any) -> Any:
         if isinstance(value, str):
             return [ticker.strip().upper() for ticker in value.split(",") if ticker.strip()]
         return value

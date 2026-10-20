@@ -2,6 +2,13 @@
 middleware as the data routes — any known unrevoked key passes (S005; scope
 narrowing is Phase 3)."""
 
+import asyncio
+
+import pytest
+from starlette.requests import Request
+
+from rs_serve.metrics import HttpMetrics, MetricsMiddleware
+
 
 async def test_metrics_requires_a_key(client):
     response = await client.get("/metrics")
@@ -47,3 +54,18 @@ async def test_bars_requests_labelled_by_route_template_and_status(client, bars_
     # Route template, not the raw path — label cardinality stays bounded.
     assert 'path="/v1/bars/{ticker}"' in exposition
     assert "http_request_duration_seconds" in exposition
+
+
+async def test_cancelled_request_propagates_cancellation():
+    # BaseException skips the status assignments; the finally must not mask
+    # the cancellation with an UnboundLocalError.
+    metrics = HttpMetrics()
+    middleware = MetricsMiddleware(app=None, metrics=metrics)
+    request = Request({"type": "http", "method": "GET", "path": "/v1/bars/SPY", "headers": []})
+
+    async def cancelled(_request):
+        raise asyncio.CancelledError
+
+    with pytest.raises(asyncio.CancelledError):
+        await middleware.dispatch(request, cancelled)
+    assert 'status="500"' in metrics.exposition().body.decode()
