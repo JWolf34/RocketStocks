@@ -32,7 +32,9 @@ def captured_json_stream(service: str) -> Iterator[io.StringIO]:
     saved_level = root.level
     configure_logging(service)
     buffer = io.StringIO()
-    root.handlers[0].setStream(buffer)
+    handler = root.handlers[0]
+    assert isinstance(handler, logging.StreamHandler)
+    handler.setStream(buffer)
     try:
         yield buffer
     finally:

@@ -7,6 +7,7 @@ is the single writer (ADR-0024).
 """
 
 import logging
+from typing import Any
 
 from schwab.auth import client_from_access_functions
 
@@ -22,7 +23,9 @@ class TokenMissingError(RuntimeError):
     pass
 
 
-async def build_schwab_client(settings: IngestSettings, token_store: SchwabTokenStore, use_asyncio: bool = True):
+async def build_schwab_client(
+    settings: IngestSettings, token_store: SchwabTokenStore, use_asyncio: bool = True
+) -> Any:
     token = await token_store.load()
     if token is None:
         raise TokenMissingError(LOGIN_HINT)

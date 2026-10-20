@@ -23,11 +23,10 @@ from typing import Protocol
 import discord
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from rs_observability import unit_of_work
-from rs_persistence import AlertRepository
-
 from rs_bot.counters import new_counters
 from rs_bot.render import render
+from rs_observability import unit_of_work
+from rs_persistence import AlertRepository
 
 logger = logging.getLogger(__name__)
 

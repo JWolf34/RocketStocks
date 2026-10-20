@@ -7,15 +7,15 @@ reproducible without a socket. Session bounds match the aggregator tests:
 """
 
 import asyncio
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 import pytest
 from authlib.integrations.base_client import OAuthError
 
 from rs_ingest.sources.live import LiveEventSource, ReconnectPolicy
 
-OPEN = datetime(2026, 7, 6, 13, 30, tzinfo=timezone.utc)
-CLOSE = datetime(2026, 7, 6, 20, 0, tzinfo=timezone.utc)
+OPEN = datetime(2026, 7, 6, 13, 30, tzinfo=UTC)
+CLOSE = datetime(2026, 7, 6, 20, 0, tzinfo=UTC)
 GRACE = timedelta(seconds=30)
 AFTER_STOP = CLOSE + GRACE + timedelta(seconds=1)
 

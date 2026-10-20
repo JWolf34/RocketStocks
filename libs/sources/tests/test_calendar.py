@@ -7,7 +7,7 @@ Dates used:
 - 2026-01-05 (Mon): regular session, EST (UTC-5) → open 14:30Z (DST coverage).
 """
 
-from datetime import date, datetime, timedelta, timezone
+from datetime import UTC, date, datetime, timedelta
 
 import pytest
 
@@ -34,12 +34,12 @@ class TestSessions:
 class TestSessionBounds:
     def test_regular_open_close_edt(self, cal):
         day = date(2026, 7, 6)
-        assert cal.session_open(day) == datetime(2026, 7, 6, 13, 30, tzinfo=timezone.utc)
-        assert cal.session_close(day) == datetime(2026, 7, 6, 20, 0, tzinfo=timezone.utc)
+        assert cal.session_open(day) == datetime(2026, 7, 6, 13, 30, tzinfo=UTC)
+        assert cal.session_close(day) == datetime(2026, 7, 6, 20, 0, tzinfo=UTC)
 
     def test_regular_open_est(self, cal):
         # Same 09:30 ET wall clock, different UTC instant across DST.
-        assert cal.session_open(date(2026, 1, 5)) == datetime(2026, 1, 5, 14, 30, tzinfo=timezone.utc)
+        assert cal.session_open(date(2026, 1, 5)) == datetime(2026, 1, 5, 14, 30, tzinfo=UTC)
 
     def test_early_close_thanksgiving_friday(self, cal):
         day = date(2026, 11, 27)

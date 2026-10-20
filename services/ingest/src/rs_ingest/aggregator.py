@@ -19,7 +19,8 @@ candles; its volume accrues to the baseline so neighbouring bars stay exact.
 
 import logging
 from dataclasses import dataclass
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
+from typing import Any
 
 from rs_domain import Bar
 
@@ -52,7 +53,7 @@ class Tick:
     cumulative_volume: int | None
 
 
-def _get(item: dict, field: str):
+def _get(item: dict, field: str) -> Any:
     value = item.get(field)
     return value if value is not None else item.get(_FIELD_ALIASES[field])
 
@@ -238,7 +239,7 @@ class BarAggregator:
         self.counters["bars_built"] += 1
         bar = Bar(
             symbol=self.symbol,
-            bucket=datetime.fromtimestamp(start / 1000, tz=timezone.utc),
+            bucket=datetime.fromtimestamp(start / 1000, tz=UTC),
             volume=volume,
             **ohlc,
         )
@@ -247,4 +248,4 @@ class BarAggregator:
 
 
 def _fmt(epoch_ms: int) -> str:
-    return datetime.fromtimestamp(epoch_ms / 1000, tz=timezone.utc).strftime("%H:%M")
+    return datetime.fromtimestamp(epoch_ms / 1000, tz=UTC).strftime("%H:%M")

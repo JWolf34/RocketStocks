@@ -3,20 +3,19 @@ raw payload numbers shown as-is (ADR-0026 transparency), alert id in the
 footer. A render exception yields the generic fallback embed — an alert can
 be render-ugly, never render-poisoned (spec pin #5a)."""
 
-from datetime import datetime, timezone
-
-from rs_domain import Alert
-from rs_persistence import PendingAlert
+from datetime import UTC, datetime
 
 import rs_bot.render
 from rs_bot.render import render
+from rs_domain import Alert
+from rs_persistence import PendingAlert
 
 PENDING = PendingAlert(
     id=42,
     alert=Alert(
         symbol="SPY",
         alert_type="volume_threshold",
-        triggered_at=datetime(2026, 7, 6, 14, 30, tzinfo=timezone.utc),
+        triggered_at=datetime(2026, 7, 6, 14, 30, tzinfo=UTC),
         payload={"volume": 750_000, "threshold": 500_000},
     ),
 )

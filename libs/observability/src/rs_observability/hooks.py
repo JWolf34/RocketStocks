@@ -12,6 +12,8 @@ import asyncio
 import logging
 import sys
 import threading
+from types import TracebackType
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -34,7 +36,9 @@ def install_excepthooks() -> None:
         loop.set_exception_handler(_asyncio_handler)
 
 
-def _sys_hook(exc_type, exc_value, exc_tb) -> None:
+def _sys_hook(
+    exc_type: type[BaseException], exc_value: BaseException, exc_tb: TracebackType | None
+) -> None:
     if issubclass(exc_type, KeyboardInterrupt):
         sys.__excepthook__(exc_type, exc_value, exc_tb)  # Ctrl-C is not an error
         return
@@ -43,14 +47,14 @@ def _sys_hook(exc_type, exc_value, exc_tb) -> None:
 
 def _threading_hook(args: threading.ExceptHookArgs) -> None:
     thread_name = args.thread.name if args.thread is not None else "<unknown>"
-    logger.error(
-        "unhandled exception in thread %s",
-        thread_name,
-        exc_info=(args.exc_type, args.exc_value, args.exc_traceback),
+    # The hook contract allows exc_value None; log without a traceback then.
+    exc_info = (
+        (args.exc_type, args.exc_value, args.exc_traceback) if args.exc_value is not None else None
     )
+    logger.error("unhandled exception in thread %s", thread_name, exc_info=exc_info)
 
 
-def _asyncio_handler(loop: asyncio.AbstractEventLoop, context: dict) -> None:
+def _asyncio_handler(loop: asyncio.AbstractEventLoop, context: dict[str, Any]) -> None:
     # context always carries "message"; "exception" only when one escaped
     # (the handler also fires for e.g. resource leaks — still worth a record).
     logger.error(

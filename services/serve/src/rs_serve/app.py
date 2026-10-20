@@ -4,6 +4,7 @@ is eager, so test clients that skip lifespan startup still get a working app).
 """
 
 import logging
+from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request
@@ -45,7 +46,7 @@ def create_app(settings: ServeSettings | None = None) -> FastAPI:
     metrics = HttpMetrics()
 
     @asynccontextmanager
-    async def lifespan(app: FastAPI):
+    async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         # The running-loop half of the S006 excepthook wiring: asyncio's
         # handler can only attach once uvicorn's loop exists.
         install_excepthooks()

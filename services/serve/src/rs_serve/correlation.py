@@ -11,7 +11,7 @@ fields. The one "request completed" record replaces uvicorn's access line
 
 import logging
 
-from starlette.middleware.base import BaseHTTPMiddleware
+from starlette.middleware.base import BaseHTTPMiddleware, RequestResponseEndpoint
 from starlette.requests import Request
 from starlette.responses import Response
 
@@ -25,7 +25,7 @@ CORRELATION_HEADER = "X-Correlation-ID"
 class CorrelationMiddleware(BaseHTTPMiddleware):
     """Outermost middleware: auth rejections are units of work too."""
 
-    async def dispatch(self, request: Request, call_next) -> Response:
+    async def dispatch(self, request: Request, call_next: RequestResponseEndpoint) -> Response:
         with unit_of_work(method=request.method, route=request.url.path) as correlation_id:
             # Stashed for the catch-all 500 handler, which runs in Starlette's
             # outermost ServerErrorMiddleware — after this context has exited.

@@ -8,23 +8,22 @@ the cursor semantics run against the real ephemeral Postgres (ADR-0023 tier)."""
 
 import asyncio
 import logging
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 import pytest
 
-from rs_domain import Alert
-from rs_persistence import AlertRepository
-
 from rs_bot.counters import new_counters
 from rs_bot.sweep import SweepWorker
+from rs_domain import Alert
 from rs_observability.testing import captured_json_stream, json_records
+from rs_persistence import AlertRepository
 
 
 def _alert(symbol: str) -> Alert:
     return Alert(
         symbol=symbol,
         alert_type="volume_threshold",
-        triggered_at=datetime(2026, 7, 6, 14, 30, tzinfo=timezone.utc),
+        triggered_at=datetime(2026, 7, 6, 14, 30, tzinfo=UTC),
         payload={"volume": 750_000, "threshold": 500_000},
     )
 

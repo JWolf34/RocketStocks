@@ -11,7 +11,7 @@ transactions so the two-transaction structure is visible.
 """
 
 import logging
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 import pytest
 
@@ -22,7 +22,7 @@ from rs_ingest.pipeline import Pipeline
 from rs_observability.testing import captured_json_stream, json_records
 from rs_persistence import NOTIFY_CHANNEL
 
-BUCKET0 = datetime(2026, 7, 6, 13, 30, tzinfo=timezone.utc)
+BUCKET0 = datetime(2026, 7, 6, 13, 30, tzinfo=UTC)
 
 
 def bar(volume: int, *, i: int = 0, close: float = 100.0) -> Bar:

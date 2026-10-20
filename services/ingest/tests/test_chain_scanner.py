@@ -3,12 +3,12 @@ fake store; no ambient time, no network, no DB. A synthetic stale-response
 sequence replays from builders."""
 
 import asyncio
-from datetime import date, datetime, timedelta, timezone
+from datetime import UTC, date, datetime, timedelta
 
 from rs_domain import Dataset, SourceStatus
 from rs_ingest.chain_scanner import ChainScanner
 
-UTC = timezone.utc
+UTC = UTC
 DAY = date(2026, 7, 6)
 OPEN = datetime(2026, 7, 6, 13, 30, tzinfo=UTC)
 

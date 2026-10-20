@@ -1,12 +1,12 @@
 """BarAggregator unit tests over synthetic tick sequences (invented numbers;
 no vendor recordings are committed)."""
 
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 from rs_ingest.aggregator import BUCKET_MS, BarAggregator
 
-SESSION_OPEN = datetime(2026, 7, 6, 13, 30, tzinfo=timezone.utc)
-SESSION_CLOSE = datetime(2026, 7, 6, 20, 0, tzinfo=timezone.utc)
+SESSION_OPEN = datetime(2026, 7, 6, 13, 30, tzinfo=UTC)
+SESSION_CLOSE = datetime(2026, 7, 6, 20, 0, tzinfo=UTC)
 OPEN_MS = int(SESSION_OPEN.timestamp() * 1000)
 CLOSE_MS = int(SESSION_CLOSE.timestamp() * 1000)
 

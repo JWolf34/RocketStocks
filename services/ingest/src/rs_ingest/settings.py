@@ -11,7 +11,7 @@ exit-1, never a silent default.
 """
 
 from pathlib import Path
-from typing import Annotated
+from typing import Annotated, Any
 
 from pydantic import Field, SecretStr, field_validator
 from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
@@ -56,7 +56,7 @@ class IngestSettings(BaseSettings):
 
     @field_validator("chain_scan_universe", mode="before")
     @classmethod
-    def _split_universe(cls, value):
+    def _split_universe(cls, value: Any) -> Any:
         if isinstance(value, str):
             return [ticker.strip().upper() for ticker in value.split(",") if ticker.strip()]
         return value

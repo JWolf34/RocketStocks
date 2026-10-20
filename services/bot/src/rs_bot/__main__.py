@@ -21,6 +21,10 @@ import sys
 import discord
 from pydantic import ValidationError
 
+from rs_bot.counters import new_counters
+from rs_bot.listener import ListenLoop
+from rs_bot.settings import BotSettings
+from rs_bot.sweep import SweepWorker
 from rs_observability import (
     DictCounterCollector,
     configure_logging,
@@ -28,11 +32,6 @@ from rs_observability import (
     start_metrics_server,
 )
 from rs_persistence import NOTIFY_CHANNEL, build_engine, build_session_factory
-
-from rs_bot.counters import new_counters
-from rs_bot.listener import ListenLoop
-from rs_bot.settings import BotSettings
-from rs_bot.sweep import SweepWorker
 
 logger = logging.getLogger(__name__)
 
@@ -112,8 +111,8 @@ async def run_bot(settings: BotSettings) -> int:
         done, _ = await asyncio.wait({sweep_task, gateway_task}, return_when=asyncio.FIRST_COMPLETED)
 
         if sweep_task in done:
-            if (exc := sweep_task.exception()) is not None:
-                logger.error("sweep worker crashed", exc_info=exc)
+            if (sweep_exc := sweep_task.exception()) is not None:
+                logger.error("sweep worker crashed", exc_info=sweep_exc)
                 return 1
             logger.info("shutdown requested — in-flight post finished")
             return 0

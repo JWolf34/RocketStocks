@@ -2,7 +2,7 @@
 candle mapping. The DB read (BarRepository.list_for_day) is tested in
 libs/persistence; the live Schwab REST call is exercised in the B8 acceptance run."""
 
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 import pytest
 
@@ -14,7 +14,7 @@ from rs_ingest.tools.compare_bars import (
     format_report,
 )
 
-B0 = datetime(2026, 7, 6, 13, 30, tzinfo=timezone.utc)
+B0 = datetime(2026, 7, 6, 13, 30, tzinfo=UTC)
 
 
 def bkt(i: int) -> datetime:
