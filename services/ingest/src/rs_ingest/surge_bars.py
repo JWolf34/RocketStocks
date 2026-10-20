@@ -66,7 +66,9 @@ class SurgeBarsReport:
 
 @dataclass(frozen=True)
 class _Need:
-    first_event: date
+    # The first session on or after the first event: the earliest bar the event study cannot do without.
+    anchor: date
+    # Where a fetch begins: the lookback before the event.
     start: date
 
 
@@ -98,9 +100,9 @@ async def first_event_dates(
 
 
 def lookback_start(calendar: TradingCalendar, day: date) -> date:
-    """The first of the LOOKBACK_SESSIONS sessions ending at `day`."""
+    """The session LOOKBACK_SESSIONS sessions before `day` (or the earliest in range)."""
     sessions = calendar.sessions_in_range(day - timedelta(days=LOOKBACK_CALENDAR_DAYS), day)
-    return sessions[-LOOKBACK_SESSIONS:][0] if sessions else day
+    return sessions[-(LOOKBACK_SESSIONS + 1) :][0] if sessions else day
 
 
 def last_settled_session(calendar: TradingCalendar, now: datetime) -> date:
@@ -112,26 +114,28 @@ def last_settled_session(calendar: TradingCalendar, now: datetime) -> date:
 
 
 def _needs(event_dates: Mapping[str, date], calendar: TradingCalendar, last_session: date) -> dict[str, _Need]:
-    needs = {
-        ticker: _Need(first_event=day, start=lookback_start(calendar, day))
-        for ticker, day in event_dates.items()
-    }
+    def need(day: date) -> _Need:
+        # A weekend or holiday event is anchored on the next session, so a listing that
+        # starts there is complete; the 10 days always reach one.
+        following = calendar.sessions_in_range(day, day + timedelta(days=10))
+        return _Need(anchor=following[0] if following else day, start=lookback_start(calendar, day))
+
+    needs = {ticker: need(day) for ticker, day in event_dates.items()}
     # The benchmark must cover every event, so it starts at the earliest one.
-    earliest = min(event_dates.values(), default=last_session)
-    needs[BENCHMARK] = _Need(first_event=earliest, start=lookback_start(calendar, earliest))
+    needs[BENCHMARK] = need(min(event_dates.values(), default=last_session))
     return needs
 
 
 def _fetch_from(need: _Need, stored: tuple[date, date] | None, last_session: date) -> date | None:
     """Where this symbol's fetch must start, or None when it is complete.
 
-    Bars before the first event are padding: a listing younger than the
-    lookback has none, so only bars missing at or before the event count as a gap.
+    Bars before the anchor are padding: a listing younger than the lookback
+    has none, so only bars missing at or after the anchor count as a gap.
     """
     if stored is None:
         return need.start
     first, last = stored
-    if need.first_event < first:
+    if need.anchor < first:
         return need.start
     if last < last_session:
         return last + timedelta(days=1)
@@ -191,41 +195,44 @@ async def sync_surge_bars(
             continue
         todo.append((symbol, start))
 
-    for symbol, start in todo:
-        await limiter.acquire()
-        try:
-            history = await source.daily_history(symbol, start, last_session)
-        except SchwabAuthError:
-            raise  # the daemon pauses Schwab jobs on this
-        except SchwabResponseError as exc:
-            if exc.status_code == 429:
-                raise  # over budget: stop, the next run resumes
-            if exc.status_code in PERMANENT_STATUSES and symbol not in stored:
-                await _record_unpriced(session_factory, symbol, f"http_{exc.status_code}", clock.now())
-                report.unpriced += 1
+    try:  # the partial report is worth logging when a 429 or dead token stops the run
+        for symbol, start in todo:
+            await limiter.acquire()
+            try:
+                history = await source.daily_history(symbol, start, last_session)
+            except SchwabAuthError:
+                raise  # the daemon pauses Schwab jobs on this
+            except SchwabResponseError as exc:
+                if exc.status_code == 429:
+                    raise  # over budget: stop, the next run resumes
+                if exc.status_code in PERMANENT_STATUSES:
+                    # A 400 can also be our own bad request, so the reason stays visible in the log.
+                    logger.warning("%s: Schwab refuses the symbol: %s", symbol, exc)
+                    if symbol not in stored:
+                        await _record_unpriced(session_factory, symbol, f"http_{exc.status_code}", clock.now())
+                        report.unpriced += 1
+                    continue
+                logger.warning("%s: daily history failed: %s", symbol, exc)
+                report.failed.append(symbol)
                 continue
-            logger.warning("%s: daily history failed: %s", symbol, exc)
-            report.failed.append(symbol)
-            continue
-        except Exception:
-            logger.exception("%s: daily history failed", symbol)
-            report.failed.append(symbol)
-            continue
+            except Exception:
+                logger.exception("%s: daily history failed", symbol)
+                report.failed.append(symbol)
+                continue
 
-        report.fetched += 1
-        report.rejected.update(r.reason.value for r in history.rejects)
-        fetched_at = clock.now()
-        async with session_factory() as session:
-            repo = DailyBarRepository(session)
-            report.bars_inserted += await repo.insert_many(_to_stored(history, fetched_at))
+            report.fetched += 1
+            report.rejected.update(r.reason.value for r in history.rejects)
             if history.bars:
-                await repo.clear_unpriced(symbol)
+                async with session_factory() as session:
+                    repo = DailyBarRepository(session)
+                    report.bars_inserted += await repo.insert_many(_to_stored(history, clock.now()))
+                    await repo.clear_unpriced(symbol)
+                    await session.commit()
             elif symbol not in stored:
-                await repo.record_unpriced(symbol, _unpriced_reason(history), fetched_at)
+                await _record_unpriced(session_factory, symbol, _unpriced_reason(history), clock.now())
                 report.unpriced += 1
-            await session.commit()
-
-    _log(report, last_session)
+    finally:
+        _log(report, last_session)
     if report.failed:
         raise SurgeBarsError(f"{len(report.failed)} of {len(todo)} symbols failed: {_head(report.failed)}")
     return report

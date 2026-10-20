@@ -354,6 +354,40 @@ async def test_a_listing_younger_than_the_lookback_is_not_refetched_forever(sess
     assert schwab.calls == []
 
 
+async def test_a_weekend_event_on_a_listing_that_starts_monday_is_not_refetched_forever(session_factory):
+    saturday = datetime(2026, 10, 17, 15, 0, tzinfo=UTC)
+    async with session_factory() as s:
+        await PopularityRepository(s).insert_many([_snap("NEW", saturday)])
+        await s.commit()
+    schwab = FakeSchwab().price(BENCHMARK).price("NEW", listed=date(2026, 10, 19))
+    clock = FakeClock(NOW)
+    await _run(session_factory, schwab, clock)
+    assert (await _bars(session_factory, "NEW"))[0] == date(2026, 10, 19)
+    schwab.calls.clear()
+
+    await _run(session_factory, schwab, clock)
+
+    assert schwab.calls == []
+
+
+async def test_the_lookback_is_thirty_sessions_before_the_event(session_factory):
+    start = lookback_start(CALENDAR, date(2026, 10, 14))
+    assert len(CALENDAR.sessions_in_range(start, date(2026, 10, 13))) == 30
+
+
+async def test_a_stored_symbol_schwab_stops_answering_for_is_not_a_job_failure(session_factory):
+    await _seed(session_factory)
+    schwab = FakeSchwab().price("AAA", "BBB", "ZZZ", BENCHMARK)
+    clock = FakeClock(NOW)
+    await _run(session_factory, schwab, clock)
+    schwab.broken["AAA"] = 404  # delisted since
+
+    clock.current = NOW + timedelta(days=1)
+    await _run(session_factory, schwab, clock)
+
+    assert "AAA" not in await _unpriced(session_factory)  # its earlier bars are still good
+
+
 async def test_a_failing_symbol_is_reported_but_does_not_stop_the_others(session_factory):
     await _seed(session_factory)
     schwab = FakeSchwab().price("AAA", "BBB", "ZZZ", BENCHMARK)
