@@ -143,13 +143,13 @@ class TestPopularityCard:
             {'datetime': now - datetime.timedelta(hours=8),
              'rank': 50, 'mentions': 80, 'mentions_24h_ago': 25},
             # 1D ago daily row
-            {'datetime': now - datetime.timedelta(days=1, hours=2),
+            {'datetime': now - datetime.timedelta(days=1),
              'rank': 18, 'mentions': 70, 'mentions_24h_ago': 20},
             # 3D ago daily row
-            {'datetime': now - datetime.timedelta(days=3, hours=2),
+            {'datetime': now - datetime.timedelta(days=3),
              'rank': 42, 'mentions': 60, 'mentions_24h_ago': 15},
             # 7D ago daily row
-            {'datetime': now - datetime.timedelta(days=7, hours=2),
+            {'datetime': now - datetime.timedelta(days=7),
              'rank': 65, 'mentions': 50, 'mentions_24h_ago': 10},
         ]
         df = pd.DataFrame(rows)
