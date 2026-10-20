@@ -50,6 +50,8 @@ GRANTS: dict[str, dict[str, tuple[str, ...]]] = {
         "serve": _SELECT,
         "research": _SELECT,
     },
+    # Written by the backfill tool on the owner DSN; no service touches it.
+    "import_verification": {},
     "options_chain_snapshot": {
         "ingest": _SELECT_INSERT,
         "serve": _SELECT,
