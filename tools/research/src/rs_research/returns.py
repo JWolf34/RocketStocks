@@ -13,6 +13,7 @@ Definitions, shared by every study and quoted by the bot's label:
 - N counts events with an entry price. Each horizon's hit rate and median use
   the events that have reached it, so a horizon's sample can be smaller than N.
 - Events without an entry price are `n_unpriced`, never silently dropped.
+  Horizons that matured but have no exit bar are counted in `n_missing_exit`.
 
 Everything is vectorised and a pure function of its inputs.
 """
@@ -40,6 +41,8 @@ MAX_CLOSURE_DAYS = 5
 class Summary:
     n: int
     n_unpriced: int
+    # Matured (event, horizon) outcomes with no exit bar, e.g. a name delisted mid-window.
+    n_missing_exit: int
     hit_rate: dict[int, float | None]
     median_excess: dict[int, float | None]
 
@@ -92,14 +95,20 @@ def excess_returns(
     return pd.DataFrame(out)
 
 
-def summarize(excess: pd.DataFrame, n_unpriced: int) -> Summary:
+def summarize(excess: pd.DataFrame, n_unpriced: int, n_missing_exit: int) -> Summary:
     hit_rate: dict[int, float | None] = {}
     median: dict[int, float | None] = {}
     for horizon in HORIZONS:
         values = excess[horizon].dropna()
         hit_rate[horizon] = float((values > 0).mean()) if len(values) else None
         median[horizon] = float(values.median()) if len(values) else None
-    return Summary(n=len(excess), n_unpriced=n_unpriced, hit_rate=hit_rate, median_excess=median)
+    return Summary(
+        n=len(excess),
+        n_unpriced=n_unpriced,
+        n_missing_exit=n_missing_exit,
+        hit_rate=hit_rate,
+        median_excess=median,
+    )
 
 
 def measure(
@@ -118,5 +127,10 @@ def measure(
     excess = excess_returns(
         kept, ref_idx[priced], entry_price[priced], sessions, spy_close, closes
     )
-    return summarize(excess, n_unpriced=int((~priced).sum()))
+    ref = ref_idx[priced]
+    missing = sum(
+        int(((ref + horizon < len(sessions)) & excess[horizon].isna().to_numpy()).sum())
+        for horizon in HORIZONS
+    )
+    return summarize(excess, n_unpriced=int((~priced).sum()), n_missing_exit=missing)
 

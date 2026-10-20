@@ -7,8 +7,11 @@ rule version:
   enter each event at the close of the first session after its event date
   (the signal evidence study convention).
 - `logged`: the alerts the rule actually posted, entered at their `alert_price`.
-  The benchmark and exits use the close of the last session before the alert as
-  the reference, so the first horizon is the next close after the alert.
+  Exits are the closes 1, 5 and 10 sessions after the last session that closed
+  before the alert, so for an intraday alert the first horizon is that same day's
+  close and for an after-hours or weekend alert the next session's. SPY is
+  measured from that previous close too, so its move before the alert is
+  subtracted from the excess: an approximation, since only daily bars are stored.
   Alerts without a price are counted in `n_unpriced`.
 
 Metrics (see rs_research.returns): returns at 1, 5 and 10 trading days, excess
@@ -108,7 +111,8 @@ def _bar_windows(*groups: list[tuple[str, datetime]]) -> dict[str, tuple[date, d
 def _caveat(summary: Summary, total: int, what: str) -> str:
     return (
         f"{summary.n_unpriced} of {total} {what} could not be priced and are excluded; "
-        "they are mostly delisted or renamed tickers, so results lean toward survivors."
+        "they are mostly delisted or renamed tickers, so results lean toward survivors. "
+        f"{summary.n_missing_exit} matured outcomes had no exit price and are excluded too."
     )
 
 

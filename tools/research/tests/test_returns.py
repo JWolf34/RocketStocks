@@ -46,3 +46,18 @@ def test_events_without_a_price_or_a_reference_are_counted_and_excluded():
     assert summary.median_excess[1] == pytest.approx(0.1)
     assert summary.hit_rate[5] is None and summary.median_excess[10] is None
 
+
+
+def test_a_matured_horizon_without_an_exit_bar_is_counted_not_hidden():
+    # AAA has its entry bar but no bar on the next session (delisted, halted).
+    closes = pd.Series(
+        [10.0],
+        index=pd.MultiIndex.from_arrays([["AAA"], SESSIONS[:1]], names=["symbol", "session"]),
+    )
+    spy = np.array([100.0, 100.0, 100.0, 100.0])
+
+    summary = measure(["AAA"], np.array([0]), np.array([10.0]), SESSIONS, spy, closes)
+
+    assert summary.n == 1
+    assert summary.n_missing_exit == 1  # the 1-day horizon; 5 and 10 have not matured
+    assert summary.hit_rate[1] is None
