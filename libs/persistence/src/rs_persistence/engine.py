@@ -21,7 +21,10 @@ def psycopg_conninfo(sqlalchemy_url: str) -> str:
 
 
 def build_engine(dsn: str) -> AsyncEngine:
-    return create_async_engine(dsn, connect_args={"options": "-c timezone=UTC"})
+    # hide_parameters: a DB error must not log bound values (Schwab token data).
+    return create_async_engine(
+        dsn, connect_args={"options": "-c timezone=UTC"}, hide_parameters=True
+    )
 
 
 def build_session_factory(engine: AsyncEngine) -> async_sessionmaker[AsyncSession]:
