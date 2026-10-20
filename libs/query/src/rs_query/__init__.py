@@ -8,7 +8,7 @@ from rs_query._page import InvalidCursor, Page
 from rs_query.alerts import AlertRecord, recent_alerts
 from rs_query.base_rates import BASE_RATE_LOGGED_MIN_N, current_base_rate
 from rs_query.daily_bars import daily_bars
-from rs_query.popularity import popularity_history
+from rs_query.popularity import popularity_between, popularity_history
 
 __all__ = [
     "BASE_RATE_LOGGED_MIN_N",
@@ -17,6 +17,7 @@ __all__ = [
     "Page",
     "current_base_rate",
     "daily_bars",
+    "popularity_between",
     "popularity_history",
     "recent_alerts",
 ]
