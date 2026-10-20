@@ -122,3 +122,50 @@ jobs:
           push: false
           cache-from: type=gha,scope=v2
           cache-to: type=gha,mode=max,scope=v2
+
+  compose-smoke:
+    name: compose smoke (db + migrate gate)
+    runs-on: ubuntu-latest
+    env:
+      COMPOSE: docker compose -p rs-smoke -f docker-compose.v2.yml
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # Throwaway credentials: only the database and the migrate gate start here.
+      - name: Write a smoke .env
+        run: |
+          cat > .env <<'EOF'
+          RS_DB_PASSWORD=ci-smoke-superuser-0000
+          RS_DB_PASSWORD_INGEST=ci-password-ingest-0000
+          RS_DB_PASSWORD_BOT=ci-password-bot-000000
+          RS_DB_PASSWORD_SERVE=ci-password-serve-0000
+          RS_DB_PASSWORD_RESEARCH=ci-password-research-0
+          RS_EDGAR_USER_AGENT=RocketStocks ci@example.com
+          EOF
+
+      - name: Validate v2 compose config
+        run: $COMPOSE config -q
+
+      - name: Build the v2 image
+        run: $COMPOSE build migrate
+
+      # Starts timescaledb, waits for its healthcheck, then upgrades and applies the roles.
+      - name: Run the migrate gate
+        run: $COMPOSE run --rm migrate
+
+      - name: Schema is at head and matches the models
+        run: |
+          $COMPOSE run --rm --no-deps migrate python -m rs_migrate current
+          $COMPOSE run --rm --no-deps migrate python -m rs_migrate check
+
+      - name: Roles step is idempotent
+        run: $COMPOSE run --rm --no-deps migrate python -m rs_migrate roles
+
+      - name: Show logs on failure
+        if: failure()
+        run: $COMPOSE logs --no-color
+
+      - name: Tear down
+        if: always()
+        run: $COMPOSE down -v
