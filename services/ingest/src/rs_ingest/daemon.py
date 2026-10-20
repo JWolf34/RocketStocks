@@ -1,0 +1,270 @@
+"""The supervised cron loop and the Schwab token gate.
+
+One loop dispatches due jobs; each run is its own task and fault boundary, so a
+raising or hanging job never stalls the loop or its siblings. The loop ticks at
+least every `tick_seconds` even when nothing is due: that tick is the heartbeat
+the container healthcheck reads.
+"""
+
+import asyncio
+import logging
+from collections.abc import Awaitable, Callable, Coroutine, Sequence
+from dataclasses import dataclass
+from datetime import datetime, timedelta
+from typing import Any, Protocol
+
+from rs_domain import Clock
+from rs_ingest.cron import CronTable, Job
+from rs_ingest.metrics import DaemonMetrics
+from rs_observability import notify_ops, unit_of_work
+from rs_sources.schwab import SchwabAuthError
+
+logger = logging.getLogger(__name__)
+
+Sleep = Callable[[float], Awaitable[None]]
+
+
+class TokenFreshness(Protocol):
+    """Reads when the stored Schwab token was last written."""
+
+    async def updated_at(self) -> datetime | None: ...
+
+
+class TokenGate:
+    """Shared "Schwab token is dead" state.
+
+    A SchwabAuthError from any job trips it; needs_schwab jobs are skipped
+    while it is tripped. It clears when the stored token is newer than the
+    failure (polled) or when `renewed()` is called directly, after
+    `on_renewed` has rebuilt whatever holds the old token.
+    """
+
+    def __init__(
+        self,
+        freshness: TokenFreshness,
+        on_renewed: Callable[[], Awaitable[None]],
+        clock: Clock,
+        metrics: DaemonMetrics,
+    ) -> None:
+        self._freshness = freshness
+        self._on_renewed = on_renewed
+        self._clock = clock
+        self._metrics = metrics
+        self._dead_since: datetime | None = None
+
+    @property
+    def dead(self) -> bool:
+        return self._dead_since is not None
+
+    async def trip(self, reason: str) -> None:
+        if self._dead_since is not None:
+            return
+        self._dead_since = self._clock.now()
+        self._metrics.token_dead.set(1)
+        logger.error("Schwab token dead - pausing Schwab jobs: %s", reason)
+        await notify_ops(
+            f"Schwab token is dead ({reason}). Schwab jobs are paused and other jobs keep "
+            "running. Re-authenticate to resume.",
+            key="schwab-token-dead",
+        )
+
+    async def poll(self) -> None:
+        dead_since = self._dead_since
+        if dead_since is None:
+            return
+        try:
+            updated_at = await self._freshness.updated_at()
+        except Exception:
+            logger.exception("could not read the Schwab token age; gate stays closed")
+            return
+        if updated_at is not None and updated_at > dead_since:
+            await self.renewed()
+
+    async def renewed(self) -> None:
+        if self._dead_since is None:
+            return
+        try:
+            await self._on_renewed()
+        except Exception:
+            logger.exception("could not rebuild the Schwab client from the new token; gate stays closed")
+            return
+        self._dead_since = None
+        self._metrics.token_dead.set(0)
+        logger.info("Schwab token renewed - resuming Schwab jobs")
+        await notify_ops("Schwab token renewed. Schwab jobs resumed.", key="schwab-token-renewed")
+
+
+@dataclass
+class _JobState:
+    job: Job
+    next_fire: datetime
+    task: asyncio.Task[None] | None = None
+    consecutive_failures: int = 0
+    alerted: bool = False
+
+
+class Daemon:
+    def __init__(
+        self,
+        cron: CronTable,
+        gate: TokenGate,
+        clock: Clock,
+        metrics: DaemonMetrics,
+        *,
+        sleep: Sleep = asyncio.sleep,
+        failure_threshold: int = 3,
+        tick_seconds: float = 15.0,
+        token_poll_seconds: float = 60.0,
+        shutdown_grace_seconds: float = 30.0,
+        finalizers: Sequence[Callable[[], Awaitable[None]]] = (),
+    ) -> None:
+        self._cron = cron
+        self._gate = gate
+        self._clock = clock
+        self._metrics = metrics
+        self._sleep = sleep
+        self._failure_threshold = failure_threshold
+        self._tick = timedelta(seconds=tick_seconds)
+        self._token_poll = timedelta(seconds=token_poll_seconds)
+        self._grace = shutdown_grace_seconds
+        self._finalizers = finalizers
+        self._stop = asyncio.Event()
+        self._inflight: set[asyncio.Task[None]] = set()
+        self._gate_poll: asyncio.Task[None] | None = None
+        self._next_gate_poll: datetime | None = None
+
+    def request_stop(self) -> None:
+        self._stop.set()
+
+    async def run(self) -> None:
+        """Run until `request_stop()`; finalizers run on every exit path."""
+        try:
+            states = self._initial_states()
+            while not self._stop.is_set():
+                now = self._clock.now()
+                self._metrics.loop_last_tick.set(now.timestamp())
+                self._dispatch_due(states, now)
+                self._maybe_poll_gate(now)
+                await self._wait(self._time_to_next_event(states))
+        finally:
+            await self._shutdown()
+
+    def _initial_states(self) -> list[_JobState]:
+        now = self._clock.now()
+        states = []
+        for job in self._cron:
+            self._metrics.register_job(job.name)
+            first = now if job.run_on_start else job.schedule.next_after(now)
+            states.append(_JobState(job, first))
+        return states
+
+    def _dispatch_due(self, states: list[_JobState], now: datetime) -> None:
+        for state in states:
+            if state.next_fire > now:
+                continue
+            # Slots missed while down or busy are dropped, not replayed.
+            state.next_fire = state.job.schedule.next_after(now)
+            name = state.job.name
+            if state.task is not None and not state.task.done():
+                logger.warning("job %s still running at its next slot - skipping", name)
+                self._metrics.job_runs.labels(name, "skipped_overlap").inc()
+            elif state.job.needs_schwab and self._gate.dead:
+                logger.info("job %s skipped - Schwab token is dead", name)
+                self._metrics.job_runs.labels(name, "skipped_token_dead").inc()
+            else:
+                state.task = self._spawn(self._execute(state), name)
+
+    def _maybe_poll_gate(self, now: datetime) -> None:
+        if not self._gate.dead:
+            self._next_gate_poll = None
+            return
+        if self._next_gate_poll is None:
+            self._next_gate_poll = now + self._token_poll
+        if now < self._next_gate_poll:
+            return
+        self._next_gate_poll = now + self._token_poll
+        if self._gate_poll is None or self._gate_poll.done():
+            self._gate_poll = self._spawn(self._gate.poll(), "token-gate-poll")
+
+    def _time_to_next_event(self, states: list[_JobState]) -> float:
+        now = self._clock.now()
+        horizon = now + self._tick
+        for state in states:
+            horizon = min(horizon, state.next_fire)
+        if self._gate.dead and self._next_gate_poll is not None:
+            horizon = min(horizon, self._next_gate_poll)
+        return max(0.0, (horizon - now).total_seconds())
+
+    def _spawn(self, coro: Coroutine[Any, Any, None], name: str) -> asyncio.Task[None]:
+        task = asyncio.create_task(coro, name=name)
+        self._inflight.add(task)
+        task.add_done_callback(self._inflight.discard)
+        return task
+
+    async def _wait(self, seconds: float) -> None:
+        """Sleep, but wake at once for a stop request."""
+        sleeper = asyncio.ensure_future(self._sleep(seconds))
+        stopper = asyncio.ensure_future(self._stop.wait())
+        try:
+            await asyncio.wait({sleeper, stopper}, return_when=asyncio.FIRST_COMPLETED)
+            if sleeper.done():
+                sleeper.result()
+        finally:
+            for task in (sleeper, stopper):
+                task.cancel()
+            await asyncio.gather(sleeper, stopper, return_exceptions=True)
+
+    async def _execute(self, state: _JobState) -> None:
+        job = state.job
+        with unit_of_work(job_name=job.name):
+            try:
+                await job.run()
+            except asyncio.CancelledError:
+                raise
+            except SchwabAuthError as exc:
+                self._metrics.job_runs.labels(job.name, "auth_error").inc()
+                await self._gate.trip(f"job {job.name}: {exc}")
+            except Exception as exc:
+                logger.exception("job %s failed", job.name)
+                self._metrics.job_runs.labels(job.name, "failure").inc()
+                await self._record_failure(state, exc)
+            else:
+                self._metrics.job_runs.labels(job.name, "success").inc()
+                self._metrics.job_last_success.labels(job.name).set(self._clock.now().timestamp())
+                await self._record_success(state)
+
+    async def _record_failure(self, state: _JobState, exc: Exception) -> None:
+        state.consecutive_failures += 1
+        if state.consecutive_failures != self._failure_threshold:
+            return
+        state.alerted = True
+        name = state.job.name
+        # The type only: exception text can carry URLs or credentials.
+        await notify_ops(
+            f"Ingest job {name} has failed {state.consecutive_failures} times in a row "
+            f"(latest: {type(exc).__name__}). See the ingest logs.",
+            key=f"job-failing:{name}",
+        )
+
+    async def _record_success(self, state: _JobState) -> None:
+        was_alerted = state.alerted
+        state.consecutive_failures = 0
+        state.alerted = False
+        if was_alerted:
+            name = state.job.name
+            await notify_ops(f"Ingest job {name} recovered.", key=f"job-recovered:{name}")
+
+    async def _shutdown(self) -> None:
+        # In-flight work gets the grace period, then is cancelled.
+        pending = set(self._inflight)
+        if pending:
+            _, pending = await asyncio.wait(pending, timeout=self._grace)
+        for task in pending:
+            logger.warning("cancelling %s after the %.0fs shutdown grace", task.get_name(), self._grace)
+            task.cancel()
+        await asyncio.gather(*pending, return_exceptions=True)
+        for finalizer in self._finalizers:
+            try:
+                await finalizer()
+            except Exception:
+                logger.exception("shutdown finalizer failed")
