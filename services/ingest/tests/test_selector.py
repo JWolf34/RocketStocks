@@ -3,12 +3,11 @@
 from datetime import UTC, datetime, timedelta
 
 from rs_analysis.popularity_surge import SubRule, SurgeEvent, SurgeInputs
-from rs_domain import Verdict
+from rs_domain import ALERT_STALE_AFTER, Verdict
 from rs_ingest.selector import (
     DAILY_BUDGET,
     MAX_REPLIES_PER_STOCK_DAY,
     REPLY_STRENGTH_MARGIN,
-    STALE_AFTER,
     DayState,
     StockDay,
     announce,
@@ -142,13 +141,13 @@ class TestAStockAlreadyAlertedToday:
 
 class TestStale:
     def test_a_hit_decided_more_than_an_hour_after_its_boundary_is_stale(self):
-        assert verdict(0.99, decided_at=HIT_AT + STALE_AFTER + timedelta(seconds=1)) is Verdict.STALE
+        assert verdict(0.99, decided_at=HIT_AT + ALERT_STALE_AFTER + timedelta(seconds=1)) is Verdict.STALE
 
     def test_a_hit_decided_within_the_hour_is_not(self):
-        assert verdict(0.99, decided_at=HIT_AT + STALE_AFTER) is Verdict.POSTED
+        assert verdict(0.99, decided_at=HIT_AT + ALERT_STALE_AFTER) is Verdict.POSTED
 
     def test_a_stale_reply_is_not_sent(self):
-        late = HIT_AT + STALE_AFTER + timedelta(minutes=5)
+        late = HIT_AT + ALERT_STALE_AFTER + timedelta(minutes=5)
 
         assert verdict(0.95, event=hit(SubRule.RANK_JUMP), stock=alerted(0.95), decided_at=late) is Verdict.STALE
 

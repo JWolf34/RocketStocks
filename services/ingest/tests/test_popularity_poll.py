@@ -11,6 +11,7 @@ from sqlalchemy import delete, func, insert, select
 
 from rs_analysis.popularity_surge import RULE_VERSION, SubRule
 from rs_domain import (
+    ALERT_STALE_AFTER,
     Alert,
     Candidate,
     FactUnavailable,
@@ -26,7 +27,6 @@ from rs_ingest.selector import (
     DAILY_BUDGET,
     MAX_REPLIES_PER_STOCK_DAY,
     REPLY_STRENGTH_MARGIN,
-    STALE_AFTER,
 )
 from rs_ingest.surge_facts import SurgeFactsGatherer
 from rs_persistence import (
@@ -788,7 +788,7 @@ class TestReplies:
 
 class TestStale:
     async def test_a_hit_decided_over_an_hour_after_its_boundary_is_recorded_stale_and_posts_nothing(self, rig):
-        rig.scorer.before_scoring = lambda: setattr(rig.clock, "current", T0 + STALE_AFTER + timedelta(minutes=1))
+        rig.scorer.before_scoring = lambda: setattr(rig.clock, "current", T0 + ALERT_STALE_AFTER + timedelta(minutes=1))
 
         await rig.run_at(T0 + timedelta(seconds=20))
 

@@ -12,19 +12,17 @@ replies never use the budget.
 
 from collections.abc import Collection
 from dataclasses import dataclass
-from datetime import datetime, timedelta
+from datetime import datetime
 from typing import Literal
 
 from rs_analysis.popularity_surge import SubRule, SurgeEvent
-from rs_domain import Verdict
+from rs_domain import ALERT_STALE_AFTER, Verdict
 
 # Alerts per Eastern day, all stocks; replies are not counted.
 DAILY_BUDGET = 5
 # Stocks a typical day has at or above the bar. The budget is what a typical day
 # should yield, so the bar targets it; lowering this leaves headroom for busy days.
 BAR_TARGET_PER_DAY = DAILY_BUDGET
-# A hit decided later than this after its boundary (a catch-up after an outage) is not posted.
-STALE_AFTER = timedelta(hours=1)
 # How far a hit's strength must rise above the highest strength already announced for
 # the stock that day to reply on strength alone; strengths are percentiles in [0, 1].
 REPLY_STRENGTH_MARGIN = 0.05
@@ -93,7 +91,7 @@ def select(
 ) -> Verdict:
     """The verdict on a hit with `strength` (None when its stock has no Baseline, so
     it cannot be shown Unusual) against `bar`, decided at `decided_at`."""
-    if decided_at - hit.polled_at > STALE_AFTER:
+    if decided_at - hit.polled_at > ALERT_STALE_AFTER:
         return Verdict.STALE
     if day.stock is not None:
         if escalation(hit, strength, day.stock) is not None and day.stock.replies < MAX_REPLIES_PER_STOCK_DAY:
