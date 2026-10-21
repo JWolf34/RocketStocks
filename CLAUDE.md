@@ -107,8 +107,11 @@ uv sync --all-packages
 # A new member needs a line in root_packages and in each contract that covers it.
 .venv/bin/lint-imports
 
-# Clock-discipline gate (no ambient time in v2 src - ADR-0023)
+# Clock-discipline gate (no ambient time in v2 src)
 scripts/check_clock_discipline.sh
+
+# Plan-citation gate (no ADR-NNNN, grilling #, slice N, attention or base_rate in v2 src/tests)
+scripts/check_plan_citations.sh
 
 # Migrations vs ORM models (run against a migrated DB; fails on drift)
 RS_DB_URL=postgresql+psycopg://... .venv/bin/python -m rs_migrate check
