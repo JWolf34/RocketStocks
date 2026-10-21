@@ -1,13 +1,14 @@
 # RocketStocks
 
-A Discord bot that delivers real-time stock market alerts and screener reports using technical analysis, sentiment data, and multiple financial APIs.
+A Discord bot that scans the whole market and posts a small number of stocks per day worth talking about, each with a Track record and a Report of RocketStocks' own data.
 
-## v2 rewrite in progress - read this first
+## Read this first
 
-- **v1 (`legacy/src/rocketstocks/`) is in code freeze** (since 2026-06-11): bugfixes only, no feature work. In prod it runs muted (Discord posting silenced), collecting only ApeWisdom popularity until v2 slice 1 takes over; then it is retired.
-- **All v2 work starts at [docs/foundation/README.md](docs/foundation/README.md)** - charter, [architecture](docs/foundation/architecture.md) (current truth), roadmap, current slice spec. Decisions live on the [v2 foundation map](https://github.com/JWolf34/RocketStocks/issues/40) tickets and the surviving ADRs in `docs/v2/adr/`; the pre-2026-10 plan is archived under git tag `v2-plan-archive-2026-10`.
-- **Each slice ships a half-page spec in its implementing PR** (template: `docs/foundation/specs/README.md`) and must meet the definition of done in `docs/foundation/README.md`. Keep `architecture.md` current in the same PR; a new ADR only for a contested decision.
-- **The rest of this file describes v1.** `docs/alerts/` is v1-historical reference; v2 folds those alert types into three informational alerts (attention surge, earnings reaction, large move).
+- **[docs/vision.md](docs/vision.md) is the only authority** for what RocketStocks is and what gets built; [CONTEXT.md](CONTEXT.md) is its glossary.
+- Architectural decisions are ADRs in [docs/adr/](docs/adr/).
+- Operations (deploy, Schwab sign-in, Popularity import, rehearsals, backup and restore) are in [docs/operations.md](docs/operations.md).
+- **v1 (`legacy/`) is frozen** (bugfixes only), runs muted collecting Popularity, and retires in milestone 1.
+- **The rest of this file describes v1** except the monorepo layout and the run, test and lint commands.
 
 ## Tech Stack
 
@@ -131,7 +132,7 @@ docker compose up -d
 # Needs RS_DB_PASSWORD + service credentials in .env.
 docker compose -f docker-compose.v2.yml up -d
 
-# v2 operator tools (host-side, shared venv; exact procedures in docs/foundation/runbooks/slice-1.md)
+# v2 operator tools (host-side, shared venv; exact procedures in docs/operations.md)
 .venv/bin/python -m rs_backfill verify-offset --dump PATH   # then popularity-import --dump PATH --zone ZONE
 .venv/bin/python -m rs_ingest.tools.login                   # first Schwab login; later logins use /setup schwab
 RS_RESEARCH_DB_URL=... .venv/bin/python -m rs_research event-study attention_surge
@@ -154,7 +155,7 @@ Auto-created on startup via `data/schema.py:34`. Tables: `tickers`, `ticker_stat
 
 | Topic | File |
 |-------|------|
-| **v2** foundation plan - charter, architecture, roadmap, slice specs | [docs/foundation/README.md](docs/foundation/README.md) |
+| **v2** vision, scope, architecture, milestones | [docs/vision.md](docs/vision.md) |
 | Architectural patterns & cross-cutting design | [.claude/docs/architectural_patterns.md](.claude/docs/architectural_patterns.md) |
 | `core/` — analysis, content classes, scheduler, notifications | [.claude/docs/core.md](.claude/docs/core.md) |
 | `data/` — DB wrapper, repositories, API clients | [.claude/docs/data.md](.claude/docs/data.md) |
@@ -169,8 +170,8 @@ Auto-created on startup via `data/schema.py:34`. Tables: `tickers`, `ticker_stat
 
 ### Issue tracker
 
-Issues/PRDs live in GitHub Issues (`JWolf34/RocketStocks`) via the `gh` CLI. Note v2 slice specs are a separate surface under `docs/foundation/specs/`. See `docs/agents/issue-tracker.md`.
+Issues/PRDs live in GitHub Issues (`JWolf34/RocketStocks`) via the `gh` CLI. Milestone specs (at most about 40 lines) land with the code, not in the tracker. See `docs/agents/issue-tracker.md`.
 
 ### Domain docs
 
-Single-context: one root `CONTEXT.md`; ADRs live at `docs/v2/adr/` (**not** the default `docs/adr/`). See `docs/agents/domain.md`.
+Single-context: one root `CONTEXT.md`; ADRs live at `docs/adr/`. See `docs/agents/domain.md`.
