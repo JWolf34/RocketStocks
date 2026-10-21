@@ -12,11 +12,9 @@ from sqlalchemy import delete, func, insert, select
 from rs_analysis.popularity_surge import RULE_VERSION, SubRule
 from rs_domain import (
     Alert,
-    BenchmarkFact,
     FactUnavailable,
     PopularitySurgePayload,
     PriceMoveFact,
-    StoredDailyBar,
     Verdict,
 )
 from rs_ingest.alert_writer import AlertWriteError, AlertWriter, RetryPolicy
@@ -26,10 +24,9 @@ from rs_persistence import (
     AlertRepository,
     AlertRow,
     CandidateRow,
-    DailyBarRepository,
     PopularitySnapshotRow,
 )
-from rs_sources import ApeWisdomError, ApeWisdomRow, ExchangeCalendar
+from rs_sources import ApeWisdomError, ApeWisdomRow
 from rs_sources.earnings import NextEarnings
 from rs_sources.schwab import Quote, SchwabAuthError
 
@@ -103,11 +100,6 @@ def good_quote(at: datetime = T0) -> Quote:
     return Quote(symbol="X", last_price=12.5, previous_close=10.0, quote_time=at, volume=3_000_000)
 
 
-@pytest.fixture(scope="module")
-def calendar() -> ExchangeCalendar:
-    return ExchangeCalendar()
-
-
 class CountingLimiter:
     def __init__(self) -> None:
         self.acquired = 0
@@ -117,7 +109,7 @@ class CountingLimiter:
 
 
 class Rig:
-    def __init__(self, session_factory, calendar, sleeps, rows, quotes=None, *, writer_factory=None) -> None:
+    def __init__(self, session_factory, sleeps, rows, quotes=None, *, writer_factory=None) -> None:
         self.session_factory = session_factory
         self.clock = FakeClock(T0 + timedelta(seconds=20))
         self.apewisdom = FakeApeWisdom(rows)
@@ -137,8 +129,6 @@ class Rig:
                 quotes=lambda: self.quotes,
                 limiter=self.limiter,
                 earnings=FakeEarnings(),
-                session_factory=session_factory,
-                calendar=calendar,
                 on_token_dead=self.tripped,
             ),
         )
@@ -164,8 +154,8 @@ class Rig:
 
 
 @pytest.fixture
-def rig(session_factory, calendar, sleeps, notices) -> Rig:
-    return Rig(session_factory, calendar, sleeps, listing())
+def rig(session_factory, sleeps, notices) -> Rig:
+    return Rig(session_factory, sleeps, listing())
 
 
 def test_the_payload_can_name_every_sub_rule_the_rule_emits():
@@ -202,12 +192,12 @@ class TestStoringSnapshots:
         assert {s.fetched_at for s in stored} == {T0 + timedelta(seconds=20)}
         assert {s.origin for s in stored} == {"live"}
 
-    async def test_new_entrants_and_negative_upvotes_are_stored(self, session_factory, calendar, sleeps, notices):
+    async def test_new_entrants_and_negative_upvotes_are_stored(self, session_factory, sleeps, notices):
         rows = [
             ApeWisdomRow(rank=1, ticker="NEWB", mentions=30, upvotes=-1, rank_24h_ago=None, mentions_24h_ago=None),
             ApeWisdomRow(rank=2, ticker="DOWN", mentions=25, upvotes=-40, rank_24h_ago=3, mentions_24h_ago=24),
         ]
-        rig = Rig(session_factory, calendar, sleeps, rows)
+        rig = Rig(session_factory, sleeps, rows)
 
         await rig.poll.run()
 
@@ -216,8 +206,8 @@ class TestStoringSnapshots:
         assert (stored["NEWB"].upvotes, stored["NEWB"].rank_24h_ago) == (-1, None)
         assert stored["DOWN"].upvotes == -40
 
-    async def test_a_failed_fetch_stores_nothing_and_surfaces_the_error(self, session_factory, calendar, sleeps, notices):
-        rig = Rig(session_factory, calendar, sleeps, ApeWisdomError("page 2 failed after 3 attempts"))
+    async def test_a_failed_fetch_stores_nothing_and_surfaces_the_error(self, session_factory, sleeps, notices):
+        rig = Rig(session_factory, sleeps, ApeWisdomError("page 2 failed after 3 attempts"))
 
         with pytest.raises(ApeWisdomError):
             await rig.poll.run()
@@ -226,8 +216,8 @@ class TestStoringSnapshots:
         assert await rig.alerts() == []
         assert notices == []  # the daemon's failure streak is the ops channel for this
 
-    async def test_an_empty_listing_is_a_failure_not_a_quiet_boundary(self, session_factory, calendar, sleeps, notices):
-        rig = Rig(session_factory, calendar, sleeps, [])
+    async def test_an_empty_listing_is_a_failure_not_a_quiet_boundary(self, session_factory, sleeps, notices):
+        rig = Rig(session_factory, sleeps, [])
 
         with pytest.raises(ApeWisdomError, match="no rows"):
             await rig.poll.run()
@@ -259,17 +249,17 @@ class TestIdempotency:
         assert len(rig.quotes.symbols) == lookups
 
     async def test_a_rerun_finishes_alerts_a_crash_left_unwritten(
-        self, session_factory, calendar, sleeps, make_flaky, notices
+        self, session_factory, sleeps, make_flaky, notices
     ):
         broken = make_flaky(failures=99)
-        rig = Rig(session_factory, calendar, sleeps, listing(), writer_factory=broken)
+        rig = Rig(session_factory, sleeps, listing(), writer_factory=broken)
         with pytest.raises(ExceptionGroup):
             await rig.poll.run()
         assert await rig.snapshots() == 2
         assert await rig.alerts() == []
         assert await rig.candidates() == []
 
-        healthy = Rig(session_factory, calendar, sleeps, listing())
+        healthy = Rig(session_factory, sleeps, listing())
         await healthy.run_at(T0 + timedelta(minutes=3))
 
         assert await healthy.snapshots() == 2
@@ -281,17 +271,17 @@ T1 = T0 + timedelta(minutes=30)
 
 
 class TestCatchUp:
-    async def _miss_the_first_boundary(self, session_factory, calendar, sleeps, make_flaky) -> Rig:
-        broken = Rig(session_factory, calendar, sleeps, listing(), writer_factory=make_flaky(failures=99))
+    async def _miss_the_first_boundary(self, session_factory, sleeps, make_flaky) -> Rig:
+        broken = Rig(session_factory, sleeps, listing(), writer_factory=make_flaky(failures=99))
         with pytest.raises(ExceptionGroup):
             await broken.poll.run()
         assert await broken.alerts() == []
-        return Rig(session_factory, calendar, sleeps, listing())
+        return Rig(session_factory, sleeps, listing())
 
     async def test_an_alert_whose_write_failed_is_written_at_the_next_boundary_once(
-        self, session_factory, calendar, sleeps, make_flaky, notices
+        self, session_factory, sleeps, make_flaky, notices
     ):
-        healthy = await self._miss_the_first_boundary(session_factory, calendar, sleeps, make_flaky)
+        healthy = await self._miss_the_first_boundary(session_factory, sleeps, make_flaky)
 
         await healthy.run_at(T1 + timedelta(seconds=20))
         await healthy.run_at(T1 + timedelta(minutes=30, seconds=20))
@@ -306,9 +296,9 @@ class TestCatchUp:
         ]
 
     async def test_a_ticker_caught_up_and_still_surging_alerts_once(
-        self, session_factory, calendar, sleeps, make_flaky, notices
+        self, session_factory, sleeps, make_flaky, notices
     ):
-        healthy = await self._miss_the_first_boundary(session_factory, calendar, sleeps, make_flaky)
+        healthy = await self._miss_the_first_boundary(session_factory, sleeps, make_flaky)
 
         await healthy.run_at(T1 + timedelta(seconds=20))
 
@@ -318,11 +308,11 @@ class TestCatchUp:
         assert await healthy.verdicts() == [("SURGER", T0, "posted"), ("SURGER", T1, "repeat")]
 
     async def test_a_later_hit_waits_when_the_earlier_one_of_its_stock_could_not_be_stored(
-        self, session_factory, calendar, sleeps, make_flaky, notices
+        self, session_factory, sleeps, make_flaky, notices
     ):
-        await self._miss_the_first_boundary(session_factory, calendar, sleeps, make_flaky)
+        await self._miss_the_first_boundary(session_factory, sleeps, make_flaky)
         # Three failed opens exhaust the caught-up hit's attempts.
-        stuck = Rig(session_factory, calendar, sleeps, listing(), writer_factory=make_flaky(failures=3))
+        stuck = Rig(session_factory, sleeps, listing(), writer_factory=make_flaky(failures=3))
 
         with pytest.raises(ExceptionGroup):
             await stuck.run_at(T1 + timedelta(seconds=20))
@@ -332,9 +322,9 @@ class TestCatchUp:
         assert await stuck.alerts() == []
 
     async def test_a_ticker_that_only_surges_at_the_current_boundary_alerts_at_it(
-        self, session_factory, calendar, sleeps, notices
+        self, session_factory, sleeps, notices
     ):
-        healthy = Rig(session_factory, calendar, sleeps, [row("STEADY", 41, 25, mentions_24h_ago=24)])
+        healthy = Rig(session_factory, sleeps, [row("STEADY", 41, 25, mentions_24h_ago=24)])
         await healthy.run_at(T0 + timedelta(seconds=20))
         healthy.apewisdom.rows = listing()
 
@@ -399,7 +389,6 @@ class TestAlert:
         assert payload.polled_at == T0
         assert isinstance(payload.facts.price_move, PriceMoveFact)
         assert payload.facts.price_move.change_pct == pytest.approx(25.0)
-        assert payload.facts.benchmark == BenchmarkFact(symbol="SPY", price=12.5, quote_time=T0)
 
     async def test_the_hit_is_stored_as_a_posted_candidate_naming_its_alert(self, rig):
         await rig.poll.run()
@@ -420,41 +409,20 @@ class TestAlert:
             "mention_multiplier": 3.0, "mention_min_prior": 15,
         }
 
-    async def test_a_quiet_listing_writes_no_alert(self, session_factory, calendar, sleeps, notices):
-        rig = Rig(session_factory, calendar, sleeps, [row("STEADY", 41, 25, mentions_24h_ago=24)])
+    async def test_a_quiet_listing_writes_no_alert(self, session_factory, sleeps, notices):
+        rig = Rig(session_factory, sleeps, [row("STEADY", 41, 25, mentions_24h_ago=24)])
 
         await rig.poll.run()
 
         assert await rig.alerts() == []
         assert rig.quotes.symbols == []
 
-    async def test_alert_facts_come_from_the_stored_daily_bars(self, rig, calendar):
-        sessions = list(calendar.sessions_in_range(T0.date() - timedelta(days=60), T0.date() - timedelta(days=1)))[-20:]
-        async with rig.session_factory() as session:
-            await DailyBarRepository(session).insert_many(
-                [
-                    StoredDailyBar(
-                        symbol="SURGER", session_date=day, open=10.0, high=11.0, low=9.0, close=10.0,
-                        volume=1_000_000, fetched_at=T0, adjusted=True,
-                    )
-                    for day in sessions
-                ]
-            )
-            await session.commit()
-
+    async def test_the_payload_carries_the_price_and_no_volume_or_benchmark(self, rig):
         await rig.poll.run()
 
         [alert] = await rig.alerts()
-        payload = PopularitySurgePayload.model_validate(alert.payload)
-        assert payload.facts.volume.status == "ok"
-        assert payload.facts.volume.ratio == pytest.approx(3.0)
-
-    async def test_without_daily_bars_the_volume_fact_says_why(self, rig):
-        await rig.poll.run()
-
-        [alert] = await rig.alerts()
-        volume = PopularitySurgePayload.model_validate(alert.payload).facts.volume
-        assert volume == FactUnavailable(reason="only 0 of 20 daily bars stored for the average")
+        assert alert.payload["version"] == 3
+        assert set(alert.payload["facts"]) == {"price_move", "next_earnings"}
 
 
 class TestOneAlertPerStockPerDay:
@@ -543,9 +511,9 @@ class TestOneAlertPerStockPerDay:
 
 
 class TestSchwabUnavailable:
-    async def test_a_dead_token_writes_the_alert_without_price_facts(self, session_factory, calendar, sleeps, notices):
+    async def test_a_dead_token_writes_the_alert_without_price_facts(self, session_factory, sleeps, notices):
         quotes = FakeQuotes(SchwabAuthError("refresh token rejected"))
-        rig = Rig(session_factory, calendar, sleeps, listing(), quotes)
+        rig = Rig(session_factory, sleeps, listing(), quotes)
 
         await rig.poll.run()
 
@@ -560,12 +528,11 @@ class TestSchwabUnavailable:
     async def test_every_quote_waits_on_the_shared_schwab_limiter(self, rig):
         await rig.poll.run()
 
-        # The ticker's quote and the SPY benchmark quote.
-        assert rig.quotes.symbols == ["SURGER", "SPY"]
-        assert rig.limiter.acquired == 2
+        assert rig.quotes.symbols == ["SURGER"]
+        assert rig.limiter.acquired == 1
 
-    async def test_an_unknown_symbol_still_alerts_without_a_price(self, session_factory, calendar, sleeps, notices):
-        rig = Rig(session_factory, calendar, sleeps, listing(), FakeQuotes(None))
+    async def test_an_unknown_symbol_still_alerts_without_a_price(self, session_factory, sleeps, notices):
+        rig = Rig(session_factory, sleeps, listing(), FakeQuotes(None))
 
         await rig.poll.run()
 
@@ -575,10 +542,10 @@ class TestSchwabUnavailable:
 
 class TestDurability:
     async def test_a_database_failure_retries_then_tells_ops_and_raises(
-        self, session_factory, calendar, sleeps, make_flaky, notices
+        self, session_factory, sleeps, make_flaky, notices
     ):
         broken = make_flaky(failures=99)
-        rig = Rig(session_factory, calendar, sleeps, listing(), writer_factory=broken)
+        rig = Rig(session_factory, sleeps, listing(), writer_factory=broken)
 
         with pytest.raises(ExceptionGroup) as raised:
             await rig.poll.run()
@@ -591,13 +558,12 @@ class TestDurability:
         assert "SURGER" in notice and "popularity_surge" in notice
 
     async def test_one_alert_failing_does_not_lose_the_others(
-        self, session_factory, calendar, sleeps, make_flaky, notices
+        self, session_factory, sleeps, make_flaky, notices
     ):
         # Three failed opens exhaust one alert's attempts; the other alert then goes through.
         broken_for_one = make_flaky(failures=3)
         rig = Rig(
             session_factory,
-            calendar,
             sleeps,
             [*listing(), row("OTHER", 60, 80)],
             writer_factory=broken_for_one,

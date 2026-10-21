@@ -15,13 +15,11 @@ from rs_bot.testing import alert as _alert
 from rs_bot.testing import surge_alert as _surge_alert
 from rs_domain import (
     Alert,
-    BenchmarkFact,
     Delivery,
     FactUnavailable,
     NextEarningsFact,
     PriceMoveFact,
     SurgeFacts,
-    VolumeFact,
 )
 from rs_observability import HealthTracker
 from rs_persistence import AlertRepository, AlertRow, PendingAlert
@@ -430,9 +428,7 @@ async def test_a_reply_to_an_alert_posted_before_messages_were_stored_is_recorde
 def _facts(**unavailable: str) -> SurgeFacts:
     fine = {
         "price_move": PriceMoveFact(last_price=10.0, previous_close=9.0, change_pct=11.1, quote_time=HIT),
-        "volume": VolumeFact(volume=10, average_volume=5.0, sessions=20, ratio=2.0, intraday=False),
         "next_earnings": NextEarningsFact(date=HIT.date(), estimated=False),
-        "benchmark": BenchmarkFact(symbol="SPY", price=500.0, quote_time=HIT),
     }
     return SurgeFacts(**(fine | {name: FactUnavailable(reason=why) for name, why in unavailable.items()}))
 
@@ -453,7 +449,6 @@ async def test_an_alert_posted_with_missing_facts_pings_once_naming_the_stock_an
     assert f"#{row_id}" in ping and "GME" in ping
     assert "price move (Schwab has no quote for this symbol)" in ping
     assert "next earnings (no upcoming earnings date found)" in ping
-    assert "volume" not in ping and "benchmark" not in ping
 
 
 async def test_an_alert_with_every_fact_pings_no_one(session_factory, notices):
@@ -465,7 +460,7 @@ async def test_an_alert_with_every_fact_pings_no_one(session_factory, notices):
 
 
 async def test_an_alert_that_did_not_post_does_not_ping_about_facts(session_factory, notices):
-    await _insert(session_factory, _surge_alert(_facts(volume="timed out after 5s")))
+    await _insert(session_factory, _surge_alert(_facts(price_move="timed out after 5s")))
 
     await _worker(session_factory, FakeDiscord(), now=HIT + timedelta(hours=2)).sweep()
 
@@ -476,7 +471,7 @@ async def test_a_reply_does_not_ping_about_facts(session_factory, notices):
     (alert_id,) = await _insert(session_factory, _surge_alert(_facts()))
     worker = _worker(session_factory, FakeDiscord())
     await worker.sweep()
-    reply = _surge_alert(_facts(volume="timed out after 5s")).model_copy(
+    reply = _surge_alert(_facts(price_move="timed out after 5s")).model_copy(
         update={"reply_to": alert_id, "triggered_at": HIT + timedelta(minutes=30)}
     )
     await _insert(session_factory, reply)

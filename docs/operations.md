@@ -256,7 +256,15 @@ Done when a real Popularity Alert posts and carries a Track record.
    ```
    psql -c "SELECT id, symbol, rule_version, alert_price, quote_time, triggered_at, delivery, message_id, thread_id, post_attempts FROM alerts WHERE trigger = 'popularity_surge' ORDER BY id DESC LIMIT 5"
    ```
-3. Confirm in Discord that the message shows its Track record, the `rule_version` and the `alert_price`, and that it was never edited.
+3. Confirm in Discord that the message reads well on a phone and was never edited:
+   a one-line talking point naming the mentions multiple and the rank move;
+   the reasons (the Trigger and the sub-rules that fired);
+   the price with its As-of time, as a timestamp in your own zone;
+   the Track record as a small table per horizon (1, 5 and 20 days), with its case count and how many are live, and "too few cases" for a horizon under 30 Outcomes;
+   and the next Catalyst, an earnings date marked estimated when it is.
+   A fact that could not be gathered shows as `unavailable:` with its reason, and the Ops ping names it.
+   The footer opens with `alert #<id>` and names the Trigger version.
+   Volume does not appear: it moves to the Report.
 4. Confirm which Track record it showed:
    ```
    psql -c "SELECT horizon, cases, live_cases, outcomes, unpriced, split_excluded, no_move_size, share_at_2x, ordinary_share, median_multiple, median_excess, computed_at FROM track_record WHERE trigger = 'popularity_surge' ORDER BY rule_version DESC, horizon"
