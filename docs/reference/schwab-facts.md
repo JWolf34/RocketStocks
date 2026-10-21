@@ -40,16 +40,6 @@ Measured against SPY and a handful of other symbols in July and August 2026 unle
 - The extended session is 07:00 to 20:00 ET (pre-market before 07:00 is not served), a ceiling of 2.00x the regular-hours bar count; mega-caps saturate it and the illiquid tail is near 1.0x.
 - Half-day behaviour was not measurable inside the history window.
 
-## Streaming
-
-- Level-one equity and option streams ran on one shared streamer connection for a full session with zero disconnects (largest gap 2 seconds, cadence about 1 per second per service).
-- The first message after subscribe is a full snapshot; every later message carries only changed fields, so handlers must accept any field subset.
-- `TOTAL_VOLUME` is cumulative for the day including pre-market, so bar volume is a delta.
-- `TRADE_TIME_MILLIS` is the event-time basis for bucketing; quote-only updates carry quote time instead.
-- Stream-built 5-minute bars matched REST candles on price (typically within 0.05 on a roughly 750 instrument, worst bucket 0.28 at the closing auction).
-- Stream volume ran systematically 9 to 26 percent above official candle volume, with isolated spikes.
-- Schwab allows one streamer connection per account.
-
 ## Symbol files (Nasdaq Trader and Cboe, captured 2026-07-17)
 
 - `nasdaqlisted.txt`, `otherlisted.txt` and `options.txt` are plain unauthenticated GETs under `https://www.nasdaqtrader.com/dynamic/SymDir/`; the Cboe symbol directory CSV downloads without auth from its download URL.
