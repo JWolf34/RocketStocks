@@ -1,6 +1,6 @@
-"""Research CLI: `python -m rs_research event-study attention_surge`.
+"""Research CLI: `python -m rs_research event-study popularity_surge`.
 
-Connects as the `rs_research` role (read-only apart from INSERT on base_rate); the
+Connects as the `rs_research` role (read-only apart from INSERT on track_record); the
 DSN comes from RS_RESEARCH_DB_URL, never RS_DB_URL, so a misconfigured
 container cannot run it with a wider role. Exit 0 on success (including
 "nothing to measure"), 1 when the study fails, 2 on bad configuration.
@@ -18,7 +18,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from rs_domain import Clock, SystemClock, TradingCalendar
 from rs_observability import configure_logging
 from rs_persistence import build_engine, build_session_factory
-from rs_research import attention_surge
+from rs_research import popularity_surge
 from rs_sources.calendar import ExchangeCalendar
 
 logger = logging.getLogger(__name__)
@@ -26,7 +26,7 @@ logger = logging.getLogger(__name__)
 DSN_VARIABLE = "RS_RESEARCH_DB_URL"
 
 Study = Callable[[async_sessionmaker[AsyncSession], Clock, TradingCalendar], Awaitable[object]]
-STUDIES: dict[str, Study] = {attention_surge.ALERT_TYPE: attention_surge.run}
+STUDIES: dict[str, Study] = {popularity_surge.ALERT_TYPE: popularity_surge.run}
 
 
 async def _run(study: Study, dsn: str, clock: Clock, calendar: TradingCalendar) -> None:
@@ -44,7 +44,7 @@ def main(
 ) -> int:
     parser = argparse.ArgumentParser(prog="rs_research", description=__doc__)
     sub = parser.add_subparsers(dest="action", required=True)
-    event_study = sub.add_parser("event-study", help="measure a signal and write its base rates")
+    event_study = sub.add_parser("event-study", help="measure a Trigger and write its track records")
     event_study.add_argument("study", choices=sorted(STUDIES))
     args = parser.parse_args(argv)
 

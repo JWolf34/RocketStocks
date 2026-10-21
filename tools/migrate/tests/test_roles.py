@@ -13,10 +13,10 @@ from sqlalchemy.engine import make_url
 from rs_domain import (
     Alert,
     AuthRequestState,
-    BaseRate,
-    BaseRateInput,
     PopularityOrigin,
     PopularitySnapshot,
+    TrackRecord,
+    TrackRecordInput,
 )
 from rs_migrate.__main__ import main
 from rs_migrate.roles import (
@@ -34,10 +34,10 @@ from rs_persistence import (
     AlertRepository,
     AuthRequestRepository,
     Base,
-    BaseRateRepository,
     PopularityRepository,
     SchwabTokenStore,
     TokenNoticeRepository,
+    TrackRecordRepository,
     build_engine,
     build_session_factory,
 )
@@ -85,7 +85,7 @@ class Roles:
 def _clear_data(r: Roles) -> None:
     with r.admin() as conn:
         conn.execute(
-            "TRUNCATE alerts, base_rate, popularity_snapshot, schwab_auth_request,"
+            "TRUNCATE alerts, track_record, popularity_snapshot, schwab_auth_request,"
             " schwab_tokens, schwab_token_notice RESTART IDENTITY"
         )
 
@@ -236,10 +236,10 @@ def test_ingest_reads_and_writes_schwab_tokens(roles):
         assert conn.execute("SELECT token_data FROM schwab_tokens").fetchone() == ({},)
 
 
-def test_research_inserts_base_rate_but_not_alerts(roles):
+def test_research_inserts_track_record_but_not_alerts(roles):
     with roles.connect("research") as conn:
         conn.execute(
-            "INSERT INTO base_rate (alert_type, rule_version, computed_at, input, n,"
+            "INSERT INTO track_record (alert_type, rule_version, computed_at, input, n,"
             " survivorship_caveat) VALUES ('t', '1', now(), 'reconstructed', 0, 'c')"
         )
         _denied(
@@ -247,14 +247,14 @@ def test_research_inserts_base_rate_but_not_alerts(roles):
             "INSERT INTO alerts (symbol, alert_type, triggered_at, payload)"
             " VALUES ('A', 't', now(), '{}')",
         )
-        _denied(conn, "UPDATE base_rate SET n = 1")
-        _denied(conn, "DELETE FROM base_rate")
+        _denied(conn, "UPDATE track_record SET n = 1")
+        _denied(conn, "DELETE FROM track_record")
 
 
 @pytest.mark.parametrize(
     "statement",
     [
-        "INSERT INTO base_rate (alert_type, rule_version, computed_at, input, n,"
+        "INSERT INTO track_record (alert_type, rule_version, computed_at, input, n,"
         " survivorship_caveat) VALUES ('t', '1', now(), 'logged', 0, 'c')",
         "INSERT INTO alerts (symbol, alert_type, triggered_at, payload)"
         " VALUES ('A', 't', now(), '{}')",
@@ -271,7 +271,7 @@ def test_mcp_is_read_only_and_cannot_see_secrets(roles, statement):
 
 def test_mcp_reads_the_market_data_it_exposes(roles):
     with roles.connect("mcp") as conn:
-        for table in ("alerts", "base_rate", "daily_bar", "popularity_snapshot"):
+        for table in ("alerts", "track_record", "daily_bar", "popularity_snapshot"):
             conn.execute(f"SELECT * FROM {table}")
 
 
@@ -374,14 +374,14 @@ async def test_services_run_their_real_repositories_under_their_roles(roles):
         assert await repo.expire_older_than(NOW + timedelta(days=1)) == 0
         await s.commit()
 
-    # research writes the base rate; mcp reads the lot.
+    # research writes the track record; mcp reads the lot.
     async with research() as s:
-        await BaseRateRepository(s).insert(
-            BaseRate(
+        await TrackRecordRepository(s).insert(
+            TrackRecord(
                 alert_type="surge",
                 rule_version="1",
                 computed_at=NOW,
-                input=BaseRateInput.RECONSTRUCTED,
+                input=TrackRecordInput.RECONSTRUCTED,
                 n=0,
                 survivorship_caveat="c",
             )

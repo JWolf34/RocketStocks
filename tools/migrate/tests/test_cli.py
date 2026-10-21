@@ -57,11 +57,11 @@ def test_check_fails_on_schema_drift(monkeypatch, capsys, migrated_db_url):
     monkeypatch.setenv("RS_DB_URL", migrated_db_url)
     engine = create_engine(migrated_db_url, isolation_level="AUTOCOMMIT")
     with engine.connect() as conn:
-        conn.execute(text("ALTER TABLE base_rate ADD COLUMN drifted integer"))
+        conn.execute(text("ALTER TABLE track_record ADD COLUMN drifted integer"))
     try:
         assert main(["check"]) == 1
         assert "drift" in capsys.readouterr().err
     finally:
         with engine.connect() as conn:
-            conn.execute(text("ALTER TABLE base_rate DROP COLUMN drifted"))
+            conn.execute(text("ALTER TABLE track_record DROP COLUMN drifted"))
         engine.dispose()

@@ -213,16 +213,16 @@ Done when a real Popularity Alert posts and carries a Track record.
 1. Leave the stack running with a valid token, the imported history and bars loaded.
    After the import, measure the Track record once rather than waiting for the weekly job:
    ```
-   $COMPOSE exec ingest python -m rs_research event-study attention_surge
+   $COMPOSE exec ingest python -m rs_research event-study popularity_surge
    ```
 2. Find the Alert:
    ```
-   psql -c "SELECT id, symbol, rule_version, alert_price, quote_time, triggered_at, posted_at, post_attempts FROM alerts WHERE alert_type = 'attention_surge' ORDER BY id DESC LIMIT 5"
+   psql -c "SELECT id, symbol, rule_version, alert_price, quote_time, triggered_at, posted_at, post_attempts FROM alerts WHERE alert_type = 'popularity_surge' ORDER BY id DESC LIMIT 5"
    ```
 3. Confirm in Discord that the message shows its Track record, the `rule_version` and the `alert_price`, and that it was never edited.
 4. Confirm which Track record it showed:
    ```
-   psql -c "SELECT input, n, hit_rate_5d, median_excess_5d, computed_at FROM base_rate WHERE alert_type = 'attention_surge' ORDER BY computed_at DESC LIMIT 3"
+   psql -c "SELECT input, n, hit_rate_5d, median_excess_5d, computed_at FROM track_record WHERE alert_type = 'popularity_surge' ORDER BY computed_at DESC LIMIT 3"
    ```
    The bot shows the `logged` row once its N passes 30, otherwise the `reconstructed` row.
 

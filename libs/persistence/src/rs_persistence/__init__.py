@@ -10,7 +10,6 @@ from rs_persistence.auth_requests import (
     AUTH_REQUEST_WINDOW,
     AuthRequestRepository,
 )
-from rs_persistence.base_rates import BaseRateRepository
 from rs_persistence.chains import ChainSnapshotRepository
 from rs_persistence.daily_bars import DailyBarRepository
 from rs_persistence.engine import build_engine, build_session_factory, psycopg_conninfo
@@ -21,19 +20,20 @@ from rs_persistence.import_verification import (
 from rs_persistence.models import (
     AlertRow,
     Base,
-    BaseRateRow,
     DailyBarRow,
     ImportVerificationRow,
     PopularitySnapshotRow,
     SchwabAuthRequestRow,
     SchwabTokenNoticeRow,
     SchwabTokenRow,
+    TrackRecordRow,
     UnpricedSymbolRow,
     chain_snapshot_table,
 )
 from rs_persistence.popularity import PopularityRepository
 from rs_persistence.token_notices import TokenNoticeRepository
 from rs_persistence.token_store import SchwabTokenStore
+from rs_persistence.track_records import TrackRecordRepository
 
 
 def migration_config(db_url: str) -> Config:
@@ -57,8 +57,8 @@ __all__ = [
     "AlertRow",
     "AuthRequestRepository",
     "Base",
-    "BaseRateRepository",
-    "BaseRateRow",
+    "TrackRecordRepository",
+    "TrackRecordRow",
     "ChainSnapshotRepository",
     "DailyBarRepository",
     "DailyBarRow",

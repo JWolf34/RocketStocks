@@ -1,4 +1,4 @@
-"""The facts block of an attention-surge alert, gathered at write time.
+"""The facts block of a popularity-surge alert, gathered at write time.
 
 Each fact is independent and optional: a source that fails, times out or has
 nothing to say becomes `FactUnavailable` with a reason, so a slow or broken

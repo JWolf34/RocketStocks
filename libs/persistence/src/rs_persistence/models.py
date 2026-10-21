@@ -33,10 +33,10 @@ from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 from rs_domain import (
     AuthRequestState,
-    BaseRateInput,
     Dataset,
     PopularityOrigin,
     SourceStatus,
+    TrackRecordInput,
 )
 
 
@@ -167,12 +167,12 @@ class UnpricedSymbolRow(Base):
     reason: Mapped[str] = mapped_column(Text)
 
 
-class BaseRateRow(Base):
-    """base_rate: append-only, one row per study run."""
+class TrackRecordRow(Base):
+    """track_record: append-only, one row per study run."""
 
-    __tablename__ = "base_rate"
+    __tablename__ = "track_record"
     __table_args__ = (
-        Index("ix_base_rate_lookup", "alert_type", "rule_version", "input", "computed_at"),
+        Index("ix_track_record_lookup", "alert_type", "rule_version", "input", "computed_at"),
     )
 
     id: Mapped[int] = mapped_column(BigInteger, Identity(always=True), primary_key=True)
@@ -180,7 +180,7 @@ class BaseRateRow(Base):
     rule_version: Mapped[str] = mapped_column(Text)
     computed_at: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True))
     input: Mapped[str] = mapped_column(
-        ENUM(*(m.value for m in BaseRateInput), name="base_rate_input", create_type=False)
+        ENUM(*(m.value for m in TrackRecordInput), name="track_record_input", create_type=False)
     )
     n: Mapped[int] = mapped_column(Integer)
     n_unpriced: Mapped[int] = mapped_column(Integer, server_default=text("0"))

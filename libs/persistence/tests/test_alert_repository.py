@@ -49,7 +49,7 @@ async def test_insert_stores_the_rule_fields(session_factory):
             "rule_version": "1",
             "alert_price": 123.45,
             "quote_time": quote_time,
-            "dedup_key": "attention_surge:1:SPY:20260706T1430Z",
+            "dedup_key": "popularity_surge:1:SPY:20260706T1430Z",
         }
     )
     async with session_factory() as s:

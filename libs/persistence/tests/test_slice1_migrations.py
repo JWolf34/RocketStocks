@@ -1,4 +1,4 @@
-"""Migrations 0006-0008 against Timescale: the upgrade/downgrade round trip and
+"""Migrations 0006-0014 against Timescale: the upgrade/downgrade round trip and
 the physical layout (hypertables, compression, constraints)."""
 
 import uuid
@@ -9,8 +9,8 @@ from sqlalchemy import create_engine, inspect, text
 
 from rs_persistence import migration_config
 
-NEW_TABLES = {"popularity_snapshot", "daily_bar", "unpriced_symbol", "base_rate", "schwab_auth_request"}
-NEW_TYPES = {"popularity_origin", "base_rate_input", "auth_request_state"}
+NEW_TABLES = {"popularity_snapshot", "daily_bar", "unpriced_symbol", "track_record", "schwab_auth_request"}
+NEW_TYPES = {"popularity_origin", "track_record_input", "auth_request_state"}
 ALERT_COLUMNS_BEFORE = {"id", "symbol", "alert_type", "triggered_at", "payload", "posted_at"}
 
 
@@ -88,6 +88,67 @@ def test_0012_and_0013_drop_the_dead_tables_and_downgrade_to_empty_ones(scratch_
 
         command.upgrade(config, "head")
         assert not {"stream_bars_5m", "service_clients"} & set(inspect(engine).get_table_names())
+    finally:
+        engine.dispose()
+
+
+def test_0014_renames_to_the_glossary_and_rewrites_stored_values_both_ways(scratch_url):
+    config = migration_config(scratch_url)
+    engine = create_engine(scratch_url)
+    try:
+        command.upgrade(config, "0013")
+        with engine.begin() as conn:
+            conn.execute(
+                text(
+                    "INSERT INTO alerts (symbol, alert_type, triggered_at, payload, rule_version, dedup_key)"
+                    " VALUES ('GME', 'attention_surge', now(), '{\"note\": \"attention_surge\"}', '1',"
+                    "         'attention_surge:1:GME:20261019T1400Z'),"
+                    "        ('AMC', 'other', now(), '{\"note\": \"attention_surge\"}', NULL, 'other:AMC')"
+                )
+            )
+            conn.execute(
+                text(
+                    "INSERT INTO base_rate (alert_type, rule_version, computed_at, input, n,"
+                    " survivorship_caveat) VALUES ('attention_surge', '1', now(), 'logged', 7, 'c')"
+                )
+            )
+
+        command.upgrade(config, "head")
+        with engine.connect() as conn:
+            alerts = conn.execute(
+                text("SELECT symbol, alert_type, dedup_key, payload::text FROM alerts ORDER BY symbol")
+            ).all()
+            records = conn.execute(text("SELECT alert_type, input::text, n FROM track_record")).all()
+            names = set(
+                conn.execute(
+                    text(
+                        "SELECT relname FROM pg_class WHERE relname IN"
+                        " ('track_record_pkey', 'ix_track_record_lookup', 'track_record_id_seq')"
+                    )
+                ).scalars()
+            )
+        assert alerts == [
+            ("AMC", "other", "other:AMC", '{"note": "attention_surge"}'),
+            (
+                "GME",
+                "popularity_surge",
+                "popularity_surge:1:GME:20261019T1400Z",
+                '{"note": "popularity_surge"}',
+            ),
+        ]
+        assert records == [("popularity_surge", "logged", 7)]
+        assert names == {"track_record_pkey", "ix_track_record_lookup", "track_record_id_seq"}
+        assert "base_rate" not in inspect(engine).get_table_names()
+
+        command.downgrade(config, "0013")
+        with engine.connect() as conn:
+            assert conn.execute(
+                text("SELECT alert_type, dedup_key FROM alerts WHERE symbol = 'GME'")
+            ).one() == ("attention_surge", "attention_surge:1:GME:20261019T1400Z")
+            assert conn.execute(text("SELECT alert_type, n FROM base_rate")).one() == (
+                "attention_surge",
+                7,
+            )
     finally:
         engine.dispose()
 

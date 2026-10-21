@@ -107,15 +107,15 @@ class UnpricedSymbol(BaseModel):
     reason: str
 
 
-class BaseRateInput(StrEnum):
-    """What a base rate was measured from. Values are the DB column values."""
+class TrackRecordInput(StrEnum):
+    """What a track record was measured from. Values are the DB column values."""
 
     RECONSTRUCTED = "reconstructed"
     LOGGED = "logged"
 
 
-class BaseRate(BaseModel):
-    """A signal's measured outcome statistics for one rule version. Hit rate is
+class TrackRecord(BaseModel):
+    """A Trigger's measured outcome statistics for one rule version. Hit rate is
     the share of events with a positive excess return versus SPY; both are None
     for a horizon with no priced events. `n_unpriced` counts events dropped
     because the vendor could not price the symbol."""
@@ -125,7 +125,7 @@ class BaseRate(BaseModel):
     alert_type: str
     rule_version: str
     computed_at: UtcDatetime
-    input: BaseRateInput
+    input: TrackRecordInput
     n: NonNegativeInt
     n_unpriced: NonNegativeInt = 0
     hit_rate_1d: float | None = None

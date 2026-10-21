@@ -135,7 +135,7 @@ docker compose -f docker-compose.v2.yml up -d
 # v2 operator tools (host-side, shared venv; exact procedures in docs/operations.md)
 .venv/bin/python -m rs_backfill verify-offset --dump PATH   # then popularity-import --dump PATH --zone ZONE
 .venv/bin/python -m rs_ingest.tools.login                   # first Schwab login; later logins use /setup schwab
-RS_RESEARCH_DB_URL=... .venv/bin/python -m rs_research event-study attention_surge
+RS_RESEARCH_DB_URL=... .venv/bin/python -m rs_research event-study popularity_surge
 ```
 
 ## Environment Variables (`.env`)

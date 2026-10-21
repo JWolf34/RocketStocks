@@ -1,4 +1,4 @@
-"""The weekly base-rate job: schedule, the subprocess boundary and failure reporting."""
+"""The weekly track-record job: schedule, the subprocess boundary and failure reporting."""
 
 import asyncio
 import json
@@ -10,9 +10,9 @@ from zoneinfo import ZoneInfo
 import httpx
 import pytest
 
-from rs_ingest.base_rate import JOB_NAME, research_environment, run_event_study
 from rs_ingest.cron import CronTable, Weekly
 from rs_ingest.jobs import Dependencies, register_jobs
+from rs_ingest.track_record import JOB_NAME, research_environment, run_event_study
 from rs_observability import OpsSettings, configure_ops
 from rs_observability import ops as ops_module
 

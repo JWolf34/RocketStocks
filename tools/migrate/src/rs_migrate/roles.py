@@ -39,7 +39,7 @@ GRANTS: dict[str, dict[str, tuple[str, ...]]] = {
         "mcp": _SELECT,
         "research": _SELECT,
     },
-    "base_rate": {
+    "track_record": {
         "bot": _SELECT,
         "mcp": _SELECT,
         "research": _SELECT_INSERT,

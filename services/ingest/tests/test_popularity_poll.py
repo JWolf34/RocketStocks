@@ -9,12 +9,12 @@ from zoneinfo import ZoneInfo
 import pytest
 from sqlalchemy import delete, func, insert, select
 
-from rs_analysis.attention_surge import RULE_VERSION, SubRule
+from rs_analysis.popularity_surge import RULE_VERSION, SubRule
 from rs_domain import (
     Alert,
-    AttentionSurgePayload,
     BenchmarkFact,
     FactUnavailable,
+    PopularitySurgePayload,
     PriceMoveFact,
     StoredDailyBar,
 )
@@ -160,7 +160,7 @@ def rig(session_factory, calendar, sleeps, notices) -> Rig:
 
 
 def test_the_payload_can_name_every_sub_rule_the_rule_emits():
-    named = set(get_args(get_type_hints(AttentionSurgePayload)["fired"])[0].__args__)
+    named = set(get_args(get_type_hints(PopularitySurgePayload)["fired"])[0].__args__)
     assert named == {rule.value for rule in SubRule}
 
 
@@ -287,8 +287,8 @@ class TestCatchUp:
 
         [alert] = await healthy.alerts()
         assert alert.triggered_at == T0
-        assert alert.dedup_key == f"attention_surge:{RULE_VERSION}:SURGER:20261019T1400Z"
-        assert AttentionSurgePayload.model_validate(alert.payload).polled_at == T0
+        assert alert.dedup_key == f"popularity_surge:{RULE_VERSION}:SURGER:20261019T1400Z"
+        assert PopularitySurgePayload.model_validate(alert.payload).polled_at == T0
 
     async def test_a_ticker_caught_up_and_still_surging_alerts_once(
         self, session_factory, calendar, sleeps, make_flaky, notices
@@ -353,14 +353,14 @@ class TestAlert:
 
         [alert] = await rig.alerts()
         assert alert.symbol == "SURGER"
-        assert alert.alert_type == "attention_surge"
+        assert alert.alert_type == "popularity_surge"
         assert alert.rule_version == RULE_VERSION
-        assert alert.dedup_key == f"attention_surge:{RULE_VERSION}:SURGER:20261019T1400Z"
+        assert alert.dedup_key == f"popularity_surge:{RULE_VERSION}:SURGER:20261019T1400Z"
         assert alert.triggered_at == T0
         assert alert.alert_price == 12.5
         assert alert.quote_time == T0
         assert alert.posted_at is None
-        payload = AttentionSurgePayload.model_validate(alert.payload)
+        payload = PopularitySurgePayload.model_validate(alert.payload)
         assert payload.fired == (SubRule.MENTION_SURGE.value,)
         assert (payload.rank, payload.mentions, payload.mentions_24h_ago) == (40, 90, 20)
         assert payload.polled_at == T0
@@ -393,7 +393,7 @@ class TestAlert:
         await rig.poll.run()
 
         [alert] = await rig.alerts()
-        payload = AttentionSurgePayload.model_validate(alert.payload)
+        payload = PopularitySurgePayload.model_validate(alert.payload)
         assert payload.facts.volume.status == "ok"
         assert payload.facts.volume.ratio == pytest.approx(3.0)
 
@@ -401,7 +401,7 @@ class TestAlert:
         await rig.poll.run()
 
         [alert] = await rig.alerts()
-        volume = AttentionSurgePayload.model_validate(alert.payload).facts.volume
+        volume = PopularitySurgePayload.model_validate(alert.payload).facts.volume
         assert volume == FactUnavailable(reason="only 0 of 20 daily bars stored for the average")
 
 
@@ -433,10 +433,10 @@ class TestCooldown:
             await AlertRepository(session).insert(
                 Alert(
                     symbol="OLD",
-                    alert_type="attention_surge",
+                    alert_type="popularity_surge",
                     triggered_at=T0 - timedelta(hours=2),
                     payload={"version": 99},
-                    dedup_key="attention_surge:0:OLD:20261019T1200Z",
+                    dedup_key="popularity_surge:0:OLD:20261019T1200Z",
                 )
             )
             await session.commit()
@@ -456,7 +456,7 @@ class TestSchwabUnavailable:
         [alert] = await rig.alerts()
         assert alert.alert_price is None
         assert alert.quote_time is None
-        facts = AttentionSurgePayload.model_validate(alert.payload).facts
+        facts = PopularitySurgePayload.model_validate(alert.payload).facts
         assert facts.price_move == FactUnavailable(reason="Schwab token is dead")
         assert facts.next_earnings.status == "ok"
         assert len(rig.tripped.reasons) == 1
@@ -492,7 +492,7 @@ class TestDurability:
         assert rig.sleeps.seconds == [1.0, 2.0]
         [notice] = notices
         assert "Alert NOT stored" in notice
-        assert f"attention_surge:{RULE_VERSION}:SURGER:20261019T1400Z" in notice
+        assert f"popularity_surge:{RULE_VERSION}:SURGER:20261019T1400Z" in notice
 
     async def test_one_alert_failing_does_not_lose_the_others(
         self, session_factory, calendar, sleeps, make_flaky, notices

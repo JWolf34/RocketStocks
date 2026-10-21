@@ -85,7 +85,7 @@ class SurgeFacts(BaseModel):
     benchmark: Annotated[BenchmarkFact | FactUnavailable, Field(discriminator="status")]
 
 
-class AttentionSurgePayload(BaseModel):
+class PopularitySurgePayload(BaseModel):
     """The decision inputs (what the rule saw) plus the facts block."""
 
     model_config = ConfigDict(frozen=True)
