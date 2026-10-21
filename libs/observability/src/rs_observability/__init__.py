@@ -1,5 +1,13 @@
 """RocketStocks v2 observability: logging, metrics, and health."""
 
+from rs_observability.health import (
+    HealthTracker,
+    QuietFailure,
+    Source,
+    SourceFailed,
+    SweepTally,
+    SweepVerdict,
+)
 from rs_observability.hooks import install_excepthooks
 from rs_observability.logs import configure_logging, unit_of_work
 from rs_observability.metrics import (
@@ -13,8 +21,14 @@ from rs_observability.ops import OpsSettings, configure_ops, notify_ops
 __all__ = [
     "CallableGaugeCollector",
     "DictCounterCollector",
+    "HealthTracker",
     "LabeledDictCounterCollector",
     "OpsSettings",
+    "QuietFailure",
+    "Source",
+    "SourceFailed",
+    "SweepTally",
+    "SweepVerdict",
     "configure_logging",
     "configure_ops",
     "install_excepthooks",
