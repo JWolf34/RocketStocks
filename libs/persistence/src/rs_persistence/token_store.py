@@ -1,4 +1,4 @@
-"""Schwab OAuth token persistence — Postgres single-row store (S003 OQ#2).
+"""Schwab OAuth token persistence — Postgres single-row store.
 
 Owns its transactions (unlike the per-session repositories): schwab-py fires
 the write callback at arbitrary refresh moments, so the store opens a short

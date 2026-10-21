@@ -8,10 +8,10 @@ from rs_persistence.models import chain_snapshot_table
 
 
 class ChainSnapshotRepository:
-    """Append-only writer for options_chain_snapshot (rev-005, S008). One
+    """Append-only writer for options_chain_snapshot (rev-005). One
     ChainSnapshot persists as its payload rows, or - when it has none (a
     tombstone: failed/skipped fetch) - as a single payload-less membership row,
-    so every (cycle, name) pair has rows either way (ADR-0030). Rows are
+    so every (cycle, name) pair has rows either way. Rows are
     immutable; there is no update path by design. Caller owns the commit."""
 
     def __init__(self, session: AsyncSession) -> None:

@@ -1,1 +1,1 @@
-"""RocketStocks v2 bot service: Bus-2 consumer posting alerts to Discord."""
+"""RocketStocks v2 bot service: posts alerts to Discord."""

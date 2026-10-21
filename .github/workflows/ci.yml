@@ -70,6 +70,9 @@ jobs:
       - name: Clock-discipline gate
         run: scripts/check_clock_discipline.sh
 
+      - name: Plan-citation gate
+        run: scripts/check_plan_citations.sh
+
       # Hand-written migrations vs the ORM models: fails on any drift.
       - name: Migrations match models (alembic check)
         env:

@@ -1,7 +1,7 @@
-"""SQLAlchemy declarative models — the persistence shapes (ADR-0004).
+"""SQLAlchemy declarative models — the persistence shapes.
 
 These are internal to rs_persistence; repositories convert to/from the
-rs_domain Pydantic models so internal fields never leak (ADR-0004).
+rs_domain Pydantic models so internal fields never leak.
 
 alerts.posted_at is the bot's delivery cursor (its `posted_at IS NULL` sweep);
 post_attempts caps its retries.
@@ -44,7 +44,7 @@ class Base(DeclarativeBase):
     pass
 
 
-# options_chain_snapshot (rev-005, S008) is a Core Table, not an ORM class: the
+# options_chain_snapshot (rev-005) is a Core Table, not an ORM class: the
 # hypertable has no primary key (append-only; tombstone rows carry NULL contract
 # identity), and the ORM refuses PK-less mappings / silently drops NULL-PK rows.
 # Numeric(asdecimal=False): reads come back float, matching the rs_domain shapes
@@ -105,7 +105,7 @@ class AlertRow(Base):
     __table_args__ = (
         # The bot's delivery cursor: a partial index holding only undelivered rows.
         Index("ix_alerts_unposted", "id", postgresql_where=text("posted_at IS NULL")),
-        # Idempotent writes: a NULL key (streaming alerts) never conflicts.
+        # Idempotent writes: a NULL key never conflicts.
         UniqueConstraint("dedup_key", name="uq_alerts_dedup_key"),
     )
 

@@ -24,8 +24,7 @@ def test_requires_an_action():
 
 
 def test_alembic_records_render_on_the_json_stream(monkeypatch, capsys, migrated_db_url):
-    """S006: the migrate container's alembic output joins the one JSON stream
-    (alembic is named in the spec's third-party logger list)."""
+    """The migrate container's alembic output joins the one JSON stream."""
     monkeypatch.setenv("RS_LOG_FORMAT", "json")
     monkeypatch.setenv("RS_DB_URL", migrated_db_url)
     root = logging.getLogger()

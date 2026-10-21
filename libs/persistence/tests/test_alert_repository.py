@@ -1,5 +1,5 @@
-"""AlertRepository: the alerts row and the Bus-2 NOTIFY are one atomic unit
-(grilling #4/#6). A raw LISTEN connection witnesses that the notify arrives only
+"""AlertRepository: the alerts row and its NOTIFY are one atomic unit.
+A raw LISTEN connection witnesses that the notify arrives only
 at commit, carrying the alert id."""
 
 from datetime import UTC, datetime
@@ -37,7 +37,7 @@ async def test_insert_writes_the_alert_row(session_factory):
         row = await s.get(AlertRow, alert_id)
     assert row.symbol == "SPY"
     assert row.payload == {"volume": 750_000, "threshold": 500_000}
-    assert row.posted_at is None  # the bot stamps this on delivery (S004)
+    assert row.posted_at is None  # the bot stamps this on delivery
     assert row.post_attempts == 0
     assert (row.rule_version, row.alert_price, row.quote_time, row.dedup_key) == (None,) * 4
 
@@ -126,7 +126,7 @@ async def test_custom_channel_routes_the_notify(session_factory, migrated_db_url
 
 
 async def test_list_unposted_returns_pending_in_id_order(session_factory):
-    # The bot's sweep cursor (S004, ADR-0005): every row with posted_at IS NULL,
+    # The bot's sweep cursor: every row with posted_at IS NULL,
     # id order, full drain — a posted row leaves the pending set.
     async with session_factory() as s:
         repo = AlertRepository(s)
@@ -156,7 +156,7 @@ async def test_mark_posted_stamps_dbside_and_clears_pending(session_factory):
         stamp = await AlertRepository(s).mark_posted(alert_id)
         await s.commit()
 
-    # DB-side clock (S004 pin #9): the returned stamp is exactly what the row
+    # DB-side clock: the returned stamp is exactly what the row
     # now holds, tz-aware, and the row has left the pending set.
     assert stamp is not None and stamp.tzinfo is not None
     async with session_factory() as s:

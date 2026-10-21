@@ -90,7 +90,7 @@ class AlertRepository:
         """Alert rows as domain Alerts (the semantic decisions), id order,
         optionally filtered to symbols and a [start, end) triggered_at window.
         Delivery bookkeeping (id, posted_at, post_attempts) never leaves: the
-        replay comparator diffs decisions, not delivery state (ADR-0023)."""
+        replay comparator diffs decisions, not delivery state."""
         query = select(AlertRow).order_by(AlertRow.id)
         if symbols is not None:
             query = query.where(AlertRow.symbol.in_(symbols))
@@ -105,7 +105,7 @@ class AlertRepository:
         """Every undelivered alert, id order, no LIMIT - the bot's sweep drains
         fully. With `max_attempts`, alerts that already failed that many posts are
         excluded (the bot's capped retry); rows are rebuilt as domain Alerts at the
-        boundary (UTC-normalized - ADR-0004)."""
+        boundary (UTC-normalized)."""
         query = select(AlertRow).where(AlertRow.posted_at.is_(None)).order_by(AlertRow.id)
         if max_attempts is not None:
             query = query.where(AlertRow.post_attempts < max_attempts)

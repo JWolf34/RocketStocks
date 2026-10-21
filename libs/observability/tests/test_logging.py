@@ -1,4 +1,4 @@
-"""configure_logging: stdlib front door, structlog engine (spec S006).
+"""configure_logging: stdlib front door, structlog engine.
 
 Every test drives the pipeline the way services do — `logging.getLogger`
 module loggers (the zero-churn front door) — and asserts on the rendered
@@ -61,7 +61,7 @@ def test_percent_style_args_are_interpolated(monkeypatch, capsys):
 
 
 def test_stdlib_record_merges_bound_contextvars(monkeypatch, capsys):
-    """The spec's third-party clause: a foreign stdlib record emitted inside a
+    """A foreign stdlib record emitted inside a
     bound context (discord.py, uvicorn, ...) still carries the bound fields."""
     monkeypatch.setenv("RS_LOG_FORMAT", "json")
     configure_logging("bot")

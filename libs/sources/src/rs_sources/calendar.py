@@ -1,9 +1,9 @@
 """XNYS trading-calendar adapter over exchange_calendars.
 
 Implements the rs_domain.TradingCalendar protocol. This is the only place
-Eastern Time is handled; every datetime returned is tz-aware UTC (binding
-S002 convention). Scheduled facts only - unscheduled halts and surprise
-late opens are feed-observable, not calendar-knowable (ADR-0017).
+Eastern Time is handled; every datetime returned is tz-aware UTC.
+Scheduled facts only - unscheduled halts and surprise
+late opens are feed-observable, not calendar-knowable.
 """
 
 from datetime import UTC, date, datetime

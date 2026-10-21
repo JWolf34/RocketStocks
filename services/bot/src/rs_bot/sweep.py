@@ -1,8 +1,7 @@
 """The single posting path: one worker waits on (wake event
 OR the sweep interval), then drains every unposted alert in id order. NOTIFY
 never posts — the LISTEN loop only sets the wake event, so the correctness
-mechanism (cursor sweep) runs on every post and cannot rot unnoticed
-(Finding 3 is the cautionary live demo).
+mechanism (cursor sweep) runs on every post and cannot rot unnoticed.
 
 Per row: read track record → render → send → mark_posted → commit. The per-row
 commit bounds the crash-dupe window to one alert: delivery is at-least-once, a
@@ -114,7 +113,7 @@ class SweepWorker:
             for item in pending:
                 if self._stopping.is_set():
                     break
-                # One posting attempt = one unit of work (S006): discord.py's
+                # One posting attempt = one unit of work: discord.py's
                 # retry internals log inside it and group under the alert.
                 # alert_id is the cross-service join key (ingest's insert log
                 # carries the same field).

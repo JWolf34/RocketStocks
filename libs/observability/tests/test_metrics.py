@@ -1,4 +1,4 @@
-"""DictCounterCollector + start_metrics_server (S006 pin #6): the existing
+"""DictCounterCollector + start_metrics_server: the existing
 counter dicts stay the increment API; exposition reads them at scrape time
 with proper Counter type metadata so rate()/increase() work."""
 
@@ -41,8 +41,8 @@ def test_scrape_reads_current_values_not_registration_snapshot():
 
 
 def test_names_without_total_suffix_are_normalized():
-    """Ingest's pipeline dict uses bare names (bars_persisted, alerts_emitted
-    — S003, untouched); Prometheus counters must end in _total for
+    """Ingest's pipeline dict uses bare names (bars_persisted, alerts_emitted);
+    Prometheus counters must end in _total for
     rate()/increase(), so the bridge normalizes at exposition."""
     counters = {"bars_persisted": 2, "alerts_emitted": 1}
     text = scrape(registry_with(DictCounterCollector(counters, namespace="")))
