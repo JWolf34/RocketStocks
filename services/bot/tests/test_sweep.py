@@ -19,15 +19,15 @@ from rs_bot.counters import new_counters
 from rs_bot.sweep import SweepWorker
 from rs_domain import (
     Alert,
-    AttentionSurgePayload,
-    BaseRate,
-    BaseRateInput,
     FactUnavailable,
+    PopularitySurgePayload,
     SurgeFacts,
+    TrackRecord,
+    TrackRecordInput,
 )
 from rs_observability import OpsSettings, configure_ops
 from rs_observability.testing import captured_json_stream, json_records
-from rs_persistence import AlertRepository, BaseRateRepository
+from rs_persistence import AlertRepository, TrackRecordRepository
 
 
 def _alert(symbol: str) -> Alert:
@@ -199,7 +199,7 @@ async def test_last_attempt_posts_the_plain_embed(session_factory):
 
 def _surge_alert() -> Alert:
     unavailable = FactUnavailable(reason="test")
-    payload = AttentionSurgePayload(
+    payload = PopularitySurgePayload(
         rule_version="1",
         polled_at=datetime(2026, 7, 6, 14, 30, tzinfo=UTC),
         fired=("rank_jump",),
@@ -220,29 +220,29 @@ def _surge_alert() -> Alert:
     )
     return Alert(
         symbol="GME",
-        alert_type="attention_surge",
+        alert_type="popularity_surge",
         triggered_at=datetime(2026, 7, 6, 14, 30, tzinfo=UTC),
         payload=payload.model_dump(mode="json"),
         rule_version="1",
     )
 
 
-async def test_surge_alert_is_posted_with_the_current_base_rate(session_factory):
+async def test_surge_alert_is_posted_with_the_current_track_record(session_factory):
     await _insert(session_factory, _surge_alert())
     sender = FakeSender()
     worker = SweepWorker(session_factory, sender, sweep_seconds=60, counters=new_counters())
 
     await worker.sweep()
     (before,) = sender.sent
-    assert "No base rate has been measured" in {f.name: f.value for f in before.fields}["Base rate"]
+    assert "No track record has been measured" in {f.name: f.value for f in before.fields}["Track record"]
 
     async with session_factory() as s:
-        await BaseRateRepository(s).insert(
-            BaseRate(
-                alert_type="attention_surge",
+        await TrackRecordRepository(s).insert(
+            TrackRecord(
+                alert_type="popularity_surge",
                 rule_version="1",
                 computed_at=datetime(2026, 7, 5, tzinfo=UTC),
-                input=BaseRateInput.RECONSTRUCTED,
+                input=TrackRecordInput.RECONSTRUCTED,
                 n=77,
                 survivorship_caveat="caveat",
             )
@@ -252,7 +252,7 @@ async def test_surge_alert_is_posted_with_the_current_base_rate(session_factory)
     await worker.sweep()
 
     after = {f.name: f.value for f in sender.sent[-1].fields}
-    assert "N=77" in after["Base rate"]
+    assert "N=77" in after["Track record"]
 
 
 async def test_run_sweeps_on_wake_without_waiting_interval(session_factory):

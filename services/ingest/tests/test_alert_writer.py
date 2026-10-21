@@ -13,10 +13,10 @@ from rs_persistence import AlertRow
 T0 = datetime(2026, 10, 19, 14, 0, tzinfo=UTC)
 
 
-def alert(dedup_key: str = "attention_surge:1:ABC:20261019T1400Z") -> Alert:
+def alert(dedup_key: str = "popularity_surge:1:ABC:20261019T1400Z") -> Alert:
     return Alert(
         symbol="ABC",
-        alert_type="attention_surge",
+        alert_type="popularity_surge",
         triggered_at=T0,
         payload={"note": "unit"},
         rule_version="1",
@@ -75,7 +75,7 @@ async def test_a_persistent_failure_reports_the_alert_to_ops_and_raises(
     assert sleeps.seconds == [1.0, 2.0, 4.0]
     [notice] = notices
     assert "Alert NOT stored" in notice
-    assert "attention_surge:1:ABC:20261019T1400Z" in notice
+    assert "popularity_surge:1:ABC:20261019T1400Z" in notice
     assert "OperationalError" in notice
     assert await stored(session_factory) == 0
 
@@ -113,4 +113,4 @@ async def test_the_ops_notice_fits_discords_limit_for_a_large_alert(
         await writer.write(big)
 
     assert len(notices[0]) <= 2000
-    assert notices[0].startswith("Alert NOT stored: attention_surge for ABC")
+    assert notices[0].startswith("Alert NOT stored: popularity_surge for ABC")

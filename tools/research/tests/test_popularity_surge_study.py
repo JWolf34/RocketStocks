@@ -1,5 +1,5 @@
-"""The attention-surge event study end to end against a real database: synthetic
-snapshots, bars and alerts in, a base-rate row `rs_query` reads out, with every
+"""The popularity-surge event study end to end against a real database: synthetic
+snapshots, bars and alerts in, a track-record row `rs_query` reads out, with every
 statistic worked out by hand below.
 
 Session index i counts from Monday 2026-08-03 (i = 0); the stored sessions run
@@ -14,22 +14,22 @@ from sqlalchemy import select
 
 from rs_domain import (
     Alert,
-    BaseRate,
-    BaseRateInput,
     PopularityOrigin,
     PopularitySnapshot,
     StoredDailyBar,
+    TrackRecord,
+    TrackRecordInput,
 )
 from rs_persistence import (
     AlertRepository,
-    BaseRateRow,
     DailyBarRepository,
     PopularityRepository,
+    TrackRecordRow,
 )
-from rs_query import current_base_rate
-from rs_research import attention_surge
+from rs_query import current_track_record
+from rs_research import popularity_surge
 from rs_research.__main__ import main
-from rs_research.attention_surge import StudyError
+from rs_research.popularity_surge import StudyError
 from rs_sources.calendar import ExchangeCalendar
 
 AUG_3 = date(2026, 8, 3)
@@ -124,7 +124,7 @@ SNAPSHOTS = [
 def _alert(symbol: str, at: datetime, price: float | None, **overrides: object) -> Alert:
     fields: dict[str, object] = {
         "symbol": symbol,
-        "alert_type": "attention_surge",
+        "alert_type": "popularity_surge",
         "triggered_at": at,
         "rule_version": "1",
         "alert_price": price,
@@ -155,25 +155,25 @@ async def _seed(session_factory, snapshots=SNAPSHOTS, alerts=ALERTS, bars=None) 
         await s.commit()
 
 
-async def _rows(session_factory) -> list[BaseRateRow]:
+async def _rows(session_factory) -> list[TrackRecordRow]:
     async with session_factory() as s:
-        return list((await s.scalars(select(BaseRateRow).order_by(BaseRateRow.id))).all())
+        return list((await s.scalars(select(TrackRecordRow).order_by(TrackRecordRow.id))).all())
 
 
-def _by_input(rates: list[BaseRate]) -> dict[BaseRateInput, BaseRate]:
-    return {rate.input: rate for rate in rates}
+def _by_input(records: list[TrackRecord]) -> dict[TrackRecordInput, TrackRecord]:
+    return {record.input: record for record in records}
 
 
-async def test_reconstructed_base_rate_is_stored_and_read_back_by_rs_query(session_factory):
+async def test_reconstructed_track_record_is_stored_and_read_back_by_rs_query(session_factory):
     await _seed(session_factory)
 
-    result = await attention_surge.run(session_factory, FixedClock(), CALENDAR)
+    result = await popularity_surge.run(session_factory, FixedClock(), CALENDAR)
 
     async with session_factory() as s:
-        stored = await current_base_rate(s, "attention_surge", "1")
+        stored = await current_track_record(s, "popularity_surge", "1")
     assert stored is not None
-    assert stored == _by_input(result.rates)[BaseRateInput.RECONSTRUCTED]
-    assert (stored.input, stored.computed_at) == (BaseRateInput.RECONSTRUCTED, NOW)
+    assert stored == _by_input(result.records)[TrackRecordInput.RECONSTRUCTED]
+    assert (stored.input, stored.computed_at) == (TrackRecordInput.RECONSTRUCTED, NOW)
     # AAA, BBB, FFF, GGG and DDD are entered (EEE has no entry session yet); CCC has no bars.
     assert (stored.n, stored.n_unpriced) == (5, 1)
     aaa = [excess(52, 54, 101, 102), excess(52, 62, 101, 106), excess(52, 72, 101, 111)]
@@ -192,12 +192,12 @@ async def test_reconstructed_base_rate_is_stored_and_read_back_by_rs_query(sessi
     assert "1 of 6" in stored.survivorship_caveat
 
 
-async def test_logged_base_rate_enters_at_the_alert_price(session_factory):
+async def test_logged_track_record_enters_at_the_alert_price(session_factory):
     await _seed(session_factory)
 
-    result = await attention_surge.run(session_factory, FixedClock(), CALENDAR)
+    result = await popularity_surge.run(session_factory, FixedClock(), CALENDAR)
 
-    logged = _by_input(result.rates)[BaseRateInput.LOGGED]
+    logged = _by_input(result.records)[TrackRecordInput.LOGGED]
     assert (logged.n, logged.n_unpriced) == (3, 2)  # a missing alert price, and a symbol with no bars
     aaa = [excess(51, 50, 99, 100), excess(51, 58, 99, 104), excess(51, 68, 99, 109)]
     bbb = [excess(78, 77, 102, 103), excess(78, 73, 102, 107), excess(78, 68, 102, 112)]
@@ -231,9 +231,9 @@ async def test_logged_excess_uses_the_alert_time_spy_quote_and_counts_the_fallba
     without = _alert("BBB", _utc(5, 21), 78.0)
     await _seed(session_factory, snapshots=[], alerts=[with_quote, without])
 
-    result = await attention_surge.compute(session_factory, FixedClock(), CALENDAR)
+    result = await popularity_surge.compute(session_factory, FixedClock(), CALENDAR)
 
-    logged = _by_input(result.rates)[BaseRateInput.LOGGED]
+    logged = _by_input(result.records)[TrackRecordInput.LOGGED]
     aaa = [excess(51, 50, 100.5, 100), excess(51, 58, 100.5, 104), excess(51, 68, 100.5, 109)]
     bbb = [excess(78, 77, 102, 103), excess(78, 73, 102, 107), excess(78, 68, 102, 112)]
     for k, day in enumerate((1, 5, 10)):
@@ -249,9 +249,9 @@ async def test_a_missing_spy_bar_is_a_missing_exit_not_a_shifted_horizon(session
     alerts = [_alert("AAA", _utc(3, 15), 51.0), _alert("BBB", _utc(4, 21), 79.0)]  # BBB: ref i = 1
     await _seed(session_factory, snapshots=[], alerts=alerts, bars=bars)
 
-    result = await attention_surge.compute(session_factory, FixedClock(), CALENDAR)
+    result = await popularity_surge.compute(session_factory, FixedClock(), CALENDAR)
 
-    logged = _by_input(result.rates)[BaseRateInput.LOGGED]
+    logged = _by_input(result.records)[TrackRecordInput.LOGGED]
     assert (logged.n, logged.n_unpriced) == (2, 0)
     assert "1 matured outcomes had no exit price" in logged.survivorship_caveat
     # 1d: only AAA (BBB's exit session has no SPY bar); with the old SPY-session
@@ -265,22 +265,22 @@ async def test_a_missing_spy_bar_is_a_missing_exit_not_a_shifted_horizon(session
 
 async def test_a_logged_row_is_only_shown_once_it_has_enough_alerts(session_factory):
     await _seed(session_factory)
-    await attention_surge.run(session_factory, FixedClock(), CALENDAR)
+    await popularity_surge.run(session_factory, FixedClock(), CALENDAR)
 
     inputs = [row.input for row in await _rows(session_factory)]
 
     assert sorted(inputs) == ["logged", "reconstructed"]
     async with session_factory() as s:
-        shown = await current_base_rate(s, "attention_surge", "1")
+        shown = await current_track_record(s, "popularity_surge", "1")
     assert shown is not None
-    assert shown.input is BaseRateInput.RECONSTRUCTED  # 3 logged alerts is below the minimum N
+    assert shown.input is TrackRecordInput.RECONSTRUCTED  # 3 logged alerts is below the minimum N
 
 
 async def test_the_same_database_and_clock_give_the_same_rows(session_factory):
     await _seed(session_factory)
 
-    first = await attention_surge.compute(session_factory, FixedClock(), CALENDAR)
-    second = await attention_surge.compute(session_factory, FixedClock(), CALENDAR)
+    first = await popularity_surge.compute(session_factory, FixedClock(), CALENDAR)
+    second = await popularity_surge.compute(session_factory, FixedClock(), CALENDAR)
 
     assert first == second
 
@@ -288,8 +288,8 @@ async def test_the_same_database_and_clock_give_the_same_rows(session_factory):
 async def test_a_rerun_appends_rows_and_readers_take_the_latest(session_factory):
     await _seed(session_factory)
 
-    await attention_surge.run(session_factory, FixedClock(), CALENDAR)
-    await attention_surge.run(session_factory, FixedClock(), CALENDAR)
+    await popularity_surge.run(session_factory, FixedClock(), CALENDAR)
+    await popularity_surge.run(session_factory, FixedClock(), CALENDAR)
 
     assert len(await _rows(session_factory)) == 4
 
@@ -298,10 +298,10 @@ async def test_events_whose_ticker_has_no_bars_are_counted_not_dropped(session_f
     spy_only = [b for b in _bars() if b.symbol == "SPY"]
     await _seed(session_factory, alerts=[], bars=spy_only)
 
-    result = await attention_surge.compute(session_factory, FixedClock(), CALENDAR)
+    result = await popularity_surge.compute(session_factory, FixedClock(), CALENDAR)
 
     # Every replayed event is unpriced, so nothing is measured and nothing is written.
-    assert result.rates == []
+    assert result.records == []
     assert result.events == 7
 
 
@@ -309,16 +309,16 @@ async def test_an_event_before_the_stored_benchmark_history_is_unpriced(session_
     early = _surge("AAA", _utc(1, 15, month=7))  # three weeks before the first stored SPY session
     await _seed(session_factory, snapshots=[early, *SNAPSHOTS], alerts=[])
 
-    result = await attention_surge.compute(session_factory, FixedClock(), CALENDAR)
+    result = await popularity_surge.compute(session_factory, FixedClock(), CALENDAR)
 
-    [reconstructed] = result.rates
+    [reconstructed] = result.records
     assert (reconstructed.n, reconstructed.n_unpriced) == (5, 2)
 
 
 async def test_nothing_is_written_when_there_is_nothing_to_measure(session_factory):
-    result = await attention_surge.run(session_factory, FixedClock(), CALENDAR)
+    result = await popularity_surge.run(session_factory, FixedClock(), CALENDAR)
 
-    assert result.rates == []
+    assert result.records == []
     assert await _rows(session_factory) == []
 
 
@@ -326,7 +326,7 @@ async def test_missing_benchmark_bars_fail_loudly(session_factory):
     await _seed(session_factory, bars=[b for b in _bars() if b.symbol != "SPY"])
 
     with pytest.raises(StudyError, match="SPY"):
-        await attention_surge.run(session_factory, FixedClock(), CALENDAR)
+        await popularity_surge.run(session_factory, FixedClock(), CALENDAR)
     assert await _rows(session_factory) == []
 
 
@@ -337,7 +337,7 @@ async def test_snapshots_after_the_clock_are_not_replayed(session_factory):
         def now(self) -> datetime:
             return _utc(4, 12)  # only AAA's Aug 3 events exist yet
 
-    result = await attention_surge.compute(session_factory, EarlyClock(), CALENDAR)
+    result = await popularity_surge.compute(session_factory, EarlyClock(), CALENDAR)
 
     assert result.events == 1
 
@@ -346,7 +346,7 @@ async def test_cli_runs_the_study_and_exits_zero(session_factory, migrated_db_ur
     await _seed(session_factory)
     monkeypatch.setenv("RS_RESEARCH_DB_URL", migrated_db_url)
 
-    code = await asyncio.to_thread(main, ["event-study", "attention_surge"], FixedClock(), CALENDAR)
+    code = await asyncio.to_thread(main, ["event-study", "popularity_surge"], FixedClock(), CALENDAR)
 
     assert code == 0
     assert [row.input for row in await _rows(session_factory)] == ["reconstructed", "logged"]
@@ -356,7 +356,7 @@ async def test_cli_exits_one_when_the_study_fails(session_factory, migrated_db_u
     await _seed(session_factory, bars=[])
     monkeypatch.setenv("RS_RESEARCH_DB_URL", migrated_db_url)
 
-    code = await asyncio.to_thread(main, ["event-study", "attention_surge"], FixedClock(), CALENDAR)
+    code = await asyncio.to_thread(main, ["event-study", "popularity_surge"], FixedClock(), CALENDAR)
 
     assert code == 1
     assert await _rows(session_factory) == []
@@ -366,7 +366,7 @@ def test_cli_requires_its_own_dsn(monkeypatch, capsys):
     monkeypatch.delenv("RS_RESEARCH_DB_URL", raising=False)
     monkeypatch.setenv("RS_DB_URL", "postgresql+psycopg://wider:role@localhost/db")
 
-    assert main(["event-study", "attention_surge"]) == 2
+    assert main(["event-study", "popularity_surge"]) == 2
     assert "RS_RESEARCH_DB_URL" in capsys.readouterr().err
 
 
@@ -381,9 +381,9 @@ async def test_imported_rows_without_upvotes_replay_like_any_other(session_facto
     ]
     await _seed(session_factory, snapshots=imported, alerts=[])
 
-    result = await attention_surge.compute(session_factory, FixedClock(), CALENDAR)
+    result = await popularity_surge.compute(session_factory, FixedClock(), CALENDAR)
 
-    [reconstructed] = result.rates
+    [reconstructed] = result.records
     assert (reconstructed.n, reconstructed.n_unpriced) == (5, 1)
 
 
@@ -393,10 +393,10 @@ async def test_the_study_runs_under_the_least_privilege_research_role(
     await _seed(session_factory)
     monkeypatch.setenv("RS_RESEARCH_DB_URL", research_url)
 
-    code = await asyncio.to_thread(main, ["event-study", "attention_surge"], FixedClock(), CALENDAR)
+    code = await asyncio.to_thread(main, ["event-study", "popularity_surge"], FixedClock(), CALENDAR)
 
     assert code == 0
     async with session_factory() as s:
-        stored = await current_base_rate(s, "attention_surge", "1")
+        stored = await current_track_record(s, "popularity_surge", "1")
     assert stored is not None and stored.n == 5
     assert sorted(row.input for row in await _rows(session_factory)) == ["logged", "reconstructed"]

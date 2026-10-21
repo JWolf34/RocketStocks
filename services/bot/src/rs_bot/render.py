@@ -1,7 +1,7 @@
-"""Alert -> Embed, from the alert row plus the current base rate. The bot never
+"""Alert -> Embed, from the alert row plus the current track record. The bot never
 calls a vendor: every fact was written into the payload at alert time.
 
-An attention-surge payload is rendered typed; any other alert type, a payload
+A popularity-surge payload is rendered typed; any other alert type, a payload
 that does not parse, or any render exception falls back to the generic embed:
 an alert can be render-ugly, never render-poisoned.
 
@@ -15,16 +15,16 @@ import logging
 import discord
 
 from rs_domain import (
-    AttentionSurgePayload,
-    BaseRate,
-    BaseRateInput,
     FactUnavailable,
+    PopularitySurgePayload,
+    TrackRecord,
+    TrackRecordInput,
 )
 from rs_persistence import PendingAlert
 
 logger = logging.getLogger(__name__)
 
-ATTENTION_SURGE = "attention_surge"
+POPULARITY_SURGE = "popularity_surge"
 
 MAX_FIELDS = 25
 MAX_NAME = 256
@@ -36,11 +36,11 @@ ELLIPSIS = "..."
 
 
 def render(
-    pending: PendingAlert, base_rate: BaseRate | None = None, *, base_rate_failed: bool = False
+    pending: PendingAlert, track_record: TrackRecord | None = None, *, track_record_failed: bool = False
 ) -> discord.Embed:
-    """`base_rate_failed` says the read errored, so "none measured yet" is not claimed."""
+    """`track_record_failed` says the read errored, so "none measured yet" is not claimed."""
     try:
-        return _render_full(pending, base_rate, base_rate_failed)
+        return _render_full(pending, track_record, track_record_failed)
     except Exception:
         logger.exception(
             "render failed for alert id=%d - posting the generic fallback embed", pending.id
@@ -49,18 +49,18 @@ def render(
 
 
 def _render_full(
-    pending: PendingAlert, base_rate: BaseRate | None, base_rate_failed: bool
+    pending: PendingAlert, track_record: TrackRecord | None, track_record_failed: bool
 ) -> discord.Embed:
     alert = pending.alert
-    if alert.alert_type != ATTENTION_SURGE:
+    if alert.alert_type != POPULARITY_SURGE:
         return render_generic(pending)
-    payload = AttentionSurgePayload.model_validate(alert.payload)
+    payload = PopularitySurgePayload.model_validate(alert.payload)
     # Most important first: the fit drops from the end.
     fields = [
         ("Why it fired", _rule_text(payload)),
         ("Price", _price_text(payload)),
         ("Volume", _volume_text(payload)),
-        ("Base rate", _base_rate_text(base_rate, base_rate_failed)),
+        ("Track record", _track_record_text(track_record, track_record_failed)),
         ("Next earnings", _earnings_text(payload)),
         ("Benchmark", _benchmark_text(payload)),
     ]
@@ -69,7 +69,7 @@ def _render_full(
         parts.append(f"alert price ${alert.alert_price:,.2f}")
     if alert.quote_time is not None:
         parts.append(f"quote {alert.quote_time:%Y-%m-%d %H:%M} UTC")
-    embed = discord.Embed(title=f"{alert.symbol} · attention surge", timestamp=alert.triggered_at)
+    embed = discord.Embed(title=f"{alert.symbol} · Popularity surge", timestamp=alert.triggered_at)
     embed.set_footer(text=_clip(" | ".join(parts), MAX_FOOTER))
     for name, value in _fit(embed, fields):
         embed.add_field(name=name, value=value, inline=False)
@@ -105,7 +105,7 @@ def _unavailable(fact: FactUnavailable) -> str:
     return f"unavailable: {fact.reason}"
 
 
-def _rule_text(payload: AttentionSurgePayload) -> str:
+def _rule_text(payload: PopularitySurgePayload) -> str:
     lines = []
     for rule in payload.fired:
         if rule == "mention_surge":
@@ -123,7 +123,7 @@ def _rule_text(payload: AttentionSurgePayload) -> str:
     return "\n".join(lines)
 
 
-def _price_text(payload: AttentionSurgePayload) -> str:
+def _price_text(payload: PopularitySurgePayload) -> str:
     fact = payload.facts.price_move
     if isinstance(fact, FactUnavailable):
         return _unavailable(fact)
@@ -133,7 +133,7 @@ def _price_text(payload: AttentionSurgePayload) -> str:
     )
 
 
-def _volume_text(payload: AttentionSurgePayload) -> str:
+def _volume_text(payload: PopularitySurgePayload) -> str:
     fact = payload.facts.volume
     if isinstance(fact, FactUnavailable):
         return _unavailable(fact)
@@ -144,7 +144,7 @@ def _volume_text(payload: AttentionSurgePayload) -> str:
     return text + (" - partial day, the final multiple will be higher" if fact.intraday else "")
 
 
-def _earnings_text(payload: AttentionSurgePayload) -> str:
+def _earnings_text(payload: PopularitySurgePayload) -> str:
     fact = payload.facts.next_earnings
     if isinstance(fact, FactUnavailable):
         return _unavailable(fact)
@@ -154,7 +154,7 @@ def _earnings_text(payload: AttentionSurgePayload) -> str:
     return text + (" - estimated" if fact.estimated else "")
 
 
-def _benchmark_text(payload: AttentionSurgePayload) -> str:
+def _benchmark_text(payload: PopularitySurgePayload) -> str:
     fact = payload.facts.benchmark
     if isinstance(fact, FactUnavailable):
         return _unavailable(fact)
@@ -169,25 +169,25 @@ def _excess(value: float | None) -> str:
     return "n/a" if value is None else f"{value * 100:+.2f}%"
 
 
-def _base_rate_text(base_rate: BaseRate | None, failed: bool) -> str:
+def _track_record_text(track_record: TrackRecord | None, failed: bool) -> str:
     if failed:
-        return "unavailable: the base rate could not be read"
-    if base_rate is None:
-        return "No base rate has been measured for this rule version yet."
+        return "unavailable: the track record could not be read"
+    if track_record is None:
+        return "No track record has been measured for this rule version yet."
     label = (
         "measured on past alerts"
-        if base_rate.input is BaseRateInput.LOGGED
+        if track_record.input is TrackRecordInput.LOGGED
         else "reconstructed from history"
     )
-    unpriced = f", {base_rate.n_unpriced} unpriced" if base_rate.n_unpriced else ""
+    unpriced = f", {track_record.n_unpriced} unpriced" if track_record.n_unpriced else ""
     horizons = (
-        (1, base_rate.hit_rate_1d, base_rate.median_excess_1d),
-        (5, base_rate.hit_rate_5d, base_rate.median_excess_5d),
-        (10, base_rate.hit_rate_10d, base_rate.median_excess_10d),
+        (1, track_record.hit_rate_1d, track_record.median_excess_1d),
+        (5, track_record.hit_rate_5d, track_record.median_excess_5d),
+        (10, track_record.hit_rate_10d, track_record.median_excess_10d),
     )
     rows = [
         f"{days}d: hit rate {_pct(hit)}, median excess vs SPY {_excess(median)}"
         for days, hit, median in horizons
     ]
-    header = f"{label} (input: {base_rate.input.value}), N={base_rate.n}{unpriced}"
-    return "\n".join([header, *rows, base_rate.survivorship_caveat])
+    header = f"{label} (input: {track_record.input.value}), N={track_record.n}{unpriced}"
+    return "\n".join([header, *rows, track_record.survivorship_caveat])
