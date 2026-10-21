@@ -1,6 +1,7 @@
 """The raw score is a hit's distance from the stock's own Baseline."""
 
 import math
+from datetime import UTC, datetime, timedelta
 
 import pytest
 
@@ -10,6 +11,7 @@ from rs_analysis.popularity_score import (
     Baseline,
     baseline,
     raw_score,
+    readings_over,
 )
 
 
@@ -87,3 +89,37 @@ class TestRawScore:
 
         # 247 mentions is 8x the normal 30 (as 248 against 31), at the normal rank.
         assert raw_score(40, 8 * 31 - 1, normal) == pytest.approx(math.log(8) / 0.5)
+
+
+T0 = datetime(2026, 10, 1, tzinfo=UTC)
+BOUNDARIES = [T0 + timedelta(minutes=30 * i) for i in range(100)]
+
+
+class TestReadingsOver:
+    def test_a_stock_absent_from_a_polled_boundary_reads_zero_mentions_at_the_bottom_rank(self):
+        bottoms = {BOUNDARIES[0]: 301, BOUNDARIES[1]: 305}
+
+        got = readings_over(bottoms, {BOUNDARIES[0]: (40, 30)})
+
+        assert got == [(40, 30), (305, 0)]
+
+    def test_a_boundary_that_was_not_polled_gives_no_reading(self):
+        # Boundary 1 has no snapshot for anyone: it is not in `bottoms`, so it is downtime, not absence.
+        bottoms = {BOUNDARIES[0]: 301, BOUNDARIES[2]: 301}
+
+        assert len(readings_over(bottoms, {})) == 2
+
+    def test_a_newcomer_absent_from_every_polled_boundary_has_a_baseline_and_a_high_score(self):
+        bottoms = {at: 301 for at in BOUNDARIES}
+
+        newcomer = baseline(readings_over(bottoms, {}))
+        steady = baseline(readings_over(bottoms, {at: (40, 30) for at in BOUNDARIES}))
+
+        assert newcomer is not None and steady is not None
+        assert newcomer.mentions_median == 0
+        assert raw_score(40, 90, newcomer) > raw_score(40, 90, steady) > 0
+
+    def test_a_fresh_install_with_too_few_polled_boundaries_has_no_baseline(self):
+        bottoms = {at: 301 for at in BOUNDARIES[: MIN_BASELINE_READINGS - 1]}
+
+        assert baseline(readings_over(bottoms, {})) is None

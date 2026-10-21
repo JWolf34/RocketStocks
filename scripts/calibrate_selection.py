@@ -9,7 +9,9 @@ aggregates only (no ticker, no row):
 It reads `popularity_snapshot` with RS_DB_URL (ingest's role may SELECT it) in a
 read-only transaction. For each Eastern day it replays popularity-surge rule version 2
 over that day's readings, scores each hit against its stock's own Baseline (median and
-spread of the stock's mentions and rank over the 14 days before the day began), ranks
+spread of the stock's mentions and rank at every polled boundary of the 14 days before the
+day began, where a stock absent from a polled listing reads zero mentions at the bottom
+rank, one past the last rank stored at that boundary), ranks
 the hit among the hits of the 30 days before, and runs the selector's verdict rules
 for several bar targets and reply margins.
 
@@ -179,6 +181,8 @@ def load(conn, days, say):
             " FROM popularity_snapshot GROUP BY 1"
         )
         polls = dict(cur.fetchall())
+        cur.execute("SELECT polled_at, max(rank) + 1 FROM popularity_snapshot GROUP BY polled_at")
+        bottoms = dict(cur.fetchall())
         hits_by_day: dict[date, list] = {}
         for index, day in enumerate(days):
             cur.execute(
@@ -191,7 +195,7 @@ def load(conn, days, say):
                 fired = evaluate(rank, mentions, rank_24h_ago, mentions_24h_ago)
                 if fired:
                     events.append((polled_at, ticker, fired, rank, mentions))
-            normals = baselines(cur, day, {event[1] for event in events})
+            normals = baselines(cur, day, {event[1] for event in events}, bottoms)
             hits_by_day[day] = [
                 (
                     polled_at,
@@ -206,15 +210,25 @@ def load(conn, days, say):
     return polls, hits_by_day
 
 
-def baselines(cur, day, tickers):
-    """Each ticker's Baseline as of the start of `day`, from medians computed by the database."""
-    if not tickers:
+def baselines(cur, day, tickers, bottoms):
+    """Each ticker's Baseline as of the start of `day`, from medians computed by the database.
+
+    A reading exists at every polled boundary of the window (`bottoms` maps each polled
+    boundary to the bottom rank there); where a ticker has no snapshot it is absent: zero
+    mentions at the bottom rank. A boundary with no snapshot at all is downtime and is not in
+    `bottoms`."""
+    start, end = day_start(day - timedelta(days=BASELINE_DAYS)), day_start(day)
+    window = [(at, bottom) for at, bottom in bottoms.items() if start <= at < end]
+    if not tickers or not window:
         return {}
     cur.execute(
         """
-        WITH h AS (
-            SELECT ticker, ln(1 + mentions) AS lm, ln(rank) AS lr FROM popularity_snapshot
-            WHERE ticker = ANY(%s) AND polled_at >= %s AND polled_at < %s
+        WITH b AS (
+            SELECT * FROM unnest(%s::timestamptz[], %s::int[]) AS b(polled_at, bottom)
+        ), h AS (
+            SELECT t.ticker, ln(1 + coalesce(s.mentions, 0)) AS lm, ln(coalesce(s.rank, b.bottom)) AS lr
+            FROM b CROSS JOIN unnest(%s::text[]) AS t(ticker)
+            LEFT JOIN popularity_snapshot s ON s.polled_at = b.polled_at AND s.ticker = t.ticker
         ), c AS (
             SELECT ticker, count(*) AS n,
                    percentile_cont(0.5) WITHIN GROUP (ORDER BY lm) AS mm,
@@ -225,7 +239,7 @@ def baselines(cur, day, tickers):
                c.mr, percentile_cont(0.5) WITHIN GROUP (ORDER BY abs(h.lr - c.mr))
         FROM h JOIN c USING (ticker) GROUP BY h.ticker, c.n, c.mm, c.mr
         """,
-        (sorted(tickers), day_start(day - timedelta(days=BASELINE_DAYS)), day_start(day)),
+        ([at for at, _ in window], [bottom for _, bottom in window], sorted(tickers)),
     )
     return {ticker: normal_of(n, mm, madm, mr, madr) for ticker, n, mm, madm, mr, madr in cur.fetchall()}
 

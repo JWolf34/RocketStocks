@@ -403,8 +403,10 @@ psql -c "SELECT id, symbol, reply_to, sending_at FROM alerts WHERE delivery = 's
 ### What posts and why
 
 Every hit of the Popularity Trigger is stored as a `candidate` with a verdict, a `raw_score` and a `strength`; only some become Alerts.
-The raw score is how far the hit is from the stock's own Baseline: the median and spread of the stock's mentions and rank over the 14 Eastern days before the hit's day began, so a stock is Unusual against its own normal and never against a cutoff shared by all stocks.
-A stock with fewer than 48 stored readings in that window has no Baseline: its candidates have no score or strength and are `below_bar`.
+The raw score is how far the hit is from the stock's own Baseline: the median and spread of the stock's mentions and rank at every polled boundary of the 14 Eastern days before the hit's day began, so a stock is Unusual against its own normal and never against a cutoff shared by all stocks.
+At a polled boundary where the stock was absent from the stored listing, its reading is zero mentions at the bottom rank (one past the last rank stored at that boundary), so a newcomer has a Baseline of "not discussed" and its first surge scores very high.
+A boundary with no stored snapshot at all is downtime, not absence, and has no reading.
+With fewer than 48 polled boundaries in the window (a fresh install in its first day) no stock has a Baseline: the candidates have no score or strength and are `below_bar`.
 Strength is the share of the Trigger's hits over the 30 Eastern days before the hit's day that scored no higher.
 That reference is a replay of the current rule over the stored Popularity, not the `candidate` table, so it is whole from the first day (imported history included) and is the same whatever ingest was doing last month.
 It is computed once per Eastern day and held in memory, so the first poll after a restart takes up to a few minutes and later polls add one day's replay at most.

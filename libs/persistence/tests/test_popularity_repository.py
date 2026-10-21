@@ -203,7 +203,7 @@ async def test_list_between_can_keep_only_snapshots_with_enough_mentions(session
     assert [snap.ticker for snap in got] == ["BBB"]
 
 
-async def test_readings_are_the_rank_and_mentions_of_the_named_tickers_in_the_window_oldest_first(session_factory):
+async def test_readings_are_the_rank_and_mentions_of_the_named_tickers_per_boundary_in_the_window(session_factory):
     async with session_factory() as s:
         await PopularityRepository(s).insert_many(
             [
@@ -218,7 +218,28 @@ async def test_readings_are_the_rank_and_mentions_of_the_named_tickers_in_the_wi
 
     async with session_factory() as s:
         got = await PopularityRepository(s).readings({"AAA", "BBB", "ZZZ"}, T0, T0 + timedelta(minutes=60))
-    assert got == {"AAA": [(4, 40), (5, 50)], "BBB": [(9, 10)]}
+    assert got == {
+        "AAA": {T0: (4, 40), T0 + timedelta(minutes=30): (5, 50)},
+        "BBB": {T0: (9, 10)},
+    }
+
+
+async def test_bottom_ranks_are_one_past_the_last_stored_at_each_polled_boundary_only(session_factory):
+    async with session_factory() as s:
+        await PopularityRepository(s).insert_many(
+            [
+                _snap("AAA", T0, rank=4),
+                _snap("BBB", T0, rank=9),
+                _snap("AAA", T0 + timedelta(minutes=30), rank=2),
+                _snap("AAA", T0 + timedelta(hours=3), rank=7),  # outside the window
+            ]
+        )
+        await s.commit()
+
+    async with session_factory() as s:
+        got = await PopularityRepository(s).bottom_ranks(T0, T0 + timedelta(hours=1))
+    # The boundary at 14:00 + 1h has no snapshot at all: it is downtime, not listed.
+    assert got == {T0: 10, T0 + timedelta(minutes=30): 3}
 
 
 async def test_count_polls_counts_distinct_boundaries_not_rows(session_factory):

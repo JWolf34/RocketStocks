@@ -18,6 +18,7 @@ from rs_persistence import PopularityRepository
 DAY = date(2026, 10, 20)
 HISTORY_DAYS = 45
 SURGERS = 10
+STOCKS = SURGERS + 2
 TARGET = 5
 STEADY = 20  # mentions a stock normally has
 
@@ -129,7 +130,9 @@ async def test_the_bar_gives_a_typical_day_the_target_number_of_stocks(seeded):
     assert clearing == [5, 6, 7, 8, 9]  # the target a day, each the stock's strongest hit
 
 
-async def test_a_stock_with_no_baseline_has_no_score_but_still_the_days_bar(session_factory):
+async def test_a_newcomer_absent_from_every_earlier_poll_has_a_baseline_of_zero_mentions_at_the_bottom_rank(
+    session_factory,
+):
     await store(session_factory, history())
     scorer = PopularityScorer(session_factory, bar_target=TARGET)
     newcomer = evaluate_latest(
@@ -140,10 +143,34 @@ async def test_a_stock_with_no_baseline_has_no_score_but_still_the_days_bar(sess
     )
     assert newcomer is not None
 
-    [with_baseline, without] = await scorer.score([hit(9), newcomer])
+    [established, fresh] = await scorer.score([hit(9), newcomer])
 
-    assert (without.raw_score, without.strength) == (None, None)
-    assert without.bar == with_baseline.bar
+    bottom = 100 + STOCKS  # one past the last rank stored at every earlier boundary
+    assert fresh.raw_score == pytest.approx(
+        (math.log1p(90) - 0) / MIN_SPREAD + (math.log(bottom) - math.log(30)) / MIN_SPREAD
+    )
+    assert fresh.raw_score is not None and established.raw_score is not None
+    assert fresh.raw_score > established.raw_score
+    assert fresh.strength == 1.0
+    assert fresh.bar == established.bar
+
+
+async def test_a_stock_absent_for_part_of_the_window_has_mostly_zero_in_its_baseline(session_factory):
+    rows = history()
+    # T11 is listed only in the last third of every day, so two thirds of its readings are absences.
+    rows = [r for r in rows if r.ticker != "T11" or r.polled_at.hour >= 16]
+    await store(session_factory, rows)
+    at = datetime(DAY.year, DAY.month, DAY.day, 15, 0, tzinfo=UTC)
+    events = [evaluate_latest(snapshot(stock, at, mentions=90)) for stock in (10, 11)]
+    assert None not in events
+
+    [always_listed, mostly_absent] = await PopularityScorer(session_factory, bar_target=TARGET).score(
+        [event for event in events if event is not None]
+    )
+
+    # The same 90 mentions are further from a stock that was unlisted most of the time.
+    assert always_listed.raw_score is not None and mostly_absent.raw_score is not None
+    assert mostly_absent.raw_score > always_listed.raw_score + 3
 
 
 async def test_the_days_own_readings_do_not_move_the_baseline(session_factory):
@@ -171,6 +198,8 @@ async def test_a_stretch_without_polls_changes_neither_strengths_nor_the_bar(ses
 
     assert scored.bar == pytest.approx(control.bar)
     assert scored.strength == pytest.approx(control.strength)
+    # Boundaries ingest never polled are downtime, not absence: the Baseline is unmoved.
+    assert scored.raw_score == pytest.approx(control.raw_score)
 
 
 async def test_too_little_history_to_rank_against_is_refused(session_factory):

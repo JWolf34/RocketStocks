@@ -127,7 +127,9 @@ STOCKS = 12
 
 
 def seeded_rows() -> list[PopularitySnapshot]:
-    """45 days of steady stocks; stock s (0-9) surges once a day at 15:00 UTC to 60 + 10 s mentions."""
+    """45 days of steady stocks; stock s (0-9) and stock 11 surge once a day at 15:00 UTC to
+    60 + 10 s mentions. Stock 11 is listed only from 16:00 UTC on, so it is absent from most of
+    its Baseline window, and NEW appears for the first time at 15:00 UTC on the day before DAY."""
     rows = []
     for back in range(45, 0, -1):
         day = DAY - timedelta(days=back)
@@ -135,20 +137,31 @@ def seeded_rows() -> list[PopularitySnapshot]:
         for half_hour in range(48):
             polled_at = start + timedelta(minutes=30 * half_hour)
             for stock in range(STOCKS):
-                surging = stock < 10 and polled_at.hour == 15 and polled_at.minute == 0
-                rows.append(
-                    PopularitySnapshot(
-                        polled_at=polled_at,
-                        ticker=f"T{stock:02d}",
-                        rank=100 + stock,
-                        mentions=60 + 10 * stock if surging else 20 + stock % 3,
-                        rank_24h_ago=100 + stock,
-                        mentions_24h_ago=20 + stock % 3,
-                        fetched_at=polled_at,
-                        origin=PopularityOrigin.V1_IMPORT,
-                    )
-                )
+                surging = (stock < 10 or stock == 11) and polled_at.hour == 15 and polled_at.minute == 0
+                if stock == 11 and polled_at.hour < 16 and not surging:
+                    continue
+                rows.append(_snapshot(stock, polled_at, 60 + 10 * stock if surging else 20 + stock % 3))
+    newcomer_at = datetime(DAY.year, DAY.month, DAY.day, 15, 0, tzinfo=UTC) - timedelta(days=1)
+    rows.append(
+        PopularitySnapshot(
+            polled_at=newcomer_at, ticker="NEW", rank=50, mentions=90, rank_24h_ago=50, mentions_24h_ago=20,
+            fetched_at=newcomer_at, origin=PopularityOrigin.V1_IMPORT,
+        )
+    )
     return rows
+
+
+def _snapshot(stock: int, polled_at: datetime, mentions: int) -> PopularitySnapshot:
+    return PopularitySnapshot(
+        polled_at=polled_at,
+        ticker=f"T{stock:02d}",
+        rank=100 + stock,
+        mentions=mentions,
+        rank_24h_ago=100 + stock,
+        mentions_24h_ago=20 + stock % 3,
+        fetched_at=polled_at,
+        origin=PopularityOrigin.V1_IMPORT,
+    )
 
 
 async def test_run_over_stored_history_scores_and_sets_the_bar_as_the_shipped_scorer_does(session_factory, migrated_db_url):
@@ -178,6 +191,8 @@ async def test_run_over_stored_history_scores_and_sets_the_bar_as_the_shipped_sc
     assert sorted(round(score, 9) for *_, score in hits_by_day[day]) == pytest.approx(
         sorted(round(s.raw_score, 9) for s in shipped)
     )
+    assert any(ticker == "NEW" for _, ticker, *_ in hits_by_day[day])  # a newcomer is scored, not skipped
+    assert all(score is not None for *_, score in hits_by_day[day])
     assert counts["posted"] == 5  # the target a day
 
 
@@ -188,14 +203,10 @@ def _extent(conn):
 
 
 def _reading(ticker: str, polled_at: datetime) -> PopularitySnapshot:
+    if ticker == "NEW":
+        return PopularitySnapshot(
+            polled_at=polled_at, ticker="NEW", rank=50, mentions=90, rank_24h_ago=50, mentions_24h_ago=20,
+            fetched_at=polled_at, origin=PopularityOrigin.V1_IMPORT,
+        )
     stock = int(ticker[1:])
-    return PopularitySnapshot(
-        polled_at=polled_at,
-        ticker=ticker,
-        rank=100 + stock,
-        mentions=60 + 10 * stock,
-        rank_24h_ago=100 + stock,
-        mentions_24h_ago=20 + stock % 3,
-        fetched_at=polled_at,
-        origin=PopularityOrigin.V1_IMPORT,
-    )
+    return _snapshot(stock, polled_at, 60 + 10 * stock)

@@ -9,6 +9,8 @@ and releases of the past month; a replay of the current rule over every stored
 reading is the same on any day it is computed and covers imported history from
 the first day.
 
+A stock absent from the listing at a polled boundary counts there as zero mentions at the
+bottom rank, so a newcomer has a Baseline (see rs_analysis.popularity_score).
 Every score is of a hit against its stock's Baseline as of the start of the hit's
 Eastern day, so a day's scores and a day's reference never change once the day is
 over, and each is computed once per process: a day's reference is the 30 cached
@@ -19,12 +21,18 @@ import asyncio
 import logging
 from collections.abc import Sequence
 from dataclasses import dataclass
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 from typing import Protocol
 
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from rs_analysis.popularity_score import BASELINE_DAYS, Baseline, baseline, raw_score
+from rs_analysis.popularity_score import (
+    BASELINE_DAYS,
+    Baseline,
+    baseline,
+    raw_score,
+    readings_over,
+)
 from rs_analysis.popularity_surge import MIN_MENTIONS, SurgeEvent, evaluate_latest
 from rs_analysis.strength import REFERENCE_DAYS, Reference, ScoredHit, build_reference
 from rs_domain import eastern_day, eastern_day_start
@@ -61,6 +69,7 @@ class PopularityScorer:
         self._replayed: dict[date, tuple[bool, list[ScoredHit]]] = {}
         self._references: dict[date, Reference] = {}
         self._baselines: dict[tuple[date, str], Baseline | None] = {}
+        self._bottoms: dict[date, dict[datetime, int]] = {}
 
     async def score(self, events: Sequence[SurgeEvent]) -> list[Scored]:
         """One Scored per event, in order. Raises ReferenceUnavailable when the stored
@@ -91,15 +100,29 @@ class PopularityScorer:
         """The Baselines of `tickers` as of the start of `day`."""
         missing = {ticker for ticker in tickers if (day, ticker) not in self._baselines}
         if missing:
+            bottoms = await self._window_bottoms(day)
             async with self._session_factory() as session:
-                readings = await PopularityRepository(session).readings(
+                present = await PopularityRepository(session).readings(
                     missing,
                     eastern_day_start(day - timedelta(days=BASELINE_DAYS)),
                     eastern_day_start(day),
                 )
             for ticker in missing:
-                self._baselines[(day, ticker)] = baseline(readings.get(ticker, []))
+                self._baselines[(day, ticker)] = baseline(readings_over(bottoms, present.get(ticker, {})))
         return {ticker: self._baselines[(day, ticker)] for ticker in tickers}
+
+    async def _window_bottoms(self, day: date) -> dict[datetime, int]:
+        """Every polled boundary of the Baseline window before `day`, with its bottom rank."""
+        window: dict[datetime, int] = {}
+        async with self._session_factory() as session:
+            repo = PopularityRepository(session)
+            for past in (day - timedelta(days=back) for back in range(BASELINE_DAYS, 0, -1)):
+                if past not in self._bottoms:
+                    self._bottoms[past] = await repo.bottom_ranks(
+                        eastern_day_start(past), eastern_day_start(past + timedelta(days=1))
+                    )
+                window.update(self._bottoms[past])
+        return window
 
     async def _reference(self, day: date) -> Reference:
         """The reference for hits of `day`: the Trigger's hits of the 30 days before it."""
@@ -146,3 +169,4 @@ class PopularityScorer:
         self._replayed = {day: value for day, value in self._replayed.items() if day >= oldest}
         self._references = {day: value for day, value in self._references.items() if day >= oldest}
         self._baselines = {key: value for key, value in self._baselines.items() if key[0] >= oldest}
+        self._bottoms = {day: value for day, value in self._bottoms.items() if day >= oldest - timedelta(days=BASELINE_DAYS)}

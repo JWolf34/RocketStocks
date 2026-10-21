@@ -104,22 +104,36 @@ class PopularityRepository:
 
     async def readings(
         self, tickers: Collection[str], start: datetime, end: datetime
-    ) -> dict[str, list[tuple[int, int]]]:
-        """Each of `tickers`' (rank, mentions) readings with polled_at in [start, end),
-        oldest first; a ticker with none is absent."""
-        result: dict[str, list[tuple[int, int]]] = {}
+    ) -> dict[str, dict[datetime, tuple[int, int]]]:
+        """Each of `tickers`' (rank, mentions) reading per boundary with polled_at in
+        [start, end); a ticker with none is absent."""
+        result: dict[str, dict[datetime, tuple[int, int]]] = {}
         rows = await self._session.execute(
-            select(PopularitySnapshotRow.ticker, PopularitySnapshotRow.rank, PopularitySnapshotRow.mentions)
-            .where(
+            select(
+                PopularitySnapshotRow.ticker,
+                PopularitySnapshotRow.polled_at,
+                PopularitySnapshotRow.rank,
+                PopularitySnapshotRow.mentions,
+            ).where(
                 PopularitySnapshotRow.ticker.in_(tickers),
                 PopularitySnapshotRow.polled_at >= start,
                 PopularitySnapshotRow.polled_at < end,
             )
-            .order_by(PopularitySnapshotRow.polled_at)
         )
-        for ticker, rank, mentions in rows:
-            result.setdefault(ticker, []).append((rank, mentions))
+        for ticker, polled_at, rank, mentions in rows:
+            result.setdefault(ticker, {})[polled_at.astimezone(UTC)] = (rank, mentions)
         return result
+
+    async def bottom_ranks(self, start: datetime, end: datetime) -> dict[datetime, int]:
+        """Each polled boundary in [start, end) with the rank one past the last stored
+        there: where a stock absent from that listing stands. A boundary with no stored
+        snapshot is not polled and is not listed."""
+        rows = await self._session.execute(
+            select(PopularitySnapshotRow.polled_at, func.max(PopularitySnapshotRow.rank) + 1)
+            .where(PopularitySnapshotRow.polled_at >= start, PopularitySnapshotRow.polled_at < end)
+            .group_by(PopularitySnapshotRow.polled_at)
+        )
+        return {polled_at.astimezone(UTC): bottom for polled_at, bottom in rows}
 
     async def count_polls(self, start: datetime, end: datetime) -> int:
         """How many distinct boundaries have any snapshot with polled_at in [start, end)."""
