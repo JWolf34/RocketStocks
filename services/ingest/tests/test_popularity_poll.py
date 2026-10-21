@@ -14,8 +14,8 @@ from rs_domain import (
     ALERT_STALE_AFTER,
     Alert,
     Candidate,
+    EscalationPayload,
     FactUnavailable,
-    PopularityReplyPayload,
     PopularitySurgePayload,
     PriceMoveFact,
     Verdict,
@@ -718,12 +718,10 @@ class TestReplies:
         assert (reply.symbol, reply.trigger, reply.day) == ("SURGER", "popularity_surge", alert.day)
         assert reply.triggered_at == T1
         assert reply.alert_price is None
-        payload = PopularityReplyPayload.model_validate(reply.payload)
-        assert payload.escalated_by == ("sub_rule",)
+        payload = EscalationPayload.model_validate(reply.payload)
         assert payload.new_rules == ("rank_jump",)
-        assert payload.fired == ("mention_surge", "rank_jump")
-        assert (payload.rank, payload.rank_gain, payload.mentions) == (40, 80, 90)
-        assert payload.strength == payload.previous_strength == 0.99
+        assert payload.polled_at == T1
+        assert (payload.strength_before, payload.strength_after) == (None, None)  # strength did not rise
         assert await rig.verdicts() == [("SURGER", T0, "posted"), ("SURGER", T1, "reply")]
         assert (await rig.candidates())[1].alert_id == reply.id
 
@@ -745,10 +743,19 @@ class TestReplies:
             await rig.run_at(at + timedelta(seconds=20))
 
         assert [v for *_, v in await rig.verdicts()] == ["posted", "repeat", "reply"]
-        payload = PopularityReplyPayload.model_validate((await rig.alerts())[1].payload)
-        assert payload.escalated_by == ("strength",)
+        payload = EscalationPayload.model_validate((await rig.alerts())[1].payload)
         assert payload.new_rules == ()
-        assert payload.previous_strength == 0.90
+        assert (payload.strength_before, payload.strength_after) == (0.90, 0.90 + REPLY_STRENGTH_MARGIN)
+
+    async def test_a_reply_on_a_new_sub_rule_and_higher_strength_carries_both(self, rig):
+        rig.scorer.by_ticker_and_time[("SURGER", T0)] = scored(0.90)
+        rig.scorer.by_ticker_and_time[("SURGER", T1)] = scored(0.97)
+
+        await self._alert_then(rig, [both_rules("SURGER")])
+
+        payload = EscalationPayload.model_validate((await rig.alerts())[1].payload)
+        assert payload.new_rules == ("rank_jump",)
+        assert (payload.strength_before, payload.strength_after) == (0.90, 0.97)
 
     async def test_a_stock_gets_at_most_a_few_replies_a_day(self, rig):
         boundaries = [T0 + timedelta(minutes=30 * i) for i in range(MAX_REPLIES_PER_STOCK_DAY + 3)]

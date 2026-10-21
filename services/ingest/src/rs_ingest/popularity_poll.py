@@ -24,8 +24,8 @@ from rs_domain import (
     Alert,
     Candidate,
     Clock,
+    EscalationPayload,
     PopularityOrigin,
-    PopularityReplyPayload,
     PopularitySnapshot,
     PopularitySurgePayload,
     SurgeFacts,
@@ -318,20 +318,11 @@ def _payload(event: SurgeEvent, facts: SurgeFacts) -> PopularitySurgePayload:
     )
 
 
-def _reply_payload(decision: Decision, found: Escalation) -> PopularityReplyPayload:
-    event, inputs = decision.event, decision.event.inputs
-    return PopularityReplyPayload(
-        rule_version=event.rule_version,
-        polled_at=event.polled_at,
-        escalated_by=found.by,
+def _reply_payload(decision: Decision, found: Escalation) -> EscalationPayload:
+    """What escalated; the strengths are set only when strength rose by the margin."""
+    return EscalationPayload(
+        polled_at=decision.event.polled_at,
         new_rules=tuple(rule.value for rule in found.new_rules),
-        fired=tuple(rule.value for rule in event.fired),
-        strength=decision.scored.strength,
-        previous_strength=found.previous_strength,
-        rank=inputs.rank,
-        mentions=inputs.mentions,
-        rank_24h_ago=inputs.rank_24h_ago,
-        mentions_24h_ago=inputs.mentions_24h_ago,
-        rank_gain=inputs.rank_gain,
-        mention_ratio=inputs.mention_ratio,
+        strength_before=found.previous_strength if found.strength_up else None,
+        strength_after=decision.scored.strength if found.strength_up else None,
     )
