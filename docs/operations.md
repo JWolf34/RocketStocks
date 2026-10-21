@@ -200,8 +200,8 @@ The import refuses to run until `verify-offset` records the zone against live da
    ```
    psql -c "SELECT DISTINCT polled_at FROM popularity_snapshot WHERE origin = 'v1_import' AND polled_at >= '<spring-forward date> 04:00+00' AND polled_at < '<spring-forward date> 12:00+00' ORDER BY 1"
    ```
-   A local zone leaves no rows in the skipped hour, so the list shows a one-hour gap.
-   The matched zone must agree with what the list shows.
+   v1 polled on the local wall clock, which skips an hour at the change, and the importer converts each row to UTC, so the right zone gives an unbroken 30-minute series (for `America/Chicago` on 2026-03-08: 07:30, then 08:00 UTC).
+   A one-hour hole or a doubled hour means the zone is wrong; stop and rerun `verify-offset`.
 
 Expect: the dump's row count and range match v1's, the first import reports `parsed/inserted/rejected` counts that agree with the dump, and the rerun reports `inserted 0`.
 Once this passes, retiring v1 is an operator step.
