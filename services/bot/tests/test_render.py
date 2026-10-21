@@ -8,7 +8,7 @@ import discord
 import pytest
 
 import rs_bot.render
-from rs_bot.render import render
+from rs_bot.render import marked_row_id, render, render_generic
 from rs_domain import (
     Alert,
     BenchmarkFact,
@@ -243,3 +243,48 @@ def test_generic_embed_clips_a_huge_payload(size):
         alert=Alert(symbol="X", trigger="t", triggered_at=T0, payload={"k": "v" * size}),
     )
     assert len(render(pending).description) <= 4096
+
+
+def test_every_embed_names_its_row_so_history_can_identify_it():
+    typed = _pending()  # id 42
+    embeds = {
+        "typed": render(typed, _track_record()),
+        "generic trigger": render(GENERIC_PENDING),
+        "last-attempt plain": render_generic(typed),
+        "unparseable": render(
+            PendingAlert(
+                id=9, alert=Alert(symbol="G", trigger="popularity_surge", triggered_at=T0, payload={})
+            )
+        ),
+    }
+
+    assert {name: marked_row_id(embed) for name, embed in embeds.items()} == {
+        "typed": 42,
+        "generic trigger": 7,
+        "last-attempt plain": 42,
+        "unparseable": 9,
+    }
+
+
+def test_a_marker_is_matched_as_a_whole_id_and_only_at_the_start_of_the_footer():
+    def embed(footer: str | None) -> discord.Embed:
+        made = discord.Embed(title="x")
+        return made if footer is None else made.set_footer(text=footer)
+
+    assert marked_row_id(embed("alert #12")) == 12
+    assert marked_row_id(embed("alert #12 | rule v1 | quote 2026-07-06 14:30 UTC")) == 12
+    assert marked_row_id(embed("alert #12x")) is None
+    assert marked_row_id(embed("see alert #12")) is None
+    assert marked_row_id(embed(None)) is None
+
+
+def test_the_marker_survives_a_footer_that_has_to_be_clipped():
+    pending = _pending()
+    long_rule = pending.alert.model_copy(
+        update={"payload": {**pending.alert.payload, "rule_version": "9" * 5000}}
+    )
+
+    embed = render(PendingAlert(id=42, alert=long_rule), _track_record())
+
+    assert len(embed.footer.text) <= 2048
+    assert marked_row_id(embed) == 42

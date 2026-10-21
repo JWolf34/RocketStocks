@@ -11,6 +11,7 @@ from the end, so the same alert always renders the same embed.
 """
 
 import logging
+import re
 
 import discord
 
@@ -33,6 +34,20 @@ MAX_DESCRIPTION = 4096
 MAX_FOOTER = 2048
 MAX_TOTAL = 6000
 ELLIPSIS = "..."
+
+# Every embed opens its footer with the row id; delivery finds the bot's own message for a row in
+# channel history by it, because history reads do not reliably carry a send's nonce.
+_FOOTER_ID = re.compile(r"alert #(\d+)(?: \||\Z)")
+
+
+def footer_marker(row_id: int) -> str:
+    return f"alert #{row_id}"
+
+
+def marked_row_id(embed: discord.Embed) -> int | None:
+    """The row id an embed's footer names, or None when it carries none."""
+    match = _FOOTER_ID.match(embed.footer.text or "")
+    return None if match is None else int(match.group(1))
 
 
 def render(
@@ -64,7 +79,7 @@ def _render_full(
         ("Next earnings", _earnings_text(payload)),
         ("Benchmark", _benchmark_text(payload)),
     ]
-    parts = [f"alert #{pending.id}", f"rule v{payload.rule_version}"]
+    parts = [footer_marker(pending.id), f"rule v{payload.rule_version}"]
     if alert.alert_price is not None:
         parts.append(f"alert price ${alert.alert_price:,.2f}")
     if alert.quote_time is not None:
@@ -85,7 +100,7 @@ def render_generic(pending: PendingAlert) -> discord.Embed:
         description=_clip(str(alert.payload), MAX_DESCRIPTION),
         timestamp=alert.triggered_at,
     )
-    embed.set_footer(text=f"alert #{pending.id}")
+    embed.set_footer(text=footer_marker(pending.id))
     return embed
 
 
