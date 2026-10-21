@@ -5,13 +5,12 @@ import pytest
 from pydantic import ValidationError
 
 from rs_domain import (
-    BenchmarkFact,
+    EscalationPayload,
     FactUnavailable,
     NextEarningsFact,
     PopularitySurgePayload,
     PriceMoveFact,
     SurgeFacts,
-    VolumeFact,
 )
 
 POLLED_AT = datetime(2026, 10, 19, 14, 0, tzinfo=UTC)
@@ -22,19 +21,13 @@ def full_facts() -> SurgeFacts:
         price_move=PriceMoveFact(
             last_price=12.5, previous_close=10.0, change_pct=25.0, quote_time=POLLED_AT
         ),
-        volume=VolumeFact(
-            volume=3_000_000, average_volume=1_000_000.0, sessions=20, ratio=3.0, intraday=True
-        ),
         next_earnings=NextEarningsFact(date=date(2026, 11, 3), estimated=True, time_of_day="pre_market"),
-        benchmark=BenchmarkFact(symbol="SPY", price=512.25, quote_time=POLLED_AT),
     )
 
 
 def unavailable_facts() -> SurgeFacts:
     reason = FactUnavailable(reason="Schwab token is dead")
-    return SurgeFacts(
-        price_move=reason, volume=reason, next_earnings=reason, benchmark=reason
-    )
+    return SurgeFacts(price_move=reason, next_earnings=reason)
 
 
 def payload(facts: SurgeFacts) -> PopularitySurgePayload:
@@ -64,16 +57,16 @@ def test_payload_round_trips_through_json(facts):
 
 
 def test_each_fact_keeps_its_own_variant_after_a_round_trip():
-    facts = full_facts().model_copy(update={"volume": FactUnavailable(reason="only 3 of 20 daily bars")})
+    facts = full_facts().model_copy(update={"next_earnings": FactUnavailable(reason="no upcoming earnings date found")})
 
     restored = PopularitySurgePayload.model_validate(payload(facts).model_dump(mode="json"))
 
     assert isinstance(restored.facts.price_move, PriceMoveFact)
-    assert restored.facts.volume == FactUnavailable(reason="only 3 of 20 daily bars")
+    assert restored.facts.next_earnings == FactUnavailable(reason="no upcoming earnings date found")
 
 
 def test_payload_records_its_schema_version():
-    assert payload(full_facts()).model_dump(mode="json")["version"] == 2
+    assert payload(full_facts()).model_dump(mode="json")["version"] == 3
 
 
 def test_a_stored_version_1_payload_with_filings_still_parses():
@@ -99,8 +92,25 @@ def test_a_stored_version_1_payload_with_filings_still_parses():
     assert restored.facts == full_facts()
 
 
+def test_a_stored_version_2_payload_with_volume_and_benchmark_still_parses():
+    facts = full_facts().model_dump(mode="json") | {
+        "volume": {
+            "status": "ok", "volume": 3_000_000, "average_volume": 1_000_000.0,
+            "sessions": 20, "ratio": 3.0, "intraday": True,
+        },
+        "benchmark": {"status": "ok", "symbol": "SPY", "price": 512.25, "quote_time": "2026-10-19T14:00:00Z"},
+    }
+    stored = payload(full_facts()).model_dump(mode="json") | {"version": 2, "facts": facts}
+
+    restored = PopularitySurgePayload.model_validate(stored)
+
+    assert restored.version == 2
+    assert restored.facts == full_facts()
+    assert set(restored.facts.model_dump()) == {"price_move", "next_earnings"}
+
+
 def test_rejects_an_unknown_payload_version():
-    stored = payload(full_facts()).model_dump(mode="json") | {"version": 3}
+    stored = payload(full_facts()).model_dump(mode="json") | {"version": 4}
 
     with pytest.raises(ValidationError):
         PopularitySurgePayload.model_validate(stored)
@@ -118,3 +128,13 @@ def test_rejects_a_naive_polled_at():
 
     with pytest.raises(ValidationError, match="naive"):
         PopularitySurgePayload.model_validate(stored)
+
+
+def test_an_escalation_payload_round_trips_through_json():
+    original = EscalationPayload(
+        polled_at=POLLED_AT, new_rules=("rank_jump",), strength_before=0.8, strength_after=0.97
+    )
+
+    stored = json.loads(json.dumps(original.model_dump(mode="json")))
+
+    assert EscalationPayload.model_validate(stored) == original

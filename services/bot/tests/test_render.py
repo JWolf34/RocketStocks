@@ -1,8 +1,10 @@
-"""render(PendingAlert, track_record) -> Embed: a popularity-surge payload rendered
-typed with its facts and track record, inside Discord's embed limits. Anything that
-cannot render typed falls back to the generic embed."""
+"""render(PendingAlert, track_record) -> Embed: a popularity-surge Alert rendered typed with
+its talking point, reasons, price, Track record and next Catalyst, a reply in its thread as a
+short follow-up, inside Discord's embed limits. Anything that cannot render typed falls back to
+the generic embed. Tests assert what the embed says, not its exact bytes."""
 
-from datetime import UTC, date, datetime
+import re
+from datetime import UTC, date, datetime, timedelta
 
 import discord
 import pytest
@@ -11,47 +13,50 @@ import rs_bot.render
 from rs_bot.render import marked_row_id, render, render_generic
 from rs_domain import (
     Alert,
-    BenchmarkFact,
+    EscalationPayload,
     FactUnavailable,
     NextEarningsFact,
     PopularitySurgePayload,
     PriceMoveFact,
     SurgeFacts,
     TrackRecord,
-    VolumeFact,
 )
 from rs_persistence import PendingAlert
 
 T0 = datetime(2026, 7, 6, 14, 30, tzinfo=UTC)
+QUOTE_AT = T0 + timedelta(minutes=2)
+REPLY_AT = T0 + timedelta(minutes=90)
 GONE = FactUnavailable(reason="quote vendor down")
+# Discord's timestamp markup: <t:unix:style>.
+STAMP = re.compile(r"<t:(\d+):[a-zA-Z]>")
+CLOCK_TIME = re.compile(r"\d{1,2}:\d{2}|UTC")
 
 
 def _facts(**overrides) -> SurgeFacts:
     facts = {
-        "price_move": PriceMoveFact(last_price=12.5, previous_close=10.0, change_pct=25.0, quote_time=T0),
-        "volume": VolumeFact(
-            volume=3_000_000, average_volume=1_000_000, sessions=20, ratio=3.0, intraday=True
-        ),
+        "price_move": PriceMoveFact(last_price=12.5, previous_close=10.0, change_pct=25.0, quote_time=QUOTE_AT),
         "next_earnings": NextEarningsFact(date=date(2026, 8, 4), estimated=True),
-        "benchmark": BenchmarkFact(symbol="SPY", price=500.0, quote_time=T0),
     }
     return SurgeFacts(**{**facts, **overrides})
 
 
-def _pending(facts: SurgeFacts | None = None, fired=("mention_surge",)) -> PendingAlert:
+def _pending(facts: SurgeFacts | None = None, fired=("mention_surge",), **payload_overrides) -> PendingAlert:
     payload = PopularitySurgePayload(
-        rule_version="1",
-        polled_at=T0,
-        fired=fired,
-        rank=12,
-        mentions=150,
-        rank_24h_ago=70,
-        mentions_24h_ago=40,
-        rank_gain=58,
-        mention_ratio=3.75,
-        mention_multiplier=3.0,
-        mention_min_prior=15,
-        facts=facts or _facts(),
+        **{
+            "rule_version": "1",
+            "polled_at": T0,
+            "fired": fired,
+            "rank": 12,
+            "mentions": 150,
+            "rank_24h_ago": 70,
+            "mentions_24h_ago": 40,
+            "rank_gain": 58,
+            "mention_ratio": 3.75,
+            "mention_multiplier": 3.0,
+            "mention_min_prior": 15,
+            "facts": facts or _facts(),
+        }
+        | payload_overrides
     )
     return PendingAlert(
         id=42,
@@ -62,7 +67,22 @@ def _pending(facts: SurgeFacts | None = None, fired=("mention_surge",)) -> Pendi
             payload=payload.model_dump(mode="json"),
             rule_version="1",
             alert_price=12.5,
-            quote_time=T0,
+            quote_time=QUOTE_AT,
+        ),
+    )
+
+
+def _reply(**payload) -> PendingAlert:
+    escalation = EscalationPayload(polled_at=REPLY_AT, **payload)
+    return PendingAlert(
+        id=43,
+        alert=Alert(
+            symbol="GME",
+            trigger="popularity_surge",
+            triggered_at=REPLY_AT,
+            payload=escalation.model_dump(mode="json"),
+            rule_version="1",
+            reply_to=42,
         ),
     )
 
@@ -93,70 +113,274 @@ def _fields(embed) -> dict[str, str]:
     return {f.name: f.value for f in embed.fields}
 
 
+def _text(embed) -> str:
+    """Everything the embed shows a reader, apart from the footer."""
+    parts = [embed.title or "", embed.description or "", *(f"{f.name}\n{f.value}" for f in embed.fields)]
+    return "\n".join(parts)
+
+
 def _assert_within_discord_limits(embed) -> None:
     assert len(embed.fields) <= 25
     assert all(len(f.name) <= 256 and len(f.value) <= 1024 for f in embed.fields)
     assert len(embed) <= 6000  # discord.py's total of title, description, fields and footer
 
 
-def test_full_payload_shows_rule_facts_track_record_and_provenance():
-    embed = render(_pending(), _track_record())
-    fields = _fields(embed)
+def _unix(moment: datetime) -> int:
+    return int(moment.timestamp())
+
+
+# -- a full Alert ----------------------------------------------------------------------------
+
+
+def test_the_talking_point_names_the_mention_multiple_and_the_rank_move():
+    embed = render(_pending(fired=("mention_surge", "rank_jump")), _track_record())
 
     assert embed.title == "GME · Popularity surge"
-    assert embed.timestamp == T0
-    assert "150 mentions vs 40 24h ago" in fields["Why it fired"]
-    assert "3.8x" in fields["Why it fired"]
+    assert "3.8x" in embed.description and "40 to 150" in embed.description
+    assert "#70 to #12" in embed.description
+    assert "\n" not in embed.description  # one line
+
+
+@pytest.mark.parametrize("fired", [("mention_surge",), ("rank_jump",)])
+def test_the_talking_point_describes_only_the_sub_rule_that_fired(fired):
+    description = render(_pending(fired=fired), _track_record()).description
+
+    assert ("3.8x" in description) == (fired == ("mention_surge",))
+    assert ("#70 to #12" in description) == (fired == ("rank_jump",))
+
+
+def test_the_alert_never_advises():
+    text = _text(render(_pending(fired=("mention_surge", "rank_jump")), _track_record())).lower()
+
+    for advice in ("buy", "sell", "target", "should", "position"):
+        assert advice not in text
+
+
+def test_the_reasons_name_the_trigger_and_each_sub_rule_that_fired():
+    why = _fields(render(_pending(fired=("mention_surge", "rank_jump")), _track_record()))["Why it fired"]
+
+    assert "Popularity surge v1" in why
+    assert "Mention surge: 150 mentions vs 40 a day ago" in why and "needs 3x from at least 15" in why
+    assert "Rank jump: #70 to #12" in why
+
+
+def test_the_price_shows_with_its_as_of_time_and_the_next_catalyst_as_a_date():
+    fields = _fields(render(_pending(), _track_record()))
+
     assert "$12.50" in fields["Price"] and "+25.00%" in fields["Price"]
-    assert "3,000,000" in fields["Volume"] and "3.0x" in fields["Volume"]
-    assert "partial day" in fields["Volume"]
-    assert fields["Next earnings"] == "2026-08-04 - estimated"
-    assert fields["Benchmark"].startswith("SPY $500.00")
-    for text in ("alert #42", "rule v1", "alert price $12.50", "quote 2026-07-06 14:30 UTC"):
-        assert text in embed.footer.text
+    assert f"<t:{_unix(QUOTE_AT)}:f>" in fields["Price"]
+    assert fields["Next Catalyst"] == "Earnings on Aug 4, 2026, estimated"
+
+
+def test_a_confirmed_earnings_date_is_not_marked_estimated_and_names_the_session():
+    facts = _facts(next_earnings=NextEarningsFact(date=date(2026, 8, 4), estimated=False, time_of_day="after_hours"))
+
+    value = _fields(render(_pending(facts), _track_record()))["Next Catalyst"]
+
+    assert value == "Earnings on Aug 4, 2026 (after the close)"
+
+
+def test_every_time_shown_is_discord_timestamp_markup_and_a_date_is_not():
+    embed = render(_pending(), _track_record())
+    shown = _text(embed)
+
+    assert {int(unix) for unix in STAMP.findall(shown)} == {_unix(T0), _unix(QUOTE_AT)}
+    assert not CLOCK_TIME.search(STAMP.sub("", shown))  # no clock time outside the markup
+    assert not STAMP.search(_fields(embed)["Next Catalyst"])  # a date has no zone to convert
+    assert embed.timestamp == T0  # Discord shows this one in the reader's zone too
+    assert not CLOCK_TIME.search(embed.footer.text)
+
+
+def test_volume_and_the_benchmark_are_not_shown():
+    shown = _text(render(_pending(), _track_record()))
+
+    assert "volume" not in shown.lower() and "benchmark" not in shown.lower()
+
+
+def test_the_footer_opens_with_the_row_id_and_names_the_trigger_version():
+    embed = render(_pending(), _track_record())
+
+    assert embed.footer.text.startswith("alert #42")
+    assert "popularity_surge v1" in embed.footer.text
     _assert_within_discord_limits(embed)
 
 
-def test_rank_jump_names_both_ranks():
-    embed = render(_pending(fired=("rank_jump",)), _track_record())
-    assert "Rank jump: #12 from #70" in _fields(embed)["Why it fired"]
+# -- the Track record ------------------------------------------------------------------------
+
+
+def test_the_track_record_shows_both_measures_at_every_horizon_and_how_many_cases_are_live():
+    value = _fields(render(_pending(), _track_record()))["Track record"]
+
+    assert value.splitlines()[0].startswith("120 cases, 8 live")
+    header = next(line for line in value.splitlines() if "1d" in line)
+    assert all(horizon in header for horizon in ("1d", "5d", "20d"))
+    assert "-1.2%" in value and "SPY" in value  # direction: the median excess return over SPY
+    assert "25%" in value and "7%" in value  # move size: the share at 2x, and the ordinary share
+    assert "0.9x" in value  # and the median multiple
+    assert re.search(r"Outcomes\s+45\s+45\s+45", value)
+
+
+def test_the_track_record_is_a_compact_block_a_phone_can_show():
+    block = _fields(render(_pending(), _track_record()))["Track record"].split("```")[1]
+
+    assert max(len(line) for line in block.splitlines()) <= 32
+
+
+def test_a_horizon_below_thirty_outcomes_says_too_few_cases_and_shows_no_numbers_for_it():
+    thin = _track_record()
+    thin[2] = thin[2].model_copy(update={"outcomes": 29, "share_at_2x": 0.9, "median_excess": 0.5})
+
+    value = _fields(render(_pending(), thin))["Track record"]
+
+    assert "20d: too few cases (29 Outcomes" in value
+    assert "90%" not in value and "+50" not in value
+    block = value.split("```")[1]
+    assert "20d" not in block and "5d" in block  # the horizons with enough cases keep their numbers
+
+
+def test_every_horizon_too_thin_shows_only_too_few_cases():
+    value = _fields(render(_pending(), _track_record(outcomes=10)))["Track record"]
+
+    assert value.count("too few cases") == 3
+    assert "```" not in value
+
+
+def test_no_track_record_says_so_and_is_not_shown_as_zero():
+    value = _fields(render(_pending()))["Track record"]
+
+    assert "Not measured yet" in value
+    assert "0%" not in value and "0 cases" not in value
+
+
+def test_failed_track_record_read_does_not_claim_none_measured():
+    value = _fields(render(_pending(), track_record_failed=True))["Track record"]
+
+    assert "could not be read" in value and "Not measured" not in value
+
+
+def test_a_missing_measure_is_labelled_not_shown_as_zero():
+    bare = [
+        r.model_copy(update={"share_at_2x": None, "ordinary_share": None, "median_multiple": None, "median_excess": None})
+        for r in _track_record()
+    ]
+
+    value = _fields(render(_pending(), bare))["Track record"]
+
+    assert "n/a" in value and "not measurable" in value
+    assert "0.0%" not in value and "+0.0" not in value
+
+
+def test_cases_that_could_not_be_priced_are_counted():
+    value = _fields(render(_pending(), _track_record()))["Track record"]
+
+    assert re.search(r"unpriced\s+3\s+3\s+3", value)
+
+
+# -- missing facts ---------------------------------------------------------------------------
 
 
 def test_every_optional_fact_unavailable_says_why():
-    facts = _facts(
-        price_move=GONE, volume=GONE, next_earnings=GONE, benchmark=GONE
-    )
-    fields = _fields(render(_pending(facts), _track_record()))
-    for name in ("Price", "Volume", "Next earnings", "Benchmark"):
+    fields = _fields(render(_pending(_facts(price_move=GONE, next_earnings=GONE)), _track_record()))
+
+    for name in ("Price", "Next Catalyst"):
         assert fields[name] == "unavailable: quote vendor down"
 
 
-def test_a_version_1_payload_with_filings_still_renders_typed():
+def test_one_missing_fact_does_not_hide_the_others():
+    fields = _fields(render(_pending(_facts(price_move=GONE)), _track_record()))
+
+    assert "quote vendor down" in fields["Price"]
+    assert "Aug 4, 2026" in fields["Next Catalyst"]
+    assert "Mention surge" in fields["Why it fired"]
+
+
+def test_a_payload_without_the_prior_day_still_gets_a_truthful_talking_point():
+    pending = _pending(rank_24h_ago=None, mentions_24h_ago=None, rank_gain=None, mention_ratio=None)
+
+    description = render(pending, _track_record()).description
+
+    assert "rank #12" in description and "150 mentions" in description
+    assert "3.8x" not in description
+
+
+# -- older payload versions ------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("version", [1, 2])
+def test_a_stored_older_payload_still_renders_typed_without_volume_or_benchmark(version):
     pending = _pending()
-    payload = pending.alert.payload | {
-        "version": 1,
-        "facts": pending.alert.payload["facts"]
-        | {
-            "recent_filings": {
-                "status": "ok",
-                "window_days": 14,
-                "filings": [
-                    {
-                        "form": "8-K",
-                        "filing_date": "2026-07-01",
-                        "items": ["2.02"],
-                        "url": "https://example.test/f1",
-                    }
-                ],
-            }
+    stored_facts = pending.alert.payload["facts"] | {
+        "volume": {
+            "status": "ok", "volume": 3_000_000, "average_volume": 1_000_000.0,
+            "sessions": 20, "ratio": 3.0, "intraday": True,
         },
+        "benchmark": {"status": "ok", "symbol": "SPY", "price": 500.0, "quote_time": "2026-07-06T14:30:00Z"},
+        "recent_filings": {"status": "ok", "window_days": 14, "filings": []},
     }
-    old = PendingAlert(id=42, alert=pending.alert.model_copy(update={"payload": payload}))
+    old = PendingAlert(
+        id=42,
+        alert=pending.alert.model_copy(
+            update={"payload": pending.alert.payload | {"version": version, "facts": stored_facts}}
+        ),
+    )
 
-    fields = _fields(render(old, _track_record()))
+    embed = render(old, _track_record())
 
-    assert "Recent 8-Ks" not in fields
-    assert "$12.50" in fields["Price"]
+    assert [f.name for f in embed.fields] == ["Why it fired", "Price", "Track record", "Next Catalyst"]
+    assert "$12.50" in _fields(embed)["Price"]
+    assert "3,000,000" not in _text(embed) and "500.00" not in _text(embed)
+
+
+def test_new_payloads_are_written_as_version_3():
+    assert _pending().alert.payload["version"] == 3
+
+
+# -- a reply in the Alert's thread -----------------------------------------------------------
+
+
+def test_a_reply_says_what_escalated_and_when():
+    embed = render(_reply(new_rules=("rank_jump",), strength_before=0.8, strength_after=0.97))
+
+    text = _text(embed)
+    assert "rank jump" in text.lower() and "did not carry" in text
+    assert "97" in text and "80" in text
+    assert f"<t:{_unix(REPLY_AT)}:f>" in text
+    assert "GME" in embed.title
+    assert not embed.fields  # a short follow-up, not a second Alert
+    assert "Track record" not in text and "Price" not in text
+
+
+def test_a_reply_footer_names_its_own_row_and_the_alert_it_continues():
+    embed = render(_reply(new_rules=("mention_surge",)))
+
+    assert marked_row_id(embed) == 43
+    assert "reply to #42" in embed.footer.text
+
+
+def test_a_strength_only_escalation_needs_no_new_sub_rule():
+    embed = render(_reply(strength_after=0.97))
+
+    assert "also fired" not in embed.description
+    assert "97" in embed.description
+
+
+def test_a_reply_without_detail_says_so():
+    assert "details were not stored" in render(_reply()).description
+
+
+def test_a_reply_that_is_not_an_escalation_payload_falls_back():
+    pending = PendingAlert(
+        id=44,
+        alert=Alert(symbol="GME", trigger="popularity_surge", triggered_at=T0, payload={"junk": 1}, reply_to=42),
+    )
+
+    embed = render(pending)
+
+    assert marked_row_id(embed) == 44
+    assert not embed.fields
+
+
+# -- limits and fallbacks --------------------------------------------------------------------
 
 
 def test_fields_over_the_total_are_dropped_from_the_end_deterministically():
@@ -169,46 +393,6 @@ def test_fields_over_the_total_are_dropped_from_the_end_deterministically():
     assert 0 < len(fitted) < 10
     assert sum(len(n) + len(v) for n, v in fitted) + len("T") <= 6000
     assert rs_bot.render._fit(embed, fields) == fitted
-
-
-def test_no_track_record_says_so_explicitly():
-    value = _fields(render(_pending()))["Track record"]
-    assert "No track record has been measured" in value
-
-
-def test_failed_track_record_read_does_not_claim_none_measured():
-    value = _fields(render(_pending(), track_record_failed=True))["Track record"]
-    assert "could not be read" in value
-
-
-def test_each_horizon_shows_its_outcomes_shares_and_direction():
-    value = _fields(render(_pending(), _track_record()))["Track record"]
-
-    assert value.splitlines()[0] == "120 cases, 8 live (the rest replayed from history)"
-    assert (
-        "5d: 45 Outcomes, 3 could not be priced; 25% moved 2x typical or more "
-        "(same stocks on ordinary days: 7%), median 0.9x typical, median excess vs SPY -1.20%"
-    ) in value
-    assert [line.split(":")[0] for line in value.splitlines()[1:]] == ["1d", "5d", "20d"]
-
-
-def test_a_horizon_below_thirty_outcomes_says_too_few_cases():
-    thin = _track_record()
-    thin[2] = thin[2].model_copy(update={"outcomes": 29})
-
-    lines = _fields(render(_pending(), thin))["Track record"].splitlines()
-
-    assert lines[3] == "20d: too few cases (29 Outcomes)"
-    assert "too few cases" not in lines[2]
-
-
-def test_missing_shares_show_as_not_available():
-    bare = [r.model_copy(update={"share_at_2x": None, "ordinary_share": None, "median_multiple": None, "median_excess": None})
-            for r in _track_record()]
-
-    value = _fields(render(_pending(), bare))["Track record"]
-
-    assert "n/a moved 2x typical or more (same stocks on ordinary days: n/a), median n/a typical, median excess vs SPY n/a" in value
 
 
 GENERIC_PENDING = PendingAlert(

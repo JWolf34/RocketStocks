@@ -213,12 +213,7 @@ def surge_alert(facts: SurgeFacts | None = None) -> Alert:
         mention_multiplier=5.0,
         mention_min_prior=15,
         facts=facts
-        or SurgeFacts(
-            price_move=unavailable,
-            volume=unavailable,
-            next_earnings=unavailable,
-            benchmark=unavailable,
-        ),
+        or SurgeFacts(price_move=unavailable, next_earnings=unavailable),
     )
     return Alert(
         symbol="GME",

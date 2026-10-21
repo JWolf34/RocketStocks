@@ -24,13 +24,12 @@ from rs_domain.models import (
     Verdict,
 )
 from rs_domain.payloads import (
-    BenchmarkFact,
+    EscalationPayload,
     FactUnavailable,
     NextEarningsFact,
     PopularitySurgePayload,
     PriceMoveFact,
     SurgeFacts,
-    VolumeFact,
 )
 from rs_domain.ports import Clock, TradingCalendar
 
@@ -41,12 +40,12 @@ __all__ = [
     "AuthRequestState",
     "TOO_FEW_CASES_BELOW",
     "TrackRecord",
-    "BenchmarkFact",
     "Candidate",
     "ChainSnapshot",
     "Clock",
     "Dataset",
     "Delivery",
+    "EscalationPayload",
     "FactUnavailable",
     "NextEarningsFact",
     "OptionQuote",
@@ -63,6 +62,5 @@ __all__ = [
     "UnpricedSymbol",
     "UtcDatetime",
     "Verdict",
-    "VolumeFact",
     "eastern_day",
 ]
