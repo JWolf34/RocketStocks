@@ -5,7 +5,7 @@ totalVolume (cumulative daily → delta ≈ 5-min flow), openInterest (expected
 static intraday — measure whether that holds), and bid/ask drift. Emits
 data/spike-findings/chains/findings-<date>.md. Both the findings and the raw snapshots
 stay gitignored-local (vendor-data rule); measured facts worth keeping are
-summarized by hand in docs/foundation/research/vendor-stack.md ("Measured Schwab facts").
+summarized by hand in docs/reference/schwab-facts.md.
 
     .venv/bin/python scripts/spikes/chain_diff.py [--date YYYY-MM-DD]
     .venv/bin/python scripts/spikes/chain_diff.py --dry-run   # synthetic two-snapshot diff

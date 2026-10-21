@@ -18,7 +18,7 @@ TOKEN_PATH = REPO_ROOT / "data" / "schwab-spike-token.json"
 CALLBACK_URL = "https://127.0.0.1:8182"
 # Findings md written by the analysis scripts. Gitignored-local like the raw
 # recordings (vendor-data rule); keep durable facts by hand in
-# docs/foundation/research/vendor-stack.md ("Measured Schwab facts").
+# docs/reference/schwab-facts.md.
 FINDINGS_DIR = REPO_ROOT / "data" / "spike-findings"
 SPIKE_DATA_DIR = REPO_ROOT / "data" / "spike-recordings"
 
