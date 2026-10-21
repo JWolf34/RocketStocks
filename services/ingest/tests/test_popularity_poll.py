@@ -12,6 +12,7 @@ from sqlalchemy import delete, func, insert, select
 from rs_analysis.popularity_surge import RULE_VERSION, SubRule
 from rs_domain import (
     Alert,
+    Candidate,
     FactUnavailable,
     PopularitySurgePayload,
     PriceMoveFact,
@@ -19,10 +20,12 @@ from rs_domain import (
 )
 from rs_ingest.alert_writer import AlertWriteError, AlertWriter, RetryPolicy
 from rs_ingest.popularity_poll import PopularityPoll, poll_boundary
+from rs_ingest.scoring import Scored
 from rs_ingest.surge_facts import SurgeFactsGatherer
 from rs_persistence import (
     AlertRepository,
     AlertRow,
+    CandidateRepository,
     CandidateRow,
     PopularitySnapshotRow,
 )
@@ -88,6 +91,22 @@ class FakeEarnings:
         return NextEarnings(date=date(2026, 11, 3))
 
 
+class FakeScorer:
+    """Scores every hit the same unless a ticker is given its own `Scored`; the real
+    scorer has its own tests against stored history."""
+
+    def __init__(self, default: Scored | None = None) -> None:
+        self.default = default or Scored(raw_score=9.0, strength=0.99, bar=0.9)
+        self.by_ticker: dict[str, Scored] = {}
+        self.by_ticker_and_time: dict[tuple[str, datetime], Scored] = {}
+
+    async def score(self, events):
+        return [
+            self.by_ticker_and_time.get((e.ticker, e.polled_at), self.by_ticker.get(e.ticker, self.default))
+            for e in events
+        ]
+
+
 class Tripped:
     def __init__(self) -> None:
         self.reasons: list[str] = []
@@ -109,13 +128,14 @@ class CountingLimiter:
 
 
 class Rig:
-    def __init__(self, session_factory, sleeps, rows, quotes=None, *, writer_factory=None) -> None:
+    def __init__(self, session_factory, sleeps, rows, quotes=None, *, writer_factory=None, scorer=None) -> None:
         self.session_factory = session_factory
         self.clock = FakeClock(T0 + timedelta(seconds=20))
         self.apewisdom = FakeApeWisdom(rows)
         self.quotes = quotes or FakeQuotes(good_quote())
         self.tripped = Tripped()
         self.limiter = CountingLimiter()
+        self.scorer = scorer or FakeScorer()
         self.sleeps = sleeps
         self.writer = AlertWriter(
             writer_factory or session_factory, policy=RetryPolicy(attempts=3), sleep=sleeps
@@ -125,6 +145,7 @@ class Rig:
             session_factory=session_factory,
             clock=self.clock,
             writer=self.writer,
+            scorer=self.scorer,
             gatherer=lambda: SurgeFactsGatherer(
                 quotes=lambda: self.quotes,
                 limiter=self.limiter,
@@ -473,14 +494,27 @@ class TestOneAlertPerStockPerDay:
         assert [a.symbol for a in await rig.alerts()] == ["SURGER", "OTHER"]
 
     async def test_an_alert_the_stock_already_has_today_from_an_earlier_rule_version_holds_the_day(self, rig):
+        earlier = T0 - timedelta(hours=2)
         async with rig.session_factory() as session:
-            await AlertRepository(session).insert(
+            alert_id = await AlertRepository(session).insert(
                 Alert(
                     symbol="SURGER",
                     trigger="popularity_surge",
-                    triggered_at=T0 - timedelta(hours=2),
+                    triggered_at=earlier,
                     payload={"version": 99},
                     rule_version="1",
+                )
+            )
+            await CandidateRepository(session).insert(
+                Candidate(
+                    trigger="popularity_surge",
+                    rule_version="1",
+                    symbol="SURGER",
+                    hit_at=earlier,
+                    inputs={"fired": ["mention_surge"]},
+                    verdict=Verdict.POSTED,
+                    decided_at=earlier,
+                    alert_id=alert_id,
                 )
             )
             await session.commit()
@@ -488,7 +522,7 @@ class TestOneAlertPerStockPerDay:
         await rig.poll.run()
 
         assert len(await rig.alerts()) == 1
-        assert await rig.verdicts() == [("SURGER", T0, "repeat")]
+        assert await rig.verdicts() == [("SURGER", earlier, "posted"), ("SURGER", T0, "repeat")]
 
     async def test_two_hits_of_one_stock_in_one_run_post_the_earlier_and_repeat_the_later(self, rig):
         async with rig.session_factory() as session:

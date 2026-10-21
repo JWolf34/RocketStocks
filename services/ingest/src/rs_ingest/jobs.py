@@ -26,6 +26,8 @@ from rs_ingest.monitored import (
 from rs_ingest.popularity_poll import POLL_MINUTES, PopularityPoll
 from rs_ingest.rate_limit import RateLimiter
 from rs_ingest.schwab_session import SchwabSession
+from rs_ingest.scoring import PopularityScorer
+from rs_ingest.selector import BAR_TARGET_PER_DAY
 from rs_ingest.surge_bars import EASTERN, SurgeBarsError, sync_surge_bars
 from rs_ingest.surge_facts import SurgeFactsGatherer
 from rs_ingest.track_record import track_record_job
@@ -139,4 +141,5 @@ def _popularity_poll(deps: Dependencies, nasdaq: NasdaqEarningsCalendar) -> Popu
             earnings=earnings,
             on_token_dead=deps.trip_token_gate,
         ),
+        scorer=PopularityScorer(deps.session_factory, bar_target=BAR_TARGET_PER_DAY),
     )
