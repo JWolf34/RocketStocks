@@ -359,7 +359,7 @@ async def test_a_posted_case_is_timed_at_its_post_not_its_hit(session_factory):
         alert_id = await AlertRepository(s).insert(
             Alert(symbol="PST", trigger=TRIGGER, triggered_at=hit, rule_version=RULE_VERSION)
         )
-        await s.execute(text("UPDATE alerts SET posted_at = :at WHERE id = :id"), {"at": posted, "id": alert_id})
+        await s.execute(text("UPDATE alerts SET posted_at = :at, delivery = 'posted' WHERE id = :id"), {"at": posted, "id": alert_id})
         await s.commit()
 
     await _refresh(session_factory)
@@ -370,17 +370,68 @@ async def test_a_posted_case_is_timed_at_its_post_not_its_hit(session_factory):
     assert row.excess_return == pytest.approx(EXCESS[1])
 
 
-async def test_a_case_whose_alert_is_not_delivered_yet_waits_for_its_post(session_factory):
-    hit = datetime(2026, 7, 7, 12, 0, tzinfo=UTC)
-    await _store(session_factory, Seed([surge("WAIT", hit)], stock_bars("WAIT", date(2026, 7, 7), STOCK_AFTER) + spy_bars(date(2026, 7, 7), SPY_AFTER)))
+async def _alert_in(session_factory, symbol: str, hit: datetime, delivery: str) -> None:
     async with session_factory() as s:
-        await AlertRepository(s).insert(Alert(symbol="WAIT", trigger=TRIGGER, triggered_at=hit, rule_version=RULE_VERSION))
+        alert_id = await AlertRepository(s).insert(
+            Alert(symbol=symbol, trigger=TRIGGER, triggered_at=hit, rule_version=RULE_VERSION)
+        )
+        await s.execute(
+            text("UPDATE alerts SET delivery = CAST(:delivery AS alert_delivery) WHERE id = :id"),
+            {"delivery": delivery, "id": alert_id},
+        )
         await s.commit()
+
+
+@pytest.mark.parametrize("delivery", ["pending", "sending"])
+async def test_a_case_whose_alert_may_still_post_waits_for_its_post(session_factory, delivery):
+    hit = NOW - timedelta(minutes=30)  # Friday 17:30 ET, inside the bot's stale limit
+    await _store(session_factory, Seed([surge("WAIT", hit)], spy_bars(date(2026, 10, 26))))
+    await _alert_in(session_factory, "WAIT", hit, delivery)
 
     await _refresh(session_factory)
 
     assert await _outcomes(session_factory) == {}
-    assert {(r.cases, r.outcomes) for r in (await _records(session_factory)).values()} == {(0, 0)}
+    assert {r.cases for r in (await _records(session_factory)).values()} == {0}
+
+
+async def test_once_the_stale_limit_passes_an_unposted_alert_is_timed_at_its_hit(session_factory):
+    hit = NOW - timedelta(minutes=30)
+    await _store(session_factory, Seed([surge("LATE", hit)], spy_bars(date(2026, 10, 26))))
+    await _alert_in(session_factory, "LATE", hit, "pending")
+    await _refresh(session_factory)
+    assert {r.cases for r in (await _records(session_factory)).values()} == {0}
+
+    # An hour and a minute after the hit the bot would record it stale, so it can never post.
+    await _refresh(session_factory, FakeClock(hit + timedelta(hours=1, minutes=1)))
+
+    assert {(r.cases, r.live_cases) for r in (await _records(session_factory)).values()} == {(1, 0)}
+
+
+@pytest.mark.parametrize("delivery", ["stale", "pending", "sending"])
+async def test_an_alert_that_never_posts_still_counts_timed_at_its_hit(session_factory, delivery):
+    # Stale, or abandoned after its sends failed (still pending or sending, long past the limit).
+    hit = datetime(2026, 7, 7, 12, 0, tzinfo=UTC)  # 08:00 ET: enters that day's open
+    await _store(
+        session_factory,
+        Seed([surge("GHOST", hit)], stock_bars("GHOST", date(2026, 7, 7), STOCK_AFTER) + spy_bars(date(2026, 7, 7), SPY_AFTER)),
+    )
+    await _alert_in(session_factory, "GHOST", hit, delivery)
+
+    await _refresh(session_factory)
+
+    row = (await _outcomes(session_factory))[("GHOST", date(2026, 7, 7), 1)]
+    assert (row.case_at, row.entry_session) == (hit, date(2026, 7, 7))
+    assert row.excess_return == pytest.approx(EXCESS[1])
+
+
+async def test_the_benchmark_is_never_a_case(session_factory):
+    hit = datetime(2026, 7, 7, 15, 0, tzinfo=UTC)
+    await _store(session_factory, Seed([surge("SPY", hit)], spy_bars(date(2026, 7, 8))))
+
+    await _refresh(session_factory)
+
+    assert await _outcomes(session_factory) == {}
+    assert {r.cases for r in (await _records(session_factory)).values()} == {0}
 
 
 async def test_an_old_rule_versions_candidates_are_not_this_versions_cases(session_factory):

@@ -3,12 +3,15 @@ bars and rewrite the Trigger version's Outcomes and Track record.
 
 A case is the first candidate of the Trigger version on a stock on an Eastern day,
 timed at its post (the Alert's `posted_at`) when it was posted and at its hit
-otherwise. Cases come from a replay of the rule over every stored Popularity
+otherwise, so an Alert that never posts (stale, or abandoned after its sends failed)
+still counts, timed at its hit. Cases come from a replay of the rule over every stored Popularity
 snapshot, both origins, merged with the candidates the live poll stored: one case
 per stock and day however many of those saw it. A case is live when the live poll
 stored a candidate for it; the rest are replayed history, which the Track record
-discloses because the rule was written having seen it. A stock whose Alert has not
-been delivered yet is held back, since its post time is not known; a later run takes it.
+discloses because the rule was written having seen it. The benchmark itself is no case:
+its excess over itself is always zero. A stock whose Alert is still pending or sending and
+whose hit is younger than the stale limit is held back, since its post time is not known
+yet; past the limit the row can never post, so its case is timed at its hit.
 
 The measure itself is `rs_analysis.outcomes`. Everything is recomputed from the
 stored Popularity, candidates, Alerts and bars, then written in one transaction,
@@ -40,7 +43,9 @@ from rs_analysis.outcomes import (
 )
 from rs_analysis.popularity_surge import RULE_VERSION
 from rs_domain import (
+    ALERT_STALE_AFTER,
     Clock,
+    Delivery,
     Outcome,
     SystemClock,
     TrackRecord,
@@ -103,14 +108,17 @@ async def discover_cases(
     held_back = 0
     for key in sorted(replayed.keys() | stored.keys(), key=lambda k: (k[1], k[0])):
         symbol, day = key
+        if symbol == BENCHMARK:
+            continue
         hit_at = min(t for t in (replayed.get(key), stored.get(key)) if t is not None)
         case_at = hit_at
-        if key in posts:
-            posted_at = posts[key]
-            if posted_at is None:
-                held_back += 1
+        post = posts.get(key)
+        if post is not None and post.delivery is Delivery.POSTED and post.posted_at is not None:
+            case_at = post.posted_at
+        elif post is not None and post.delivery in (Delivery.PENDING, Delivery.SENDING):
+            if now - post.triggered_at <= ALERT_STALE_AFTER:
+                held_back += 1  # may still post; its time is not known yet
                 continue
-            case_at = posted_at
         cases.append(Case(symbol, day, hit_at, case_at, live=key in stored))
     return cases, held_back
 
@@ -205,7 +213,7 @@ async def refresh_outcomes(
         await repo.upsert(records)
         await session.commit()
     logger.info(
-        "outcomes for %s v%s: %d cases (%d live, %d held back for an undelivered Alert); Outcomes %s",
+        "outcomes for %s v%s: %d cases (%d live, %d held back for an Alert that may still post); Outcomes %s",
         TRIGGER,
         RULE_VERSION,
         len(cases),

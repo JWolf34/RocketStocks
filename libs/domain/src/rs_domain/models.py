@@ -5,7 +5,7 @@ float64, and DOUBLE PRECISION round-trips them bit-exactly. NUMERIC/Decimal is
 reserved for future accounting-grade tables, never this path.
 """
 
-from datetime import date
+from datetime import date, timedelta
 from enum import StrEnum
 from typing import Literal
 
@@ -40,6 +40,11 @@ class Verdict(StrEnum):
     OVER_BUDGET = "over_budget"
     REPEAT = "repeat"
     STALE = "stale"
+
+
+# After an outage, an Alert or reply older than this (from its hit) is recorded as stale and
+# never posted. The bot enforces it; the Outcomes job reads it to know a row can no longer post.
+ALERT_STALE_AFTER = timedelta(hours=1)
 
 
 class Delivery(StrEnum):

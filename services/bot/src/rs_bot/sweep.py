@@ -35,6 +35,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from rs_bot.counters import new_counters
 from rs_bot.render import POPULARITY_SURGE, render, render_generic
 from rs_domain import (
+    ALERT_STALE_AFTER,
     Alert,
     Clock,
     Delivery,
@@ -50,7 +51,7 @@ from rs_query import track_records
 logger = logging.getLogger(__name__)
 
 # After an outage, an Alert or reply older than this is recorded but not posted.
-STALE_AFTER = timedelta(hours=1)
+STALE_AFTER = ALERT_STALE_AFTER
 
 # Discord's answer about one embed it will not take (a malformed or oversized body).
 _REJECTED_EMBED_STATUS = 400

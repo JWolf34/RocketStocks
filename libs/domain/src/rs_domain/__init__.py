@@ -4,6 +4,7 @@ from rs_domain._types import UtcDatetime
 from rs_domain.clock import SystemClock
 from rs_domain.days import eastern_day
 from rs_domain.models import (
+    ALERT_STALE_AFTER,
     TOO_FEW_CASES_BELOW,
     Alert,
     AuthRequestState,
@@ -34,6 +35,7 @@ from rs_domain.payloads import (
 from rs_domain.ports import Clock, TradingCalendar
 
 __all__ = [
+    "ALERT_STALE_AFTER",
     "Alert",
     "PopularitySurgePayload",
     "AuthRequestState",
