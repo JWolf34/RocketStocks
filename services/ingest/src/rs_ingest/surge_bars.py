@@ -81,6 +81,7 @@ class SurgeBarsReport:
     fetched: int = 0
     bars_inserted: int = 0
     repaired: int = 0
+    unverified: int = 0
     rejected: Counter[str] = field(default_factory=Counter)
     unpriced: int = 0
     deferred: int = 0
@@ -172,15 +173,10 @@ def _off(stored: float, fresh: float) -> bool:
     return abs(stored - fresh) > CLOSE_TOLERANCE * fresh
 
 
-def _disagreements(held: Sequence[StoredDailyBar], history: DailyHistory) -> list[tuple[StoredDailyBar, float]]:
-    """Stored bars whose close differs from the fresh close of the same session by more than
-    CLOSE_TOLERANCE, each with that fresh close. Sessions the answer lacks are not compared."""
+def _compared(held: Sequence[StoredDailyBar], history: DailyHistory) -> list[tuple[StoredDailyBar, float]]:
+    """Each stored bar with the fresh close of the same session; sessions the answer lacks are left out."""
     fresh = {bar.session_date: bar.close for bar in history.bars}
-    return [
-        (bar, fresh[bar.session_date])
-        for bar in held
-        if bar.session_date in fresh and _off(bar.close, fresh[bar.session_date])
-    ]
+    return [(bar, fresh[bar.session_date]) for bar in held if bar.session_date in fresh]
 
 
 def _unpriced_reason(history: DailyHistory) -> str:
@@ -265,12 +261,21 @@ async def sync_surge_bars(
                     held = await DailyBarRepository(session).list_range(
                         symbol, history.bars[0].session_date, stored[symbol][1]
                     )
-                if stale := _disagreements(held, history):
+                compared = _compared(held, history)
+                if not compared:
+                    # A halted stock, say: the new bars go in unchecked, and the gap is the log's to show.
+                    logger.warning(
+                        "%s: no session in common with the stored bars (stored through %s, Schwab's answer starts %s): "
+                        "storing the new bars unverified",
+                        symbol, stored[symbol][1], history.bars[0].session_date,
+                    )
+                    report.unverified += 1
+                if stale := [(bar, fresh) for bar, fresh in compared if _off(bar.close, fresh)]:
                     bar, fresh = stale[0]
                     logger.warning(
                         "%s: stored bars no longer match Schwab (%d of %d overlap sessions, %s closed %.4f stored "
                         "against %.4f now): replacing them with a fresh fetch from %s",
-                        symbol, len(stale), len(held), bar.session_date, bar.close, fresh, needs[symbol],
+                        symbol, len(stale), len(compared), bar.session_date, bar.close, fresh, needs[symbol],
                     )
                     if start > needs[symbol]:
                         start = needs[symbol]
@@ -319,12 +324,13 @@ def _head(symbols: Iterable[str], limit: int = 10) -> str:
 def _log(report: SurgeBarsReport, last_session: date) -> None:
     logger.info(
         "surge_bars through %s: %d symbols tracked, %d fetched, %d bars inserted, %d repaired, "
-        "%d unpriced, %d unpriced deferred, %d failed",
+        "%d unverified, %d unpriced, %d unpriced deferred, %d failed",
         last_session,
         report.needed,
         report.fetched,
         report.bars_inserted,
         report.repaired,
+        report.unverified,
         report.unpriced,
         report.deferred,
         len(report.failed),

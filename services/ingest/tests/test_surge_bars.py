@@ -712,22 +712,42 @@ async def test_an_empty_answer_does_not_wipe_stored_bars(session_factory):
     assert "AAA" not in await _unpriced(session_factory)
 
 
-async def test_an_answer_without_the_overlap_sessions_is_not_a_disagreement(session_factory):
+async def test_an_answer_without_the_overlap_sessions_is_not_a_disagreement_but_is_reported_unverified(
+    session_factory, caplog
+):
     schwab, clock, before = await _stored_then_next_session(session_factory)
     schwab.scale["AAA"] = 10.0
     plain = schwab.get_price_history_every_day
 
     async def only_the_new_session(symbol, start_datetime, end_datetime, **kwargs):
         # The vendor has nothing for the sessions before Wednesday: nothing to compare against.
+        if symbol != "AAA":
+            return await plain(symbol, start_datetime, end_datetime, **kwargs)
         return await plain(symbol, start_datetime.replace(day=21), end_datetime, **kwargs)
 
     schwab.get_price_history_every_day = only_the_new_session
 
-    report = await _run(session_factory, schwab, clock)
+    with caplog.at_level("WARNING", logger="rs_ingest.surge_bars"):
+        report = await _run(session_factory, schwab, clock)
 
     assert report.repaired == 0
     after = await _closes(session_factory, "AAA")
     assert {d: c for d, c in after.items() if d in before} == before  # nothing was deleted
+    # The unverifiable tail is visible, not silent, and costs no second call.
+    assert report.unverified == 1
+    assert any(
+        "AAA" in r.getMessage() and "unverified" in r.getMessage() and "2026-10-20" in r.getMessage()
+        for r in caplog.records
+    )
+    assert [c[0] for c in schwab.calls].count("AAA") == 1
+
+
+async def test_an_answer_with_overlap_is_not_unverified(session_factory):
+    schwab, clock, _ = await _stored_then_next_session(session_factory)
+
+    report = await _run(session_factory, schwab, clock)
+
+    assert report.unverified == 0
 
 
 class _FailsFullFetch:
