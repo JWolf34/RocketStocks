@@ -211,10 +211,12 @@ Once this passes, retiring v1 is an operator step.
 Done when a real Popularity Alert posts and carries a Track record.
 
 1. Leave the stack running with a valid token, the imported history and bars loaded.
-   After the import, measure the Track record once rather than waiting for the weekly job:
+   After the import, and once the daily-bars job has caught up (its log line `surge_bars through ...` with nothing failed), measure the Track record once rather than waiting for the nightly job at 20:00 Eastern:
    ```
-   $COMPOSE exec ingest python -m rs_research event-study popularity_surge
+   $COMPOSE exec ingest python -m rs_ingest.outcomes
    ```
+   The job reads every stored Popularity snapshot, so it takes minutes.
+   It rewrites the whole Track record each run, so a rerun is always safe.
 2. Find the Alert:
    ```
    psql -c "SELECT id, symbol, rule_version, alert_price, quote_time, triggered_at, delivery, message_id, thread_id, post_attempts FROM alerts WHERE trigger = 'popularity_surge' ORDER BY id DESC LIMIT 5"
@@ -222,9 +224,17 @@ Done when a real Popularity Alert posts and carries a Track record.
 3. Confirm in Discord that the message shows its Track record, the `rule_version` and the `alert_price`, and that it was never edited.
 4. Confirm which Track record it showed:
    ```
-   psql -c "SELECT input, n, hit_rate_5d, median_excess_5d, computed_at FROM track_record WHERE trigger = 'popularity_surge' ORDER BY computed_at DESC LIMIT 3"
+   psql -c "SELECT horizon, cases, live_cases, outcomes, unpriced, split_excluded, no_move_size, share_at_2x, ordinary_share, median_multiple, median_excess, computed_at FROM track_record WHERE trigger = 'popularity_surge' ORDER BY rule_version DESC, horizon"
    ```
-   The bot shows the `logged` row once its N passes 30, otherwise the `reconstructed` row.
+   There is one row per horizon (1, 5 and 20 sessions).
+   `live_cases` counts the cases the live poll stored; the rest are replayed from imported and stored history, which the rule was written having seen.
+   The bot says "too few cases" for a horizon with fewer than 30 `outcomes`.
+5. To check one Outcome by hand, list a stock's cases and compare with its daily bars:
+   ```
+   psql -c "SELECT day, horizon, case_at, entry_session, exit_session, stock_return, benchmark_return, excess_return, move_multiple, live FROM outcome WHERE symbol = 'GME' ORDER BY day, horizon"
+   ```
+   The entry is the open of `entry_session` and the exit the close of `exit_session` in `daily_bar`; SPY is measured over the same sessions.
+   A large `unpriced` count means bars are missing (run the daily-bars job and then the Track record job again); a `split_excluded` count means stored bars are not marked split-adjusted and those cases were left out rather than measured.
 
 If no surge fires for days, stage a clearly marked test Alert through the real write path to prove the posting path (it is not a real Alert; its symbol is `TEST-` and the time, because the database allows one Alert per stock per Eastern day):
 ```
@@ -406,7 +416,7 @@ Which pings to expect, by cause:
 - `Alert #<id> ... may or may not have posted ...`: the history check above could not be read.
 - `Alert #<id> <stock> <trigger> posted with facts unavailable: ...`: the Alert posted, and the ping names which supporting facts were missing and why.
   It is sent once per Alert, when it posts.
-- The weekly Track record job failing.
+- The nightly Track record job failing (`Ingest job track_record is failing ...`); the stored Track record stays as it was until the next successful run.
 
 One cause sends one ping: a source failure that also fails its job does not send a job ping on top.
 

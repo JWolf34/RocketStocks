@@ -66,6 +66,7 @@ async def run_daemon(settings: IngestSettings) -> int:
             cron,
             Dependencies(
                 session_factory=session_factory,
+                db_url=settings.rs_db_url,
                 clock=clock,
                 schwab=schwab,
                 schwab_limiter=RateLimiter(settings.schwab_calls_per_minute),

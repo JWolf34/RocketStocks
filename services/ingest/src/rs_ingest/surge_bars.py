@@ -21,10 +21,10 @@ from zoneinfo import ZoneInfo
 
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from rs_analysis import popularity_surge
 from rs_domain import Clock, StoredDailyBar, TradingCalendar
 from rs_ingest.rate_limit import RateLimiter
-from rs_persistence import DailyBarRepository, PopularityRepository
+from rs_ingest.replay import replayed_hits
+from rs_persistence import DailyBarRepository
 from rs_sources.schwab import DailyHistory, SchwabAuthError, SchwabResponseError
 
 logger = logging.getLogger(__name__)
@@ -43,8 +43,6 @@ PROGRESS_EVERY = 100
 SETTLE = timedelta(hours=1)
 # A symbol Schwab cannot price is asked about again this often, never sooner.
 UNPRICED_RETRY = timedelta(days=7)
-# History is replayed in windows so memory stays bounded however long it runs.
-REPLAY_WINDOW = timedelta(days=7)
 # Not yet measured against a known split (needs a live Schwab session): do not claim adjustment.
 PRICES_ADJUSTED = False
 # Schwab answers these for a symbol it will never price; anything else is transient.
@@ -73,26 +71,12 @@ class SurgeBarsReport:
 async def first_event_dates(
     session_factory: async_sessionmaker[AsyncSession], now: datetime
 ) -> dict[str, date]:
-    """Eastern date of each surge ticker's first event, over both popularity origins.
-
-    Judges each snapshot on its own, as `popularity_surge.replay` does, without
-    holding the whole history.
-    """
+    """Eastern date of each surge ticker's first event, over both popularity origins."""
     first: dict[str, date] = {}
-    async with session_factory() as session:
-        repo = PopularityRepository(session)
-        window_start = await repo.earliest_polled_at()
-        if window_start is None:
-            return first
-        while window_start <= now:
-            window_end = window_start + REPLAY_WINDOW
-            for snapshot in await repo.list_between(window_start, window_end):
-                if popularity_surge.evaluate_latest(snapshot) is None:
-                    continue
-                day = snapshot.polled_at.astimezone(EASTERN).date()
-                if snapshot.ticker not in first or day < first[snapshot.ticker]:
-                    first[snapshot.ticker] = day
-            window_start = window_end
+    async for event in replayed_hits(session_factory, now):
+        day = event.polled_at.astimezone(EASTERN).date()
+        if event.ticker not in first or day < first[event.ticker]:
+            first[event.ticker] = day
     return first
 
 

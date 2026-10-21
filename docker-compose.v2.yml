@@ -93,9 +93,6 @@ services:
       SCHWAB_API_SECRET: ${SCHWAB_API_SECRET}
       # Must match the callback registered with the Schwab app.
       SCHWAB_CALLBACK_URL:
-      # The weekly base-rate job runs rs_research as a subprocess under its own
-      # read-only role; the job passes this and nothing else of ingest's env.
-      RS_RESEARCH_DB_URL: postgresql+psycopg://rs_research:${RS_DB_PASSWORD_RESEARCH}@timescaledb:5432/rocketstocks
       RS_EDGAR_USER_AGENT: ${RS_EDGAR_USER_AGENT:?set RS_EDGAR_USER_AGENT in .env}
       RS_OPS_WEBHOOK_URL: ${RS_OPS_WEBHOOK_URL:-}
       RS_OPS_DEDUP_WINDOW_SECONDS:
