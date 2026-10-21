@@ -39,6 +39,10 @@ Measured against SPY and a handful of other symbols in July and August 2026 unle
 - Candle `datetime` is the bucket start in epoch milliseconds UTC.
 - The extended session is 07:00 to 20:00 ET (pre-market before 07:00 is not served), a ceiling of 2.00x the regular-hours bar count; mega-caps saturate it and the illiquid tail is near 1.0x.
 - Half-day behaviour was not measurable inside the history window.
+- Daily history is split-adjusted (measured 2026-10-21 on the production ingest container with a read-only probe on the stored token).
+- The probe took the ratio of the split-day close to the previous session's close on four known splits: NVDA 10-for-1 on 2024-06-10 gave 1.0075, AVGO 10-for-1 on 2024-07-15 gave 1.0080, CMG 50-for-1 on 2024-06-26 gave 1.0030 and WMT 3-for-1 on 2024-02-26 gave 1.0185; an unadjusted series would have shown about 0.1, 0.1, 0.02 and 0.33.
+- Adjustment holds as of the fetch: bars stored before a later split stay at the old scale, so a stored series has to be compared with a fresh fetch (see "Daily bars" in `docs/operations.md`).
+- Dividend adjustment was not measured.
 
 ## Symbol files (Nasdaq Trader and Cboe, captured 2026-07-17)
 

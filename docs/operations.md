@@ -401,6 +401,17 @@ It runs at startup and each weekday 90 minutes after the close, and a rerun with
 A stock whose stored history starts after the start it needs is extended back once.
 `bar_request` records the earliest start already asked of Schwab per symbol, so a listing younger than the lookback is asked once and not every night.
 
+Schwab's daily history is split-adjusted as of the moment it is fetched, so bars are stored with `adjusted` true.
+A split after bars were stored leaves them at the old scale beside new bars at the new scale, and reverse splits are common among Popularity stocks.
+So a tail fetch starts 3 sessions before the newest stored bar, on the same call, and compares the closes of the overlap with the stored ones.
+If any differs by more than 1 percent, the stock's stored bars are deleted and replaced by a fresh full fetch from its needed start, in one transaction, and the job logs `stored bars no longer match Schwab` with the stock and the first disagreement.
+If that fetch fails the stored bars stay as they were and the next run tries again; an empty answer (a delisted or halted stock) never replaces or deletes anything.
+A stock already at the last settled session is not checked until the next session adds a bar, so a split can sit unrepaired for up to a day.
+Count repairs in the run summary (`N repaired`):
+```
+$COMPOSE logs ingest | grep "surge_bars through"
+```
+
 The first run after an import, or after upgrading from a version with a shorter lookback, makes one call per Popularity-hit stock at the shared 100 calls a minute (thousands of stocks, under an hour per thousand), and the job's timeout is 3 hours.
 Progress logs every 100 symbols (`surge_bars: N of M symbols done`).
 If the run stops (timeout, a 429, a restart), the next run resumes where it left off, because each symbol's bars and request are committed together.
