@@ -21,5 +21,5 @@ We decided the surface is small and fixed in shape.
 ## Considered options
 
 - Slash commands only: loses inline affordances such as the Schwab sign-in modal.
-- Keeping a legacy `!` prefix: doubles the input surface for no benefit.
+- Adding a `!` prefix: doubles the input surface for no benefit.
 - Editing an Alert as new facts arrive: rejected, readers cannot tell what changed or when.

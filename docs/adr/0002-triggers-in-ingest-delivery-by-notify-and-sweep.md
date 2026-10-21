@@ -23,6 +23,6 @@ We decided that ingest evaluates every Trigger and selects Alerts, and the bot o
 
 ## Considered options
 
-- Evaluating Triggers in the bot, as the first version did: couples deciding to Discord latency and uptime, and stops detection when the bot is down.
+- Evaluating Triggers in the bot: couples deciding to Discord latency and uptime, and stops detection when the bot is down.
 - Posting every unposted Alert on sweep: rejected, it floods the channel with stale Alerts after an outage.
 - A separate outbox table or message broker: rejected, the Alert row is already the durable record.
