@@ -3,7 +3,7 @@ from datetime import UTC, datetime, timedelta
 
 import pytest
 
-from rs_analysis.attention_surge import (
+from rs_analysis.popularity_surge import (
     COOLDOWN,
     RULE_VERSION,
     SubRule,

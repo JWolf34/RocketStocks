@@ -1,7 +1,7 @@
 """Shared pytest fixtures for DB-backed tests — the "5499 pattern", extracted
-once a second workspace member (rs_bot, S004) needed a verbatim copy.
+once a second workspace member (rs_bot) needed a verbatim copy.
 
-Target resolution: RS_TEST_DB_URL, defaulting to the spec's ephemeral
+Target resolution: RS_TEST_DB_URL, defaulting to the ephemeral
 container (docker run -d --rm -p 5499:5432 -e POSTGRES_PASSWORD=t
 timescale/timescaledb:2.30.2-pg16).
 
@@ -77,14 +77,14 @@ def migrated_db_url() -> Iterator[str]:
 async def session_factory(migrated_db_url: str) -> AsyncIterator[async_sessionmaker[AsyncSession]]:
     """Async session factory over the migrated DB. migrated_db_url is
     session-scoped and shared; this truncates so each test starts from empty
-    slice-1 tables with a reset identity."""
+    tables with a reset identity."""
     engine = build_engine(migrated_db_url)
     factory = build_session_factory(engine)
     async with factory() as s:
         await s.execute(
             text(
                 "TRUNCATE alerts, popularity_snapshot, daily_bar,"
-                " unpriced_symbol, base_rate, schwab_auth_request, import_verification,"
+                " unpriced_symbol, track_record, schwab_auth_request, import_verification,"
                 " schwab_tokens, schwab_token_notice RESTART IDENTITY"
             )
         )

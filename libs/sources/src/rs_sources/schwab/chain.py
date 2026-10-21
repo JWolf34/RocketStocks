@@ -1,7 +1,7 @@
 """Option-chain fetch over schwab-py.
 
-SchwabChainFetch shares the daemon's ONE schwab-py client (the token row's
-single-writer constraint, ADR-0024) - never build a second client for it.
+SchwabChainFetch shares the daemon's ONE schwab-py client (the token row has a
+single writer) - never build a second client for it.
 """
 
 from datetime import timedelta
@@ -11,7 +11,7 @@ from rs_domain import Clock
 from rs_sources.errors import SourceError
 from rs_sources.schwab.client import translate_auth_errors
 
-# The server-side expiry bound (ADR-0032 D7): <=30 DTE, the bound that avoids
+# The server-side expiry bound: <=30 DTE, the bound that avoids
 # the measured unfiltered-SPY/QQQ 502s.
 DTE_BOUND = timedelta(days=30)
 

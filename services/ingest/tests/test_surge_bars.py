@@ -8,7 +8,7 @@ from datetime import UTC, date, datetime, time, timedelta
 import pytest
 from sqlalchemy import func, select
 
-from rs_analysis import attention_surge
+from rs_analysis import popularity_surge
 from rs_domain import PopularityOrigin, PopularitySnapshot
 from rs_ingest.rate_limit import RateLimiter
 from rs_ingest.surge_bars import (
@@ -478,7 +478,7 @@ async def test_first_event_dates_agree_with_the_rule_replay(session_factory):
 
     got = await first_event_dates(session_factory, NOW)
 
-    replayed = attention_surge.replay(history)
+    replayed = popularity_surge.replay(history)
     expected = {}
     for event in replayed:
         expected.setdefault(event.ticker, event.polled_at.astimezone(EASTERN).date())

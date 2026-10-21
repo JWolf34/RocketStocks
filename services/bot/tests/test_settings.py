@@ -31,7 +31,7 @@ def test_token_not_leaked_in_repr(monkeypatch):
 
 
 def test_v1_discord_token_is_never_read(monkeypatch):
-    # Burn-in coexistence guard (spec pin #7): v2 must not fall back to v1's
+    # Coexistence guard: v2 must not fall back to v1's
     # DISCORD_TOKEN — only RS_BOT_DISCORD_TOKEN may supply the credential.
     _set_required(monkeypatch)
     monkeypatch.delenv("RS_BOT_DISCORD_TOKEN")

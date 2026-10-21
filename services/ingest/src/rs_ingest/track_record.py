@@ -1,4 +1,4 @@
-"""The weekly base-rate rerun: `rs_research` as a subprocess of the same image.
+"""The weekly track-record rerun: `rs_research` as a subprocess of the same image.
 
 It runs out of process on purpose. The study is CPU-heavy pandas that would
 stall the daemon's event loop, and it connects with its own read-only database
@@ -18,8 +18,8 @@ from rs_observability import notify_ops
 
 logger = logging.getLogger(__name__)
 
-JOB_NAME = "base_rate_weekly"
-COMMAND = (sys.executable, "-m", "rs_research", "event-study", "attention_surge")
+JOB_NAME = "track_record_weekly"
+COMMAND = (sys.executable, "-m", "rs_research", "event-study", "popularity_surge")
 # The subprocess gets only what it needs: never ingest's DSN or Schwab secrets.
 PASSED_ENVIRONMENT = ("PATH", "TZ", "RS_RESEARCH_DB_URL", "RS_LOG_FORMAT", "RS_LOG_LEVEL")
 SUNDAY = 6
@@ -46,14 +46,14 @@ async def run_event_study(
         raise
     if code != 0:
         await notify_ops(
-            f"Weekly base-rate study exited with status {code}; the stored base rate is stale.",
+            f"Weekly track-record study exited with status {code}; the stored track record is stale.",
             key=f"job-failed:{JOB_NAME}",
         )
         raise RuntimeError(f"{JOB_NAME}: rs_research exited with status {code}")
     logger.info("%s finished", JOB_NAME)
 
 
-def base_rate_job() -> Job:
+def track_record_job() -> Job:
     return Job(
         JOB_NAME,
         Weekly(SUNDAY, time(20, 0), ZoneInfo("America/Chicago")),

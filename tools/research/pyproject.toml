@@ -1,7 +1,7 @@
 [project]
 name = "rs-research"
 version = "0.1.0"
-description = "RocketStocks v2 research CLI: event studies that write base rates"
+description = "RocketStocks v2 research CLI: event studies that write track records"
 authors = [
     { name = "John Wolf", email = "johnmwolf34@gmail.com" }
 ]

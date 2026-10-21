@@ -5,10 +5,10 @@ import pytest
 from pydantic import ValidationError
 
 from rs_domain import (
-    AttentionSurgePayload,
     BenchmarkFact,
     FactUnavailable,
     NextEarningsFact,
+    PopularitySurgePayload,
     PriceMoveFact,
     SurgeFacts,
     VolumeFact,
@@ -37,8 +37,8 @@ def unavailable_facts() -> SurgeFacts:
     )
 
 
-def payload(facts: SurgeFacts) -> AttentionSurgePayload:
-    return AttentionSurgePayload(
+def payload(facts: SurgeFacts) -> PopularitySurgePayload:
+    return PopularitySurgePayload(
         rule_version="1",
         polled_at=POLLED_AT,
         fired=("mention_surge", "rank_jump"),
@@ -60,13 +60,13 @@ def test_payload_round_trips_through_json(facts):
 
     stored = json.loads(json.dumps(original.model_dump(mode="json")))
 
-    assert AttentionSurgePayload.model_validate(stored) == original
+    assert PopularitySurgePayload.model_validate(stored) == original
 
 
 def test_each_fact_keeps_its_own_variant_after_a_round_trip():
     facts = full_facts().model_copy(update={"volume": FactUnavailable(reason="only 3 of 20 daily bars")})
 
-    restored = AttentionSurgePayload.model_validate(payload(facts).model_dump(mode="json"))
+    restored = PopularitySurgePayload.model_validate(payload(facts).model_dump(mode="json"))
 
     assert isinstance(restored.facts.price_move, PriceMoveFact)
     assert restored.facts.volume == FactUnavailable(reason="only 3 of 20 daily bars")
@@ -93,7 +93,7 @@ def test_a_stored_version_1_payload_with_filings_still_parses():
     }
     stored = payload(full_facts()).model_dump(mode="json") | {"version": 1, "facts": facts}
 
-    restored = AttentionSurgePayload.model_validate(stored)
+    restored = PopularitySurgePayload.model_validate(stored)
 
     assert restored.version == 1
     assert restored.facts == full_facts()
@@ -103,18 +103,18 @@ def test_rejects_an_unknown_payload_version():
     stored = payload(full_facts()).model_dump(mode="json") | {"version": 3}
 
     with pytest.raises(ValidationError):
-        AttentionSurgePayload.model_validate(stored)
+        PopularitySurgePayload.model_validate(stored)
 
 
 def test_rejects_an_unknown_sub_rule():
     stored = payload(full_facts()).model_dump(mode="json") | {"fired": ["velocity_spike"]}
 
     with pytest.raises(ValidationError):
-        AttentionSurgePayload.model_validate(stored)
+        PopularitySurgePayload.model_validate(stored)
 
 
 def test_rejects_a_naive_polled_at():
     stored = payload(full_facts()).model_dump(mode="json") | {"polled_at": "2026-10-19T14:00:00"}
 
     with pytest.raises(ValidationError, match="naive"):
-        AttentionSurgePayload.model_validate(stored)
+        PopularitySurgePayload.model_validate(stored)

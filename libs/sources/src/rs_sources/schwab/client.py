@@ -1,9 +1,9 @@
-"""schwab-py client factory wired to a token store (S003 OQ#2).
+"""schwab-py client factory wired to a token store.
 
 The token is loaded once, up front, and the read func hands schwab-py that
 in-memory dict; schwab-py mutates and re-writes it through the write callback
 on every refresh, so the DB row tracks refreshes without re-reads. `ingest`
-is the single writer (ADR-0024).
+is the single writer.
 
 authlib stays behind this module: a dead refresh token surfaces to callers as
 SchwabAuthError, so they can pause Schwab jobs without importing authlib.

@@ -5,8 +5,6 @@ from rs_domain.clock import SystemClock
 from rs_domain.models import (
     Alert,
     AuthRequestState,
-    BaseRate,
-    BaseRateInput,
     ChainSnapshot,
     Dataset,
     OptionQuote,
@@ -15,13 +13,15 @@ from rs_domain.models import (
     SchwabAuthRequest,
     SourceStatus,
     StoredDailyBar,
+    TrackRecord,
+    TrackRecordInput,
     UnpricedSymbol,
 )
 from rs_domain.payloads import (
-    AttentionSurgePayload,
     BenchmarkFact,
     FactUnavailable,
     NextEarningsFact,
+    PopularitySurgePayload,
     PriceMoveFact,
     SurgeFacts,
     VolumeFact,
@@ -30,10 +30,10 @@ from rs_domain.ports import Clock, TradingCalendar
 
 __all__ = [
     "Alert",
-    "AttentionSurgePayload",
+    "PopularitySurgePayload",
     "AuthRequestState",
-    "BaseRate",
-    "BaseRateInput",
+    "TrackRecord",
+    "TrackRecordInput",
     "BenchmarkFact",
     "ChainSnapshot",
     "Clock",

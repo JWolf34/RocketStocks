@@ -1,5 +1,5 @@
-"""render(PendingAlert, base_rate) -> Embed: an attention-surge payload rendered
-typed with its facts and base rate, inside Discord's embed limits. Anything that
+"""render(PendingAlert, track_record) -> Embed: a popularity-surge payload rendered
+typed with its facts and track record, inside Discord's embed limits. Anything that
 cannot render typed falls back to the generic embed."""
 
 from datetime import UTC, date, datetime
@@ -11,14 +11,14 @@ import rs_bot.render
 from rs_bot.render import render
 from rs_domain import (
     Alert,
-    AttentionSurgePayload,
-    BaseRate,
-    BaseRateInput,
     BenchmarkFact,
     FactUnavailable,
     NextEarningsFact,
+    PopularitySurgePayload,
     PriceMoveFact,
     SurgeFacts,
+    TrackRecord,
+    TrackRecordInput,
     VolumeFact,
 )
 from rs_persistence import PendingAlert
@@ -40,7 +40,7 @@ def _facts(**overrides) -> SurgeFacts:
 
 
 def _pending(facts: SurgeFacts | None = None, fired=("mention_surge",)) -> PendingAlert:
-    payload = AttentionSurgePayload(
+    payload = PopularitySurgePayload(
         rule_version="1",
         polled_at=T0,
         fired=fired,
@@ -58,7 +58,7 @@ def _pending(facts: SurgeFacts | None = None, fired=("mention_surge",)) -> Pendi
         id=42,
         alert=Alert(
             symbol="GME",
-            alert_type="attention_surge",
+            alert_type="popularity_surge",
             triggered_at=T0,
             payload=payload.model_dump(mode="json"),
             rule_version="1",
@@ -68,9 +68,9 @@ def _pending(facts: SurgeFacts | None = None, fired=("mention_surge",)) -> Pendi
     )
 
 
-def _base_rate(input=BaseRateInput.RECONSTRUCTED, n=120) -> BaseRate:
-    return BaseRate(
-        alert_type="attention_surge",
+def _track_record(input=TrackRecordInput.RECONSTRUCTED, n=120) -> TrackRecord:
+    return TrackRecord(
+        alert_type="popularity_surge",
         rule_version="1",
         computed_at=T0,
         input=input,
@@ -96,11 +96,11 @@ def _assert_within_discord_limits(embed) -> None:
     assert len(embed) <= 6000  # discord.py's total of title, description, fields and footer
 
 
-def test_full_payload_shows_rule_facts_base_rate_and_provenance():
-    embed = render(_pending(), _base_rate())
+def test_full_payload_shows_rule_facts_track_record_and_provenance():
+    embed = render(_pending(), _track_record())
     fields = _fields(embed)
 
-    assert embed.title == "GME · attention surge"
+    assert embed.title == "GME · Popularity surge"
     assert embed.timestamp == T0
     assert "150 mentions vs 40 24h ago" in fields["Why it fired"]
     assert "3.8x" in fields["Why it fired"]
@@ -115,7 +115,7 @@ def test_full_payload_shows_rule_facts_base_rate_and_provenance():
 
 
 def test_rank_jump_names_both_ranks():
-    embed = render(_pending(fired=("rank_jump",)), _base_rate())
+    embed = render(_pending(fired=("rank_jump",)), _track_record())
     assert "Rank jump: #12 from #70" in _fields(embed)["Why it fired"]
 
 
@@ -123,7 +123,7 @@ def test_every_optional_fact_unavailable_says_why():
     facts = _facts(
         price_move=GONE, volume=GONE, next_earnings=GONE, benchmark=GONE
     )
-    fields = _fields(render(_pending(facts), _base_rate()))
+    fields = _fields(render(_pending(facts), _track_record()))
     for name in ("Price", "Volume", "Next earnings", "Benchmark"):
         assert fields[name] == "unavailable: quote vendor down"
 
@@ -150,17 +150,17 @@ def test_a_version_1_payload_with_filings_still_renders_typed():
     }
     old = PendingAlert(id=42, alert=pending.alert.model_copy(update={"payload": payload}))
 
-    fields = _fields(render(old, _base_rate()))
+    fields = _fields(render(old, _track_record()))
 
     assert "Recent 8-Ks" not in fields
     assert "$12.50" in fields["Price"]
 
 
 def test_oversized_caveat_is_clipped_inside_the_limits():
-    base_rate = _base_rate().model_copy(update={"survivorship_caveat": "x" * 5000})
-    embed = render(_pending(), base_rate)
+    track_record = _track_record().model_copy(update={"survivorship_caveat": "x" * 5000})
+    embed = render(_pending(), track_record)
     _assert_within_discord_limits(embed)
-    assert _fields(embed)["Base rate"].endswith("...")
+    assert _fields(embed)["Track record"].endswith("...")
 
 
 def test_fields_over_the_total_are_dropped_from_the_end_deterministically():
@@ -175,19 +175,19 @@ def test_fields_over_the_total_are_dropped_from_the_end_deterministically():
     assert rs_bot.render._fit(embed, fields) == fitted
 
 
-def test_no_base_rate_says_so_explicitly():
-    value = _fields(render(_pending(), None))["Base rate"]
-    assert "No base rate has been measured" in value
+def test_no_track_record_says_so_explicitly():
+    value = _fields(render(_pending(), None))["Track record"]
+    assert "No track record has been measured" in value
 
 
-def test_failed_base_rate_read_does_not_claim_none_measured():
-    value = _fields(render(_pending(), None, base_rate_failed=True))["Base rate"]
+def test_failed_track_record_read_does_not_claim_none_measured():
+    value = _fields(render(_pending(), None, track_record_failed=True))["Track record"]
     assert "could not be read" in value
 
 
 def test_reconstructed_and_logged_rates_are_labelled():
-    reconstructed = _fields(render(_pending(), _base_rate(BaseRateInput.RECONSTRUCTED)))["Base rate"]
-    logged = _fields(render(_pending(), _base_rate(BaseRateInput.LOGGED, n=45)))["Base rate"]
+    reconstructed = _fields(render(_pending(), _track_record(TrackRecordInput.RECONSTRUCTED)))["Track record"]
+    logged = _fields(render(_pending(), _track_record(TrackRecordInput.LOGGED, n=45)))["Track record"]
 
     assert "reconstructed from history (input: reconstructed), N=120, 3 unpriced" in reconstructed
     assert "measured on past alerts (input: logged), N=45" in logged
@@ -219,10 +219,10 @@ def test_other_alert_types_get_the_generic_embed():
     _assert_generic(render(GENERIC_PENDING), GENERIC_PENDING)
 
 
-def test_unparseable_attention_surge_payload_falls_back():
+def test_unparseable_popularity_surge_payload_falls_back():
     pending = PendingAlert(
         id=9,
-        alert=Alert(symbol="GME", alert_type="attention_surge", triggered_at=T0, payload={"rank": 1}),
+        alert=Alert(symbol="GME", alert_type="popularity_surge", triggered_at=T0, payload={"rank": 1}),
     )
     _assert_generic(render(pending), pending)
 
@@ -233,7 +233,7 @@ def test_render_failure_falls_back_to_generic_embed(monkeypatch):
 
     monkeypatch.setattr(rs_bot.render, "_price_text", poisoned)
     pending = _pending()
-    _assert_generic(render(pending, _base_rate()), pending)
+    _assert_generic(render(pending, _track_record()), pending)
 
 
 @pytest.mark.parametrize("size", [5000, 10])

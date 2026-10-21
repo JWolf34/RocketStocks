@@ -1,6 +1,6 @@
-"""Attention-surge event study: the base rates the bot shows beside an alert.
+"""Popularity-surge event study: the track records the bot shows beside an alert.
 
-Two rows are written per run, for the current `rs_analysis.attention_surge`
+Two rows are written per run, for the current `rs_analysis.popularity_surge`
 rule version:
 
 - `reconstructed`: replay the rule over every stored popularity snapshot and
@@ -34,18 +34,18 @@ import pandas as pd
 from pydantic import ValidationError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from rs_analysis.attention_surge import RULE_VERSION, SurgeEvent, replay
+from rs_analysis.popularity_surge import RULE_VERSION, SurgeEvent, replay
 from rs_domain import (
     Alert,
-    BaseRate,
-    BaseRateInput,
     BenchmarkFact,
     Clock,
     PopularitySnapshot,
     StoredDailyBar,
+    TrackRecord,
+    TrackRecordInput,
     TradingCalendar,
 )
-from rs_persistence import BaseRateRepository
+from rs_persistence import TrackRecordRepository
 from rs_query import AlertRecord, Page, daily_bars, popularity_between, recent_alerts
 from rs_research.returns import (
     MAX_CLOSURE_DAYS,
@@ -58,7 +58,7 @@ from rs_research.returns import (
 
 logger = logging.getLogger(__name__)
 
-ALERT_TYPE = "attention_surge"
+ALERT_TYPE = "popularity_surge"
 BENCHMARK = "SPY"
 
 HISTORY_START = datetime(2000, 1, 1, tzinfo=UTC)
@@ -136,11 +136,11 @@ def _caveat(summary: Summary, total: int, what: str, benchmark_note: bool) -> st
     return caveat
 
 
-def _rate(
-    kind: BaseRateInput, summary: Summary, total: int, what: str, computed_at: datetime
-) -> BaseRate:
-    benchmark_note = kind is BaseRateInput.LOGGED
-    return BaseRate(
+def _record(
+    kind: TrackRecordInput, summary: Summary, total: int, what: str, computed_at: datetime
+) -> TrackRecord:
+    benchmark_note = kind is TrackRecordInput.LOGGED
+    return TrackRecord(
         alert_type=ALERT_TYPE,
         rule_version=RULE_VERSION,
         computed_at=computed_at,
@@ -214,7 +214,7 @@ def logged_summary(
 
 @dataclass(frozen=True)
 class StudyResult:
-    rates: list[BaseRate]
+    records: list[TrackRecord]
     events: int
     alerts: int
 
@@ -267,43 +267,43 @@ async def compute(
     spy = closes.xs(BENCHMARK, level="symbol").sort_index()
     sessions, spy_close = _calendar_sessions(calendar, spy)
 
-    rates: list[BaseRate] = []
+    records: list[TrackRecord] = []
     if events:
         summary, considered = reconstructed_summary(events, sessions, spy_close, closes)
         if summary.n:
-            rates.append(
-                _rate(BaseRateInput.RECONSTRUCTED, summary, considered, "replayed events", now)
+            records.append(
+                _record(TrackRecordInput.RECONSTRUCTED, summary, considered, "replayed events", now)
             )
     if alerts:
         summary = logged_summary(alerts, sessions, spy_close, closes)
         if summary.n:
-            rates.append(_rate(BaseRateInput.LOGGED, summary, len(alerts), "posted alerts", now))
-    return StudyResult(rates, len(events), len(alerts))
+            records.append(_record(TrackRecordInput.LOGGED, summary, len(alerts), "posted alerts", now))
+    return StudyResult(records, len(events), len(alerts))
 
 
 async def run(
     session_factory: async_sessionmaker[AsyncSession], clock: Clock, calendar: TradingCalendar
 ) -> StudyResult:
-    """Compute and append the base-rate rows (a rerun appends new rows; readers
+    """Compute and append the track-record rows (a rerun appends new rows; readers
     take the latest). Nothing is written when there is nothing to measure."""
     result = await compute(session_factory, clock, calendar)
-    if not result.rates:
+    if not result.records:
         logger.warning(
-            "attention_surge event study measured nothing (%d events, %d alerts)",
+            "popularity_surge event study measured nothing (%d events, %d alerts)",
             result.events,
             result.alerts,
         )
         return result
     async with session_factory() as session:
-        repository = BaseRateRepository(session)
-        for rate in result.rates:
-            await repository.insert(rate)
+        repository = TrackRecordRepository(session)
+        for record in result.records:
+            await repository.insert(record)
         await session.commit()
-    for rate in result.rates:
+    for record in result.records:
         logger.info(
-            "attention_surge base rate written: input=%s n=%d n_unpriced=%d",
-            rate.input.value,
-            rate.n,
-            rate.n_unpriced,
+            "popularity_surge track record written: input=%s n=%d n_unpriced=%d",
+            record.input.value,
+            record.n,
+            record.n_unpriced,
         )
     return result

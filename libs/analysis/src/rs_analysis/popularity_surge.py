@@ -1,4 +1,4 @@
-"""Attention-surge rule: pure, deterministic detection over ApeWisdom popularity snapshots.
+"""Popularity-surge rule: pure, deterministic detection over ApeWisdom popularity snapshots.
 
 `evaluate_latest` is the live entry point and `replay` the research one (it loops
 evaluate_latest, so they cannot disagree). Changing any threshold below bumps

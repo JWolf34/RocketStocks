@@ -21,7 +21,7 @@ class TradingCalendar(Protocol):
     """XNYS session facts. All returned datetimes are tz-aware UTC.
 
     Scheduled facts only: unscheduled halts and surprise late opens are
-    feed-observable, not calendar-knowable (ADR-0017 staleness covers them).
+    feed-observable, not calendar-knowable (staleness covers them).
     """
 
     def is_session(self, day: date) -> bool:

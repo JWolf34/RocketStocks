@@ -1,5 +1,5 @@
-"""unit_of_work: fresh opaque correlation_id + domain keys as fields (S006
-pin #3). Asserted through the rendered stream (rs_observability.testing) —
+"""unit_of_work: fresh opaque correlation_id + domain keys as fields.
+Asserted through the rendered stream (rs_observability.testing) —
 binding only matters if the records actually carry the fields. That the
 stream targets stdout is test_logging.py's subject."""
 

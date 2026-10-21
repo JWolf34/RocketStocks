@@ -1,13 +1,13 @@
-"""rev-005: options_chain_snapshot hypertable + dataset/source_status enums (S008).
+"""rev-005: options_chain_snapshot hypertable + dataset/source_status enums.
 
-Append-only point-in-time options capture (ADR-0032). No primary key: rows are
+Append-only point-in-time options capture. No primary key: rows are
 immutable and tombstones (payload-less membership rows) carry NULL contract
-identity, so no column set is both unique and non-null. Hypertable DDL is raw
-(ADR-0004); 1-day chunks; compression after 3 days segmented by
-(dataset, underlying); NO retention policy — forward-only dataset (ADR-0020).
+identity, so no column set is both unique and non-null. Hypertable DDL is raw;
+1-day chunks; compression after 3 days segmented by
+(dataset, underlying); NO retention policy — forward-only dataset.
 
-source_status extends ADR-0017's three with `stale` (quote_time-regression
-guard) and `skipped` (overrun tombstones) — S008 Decisions surfaced.
+source_status extends the original three with `stale` (quote_time-regression
+guard) and `skipped` (overrun tombstones).
 
 Revision ID: 0005
 Revises: 0004

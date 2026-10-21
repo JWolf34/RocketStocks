@@ -92,7 +92,7 @@ def sync_engine(migrated_db_url):
 async def chain_session_factory(migrated_db_url):
     """Async factory over the shared migrated DB, with options_chain_snapshot
     truncated first — the shared session_factory fixture only resets the
-    S002/S004 tables."""
+    shared tables."""
     engine = build_engine(migrated_db_url)
     factory = build_session_factory(engine)
     async with factory() as s:
@@ -163,7 +163,7 @@ class TestRev005Schema:
                     "AND hypertable_name = 'options_chain_snapshot'"
                 )
             ).scalar_one()
-        assert jobs == 0, "forward-only dataset must have no retention policy (ADR-0020)"
+        assert jobs == 0, "forward-only dataset must have no retention policy"
 
 
 class TestSnapshotRoundTrip:

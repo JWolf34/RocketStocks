@@ -21,7 +21,7 @@ A Discord bot that scans the whole market and posts a small number of stocks per
 - **Notifications:** EventEmitter (thread-safe Queue) for scheduler job status
 - **Infrastructure:** Docker + Docker Compose
 
-## Repo Layout (monorepo since S001, 2026-07-05)
+## Repo Layout (monorepo)
 
 uv workspace: root `pyproject.toml` lists the members, one `uv.lock`, one shared `.venv` (`uv sync --all-packages`). Python pinned to 3.13 (`.python-version`).
 
@@ -29,10 +29,10 @@ uv workspace: root `pyproject.toml` lists the members, one `uv.lock`, one shared
 legacy/       # v1, moved intact (legacy/src/rocketstocks/, legacy/tests/, legacy/pyproject.toml)
 libs/         # v2 shared libraries: domain, persistence, query, observability, analysis, sources
 services/     # v2 long-running daemons (ingest, bot)
-tools/        # v2 one-shot CLIs (migrate; backfill/research come with their slices)
+tools/        # v2 one-shot CLIs (migrate, backfill, research)
 ```
 
-v2 naming rule (ADR-0001): import name = `rs_` + member dir (`libs/domain` → `rs_domain`); every member is `<root>/<member>/` with `pyproject.toml` + `src/rs_<member>/` + `tests/`. `rs_common`/`rs_utils` grab-bags are banned.
+v2 naming rule: import name = `rs_` + member dir (`libs/domain` → `rs_domain`); every member is `<root>/<member>/` with `pyproject.toml` + `src/rs_<member>/` + `tests/`. `rs_common`/`rs_utils` grab-bags are banned.
 
 ## v1 Package Layout
 
@@ -107,8 +107,11 @@ uv sync --all-packages
 # A new member needs a line in root_packages and in each contract that covers it.
 .venv/bin/lint-imports
 
-# Clock-discipline gate (no ambient time in v2 src - ADR-0023)
+# Clock-discipline gate (no ambient time in v2 src)
 scripts/check_clock_discipline.sh
+
+# Plan-citation gate (no ADR-NNNN, grilling #, slice N, attention or base_rate in v2 src/tests)
+scripts/check_plan_citations.sh
 
 # Migrations vs ORM models (run against a migrated DB; fails on drift)
 RS_DB_URL=postgresql+psycopg://... .venv/bin/python -m rs_migrate check
@@ -135,7 +138,7 @@ docker compose -f docker-compose.v2.yml up -d
 # v2 operator tools (host-side, shared venv; exact procedures in docs/operations.md)
 .venv/bin/python -m rs_backfill verify-offset --dump PATH   # then popularity-import --dump PATH --zone ZONE
 .venv/bin/python -m rs_ingest.tools.login                   # first Schwab login; later logins use /setup schwab
-RS_RESEARCH_DB_URL=... .venv/bin/python -m rs_research event-study attention_surge
+RS_RESEARCH_DB_URL=... .venv/bin/python -m rs_research event-study popularity_surge
 ```
 
 ## Environment Variables (`.env`)

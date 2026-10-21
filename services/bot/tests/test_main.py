@@ -1,6 +1,6 @@
 """Daemon seams that don't need Discord: the sender adapter and the DSN
 conversion for the raw-psycopg LISTEN connection. The full lifecycle (channel
-resolution, SIGTERM, kill/restart) is the spec's live acceptance runbook."""
+resolution, SIGTERM, kill/restart) is covered by the live acceptance runbook."""
 
 import discord
 

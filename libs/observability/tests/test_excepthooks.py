@@ -1,5 +1,5 @@
 """install_excepthooks: every unhandled-exception path ends as a JSON record
-with a full traceback (ADR-0015 native capture; S006 acceptance criterion)."""
+with a full traceback."""
 
 import asyncio
 import sys

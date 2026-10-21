@@ -1,5 +1,5 @@
 """Async engine + session factory. DSNs use the psycopg3 dialect
-(postgresql+psycopg://) — one driver family repo-wide (S002 decision).
+(postgresql+psycopg://) — one driver family repo-wide.
 
 The engine pins the session timezone to UTC: psycopg3 decodes timestamptz
 into the connection's TimeZone, so without the pin, reads from a server
