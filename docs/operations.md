@@ -31,6 +31,7 @@ Four need setting:
 
 - `RS_BOT_ADMIN_USER_ID`: set it to your own Discord user id.
   Without it, token-age DMs go to the Discord application's owner, who may not be the guild owner, and only the guild owner may run `/setup schwab`.
+  `/setup` is hidden from everyone but server administrators, so the operator also needs the Administrator permission (see "Discord permissions and role pings").
 - `RS_BOT_ALERT_CHANNEL_ID`: the private channel Alerts post to.
 - `RS_OPS_WEBHOOK_URL`: a webhook on a private ops channel.
   Ingest and the bot both read it.
@@ -45,7 +46,7 @@ Compose passes each one through only when it is set in `.env` or the shell.
 1. Create `.env` from `.env.example` and fill every uncommented line.
    Generate each `RS_DB_PASSWORD_*` role password with `openssl rand -hex 24`.
    `RS_DB_PASSWORD` and the password inside `RS_DB_URL` must match.
-2. Create the Discord application and bot, invite it to your server with the permission to send messages, embed links, read message history and create public threads in the Alert channel, and copy the token into `RS_BOT_DISCORD_TOKEN`.
+2. Create the Discord application and bot, invite it to your server with the permissions in "Discord permissions and role pings", and copy the token into `RS_BOT_DISCORD_TOKEN`.
    The bot uses default intents only.
 3. Check the file parses and the image builds:
    ```
@@ -104,6 +105,40 @@ $COMPOSE restart ingest bot
 ```
 `ALTER EXTENSION ... UPDATE` must be the first statement in a fresh session, which `psql -X -c` is.
 `extversion` must equal the version in the image tag.
+
+## Discord permissions and role pings
+
+The bot needs these permissions, granted by its role in the server (and not denied in the Alert channel):
+
+- View Channels, Send Messages, Embed Links and Read Message History, to post Alerts and to check the channel before a resend.
+- Create Public Threads and Send Messages in Threads, for the thread under each Alert and its replies.
+- Manage Roles, so `/pings` can give and take the Alert roles on a member's behalf.
+  The member needs no permission of their own.
+
+Discord lets a bot manage only roles below its own highest role.
+Move the bot's role above every role it manages (Server Settings, Roles, drag the bot's role up).
+It cannot manage the `@everyone` role, a role an integration owns, or any role at or above its own.
+
+Alerts ping by Trigger, so people opt in to what pings them:
+
+1. Create a server role for each Trigger you want pinged, for example `popularity-surge`, and turn on "Allow anyone to @mention this role" for it.
+   A role that is not mentionable is still shown in the Alert, but Discord does not notify its members.
+   The alternative, giving the bot the Mention Everyone permission, lets it notify any role and is not needed.
+2. As an administrator, run `/setup roles add`, choose the Trigger and the role.
+   The bot refuses a role it cannot manage and says why, so the order problem shows up here and not at the first Alert.
+   `/setup roles show` lists each Trigger's role and flags one that was deleted or that the bot can no longer manage, and `/setup roles remove` unmaps a Trigger (members keep the role).
+3. Members run `/pings` and choose the Alerts they want; the bot adds and removes the role.
+   The menu is private to the member.
+   If the bot could not change a role, the menu says which one.
+
+`/setup` is hidden from members who are not administrators (Administrator is the default member permission).
+A server administrator can widen or narrow that under Server Settings, Integrations.
+`/setup schwab` also checks that the caller is the guild owner or `RS_BOT_ADMIN_USER_ID`.
+
+An Alert mentions only the role mapped to its Trigger, and Discord is told to ping nothing else.
+A reply in an Alert's thread never pings.
+If the role mapped to an Alert's Trigger was deleted, the Alert posts without the mention and the operator gets one Ops ping per missing role, `Alert #<id> ... posted without its role ping`; run `/setup roles add` again with a new role.
+The mapping is stored in the `trigger_role` table of the database, so the backup carries it.
 
 ## Schwab sign-in with `/setup schwab`
 
@@ -417,6 +452,8 @@ Which pings to expect, by cause:
 - `Alert #<id> <stock> <trigger> posted with facts unavailable: ...`: the Alert posted, and the ping names which supporting facts were missing and why.
   It is sent once per Alert, when it posts.
 - The nightly Track record job failing (`Ingest job track_record is failing ...`); the stored Track record stays as it was until the next successful run.
+- `Alert #<id> <stock> <trigger> posted without its role ping: the role mapped to <trigger> ... no longer exists`: see "Discord permissions and role pings".
+  It is sent once per missing role, not once per Alert, so a deleted role does not ping for every Alert until it is mapped again.
 
 One cause sends one ping: a source failure that also fails its job does not send a job ping on top.
 
