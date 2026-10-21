@@ -406,7 +406,8 @@ A split after bars were stored leaves them at the old scale beside new bars at t
 So a tail fetch starts 3 sessions before the newest stored bar, on the same call, and compares the closes of the overlap with the stored ones.
 If any differs by more than 1 percent, the stock's stored bars are deleted and replaced by a fresh full fetch from its needed start, in one transaction, and the job logs `stored bars no longer match Schwab` with the stock and the first disagreement.
 If that fetch fails the stored bars stay as they were and the next run tries again; an empty answer (a delisted or halted stock) never replaces or deletes anything.
-A stock already at the last settled session is not checked until the next session adds a bar, so a split can sit unrepaired for up to a day.
+A stock already at the last settled session is not checked until the next session adds a bar, so a split can sit unrepaired for up to a day, and in that window the Track record job's split guard does not cover it, because its bars are marked adjusted.
+An answer that lacks every overlap session (a halted stock) cannot be compared, so its new bars are stored and the check happens on a later run.
 Count repairs in the run summary (`N repaired`):
 ```
 $COMPOSE logs ingest | grep "surge_bars through"

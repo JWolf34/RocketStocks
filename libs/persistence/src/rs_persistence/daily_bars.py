@@ -1,6 +1,6 @@
-"""daily_bar, bar_request and unpriced_symbol: idempotent bar writes, whole-symbol replacement, coverage
-queries, the earliest start asked of the price vendor, and the record of symbols
-it cannot price."""
+"""daily_bar, bar_request and unpriced_symbol: idempotent bar writes, whole-symbol
+replacement, coverage queries, the earliest start asked of the price vendor, and
+the record of symbols it cannot price."""
 
 from collections.abc import Collection, Sequence
 from datetime import UTC, date, datetime

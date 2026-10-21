@@ -168,6 +168,10 @@ def _to_stored(history: DailyHistory, fetched_at: datetime) -> list[StoredDailyB
     ]
 
 
+def _off(stored: float, fresh: float) -> bool:
+    return abs(stored - fresh) > CLOSE_TOLERANCE * fresh
+
+
 def _disagreements(held: Sequence[StoredDailyBar], history: DailyHistory) -> list[tuple[StoredDailyBar, float]]:
     """Stored bars whose close differs from the fresh close of the same session by more than
     CLOSE_TOLERANCE, each with that fresh close. Sessions the answer lacks are not compared."""
@@ -175,7 +179,7 @@ def _disagreements(held: Sequence[StoredDailyBar], history: DailyHistory) -> lis
     return [
         (bar, fresh[bar.session_date])
         for bar in held
-        if bar.session_date in fresh and abs(bar.close - fresh[bar.session_date]) > CLOSE_TOLERANCE * fresh[bar.session_date]
+        if bar.session_date in fresh and _off(bar.close, fresh[bar.session_date])
     ]
 
 
@@ -218,6 +222,7 @@ async def sync_surge_bars(
 
     if len(todo) > PROGRESS_EVERY:
         logger.info("surge_bars: %d of %d symbols to fetch, one call each", len(todo), len(needs))
+
     async def fetch(symbol: str, start: date) -> DailyHistory | None:
         """One paced call; None when the symbol was refused or failed and has been accounted for."""
         await limiter.acquire()
