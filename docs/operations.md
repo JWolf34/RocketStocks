@@ -37,7 +37,7 @@ Four need setting:
   Unset, Ops pings are only logged at ERROR.
 - `RS_EDGAR_USER_AGENT`: required by ingest, for example `RocketStocks you@example.com`.
 
-Optional tunables you may touch during the rehearsals: `RS_BOT_POST_MAX_ATTEMPTS` (default 5), `RS_BOT_SWEEP_SECONDS` (60), `RS_INGEST_AUTH_POLL_SECONDS` (15), `RS_INGEST_TOKEN_POLL_SECONDS` (60), `RS_INGEST_JOB_FAILURE_THRESHOLD` (3).
+Optional tunables you may touch during the rehearsals: `RS_BOT_POST_MAX_ATTEMPTS` (default 5), `RS_BOT_SWEEP_SECONDS` (60), `RS_INGEST_AUTH_POLL_SECONDS` (15), `RS_INGEST_TOKEN_POLL_SECONDS` (60).
 Compose passes each one through only when it is set in `.env` or the shell.
 
 ## First deploy
@@ -323,10 +323,38 @@ Never set `posted_at` by hand unless you posted the message yourself.
 
 ### Ops pings to expect
 
+A source pings once when it starts failing and once when it clears; repeated failures in between say nothing.
+The sources are ApeWisdom, Schwab, Nasdaq, EDGAR and Discord.
+A ping reads `<source> is failing (<reason>). See the <service> logs.` and later `<source> recovered.`.
+The reason is an exception type or a count, never vendor text; the logs have the detail.
+
+What counts as failing:
+
+- A source failing: a connection error, a timeout, a 5xx, a 429 or a payload that is not what it should be.
+- More than about 5% of a sweep's per-stock requests failing, and at least two requests.
+- Never one stock: a 400 or 404 for a symbol, no data for it, or a single failed request among many pings nothing.
+
+Which pings to expect, by cause:
+
+- `ApeWisdom is failing ...`: the Popularity poll could not fetch the listing, or fetched it empty.
+  The poll fails without a second ping; a boundary is missed until the next poll.
+- `Schwab is failing ...`: quotes for an Alert's facts failed, or more than about 5% of the daily-bar sweep did.
+  The Alert still posts, with the missing facts labelled.
+- `Nasdaq is failing ...` and `EDGAR is failing ...`: the earnings calendar or the filings lookup failed.
+  The next-earnings fact falls back to the EDGAR estimate, then to missing.
+- `Discord is failing ...`: the bot's sends failed for a reason other than one Alert (a rejected embed is one Alert).
+  Unposted Alerts stay queued and the sweep retries them.
+- `Ingest job <name> is failing (<type>)` and `Ingest job <name> recovered.`: a job failed for a reason that is not a source, such as the database being down or a bug.
+  It pings on its first failure, not after several, and once when the job next succeeds.
 - `Schwab token is dead ...` and `Schwab token renewed ...`: see "Schwab sign-in" and the token-expiry rehearsal.
-- `Ingest job <name> has failed N times in a row ...` after `RS_INGEST_JOB_FAILURE_THRESHOLD` consecutive failures, and `... recovered.` when it clears.
+  A dead token has these pings only; it does not also send `Schwab is failing`.
 - `Alert #<id> ... failed to post after N attempts ...`: the procedure above.
 - The weekly Track record job failing.
+
+One cause sends one ping: a source failure that also fails its job does not send a job ping on top.
+
+Health is remembered in process only.
+After an ingest or bot restart, a source that is still failing pings once more when the next request fails, and one that recovered while the service was down says nothing.
 
 ## What to back up and how to restore
 
