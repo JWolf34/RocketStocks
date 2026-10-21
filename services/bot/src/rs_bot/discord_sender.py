@@ -9,6 +9,7 @@ the nonce is not relied on there, since history reads do not reliably carry it.
 """
 
 import logging
+from collections.abc import Sequence
 from datetime import datetime, timedelta
 
 import discord
@@ -32,8 +33,19 @@ class ChannelSender:
         self._channel = channel
         self._bot_user_id = bot_user_id
 
-    async def send_alert(self, embed: discord.Embed, *, nonce: int) -> int:
-        message = await self._channel.send(embed=embed, nonce=nonce)
+    async def send_alert(
+        self, embed: discord.Embed, *, nonce: int, role_ids: Sequence[int] = ()
+    ) -> int:
+        # An Alert pings exactly the roles of its Triggers, and nobody else.
+        roles = [discord.Object(role_id) for role_id in role_ids]
+        message = await self._channel.send(
+            content=" ".join(f"<@&{role_id}>" for role_id in role_ids) or None,
+            embed=embed,
+            nonce=nonce,
+            allowed_mentions=discord.AllowedMentions(
+                everyone=False, users=False, roles=roles, replied_user=False
+            ),
+        )
         return message.id
 
     async def send_reply(self, thread_id: int, embed: discord.Embed, *, nonce: int) -> int:

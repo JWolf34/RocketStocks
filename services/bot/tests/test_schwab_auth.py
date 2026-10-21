@@ -11,12 +11,13 @@ import discord
 import pytest
 from discord import app_commands
 
+from rs_bot.commands import register_commands
+from rs_bot.pings import PingRoles
 from rs_bot.schwab_auth import (
     DENIED,
     SchwabAuthFlow,
     is_authorized,
     looks_like_callback,
-    register_setup_commands,
 )
 from rs_domain import AuthRequestState
 from rs_persistence import AuthRequestRepository
@@ -108,7 +109,12 @@ def _interaction(user_id: int, owner_id: int = OWNER):
 
 def _command(session_factory, ingest: FakeIngest, admin_user_id: int | None):
     tree = app_commands.CommandTree(discord.Client(intents=discord.Intents.default()))
-    register_setup_commands(tree, _flow(session_factory, ingest), admin_user_id)
+    register_commands(
+        tree,
+        flow=_flow(session_factory, ingest),
+        pings=PingRoles(session_factory),
+        admin_user_id=admin_user_id,
+    )
     return tree.get_command("setup").get_command("schwab")
 
 

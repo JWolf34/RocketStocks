@@ -149,11 +149,9 @@ class _SignInView(discord.ui.View):
         await interaction.response.send_modal(_CallbackModal(self._flow, self._request_id))
 
 
-def register_setup_commands(
-    tree: app_commands.CommandTree, flow: SchwabAuthFlow, admin_user_id: int | None
+def add_schwab_command(
+    setup: app_commands.Group, flow: SchwabAuthFlow, admin_user_id: int | None
 ) -> None:
-    setup = app_commands.Group(name="setup", description="Bot setup", guild_only=True)
-
     @setup.command(name="schwab", description="Sign in to Schwab again")
     async def schwab(interaction: discord.Interaction) -> None:
         owner_id = interaction.guild.owner_id if interaction.guild is not None else None
@@ -177,5 +175,3 @@ def register_setup_commands(
             view=_SignInView(flow, sign_in.request_id, interaction.user.id),
             ephemeral=True,
         )
-
-    tree.add_command(setup)

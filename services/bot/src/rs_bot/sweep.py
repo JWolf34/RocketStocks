@@ -23,6 +23,7 @@ heals.
 
 import asyncio
 import logging
+from collections.abc import Sequence
 from contextlib import suppress
 from datetime import datetime, timedelta
 from typing import Protocol
@@ -33,6 +34,7 @@ from pydantic import ValidationError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from rs_bot.counters import new_counters
+from rs_bot.pings import GuildRoles
 from rs_bot.render import POPULARITY_SURGE, render, render_generic
 from rs_domain import (
     ALERT_STALE_AFTER,
@@ -45,7 +47,12 @@ from rs_domain import (
     TrackRecord,
 )
 from rs_observability import HealthTracker, Source, notify_ops, unit_of_work
-from rs_persistence import AlertDelivery, AlertRepository, PendingAlert
+from rs_persistence import (
+    AlertDelivery,
+    AlertRepository,
+    PendingAlert,
+    TriggerRoleRepository,
+)
 from rs_query import track_records
 
 logger = logging.getLogger(__name__)
@@ -70,11 +77,14 @@ def _discord_health(exc: Exception) -> bool | None:
 
 class AlertSender(Protocol):
     """The Discord seam: tests fake this; the daemon backs it with the resolved alert
-    channel. Sends return the Discord message id; a `find` returns the bot's own message
+    channel. Sends return the Discord message id (an Alert's `role_ids` are the roles it
+    pings; a reply pings nobody); a `find` returns the bot's own message
     for a row sent at or after `since`, None when there is none, and raises when the
     history cannot be read."""
 
-    async def send_alert(self, embed: discord.Embed, *, nonce: int) -> int: ...
+    async def send_alert(
+        self, embed: discord.Embed, *, nonce: int, role_ids: Sequence[int] = ()
+    ) -> int: ...
 
     async def send_reply(self, thread_id: int, embed: discord.Embed, *, nonce: int) -> int: ...
 
@@ -114,6 +124,7 @@ class SweepWorker:
         retry_gap_seconds: float | None = None,
         stale_after: timedelta = STALE_AFTER,
         counters: dict[str, int] | None = None,
+        roles: GuildRoles | None = None,
     ) -> None:
         self._session_factory = session_factory
         self._sender = sender
@@ -123,6 +134,8 @@ class SweepWorker:
         self._max_attempts = max_attempts
         self._retry_gap = sweep_seconds if retry_gap_seconds is None else retry_gap_seconds
         self._stale_after = stale_after
+        # The server's roles, to ping the one mapped to an Alert's Trigger; None pings nobody.
+        self._roles = roles
         self.counters = counters if counters is not None else new_counters()
         # Set by the LISTEN loop on NOTIFY and on every (re)connect — so
         # "sweep on reconnect" is not a special case.
@@ -249,8 +262,9 @@ class SweepWorker:
             embed = render_generic(item)
         else:
             embed = render(item, track_record, track_record_failed=track_record_failed)
+        role_ids, missing_role = await self._role_pings(session, alert)
         try:
-            message_id = await self._post(session, repo, item, embed, parent)
+            message_id = await self._post(session, repo, item, embed, parent, role_ids)
         except Exception as exc:
             await self._send_failed(session, repo, item, exc, loop)
             return
@@ -258,6 +272,27 @@ class SweepWorker:
             return  # settled meanwhile; nothing was sent
         await self._health.report_ok(Source.DISCORD)
         await self._record_posted(session, repo, item, message_id)
+        if missing_role is not None:
+            await notify_ops(
+                f"Alert #{item.id} {alert.symbol} {alert.trigger} posted without its role ping: "
+                f"the role mapped to {alert.trigger} (id {missing_role}) no longer exists. "
+                "Map it again with /setup roles add.",
+                key=f"role-missing:{item.id}",
+            )
+
+    async def _role_pings(
+        self, session: AsyncSession, alert: Alert
+    ) -> tuple[Sequence[int], int | None]:
+        """(the roles this Alert pings, the id of its mapped role when that no longer exists).
+        A reply pings nobody."""
+        if self._roles is None or alert.reply_to is not None:
+            return (), None
+        role_id = await TriggerRoleRepository(session).get(alert.trigger)
+        if role_id is None:
+            return (), None
+        if self._roles.role(role_id) is None:
+            return (), role_id
+        return (role_id,), None
 
     async def _post(
         self,
@@ -266,6 +301,7 @@ class SweepWorker:
         item: PendingAlert,
         embed: discord.Embed,
         parent: AlertDelivery | None,
+        role_ids: Sequence[int],
     ) -> int | None:
         """Mark the row sending, commit the mark, then send; returns the Discord message id."""
         alert = item.alert
@@ -283,7 +319,7 @@ class SweepWorker:
             return None
         await session.commit()  # the evidence a crash between send and record leaves
         if thread_id is None:
-            return await self._sender.send_alert(embed, nonce=item.id)
+            return await self._sender.send_alert(embed, nonce=item.id, role_ids=role_ids)
         return await self._sender.send_reply(thread_id, embed, nonce=item.id)
 
     async def _find(self, item: PendingAlert, parent: AlertDelivery | None) -> int | None:
