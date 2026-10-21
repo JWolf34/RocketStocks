@@ -312,6 +312,24 @@ To re-queue every abandoned Alert at once, drop the `id` filter and use the same
 The bot's next sweep (within `RS_BOT_SWEEP_SECONDS`, 60 by default) posts it.
 Never set `posted_at` by hand unless you posted the message yourself.
 
+### Daily bars
+
+The `surge_bars` job keeps daily bars for SPY and for every stock the Popularity Trigger ever hit, found by replaying the Trigger over all stored Popularity.
+Each stock gets about 270 sessions before its first hit (a year for its typical move, plus margin) and every session since, up to the last settled one.
+It runs at startup and each weekday 90 minutes after the close, and a rerun with nothing missing makes no Schwab call.
+
+A stock whose stored history starts after the start it needs is extended back once.
+`bar_request` records the earliest start already asked of Schwab per symbol, so a listing younger than the lookback is asked once and not every night.
+
+The first run after an import, or after upgrading from a version with a shorter lookback, makes one call per Popularity-hit stock at the shared 100 calls a minute (thousands of stocks, under an hour per thousand), and the job's timeout is 3 hours.
+Progress logs every 100 symbols (`surge_bars: N of M symbols done`).
+If the run stops (timeout, a 429, a restart), the next run resumes where it left off, because each symbol's bars and request are committed together.
+Watch it with:
+```
+$COMPOSE logs -f ingest | grep surge_bars
+psql -c "SELECT count(*) AS asked FROM bar_request"
+```
+
 ### Logs, metrics and health
 
 - Logs are JSON on stdout: `$COMPOSE logs -f ingest bot`.

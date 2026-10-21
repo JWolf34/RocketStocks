@@ -1,4 +1,4 @@
-"""Migrations 0006-0014 against Timescale: the upgrade/downgrade round trip and
+"""Migrations 0006-0015 against Timescale: the upgrade/downgrade round trip and
 the physical layout (hypertables, compression, constraints)."""
 
 import uuid
@@ -192,3 +192,17 @@ def test_alerts_dedup_key_is_unique(sync_engine):
         u["name"]: u["column_names"] for u in inspect(sync_engine).get_unique_constraints("alerts")
     }
     assert uniques == {"uq_alerts_dedup_key": ["dedup_key"]}
+
+
+def test_0015_adds_bar_request_and_downgrade_drops_it(scratch_url):
+    config = migration_config(scratch_url)
+    engine = create_engine(scratch_url)
+    try:
+        command.upgrade(config, "head")
+        assert [c["name"] for c in inspect(engine).get_columns("bar_request")] == ["symbol", "earliest_start"]
+        assert inspect(engine).get_pk_constraint("bar_request")["constrained_columns"] == ["symbol"]
+
+        command.downgrade(config, "0014")
+        assert "bar_request" not in inspect(engine).get_table_names()
+    finally:
+        engine.dispose()

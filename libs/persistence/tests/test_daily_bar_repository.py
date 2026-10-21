@@ -136,3 +136,21 @@ async def test_clear_unpriced(session_factory):
         assert await repo.clear_unpriced("DEAD") is True
         assert await repo.clear_unpriced("DEAD") is False
         assert await repo.list_unpriced() == []
+
+
+async def test_record_request_only_ever_moves_a_symbols_start_earlier(session_factory):
+    async with session_factory() as s:
+        repo = DailyBarRepository(s)
+        await repo.record_request("AAA", D0)
+        await repo.record_request("AAA", D0 - timedelta(days=30))
+        await repo.record_request("AAA", D0 + timedelta(days=5))
+        await repo.record_request("BBB", D0)
+        await s.commit()
+
+    async with session_factory() as s:
+        repo = DailyBarRepository(s)
+        assert await repo.earliest_requested(["AAA", "BBB", "NEVER"]) == {
+            "AAA": D0 - timedelta(days=30),
+            "BBB": D0,
+        }
+        assert await repo.earliest_requested([]) == {}

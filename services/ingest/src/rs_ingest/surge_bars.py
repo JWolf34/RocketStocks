@@ -1,10 +1,14 @@
 """surge_bars: daily bars for every ticker that ever had a popularity-surge event, plus SPY.
 
-The event study needs each event's neighbourhood of daily bars and the
-benchmark's. The job is a catch-up, not a per-day append: each run works out
-from the stored snapshots and bars what is missing up to the last settled
-session and fetches only that, so the daily slot, the startup run and a rerun
-are the same code and a rerun with nothing new makes no Schwab call.
+An Outcome needs about a year of bars before its case (the stock's typical
+move is measured over the 250 sessions before entry) and the sessions through
+its 20-session horizon, and the benchmark's over the same span. The job is a
+catch-up, not a per-day append: each run works out from the stored snapshots,
+bars and requests what is missing up to the last settled session and fetches
+only that, so the daily slot, the startup run and a rerun are the same code and
+a rerun with nothing new makes no Schwab call. A symbol's history is extended
+back when it begins after the start the job needs, unless Schwab was already
+asked for that start and has nothing earlier: a young listing is asked once.
 """
 
 import logging
@@ -29,10 +33,12 @@ BENCHMARK = "SPY"
 
 EASTERN = ZoneInfo("America/New_York")
 
-# The event study's 20-day volume average needs 20 prior sessions; 30 leaves slack.
-LOOKBACK_SESSIONS = 30
+# An Outcome's typical move is measured over the 250 sessions before entry; 270 leaves slack.
+LOOKBACK_SESSIONS = 270
 # Calendar days that always hold LOOKBACK_SESSIONS sessions (holiday weeks included).
-LOOKBACK_CALENDAR_DAYS = 70
+LOOKBACK_CALENDAR_DAYS = 400
+# Progress is logged this often during a long catch-up.
+PROGRESS_EVERY = 100
 # A session's candle is trusted this long after the close; the daily slot is 90 minutes after.
 SETTLE = timedelta(hours=1)
 # A symbol Schwab cannot price is asked about again this often, never sooner.
@@ -62,14 +68,6 @@ class SurgeBarsReport:
     unpriced: int = 0
     deferred: int = 0
     failed: list[str] = field(default_factory=list)
-
-
-@dataclass(frozen=True)
-class _Need:
-    # The first session on or after the first event: the earliest bar the event study cannot do without.
-    anchor: date
-    # Where a fetch begins: the lookback before the event.
-    start: date
 
 
 async def first_event_dates(
@@ -113,30 +111,28 @@ def last_settled_session(calendar: TradingCalendar, now: datetime) -> date:
     raise RuntimeError(f"no settled session in the 10 days before {today}")
 
 
-def _needs(event_dates: Mapping[str, date], calendar: TradingCalendar, last_session: date) -> dict[str, _Need]:
-    def need(day: date) -> _Need:
-        # A weekend or holiday event is anchored on the next session, so a listing that
-        # starts there is complete; the 10 days always reach one.
-        following = calendar.sessions_in_range(day, day + timedelta(days=10))
-        return _Need(anchor=following[0] if following else day, start=lookback_start(calendar, day))
-
-    needs = {ticker: need(day) for ticker, day in event_dates.items()}
+def _needs(event_dates: Mapping[str, date], calendar: TradingCalendar, last_session: date) -> dict[str, date]:
+    """Each symbol's earliest needed session: the lookback before its first event."""
+    needs = {ticker: lookback_start(calendar, day) for ticker, day in event_dates.items()}
     # The benchmark must cover every event, so it starts at the earliest one.
-    needs[BENCHMARK] = need(min(event_dates.values(), default=last_session))
+    needs[BENCHMARK] = lookback_start(calendar, min(event_dates.values(), default=last_session))
     return needs
 
 
-def _fetch_from(need: _Need, stored: tuple[date, date] | None, last_session: date) -> date | None:
+def _fetch_from(
+    need: date, stored: tuple[date, date] | None, requested: date | None, last_session: date
+) -> date | None:
     """Where this symbol's fetch must start, or None when it is complete.
 
-    Bars before the anchor are padding: a listing younger than the lookback
-    has none, so only bars missing at or after the anchor count as a gap.
+    History that begins after `need` is extended back, unless Schwab was
+    already asked from `need` or earlier: a listing younger than the lookback
+    has nothing before its first bar, and must not be asked every night.
     """
     if stored is None:
-        return need.start
+        return need
     first, last = stored
-    if need.anchor < first:
-        return need.start
+    if first > need and (requested is None or requested > need):
+        return need
     if last < last_session:
         return last + timedelta(days=1)
     return None
@@ -181,12 +177,13 @@ async def sync_surge_bars(
     async with session_factory() as session:
         repo = DailyBarRepository(session)
         stored = await repo.session_bounds(needs)
+        requested = await repo.earliest_requested(needs)
         unpriced = {u.symbol: u for u in await repo.list_unpriced()}
 
     todo: list[tuple[str, date]] = []
     # The benchmark first: without it no event has an excess return.
     for symbol in sorted(needs, key=lambda s: (s != BENCHMARK, s)):
-        start = _fetch_from(needs[symbol], stored.get(symbol), last_session)
+        start = _fetch_from(needs[symbol], stored.get(symbol), requested.get(symbol), last_session)
         if start is None:
             continue
         previous = unpriced.get(symbol)
@@ -195,8 +192,12 @@ async def sync_surge_bars(
             continue
         todo.append((symbol, start))
 
+    if len(todo) > PROGRESS_EVERY:
+        logger.info("surge_bars: %d of %d symbols to fetch, one call each", len(todo), len(needs))
     try:  # the partial report is worth logging when a 429 or dead token stops the run
-        for symbol, start in todo:
+        for done, (symbol, start) in enumerate(todo):
+            if done and done % PROGRESS_EVERY == 0:
+                logger.info("surge_bars: %d of %d symbols done", done, len(todo))
             await limiter.acquire()
             try:
                 history = await source.daily_history(symbol, start, last_session)
@@ -222,13 +223,14 @@ async def sync_surge_bars(
 
             report.fetched += 1
             report.rejected.update(r.reason.value for r in history.rejects)
-            if history.bars:
-                async with session_factory() as session:
-                    repo = DailyBarRepository(session)
+            async with session_factory() as session:
+                repo = DailyBarRepository(session)
+                if history.bars:
                     report.bars_inserted += await repo.insert_many(_to_stored(history, clock.now()))
                     await repo.clear_unpriced(symbol)
-                    await session.commit()
-            elif symbol not in stored:
+                await repo.record_request(symbol, start)
+                await session.commit()
+            if not history.bars and symbol not in stored:
                 await _record_unpriced(session_factory, symbol, _unpriced_reason(history), clock.now())
                 report.unpriced += 1
     finally:

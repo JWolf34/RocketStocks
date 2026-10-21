@@ -1,5 +1,6 @@
-"""daily_bar and unpriced_symbol: idempotent bar writes, coverage queries, and the
-record of symbols the price vendor cannot price."""
+"""daily_bar, bar_request and unpriced_symbol: idempotent bar writes, coverage
+queries, the earliest start asked of the price vendor, and the record of symbols
+it cannot price."""
 
 from collections.abc import Collection, Sequence
 from datetime import UTC, date, datetime
@@ -9,7 +10,7 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from rs_domain import StoredDailyBar, UnpricedSymbol
-from rs_persistence.models import DailyBarRow, UnpricedSymbolRow
+from rs_persistence.models import BarRequestRow, DailyBarRow, UnpricedSymbolRow
 
 # 9 bound parameters per row; stay far below the protocol's 65535 limit.
 _INSERT_CHUNK = 5000
@@ -82,6 +83,23 @@ class DailyBarRepository:
             .group_by(DailyBarRow.symbol)
         )
         return {symbol: (first, last) for symbol, first, last in result}
+
+    async def earliest_requested(self, symbols: Collection[str]) -> dict[str, date]:
+        """Earliest start already requested of the vendor per symbol; never-requested symbols are absent."""
+        result = await self._session.execute(
+            select(BarRequestRow.symbol, BarRequestRow.earliest_start).where(BarRequestRow.symbol.in_(symbols))
+        )
+        return {symbol: start for symbol, start in result}
+
+    async def record_request(self, symbol: str, start: date) -> None:
+        """Note that the vendor was asked for history from `start`; only ever moves a symbol's start earlier."""
+        stmt = pg_insert(BarRequestRow).values(symbol=symbol, earliest_start=start)
+        await self._session.execute(
+            stmt.on_conflict_do_update(
+                index_elements=[BarRequestRow.symbol],
+                set_={"earliest_start": func.least(BarRequestRow.earliest_start, stmt.excluded.earliest_start)},
+            )
+        )
 
     async def missing_symbols(self, symbols: Collection[str]) -> list[str]:
         """The given symbols that have no stored bars at all, sorted."""
