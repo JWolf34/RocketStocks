@@ -70,12 +70,15 @@ async def test_commit_wakes_the_sweep(running_loop):
 
 async def test_severed_listen_self_heals(running_loop):
     # The Finding-3 drill: kill the listener's backend out from under it.
+    # pg_stat_activity is server-wide: scope to this test's database or the kill
+    # also severs LISTEN connections of concurrent pytest processes on the server.
     wake, counters, session_factory = running_loop
     async with session_factory() as s:
         await s.execute(
             text(
                 "SELECT pg_terminate_backend(pid) FROM pg_stat_activity "
-                "WHERE query ILIKE 'LISTEN%' AND pid <> pg_backend_pid()"
+                "WHERE query ILIKE 'LISTEN%' AND datname = current_database()"
+                " AND pid <> pg_backend_pid()"
             )
         )
         await s.commit()
