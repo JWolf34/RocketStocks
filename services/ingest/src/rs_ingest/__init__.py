@@ -1,1 +1,1 @@
-"""RocketStocks v2 ingest service: market-data streaming and persistence."""
+"""RocketStocks v2 ingest service: Popularity polling and Alert writing."""

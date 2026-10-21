@@ -1,1 +1,1 @@
-"""One-shot operator tools: login (token bootstrap), compare_bars (S003 B7)."""
+"""One-shot operator tools: login (Schwab token bootstrap)."""
