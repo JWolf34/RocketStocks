@@ -1,11 +1,9 @@
-"""Native unhandled-exception capture (ADR-0015 layer 4, S005-assigned).
+"""Native unhandled-exception capture.
 
 Every path an exception can escape a service unnoticed ends in
 `logger.error(..., exc_info=...)` — a full-traceback record on the one JSON
-stream. Framework hooks are separate and already wired (serve's catch-all
-handler — S005; discord.py logs through stdlib loggers the stream captures).
-The `notifications.send(SYSTEM_CRITICAL, ...)` half of each hook joins when
-ADR-0016 lands.
+stream. Framework hooks are separate and already wired (discord.py logs
+through stdlib loggers the stream captures).
 """
 
 import asyncio

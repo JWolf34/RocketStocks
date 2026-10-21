@@ -1,10 +1,9 @@
 """The single posting path: one worker waits on (wake event
 OR the sweep interval), then drains every unposted alert in id order. NOTIFY
 never posts — the LISTEN loop only sets the wake event, so the correctness
-mechanism (cursor sweep) runs on every post and cannot rot unnoticed
-(Finding 3 is the cautionary live demo).
+mechanism (cursor sweep) runs on every post and cannot rot unnoticed.
 
-Per row: read base rate → render → send → mark_posted → commit. The per-row
+Per row: read track record → render → send → mark_posted → commit. The per-row
 commit bounds the crash-dupe window to one alert: delivery is at-least-once, a
 crash inside the send→commit gap re-posts ≤1 alert on restart. A send
 failure is ERROR-logged with the full payload, counted in `post_attempts` and
@@ -25,11 +24,11 @@ import discord
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from rs_bot.counters import new_counters
-from rs_bot.render import ATTENTION_SURGE, render, render_generic
-from rs_domain import BaseRate
+from rs_bot.render import POPULARITY_SURGE, render, render_generic
+from rs_domain import TrackRecord
 from rs_observability import notify_ops, unit_of_work
 from rs_persistence import AlertRepository, PendingAlert
-from rs_query import current_base_rate
+from rs_query import current_track_record
 
 logger = logging.getLogger(__name__)
 
@@ -82,22 +81,22 @@ class SweepWorker:
                 break
             await self.sweep()
 
-    async def _base_rate(
+    async def _track_record(
         self,
         session: AsyncSession,
         item: PendingAlert,
-        cache: dict[tuple[str, str], tuple[BaseRate | None, bool]],
-    ) -> tuple[BaseRate | None, bool]:
-        """(base rate, read failed), read once per rule version per sweep."""
+        cache: dict[tuple[str, str], tuple[TrackRecord | None, bool]],
+    ) -> tuple[TrackRecord | None, bool]:
+        """(track record, read failed), read once per rule version per sweep."""
         alert = item.alert
-        if alert.alert_type != ATTENTION_SURGE or alert.rule_version is None:
+        if alert.alert_type != POPULARITY_SURGE or alert.rule_version is None:
             return None, False
         key = (alert.alert_type, alert.rule_version)
         if key not in cache:
             try:
-                cache[key] = (await current_base_rate(session, *key), False)
+                cache[key] = (await current_track_record(session, *key), False)
             except Exception:
-                logger.exception("base rate read failed for %s v%s", *key)
+                logger.exception("track record read failed for %s v%s", *key)
                 await session.rollback()
                 cache[key] = (None, True)
         return cache[key]
@@ -110,23 +109,23 @@ class SweepWorker:
             repo = AlertRepository(session)
             pending = await repo.list_unposted(self._max_attempts)
             loop = asyncio.get_running_loop()
-            base_rates: dict[tuple[str, str], tuple[BaseRate | None, bool]] = {}
+            track_records: dict[tuple[str, str], tuple[TrackRecord | None, bool]] = {}
             for item in pending:
                 if self._stopping.is_set():
                     break
-                # One posting attempt = one unit of work (S006): discord.py's
+                # One posting attempt = one unit of work: discord.py's
                 # retry internals log inside it and group under the alert.
                 # alert_id is the cross-service join key (ingest's insert log
                 # carries the same field).
                 with unit_of_work(alert_id=item.id):
                     if self._retry_not_before.get(item.id, 0.0) > loop.time():
                         continue  # failed moments ago; a NOTIFY burst must not burn the cap
-                    base_rate, base_rate_failed = await self._base_rate(session, item, base_rates)
+                    track_record, track_record_failed = await self._track_record(session, item, track_records)
                     if item.post_attempts + 1 >= self._max_attempts:
                         # Last try: the plain embed cannot be rejected for its shape.
                         embed = render_generic(item)
                     else:
-                        embed = render(item, base_rate, base_rate_failed=base_rate_failed)
+                        embed = render(item, track_record, track_record_failed=track_record_failed)
                     try:
                         message_id = await self._sender.send(embed)
                     except Exception:

@@ -1,9 +1,9 @@
-"""Structured logging (ADR-0015, S006 pin #2): stdlib front door, structlog
+"""Structured logging: stdlib front door, structlog
 engine.
 
 configure_logging installs a structlog ProcessorFormatter on the root stdlib
-handler. Module code keeps `logging.getLogger(__name__)` — zero churn in the
-accepted S003–S005 modules — and third-party stdlib records (uvicorn,
+handler. Module code keeps `logging.getLogger(__name__)` — zero churn in
+existing modules — and third-party stdlib records (uvicorn,
 discord.py, schwab-py, asyncio, alembic) render through the same processor
 chain, including the contextvars merge that carries `correlation_id` and the
 unit-of-work domain keys. New code MAY use `structlog.get_logger()`; both
@@ -102,12 +102,11 @@ def configure_logging(service: str) -> None:
 def unit_of_work(**fields: Any) -> Iterator[str]:
     """Bind a fresh opaque UUID as `correlation_id` plus the given domain-key
     fields onto every record logged inside the block — from any logger,
-    third-party retry internals included (S006 pin #3).
+    third-party retry internals included.
 
     correlation_id groups one unit of work; cross-service tracing joins on the
     domain keys (`alert_id` in ingest's insert log and bot's post log), never
-    on the id. Yields the id so callers can echo it (serve's
-    `X-Correlation-ID` response header).
+    on the id. Yields the id so callers can echo it.
     """
     correlation_id = str(uuid.uuid4())
     with structlog.contextvars.bound_contextvars(correlation_id=correlation_id, **fields):

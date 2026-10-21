@@ -1,7 +1,7 @@
 """alerts gains rule_version, alert_price, quote_time, dedup_key and
 post_attempts; the outbox table is dropped.
 
-dedup_key is unique but nullable (streaming alerts without a rule carry none;
+dedup_key is unique but nullable (alerts without a rule carry none;
 Postgres allows many NULLs under a unique constraint). The bot's posted_at IS
 NULL sweep, woken by NOTIFY, is what makes delivery correct, so the outbox
 ledger has no reader and goes away.

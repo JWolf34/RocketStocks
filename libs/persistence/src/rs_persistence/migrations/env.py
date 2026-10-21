@@ -1,5 +1,5 @@
 """Alembic environment. Runs sync via the same psycopg3 driver the app uses
-async (postgresql+psycopg handles both modes — S002 driver decision).
+async (postgresql+psycopg handles both modes).
 
 The DSN arrives on the config's sqlalchemy.url, set by
 rs_persistence.migration_config() (rs_migrate CLI and tests both build

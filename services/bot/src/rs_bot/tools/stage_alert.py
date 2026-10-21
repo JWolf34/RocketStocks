@@ -3,7 +3,7 @@
 Commits one clearly-marked test alert through the real AlertRepository insert
 path - alerts row + transactional NOTIFY, exactly what
 ingest produces - so the acceptance drills (live notify-wake, severed LISTEN,
-kill/restart) stage their inputs on the real Bus-2 write path.
+kill/restart) stage their inputs on the real write path.
 """
 
 import asyncio

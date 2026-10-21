@@ -1,8 +1,8 @@
-"""ListenLoop: the Finding-3 witness. A dedicated autocommit connection holds
+"""ListenLoop: the dead-LISTEN witness. A dedicated autocommit connection holds
 LISTEN; a NOTIFY only sets the sweep's wake event (never posts). Every
 (re)connect sets the wake too, so a severed connection self-heals into a
 recovery sweep rather than a silent dead LISTEN — the structural cover for
-the acceptance-2026-07-09 Finding-3 failure class.
+that failure class.
 
 Real ephemeral Postgres; NOTIFYs are staged through the real AlertRepository
 transactional path."""
@@ -69,13 +69,16 @@ async def test_commit_wakes_the_sweep(running_loop):
 
 
 async def test_severed_listen_self_heals(running_loop):
-    # The Finding-3 drill: kill the listener's backend out from under it.
+    # The dead-LISTEN drill: kill the listener's backend out from under it.
+    # pg_stat_activity is server-wide: scope to this test's database or the kill
+    # also severs LISTEN connections of concurrent pytest processes on the server.
     wake, counters, session_factory = running_loop
     async with session_factory() as s:
         await s.execute(
             text(
                 "SELECT pg_terminate_backend(pid) FROM pg_stat_activity "
-                "WHERE query ILIKE 'LISTEN%' AND pid <> pg_backend_pid()"
+                "WHERE query ILIKE 'LISTEN%' AND datname = current_database()"
+                " AND pid <> pg_backend_pid()"
             )
         )
         await s.commit()

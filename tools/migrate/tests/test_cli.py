@@ -1,5 +1,5 @@
 # ruff: noqa: F811 — fixture params named after the imported migrated_db_url
-# fixture are how pytest injects it, not redefinitions (serve conftest idiom).
+# fixture are how pytest injects it, not redefinitions.
 
 import json
 import logging
@@ -24,8 +24,7 @@ def test_requires_an_action():
 
 
 def test_alembic_records_render_on_the_json_stream(monkeypatch, capsys, migrated_db_url):
-    """S006: the migrate container's alembic output joins the one JSON stream
-    (alembic is named in the spec's third-party logger list)."""
+    """The migrate container's alembic output joins the one JSON stream."""
     monkeypatch.setenv("RS_LOG_FORMAT", "json")
     monkeypatch.setenv("RS_DB_URL", migrated_db_url)
     root = logging.getLogger()
@@ -57,11 +56,11 @@ def test_check_fails_on_schema_drift(monkeypatch, capsys, migrated_db_url):
     monkeypatch.setenv("RS_DB_URL", migrated_db_url)
     engine = create_engine(migrated_db_url, isolation_level="AUTOCOMMIT")
     with engine.connect() as conn:
-        conn.execute(text("ALTER TABLE base_rate ADD COLUMN drifted integer"))
+        conn.execute(text("ALTER TABLE track_record ADD COLUMN drifted integer"))
     try:
         assert main(["check"]) == 1
         assert "drift" in capsys.readouterr().err
     finally:
         with engine.connect() as conn:
-            conn.execute(text("ALTER TABLE base_rate DROP COLUMN drifted"))
+            conn.execute(text("ALTER TABLE track_record DROP COLUMN drifted"))
         engine.dispose()

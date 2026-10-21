@@ -1,4 +1,4 @@
-"""Schwab market-data calls slice 1 needs: a quote and daily price history.
+"""Schwab market-data calls: a quote and daily price history.
 
 Both are validated at the edge, and neither reads the clock (the caller stamps
 fetched_at). Schwab floors history bounds to Eastern days and reads naive

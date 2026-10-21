@@ -1,5 +1,5 @@
 """The popularity poll: store one ApeWisdom snapshot per half-hour boundary,
-judge it with the attention-surge rule, and write each new alert with its facts.
+judge it with the popularity-surge rule, and write each new alert with its facts.
 
 Every step is idempotent on the boundary: snapshots are first-write-wins, the
 rule judges the *stored* rows (so a rerun sees what the first run saw), and an
@@ -16,7 +16,7 @@ from typing import Protocol
 from pydantic import ValidationError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from rs_analysis.attention_surge import (
+from rs_analysis.popularity_surge import (
     COOLDOWN,
     SubRule,
     SurgeEvent,
@@ -25,10 +25,10 @@ from rs_analysis.attention_surge import (
 )
 from rs_domain import (
     Alert,
-    AttentionSurgePayload,
     Clock,
     PopularityOrigin,
     PopularitySnapshot,
+    PopularitySurgePayload,
     SurgeFacts,
 )
 from rs_ingest.alert_writer import AlertWriter
@@ -38,7 +38,7 @@ from rs_sources import ApeWisdomError, ApeWisdomRow
 
 logger = logging.getLogger(__name__)
 
-ALERT_TYPE = "attention_surge"
+ALERT_TYPE = "popularity_surge"
 POLL_MINUTES = 30
 POLL_INTERVAL = timedelta(minutes=POLL_MINUTES)
 # Alerts being written at once; each already fans its facts out in parallel.
@@ -182,9 +182,9 @@ class PopularityPoll:
             logger.info("surge alert %d stored%s for %s (%s)", alert_id, late, event.ticker, [r.value for r in event.fired])
 
 
-def _payload(event: SurgeEvent, facts: SurgeFacts) -> AttentionSurgePayload:
+def _payload(event: SurgeEvent, facts: SurgeFacts) -> PopularitySurgePayload:
     inputs = event.inputs
-    return AttentionSurgePayload(
+    return PopularitySurgePayload(
         rule_version=event.rule_version,
         polled_at=event.polled_at,
         fired=tuple(rule.value for rule in event.fired),
@@ -204,7 +204,7 @@ def _prior_event(alert: Alert) -> SurgeEvent | None:
     """Rebuild the logged event the cooldown reads. An alert whose payload no
     longer parses is skipped loudly rather than stalling every later poll."""
     try:
-        payload = AttentionSurgePayload.model_validate(alert.payload)
+        payload = PopularitySurgePayload.model_validate(alert.payload)
     except ValidationError:
         logger.exception("cannot read the payload of prior %s alert %s; ignoring it for the cooldown",
                          alert.alert_type, alert.dedup_key)

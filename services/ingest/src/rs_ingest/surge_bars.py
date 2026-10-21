@@ -1,4 +1,4 @@
-"""surge_bars: daily bars for every ticker that ever had an attention-surge event, plus SPY.
+"""surge_bars: daily bars for every ticker that ever had a popularity-surge event, plus SPY.
 
 The event study needs each event's neighbourhood of daily bars and the
 benchmark's. The job is a catch-up, not a per-day append: each run works out
@@ -17,7 +17,7 @@ from zoneinfo import ZoneInfo
 
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from rs_analysis import attention_surge
+from rs_analysis import popularity_surge
 from rs_domain import Clock, StoredDailyBar, TradingCalendar
 from rs_ingest.rate_limit import RateLimiter
 from rs_persistence import DailyBarRepository, PopularityRepository
@@ -79,7 +79,7 @@ async def first_event_dates(
 
     Judges each snapshot with no prior events: the cooldown only suppresses
     repeats, so a ticker's first event, the only one that matters here, is the
-    same as in `attention_surge.replay` without holding the whole history.
+    same as in `popularity_surge.replay` without holding the whole history.
     """
     first: dict[str, date] = {}
     async with session_factory() as session:
@@ -90,7 +90,7 @@ async def first_event_dates(
         while window_start <= now:
             window_end = window_start + REPLAY_WINDOW
             for snapshot in await repo.list_between(window_start, window_end):
-                if attention_surge.evaluate_latest(snapshot, ()) is None:
+                if popularity_surge.evaluate_latest(snapshot, ()) is None:
                     continue
                 day = snapshot.polled_at.astimezone(EASTERN).date()
                 if snapshot.ticker not in first or day < first[snapshot.ticker]:

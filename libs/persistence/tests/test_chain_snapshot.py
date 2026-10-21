@@ -1,7 +1,6 @@
-"""S008 step-1 acceptance: rev-005 migrates, options_chain_snapshot is a 1-day-chunk
-hypertable with the pinned compression policy and no retention, a ChainSnapshot
-round-trips (payload rows and tombstones), and the stale-guard restart query
-rebuilds per-name medians from the last accepted snapshot only."""
+"""rev-005 migrates, options_chain_snapshot is a 1-day-chunk hypertable with the
+pinned compression policy and no retention, and a ChainSnapshot round-trips
+(payload rows and tombstones)."""
 
 from datetime import UTC, date, datetime, timedelta
 
@@ -93,7 +92,7 @@ def sync_engine(migrated_db_url):
 async def chain_session_factory(migrated_db_url):
     """Async factory over the shared migrated DB, with options_chain_snapshot
     truncated first — the shared session_factory fixture only resets the
-    S002/S004 tables."""
+    shared tables."""
     engine = build_engine(migrated_db_url)
     factory = build_session_factory(engine)
     async with factory() as s:
@@ -164,7 +163,7 @@ class TestRev005Schema:
                     "AND hypertable_name = 'options_chain_snapshot'"
                 )
             ).scalar_one()
-        assert jobs == 0, "forward-only dataset must have no retention policy (ADR-0020)"
+        assert jobs == 0, "forward-only dataset must have no retention policy"
 
 
 class TestSnapshotRoundTrip:
@@ -210,75 +209,3 @@ class TestSnapshotRoundTrip:
         assert row["cycle_id"] == tombstone.cycle_id
         payload_columns = COLUMNS - {"underlying", "dataset", "cycle_id", "fetched_at", "source_status"}
         assert all(row[c] is None for c in payload_columns)
-
-
-class TestRestartState:
-    """last_accepted_median_quote_times rebuilds the stale guard after a restart:
-    last accepted (ok/partial) snapshot per name, never stale rows, never
-    tombstones, nothing older than the horizon."""
-
-    NOW = CYCLE + timedelta(hours=2)
-
-    @staticmethod
-    def snapshot_at(underlying, cycle, status, quote_offsets_s, **overrides):
-        rows = tuple(
-            make_quote(quote_time=cycle + timedelta(seconds=s), option_symbol=f"X{i}")
-            for i, s in enumerate(quote_offsets_s)
-        )
-        return make_snapshot(
-            underlying=underlying,
-            cycle_id=cycle,
-            fetched_at=cycle + timedelta(seconds=10),
-            source_status=status,
-            rows=rows,
-            **overrides,
-        )
-
-    async def test_rebuilds_from_last_accepted_snapshot_only(self, chain_session_factory):
-        c1, c2 = CYCLE, CYCLE + timedelta(minutes=5)
-        snapshots = [
-            # AAA: later snapshot is stale — state must come from c1, not c2
-            self.snapshot_at("AAA", c1, SourceStatus.OK, [1, 3, 5]),
-            self.snapshot_at("AAA", c2, SourceStatus.STALE, [-800, -790, -780]),
-            # BBB: two accepted cycles — state comes from the later one
-            self.snapshot_at("BBB", c1, SourceStatus.OK, [2, 4]),
-            self.snapshot_at("BBB", c2, SourceStatus.PARTIAL, [7, 9, 11]),
-            # CCC: only tombstones — contributes no state
-            self.snapshot_at("CCC", c2, SourceStatus.FAILED, []),
-        ]
-        async with chain_session_factory() as session:
-            async with session.begin():
-                repo = ChainSnapshotRepository(session)
-                for snapshot in snapshots:
-                    await repo.insert(snapshot)
-            medians = await ChainSnapshotRepository(session).last_accepted_median_quote_times(
-                Dataset.CURATED_5M, now=self.NOW
-            )
-
-        assert medians == {
-            "AAA": c1 + timedelta(seconds=3),
-            "BBB": c2 + timedelta(seconds=9),
-        }
-
-    async def test_snapshots_beyond_horizon_contribute_no_state(self, chain_session_factory):
-        old_cycle = self.NOW - ChainSnapshotRepository.RESTART_STATE_HORIZON - timedelta(hours=1)
-        async with chain_session_factory() as session:
-            async with session.begin():
-                await ChainSnapshotRepository(session).insert(
-                    self.snapshot_at("DDD", old_cycle, SourceStatus.OK, [1, 2, 3])
-                )
-            medians = await ChainSnapshotRepository(session).last_accepted_median_quote_times(
-                Dataset.CURATED_5M, now=self.NOW
-            )
-        assert medians == {}
-
-    async def test_other_dataset_is_invisible(self, chain_session_factory):
-        async with chain_session_factory() as session:
-            async with session.begin():
-                await ChainSnapshotRepository(session).insert(
-                    self.snapshot_at("EEE", CYCLE, SourceStatus.OK, [1], dataset=Dataset.EOD_FULL)
-                )
-            medians = await ChainSnapshotRepository(session).last_accepted_median_quote_times(
-                Dataset.CURATED_5M, now=self.NOW
-            )
-        assert medians == {}

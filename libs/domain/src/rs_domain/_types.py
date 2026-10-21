@@ -9,7 +9,7 @@ from pydantic import AfterValidator
 def _require_utc(value: datetime) -> datetime:
     """Reject naive datetimes and non-UTC offsets at the validation boundary.
 
-    Binding convention (S002): every datetime in the domain is timezone-aware
+    Binding convention: every datetime in the domain is timezone-aware
     UTC. Eastern Time exists only inside the TradingCalendar adapter and
     presentation code.
 

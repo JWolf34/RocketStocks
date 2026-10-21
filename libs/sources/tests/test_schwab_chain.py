@@ -45,7 +45,7 @@ async def test_bounded_params_from_injected_clock():
     ((symbol, kwargs),) = client.calls
     assert symbol == "SPY"
     # Exactly the two bounding kwargs (schwab-py 1.5.1 names) - everything
-    # else stays server-default; window/cap are client-side (ADR-0032 D7).
+    # else stays server-default; window/cap are client-side.
     assert kwargs == {
         "from_date": date(2026, 7, 16),
         "to_date": date(2026, 7, 16) + timedelta(days=30),

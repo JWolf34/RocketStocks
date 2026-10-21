@@ -1,9 +1,8 @@
 """Token bootstrap: write the Schwab OAuth token into the DB row (rev-002).
 
     python -m rs_ingest.tools.login --from-file data/schwab-spike-token.json
-    python -m rs_ingest.tools.login          # browser OAuth flow (fallback,
-                                             # and the weekly re-auth path
-                                             # until ADR-0016 lands)
+    python -m rs_ingest.tools.login          # browser OAuth flow (first login;
+                                             # later logins use /setup schwab)
 
 The browser flow runs schwab-py's login against a temp file, then imports it —
 same code path as --from-file, and we stay off schwab-py's token internals.

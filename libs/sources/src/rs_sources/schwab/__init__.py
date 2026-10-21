@@ -1,7 +1,6 @@
 """Every Schwab call: client factory, option chains, quote and daily history.
 
-The REST adapters keep schwab-py and authlib inside this package; the ingest
-stream session still uses schwab-py directly until slice 4 reshapes it.
+The REST adapters keep schwab-py and authlib inside this package.
 """
 
 from rs_sources.schwab.chain import DTE_BOUND, ChainFetchError, SchwabChainFetch

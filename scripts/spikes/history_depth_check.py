@@ -1,5 +1,5 @@
 """ADR-0022 depth check: how far back does Schwab price history actually reach
-per frequency? (throwaway — measured facts live in docs/foundation/research/vendor-stack.md, "Measured Schwab facts")
+per frequency? (throwaway — measured facts live in docs/reference/schwab-facts.md)
 
 Requests each frequency with a start far beyond the expected window and reports
 the earliest candle returned. Working figures under test: ~7 days @ 1-min,

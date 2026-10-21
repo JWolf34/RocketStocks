@@ -1,11 +1,10 @@
-"""Prometheus exposition for the side-port services (ADR-0015, S006 pin #6).
+"""Prometheus exposition for the side-port services.
 
-The one home for exposition decisions (S004 pin #8): ingest and bot keep
+The one home for exposition decisions: ingest and bot keep
 their plain counter dicts as the increment API — and their counter log
 lines — while DictCounterCollector reads the same dicts at scrape time and
 emits them with Counter type metadata, so rate()/increase() work without
-reopening the accepted S003/S004 internals. serve is untouched: its per-app
-registry behind API-key auth (S005) stands.
+reopening the services' counter internals.
 """
 
 import threading
@@ -48,11 +47,11 @@ class DictCounterCollector(Collector):
 
 
 class LabeledDictCounterCollector(Collector):
-    """One Counter family from a {label_value: count} dict (S008): the dict
+    """One Counter family from a {label_value: count} dict: the dict
     stays the service's increment API — seeded with every label value at
     construction so no series appears from nowhere mid-scrape — and each key
-    becomes one labeled sample, read live at scrape time. `name` is bare
-    (ADR-0015); CounterMetricFamily adds the `_total` sample suffix."""
+    becomes one labeled sample, read live at scrape time. `name` is bare;
+    CounterMetricFamily adds the `_total` sample suffix."""
 
     def __init__(self, name: str, label_name: str, counters: Mapping[str, int]) -> None:
         self._name = name
@@ -71,8 +70,8 @@ class LabeledDictCounterCollector(Collector):
 
 
 class CallableGaugeCollector(Collector):
-    """A Gauge computed at scrape time from a zero-arg callable (S008:
-    source_last_success_seconds — 'seconds since' must be evaluated when the
+    """A Gauge computed at scrape time from a zero-arg callable (for
+    source_last_success_seconds, 'seconds since' must be evaluated when the
     scrape happens, not when something last incremented). A None result emits
     no sample: the series is absent until the measured event first occurs,
     which alert rules can distinguish from a huge value."""

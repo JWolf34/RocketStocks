@@ -60,25 +60,6 @@ class BenchmarkFact(BaseModel):
     quote_time: UtcDatetime
 
 
-class FilingFact(BaseModel):
-    model_config = ConfigDict(frozen=True)
-
-    form: str
-    filing_date: date
-    items: tuple[str, ...]
-    url: str
-
-
-class RecentFilingsFact(BaseModel):
-    """The newest 8-Ks within `window_days` before the alert; empty means none."""
-
-    model_config = ConfigDict(frozen=True)
-
-    status: Literal["ok"] = "ok"
-    window_days: PositiveInt
-    filings: tuple[FilingFact, ...]
-
-
 class NextEarningsFact(BaseModel):
     """`estimated` marks a date derived from the last results filing rather than
     listed by the earnings calendar. `time_of_day` is `pre_market`,
@@ -93,21 +74,24 @@ class NextEarningsFact(BaseModel):
 
 
 class SurgeFacts(BaseModel):
+    """Unknown keys are ignored on read, so a version 1 payload (which also
+    carried a `recent_filings` fact) still parses."""
+
     model_config = ConfigDict(frozen=True)
 
     price_move: Annotated[PriceMoveFact | FactUnavailable, Field(discriminator="status")]
     volume: Annotated[VolumeFact | FactUnavailable, Field(discriminator="status")]
-    recent_filings: Annotated[RecentFilingsFact | FactUnavailable, Field(discriminator="status")]
     next_earnings: Annotated[NextEarningsFact | FactUnavailable, Field(discriminator="status")]
     benchmark: Annotated[BenchmarkFact | FactUnavailable, Field(discriminator="status")]
 
 
-class AttentionSurgePayload(BaseModel):
+class PopularitySurgePayload(BaseModel):
     """The decision inputs (what the rule saw) plus the facts block."""
 
     model_config = ConfigDict(frozen=True)
 
-    version: Literal[1] = 1
+    # 2 dropped the `recent_filings` fact; stored version 1 payloads stay readable.
+    version: Literal[1, 2] = 2
     rule_version: str
     polled_at: UtcDatetime
     fired: tuple[Literal["mention_surge", "rank_jump"], ...]
