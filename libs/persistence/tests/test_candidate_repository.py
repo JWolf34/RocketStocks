@@ -125,3 +125,27 @@ async def test_a_rolled_back_candidate_leaves_nothing(session_factory):
 
     async with session_factory() as s:
         assert (await s.scalars(select(CandidateRow))).all() == []
+
+
+async def test_first_hits_by_day_takes_the_earliest_per_stock_and_eastern_day(session_factory):
+    evening = HIT  # 23:30 EDT on July 6
+    hits = [
+        ("ABC", "2", evening + timedelta(minutes=30)),  # 00:00 EDT on July 7: a new Eastern day
+        ("ABC", "2", evening),
+        ("ABC", "2", evening - timedelta(hours=1)),
+        ("ABC", "1", evening - timedelta(hours=5)),  # another rule version
+        ("XYZ", "2", evening),
+    ]
+    for symbol, version, hit_at in hits:
+        await _insert(
+            session_factory, CANDIDATE.model_copy(update={"symbol": symbol, "rule_version": version, "hit_at": hit_at})
+        )
+
+    async with session_factory() as s:
+        first = await CandidateRepository(s).first_hits_by_day("popularity_surge", "2")
+
+    assert first == {
+        ("ABC", date(2026, 7, 6)): evening - timedelta(hours=1),
+        ("ABC", date(2026, 7, 7)): evening + timedelta(minutes=30),
+        ("XYZ", date(2026, 7, 6)): evening,
+    }

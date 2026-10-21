@@ -29,7 +29,7 @@ uv workspace: root `pyproject.toml` lists the members, one `uv.lock`, one shared
 legacy/       # v1, moved intact (legacy/src/rocketstocks/, legacy/tests/, legacy/pyproject.toml)
 libs/         # v2 shared libraries: domain, persistence, query, observability, analysis, sources
 services/     # v2 long-running daemons (ingest, bot)
-tools/        # v2 one-shot CLIs (migrate, backfill, research)
+tools/        # v2 one-shot CLIs (migrate, backfill)
 ```
 
 v2 naming rule: import name = `rs_` + member dir (`libs/domain` → `rs_domain`); every member is `<root>/<member>/` with `pyproject.toml` + `src/rs_<member>/` + `tests/`. `rs_common`/`rs_utils` grab-bags are banned.
@@ -138,7 +138,7 @@ docker compose -f docker-compose.v2.yml up -d
 # v2 operator tools (host-side, shared venv; exact procedures in docs/operations.md)
 .venv/bin/python -m rs_backfill verify-offset --dump PATH   # then popularity-import --dump PATH --zone ZONE
 .venv/bin/python -m rs_ingest.tools.login                   # first Schwab login; later logins use /setup schwab
-RS_RESEARCH_DB_URL=... .venv/bin/python -m rs_research event-study popularity_surge
+.venv/bin/python -m rs_ingest.outcomes                     # RS_DB_URL set; the nightly Track record job, run by hand
 ```
 
 ## Environment Variables (`.env`)

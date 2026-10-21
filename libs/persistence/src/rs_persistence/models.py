@@ -43,7 +43,6 @@ from rs_domain import (
     Delivery,
     PopularityOrigin,
     SourceStatus,
-    TrackRecordInput,
     Verdict,
 )
 
@@ -222,30 +221,49 @@ class UnpricedSymbolRow(Base):
     reason: Mapped[str] = mapped_column(Text)
 
 
+class OutcomeRow(Base):
+    """outcome: what one case did at one horizon. Derived from daily bars and rewritten
+    whole for a Trigger version by the nightly job."""
+
+    __tablename__ = "outcome"
+
+    trigger: Mapped[str] = mapped_column(Text, primary_key=True)
+    rule_version: Mapped[str] = mapped_column(Text, primary_key=True)
+    symbol: Mapped[str] = mapped_column(Text, primary_key=True)
+    day: Mapped[date] = mapped_column(Date, primary_key=True)
+    horizon: Mapped[int] = mapped_column(SmallInteger, primary_key=True)
+    case_at: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True))
+    hit_at: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True))
+    live: Mapped[bool] = mapped_column(Boolean)
+    entry_session: Mapped[date] = mapped_column(Date)
+    exit_session: Mapped[date] = mapped_column(Date)
+    stock_return: Mapped[float] = mapped_column(Double)
+    benchmark_return: Mapped[float] = mapped_column(Double)
+    excess_return: Mapped[float] = mapped_column(Double)
+    typical_move: Mapped[float | None] = mapped_column(Double)
+    move_multiple: Mapped[float | None] = mapped_column(Double)
+    ordinary_share: Mapped[float | None] = mapped_column(Double)
+
+
 class TrackRecordRow(Base):
-    """track_record: append-only, one row per study run."""
+    """track_record: one row per Trigger version and horizon, rewritten by the nightly job."""
 
     __tablename__ = "track_record"
-    __table_args__ = (
-        Index("ix_track_record_lookup", "trigger", "rule_version", "input", "computed_at"),
-    )
 
-    id: Mapped[int] = mapped_column(BigInteger, Identity(always=True), primary_key=True)
-    trigger: Mapped[str] = mapped_column(Text)
-    rule_version: Mapped[str] = mapped_column(Text)
+    trigger: Mapped[str] = mapped_column(Text, primary_key=True)
+    rule_version: Mapped[str] = mapped_column(Text, primary_key=True)
+    horizon: Mapped[int] = mapped_column(SmallInteger, primary_key=True)
     computed_at: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True))
-    input: Mapped[str] = mapped_column(
-        ENUM(*(m.value for m in TrackRecordInput), name="track_record_input", create_type=False)
-    )
-    n: Mapped[int] = mapped_column(Integer)
-    n_unpriced: Mapped[int] = mapped_column(Integer, server_default=text("0"))
-    hit_rate_1d: Mapped[float | None] = mapped_column(Double)
-    hit_rate_5d: Mapped[float | None] = mapped_column(Double)
-    hit_rate_10d: Mapped[float | None] = mapped_column(Double)
-    median_excess_1d: Mapped[float | None] = mapped_column(Double)
-    median_excess_5d: Mapped[float | None] = mapped_column(Double)
-    median_excess_10d: Mapped[float | None] = mapped_column(Double)
-    survivorship_caveat: Mapped[str] = mapped_column(Text)
+    cases: Mapped[int] = mapped_column(Integer)
+    live_cases: Mapped[int] = mapped_column(Integer)
+    outcomes: Mapped[int] = mapped_column(Integer)
+    unpriced: Mapped[int] = mapped_column(Integer)
+    split_excluded: Mapped[int] = mapped_column(Integer)
+    no_move_size: Mapped[int] = mapped_column(Integer)
+    share_at_2x: Mapped[float | None] = mapped_column(Double)
+    ordinary_share: Mapped[float | None] = mapped_column(Double)
+    median_multiple: Mapped[float | None] = mapped_column(Double)
+    median_excess: Mapped[float | None] = mapped_column(Double)
 
 
 class ImportVerificationRow(Base):

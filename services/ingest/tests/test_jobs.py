@@ -53,6 +53,7 @@ async def _trip(reason: str) -> None: ...
 def _deps(session_factory, schwab, http: httpx.AsyncClient | None = None) -> Dependencies:
     return Dependencies(
         session_factory=session_factory,
+        db_url="postgresql+psycopg://ingest@db/rocketstocks",
         clock=FixedClock(),
         schwab=schwab,
         schwab_limiter=RateLimiter(6000),

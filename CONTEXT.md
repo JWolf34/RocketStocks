@@ -37,7 +37,7 @@ The one per-stock view of RocketStocks' own data, attached to Alerts and availab
 _Avoid_: dossier, stock report, data card
 
 **Outcome**:
-What a stock did after an Alert, at 1, 5 and 20 trading days.
+What a stock did after a Trigger hit, posted or not, at 1, 5 and 20 trading days.
 _Avoid_: result, return
 
 **Track record**:
@@ -73,5 +73,5 @@ A stored record that a fetch was attempted and failed; it means "no observation"
 - A stock is **Unusual** when it is far from its own **Baseline**.
 - A **Trigger** decides a stock is worth attention now; an **Alert** carries its **Triggers** as the reasons.
 - An **Alert** carries a talking point, the **Track record** and the next **Catalyst**, and comes with a **Report**.
-- An **Outcome** is what a stock did after an **Alert**; a **Track record** summarises **Outcomes** for one **Trigger**.
+- An **Outcome** is what a stock did after a **Trigger** hit, posted or not; a **Track record** summarises **Outcomes** for one **Trigger**.
 - An **Alert** is only ever about a stock; a message to the operator is an **Ops ping**.

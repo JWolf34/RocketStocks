@@ -72,7 +72,6 @@ root_packages = [
     "rs_observability",
     "rs_persistence",
     "rs_query",
-    "rs_research",
     "rs_sources",
 ]
 
@@ -89,7 +88,6 @@ forbidden_modules = [
     "rs_observability",
     "rs_persistence",
     "rs_query",
-    "rs_research",
     "rs_sources",
 ]
 
@@ -105,7 +103,6 @@ forbidden_modules = [
     "rs_observability",
     "rs_persistence",
     "rs_query",
-    "rs_research",
     "rs_sources",
 ]
 
@@ -120,7 +117,7 @@ source_modules = [
     "rs_query",
     "rs_sources",
 ]
-forbidden_modules = ["rs_backfill", "rs_bot", "rs_ingest", "rs_migrate", "rs_research"]
+forbidden_modules = ["rs_backfill", "rs_bot", "rs_ingest", "rs_migrate"]
 
 [[tool.importlinter.contracts]]
 name = "services never import each other"
@@ -143,15 +140,5 @@ forbidden_modules = [
     "rs_ingest",
     "rs_migrate",
     "rs_observability",
-    "rs_research",
     "rs_sources",
 ]
-
-[[tool.importlinter.contracts]]
-name = "rs_research reads through rs_query and writes through rs_persistence"
-type = "forbidden"
-source_modules = ["rs_research"]
-forbidden_modules = ["rs_backfill", "rs_bot", "rs_ingest", "rs_migrate", "rs_sources"]
-# The CLI is the composition root, so it alone wires the exchange-calendar
-# adapter; the study maths take the rs_domain TradingCalendar port.
-ignore_imports = ["rs_research.__main__ -> rs_sources.calendar"]

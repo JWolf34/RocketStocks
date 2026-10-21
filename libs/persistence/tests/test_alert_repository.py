@@ -10,7 +10,7 @@ from sqlalchemy import func, select, text
 from sqlalchemy.exc import IntegrityError
 
 from rs_domain import Alert, Delivery
-from rs_persistence import AlertRepository, AlertRow
+from rs_persistence import AlertPost, AlertRepository, AlertRow
 from rs_persistence.alerts import alert_from_row
 
 ALERT = Alert(
@@ -395,3 +395,32 @@ async def test_increment_post_attempts_ignores_posted_and_unknown(session_factor
         repo = AlertRepository(s)
         assert await repo.increment_post_attempts(alert_id) is None
         assert await repo.increment_post_attempts(alert_id + 999) is None
+
+
+async def test_posts_by_day_reports_each_stocks_alert_and_when_it_posted(session_factory):
+    def surge(symbol: str, **overrides) -> Alert:
+        fields = {"symbol": symbol, "trigger": "popularity_surge", "rule_version": "2"}
+        return ALERT.model_copy(update=fields | overrides)
+
+    async with session_factory() as s:
+        repo = AlertRepository(s)
+        posted_id = await repo.insert(surge("AAA"))
+        await repo.insert(surge("BBB"))
+        stale_id = await repo.insert(surge("DDD"))
+        # another rule version and a reply are not this version's Alert
+        await repo.insert(surge("CCC", rule_version="1"))
+        await repo.insert(surge("AAA", reply_to=posted_id))
+        posted_at = await repo.mark_posted(posted_id, message_id=11)
+        await repo.mark_stale(stale_id)
+        await s.commit()
+
+    async with session_factory() as s:
+        posts = await AlertRepository(s).posts_by_day("popularity_surge", "2")
+
+    triggered = ALERT.triggered_at
+    day = date(2026, 7, 6)
+    assert posts == {
+        ("AAA", day): AlertPost(delivery=Delivery.POSTED, triggered_at=triggered, posted_at=posted_at),
+        ("BBB", day): AlertPost(delivery=Delivery.PENDING, triggered_at=triggered),
+        ("DDD", day): AlertPost(delivery=Delivery.STALE, triggered_at=triggered),
+    }

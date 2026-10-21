@@ -49,6 +49,16 @@ class PendingAlert(BaseModel):
     sending_at: datetime | None = None
 
 
+class AlertPost(BaseModel):
+    """How one Alert stands: its delivery, when it was triggered, and when it posted (None until it has)."""
+
+    model_config = ConfigDict(frozen=True)
+
+    delivery: Delivery
+    triggered_at: datetime
+    posted_at: datetime | None = None
+
+
 def alert_from_row(row: AlertRow) -> Alert:
     return Alert(
         symbol=row.symbol,
@@ -105,6 +115,25 @@ class AlertRepository:
             )
         )
         return set(rows)
+
+    async def posts_by_day(self, trigger: str, rule_version: str) -> dict[tuple[str, date], AlertPost]:
+        """Each stock's Alert (not a reply) of one Trigger version by Eastern day: how its
+        delivery stands, when it was triggered and, once posted, when."""
+        result = await self._session.execute(
+            select(AlertRow.symbol, AlertRow.day, AlertRow.delivery, AlertRow.triggered_at, AlertRow.posted_at).where(
+                AlertRow.trigger == trigger,
+                AlertRow.rule_version == rule_version,
+                AlertRow.reply_to.is_(None),
+            )
+        )
+        return {
+            (symbol, day): AlertPost(
+                delivery=Delivery(delivery),
+                triggered_at=triggered.astimezone(UTC),
+                posted_at=None if posted is None else posted.astimezone(UTC),
+            )
+            for symbol, day, delivery, triggered, posted in result
+        }
 
     async def list_undelivered(self, max_attempts: int | None = None) -> list[PendingAlert]:
         """Every Alert and reply still pending or sending, id order, no LIMIT - the bot's

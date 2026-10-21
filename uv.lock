@@ -25,7 +25,6 @@ members = [
     "rs-observability",
     "rs-persistence",
     "rs-query",
-    "rs-research",
     "rs-sources",
 ]
 
@@ -2457,12 +2456,14 @@ name = "rs-analysis"
 version = "0.1.0"
 source = { editable = "libs/analysis" }
 dependencies = [
+    { name = "numpy" },
     { name = "pydantic" },
     { name = "rs-domain" },
 ]
 
 [package.metadata]
 requires-dist = [
+    { name = "numpy", specifier = ">=2.4.0" },
     { name = "pydantic", specifier = ">=2.13.4" },
     { name = "rs-domain", editable = "libs/domain" },
 ]
@@ -2653,43 +2654,6 @@ requires-dist = [
     { name = "rs-persistence", editable = "libs/persistence" },
     { name = "sqlalchemy", extras = ["asyncio"], specifier = ">=2" },
 ]
-
-[[package]]
-name = "rs-research"
-version = "0.1.0"
-source = { editable = "tools/research" }
-dependencies = [
-    { name = "numpy" },
-    { name = "pandas" },
-    { name = "rs-analysis" },
-    { name = "rs-domain" },
-    { name = "rs-observability" },
-    { name = "rs-persistence" },
-    { name = "rs-query" },
-    { name = "rs-sources" },
-    { name = "sqlalchemy", extra = ["asyncio"] },
-]
-
-[package.dev-dependencies]
-dev = [
-    { name = "rs-migrate" },
-]
-
-[package.metadata]
-requires-dist = [
-    { name = "numpy", specifier = ">=2.4.0" },
-    { name = "pandas", specifier = ">=3.0" },
-    { name = "rs-analysis", editable = "libs/analysis" },
-    { name = "rs-domain", editable = "libs/domain" },
-    { name = "rs-observability", editable = "libs/observability" },
-    { name = "rs-persistence", editable = "libs/persistence" },
-    { name = "rs-query", editable = "libs/query" },
-    { name = "rs-sources", editable = "libs/sources" },
-    { name = "sqlalchemy", extras = ["asyncio"], specifier = ">=2" },
-]
-
-[package.metadata.requires-dev]
-dev = [{ name = "rs-migrate", editable = "tools/migrate" }]
 
 [[package]]
 name = "rs-sources"

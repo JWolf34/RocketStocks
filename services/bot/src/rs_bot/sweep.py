@@ -35,6 +35,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from rs_bot.counters import new_counters
 from rs_bot.render import POPULARITY_SURGE, render, render_generic
 from rs_domain import (
+    ALERT_STALE_AFTER,
     Alert,
     Clock,
     Delivery,
@@ -45,12 +46,12 @@ from rs_domain import (
 )
 from rs_observability import HealthTracker, Source, notify_ops, unit_of_work
 from rs_persistence import AlertDelivery, AlertRepository, PendingAlert
-from rs_query import current_track_record
+from rs_query import track_records
 
 logger = logging.getLogger(__name__)
 
 # After an outage, an Alert or reply older than this is recorded but not posted.
-STALE_AFTER = timedelta(hours=1)
+STALE_AFTER = ALERT_STALE_AFTER
 
 # Discord's answer about one embed it will not take (a malformed or oversized body).
 _REJECTED_EMBED_STATUS = 400
@@ -153,20 +154,20 @@ class SweepWorker:
         self,
         session: AsyncSession,
         item: PendingAlert,
-        cache: dict[tuple[str, str], tuple[TrackRecord | None, bool]],
-    ) -> tuple[TrackRecord | None, bool]:
-        """(track record, read failed), read once per rule version per sweep."""
+        cache: dict[tuple[str, str], tuple[list[TrackRecord], bool]],
+    ) -> tuple[list[TrackRecord], bool]:
+        """(track record rows, read failed), read once per rule version per sweep."""
         alert = item.alert
         if alert.trigger != POPULARITY_SURGE or alert.rule_version is None:
-            return None, False
+            return [], False
         key = (alert.trigger, alert.rule_version)
         if key not in cache:
             try:
-                cache[key] = (await current_track_record(session, *key), False)
+                cache[key] = (await track_records(session, *key), False)
             except Exception:
                 logger.exception("track record read failed for %s v%s", *key)
                 await session.rollback()
-                cache[key] = (None, True)
+                cache[key] = ([], True)
         return cache[key]
 
     async def _report_discord(self, exc: Exception) -> None:
@@ -184,7 +185,7 @@ class SweepWorker:
             repo = AlertRepository(session)
             pending = await repo.list_undelivered(self._max_attempts)
             loop = asyncio.get_running_loop()
-            track_records: dict[tuple[str, str], tuple[TrackRecord | None, bool]] = {}
+            track_record_cache: dict[tuple[str, str], tuple[list[TrackRecord], bool]] = {}
             for item in pending:
                 if self._stopping.is_set():
                     break
@@ -195,7 +196,7 @@ class SweepWorker:
                 with unit_of_work(alert_id=item.id):
                     if self._retry_not_before.get(item.id, 0.0) > loop.time():
                         continue  # failed moments ago; a NOTIFY burst must not burn the cap
-                    await self._deliver(session, repo, item, track_records, loop)
+                    await self._deliver(session, repo, item, track_record_cache, loop)
             await self._thread_stragglers(session, repo)
         if pending:
             logger.info("counters: %s", self.counters)
@@ -205,7 +206,7 @@ class SweepWorker:
         session: AsyncSession,
         repo: AlertRepository,
         item: PendingAlert,
-        track_records: dict[tuple[str, str], tuple[TrackRecord | None, bool]],
+        track_record_cache: dict[tuple[str, str], tuple[list[TrackRecord], bool]],
         loop: asyncio.AbstractEventLoop,
     ) -> None:
         alert = item.alert
@@ -242,7 +243,7 @@ class SweepWorker:
                 await self._record_stale(session, repo, item, "its Alert has no stored message")
                 return
 
-        track_record, track_record_failed = await self._track_record(session, item, track_records)
+        track_record, track_record_failed = await self._track_record(session, item, track_record_cache)
         if item.post_attempts + 1 >= self._max_attempts:
             # Last try: the plain embed cannot be rejected for its shape.
             embed = render_generic(item)

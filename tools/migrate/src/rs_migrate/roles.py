@@ -85,10 +85,18 @@ GRANTS: dict[str, dict[str, tuple[str, ...]]] = {
     "schwab_token_notice": {
         "bot": _SELECT_INSERT,
     },
+    # Rewritten whole for a Trigger version by the nightly job (delete, insert) and read by the rest.
+    "outcome": {
+        "ingest": ("SELECT", "INSERT", "DELETE"),
+        "mcp": _SELECT,
+        "research": _SELECT,
+    },
+    # Upserted per horizon by the nightly job; the bot shows it beside an Alert.
     "track_record": {
+        "ingest": ("SELECT", "INSERT", "UPDATE"),
         "bot": _SELECT,
         "mcp": _SELECT,
-        "research": _SELECT_INSERT,
+        "research": _SELECT,
     },
     "unpriced_symbol": {
         "ingest": ("SELECT", "INSERT", "UPDATE", "DELETE"),

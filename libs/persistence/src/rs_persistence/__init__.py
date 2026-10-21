@@ -7,6 +7,7 @@ from alembic.config import Config
 from rs_persistence.alerts import (
     NOTIFY_CHANNEL,
     AlertDelivery,
+    AlertPost,
     AlertRepository,
     PendingAlert,
 )
@@ -30,6 +31,7 @@ from rs_persistence.models import (
     CandidateRow,
     DailyBarRow,
     ImportVerificationRow,
+    OutcomeRow,
     PopularitySnapshotRow,
     SchwabAuthRequestRow,
     SchwabTokenNoticeRow,
@@ -62,6 +64,7 @@ __all__ = [
     "AUTH_REQUEST_WINDOW",
     "NOTIFY_CHANNEL",
     "AlertDelivery",
+    "AlertPost",
     "AlertRepository",
     "AlertRow",
     "AuthRequestRepository",
@@ -77,6 +80,7 @@ __all__ = [
     "ImportVerification",
     "ImportVerificationRepository",
     "ImportVerificationRow",
+    "OutcomeRow",
     "PendingAlert",
     "PopularityRepository",
     "PopularitySnapshotRow",

@@ -40,6 +40,8 @@ from rs_sources.schwab import SchwabAuthError, SchwabMarketData
 @dataclass(frozen=True)
 class Dependencies:
     session_factory: async_sessionmaker[AsyncSession]
+    # What the subprocess jobs connect with: they build their own pool.
+    db_url: str
     clock: Clock
     schwab: SchwabSession
     # One budget for every Schwab job: acquire before each request.
@@ -87,7 +89,7 @@ def register_jobs(cron: CronTable, deps: Dependencies) -> None:
             timeout=timedelta(hours=3),
         )
     )
-    cron.register(track_record_job())
+    cron.register(track_record_job(deps.db_url))
     # One calendar for the warm job and the poll's lookups, so they share a cache.
     nasdaq = NasdaqEarningsCalendar(deps.http, deps.clock)
 
