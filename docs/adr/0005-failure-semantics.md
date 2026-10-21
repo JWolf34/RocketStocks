@@ -15,9 +15,8 @@ We decided on one policy for both.
 - **Missing facts are labelled.**
   Every number shown carries its As-of time; a fact that cannot be computed is shown as missing with the reason.
   An Alert whose supporting facts are missing still posts, with them labelled, and pings the operator.
-- **Freshness lives on stored rows**, as a fetch time and a status (`ok`, `partial`, `failed`, `stale`, `skipped`), and in per-source health metrics.
+- **Freshness lives on stored rows**, as a fetch time and a status (`ok` or one of a small set of non-ok reasons), and in per-source health metrics.
   In-process data carries no freshness of its own.
-  `stale` marks a snapshot rejected because its quote time went backwards; `skipped` marks a fetch dropped on overrun, distinguishable from a failed fetch.
 - **Ops pings** fire when a source starts failing and again when it clears.
   A failure is a source failing (or more than about 5% of a sweep failing), not one stock.
 
