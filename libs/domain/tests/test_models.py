@@ -14,6 +14,7 @@ from rs_domain import (
     SourceStatus,
     Verdict,
     eastern_day,
+    eastern_day_start,
 )
 
 UTC_NOON = datetime(2026, 7, 6, 16, 0, tzinfo=UTC)
@@ -199,3 +200,22 @@ class TestEasternDay:
     def test_refuses_a_naive_reading(self):
         with pytest.raises(ValueError, match="naive"):
             eastern_day(datetime(2026, 7, 6, 16, 0))
+
+
+class TestEasternDayStart:
+    @pytest.mark.parametrize(
+        ("day", "start"),
+        [
+            (date(2026, 7, 7), datetime(2026, 7, 7, 4, 0, tzinfo=UTC)),
+            (date(2026, 12, 8), datetime(2026, 12, 8, 5, 0, tzinfo=UTC)),
+        ],
+    )
+    def test_is_new_york_midnight_in_utc(self, day, start):
+        assert eastern_day_start(day) == start
+        assert eastern_day(start) == day
+        assert eastern_day(start - timedelta(microseconds=1)) == day - timedelta(days=1)
+
+    def test_a_day_is_23_hours_on_spring_forward_and_25_on_fall_back(self):
+        spring, fall = date(2026, 3, 8), date(2026, 11, 1)
+        assert eastern_day_start(spring + timedelta(days=1)) - eastern_day_start(spring) == timedelta(hours=23)
+        assert eastern_day_start(fall + timedelta(days=1)) - eastern_day_start(fall) == timedelta(hours=25)

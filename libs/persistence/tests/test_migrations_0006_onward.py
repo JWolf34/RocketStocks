@@ -1,4 +1,4 @@
-"""Migrations 0006-0020 against Timescale: the upgrade/downgrade round trip and
+"""Migrations 0006-0021 against Timescale: the upgrade/downgrade round trip and
 the physical layout (hypertables, compression, constraints)."""
 
 import uuid
@@ -449,6 +449,37 @@ def test_0020_flags_the_stored_bars_adjusted_and_downgrade_flags_them_unadjusted
         command.downgrade(config, "0019")
         with engine.connect() as conn:
             assert conn.execute(text("SELECT count(*) FROM daily_bar WHERE NOT adjusted")).scalar_one() == 3
+
+        command.upgrade(config, "head")
+    finally:
+        engine.dispose()
+
+
+def test_0021_adds_candidate_scores_and_keeps_existing_candidates_unscored(scratch_url):
+    config = migration_config(scratch_url)
+    engine = create_engine(scratch_url)
+    try:
+        command.upgrade(config, "0020")
+        with engine.begin() as conn:
+            conn.execute(
+                text(
+                    "INSERT INTO candidate (trigger, rule_version, symbol, hit_at, inputs, verdict, decided_at)"
+                    " VALUES ('t', '2', 'AAA', '2026-10-19 15:00+00', '{}', 'repeat', '2026-10-19 15:00+00')"
+                )
+            )
+
+        command.upgrade(config, "head")
+        with engine.connect() as conn:
+            assert conn.execute(text("SELECT raw_score, strength FROM candidate")).all() == [(None, None)]
+            index = conn.execute(
+                text("SELECT indexdef FROM pg_indexes WHERE indexname = 'ix_candidate_announced_day'")
+            ).scalar_one()
+        assert "(day) WHERE (verdict = ANY (ARRAY['posted'::candidate_verdict, 'reply'::candidate_verdict]))" in index
+
+        command.downgrade(config, "0020")
+        insp = inspect(engine)
+        assert not {"raw_score", "strength"} & {c["name"] for c in insp.get_columns("candidate")}
+        assert "ix_candidate_announced_day" not in {i["name"] for i in insp.get_indexes("candidate")}
 
         command.upgrade(config, "head")
     finally:

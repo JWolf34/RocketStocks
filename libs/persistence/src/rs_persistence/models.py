@@ -151,6 +151,8 @@ class CandidateRow(Base):
         # A Trigger's candidates in a time window (strength ranks over the trailing 30 days).
         Index("ix_candidate_trigger_hit_at", "trigger", "hit_at"),
         Index("ix_candidate_symbol_day", "symbol", "day"),
+        # What an Eastern day has announced (the budget used, what each Alert carried).
+        Index("ix_candidate_announced_day", "day", postgresql_where=text("verdict IN ('posted', 'reply')")),
     )
 
     id: Mapped[int] = mapped_column(BigInteger, Identity(always=True), primary_key=True)
@@ -165,6 +167,8 @@ class CandidateRow(Base):
     )
     decided_at: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True))
     alert_id: Mapped[int | None] = mapped_column(BigInteger, ForeignKey("alerts.id"))
+    raw_score: Mapped[float | None] = mapped_column(Double)
+    strength: Mapped[float | None] = mapped_column(Double)
 
 
 class PopularitySnapshotRow(Base):

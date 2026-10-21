@@ -24,6 +24,8 @@ def candidate_from_row(row: CandidateRow) -> Candidate:
         verdict=Verdict(row.verdict),
         decided_at=row.decided_at.astimezone(UTC),
         alert_id=row.alert_id,
+        raw_score=row.raw_score,
+        strength=row.strength,
     )
 
 
@@ -61,6 +63,8 @@ class CandidateRepository:
                 verdict=candidate.verdict.value,
                 decided_at=candidate.decided_at,
                 alert_id=candidate.alert_id,
+                raw_score=candidate.raw_score,
+                strength=candidate.strength,
             )
             .on_conflict_do_nothing(
                 index_elements=[
@@ -95,3 +99,13 @@ class CandidateRepository:
             .group_by(CandidateRow.symbol, CandidateRow.day)
         )
         return {(symbol, day): first.astimezone(UTC) for symbol, day, first in result}
+
+    async def list_announced(self, day: date) -> list[Candidate]:
+        """The candidates the Eastern `day` announced (posted Alerts and replies, any
+        Trigger), in decision order."""
+        rows = await self._session.scalars(
+            select(CandidateRow)
+            .where(CandidateRow.day == day, CandidateRow.verdict.in_((Verdict.POSTED.value, Verdict.REPLY.value)))
+            .order_by(CandidateRow.hit_at, CandidateRow.id)
+        )
+        return [candidate_from_row(row) for row in rows]
