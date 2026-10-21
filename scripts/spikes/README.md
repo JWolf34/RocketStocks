@@ -5,7 +5,7 @@ written under `data/spike-findings/` (gitignored, local-only, never committed). 
 recordings stay local** under the same gitignored `data/` tree (stream JSONL in
 `data/spike-recordings/`, chain snapshots in `data/chain-snapshots/`) - never committed.
 Measured facts worth keeping are summarized by hand in
-`docs/foundation/research/vendor-stack.md` ("Measured Schwab facts"). These scripts are deleted once
+`docs/reference/schwab-facts.md`. These scripts are deleted once
 the Phase-2 session confirms no re-runs are needed.
 
 ## One-time setup (before Monday)
@@ -50,8 +50,8 @@ while the session is open). Passive 429s during the day are unlikely: the chain
 cadence is ~120 requests/hour against a documented ~120/minute limit, which is
 exactly why the probe exists.
 
-Then summarize anything durable in `docs/foundation/research/vendor-stack.md`
-("Measured Schwab facts"). Findings and raw data (`data/spike-findings/`,
+Then summarize anything durable in `docs/reference/schwab-facts.md`.
+Findings and raw data (`data/spike-findings/`,
 `data/spike-recordings/`, `data/chain-snapshots/`) live on this machine
 only - never in git (vendor-data rule).
 
