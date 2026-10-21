@@ -1,6 +1,6 @@
 # RocketStocks
 
-A Discord bot that delivers real-time stock market alerts and screener reports using technical analysis, sentiment data, and multiple financial APIs.
+A Discord bot that scans the whole market and posts a small number of stocks per day worth talking about, each with a Track record and a Report of RocketStocks' own data.
 
 ## Read this first
 
