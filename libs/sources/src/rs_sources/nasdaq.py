@@ -51,6 +51,15 @@ class ScheduledEarnings(BaseModel):
     time_of_day: EarningsTime | None
 
 
+class EarningsWarmError(SourceError):
+    """A warm that could not read every day; `attempted` days were requested and `failed` of them failed."""
+
+    def __init__(self, message: str, *, attempted: int, failed: int) -> None:
+        super().__init__(message)
+        self.attempted = attempted
+        self.failed = failed
+
+
 class NasdaqEarningsCalendar:
     def __init__(
         self,
@@ -85,7 +94,7 @@ class NasdaqEarningsCalendar:
 
         Days younger than half the TTL are skipped, so a run on a cadence under
         the TTL refreshes each day before it lapses and a fresh window costs no
-        requests. Every day is tried; any failures raise one SourceError at the end.
+        requests. Every day is tried; any failures raise one EarningsWarmError at the end.
         """
         refresh_after = self._cache_ttl / 2
         fetched, failed = 0, []
@@ -101,7 +110,11 @@ class NasdaqEarningsCalendar:
             else:
                 fetched += 1
         if failed:
-            raise SourceError(f"Nasdaq earnings warm failed for {len(failed)} day(s), first {failed[0]}")
+            raise EarningsWarmError(
+                f"Nasdaq earnings warm failed for {len(failed)} day(s), first {failed[0]}",
+                attempted=fetched + len(failed),
+                failed=len(failed),
+            )
         return fetched
 
     def _fresh(self, day: date, max_age: timedelta) -> bool:
