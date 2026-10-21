@@ -2487,6 +2487,7 @@ name = "rs-bot"
 version = "0.1.0"
 source = { editable = "services/bot" }
 dependencies = [
+    { name = "aiohttp" },
     { name = "discord-py" },
     { name = "psycopg", extra = ["binary"] },
     { name = "pydantic" },
@@ -2500,6 +2501,7 @@ dependencies = [
 
 [package.metadata]
 requires-dist = [
+    { name = "aiohttp" },
     { name = "discord-py", specifier = ">=2.4" },
     { name = "psycopg", extras = ["binary"], specifier = ">=3.3.4" },
     { name = "pydantic", specifier = ">=2.13.4" },
