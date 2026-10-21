@@ -11,6 +11,7 @@ threads, replies and the stale rule are in test_delivery."""
 import asyncio
 import json
 import logging
+import re
 from datetime import UTC, datetime
 from types import SimpleNamespace
 
@@ -191,7 +192,7 @@ async def test_surge_alert_is_posted_with_the_stored_track_record(session_factor
 
     await worker.sweep()
     (before,) = sender.sent
-    assert "No track record has been measured" in {f.name: f.value for f in before.fields}["Track record"]
+    assert "Not measured yet" in {f.name: f.value for f in before.fields}["Track record"]
 
     async with session_factory() as s:
         await TrackRecordRepository(s).upsert(
@@ -215,7 +216,8 @@ async def test_surge_alert_is_posted_with_the_stored_track_record(session_factor
     await worker.sweep()
 
     after = {f.name: f.value for f in sender.sent[-1].fields}
-    assert "5d: 77 Outcomes" in after["Track record"]
+    assert "90 cases, 3 live" in after["Track record"]
+    assert re.search(r"Outcomes\s+77", after["Track record"])
 
 
 async def test_run_sweeps_on_wake_without_waiting_interval(session_factory):
