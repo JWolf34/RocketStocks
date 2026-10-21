@@ -96,7 +96,22 @@ async def test_an_alert_is_sent_to_the_channel_with_the_row_id_as_its_nonce():
     message_id = await _sender(channel).send_alert(embed, nonce=7)
 
     assert message_id == 901
-    assert channel.sent == [{"embed": embed, "nonce": 7}]
+    (sent,) = channel.sent
+    assert (sent["embed"], sent["nonce"], sent["content"]) == (embed, 7, None)
+    allowed = sent["allowed_mentions"]
+    assert (allowed.everyone, allowed.users, allowed.roles) == (False, False, [])
+
+
+async def test_an_alert_names_its_roles_and_allows_exactly_those_mentions():
+    channel = _Channel()
+
+    await _sender(channel).send_alert(_embed(7), nonce=7, role_ids=[111, 222])
+
+    (sent,) = channel.sent
+    assert sent["content"] == "<@&111> <@&222>"
+    allowed = sent["allowed_mentions"]
+    assert [role.id for role in allowed.roles] == [111, 222]
+    assert (allowed.everyone, allowed.users, allowed.replied_user) == (False, False, False)
 
 
 async def test_a_reply_is_sent_to_the_thread_with_the_nonce_and_no_mentions_allowed():

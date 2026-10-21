@@ -37,6 +37,7 @@ from rs_persistence.models import (
     SchwabTokenNoticeRow,
     SchwabTokenRow,
     TrackRecordRow,
+    TriggerRoleRow,
     UnpricedSymbolRow,
     chain_snapshot_table,
 )
@@ -44,6 +45,7 @@ from rs_persistence.popularity import PopularityRepository
 from rs_persistence.token_notices import TokenNoticeRepository
 from rs_persistence.token_store import SchwabTokenStore
 from rs_persistence.track_records import TrackRecordRepository
+from rs_persistence.trigger_roles import TriggerRoleRepository
 
 
 def migration_config(db_url: str) -> Config:
@@ -89,6 +91,8 @@ __all__ = [
     "SchwabTokenRow",
     "SchwabTokenStore",
     "TokenNoticeRepository",
+    "TriggerRoleRepository",
+    "TriggerRoleRow",
     "UnpricedSymbolRow",
     "build_engine",
     "build_session_factory",

@@ -98,6 +98,10 @@ GRANTS: dict[str, dict[str, tuple[str, ...]]] = {
         "mcp": _SELECT,
         "research": _SELECT,
     },
+    # Which server role an Alert pings per Trigger; the bot's /setup roles writes it.
+    "trigger_role": {
+        "bot": ("SELECT", "INSERT", "UPDATE", "DELETE"),
+    },
     "unpriced_symbol": {
         "ingest": ("SELECT", "INSERT", "UPDATE", "DELETE"),
         "mcp": _SELECT,

@@ -34,7 +34,7 @@ Friends receive a few Popularity Alerts a day, each carrying a Track record seed
 ## Discord, Ops pings, v1
 
 - `/pings` gives every member a private menu to toggle their Trigger roles; `/setup roles add|remove|show` maps a Trigger to an existing role; `/setup` is hidden from members.
-- The bot needs Manage Roles, Read Message History and Create Public Threads in the Alert channel.
+- The bot needs View Channels, Send Messages, Embed Links, Read Message History, Create Public Threads, Send Messages in Threads and Manage Roles, and its role must sit above every role it manages (`docs/operations.md`).
 - Ops pings fire per source on first failure and on recovery, replacing the three-failure threshold.
 - After the import passes, the operator stops and removes v1's containers; deleting the public ghcr image is the operator's choice.
 - Then tag `v1-final` and delete `legacy/`, the v1 Dockerfile and compose files, `docker-publish.yml`, the legacy CI job and the v1 parts of `CLAUDE.md` and `.claude/docs/`; the v2 compose file and Dockerfile take the plain names.

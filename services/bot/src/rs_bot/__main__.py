@@ -23,10 +23,12 @@ import discord
 from discord import app_commands
 from pydantic import ValidationError
 
+from rs_bot.commands import register_commands
 from rs_bot.counters import new_counters
 from rs_bot.discord_sender import ChannelSender
 from rs_bot.listener import ListenLoop
-from rs_bot.schwab_auth import SchwabAuthFlow, register_setup_commands
+from rs_bot.pings import DiscordGuildRoles, PingRoles
+from rs_bot.schwab_auth import SchwabAuthFlow
 from rs_bot.settings import BotSettings
 from rs_bot.sweep import SweepWorker
 from rs_bot.token_notices import TokenAgeNotifier
@@ -83,11 +85,16 @@ async def run_bot(settings: BotSettings) -> int:
             logger.error("Discord login failed — check RS_BOT_DISCORD_TOKEN: %s", exc)
             return 1
         session_factory = build_session_factory(engine)
-        register_setup_commands(tree, SchwabAuthFlow(session_factory), settings.admin_user_id)
+        register_commands(
+            tree,
+            flow=SchwabAuthFlow(session_factory),
+            pings=PingRoles(session_factory),
+            admin_user_id=settings.admin_user_id,
+        )
         try:
             await tree.sync()
-        except Exception:  # alerts do not need the command, so a failed sync must not stop the bot
-            logger.exception("could not sync slash commands - /setup schwab may be missing")
+        except Exception:  # alerts do not need the commands, so a failed sync must not stop the bot
+            logger.exception("could not sync slash commands - /setup and /pings may be missing")
         gateway_task = asyncio.create_task(client.connect(), name="gateway")
         try:
             channel = await client.fetch_channel(settings.alert_channel_id)
@@ -108,6 +115,17 @@ async def run_bot(settings: BotSettings) -> int:
             return 1
         logger.info("resolved alert channel %d (%s)", settings.alert_channel_id, channel)
 
+        # The gateway fills the guild's role cache; an Alert's role ping is checked against it.
+        ready = asyncio.create_task(client.wait_until_ready(), name="ready")
+        await asyncio.wait({ready, gateway_task}, return_when=asyncio.FIRST_COMPLETED)
+        if not ready.done():
+            ready.cancel()
+            logger.error(
+                "Discord gateway ended before it was ready",
+                exc_info=None if gateway_task.cancelled() else gateway_task.exception(),
+            )
+            return 1
+        guild_id = channel.guild.id
         assert client.user is not None  # set by login
         worker = SweepWorker(
             session_factory,
@@ -117,6 +135,7 @@ async def run_bot(settings: BotSettings) -> int:
             health=HealthTracker("bot"),
             max_attempts=settings.post_max_attempts,
             counters=counters,
+            roles=DiscordGuildRoles(lambda: client.get_guild(guild_id)),
         )
         listener = ListenLoop(psycopg_conninfo(settings.rs_db_url), worker.wake, counters=counters)
         listen_task = asyncio.create_task(listener.run(), name="listen")

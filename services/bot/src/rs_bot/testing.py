@@ -8,12 +8,14 @@ sender does, unless the test hides it.
 Test-support only (the rs_persistence.testing pattern): runtime code must never import it.
 """
 
-from collections.abc import Awaitable, Callable
-from dataclasses import dataclass
+from collections.abc import Awaitable, Callable, Sequence
+from dataclasses import dataclass, field
 from datetime import UTC, datetime
+from types import SimpleNamespace
 
 import discord
 
+from rs_bot.pings import GuildUnavailable, RoleInfo
 from rs_bot.render import marked_row_id
 from rs_domain import Alert, FactUnavailable, PopularitySurgePayload, SurgeFacts
 
@@ -29,6 +31,7 @@ class Message:
     nonce: int | None
     from_bot: bool = True
     mentions_allowed: bool = True
+    role_ids: tuple[int, ...] = ()  # the roles it pinged
 
 
 class FakeDiscord:
@@ -60,8 +63,10 @@ class FakeDiscord:
     def in_thread(self, thread_id: int) -> list[Message]:
         return [m for m in self.messages if m.where == thread_id]
 
-    async def send_alert(self, embed: discord.Embed, *, nonce: int) -> int:
-        return await self._send(CHANNEL, embed, nonce, mentions_allowed=True)
+    async def send_alert(
+        self, embed: discord.Embed, *, nonce: int, role_ids: Sequence[int] = ()
+    ) -> int:
+        return await self._send(CHANNEL, embed, nonce, mentions_allowed=True, role_ids=tuple(role_ids))
 
     async def send_reply(self, thread_id: int, embed: discord.Embed, *, nonce: int) -> int:
         return await self._send(thread_id, embed, nonce, mentions_allowed=False)
@@ -78,7 +83,15 @@ class FakeDiscord:
     async def find_reply(self, thread_id: int, row_id: int, since: datetime) -> int | None:
         return self._find(thread_id, row_id, since)
 
-    async def _send(self, where: int, embed: discord.Embed, nonce: int, *, mentions_allowed: bool) -> int:
+    async def _send(
+        self,
+        where: int,
+        embed: discord.Embed,
+        nonce: int,
+        *,
+        mentions_allowed: bool,
+        role_ids: tuple[int, ...] = (),
+    ) -> int:
         if self.before_send is not None:
             await self.before_send()
         failure = self.send_failures.pop(0) if self.send_failures else None
@@ -89,7 +102,9 @@ class FakeDiscord:
         for message in self.messages:
             if message.from_bot and message.nonce == nonce and message.where == where:
                 return message.id  # enforce_nonce: this author already made it
-        message = Message(self._mint(), where, embed, nonce, mentions_allowed=mentions_allowed)
+        message = Message(
+            self._mint(), where, embed, nonce, mentions_allowed=mentions_allowed, role_ids=role_ids
+        )
         self.messages.append(message)
         if self.fail_after_posting:
             raise self.fail_after_posting.pop(0)
@@ -109,6 +124,60 @@ class FakeDiscord:
     def _mint(self) -> int:
         self._next_id += 1
         return self._next_id
+
+
+class FakeRoles:
+    """The server's roles, as `GuildRoles` reads them: add one, delete one, make one unmanageable."""
+
+    def __init__(self) -> None:
+        self._roles: dict[int, RoleInfo] = {}
+        self.guild_known = True
+
+    def add(
+        self, role_id: int, name: str = "role", *, assignable: bool = True, mentionable: bool = True
+    ) -> RoleInfo:
+        self._roles[role_id] = RoleInfo(role_id, name, assignable, mentionable)
+        return self._roles[role_id]
+
+    def delete(self, role_id: int) -> None:
+        del self._roles[role_id]
+
+    def role(self, role_id: int) -> RoleInfo | None:
+        if not self.guild_known:
+            raise GuildUnavailable
+        return self._roles.get(role_id)
+
+
+@dataclass
+class FakeMember:
+    """One member's roles, changed by the bot as Discord would: a role the bot may not touch is
+    refused with a 403, and `fail_with` plants any other refusal."""
+
+    id: int = 7
+    role_ids: set[int] = field(default_factory=set)
+    forbidden: set[int] = field(default_factory=set)
+    fail_with: discord.HTTPException | None = None
+
+    @property
+    def roles(self) -> list[discord.Role]:
+        return [SimpleNamespace(id=role_id) for role_id in self.role_ids]  # type: ignore[misc]
+
+    async def add_roles(self, *roles: discord.abc.Snowflake, reason: str | None = None) -> None:
+        for role in roles:
+            self._check(role.id)
+            self.role_ids.add(role.id)
+
+    async def remove_roles(self, *roles: discord.abc.Snowflake, reason: str | None = None) -> None:
+        for role in roles:
+            self._check(role.id)
+            self.role_ids.discard(role.id)
+
+    def _check(self, role_id: int) -> None:
+        if self.fail_with is not None:
+            raise self.fail_with
+        if role_id in self.forbidden:
+            response = SimpleNamespace(status=403, reason="Missing Permissions")
+            raise discord.Forbidden(response, "Missing Permissions")  # type: ignore[arg-type]
 
 
 class FixedClock:

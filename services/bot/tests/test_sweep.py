@@ -170,11 +170,11 @@ async def test_last_attempt_posts_the_plain_embed(session_factory):
     shapes = []
 
     class Rejecting(FakeDiscord):
-        async def send_alert(self, embed, *, nonce):
+        async def send_alert(self, embed, **sent):
             shapes.append(bool(embed.fields))
             if embed.fields:
                 raise RuntimeError("typed embed rejected")
-            return await super().send_alert(embed, nonce=nonce)
+            return await super().send_alert(embed, **sent)
 
     worker = _worker(session_factory, Rejecting(), max_attempts=2, retry_gap_seconds=0)
     await worker.sweep()
@@ -255,9 +255,9 @@ class LoggingDiscord(FakeDiscord):
     """Logs like discord.py's internals do - the 'retry internals group under the
     alert' claim needs a third-party-style record emitted inside the attempt."""
 
-    async def send_alert(self, embed, *, nonce):
+    async def send_alert(self, embed, **sent):
         logging.getLogger("discord.http").warning("rate limited, retrying")
-        return await super().send_alert(embed, nonce=nonce)
+        return await super().send_alert(embed, **sent)
 
 
 async def test_posting_attempt_records_share_one_correlation_id(session_factory, json_stream):
