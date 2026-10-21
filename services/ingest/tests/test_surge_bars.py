@@ -571,7 +571,7 @@ async def test_with_no_events_only_the_benchmark_is_tracked(session_factory):
 
 async def test_first_event_dates_agree_with_the_rule_replay(session_factory):
     history = []
-    for hours in range(0, 24 * 21, 6):  # AAA surges repeatedly; the cooldown thins the replay
+    for hours in range(0, 24 * 21, 6):  # AAA surges repeatedly; each hit is its own event
         at = datetime(2026, 9, 1, tzinfo=UTC) + timedelta(hours=hours)
         history.append(_snap("AAA", at, origin=PopularityOrigin.V1_IMPORT if hours % 12 else PopularityOrigin.LIVE))
         history.append(_snap("QUIET", at, mentions=100, prior=100))

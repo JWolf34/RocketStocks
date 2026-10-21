@@ -5,12 +5,15 @@ from pydantic import ValidationError
 
 from rs_domain import (
     Alert,
+    Candidate,
     ChainSnapshot,
     Dataset,
     OptionQuote,
     PopularityOrigin,
     PopularitySnapshot,
     SourceStatus,
+    Verdict,
+    eastern_day,
 )
 
 UTC_NOON = datetime(2026, 7, 6, 16, 0, tzinfo=UTC)
@@ -18,19 +21,19 @@ UTC_NOON = datetime(2026, 7, 6, 16, 0, tzinfo=UTC)
 
 class TestAlert:
     def test_valid_alert_builds(self):
-        alert = Alert(symbol="SPY", alert_type="VOLUME_THRESHOLD", triggered_at=UTC_NOON)
+        alert = Alert(symbol="SPY", trigger="VOLUME_THRESHOLD", triggered_at=UTC_NOON)
         assert alert.payload == {}
 
     def test_rejects_naive_triggered_at(self):
         with pytest.raises(ValidationError, match="naive"):
-            Alert(symbol="SPY", alert_type="VOLUME_THRESHOLD", triggered_at=datetime(2026, 7, 6, 16, 0))
+            Alert(symbol="SPY", trigger="VOLUME_THRESHOLD", triggered_at=datetime(2026, 7, 6, 16, 0))
 
     def test_rejects_non_utc_triggered_at(self):
         eastern = timezone(timedelta(hours=-4))
         with pytest.raises(ValidationError, match="non-UTC"):
             Alert(
                 symbol="SPY",
-                alert_type="VOLUME_THRESHOLD",
+                trigger="VOLUME_THRESHOLD",
                 triggered_at=datetime(2026, 7, 6, 12, 0, tzinfo=eastern),
             )
 
@@ -39,7 +42,7 @@ class TestAlert:
         # variable zones would make later wall-clock arithmetic DST-hazardous.
         alert = Alert(
             symbol="SPY",
-            alert_type="VOLUME_THRESHOLD",
+            trigger="VOLUME_THRESHOLD",
             triggered_at=datetime(2026, 7, 6, 16, 0, tzinfo=timezone(timedelta(0))),
         )
         assert alert.triggered_at.tzinfo is UTC
@@ -149,3 +152,50 @@ class TestPopularitySnapshot:
     def test_rejects_rank_zero(self):
         with pytest.raises(ValidationError):
             PopularitySnapshot(**self.fields(rank=0))
+
+
+class TestCandidate:
+    def test_valid_candidate_builds_without_an_alert(self):
+        candidate = Candidate(
+            trigger="popularity_surge",
+            rule_version="2",
+            symbol="GME",
+            hit_at=UTC_NOON,
+            inputs={"fired": ["rank_jump"]},
+            verdict=Verdict.REPEAT,
+            decided_at=UTC_NOON,
+        )
+        assert candidate.alert_id is None
+
+    def test_verdicts_are_the_six_the_selector_can_give(self):
+        assert [v.value for v in Verdict] == ["posted", "reply", "below_bar", "over_budget", "repeat", "stale"]
+
+    def test_rejects_naive_times(self):
+        with pytest.raises(ValidationError, match="naive"):
+            Candidate(
+                trigger="t",
+                rule_version="1",
+                symbol="X",
+                hit_at=datetime(2026, 7, 6, 16, 0),
+                inputs={},
+                verdict=Verdict.POSTED,
+                decided_at=UTC_NOON,
+            )
+
+
+class TestEasternDay:
+    @pytest.mark.parametrize(
+        ("moment", "day"),
+        [
+            (datetime(2026, 7, 7, 3, 59, tzinfo=UTC), date(2026, 7, 6)),
+            (datetime(2026, 7, 7, 4, 0, tzinfo=UTC), date(2026, 7, 7)),
+            (datetime(2026, 12, 8, 4, 59, tzinfo=UTC), date(2026, 12, 7)),
+            (datetime(2026, 12, 8, 5, 0, tzinfo=UTC), date(2026, 12, 8)),
+        ],
+    )
+    def test_follows_new_york_across_daylight_saving(self, moment, day):
+        assert eastern_day(moment) == day
+
+    def test_refuses_a_naive_reading(self):
+        with pytest.raises(ValueError, match="naive"):
+            eastern_day(datetime(2026, 7, 6, 16, 0))

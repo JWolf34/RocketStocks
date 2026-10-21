@@ -75,9 +75,8 @@ async def first_event_dates(
 ) -> dict[str, date]:
     """Eastern date of each surge ticker's first event, over both popularity origins.
 
-    Judges each snapshot with no prior events: the cooldown only suppresses
-    repeats, so a ticker's first event, the only one that matters here, is the
-    same as in `popularity_surge.replay` without holding the whole history.
+    Judges each snapshot on its own, as `popularity_surge.replay` does, without
+    holding the whole history.
     """
     first: dict[str, date] = {}
     async with session_factory() as session:
@@ -88,7 +87,7 @@ async def first_event_dates(
         while window_start <= now:
             window_end = window_start + REPLAY_WINDOW
             for snapshot in await repo.list_between(window_start, window_end):
-                if popularity_surge.evaluate_latest(snapshot, ()) is None:
+                if popularity_surge.evaluate_latest(snapshot) is None:
                     continue
                 day = snapshot.polled_at.astimezone(EASTERN).date()
                 if snapshot.ticker not in first or day < first[snapshot.ticker]:

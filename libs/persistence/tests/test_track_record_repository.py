@@ -12,7 +12,7 @@ COMPUTED = datetime(2026, 7, 6, 3, 0, tzinfo=UTC)
 
 def _record(**overrides) -> TrackRecord:
     fields = {
-        "alert_type": "popularity_surge",
+        "trigger": "popularity_surge",
         "rule_version": "1",
         "computed_at": COMPUTED,
         "input": TrackRecordInput.RECONSTRUCTED,

@@ -26,7 +26,7 @@ logger = logging.getLogger(__name__)
 DSN_VARIABLE = "RS_RESEARCH_DB_URL"
 
 Study = Callable[[async_sessionmaker[AsyncSession], Clock, TradingCalendar], Awaitable[object]]
-STUDIES: dict[str, Study] = {popularity_surge.ALERT_TYPE: popularity_surge.run}
+STUDIES: dict[str, Study] = {popularity_surge.TRIGGER: popularity_surge.run}
 
 
 async def _run(study: Study, dsn: str, clock: Clock, calendar: TradingCalendar) -> None:

@@ -85,7 +85,7 @@ class Roles:
 def _clear_data(r: Roles) -> None:
     with r.admin() as conn:
         conn.execute(
-            "TRUNCATE alerts, track_record, popularity_snapshot, schwab_auth_request,"
+            "TRUNCATE alerts, candidate, track_record, popularity_snapshot, schwab_auth_request,"
             " schwab_tokens, schwab_token_notice RESTART IDENTITY"
         )
 
@@ -239,12 +239,12 @@ def test_ingest_reads_and_writes_schwab_tokens(roles):
 def test_research_inserts_track_record_but_not_alerts(roles):
     with roles.connect("research") as conn:
         conn.execute(
-            "INSERT INTO track_record (alert_type, rule_version, computed_at, input, n,"
+            "INSERT INTO track_record (trigger, rule_version, computed_at, input, n,"
             " survivorship_caveat) VALUES ('t', '1', now(), 'reconstructed', 0, 'c')"
         )
         _denied(
             conn,
-            "INSERT INTO alerts (symbol, alert_type, triggered_at, payload)"
+            "INSERT INTO alerts (symbol, trigger, triggered_at, payload)"
             " VALUES ('A', 't', now(), '{}')",
         )
         _denied(conn, "UPDATE track_record SET n = 1")
@@ -254,9 +254,9 @@ def test_research_inserts_track_record_but_not_alerts(roles):
 @pytest.mark.parametrize(
     "statement",
     [
-        "INSERT INTO track_record (alert_type, rule_version, computed_at, input, n,"
+        "INSERT INTO track_record (trigger, rule_version, computed_at, input, n,"
         " survivorship_caveat) VALUES ('t', '1', now(), 'logged', 0, 'c')",
-        "INSERT INTO alerts (symbol, alert_type, triggered_at, payload)"
+        "INSERT INTO alerts (symbol, trigger, triggered_at, payload)"
         " VALUES ('A', 't', now(), '{}')",
         "DELETE FROM alerts",
         "TRUNCATE alerts",
@@ -278,16 +278,32 @@ def test_mcp_reads_the_market_data_it_exposes(roles):
 def test_bot_may_only_touch_delivery_columns_of_alerts(roles):
     with roles.admin() as conn:
         conn.execute(
-            "INSERT INTO alerts (symbol, alert_type, triggered_at, payload)"
+            "INSERT INTO alerts (symbol, trigger, triggered_at, payload)"
             " VALUES ('A', 't', now(), '{}')"
         )
     with roles.connect("bot") as conn:
         conn.execute("UPDATE alerts SET posted_at = now(), post_attempts = 1")
         _denied(conn, "UPDATE alerts SET payload = '{\"x\": 1}'")
         _denied(conn, "UPDATE alerts SET symbol = 'B'")
-        _denied(conn, "INSERT INTO alerts (symbol, alert_type, triggered_at, payload) "
+        _denied(conn, "INSERT INTO alerts (symbol, trigger, triggered_at, payload) "
                 "VALUES ('A', 't', now(), '{}')")
         _denied(conn, "DELETE FROM alerts")
+
+
+def test_ingest_decides_candidates_once_and_the_analysts_read_them(roles):
+    insert = (
+        "INSERT INTO candidate (trigger, rule_version, symbol, hit_at, inputs, verdict, decided_at)"
+        " VALUES ('t', '1', 'A', now(), '{}', 'repeat', now())"
+    )
+    with roles.connect("ingest") as conn:
+        conn.execute(insert)
+        conn.execute("SELECT * FROM candidate")
+        _denied(conn, "UPDATE candidate SET verdict = 'posted'")
+        _denied(conn, "DELETE FROM candidate")
+    for service in ("mcp", "research"):
+        with roles.connect(service) as conn:
+            conn.execute("SELECT * FROM candidate")
+            _denied(conn, insert)
 
 
 def test_bot_may_insert_auth_requests_and_set_the_callback_only(roles):
@@ -322,7 +338,7 @@ def _factory(roles: Roles, service: str):
 
 async def test_services_run_their_real_repositories_under_their_roles(roles):
     ingest, bot, mcp, research = (_factory(roles, s) for s in SERVICES)
-    alert = Alert(symbol="AAA", alert_type="surge", triggered_at=NOW, dedup_key="k1")
+    alert = Alert(symbol="AAA", trigger="surge", triggered_at=NOW)
     snapshot = PopularitySnapshot(
         polled_at=NOW,
         ticker="AAA",
@@ -337,7 +353,6 @@ async def test_services_run_their_real_repositories_under_their_roles(roles):
     async with ingest() as s:
         assert await PopularityRepository(s).insert_many([snapshot]) == 1
         assert await AlertRepository(s).insert(alert) is not None
-        assert await AlertRepository(s).insert(alert) is None
         await s.commit()
     await SchwabTokenStore(ingest).save({"refresh_token": "r"})
     assert await SchwabTokenStore(ingest).load() == {"refresh_token": "r"}
@@ -352,7 +367,7 @@ async def test_services_run_their_real_repositories_under_their_roles(roles):
     # bot: sweep, retry bookkeeping, mark posted.
     async with bot() as s:
         pending = await AlertRepository(s).list_unposted()
-        assert [p.alert.dedup_key for p in pending] == ["k1"]
+        assert [p.alert.symbol for p in pending] == ["AAA"]
         assert await AlertRepository(s).increment_post_attempts(pending[0].id) == 1
         assert await AlertRepository(s).mark_posted(pending[0].id) is not None
         await s.commit()
@@ -378,7 +393,7 @@ async def test_services_run_their_real_repositories_under_their_roles(roles):
     async with research() as s:
         await TrackRecordRepository(s).insert(
             TrackRecord(
-                alert_type="surge",
+                trigger="surge",
                 rule_version="1",
                 computed_at=NOW,
                 input=TrackRecordInput.RECONSTRUCTED,

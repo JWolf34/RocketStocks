@@ -217,16 +217,16 @@ Done when a real Popularity Alert posts and carries a Track record.
    ```
 2. Find the Alert:
    ```
-   psql -c "SELECT id, symbol, rule_version, alert_price, quote_time, triggered_at, posted_at, post_attempts FROM alerts WHERE alert_type = 'popularity_surge' ORDER BY id DESC LIMIT 5"
+   psql -c "SELECT id, symbol, rule_version, alert_price, quote_time, triggered_at, posted_at, post_attempts FROM alerts WHERE trigger = 'popularity_surge' ORDER BY id DESC LIMIT 5"
    ```
 3. Confirm in Discord that the message shows its Track record, the `rule_version` and the `alert_price`, and that it was never edited.
 4. Confirm which Track record it showed:
    ```
-   psql -c "SELECT input, n, hit_rate_5d, median_excess_5d, computed_at FROM track_record WHERE alert_type = 'popularity_surge' ORDER BY computed_at DESC LIMIT 3"
+   psql -c "SELECT input, n, hit_rate_5d, median_excess_5d, computed_at FROM track_record WHERE trigger = 'popularity_surge' ORDER BY computed_at DESC LIMIT 3"
    ```
    The bot shows the `logged` row once its N passes 30, otherwise the `reconstructed` row.
 
-If no surge fires for days, stage a clearly marked test Alert through the real write path to prove the posting path (it is not a real Alert):
+If no surge fires for days, stage a clearly marked test Alert through the real write path to prove the posting path (it is not a real Alert; its symbol is `TEST-` and the time, because the database allows one Alert per stock per Eastern day):
 ```
 .venv/bin/python -m rs_bot.tools.stage_alert
 ```
@@ -270,7 +270,7 @@ Goal: no lost or duplicated rows or Alerts after a restart.
 
 1. Capture counts and the newest boundary:
    ```
-   psql -c "SELECT (SELECT count(*) FROM popularity_snapshot) AS snapshots, (SELECT count(*) FROM alerts) AS alerts, (SELECT count(DISTINCT dedup_key) FROM alerts) AS distinct_keys"
+   psql -c "SELECT (SELECT count(*) FROM popularity_snapshot) AS snapshots, (SELECT count(*) FROM candidate) AS candidates, (SELECT count(*) FROM alerts) AS alerts"
    ```
 2. Kill ingest hard while a poll is running.
    Polls fire on the :00 and :30 UTC boundaries.
@@ -283,12 +283,13 @@ Goal: no lost or duplicated rows or Alerts after a restart.
 3. Confirm the restart policy brought ingest back (`$COMPOSE ps` shows it up again, with a fresh start time).
    Ingest runs the poll at startup, so it finishes the interrupted boundary.
 4. Repeat the count query.
-   Expect: snapshot rows for the interrupted boundary are present exactly once (the key is `polled_at, ticker` with `ON CONFLICT DO NOTHING`), `alerts` equals `distinct_keys`, and a rerun of the same boundary added no Alert.
+   Expect: snapshot rows for the interrupted boundary are present exactly once (the key is `polled_at, ticker` with `ON CONFLICT DO NOTHING`), every hit has exactly one `candidate` (its key is the Trigger, rule version, stock and hit time), and a rerun of the same boundary added no Alert.
+   A candidate and the Alert it produced commit in one transaction, so a kill leaves both or neither.
    ```
    psql -c "SELECT polled_at, count(*), count(DISTINCT ticker) FROM popularity_snapshot GROUP BY 1 ORDER BY 1 DESC LIMIT 3"
-   psql -c "SELECT count(*) - count(DISTINCT dedup_key) AS duplicate_alerts FROM alerts WHERE dedup_key IS NOT NULL"
+   psql -c "SELECT (SELECT count(*) FROM candidate WHERE verdict = 'posted' AND alert_id IS NULL) AS posted_without_alert, (SELECT count(*) FROM (SELECT symbol, day FROM alerts WHERE reply_to IS NULL GROUP BY 1, 2 HAVING count(*) > 1) d) AS stocks_alerted_twice_a_day"
    ```
-   `duplicate_alerts` must be 0 and each boundary's `count` must equal its `count(DISTINCT ticker)`.
+   Both counts must be 0 and each boundary's `count` must equal its `count(DISTINCT ticker)`.
 5. A graceful stop is a separate, simpler check: `$COMPOSE stop ingest` must exit within `stop_grace_period` (45s) with a clean shutdown log.
 
 ## Operating procedures

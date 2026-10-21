@@ -14,7 +14,7 @@ TRACK_RECORD_LOGGED_MIN_N = 30
 
 def _to_track_record(row: TrackRecordRow) -> TrackRecord:
     return TrackRecord(
-        alert_type=row.alert_type,
+        trigger=row.trigger,
         rule_version=row.rule_version,
         computed_at=row.computed_at.astimezone(UTC),
         input=TrackRecordInput(row.input),
@@ -31,12 +31,12 @@ def _to_track_record(row: TrackRecordRow) -> TrackRecord:
 
 
 async def _latest(
-    session: AsyncSession, alert_type: str, rule_version: str, source: TrackRecordInput
+    session: AsyncSession, trigger: str, rule_version: str, source: TrackRecordInput
 ) -> TrackRecord | None:
     row = await session.scalar(
         select(TrackRecordRow)
         .where(
-            TrackRecordRow.alert_type == alert_type,
+            TrackRecordRow.trigger == trigger,
             TrackRecordRow.rule_version == rule_version,
             TrackRecordRow.input == source.value,
         )
@@ -47,13 +47,13 @@ async def _latest(
 
 
 async def current_track_record(
-    session: AsyncSession, alert_type: str, rule_version: str
+    session: AsyncSession, trigger: str, rule_version: str
 ) -> TrackRecord | None:
     """The track record the bot should show for a rule version: the latest `logged`
     row once its N reaches TRACK_RECORD_LOGGED_MIN_N, otherwise the latest
     `reconstructed` row. None when there is nothing to show (a thin logged row is
     never shown on its own)."""
-    logged = await _latest(session, alert_type, rule_version, TrackRecordInput.LOGGED)
+    logged = await _latest(session, trigger, rule_version, TrackRecordInput.LOGGED)
     if logged is not None and logged.n >= TRACK_RECORD_LOGGED_MIN_N:
         return logged
-    return await _latest(session, alert_type, rule_version, TrackRecordInput.RECONSTRUCTED)
+    return await _latest(session, trigger, rule_version, TrackRecordInput.RECONSTRUCTED)

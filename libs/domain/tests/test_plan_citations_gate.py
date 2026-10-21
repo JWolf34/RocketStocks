@@ -59,6 +59,11 @@ RETIRED_WORDS = [
     "# the " + "base" + " rate",
     "# the " + "Base" + " Rate",
     "# " + "Base" + "Rate",
+    "# " + "alert" + "_type",
+    "# " + "ALERT" + "_TYPE",
+    "# the " + "alert" + " type",
+    "# the " + "Alert" + " Type",
+    "x = row." + "alert" + "_type",
 ]
 
 
@@ -92,8 +97,8 @@ def test_a_cache_directory_is_not_scanned(tree):
 
 
 def test_migration_files_may_keep_the_old_names(tree):
-    _plant(tree, REAL_MIGRATION, "# renames " + "attent" + "ion_surge and " + "base" + "_rate")
-    _plant(tree, REAL_MIGRATION_TEST, "x = '" + "attent" + "ion_surge'")
+    _plant(tree, REAL_MIGRATION, "# renames " + "attent" + "ion_surge, " + "base" + "_rate and " + "alert" + "_type")
+    _plant(tree, REAL_MIGRATION_TEST, "x = '" + "attent" + "ion_surge' + '" + "alert" + "_type'")
     result = _run(tree)
     assert result.returncode == 0, result.stdout + result.stderr
 

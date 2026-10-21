@@ -58,7 +58,7 @@ from rs_research.returns import (
 
 logger = logging.getLogger(__name__)
 
-ALERT_TYPE = "popularity_surge"
+TRIGGER = "popularity_surge"
 BENCHMARK = "SPY"
 
 HISTORY_START = datetime(2000, 1, 1, tzinfo=UTC)
@@ -141,7 +141,7 @@ def _record(
 ) -> TrackRecord:
     benchmark_note = kind is TrackRecordInput.LOGGED
     return TrackRecord(
-        alert_type=ALERT_TYPE,
+        trigger=TRIGGER,
         rule_version=RULE_VERSION,
         computed_at=computed_at,
         input=kind,
@@ -250,7 +250,7 @@ async def compute(
             for record in await _drain(
                 lambda cursor: recent_alerts(session, limit=PAGE_SIZE, cursor=cursor)
             )
-            if record.alert.alert_type == ALERT_TYPE and record.alert.rule_version == RULE_VERSION
+            if record.alert.trigger == TRIGGER and record.alert.rule_version == RULE_VERSION
         ]
         events = replay(snapshots)
         del snapshots

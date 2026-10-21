@@ -16,9 +16,10 @@
 # Banned except in the allowlist below (case-insensitive):
 #   attention                 retired word for Popularity
 #   base_rate / base rate / BaseRate   retired word for Track record
+#   alert_type / alert type   retired word for Trigger
 #
 # Allowlist (explicit and minimal; each entry is history that must keep an old
-# name, and applies only to the attention/base_rate patterns):
+# name, and applies only to the retired-word patterns):
 #   Alembic revision files - they create and rename the pre-rename schema
 #   test_migrations_0006_onward.py - seeds pre-rename rows to prove the rename
 #
@@ -38,7 +39,7 @@ for root in libs services tools; do
 done
 
 CITATION_RE='ADR-[0-9]{4}|grilling #|[Ss]lice[ _-]?[0-9]|(^|[^[:alnum:]_])S0[0-9]{2}($|[^[:alnum:]_])'
-NAME_RE='attention|base[_ ]?rate'
+NAME_RE='attention|base[_ ]?rate|alert[_ ]type'
 ALLOW_NAME_RE='^libs/persistence/src/rs_persistence/migrations/versions/|^libs/persistence/tests/test_migrations_0006_onward\.py:'
 
 scan() {  # scan <pattern> [grep flags]; prints matches, exits 2 on a grep failure

@@ -12,6 +12,7 @@ from datetime import UTC, date, datetime, timedelta
 import pytest
 from sqlalchemy import select
 
+from rs_analysis.popularity_surge import RULE_VERSION
 from rs_domain import (
     Alert,
     PopularityOrigin,
@@ -111,7 +112,6 @@ def _utc(day: int, hour: int, minute: int = 0, month: int = 8) -> datetime:
 SNAPSHOTS = [
     _surge("AAA", _utc(3, 14), mentions=20),  # quiet: no event
     _surge("AAA", _utc(3, 15)),  # event, entry Tue Aug 4 (i = 1)
-    _surge("AAA", _utc(3, 16)),  # inside the 24h cooldown: no second event
     _surge("BBB", _utc(5, 15)),  # entry Thu Aug 6 (i = 3)
     _surge("CCC", _utc(4, 15)),  # no bars: unpriced
     _surge("DDD", _utc(27, 15)),  # entry Fri Aug 28, the last stored session: no horizon yet
@@ -124,12 +124,11 @@ SNAPSHOTS = [
 def _alert(symbol: str, at: datetime, price: float | None, **overrides: object) -> Alert:
     fields: dict[str, object] = {
         "symbol": symbol,
-        "alert_type": "popularity_surge",
+        "trigger": "popularity_surge",
         "triggered_at": at,
-        "rule_version": "1",
+        "rule_version": RULE_VERSION,
         "alert_price": price,
         "quote_time": at,
-        "dedup_key": f"{symbol}:{at.isoformat()}:{price}",
     }
     return Alert(**(fields | overrides))
 
@@ -140,8 +139,8 @@ ALERTS = [
     _alert("FFF", _utc(8, 12), 114.0),  # Saturday: reference is Friday's close (i = 4)
     _alert("GGG", _utc(5, 15), None),  # no alert price: unpriced
     _alert("CCC", _utc(5, 15), 9.0),  # no bars to measure an exit: unpriced
-    _alert("AAA", _utc(6, 15), 60.0, alert_type="large_move"),  # other signal: ignored
-    _alert("AAA", _utc(6, 16), 60.0, rule_version="0"),  # other rule version: ignored
+    _alert("AAA", _utc(6, 15), 60.0, trigger="large_move"),  # other signal: ignored
+    _alert("AAA", _utc(7, 16), 60.0, rule_version="0"),  # other rule version: ignored
 ]
 
 
@@ -170,7 +169,7 @@ async def test_reconstructed_track_record_is_stored_and_read_back_by_rs_query(se
     result = await popularity_surge.run(session_factory, FixedClock(), CALENDAR)
 
     async with session_factory() as s:
-        stored = await current_track_record(s, "popularity_surge", "1")
+        stored = await current_track_record(s, "popularity_surge", RULE_VERSION)
     assert stored is not None
     assert stored == _by_input(result.records)[TrackRecordInput.RECONSTRUCTED]
     assert (stored.input, stored.computed_at) == (TrackRecordInput.RECONSTRUCTED, NOW)
@@ -271,7 +270,7 @@ async def test_a_logged_row_is_only_shown_once_it_has_enough_alerts(session_fact
 
     assert sorted(inputs) == ["logged", "reconstructed"]
     async with session_factory() as s:
-        shown = await current_track_record(s, "popularity_surge", "1")
+        shown = await current_track_record(s, "popularity_surge", RULE_VERSION)
     assert shown is not None
     assert shown.input is TrackRecordInput.RECONSTRUCTED  # 3 logged alerts is below the minimum N
 
@@ -397,6 +396,6 @@ async def test_the_study_runs_under_the_least_privilege_research_role(
 
     assert code == 0
     async with session_factory() as s:
-        stored = await current_track_record(s, "popularity_surge", "1")
+        stored = await current_track_record(s, "popularity_surge", RULE_VERSION)
     assert stored is not None and stored.n == 5
     assert sorted(row.input for row in await _rows(session_factory)) == ["logged", "reconstructed"]

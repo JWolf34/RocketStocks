@@ -5,6 +5,9 @@ rs_domain Pydantic models so internal fields never leak.
 
 alerts.posted_at is the bot's delivery cursor (its `posted_at IS NULL` sweep);
 post_attempts caps its retries.
+
+`day` on alerts and candidate is the US Eastern calendar day of the row's instant,
+computed by the database so it can never disagree with `triggered_at` / `hit_at`.
 """
 
 from datetime import date, datetime
@@ -16,8 +19,10 @@ from sqlalchemy import (
     BigInteger,
     Boolean,
     Column,
+    Computed,
     Date,
     Double,
+    ForeignKey,
     Identity,
     Index,
     Integer,
@@ -25,7 +30,6 @@ from sqlalchemy import (
     SmallInteger,
     Table,
     Text,
-    UniqueConstraint,
     text,
 )
 from sqlalchemy.dialects.postgresql import ENUM, JSONB, TIMESTAMP
@@ -37,7 +41,10 @@ from rs_domain import (
     PopularityOrigin,
     SourceStatus,
     TrackRecordInput,
+    Verdict,
 )
+
+EASTERN_DAY_OF = "(({column} AT TIME ZONE 'America/New_York')::date)"
 
 
 class Base(DeclarativeBase):
@@ -105,21 +112,50 @@ class AlertRow(Base):
     __table_args__ = (
         # The bot's delivery cursor: a partial index holding only undelivered rows.
         Index("ix_alerts_unposted", "id", postgresql_where=text("posted_at IS NULL")),
-        # Idempotent writes: a NULL key never conflicts.
-        UniqueConstraint("dedup_key", name="uq_alerts_dedup_key"),
+        # One Alert per stock per Eastern day; replies continue an Alert and are exempt.
+        Index("uq_alerts_symbol_day", "symbol", "day", unique=True, postgresql_where=text("reply_to IS NULL")),
     )
 
     id: Mapped[int] = mapped_column(BigInteger, Identity(always=True), primary_key=True)
     symbol: Mapped[str] = mapped_column(Text)
-    alert_type: Mapped[str] = mapped_column(Text)
+    trigger: Mapped[str] = mapped_column(Text)
     triggered_at: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True))
+    day: Mapped[date] = mapped_column(
+        Date, Computed(EASTERN_DAY_OF.format(column="triggered_at"), persisted=True)
+    )
     payload: Mapped[dict[str, Any]] = mapped_column(JSONB)
     posted_at: Mapped[datetime | None] = mapped_column(TIMESTAMP(timezone=True), nullable=True)
     rule_version: Mapped[str | None] = mapped_column(Text)
     alert_price: Mapped[float | None] = mapped_column(Double)
     quote_time: Mapped[datetime | None] = mapped_column(TIMESTAMP(timezone=True))
-    dedup_key: Mapped[str | None] = mapped_column(Text)
+    reply_to: Mapped[int | None] = mapped_column(BigInteger, ForeignKey("alerts.id"))
     post_attempts: Mapped[int] = mapped_column(Integer, server_default=text("0"))
+
+
+class CandidateRow(Base):
+    """candidate: every Trigger hit with the selector's verdict. Rows are decided
+    once and never updated; the unique key makes a rerun of a boundary a no-op."""
+
+    __tablename__ = "candidate"
+    __table_args__ = (
+        Index("uq_candidate_hit", "trigger", "rule_version", "symbol", "hit_at", unique=True),
+        # A Trigger's candidates in a time window (strength ranks over the trailing 30 days).
+        Index("ix_candidate_trigger_hit_at", "trigger", "hit_at"),
+        Index("ix_candidate_symbol_day", "symbol", "day"),
+    )
+
+    id: Mapped[int] = mapped_column(BigInteger, Identity(always=True), primary_key=True)
+    trigger: Mapped[str] = mapped_column(Text)
+    rule_version: Mapped[str] = mapped_column(Text)
+    symbol: Mapped[str] = mapped_column(Text)
+    hit_at: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True))
+    day: Mapped[date] = mapped_column(Date, Computed(EASTERN_DAY_OF.format(column="hit_at"), persisted=True))
+    inputs: Mapped[dict[str, Any]] = mapped_column(JSONB)
+    verdict: Mapped[str] = mapped_column(
+        ENUM(*(m.value for m in Verdict), name="candidate_verdict", create_type=False)
+    )
+    decided_at: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True))
+    alert_id: Mapped[int | None] = mapped_column(BigInteger, ForeignKey("alerts.id"))
 
 
 class PopularitySnapshotRow(Base):
@@ -181,11 +217,11 @@ class TrackRecordRow(Base):
 
     __tablename__ = "track_record"
     __table_args__ = (
-        Index("ix_track_record_lookup", "alert_type", "rule_version", "input", "computed_at"),
+        Index("ix_track_record_lookup", "trigger", "rule_version", "input", "computed_at"),
     )
 
     id: Mapped[int] = mapped_column(BigInteger, Identity(always=True), primary_key=True)
-    alert_type: Mapped[str] = mapped_column(Text)
+    trigger: Mapped[str] = mapped_column(Text)
     rule_version: Mapped[str] = mapped_column(Text)
     computed_at: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True))
     input: Mapped[str] = mapped_column(

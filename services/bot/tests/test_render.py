@@ -58,7 +58,7 @@ def _pending(facts: SurgeFacts | None = None, fired=("mention_surge",)) -> Pendi
         id=42,
         alert=Alert(
             symbol="GME",
-            alert_type="popularity_surge",
+            trigger="popularity_surge",
             triggered_at=T0,
             payload=payload.model_dump(mode="json"),
             rule_version="1",
@@ -70,7 +70,7 @@ def _pending(facts: SurgeFacts | None = None, fired=("mention_surge",)) -> Pendi
 
 def _track_record(input=TrackRecordInput.RECONSTRUCTED, n=120) -> TrackRecord:
     return TrackRecord(
-        alert_type="popularity_surge",
+        trigger="popularity_surge",
         rule_version="1",
         computed_at=T0,
         input=input,
@@ -200,7 +200,7 @@ GENERIC_PENDING = PendingAlert(
     id=7,
     alert=Alert(
         symbol="SPY",
-        alert_type="volume_threshold",
+        trigger="volume_threshold",
         triggered_at=T0,
         payload={"volume": 750_000, "threshold": 500_000},
     ),
@@ -208,21 +208,21 @@ GENERIC_PENDING = PendingAlert(
 
 
 def _assert_generic(embed, pending: PendingAlert) -> None:
-    assert pending.alert.symbol in embed.title and pending.alert.alert_type in embed.title
+    assert pending.alert.symbol in embed.title and pending.alert.trigger in embed.title
     assert embed.timestamp == pending.alert.triggered_at
     assert str(pending.alert.payload) == embed.description
     assert f"alert #{pending.id}" in embed.footer.text
     assert not embed.fields
 
 
-def test_other_alert_types_get_the_generic_embed():
+def test_other_triggers_get_the_generic_embed():
     _assert_generic(render(GENERIC_PENDING), GENERIC_PENDING)
 
 
 def test_unparseable_popularity_surge_payload_falls_back():
     pending = PendingAlert(
         id=9,
-        alert=Alert(symbol="GME", alert_type="popularity_surge", triggered_at=T0, payload={"rank": 1}),
+        alert=Alert(symbol="GME", trigger="popularity_surge", triggered_at=T0, payload={"rank": 1}),
     )
     _assert_generic(render(pending), pending)
 
@@ -240,6 +240,6 @@ def test_render_failure_falls_back_to_generic_embed(monkeypatch):
 def test_generic_embed_clips_a_huge_payload(size):
     pending = PendingAlert(
         id=1,
-        alert=Alert(symbol="X", alert_type="t", triggered_at=T0, payload={"k": "v" * size}),
+        alert=Alert(symbol="X", trigger="t", triggered_at=T0, payload={"k": "v" * size}),
     )
     assert len(render(pending).description) <= 4096

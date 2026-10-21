@@ -11,7 +11,7 @@ T0 = datetime(2026, 7, 6, 3, 0, tzinfo=UTC)
 
 def _record(input: TrackRecordInput, n: int, day: int = 6, **overrides) -> TrackRecord:
     fields = {
-        "alert_type": "popularity_surge",
+        "trigger": "popularity_surge",
         "rule_version": "1",
         "computed_at": T0.replace(day=day),
         "input": input,
@@ -36,9 +36,9 @@ async def _seed(session_factory, *records):
         await s.commit()
 
 
-async def _current(session_factory, alert_type="popularity_surge", rule_version="1"):
+async def _current(session_factory, trigger="popularity_surge", rule_version="1"):
     async with session_factory() as s:
-        return await current_track_record(s, alert_type, rule_version)
+        return await current_track_record(s, trigger, rule_version)
 
 
 def test_threshold_is_thirty():
@@ -101,15 +101,15 @@ async def test_thick_logged_row_is_shown_without_a_reconstructed_row(session_fac
     assert await _current(session_factory) == logged
 
 
-async def test_scoped_to_alert_type_and_rule_version(session_factory):
+async def test_scoped_to_trigger_and_rule_version(session_factory):
     v1 = _record(TrackRecordInput.RECONSTRUCTED, n=212)
     await _seed(
         session_factory,
         v1,
         _record(TrackRecordInput.RECONSTRUCTED, n=99, rule_version="2"),
-        _record(TrackRecordInput.RECONSTRUCTED, n=98, alert_type="large_move"),
+        _record(TrackRecordInput.RECONSTRUCTED, n=98, trigger="large_move"),
     )
 
     assert await _current(session_factory) == v1
     assert await _current(session_factory, rule_version="3") is None
-    assert await _current(session_factory, alert_type="nope") is None
+    assert await _current(session_factory, trigger="nope") is None

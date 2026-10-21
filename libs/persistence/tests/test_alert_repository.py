@@ -2,17 +2,20 @@
 A raw LISTEN connection witnesses that the notify arrives only
 at commit, carrying the alert id."""
 
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 
 import psycopg
+import pytest
 from sqlalchemy import func, select, text
+from sqlalchemy.exc import IntegrityError
 
 from rs_domain import Alert
 from rs_persistence import AlertRepository, AlertRow
+from rs_persistence.alerts import alert_from_row
 
 ALERT = Alert(
     symbol="SPY",
-    alert_type="volume_threshold",
+    trigger="volume_threshold",
     triggered_at=datetime(2026, 7, 6, 14, 30, tzinfo=UTC),
     payload={"volume": 750_000, "threshold": 500_000},
 )
@@ -39,7 +42,7 @@ async def test_insert_writes_the_alert_row(session_factory):
     assert row.payload == {"volume": 750_000, "threshold": 500_000}
     assert row.posted_at is None  # the bot stamps this on delivery
     assert row.post_attempts == 0
-    assert (row.rule_version, row.alert_price, row.quote_time, row.dedup_key) == (None,) * 4
+    assert (row.rule_version, row.alert_price, row.quote_time, row.reply_to) == (None,) * 4
 
 
 async def test_insert_stores_the_rule_fields(session_factory):
@@ -49,7 +52,6 @@ async def test_insert_stores_the_rule_fields(session_factory):
             "rule_version": "1",
             "alert_price": 123.45,
             "quote_time": quote_time,
-            "dedup_key": "popularity_surge:1:SPY:20260706T1430Z",
         }
     )
     async with session_factory() as s:
@@ -57,34 +59,92 @@ async def test_insert_stores_the_rule_fields(session_factory):
         await s.commit()
 
     async with session_factory() as s:
-        assert await AlertRepository(s).list_decisions() == [versioned]
+        assert alert_from_row((await s.scalars(select(AlertRow))).one()) == versioned
 
 
-async def test_same_dedup_key_inserts_once_and_notifies_once(session_factory, migrated_db_url):
-    keyed = ALERT.model_copy(update={"dedup_key": "k1"})
+async def _insert_committed(session_factory, alert: Alert) -> int:
+    async with session_factory() as s:
+        alert_id = await AlertRepository(s).insert(alert)
+        await s.commit()
+    return alert_id
+
+
+@pytest.mark.parametrize(
+    ("triggered_at", "day"),
+    [
+        (datetime(2026, 7, 7, 3, 59, tzinfo=UTC), date(2026, 7, 6)),  # 23:59 EDT
+        (datetime(2026, 7, 7, 4, 0, tzinfo=UTC), date(2026, 7, 7)),  # midnight EDT
+        (datetime(2026, 12, 8, 4, 59, tzinfo=UTC), date(2026, 12, 7)),  # 23:59 EST
+        (datetime(2026, 12, 8, 5, 0, tzinfo=UTC), date(2026, 12, 8)),  # midnight EST
+    ],
+)
+async def test_the_day_is_the_us_eastern_day_of_the_trigger_time(session_factory, triggered_at, day):
+    alert_id = await _insert_committed(session_factory, ALERT.model_copy(update={"triggered_at": triggered_at}))
+
+    async with session_factory() as s:
+        assert (await s.get(AlertRow, alert_id)).day == day
+
+
+async def test_a_second_alert_for_a_stock_on_one_eastern_day_is_refused_and_notifies_nothing(
+    session_factory, migrated_db_url
+):
+    first_alert = ALERT.model_copy(update={"triggered_at": datetime(2026, 7, 7, 4, 30, tzinfo=UTC)})
+    # 22:30 EDT the same Eastern day, though the next UTC day.
+    later_alert = first_alert.model_copy(update={"triggered_at": datetime(2026, 7, 8, 2, 30, tzinfo=UTC)})
     raw_dsn = migrated_db_url.replace("+psycopg", "")
     async with await psycopg.AsyncConnection.connect(raw_dsn, autocommit=True) as listener:
         await listener.execute("LISTEN alerts")
+        first = await _insert_committed(session_factory, first_alert)
+        with pytest.raises(IntegrityError):
+            await _insert_committed(session_factory, later_alert)
+        # NOTIFYs reach a listener in commit order, so once the sentinel is
+        # here, any notify the refused insert had wrongly sent would be too.
         async with session_factory() as s:
-            first = await AlertRepository(s).insert(keyed)
+            await s.execute(select(func.pg_notify("alerts", "sentinel")))
             await s.commit()
-        async with session_factory() as s:
-            second = await AlertRepository(s).insert(keyed)
-            await s.commit()
-        got = [n async for n in listener.notifies(timeout=1, stop_after=2)]
+        got = [n async for n in listener.notifies(timeout=30, stop_after=2)]
 
-    assert first is not None and second is None
     assert await _count(session_factory, AlertRow) == 1
-    assert [n.payload for n in got] == [str(first)]
+    assert [n.payload for n in got] == [str(first), "sentinel"]
 
 
-async def test_alerts_without_dedup_key_never_conflict(session_factory):
+async def test_other_stocks_other_days_and_replies_do_not_conflict(session_factory):
+    base = ALERT.model_copy(update={"triggered_at": datetime(2026, 7, 6, 14, 30, tzinfo=UTC)})
+    parent = await _insert_committed(session_factory, base)
+
+    ids = [
+        await _insert_committed(session_factory, base.model_copy(update={"symbol": "QQQ"})),
+        await _insert_committed(
+            session_factory, base.model_copy(update={"triggered_at": datetime(2026, 7, 7, 14, 30, tzinfo=UTC)})
+        ),
+        await _insert_committed(session_factory, base.model_copy(update={"reply_to": parent})),
+    ]
+
+    assert len({parent, *ids}) == 4
+
+
+async def test_a_reply_is_stored_pointing_at_its_alert(session_factory):
+    parent = await _insert_committed(session_factory, ALERT)
+    reply = await _insert_committed(session_factory, ALERT.model_copy(update={"reply_to": parent}))
+
+    async with session_factory() as s:
+        pending = await AlertRepository(s).list_unposted()
+    assert [(p.id, p.alert.reply_to) for p in pending] == [(parent, None), (reply, parent)]
+
+
+async def test_alerted_symbols_names_stocks_with_an_alert_on_that_eastern_day(session_factory):
+    day = datetime(2026, 7, 6, 14, 30, tzinfo=UTC)
     async with session_factory() as s:
         repo = AlertRepository(s)
-        ids = [await repo.insert(ALERT), await repo.insert(ALERT)]
+        await repo.insert(ALERT.model_copy(update={"symbol": "AAA", "triggered_at": day}))
+        await repo.insert(ALERT.model_copy(update={"symbol": "BBB", "triggered_at": datetime(2026, 7, 7, 14, 0, tzinfo=UTC)}))
         await s.commit()
-    assert None not in ids
-    assert await _count(session_factory, AlertRow) == 2
+
+    async with session_factory() as s:
+        repo = AlertRepository(s)
+        assert await repo.alerted_symbols(date(2026, 7, 6), {"AAA", "BBB", "CCC"}) == {"AAA"}
+        assert await repo.alerted_symbols(date(2026, 7, 7), {"AAA", "BBB"}) == {"BBB"}
+        assert await repo.alerted_symbols(date(2026, 7, 8), {"AAA"}) == set()
 
 
 async def test_rollback_persists_nothing(session_factory):
@@ -193,8 +253,8 @@ async def test_multiple_alerts_share_one_transaction(session_factory, migrated_d
         await listener.execute("LISTEN alerts")
         async with session_factory() as s:
             repo = AlertRepository(s)
-            id_a = await repo.insert(ALERT)
-            id_b = await repo.insert(ALERT)
+            id_a = await repo.insert(_alert("AAA"))
+            id_b = await repo.insert(_alert("BBB"))
             await s.commit()
         got = [n async for n in listener.notifies(timeout=5, stop_after=2)]
 

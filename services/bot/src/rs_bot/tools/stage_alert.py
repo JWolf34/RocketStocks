@@ -31,16 +31,17 @@ class _StageSettings(BaseSettings):
 async def stage(session_factory: async_sessionmaker[AsyncSession]) -> int:
     """Insert + commit one staged test alert; returns its id (also the NOTIFY
     payload a running bot logs as the wake)."""
+    now = SystemClock().now()
+    # One Alert per stock per Eastern day: a drill staging twice in a day needs a symbol of its own.
     alert = Alert(
-        symbol="TEST",
-        alert_type="staged_test",
-        triggered_at=SystemClock().now(),
+        symbol=f"TEST-{now:%H%M%S}",
+        trigger="staged_test",
+        triggered_at=now,
         payload={"volume": 999_999, "threshold": 500_000, "staged": True},
     )
     async with session_factory() as session:
         alert_id = await AlertRepository(session).insert(alert)
         await session.commit()
-    assert alert_id is not None  # no dedup_key, so never deduplicated
     return alert_id
 
 

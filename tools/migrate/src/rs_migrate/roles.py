@@ -39,6 +39,12 @@ GRANTS: dict[str, dict[str, tuple[str, ...]]] = {
         "mcp": _SELECT,
         "research": _SELECT,
     },
+    # Written once by ingest and never changed; the readers rank and report over them.
+    "candidate": {
+        "ingest": _SELECT_INSERT,
+        "mcp": _SELECT,
+        "research": _SELECT,
+    },
     "daily_bar": {
         "ingest": _SELECT_INSERT,
         "bot": _SELECT,
