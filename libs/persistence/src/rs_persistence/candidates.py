@@ -4,9 +4,9 @@ A candidate is decided once and never updated; its unique key (trigger, rule
 version, stock, hit time) makes a rerun of a boundary a no-op.
 """
 
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -86,3 +86,12 @@ class CandidateRepository:
             .order_by(CandidateRow.hit_at, CandidateRow.id)
         )
         return [candidate_from_row(row) for row in rows]
+
+    async def first_hits_by_day(self, trigger: str, rule_version: str) -> dict[tuple[str, date], datetime]:
+        """The earliest stored hit of one Trigger version for each stock and Eastern day."""
+        result = await self._session.execute(
+            select(CandidateRow.symbol, CandidateRow.day, func.min(CandidateRow.hit_at))
+            .where(CandidateRow.trigger == trigger, CandidateRow.rule_version == rule_version)
+            .group_by(CandidateRow.symbol, CandidateRow.day)
+        )
+        return {(symbol, day): first.astimezone(UTC) for symbol, day, first in result}

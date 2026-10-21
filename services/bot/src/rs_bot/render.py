@@ -12,6 +12,7 @@ from the end, so the same alert always renders the same embed.
 
 import logging
 import re
+from collections.abc import Sequence
 
 import discord
 
@@ -19,7 +20,6 @@ from rs_domain import (
     FactUnavailable,
     PopularitySurgePayload,
     TrackRecord,
-    TrackRecordInput,
 )
 from rs_persistence import PendingAlert
 
@@ -51,9 +51,10 @@ def marked_row_id(embed: discord.Embed) -> int | None:
 
 
 def render(
-    pending: PendingAlert, track_record: TrackRecord | None = None, *, track_record_failed: bool = False
+    pending: PendingAlert, track_record: Sequence[TrackRecord] = (), *, track_record_failed: bool = False
 ) -> discord.Embed:
-    """`track_record_failed` says the read errored, so "none measured yet" is not claimed."""
+    """`track_record` is the Trigger version's rows, one per horizon. `track_record_failed`
+    says the read errored, so "none measured yet" is not claimed."""
     try:
         return _render_full(pending, track_record, track_record_failed)
     except Exception:
@@ -64,7 +65,7 @@ def render(
 
 
 def _render_full(
-    pending: PendingAlert, track_record: TrackRecord | None, track_record_failed: bool
+    pending: PendingAlert, track_record: Sequence[TrackRecord], track_record_failed: bool
 ) -> discord.Embed:
     alert = pending.alert
     if alert.trigger != POPULARITY_SURGE:
@@ -184,25 +185,28 @@ def _excess(value: float | None) -> str:
     return "n/a" if value is None else f"{value * 100:+.2f}%"
 
 
-def _track_record_text(track_record: TrackRecord | None, failed: bool) -> str:
+def _multiple(value: float | None) -> str:
+    return "n/a" if value is None else f"{value:.1f}x"
+
+
+def _horizon_text(record: TrackRecord) -> str:
+    if record.too_few_cases:
+        return f"{record.horizon}d: too few cases ({record.outcomes} Outcomes)"
+    unpriced = f", {record.unpriced} could not be priced" if record.unpriced else ""
+    return (
+        f"{record.horizon}d: {record.outcomes} Outcomes{unpriced}; "
+        f"{_pct(record.share_at_2x)} moved 2x typical or more "
+        f"(same stocks on ordinary days: {_pct(record.ordinary_share)}), "
+        f"median {_multiple(record.median_multiple)} typical, "
+        f"median excess vs SPY {_excess(record.median_excess)}"
+    )
+
+
+def _track_record_text(track_record: Sequence[TrackRecord], failed: bool) -> str:
     if failed:
         return "unavailable: the track record could not be read"
-    if track_record is None:
+    if not track_record:
         return "No track record has been measured for this rule version yet."
-    label = (
-        "measured on past alerts"
-        if track_record.input is TrackRecordInput.LOGGED
-        else "reconstructed from history"
-    )
-    unpriced = f", {track_record.n_unpriced} unpriced" if track_record.n_unpriced else ""
-    horizons = (
-        (1, track_record.hit_rate_1d, track_record.median_excess_1d),
-        (5, track_record.hit_rate_5d, track_record.median_excess_5d),
-        (10, track_record.hit_rate_10d, track_record.median_excess_10d),
-    )
-    rows = [
-        f"{days}d: hit rate {_pct(hit)}, median excess vs SPY {_excess(median)}"
-        for days, hit, median in horizons
-    ]
-    header = f"{label} (input: {track_record.input.value}), N={track_record.n}{unpriced}"
-    return "\n".join([header, *rows, track_record.survivorship_caveat])
+    first = track_record[0]
+    header = f"{first.cases} cases, {first.live_cases} live (the rest replayed from history)"
+    return "\n".join([header, *(_horizon_text(record) for record in track_record)])

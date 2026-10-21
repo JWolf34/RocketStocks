@@ -18,7 +18,6 @@ from rs_domain import (
     PriceMoveFact,
     SurgeFacts,
     TrackRecord,
-    TrackRecordInput,
     VolumeFact,
 )
 from rs_persistence import PendingAlert
@@ -68,22 +67,26 @@ def _pending(facts: SurgeFacts | None = None, fired=("mention_surge",)) -> Pendi
     )
 
 
-def _track_record(input=TrackRecordInput.RECONSTRUCTED, n=120) -> TrackRecord:
-    return TrackRecord(
-        trigger="popularity_surge",
-        rule_version="1",
-        computed_at=T0,
-        input=input,
-        n=n,
-        n_unpriced=3,
-        hit_rate_1d=0.52,
-        hit_rate_5d=0.47,
-        hit_rate_10d=None,
-        median_excess_1d=0.004,
-        median_excess_5d=-0.012,
-        median_excess_10d=None,
-        survivorship_caveat="Delisted names are missing.",
-    )
+def _track_record(outcomes=45) -> list[TrackRecord]:
+    """The three horizons of one Trigger version's Track record."""
+    return [
+        TrackRecord(
+            trigger="popularity_surge",
+            rule_version="1",
+            horizon=horizon,
+            computed_at=T0,
+            cases=120,
+            live_cases=8,
+            outcomes=outcomes,
+            unpriced=3,
+            no_move_size=2,
+            share_at_2x=0.25,
+            ordinary_share=0.07,
+            median_multiple=0.9,
+            median_excess=-0.012,
+        )
+        for horizon in (1, 5, 20)
+    ]
 
 
 def _fields(embed) -> dict[str, str]:
@@ -156,13 +159,6 @@ def test_a_version_1_payload_with_filings_still_renders_typed():
     assert "$12.50" in fields["Price"]
 
 
-def test_oversized_caveat_is_clipped_inside_the_limits():
-    track_record = _track_record().model_copy(update={"survivorship_caveat": "x" * 5000})
-    embed = render(_pending(), track_record)
-    _assert_within_discord_limits(embed)
-    assert _fields(embed)["Track record"].endswith("...")
-
-
 def test_fields_over_the_total_are_dropped_from_the_end_deterministically():
     embed = discord.Embed(title="T")
     fields = [(f"field {i}", "v" * 1000) for i in range(10)]
@@ -176,24 +172,43 @@ def test_fields_over_the_total_are_dropped_from_the_end_deterministically():
 
 
 def test_no_track_record_says_so_explicitly():
-    value = _fields(render(_pending(), None))["Track record"]
+    value = _fields(render(_pending()))["Track record"]
     assert "No track record has been measured" in value
 
 
 def test_failed_track_record_read_does_not_claim_none_measured():
-    value = _fields(render(_pending(), None, track_record_failed=True))["Track record"]
+    value = _fields(render(_pending(), track_record_failed=True))["Track record"]
     assert "could not be read" in value
 
 
-def test_reconstructed_and_logged_rates_are_labelled():
-    reconstructed = _fields(render(_pending(), _track_record(TrackRecordInput.RECONSTRUCTED)))["Track record"]
-    logged = _fields(render(_pending(), _track_record(TrackRecordInput.LOGGED, n=45)))["Track record"]
+def test_each_horizon_shows_its_outcomes_shares_and_direction():
+    value = _fields(render(_pending(), _track_record()))["Track record"]
 
-    assert "reconstructed from history (input: reconstructed), N=120, 3 unpriced" in reconstructed
-    assert "measured on past alerts (input: logged), N=45" in logged
-    assert "1d: hit rate 52%, median excess vs SPY +0.40%" in logged
-    assert "10d: hit rate n/a, median excess vs SPY n/a" in logged
-    assert logged.endswith("Delisted names are missing.")
+    assert value.splitlines()[0] == "120 cases, 8 live (the rest replayed from history)"
+    assert (
+        "5d: 45 Outcomes, 3 could not be priced; 25% moved 2x typical or more "
+        "(same stocks on ordinary days: 7%), median 0.9x typical, median excess vs SPY -1.20%"
+    ) in value
+    assert [line.split(":")[0] for line in value.splitlines()[1:]] == ["1d", "5d", "20d"]
+
+
+def test_a_horizon_below_thirty_outcomes_says_too_few_cases():
+    thin = _track_record()
+    thin[2] = thin[2].model_copy(update={"outcomes": 29})
+
+    lines = _fields(render(_pending(), thin))["Track record"].splitlines()
+
+    assert lines[3] == "20d: too few cases (29 Outcomes)"
+    assert "too few cases" not in lines[2]
+
+
+def test_missing_shares_show_as_not_available():
+    bare = [r.model_copy(update={"share_at_2x": None, "ordinary_share": None, "median_multiple": None, "median_excess": None})
+            for r in _track_record()]
+
+    value = _fields(render(_pending(), bare))["Track record"]
+
+    assert "n/a moved 2x typical or more (same stocks on ordinary days: n/a), median n/a typical, median excess vs SPY n/a" in value
 
 
 GENERIC_PENDING = PendingAlert(

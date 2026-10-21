@@ -138,8 +138,8 @@ class StoredDailyBar(BaseModel):
 
 
 class UnpricedSymbol(BaseModel):
-    """A symbol the price vendor cannot price, kept so it is counted in the track
-    record's survivorship caveat and retried slowly instead of in a hot loop."""
+    """A symbol the price vendor cannot price, kept so its cases are counted as
+    unpriced and it is retried slowly instead of in a hot loop."""
 
     model_config = ConfigDict(frozen=True)
 
@@ -149,34 +149,70 @@ class UnpricedSymbol(BaseModel):
     reason: str
 
 
-class TrackRecordInput(StrEnum):
-    """What a track record was measured from. Values are the DB column values."""
-
-    RECONSTRUCTED = "reconstructed"
-    LOGGED = "logged"
-
-
-class TrackRecord(BaseModel):
-    """A Trigger's measured outcome statistics for one rule version. Hit rate is
-    the share of events with a positive excess return versus SPY; both are None
-    for a horizon with no priced events. `n_unpriced` counts events dropped
-    because the vendor could not price the symbol."""
+class Outcome(BaseModel):
+    """What one case did at one horizon. A case is the first candidate of a Trigger
+    version on a stock on an Eastern day; `case_at` is its post (or its hit when it
+    was not posted) and `live` says the live poll stored a candidate for it, as
+    against a hit replayed from history. Entry is the open of the `entry_session`,
+    the exit the close of the `exit_session`; returns are fractions (0.01 is one
+    percentage point) and excess is the stock's less SPY's. `move_multiple` is the
+    absolute excess over the stock's typical move and is None, with the typical
+    move, when its history was too short. `ordinary_share` is the share of the
+    stock's own windows that year that moved 2x typical or more."""
 
     model_config = ConfigDict(frozen=True)
 
     trigger: str
     rule_version: str
+    symbol: str
+    day: date
+    horizon: PositiveInt
+    case_at: UtcDatetime
+    hit_at: UtcDatetime
+    live: bool
+    entry_session: date
+    exit_session: date
+    stock_return: float
+    benchmark_return: float
+    excess_return: float
+    typical_move: float | None = None
+    move_multiple: float | None = None
+    ordinary_share: float | None = None
+
+
+# A Track record says "too few cases" below this many Outcomes at a horizon.
+TOO_FEW_CASES_BELOW = 30
+
+
+class TrackRecord(BaseModel):
+    """A Trigger version's Outcomes summarised at one horizon. `cases` and `live_cases`
+    count every case, matured or not; the rest count this horizon: `outcomes` the
+    measured ones, `unpriced` the matured ones with a missing bar, `split_excluded`
+    the matured ones left out because unadjusted bars held what looks like a split,
+    `no_move_size` the measured ones whose history was too short. The shares and
+    medians are None when nothing backs them: `share_at_2x`, `ordinary_share` and
+    `median_multiple` over the Outcomes with a move size, `median_excess` over all."""
+
+    model_config = ConfigDict(frozen=True)
+
+    trigger: str
+    rule_version: str
+    horizon: PositiveInt
     computed_at: UtcDatetime
-    input: TrackRecordInput
-    n: NonNegativeInt
-    n_unpriced: NonNegativeInt = 0
-    hit_rate_1d: float | None = None
-    hit_rate_5d: float | None = None
-    hit_rate_10d: float | None = None
-    median_excess_1d: float | None = None
-    median_excess_5d: float | None = None
-    median_excess_10d: float | None = None
-    survivorship_caveat: str
+    cases: NonNegativeInt
+    live_cases: NonNegativeInt
+    outcomes: NonNegativeInt
+    unpriced: NonNegativeInt = 0
+    split_excluded: NonNegativeInt = 0
+    no_move_size: NonNegativeInt = 0
+    share_at_2x: float | None = None
+    ordinary_share: float | None = None
+    median_multiple: float | None = None
+    median_excess: float | None = None
+
+    @property
+    def too_few_cases(self) -> bool:
+        return self.outcomes < TOO_FEW_CASES_BELOW
 
 
 class AuthRequestState(StrEnum):

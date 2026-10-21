@@ -27,7 +27,6 @@ from rs_bot.testing import surge_alert as _surge_alert
 from rs_domain import (
     Alert,
     TrackRecord,
-    TrackRecordInput,
 )
 from rs_observability import HealthTracker, OpsSettings, configure_ops
 from rs_observability.testing import captured_json_stream, json_records
@@ -185,7 +184,7 @@ async def test_last_attempt_posts_the_plain_embed(session_factory):
     assert await _undelivered_ids(session_factory) == []
 
 
-async def test_surge_alert_is_posted_with_the_current_track_record(session_factory):
+async def test_surge_alert_is_posted_with_the_stored_track_record(session_factory):
     await _insert(session_factory, _surge_alert())
     sender = FakeDiscord()
     worker = _worker(session_factory, sender)
@@ -195,15 +194,18 @@ async def test_surge_alert_is_posted_with_the_current_track_record(session_facto
     assert "No track record has been measured" in {f.name: f.value for f in before.fields}["Track record"]
 
     async with session_factory() as s:
-        await TrackRecordRepository(s).insert(
-            TrackRecord(
-                trigger="popularity_surge",
-                rule_version="1",
-                computed_at=datetime(2026, 7, 5, tzinfo=UTC),
-                input=TrackRecordInput.RECONSTRUCTED,
-                n=77,
-                survivorship_caveat="caveat",
-            )
+        await TrackRecordRepository(s).upsert(
+            [
+                TrackRecord(
+                    trigger="popularity_surge",
+                    rule_version="1",
+                    horizon=5,
+                    computed_at=datetime(2026, 7, 5, tzinfo=UTC),
+                    cases=90,
+                    live_cases=3,
+                    outcomes=77,
+                )
+            ]
         )
         await s.commit()
     # One Alert per stock per Eastern day, so the second one is a day later (still fresh).
@@ -213,7 +215,7 @@ async def test_surge_alert_is_posted_with_the_current_track_record(session_facto
     await worker.sweep()
 
     after = {f.name: f.value for f in sender.sent[-1].fields}
-    assert "N=77" in after["Track record"]
+    assert "5d: 77 Outcomes" in after["Track record"]
 
 
 async def test_run_sweeps_on_wake_without_waiting_interval(session_factory):

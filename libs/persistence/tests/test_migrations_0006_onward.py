@@ -1,4 +1,4 @@
-"""Migrations 0006-0017 against Timescale: the upgrade/downgrade round trip and
+"""Migrations 0006-0018 against Timescale: the upgrade/downgrade round trip and
 the physical layout (hypertables, compression, constraints)."""
 
 import uuid
@@ -12,6 +12,8 @@ from rs_persistence import migration_config
 
 NEW_TABLES = {"popularity_snapshot", "daily_bar", "unpriced_symbol", "track_record", "schwab_auth_request"}
 NEW_TYPES = {"popularity_origin", "track_record_input", "auth_request_state"}
+# track_record_input is gone at head: the Track record no longer has an input.
+HEAD_TYPES = NEW_TYPES - {"track_record_input"}
 ALERT_COLUMNS_BEFORE = {"id", "symbol", "alert_type", "triggered_at", "payload", "posted_at"}
 
 
@@ -53,7 +55,7 @@ def test_upgrade_downgrade_round_trip(scratch_url):
     tables, types, alert_columns = _state(scratch_url)
     assert NEW_TABLES <= tables
     assert "outbox" not in tables
-    assert types == NEW_TYPES
+    assert types == HEAD_TYPES
     assert alert_columns >= {
         "id", "symbol", "trigger", "triggered_at", "day", "payload", "posted_at",
         "rule_version", "reply_to", "post_attempts", "delivery", "sending_at", "message_id", "thread_id",
@@ -69,7 +71,7 @@ def test_upgrade_downgrade_round_trip(scratch_url):
 
     command.upgrade(config, "head")
     tables, types, _ = _state(scratch_url)
-    assert NEW_TABLES <= tables and types == NEW_TYPES
+    assert NEW_TABLES <= tables and types == HEAD_TYPES
 
 
 def test_0012_and_0013_drop_the_dead_tables_and_downgrade_to_empty_ones(scratch_url):
@@ -244,7 +246,7 @@ def test_0016_keeps_every_alert_backfills_day_and_one_posted_candidate_per_trigg
                 )
             )
 
-        command.upgrade(config, "head")
+        command.upgrade(config, "0016")
         with engine.connect() as conn:
             alerts = conn.execute(text("SELECT id, symbol, trigger, day, reply_to FROM alerts ORDER BY id")).all()
             candidates = conn.execute(
@@ -360,5 +362,43 @@ def test_0017_marks_posted_rows_posted_and_downgrade_returns_the_old_cursor(scra
             assert conn.execute(text("SELECT count(*) FROM pg_type WHERE typname = 'alert_delivery'")).scalar_one() == 0
 
         command.upgrade(config, "head")
+    finally:
+        engine.dispose()
+
+
+def test_0018_swaps_the_track_record_for_outcomes_and_downgrade_restores_the_old_shape(scratch_url):
+    config = migration_config(scratch_url)
+    engine = create_engine(scratch_url)
+    try:
+        command.upgrade(config, "0017")
+        with engine.begin() as conn:
+            conn.execute(
+                text(
+                    "INSERT INTO track_record (trigger, rule_version, computed_at, input, n, survivorship_caveat)"
+                    " VALUES ('popularity_surge', '2', now(), 'logged', 40, 'caveat')"
+                )
+            )
+
+        command.upgrade(config, "0018")
+        insp = inspect(engine)
+        assert insp.get_pk_constraint("track_record")["constrained_columns"] == [
+            "trigger", "rule_version", "horizon",
+        ]
+        assert insp.get_pk_constraint("outcome")["constrained_columns"] == [
+            "trigger", "rule_version", "symbol", "day", "horizon",
+        ]
+        columns = {c["name"] for c in insp.get_columns("track_record")}
+        assert not columns & {"input", "n", "hit_rate_1d", "hit_rate_10d", "median_excess_10d", "survivorship_caveat"}
+        with engine.connect() as conn:
+            assert conn.execute(text("SELECT count(*) FROM track_record")).scalar_one() == 0  # old study rows are gone
+            assert conn.execute(text("SELECT count(*) FROM pg_type WHERE typname = 'track_record_input'")).scalar_one() == 0
+
+        command.downgrade(config, "0017")
+        insp = inspect(engine)
+        assert "outcome" not in insp.get_table_names()
+        assert {c["name"] for c in insp.get_columns("track_record")} >= {"input", "hit_rate_10d", "survivorship_caveat"}
+
+        command.upgrade(config, "head")
+        assert "outcome" in inspect(engine).get_table_names()
     finally:
         engine.dispose()

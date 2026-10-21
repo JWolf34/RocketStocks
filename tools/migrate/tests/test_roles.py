@@ -8,6 +8,7 @@ from datetime import UTC, datetime, timedelta
 import psycopg
 import pytest
 from psycopg import errors
+from sqlalchemy import select
 from sqlalchemy.engine import make_url
 
 from rs_domain import (
@@ -16,7 +17,6 @@ from rs_domain import (
     PopularityOrigin,
     PopularitySnapshot,
     TrackRecord,
-    TrackRecordInput,
 )
 from rs_migrate.__main__ import main
 from rs_migrate.roles import (
@@ -38,6 +38,7 @@ from rs_persistence import (
     SchwabTokenStore,
     TokenNoticeRepository,
     TrackRecordRepository,
+    TrackRecordRow,
     build_engine,
     build_session_factory,
 )
@@ -85,7 +86,7 @@ class Roles:
 def _clear_data(r: Roles) -> None:
     with r.admin() as conn:
         conn.execute(
-            "TRUNCATE alerts, candidate, track_record, popularity_snapshot, schwab_auth_request,"
+            "TRUNCATE alerts, candidate, outcome, track_record, popularity_snapshot, schwab_auth_request,"
             " schwab_tokens, schwab_token_notice RESTART IDENTITY"
         )
 
@@ -236,26 +237,42 @@ def test_ingest_reads_and_writes_schwab_tokens(roles):
         assert conn.execute("SELECT token_data FROM schwab_tokens").fetchone() == ({},)
 
 
-def test_research_inserts_track_record_but_not_alerts(roles):
-    with roles.connect("research") as conn:
-        conn.execute(
-            "INSERT INTO track_record (trigger, rule_version, computed_at, input, n,"
-            " survivorship_caveat) VALUES ('t', '1', now(), 'reconstructed', 0, 'c')"
-        )
-        _denied(
-            conn,
-            "INSERT INTO alerts (symbol, trigger, triggered_at, payload)"
-            " VALUES ('A', 't', now(), '{}')",
-        )
-        _denied(conn, "UPDATE track_record SET n = 1")
+def test_ingest_rewrites_outcomes_and_track_records_and_the_analysts_only_read_them(roles):
+    outcome = (
+        "INSERT INTO outcome (trigger, rule_version, symbol, day, horizon, case_at, hit_at, live,"
+        " entry_session, exit_session, stock_return, benchmark_return, excess_return)"
+        " VALUES ('t', '1', 'A', '2026-07-06', 5, now(), now(), true, '2026-07-07', '2026-07-13', 0, 0, 0)"
+    )
+    record = (
+        "INSERT INTO track_record (trigger, rule_version, horizon, computed_at, cases, live_cases,"
+        " outcomes, unpriced, split_excluded, no_move_size) VALUES ('t', '1', 5, now(), 0, 0, 0, 0, 0, 0)"
+    )
+    with roles.connect("ingest") as conn:
+        conn.execute(outcome)
+        conn.execute(record)
+        conn.execute("UPDATE track_record SET outcomes = 1")
+        conn.execute("DELETE FROM outcome")
+        _denied(conn, "UPDATE outcome SET live = false")
         _denied(conn, "DELETE FROM track_record")
+        conn.execute(outcome)
+    for service in ("mcp", "research"):
+        with roles.connect(service) as conn:
+            conn.execute("SELECT * FROM outcome")
+            conn.execute("SELECT * FROM track_record")
+            _denied(conn, outcome)
+            _denied(conn, record)
+            _denied(conn, "UPDATE track_record SET outcomes = 2")
+    with roles.connect("bot") as conn:
+        conn.execute("SELECT * FROM track_record")
+        _denied(conn, "SELECT * FROM outcome")
+        _denied(conn, record)
 
 
 @pytest.mark.parametrize(
     "statement",
     [
-        "INSERT INTO track_record (trigger, rule_version, computed_at, input, n,"
-        " survivorship_caveat) VALUES ('t', '1', now(), 'logged', 0, 'c')",
+        "INSERT INTO track_record (trigger, rule_version, horizon, computed_at, cases, live_cases,"
+        " outcomes, unpriced, split_excluded, no_move_size) VALUES ('t', '1', 5, now(), 0, 0, 0, 0, 0, 0)",
         "INSERT INTO alerts (symbol, trigger, triggered_at, payload)"
         " VALUES ('A', 't', now(), '{}')",
         "DELETE FROM alerts",
@@ -271,7 +288,7 @@ def test_mcp_is_read_only_and_cannot_see_secrets(roles, statement):
 
 def test_mcp_reads_the_market_data_it_exposes(roles):
     with roles.connect("mcp") as conn:
-        for table in ("alerts", "track_record", "daily_bar", "popularity_snapshot"):
+        for table in ("alerts", "outcome", "track_record", "daily_bar", "popularity_snapshot"):
             conn.execute(f"SELECT * FROM {table}")
 
 
@@ -392,19 +409,16 @@ async def test_services_run_their_real_repositories_under_their_roles(roles):
         assert await repo.expire_older_than(NOW + timedelta(days=1)) == 0
         await s.commit()
 
-    # research writes the track record; mcp reads the lot.
-    async with research() as s:
-        await TrackRecordRepository(s).insert(
-            TrackRecord(
-                trigger="surge",
-                rule_version="1",
-                computed_at=NOW,
-                input=TrackRecordInput.RECONSTRUCTED,
-                n=0,
-                survivorship_caveat="c",
-            )
+    # ingest rewrites a Trigger version's Outcomes and Track record; the others read them.
+    async with ingest() as s:
+        repo = TrackRecordRepository(s)
+        await repo.replace_outcomes("surge", "1", [])
+        await repo.upsert(
+            [TrackRecord(trigger="surge", rule_version="1", horizon=5, computed_at=NOW, cases=0, live_cases=0, outcomes=0)]
         )
         await s.commit()
+    async with research() as s:
+        assert (await s.scalars(select(TrackRecordRow.horizon))).all() == [5]
     async with mcp() as s:
         got = await PopularityRepository(s).list_between(NOW, NOW + timedelta(minutes=30))
         assert [g.ticker for g in got] == ["AAA"]
