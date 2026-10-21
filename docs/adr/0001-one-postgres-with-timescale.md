@@ -7,7 +7,7 @@ We decided that Postgres with the Timescale extension is the only stateful infra
 - Options chain snapshots, Popularity snapshots and daily bars are compressed hypertables.
   Hypertables and compression policies are created as raw DDL inside Alembic migrations; SQLAlchemy treats them as ordinary tables.
 - Everything else (Alerts, Outcomes, Track records, Baselines, settings, roles, paper trades) is a plain table.
-- Cross-service signalling uses Postgres LISTEN/NOTIFY (see the delivery ADR); there is no Redis, no message broker and no cache layer.
+- Cross-service signalling uses Postgres LISTEN/NOTIFY (Alert delivery is its own decision); there is no Redis, no message broker and no cache layer.
 - Backups cover one database, which keeps the "what to back up" answer short.
 
 ## Consequences

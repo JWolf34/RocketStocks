@@ -4,10 +4,10 @@ Deciding that a stock is worth attention must keep running when Discord or the b
 We decided that ingest evaluates every Trigger and selects Alerts, and the bot only delivers them.
 
 - **ingest** evaluates Triggers, turns hits into candidates, and applies the selector (one Alert per stock per day, the daily budget, ranking by how Unusual a candidate is, and the stale rule).
-  It writes an Alert row for every candidate, whether it is posted or not.
+  It writes a row for every candidate, whether it is selected for posting or not, and marks the ones it selected.
 - **Delivery:** ingest writes the Alert row and issues NOTIFY in one transaction, so the write and the signal commit together.
   The bot LISTENs, but NOTIFY is only latency.
-  The correctness mechanism is the bot's sweep of unposted Alerts (`posted_at IS NULL`), run on every reconnect and periodically while connected.
+  The correctness mechanism is the bot's sweep of selected Alerts that have not been posted yet (no `posted_at`), run on every reconnect and periodically while connected.
   A lost NOTIFY, a bot outage or a mid-post crash are all covered by the next sweep.
 - **Nothing posts twice:** an Alert is marked posted once it is posted, and the sweep skips posted Alerts.
 - **The bot never calls a vendor and never evaluates Triggers.**

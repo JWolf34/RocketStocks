@@ -33,10 +33,10 @@ If any of these files don't exist, **proceed silently**. Don't flag their absenc
 
 When your output names a domain concept (in an issue title, a refactor proposal, a hypothesis, a test name), use the term as defined in `CONTEXT.md`. Don't drift to synonyms the glossary explicitly avoids - the glossary's `_Avoid_` lines are binding (e.g. use **alert** for the informational push post and reserve **signal** for an edge-backed claim; **report** for the pull surface, **digest** for scheduled pushes).
 
-If the concept you need isn't in the glossary yet, that's a signal — either you're inventing language the project doesn't use (reconsider) or there's a real gap (note it for `/domain-modeling`).
+If the concept you need isn't in the glossary yet, that's a signal - either you're inventing language the project doesn't use (reconsider) or there's a real gap (note it for `/domain-modeling`).
 
 ## Flag ADR conflicts
 
 If your output contradicts an existing ADR, surface it explicitly rather than silently overriding:
 
-> _Contradicts ADR-0002 (Triggers in ingest) — but worth reopening because…_
+> _Contradicts ADR-0002 (Triggers in ingest) - but worth reopening because…_
