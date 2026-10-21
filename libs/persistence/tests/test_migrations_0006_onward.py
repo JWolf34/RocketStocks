@@ -1,4 +1,4 @@
-"""Migrations 0006-0018 against Timescale: the upgrade/downgrade round trip and
+"""Migrations 0006-0019 against Timescale: the upgrade/downgrade round trip and
 the physical layout (hypertables, compression, constraints)."""
 
 import uuid
@@ -400,5 +400,28 @@ def test_0018_swaps_the_track_record_for_outcomes_and_downgrade_restores_the_old
 
         command.upgrade(config, "head")
         assert "outcome" in inspect(engine).get_table_names()
+    finally:
+        engine.dispose()
+
+
+def test_0019_adds_trigger_role_and_downgrade_drops_it(scratch_url):
+    config = migration_config(scratch_url)
+    engine = create_engine(scratch_url)
+    try:
+        command.upgrade(config, "0018")
+        assert "trigger_role" not in inspect(engine).get_table_names()
+
+        command.upgrade(config, "head")
+        insp = inspect(engine)
+        assert {c["name"]: c["nullable"] for c in insp.get_columns("trigger_role")} == {
+            "trigger": False,
+            "role_id": False,
+        }
+        assert insp.get_pk_constraint("trigger_role")["constrained_columns"] == ["trigger"]
+
+        command.downgrade(config, "0018")
+        assert "trigger_role" not in inspect(engine).get_table_names()
+
+        command.upgrade(config, "head")
     finally:
         engine.dispose()

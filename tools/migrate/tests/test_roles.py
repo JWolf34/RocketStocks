@@ -39,6 +39,7 @@ from rs_persistence import (
     TokenNoticeRepository,
     TrackRecordRepository,
     TrackRecordRow,
+    TriggerRoleRepository,
     build_engine,
     build_session_factory,
 )
@@ -87,7 +88,7 @@ def _clear_data(r: Roles) -> None:
     with r.admin() as conn:
         conn.execute(
             "TRUNCATE alerts, candidate, outcome, track_record, popularity_snapshot, schwab_auth_request,"
-            " schwab_tokens, schwab_token_notice RESTART IDENTITY"
+            " schwab_tokens, schwab_token_notice, trigger_role RESTART IDENTITY"
         )
 
 
@@ -229,6 +230,18 @@ def test_bot_records_notices_but_cannot_rewrite_them(roles):
         conn.execute("SELECT * FROM schwab_token_notice")
         _denied(conn, "UPDATE schwab_token_notice SET threshold_hours = 6")
         _denied(conn, "DELETE FROM schwab_token_notice")
+
+
+def test_bot_maps_triggers_to_roles_and_nobody_else_touches_them(roles):
+    with roles.connect("bot") as conn:
+        conn.execute("INSERT INTO trigger_role (trigger, role_id) VALUES ('popularity_surge', 1)")
+        conn.execute("UPDATE trigger_role SET role_id = 2")
+        conn.execute("SELECT * FROM trigger_role")
+        conn.execute("DELETE FROM trigger_role")
+    for service in ("ingest", "mcp", "research"):
+        with roles.connect(service) as conn:
+            _denied(conn, "SELECT * FROM trigger_role")
+            _denied(conn, "INSERT INTO trigger_role (trigger, role_id) VALUES ('t', 1)")
 
 
 def test_ingest_reads_and_writes_schwab_tokens(roles):
@@ -383,6 +396,13 @@ async def test_services_run_their_real_repositories_under_their_roles(roles):
         await s.commit()
     async with bot() as s:
         assert await TokenNoticeRepository(s).sent_thresholds(NOW) == {24}
+
+    # bot: the role mapping /setup roles writes.
+    async with bot() as s:
+        await TriggerRoleRepository(s).set("popularity_surge", 77)
+        await s.commit()
+    async with bot() as s:
+        assert await TriggerRoleRepository(s).all() == {"popularity_surge": 77}
 
     # bot: sweep, retry bookkeeping, mark posted.
     async with bot() as s:

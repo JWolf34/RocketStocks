@@ -315,6 +315,16 @@ class SchwabTokenNoticeRow(Base):
     )
 
 
+class TriggerRoleRow(Base):
+    """trigger_role: the Discord role an Alert pings for a Trigger. A plain id, not a key:
+    the role lives in Discord and may be deleted there."""
+
+    __tablename__ = "trigger_role"
+
+    trigger: Mapped[str] = mapped_column(Text, primary_key=True)
+    role_id: Mapped[int] = mapped_column(BigInteger)
+
+
 class SchwabTokenRow(Base):
     """Single-row (id = 1, CHECK-enforced) OAuth token store; rev-002."""
 
