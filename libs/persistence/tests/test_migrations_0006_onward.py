@@ -1,4 +1,4 @@
-"""Migrations 0006-0019 against Timescale: the upgrade/downgrade round trip and
+"""Migrations 0006-0020 against Timescale: the upgrade/downgrade round trip and
 the physical layout (hypertables, compression, constraints)."""
 
 import uuid
@@ -411,7 +411,7 @@ def test_0019_adds_trigger_role_and_downgrade_drops_it(scratch_url):
         command.upgrade(config, "0018")
         assert "trigger_role" not in inspect(engine).get_table_names()
 
-        command.upgrade(config, "head")
+        command.upgrade(config, "0019")
         insp = inspect(engine)
         assert {c["name"]: c["nullable"] for c in insp.get_columns("trigger_role")} == {
             "trigger": False,
@@ -421,6 +421,34 @@ def test_0019_adds_trigger_role_and_downgrade_drops_it(scratch_url):
 
         command.downgrade(config, "0018")
         assert "trigger_role" not in inspect(engine).get_table_names()
+
+        command.upgrade(config, "head")
+    finally:
+        engine.dispose()
+
+
+def test_0020_flags_the_stored_bars_adjusted_and_downgrade_flags_them_unadjusted(scratch_url):
+    config = migration_config(scratch_url)
+    engine = create_engine(scratch_url)
+    try:
+        command.upgrade(config, "0019")
+        with engine.begin() as conn:
+            conn.execute(
+                text(
+                    "INSERT INTO daily_bar (symbol, session_date, open, high, low, close, volume, fetched_at, adjusted)"
+                    " VALUES ('AAA', '2026-10-19', 10, 11, 9, 10.5, 1000, now(), false),"
+                    " ('AAA', '2026-10-20', 10, 11, 9, 10.6, 1000, now(), false),"
+                    " ('BBB', '2026-10-20', 20, 21, 19, 20.5, 1000, now(), false)"
+                )
+            )
+
+        command.upgrade(config, "0020")
+        with engine.connect() as conn:
+            assert conn.execute(text("SELECT count(*) FROM daily_bar WHERE adjusted")).scalar_one() == 3
+
+        command.downgrade(config, "0019")
+        with engine.connect() as conn:
+            assert conn.execute(text("SELECT count(*) FROM daily_bar WHERE NOT adjusted")).scalar_one() == 3
 
         command.upgrade(config, "head")
     finally:
