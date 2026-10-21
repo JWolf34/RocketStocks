@@ -283,7 +283,7 @@ class SweepWorker:
                 f"Alert #{item.id} {alert.symbol} {alert.trigger} posted without its role ping: "
                 f"the role mapped to {alert.trigger} (id {missing_role}) no longer exists. "
                 "Map it again with /setup roles add.",
-                key=f"role-missing:{item.id}",
+                key=f"role-missing:{alert.trigger}:{missing_role}",
             )
 
     async def _role_pings(

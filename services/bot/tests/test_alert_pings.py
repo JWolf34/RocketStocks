@@ -2,7 +2,10 @@
 deleted is left out and the operator gets one Ops ping. Delivery is the sweep over the real
 database, with Discord and the server's roles faked."""
 
+import json
 from datetime import timedelta
+
+import httpx
 
 from rs_bot.counters import new_counters
 from rs_bot.render import POPULARITY_SURGE
@@ -11,7 +14,7 @@ from rs_bot.testing import FakeDiscord, FakeRoles, FixedClock
 from rs_bot.testing import alert as _alert
 from rs_bot.testing import surge_alert as _surge_alert
 from rs_domain import Alert
-from rs_observability import HealthTracker
+from rs_observability import HealthTracker, OpsSettings, configure_ops
 from rs_persistence import AlertRepository, TriggerRoleRepository
 
 ROLE = 501
@@ -139,3 +142,29 @@ async def test_an_alert_waits_when_the_server_is_not_known_and_is_not_called_a_d
     roles.guild_known = True
     await worker.sweep()
     assert [m.role_ids for m in fake.messages] == [(ROLE,)]
+
+
+async def test_a_deleted_role_pings_the_operator_once_however_many_alerts_follow(session_factory):
+    sent: list[str] = []
+
+    def webhook(request: httpx.Request) -> httpx.Response:
+        sent.append(json.loads(request.content)["content"])
+        return httpx.Response(204)
+
+    # The real de-dup is on here, unlike the `notices` fixture, which shows every send.
+    configure_ops(
+        OpsSettings(_env_file=None, rs_ops_webhook_url="https://discord.test/api/webhooks/1/t"),
+        transport=httpx.MockTransport(webhook),
+    )
+    try:
+        await _map(session_factory, POPULARITY_SURGE)
+        first = _surge_alert()
+        await _insert(session_factory, first, first.model_copy(update={"symbol": "AMC"}))
+        fake = FakeDiscord()
+
+        await _worker(session_factory, fake, _roles()).sweep()
+    finally:
+        configure_ops(OpsSettings(_env_file=None))
+
+    assert len(fake.messages) == 2  # both still posted
+    assert len(_about_roles(sent)) == 1
