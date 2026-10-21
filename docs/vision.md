@@ -1,8 +1,8 @@
 # RocketStocks vision and build plan
 
-Status: drafted 2026-10-20 from a first-principles audit; approved 2016-10-20.
-Once approved, this document is the only authority for what RocketStocks is and how it gets built.
-It replaces `docs/foundation/` (charter, roadmap, architecture, specs) and the ADRs in `docs/v2/adr/`.
+Status: drafted 2026-10-20 from a first-principles audit; approved 2026-10-20.
+This document is the only authority for what RocketStocks is and how it gets built.
+It replaced `docs/foundation/` (charter, roadmap, architecture, specs) and the ADRs in `docs/v2/adr/`, both archived under tag `v2-foundation-archive-2026-10`.
 When reality disagrees with it, rewrite the affected lines; never append amendments.
 
 ## Purpose
@@ -132,6 +132,7 @@ Stocks covered (about 13,000 listings, about 5,480 optionable), users, installat
 
 The 2026-10-19 plan got its biggest calls right and those are kept: informational alerts with a measured track record, no paid data, weekly Schwab sign-in, raw display in a private server, no in-app AI write-ups, operator-owned backups, and a well-tested ingest core.
 It diverges where it was built for its own charter instead of this one.
+Evidence paths below refer to tag `v2-foundation-archive-2026-10`.
 
 | Item | Plan says | Verdict | Reason | Evidence |
 |---|---|---|---|---|
@@ -237,5 +238,5 @@ Follow-up after milestone 7: the backtesting framework over stored history.
 - Gates on `feat/v2-rewrite` (2026-10-20): `ruff check libs services tools` "All checks passed!"; `mypy` "Success: no issues found in 127 source files"; `lint-imports` "Contracts: 7 kept, 0 broken."; `scripts/check_clock_discipline.sh` OK; `pytest libs services tools` with `RS_TEST_DB_URL` "930 passed"; `pytest legacy/tests` "2804 passed".
 - Local trial stack (2026-10-20): 10 attention-surge alerts stored, 0 posted, 0 `base_rate` rows; Schwab token dead and every price fact "unavailable"; ops webhook unset.
 - v1 production (probe run by John, 2026-10-20): Popularity 2025-06-02 to 2026-10-20, 11.2M rows, with a 204-day gap from 2025-07-31 to 2026-02-21 and near-complete 30-minute polls since 2026-03-03; 4 paper trades by one user; one personal watchlist; alert roles in two servers; options chains for May and June 2026 only (31M rows, about 8.3 GB); daily prices end 2026-07-02 and include non-session dates.
-- Schwab measured facts (July and August 2026): 120 requests per minute documented, 240 per minute burst clean; unfiltered SPY and QQQ chains return 502; about 4% sporadic 502s on bounded chains; open interest does not change intraday; about 5,480 optionable names; a full chain pass is about 68 minutes (`docs/foundation/research/vendor-stack.md`).
-- Signal study (2026-10-19): no v1 alert type shows an edge; posted Popularity surges drifted negative (adjusted 10-day excess -1.44%, interval -2.61 to -0.21) (`docs/foundation/research/signal-evidence.md`).
+- Schwab measured facts (July and August 2026): 120 requests per minute documented, 240 per minute burst clean; unfiltered SPY and QQQ chains return 502; about 4% sporadic 502s on bounded chains; open interest does not change intraday; about 5,480 optionable names; a full chain pass is about 68 minutes (`docs/reference/schwab-facts.md`).
+- Signal study (2026-10-19): no v1 alert type shows an edge; posted Popularity surges drifted negative (adjusted 10-day excess -1.44%, interval -2.61 to -0.21) (`docs/foundation/research/signal-evidence.md` at tag `v2-foundation-archive-2026-10`).
