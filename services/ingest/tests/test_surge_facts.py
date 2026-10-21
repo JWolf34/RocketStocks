@@ -10,7 +10,6 @@ from rs_domain import (
     FactUnavailable,
     NextEarningsFact,
     PriceMoveFact,
-    RecentFilingsFact,
     StoredDailyBar,
     VolumeFact,
 )
@@ -18,7 +17,6 @@ from rs_ingest.surge_facts import SurgeFactsGatherer
 from rs_persistence import DailyBarRepository
 from rs_sources import ExchangeCalendar
 from rs_sources.earnings import NextEarnings
-from rs_sources.edgar import Filing8K
 from rs_sources.errors import SourceError
 from rs_sources.nasdaq import EarningsTime
 from rs_sources.schwab import Quote, SchwabAuthError, TokenMissingError
@@ -35,17 +33,6 @@ def calendar() -> ExchangeCalendar:
 
 def quote(symbol: str = "ABC", *, at: datetime = NOW, volume: int = 3_000_000) -> Quote:
     return Quote(symbol=symbol, last_price=12.5, previous_close=10.0, quote_time=at, volume=volume)
-
-
-def filing(filed: date, form: str = "8-K") -> Filing8K:
-    return Filing8K(
-        accession_number="0001-26-000001",
-        filing_date=filed,
-        accepted_at=datetime.combine(filed, datetime.min.time(), tzinfo=UTC),
-        form=form,
-        items=("2.02",),
-        url=f"https://www.sec.gov/Archives/{filed.isoformat()}.htm",
-    )
 
 
 class FakeQuotes:
@@ -70,16 +57,6 @@ class FakeQuotes:
         if isinstance(answer, Exception):
             raise answer
         return answer
-
-
-class FakeFilings:
-    def __init__(self, result: list[Filing8K] | Exception | None = None) -> None:
-        self.result = [] if result is None else result
-
-    async def recent_8ks(self, ticker: str, as_of: datetime, limit: int | None = 5) -> list[Filing8K]:
-        if isinstance(self.result, Exception):
-            raise self.result
-        return self.result[:limit]
 
 
 class FakeEarnings:
@@ -113,7 +90,6 @@ def gatherer(
     calendar,
     *,
     quotes: FakeQuotes | None = None,
-    filings: FakeFilings | None = None,
     earnings: FakeEarnings | None = None,
     tripped: Tripped | None = None,
     fact_timeout: timedelta = timedelta(seconds=5),
@@ -122,7 +98,6 @@ def gatherer(
     return SurgeFactsGatherer(
         quotes=lambda: quote_source,
         limiter=NoLimit(),
-        filings=filings or FakeFilings(),
         earnings=earnings or FakeEarnings(),
         session_factory=session_factory,
         calendar=calendar,
@@ -161,7 +136,6 @@ async def test_every_fact_is_gathered_when_all_sources_answer(session_factory, c
     sources = gatherer(
         session_factory,
         calendar,
-        filings=FakeFilings([filing(date(2026, 10, 15))]),
         earnings=FakeEarnings(
             NextEarnings(date=date(2026, 11, 3), time_of_day=EarningsTime.PRE_MARKET, estimated=False)
         ),
@@ -176,8 +150,6 @@ async def test_every_fact_is_gathered_when_all_sources_answer(session_factory, c
     assert facts.volume == VolumeFact(
         volume=3_000_000, average_volume=1_000_000.0, sessions=20, ratio=3.0, intraday=True
     )
-    assert isinstance(facts.recent_filings, RecentFilingsFact)
-    assert [f.filing_date for f in facts.recent_filings.filings] == [date(2026, 10, 15)]
     assert facts.next_earnings == NextEarningsFact(
         date=date(2026, 11, 3), estimated=False, time_of_day="pre_market"
     )
@@ -251,7 +223,6 @@ async def test_a_dead_token_drops_price_facts_and_trips_the_gate_once(session_fa
         assert gathered.facts.price_move == dead
         assert gathered.facts.volume == dead
         assert (gathered.alert_price, gathered.quote_time) == (None, None)
-        assert isinstance(gathered.facts.recent_filings, RecentFilingsFact)
     assert len(tripped.reasons) == 1
 
 
@@ -320,13 +291,11 @@ async def test_a_failing_source_only_loses_its_own_fact(session_factory, calenda
     sources = gatherer(
         session_factory,
         calendar,
-        filings=FakeFilings(SourceError("GET https://data.sec.gov/ failed")),
         earnings=FakeEarnings(RuntimeError("boom")),
     )
 
     gathered = await sources.gather("ABC", NOW)
 
-    assert gathered.facts.recent_filings == FactUnavailable(reason="source failed (SourceError)")
     assert gathered.facts.next_earnings == FactUnavailable(reason="source failed (RuntimeError)")
     assert isinstance(gathered.facts.price_move, PriceMoveFact)
 
@@ -361,12 +330,3 @@ async def test_an_estimated_earnings_date_is_labelled(session_factory, calendar)
     gathered = await sources.gather("ABC", NOW)
 
     assert gathered.facts.next_earnings == NextEarningsFact(date=date(2026, 11, 20), estimated=True)
-
-
-async def test_only_recent_filings_are_kept_and_none_is_an_answer(session_factory, calendar):
-    old = filing(date(2026, 8, 1))
-    sources = gatherer(session_factory, calendar, filings=FakeFilings([old]))
-
-    gathered = await sources.gather("ABC", NOW)
-
-    assert gathered.facts.recent_filings == RecentFilingsFact(window_days=30, filings=())

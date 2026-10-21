@@ -1,7 +1,7 @@
 [project]
 name = "rs-ingest"
 version = "0.1.0"
-description = "RocketStocks v2 ingest service: market-data streaming and persistence"
+description = "RocketStocks v2 ingest service: Popularity polling and Alert writing"
 authors = [
     { name = "John Wolf", email = "johnmwolf34@gmail.com" }
 ]

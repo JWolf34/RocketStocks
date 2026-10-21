@@ -1,8 +1,8 @@
 """Per-service database roles: created and granted by migrate, after `upgrade`.
 
 Migrate is the only superuser path. Every other service connects as its own
-least-privilege role, so a compromise of the internet-facing one (serve) cannot
-read the Schwab refresh token or write anything.
+least-privilege role, so a compromise of the internet-facing one (bot) cannot
+read the Schwab refresh token, and the read-only role (mcp) cannot write anything.
 
 GRANTS is the single source of truth: one entry per table, naming what each
 service may do. A table with no entry fails the test suite, so adding a table
@@ -20,7 +20,7 @@ from sqlalchemy.engine import make_url
 
 logger = logging.getLogger(__name__)
 
-SERVICES = ("ingest", "bot", "serve", "research")
+SERVICES = ("ingest", "bot", "mcp", "research")
 ROLE_PREFIX = "rs_"
 
 # Compose interpolates these passwords into DSNs unencoded, so reject characters
@@ -36,31 +36,31 @@ GRANTS: dict[str, dict[str, tuple[str, ...]]] = {
     "alerts": {
         "ingest": _SELECT_INSERT,
         "bot": ("SELECT", "UPDATE (posted_at, post_attempts)"),
-        "serve": _SELECT,
+        "mcp": _SELECT,
         "research": _SELECT,
     },
     "base_rate": {
         "bot": _SELECT,
-        "serve": _SELECT,
+        "mcp": _SELECT,
         "research": _SELECT_INSERT,
     },
     "daily_bar": {
         "ingest": _SELECT_INSERT,
         "bot": _SELECT,
-        "serve": _SELECT,
+        "mcp": _SELECT,
         "research": _SELECT,
     },
     # Written by the backfill tool on the owner DSN; no service touches it.
     "import_verification": {},
     "options_chain_snapshot": {
         "ingest": _SELECT_INSERT,
-        "serve": _SELECT,
+        "mcp": _SELECT,
         "research": _SELECT,
     },
     "popularity_snapshot": {
         "ingest": _SELECT_INSERT,
         "bot": _SELECT,
-        "serve": _SELECT,
+        "mcp": _SELECT,
         "research": _SELECT,
     },
     # callback_url carries a single-use OAuth code: the bot writes it, only
@@ -76,17 +76,9 @@ GRANTS: dict[str, dict[str, tuple[str, ...]]] = {
     "schwab_token_notice": {
         "bot": _SELECT_INSERT,
     },
-    "service_clients": {
-        "serve": _SELECT,
-    },
-    "stream_bars_5m": {
-        "ingest": _SELECT_INSERT,
-        "serve": _SELECT,
-        "research": _SELECT,
-    },
     "unpriced_symbol": {
         "ingest": ("SELECT", "INSERT", "UPDATE", "DELETE"),
-        "serve": _SELECT,
+        "mcp": _SELECT,
         "research": _SELECT,
     },
 }

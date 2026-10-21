@@ -28,7 +28,7 @@ uv workspace: root `pyproject.toml` lists the members, one `uv.lock`, one shared
 ```
 legacy/       # v1, moved intact (legacy/src/rocketstocks/, legacy/tests/, legacy/pyproject.toml)
 libs/         # v2 shared libraries: domain, persistence, query, observability, analysis, sources
-services/     # v2 long-running daemons (ingest; serve/bot come with their slices)
+services/     # v2 long-running daemons (ingest, bot)
 tools/        # v2 one-shot CLIs (migrate; backfill/research come with their slices)
 ```
 
@@ -117,7 +117,7 @@ RS_DB_URL=postgresql+psycopg://... .venv/bin/python -m rs_migrate check
 #   docker run -d --rm -p 5499:5432 -e POSTGRES_PASSWORD=t timescale/timescaledb:2.30.2-pg16
 # Set RS_TEST_DB_URL to make DB tests mandatory (unreachable = failure, as in CI).
 # Migrations CLI (DSN via RS_DB_URL; upgrade also applies the per-service roles and
-# needs RS_DB_PASSWORD_{INGEST,BOT,SERVE,RESEARCH}, or pass --skip-roles on a bare dev DB):
+# needs RS_DB_PASSWORD_{INGEST,BOT,MCP,RESEARCH}, or pass --skip-roles on a bare dev DB):
 RS_DB_URL=postgresql+psycopg://... .venv/bin/python -m rs_migrate upgrade
 
 # Backtesting CLI
@@ -127,7 +127,7 @@ RS_DB_URL=postgresql+psycopg://... .venv/bin/python -m rs_migrate upgrade
 docker compose up -d
 
 # v2 stack: TimescaleDB (127.0.0.1:5498) + one-shot migrate gate +
-# ingest/serve/bot from the shared Dockerfile.v2 image; JSON logs with
+# ingest/bot from the shared Dockerfile.v2 image; JSON logs with
 # correlation_id; metrics on 127.0.0.1:9090 (ingest) / :9091 (bot).
 # Needs RS_DB_PASSWORD + service credentials in .env.
 docker compose -f docker-compose.v2.yml up -d

@@ -1,8 +1,7 @@
-"""Option-chain fetch over schwab-py (ChainScanner's ChainFetch port).
+"""Option-chain fetch over schwab-py.
 
 SchwabChainFetch shares the daemon's ONE schwab-py client (the token row's
-single-writer constraint, ADR-0024) - never build a second client for the
-scanner.
+single-writer constraint, ADR-0024) - never build a second client for it.
 """
 
 from datetime import timedelta
@@ -13,17 +12,16 @@ from rs_sources.errors import SourceError
 from rs_sources.schwab.client import translate_auth_errors
 
 # The server-side expiry bound (ADR-0032 D7): <=30 DTE, the bound that avoids
-# the measured unfiltered-SPY/QQQ 502s. The client-side window/cap live in
-# rs_ingest.chains.
+# the measured unfiltered-SPY/QQQ 502s.
 DTE_BOUND = timedelta(days=30)
 
 
 class ChainFetchError(SourceError):
-    """Non-OK chain response (the scanner retries once, then tombstones)."""
+    """Non-OK chain response."""
 
 
 class SchwabChainFetch:
-    """ChainFetch port over schwab-py's async client: one expiry-bounded
+    """Fetch one underlying's chain over schwab-py's async client: one expiry-bounded
     get_option_chain call (kwargs verified against schwab-py 1.5.1). The UTC
     date is the ET date whenever a scan can run (RTH), so `today` is safe as
     the fromDate."""

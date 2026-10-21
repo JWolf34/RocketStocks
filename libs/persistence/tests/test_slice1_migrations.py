@@ -67,6 +67,31 @@ def test_upgrade_downgrade_round_trip(scratch_url):
     assert NEW_TABLES <= tables and types == NEW_TYPES
 
 
+def test_0012_and_0013_drop_the_dead_tables_and_downgrade_to_empty_ones(scratch_url):
+    config = migration_config(scratch_url)
+    engine = create_engine(scratch_url)
+    try:
+        command.upgrade(config, "head")
+        assert not {"stream_bars_5m", "service_clients"} & set(inspect(engine).get_table_names())
+        assert "options_chain_snapshot" in inspect(engine).get_table_names()
+
+        command.downgrade(config, "0011")
+        assert {"stream_bars_5m", "service_clients"} <= set(inspect(engine).get_table_names())
+        with engine.connect() as conn:
+            hypertable = conn.execute(
+                text(
+                    "SELECT 1 FROM timescaledb_information.hypertables"
+                    " WHERE hypertable_name = 'stream_bars_5m'"
+                )
+            ).one_or_none()
+        assert hypertable is not None
+
+        command.upgrade(config, "head")
+        assert not {"stream_bars_5m", "service_clients"} & set(inspect(engine).get_table_names())
+    finally:
+        engine.dispose()
+
+
 @pytest.fixture(scope="module")
 def sync_engine(migrated_db_url):
     engine = create_engine(migrated_db_url)

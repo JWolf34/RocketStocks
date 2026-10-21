@@ -190,7 +190,7 @@ def test_applied_privileges_match_the_grants_table(roles):
 # --- acceptance: denied where it matters ------------------------------------
 
 
-@pytest.mark.parametrize("service", ["bot", "serve", "research"])
+@pytest.mark.parametrize("service", ["bot", "mcp", "research"])
 def test_only_ingest_reads_schwab_tokens(roles, service):
     with roles.connect(service) as conn:
         _denied(conn, "SELECT * FROM schwab_tokens")
@@ -216,7 +216,7 @@ def test_bot_reads_token_age_but_never_the_token(roles):
         assert can_write is False
 
 
-@pytest.mark.parametrize("service", ["ingest", "serve", "research"])
+@pytest.mark.parametrize("service", ["ingest", "mcp", "research"])
 def test_only_the_bot_reads_token_age(roles, service):
     with roles.connect(service) as conn:
         _denied(conn, "SELECT * FROM schwab_token_issue")
@@ -264,14 +264,14 @@ def test_research_inserts_base_rate_but_not_alerts(roles):
         "CREATE TABLE intruder (id int)",
     ],
 )
-def test_serve_is_read_only_and_cannot_see_secrets(roles, statement):
-    with roles.connect("serve") as conn:
+def test_mcp_is_read_only_and_cannot_see_secrets(roles, statement):
+    with roles.connect("mcp") as conn:
         _denied(conn, statement)
 
 
-def test_serve_reads_the_market_data_it_serves(roles):
-    with roles.connect("serve") as conn:
-        for table in ("alerts", "base_rate", "daily_bar", "popularity_snapshot", "service_clients"):
+def test_mcp_reads_the_market_data_it_exposes(roles):
+    with roles.connect("mcp") as conn:
+        for table in ("alerts", "base_rate", "daily_bar", "popularity_snapshot"):
             conn.execute(f"SELECT * FROM {table}")
 
 
@@ -321,7 +321,7 @@ def _factory(roles: Roles, service: str):
 
 
 async def test_services_run_their_real_repositories_under_their_roles(roles):
-    ingest, bot, serve, research = (_factory(roles, s) for s in SERVICES)
+    ingest, bot, mcp, research = (_factory(roles, s) for s in SERVICES)
     alert = Alert(symbol="AAA", alert_type="surge", triggered_at=NOW, dedup_key="k1")
     snapshot = PopularitySnapshot(
         polled_at=NOW,
@@ -374,7 +374,7 @@ async def test_services_run_their_real_repositories_under_their_roles(roles):
         assert await repo.expire_older_than(NOW + timedelta(days=1)) == 0
         await s.commit()
 
-    # research writes the base rate; serve reads the lot.
+    # research writes the base rate; mcp reads the lot.
     async with research() as s:
         await BaseRateRepository(s).insert(
             BaseRate(
@@ -387,7 +387,7 @@ async def test_services_run_their_real_repositories_under_their_roles(roles):
             )
         )
         await s.commit()
-    async with serve() as s:
+    async with mcp() as s:
         got = await PopularityRepository(s).list_between(NOW, NOW + timedelta(minutes=30))
         assert [g.ticker for g in got] == ["AAA"]
 
@@ -431,10 +431,10 @@ def test_applying_twice_is_a_no_op(roles):
 
 def test_a_changed_password_takes_effect_and_stale_grants_are_removed(roles):
     with roles.admin() as conn:
-        conn.execute(f'GRANT SELECT ON schwab_tokens TO "{roles.name("serve")}"')
-    roles.passwords["serve"] = f"pw-serve-{uuid.uuid4().hex}"
+        conn.execute(f'GRANT SELECT ON schwab_tokens TO "{roles.name("mcp")}"')
+    roles.passwords["mcp"] = f"pw-mcp-{uuid.uuid4().hex}"
     roles.apply()
-    with roles.connect("serve") as conn:
+    with roles.connect("mcp") as conn:
         _denied(conn, "SELECT * FROM schwab_tokens")
 
 
@@ -448,8 +448,8 @@ def _all_passwords() -> dict[str, str]:
 def test_read_passwords_names_every_missing_variable():
     environ = _all_passwords()
     del environ["RS_DB_PASSWORD_BOT"]
-    del environ["RS_DB_PASSWORD_SERVE"]
-    with pytest.raises(RolesConfigError, match="RS_DB_PASSWORD_BOT, RS_DB_PASSWORD_SERVE"):
+    del environ["RS_DB_PASSWORD_MCP"]
+    with pytest.raises(RolesConfigError, match="RS_DB_PASSWORD_BOT, RS_DB_PASSWORD_MCP"):
         read_passwords(environ)
 
 

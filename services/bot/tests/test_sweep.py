@@ -214,7 +214,6 @@ def _surge_alert() -> Alert:
         facts=SurgeFacts(
             price_move=unavailable,
             volume=unavailable,
-            recent_filings=unavailable,
             next_earnings=unavailable,
             benchmark=unavailable,
         ),

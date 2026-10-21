@@ -11,41 +11,9 @@ from rs_domain import (
     PopularityOrigin,
     PopularitySnapshot,
     SourceStatus,
-    median_instant,
 )
 
 UTC_NOON = datetime(2026, 7, 6, 16, 0, tzinfo=UTC)
-
-
-class TestBar:
-    def test_valid_bar_builds(self, make_bar):
-        bar = make_bar(bucket=UTC_NOON)
-        assert bar.symbol == "SPY"
-        assert bar.bucket == UTC_NOON
-
-    def test_frozen(self, make_bar):
-        with pytest.raises(ValidationError):
-            make_bar().close = 0.0
-
-    def test_rejects_negative_volume(self, make_bar):
-        with pytest.raises(ValidationError):
-            make_bar(volume=-1)
-
-    def test_rejects_naive_bucket(self, make_bar):
-        with pytest.raises(ValidationError, match="naive"):
-            make_bar(bucket=datetime(2026, 7, 6, 16, 0))
-
-    def test_rejects_non_utc_bucket(self, make_bar):
-        eastern = timezone(timedelta(hours=-4))
-        with pytest.raises(ValidationError, match="non-UTC"):
-            make_bar(bucket=datetime(2026, 7, 6, 12, 0, tzinfo=eastern))
-
-    def test_zero_offset_alias_normalized_to_utc(self, make_bar):
-        # A zero-offset non-UTC tzinfo passes validation but must not survive:
-        # variable zones would make later wall-clock arithmetic DST-hazardous.
-        bar = make_bar(bucket=datetime(2026, 7, 6, 16, 0, tzinfo=timezone(timedelta(0))))
-        assert bar.bucket.tzinfo is UTC
-        assert bar.bucket == UTC_NOON
 
 
 class TestAlert:
@@ -56,6 +24,26 @@ class TestAlert:
     def test_rejects_naive_triggered_at(self):
         with pytest.raises(ValidationError, match="naive"):
             Alert(symbol="SPY", alert_type="VOLUME_THRESHOLD", triggered_at=datetime(2026, 7, 6, 16, 0))
+
+    def test_rejects_non_utc_triggered_at(self):
+        eastern = timezone(timedelta(hours=-4))
+        with pytest.raises(ValidationError, match="non-UTC"):
+            Alert(
+                symbol="SPY",
+                alert_type="VOLUME_THRESHOLD",
+                triggered_at=datetime(2026, 7, 6, 12, 0, tzinfo=eastern),
+            )
+
+    def test_zero_offset_alias_normalized_to_utc(self):
+        # A zero-offset non-UTC tzinfo passes validation but must not survive:
+        # variable zones would make later wall-clock arithmetic DST-hazardous.
+        alert = Alert(
+            symbol="SPY",
+            alert_type="VOLUME_THRESHOLD",
+            triggered_at=datetime(2026, 7, 6, 16, 0, tzinfo=timezone(timedelta(0))),
+        )
+        assert alert.triggered_at.tzinfo is UTC
+        assert alert.triggered_at == UTC_NOON
 
 
 def make_quote(**overrides):
@@ -83,19 +71,6 @@ def make_snapshot(**overrides):
     return ChainSnapshot(**fields)
 
 
-class TestMedianInstant:
-    def test_empty_is_none(self):
-        assert median_instant([]) is None
-
-    def test_odd_count_middle(self):
-        times = [UTC_NOON + timedelta(seconds=s) for s in (5, 1, 3)]
-        assert median_instant(times) == UTC_NOON + timedelta(seconds=3)
-
-    def test_even_count_lower_middle_is_an_observed_instant(self):
-        times = [UTC_NOON + timedelta(seconds=s) for s in (4, 1, 3, 2)]
-        assert median_instant(times) == UTC_NOON + timedelta(seconds=2)
-
-
 class TestOptionQuote:
     def test_minimal_contract_identity_builds(self):
         quote = OptionQuote(
@@ -120,15 +95,6 @@ class TestChainSnapshot:
     def test_default_rows_empty_is_tombstone_shape(self):
         tomb = make_snapshot(source_status=SourceStatus.SKIPPED, rows=())
         assert tomb.rows == ()
-        assert tomb.median_quote_time is None
-
-    def test_median_quote_time_ignores_null_quote_times(self):
-        rows = (
-            make_quote(quote_time=UTC_NOON + timedelta(seconds=9)),
-            make_quote(quote_time=None),
-            make_quote(quote_time=UTC_NOON + timedelta(seconds=1)),
-        )
-        assert make_snapshot(rows=rows).median_quote_time == UTC_NOON + timedelta(seconds=1)
 
     def test_enum_values_are_db_and_metric_vocabulary(self):
         assert [d.value for d in Dataset] == ["curated_5m", "eod_full"]

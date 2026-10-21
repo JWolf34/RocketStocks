@@ -1,13 +1,11 @@
 """Domain models — the validated shapes the rest of v2 consumes (ADR-0004).
 
-Prices are float64: the wire delivers JSON floats, detection math runs in
-float64, and DOUBLE PRECISION round-trips them bit-exactly, which the replay
-contract (ADR-0023) depends on. NUMERIC/Decimal is reserved for future
-accounting-grade tables (auto-trader era), never this path.
+Prices are float64: the wire delivers JSON floats, the analysis math runs in
+float64, and DOUBLE PRECISION round-trips them bit-exactly. NUMERIC/Decimal is
+reserved for future accounting-grade tables, never this path.
 """
 
-from collections.abc import Iterable
-from datetime import date, datetime
+from datetime import date
 from enum import StrEnum
 from typing import Literal
 
@@ -16,24 +14,9 @@ from pydantic import BaseModel, ConfigDict, NonNegativeInt, PositiveInt
 from rs_domain._types import UtcDatetime
 
 
-class Bar(BaseModel):
-    """One closed bar as detection saw it. `bucket` is the UTC start instant."""
-
-    model_config = ConfigDict(frozen=True)
-
-    symbol: str
-    bucket: UtcDatetime
-    open: float
-    high: float
-    low: float
-    close: float
-    volume: NonNegativeInt
-
-
 class Alert(BaseModel):
-    """A detection decision to announce. The versioned-rule fields are optional so
-    streaming detectors without a rule version keep working; a `dedup_key` makes
-    the write idempotent (the same key is stored once)."""
+    """A detection decision to announce. The versioned-rule fields are optional; a
+    `dedup_key` makes the write idempotent (the same key is stored once)."""
 
     model_config = ConfigDict(frozen=True)
 
@@ -184,18 +167,6 @@ class SchwabAuthRequest(BaseModel):
     completed_at: UtcDatetime | None = None
 
 
-def median_instant(values: Iterable[datetime]) -> datetime | None:
-    """Median as an order statistic — the lower middle for even counts, so the
-    result is always an observed instant (no midpoint arithmetic). The stale
-    guard's one definition of "median quote_time" (S008): the scan loop applies
-    it to fresh responses and the repository to restart-state rows; both sides
-    must agree or the guard misfires across a restart."""
-    ordered = sorted(values)
-    if not ordered:
-        return None
-    return ordered[(len(ordered) - 1) // 2]
-
-
 class OptionQuote(BaseModel):
     """One contract's row within a ChainSnapshot — the payload columns of
     options_chain_snapshot (S008's binding column list minus the snapshot-level
@@ -251,7 +222,3 @@ class ChainSnapshot(BaseModel):
     fetched_at: UtcDatetime
     source_status: SourceStatus
     rows: tuple[OptionQuote, ...] = ()
-
-    @property
-    def median_quote_time(self) -> datetime | None:
-        return median_instant(q.quote_time for q in self.rows if q.quote_time is not None)
