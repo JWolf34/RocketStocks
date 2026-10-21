@@ -42,6 +42,18 @@ class Verdict(StrEnum):
     STALE = "stale"
 
 
+class Delivery(StrEnum):
+    """Where an Alert or reply is in being posted. `sending` means the bot marked it
+    before a send, so a row still `sending` after a crash may or may not have posted.
+    `stale` means it was too old to post and was recorded instead. Values are the DB
+    enum values."""
+
+    PENDING = "pending"
+    SENDING = "sending"
+    POSTED = "posted"
+    STALE = "stale"
+
+
 class Candidate(BaseModel):
     """One Trigger hit and what the selector made of it. `hit_at` is the Popularity
     boundary the hit was judged on; `inputs` is what the Trigger decided on,

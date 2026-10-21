@@ -78,7 +78,7 @@ async def test_posted_alerts_carry_their_stamp(session_factory):
     await _seed(session_factory, [_alert("AAA", 0)])
     async with session_factory() as s:
         first = (await recent_alerts(s)).items[0]
-        await AlertRepository(s).mark_posted(first.id)
+        await AlertRepository(s).mark_posted(first.id, 111)
         await s.commit()
 
     async with session_factory() as s:

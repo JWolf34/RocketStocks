@@ -45,7 +45,7 @@ Compose passes each one through only when it is set in `.env` or the shell.
 1. Create `.env` from `.env.example` and fill every uncommented line.
    Generate each `RS_DB_PASSWORD_*` role password with `openssl rand -hex 24`.
    `RS_DB_PASSWORD` and the password inside `RS_DB_URL` must match.
-2. Create the Discord application and bot, invite it to your server with the permission to send messages and embed links in the Alert channel, and copy the token into `RS_BOT_DISCORD_TOKEN`.
+2. Create the Discord application and bot, invite it to your server with the permission to send messages, embed links, read message history and create public threads in the Alert channel, and copy the token into `RS_BOT_DISCORD_TOKEN`.
    The bot uses default intents only.
 3. Check the file parses and the image builds:
    ```
@@ -217,7 +217,7 @@ Done when a real Popularity Alert posts and carries a Track record.
    ```
 2. Find the Alert:
    ```
-   psql -c "SELECT id, symbol, rule_version, alert_price, quote_time, triggered_at, posted_at, post_attempts FROM alerts WHERE trigger = 'popularity_surge' ORDER BY id DESC LIMIT 5"
+   psql -c "SELECT id, symbol, rule_version, alert_price, quote_time, triggered_at, delivery, message_id, thread_id, post_attempts FROM alerts WHERE trigger = 'popularity_surge' ORDER BY id DESC LIMIT 5"
    ```
 3. Confirm in Discord that the message shows its Track record, the `rule_version` and the `alert_price`, and that it was never edited.
 4. Confirm which Track record it showed:
@@ -292,16 +292,36 @@ Goal: no lost or duplicated rows or Alerts after a restart.
    Both counts must be 0 and each boundary's `count` must equal its `count(DISTINCT ticker)`.
 5. A graceful stop is a separate, simpler check: `$COMPOSE stop ingest` must exit within `stop_grace_period` (45s) with a clean shutdown log.
 
+### Bot restart after an unrecorded send
+
+Goal: a send the bot made but did not record is found in history after a restart, and nothing is posted twice.
+
+1. Post a marked test Alert and let the bot deliver it:
+   ```
+   .venv/bin/python -m rs_bot.tools.stage_alert
+   psql -c "SELECT id, delivery, message_id, thread_id FROM alerts ORDER BY id DESC LIMIT 1"
+   ```
+   Expect `posted`, with a message id and a thread id, and one message in Discord with a thread under it.
+2. Put the row back as a crash between the send and its record leaves it:
+   ```
+   $COMPOSE stop bot
+   psql -c "UPDATE alerts SET delivery = 'sending', posted_at = NULL, message_id = NULL, thread_id = NULL WHERE id = <id>"
+   $COMPOSE start bot
+   ```
+3. Expect the row back at `posted` with the same `message_id` as before and Discord still showing one message.
+   The bot log has `was sent before the last stop and never recorded`, and `posts_reconciled_total` is 1 on the metrics port.
+
 ## Operating procedures
 
 ### A failed-to-post Alert
 
-The bot abandons an Alert after `RS_BOT_POST_MAX_ATTEMPTS` (default 5) failed sends and sends an Ops ping.
-Such an Alert has `posted_at` NULL and `post_attempts >= RS_BOT_POST_MAX_ATTEMPTS`.
+The bot abandons an Alert or reply after `RS_BOT_POST_MAX_ATTEMPTS` (default 5) failed sends.
+It sends an Ops ping for it unless Discord itself is already reported failing, because then the `Discord is failing` ping is the one cause and the queued Alerts add none of their own.
+Such a row has `delivery` of `pending` or `sending` and `post_attempts >= RS_BOT_POST_MAX_ATTEMPTS`.
 
 Find them:
 ```
-psql -c "SELECT id, symbol, triggered_at, post_attempts FROM alerts WHERE posted_at IS NULL AND post_attempts >= 5 ORDER BY id"
+psql -c "SELECT id, symbol, reply_to, delivery, triggered_at, post_attempts FROM alerts WHERE delivery IN ('pending', 'sending') AND post_attempts >= 5 ORDER BY id"
 ```
 (use your configured `RS_BOT_POST_MAX_ATTEMPTS` instead of 5.)
 
@@ -309,9 +329,23 @@ Fix the cause first (channel permission, Discord outage, an oversized field), th
 ```
 psql -c "UPDATE alerts SET post_attempts = 0 WHERE id = <id>"
 ```
-To re-queue every abandoned Alert at once, drop the `id` filter and use the same `posted_at IS NULL AND post_attempts >= 5` condition.
-The bot's next sweep (within `RS_BOT_SWEEP_SECONDS`, 60 by default) posts it.
-Never set `posted_at` by hand unless you posted the message yourself.
+To re-queue every abandoned row at once, drop the `id` filter and use the same `delivery IN ('pending', 'sending') AND post_attempts >= 5` condition.
+The bot's next sweep (within `RS_BOT_SWEEP_SECONDS`, 60 by default) picks it up.
+A row marked `sending` is looked up in the channel's (or its thread's) history first, so re-queuing never posts a second copy of a message that did get out.
+
+An Alert or reply whose hit time is more than an hour old when the bot picks it up is recorded with `delivery` of `stale` and is not posted.
+So a re-queue after the hour has passed records the row as stale instead of posting it, which is the intended result of the stale rule.
+Never set `delivery`, `message_id` or `posted_at` by hand unless you posted the message yourself.
+
+### An Alert that may or may not have posted
+
+After a crash between a send and its record, the row stays `sending`, and the bot checks history before sending it again.
+If the history cannot be read, the bot posts nothing for that row and sends an Ops ping that names it (or the `Discord is failing` ping, when that is the cause).
+The row is checked again every sweep, so the ping is not repeated; fix the cause (a missing Read Message History permission, a Discord outage) and the next sweep settles it.
+Find rows waiting like this:
+```
+psql -c "SELECT id, symbol, reply_to, sending_at FROM alerts WHERE delivery = 'sending' ORDER BY id"
+```
 
 ### Daily bars
 
@@ -361,13 +395,17 @@ Which pings to expect, by cause:
   The Alert still posts, with the missing facts labelled.
 - `Nasdaq is failing ...` and `EDGAR is failing ...`: the earnings calendar or the filings lookup failed.
   The next-earnings fact falls back to the EDGAR estimate, then to missing.
-- `Discord is failing ...`: the bot's sends failed for a reason other than one Alert (a rejected embed is one Alert).
-  Unposted Alerts stay queued and the sweep retries them.
+- `Discord is failing ...`: the bot's sends or history reads failed for a reason other than one Alert (a rejected embed is one Alert).
+  Undelivered Alerts stay queued and the sweep retries them; one older than an hour when Discord returns is recorded as stale and not posted.
 - `Ingest job <name> is failing (<type>)` and `Ingest job <name> recovered.`: a job failed for a reason that is not a source, such as the database being down or a bug.
   It pings on its first failure, not after several, and once when the job next succeeds.
 - `Schwab token is dead ...` and `Schwab token renewed ...`: see "Schwab sign-in" and the token-expiry rehearsal.
   A dead token has these pings only; it does not also send `Schwab is failing`.
 - `Alert #<id> ... failed to post after N attempts ...`: the procedure above.
+  It is sent only when Discord is not already reported failing.
+- `Alert #<id> ... may or may not have posted ...`: the history check above could not be read.
+- `Alert #<id> <stock> <trigger> posted with facts unavailable: ...`: the Alert posted, and the ping names which supporting facts were missing and why.
+  It is sent once per Alert, when it posts.
 - The weekly Track record job failing.
 
 One cause sends one ping: a source failure that also fails its job does not send a job ping on top.

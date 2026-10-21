@@ -35,7 +35,10 @@ _SELECT_INSERT = ("SELECT", "INSERT")
 GRANTS: dict[str, dict[str, tuple[str, ...]]] = {
     "alerts": {
         "ingest": _SELECT_INSERT,
-        "bot": ("SELECT", "UPDATE (posted_at, post_attempts)"),
+        "bot": (
+            "SELECT",
+            "UPDATE (delivery, sending_at, posted_at, message_id, thread_id, post_attempts)",
+        ),
         "mcp": _SELECT,
         "research": _SELECT,
     },

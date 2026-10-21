@@ -15,8 +15,8 @@ Friends receive a few Popularity Alerts a day, each carrying a Track record seed
 ## Delivery
 
 - The bot commits a sending mark before each send, and every send carries the Alert's or reply's id as its Discord nonce.
-- A row found still sending is reconciled against the channel's or thread's recent history: the bot's own message with that id found means record it, not found means send, and a failed history read means do not post and send an Ops ping.
-- The posted message id is stored, and the Alert's thread is created from it.
+- A row found still sending is reconciled against the channel's or thread's recent history: the bot's own message with that id in its embed footer found means record it, not found means send, and a failed history read means do not post and send an Ops ping.
+- The posted message id is stored, and the Alert's thread is created from it; a row more than an hour past its hit time when it would be sent is recorded stale and not posted.
 - The Alert shows a templated one-line talking point, the reasons, the Track record, the next Catalyst and the price; Volume moves to the Report and the stored SPY benchmark fact is removed.
 - Every time shown uses Discord timestamp markup, so each reader sees their own zone.
 

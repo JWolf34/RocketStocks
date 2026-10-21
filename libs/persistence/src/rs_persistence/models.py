@@ -3,8 +3,10 @@
 These are internal to rs_persistence; repositories convert to/from the
 rs_domain Pydantic models so internal fields never leak.
 
-alerts.posted_at is the bot's delivery cursor (its `posted_at IS NULL` sweep);
-post_attempts caps its retries.
+alerts.delivery is the bot's delivery cursor (its sweep takes the rows still pending or
+sending); post_attempts caps its retries. A row marked sending keeps the `sending_at` of
+its first send, and a posted row the Discord `message_id` and, for an Alert, the
+`thread_id` of the thread started from it.
 
 `day` on alerts and candidate is the US Eastern calendar day of the row's instant,
 computed by the database so it can never disagree with `triggered_at` / `hit_at`.
@@ -38,6 +40,7 @@ from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 from rs_domain import (
     AuthRequestState,
     Dataset,
+    Delivery,
     PopularityOrigin,
     SourceStatus,
     TrackRecordInput,
@@ -111,7 +114,7 @@ class AlertRow(Base):
     __tablename__ = "alerts"
     __table_args__ = (
         # The bot's delivery cursor: a partial index holding only undelivered rows.
-        Index("ix_alerts_unposted", "id", postgresql_where=text("posted_at IS NULL")),
+        Index("ix_alerts_undelivered", "id", postgresql_where=text("delivery IN ('pending', 'sending')")),
         # One Alert per stock per Eastern day; replies continue an Alert and are exempt.
         Index("uq_alerts_symbol_day", "symbol", "day", unique=True, postgresql_where=text("reply_to IS NULL")),
     )
@@ -130,6 +133,13 @@ class AlertRow(Base):
     quote_time: Mapped[datetime | None] = mapped_column(TIMESTAMP(timezone=True))
     reply_to: Mapped[int | None] = mapped_column(BigInteger, ForeignKey("alerts.id"))
     post_attempts: Mapped[int] = mapped_column(Integer, server_default=text("0"))
+    delivery: Mapped[str] = mapped_column(
+        ENUM(*(m.value for m in Delivery), name="alert_delivery", create_type=False),
+        server_default=text("'pending'"),
+    )
+    sending_at: Mapped[datetime | None] = mapped_column(TIMESTAMP(timezone=True), nullable=True)
+    message_id: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    thread_id: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
 
 
 class CandidateRow(Base):

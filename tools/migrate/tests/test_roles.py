@@ -282,7 +282,10 @@ def test_bot_may_only_touch_delivery_columns_of_alerts(roles):
             " VALUES ('A', 't', now(), '{}')"
         )
     with roles.connect("bot") as conn:
-        conn.execute("UPDATE alerts SET posted_at = now(), post_attempts = 1")
+        conn.execute(
+            "UPDATE alerts SET delivery = 'posted', sending_at = now(), posted_at = now(),"
+            " message_id = 5, thread_id = 6, post_attempts = 1"
+        )
         _denied(conn, "UPDATE alerts SET payload = '{\"x\": 1}'")
         _denied(conn, "UPDATE alerts SET symbol = 'B'")
         _denied(conn, "INSERT INTO alerts (symbol, trigger, triggered_at, payload) "
@@ -366,10 +369,10 @@ async def test_services_run_their_real_repositories_under_their_roles(roles):
 
     # bot: sweep, retry bookkeeping, mark posted.
     async with bot() as s:
-        pending = await AlertRepository(s).list_unposted()
+        pending = await AlertRepository(s).list_undelivered()
         assert [p.alert.symbol for p in pending] == ["AAA"]
         assert await AlertRepository(s).increment_post_attempts(pending[0].id) == 1
-        assert await AlertRepository(s).mark_posted(pending[0].id) is not None
+        assert await AlertRepository(s).mark_posted(pending[0].id, 555) is not None
         await s.commit()
 
     # the re-auth handshake crosses bot and ingest.

@@ -4,7 +4,12 @@ from pathlib import Path
 
 from alembic.config import Config
 
-from rs_persistence.alerts import NOTIFY_CHANNEL, AlertRepository, PendingAlert
+from rs_persistence.alerts import (
+    NOTIFY_CHANNEL,
+    AlertDelivery,
+    AlertRepository,
+    PendingAlert,
+)
 from rs_persistence.auth_requests import (
     AUTH_NOTIFY_CHANNEL,
     AUTH_REQUEST_WINDOW,
@@ -56,6 +61,7 @@ __all__ = [
     "AUTH_NOTIFY_CHANNEL",
     "AUTH_REQUEST_WINDOW",
     "NOTIFY_CHANNEL",
+    "AlertDelivery",
     "AlertRepository",
     "AlertRow",
     "AuthRequestRepository",
