@@ -1,6 +1,6 @@
-"""daily_bar, bar_request and unpriced_symbol: idempotent bar writes, coverage
-queries, the earliest start asked of the price vendor, and the record of symbols
-it cannot price."""
+"""daily_bar, bar_request and unpriced_symbol: idempotent bar writes, whole-symbol
+replacement, coverage queries, the earliest start asked of the price vendor, and
+the record of symbols it cannot price."""
 
 from collections.abc import Collection, Sequence
 from datetime import UTC, date, datetime
@@ -51,6 +51,14 @@ class DailyBarRepository:
             )
             inserted += len(result.all())
         return inserted
+
+    async def replace_symbol(self, symbol: str, bars: Sequence[StoredDailyBar]) -> int:
+        """Delete every stored bar of `symbol` and insert `bars`, in the caller's
+        transaction; returns how many were inserted. A delete, not an upsert: the
+        old series may hold sessions the fresh one lacks, and any left behind would
+        sit at the old scale beside the new bars."""
+        await self._session.execute(delete(DailyBarRow).where(DailyBarRow.symbol == symbol))
+        return await self.insert_many(bars)
 
     async def list_range(self, symbol: str, start: date, end: date) -> list[StoredDailyBar]:
         """One symbol's bars with session_date in [start, end] (both inclusive),

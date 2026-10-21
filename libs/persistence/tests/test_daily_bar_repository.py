@@ -154,3 +154,34 @@ async def test_record_request_only_ever_moves_a_symbols_start_earlier(session_fa
             "BBB": D0,
         }
         assert await repo.earliest_requested([]) == {}
+
+
+async def test_replace_symbol_swaps_the_whole_series_and_leaves_other_symbols(session_factory):
+    old = [_bar("AAA", D0), _bar("AAA", D0 + timedelta(days=1)), _bar("BBB", D0)]
+    async with session_factory() as s:
+        await DailyBarRepository(s).insert_many(old)
+        await s.commit()
+
+    fresh = [_bar("AAA", D0 + timedelta(days=1), close=110.0), _bar("AAA", D0 + timedelta(days=2), close=111.0)]
+    async with session_factory() as s:
+        assert await DailyBarRepository(s).replace_symbol("AAA", fresh) == 2
+        await s.commit()
+
+    async with session_factory() as s:
+        repo = DailyBarRepository(s)
+        assert await repo.list_range("AAA", D0, D0 + timedelta(days=9)) == fresh  # D0 is gone, new close wins
+        assert await repo.list_range("BBB", D0, D0 + timedelta(days=9)) == [old[2]]
+
+
+async def test_replace_symbol_rolls_back_with_the_caller_transaction(session_factory):
+    async with session_factory() as s:
+        await DailyBarRepository(s).insert_many([_bar("AAA")])
+        await s.commit()
+
+    async with session_factory() as s:
+        await DailyBarRepository(s).replace_symbol("AAA", [_bar("AAA", close=5.0)])
+        await s.rollback()
+
+    async with session_factory() as s:
+        [kept] = await DailyBarRepository(s).list_range("AAA", D0, D0)
+    assert kept.close == 11.0

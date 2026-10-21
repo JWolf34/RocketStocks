@@ -127,7 +127,7 @@ class StoredDailyBar(BaseModel):
     """One stored daily candle (the row ingest builds from the vendor-edge
     rs_sources.schwab.DailyBar). `session_date` is the exchange session (Eastern)
     date; `fetched_at` stamps when the vendor answered and `adjusted` records
-    whether the prices are split/dividend adjusted."""
+    whether the prices were split-adjusted as of that moment."""
 
     model_config = ConfigDict(frozen=True)
 
