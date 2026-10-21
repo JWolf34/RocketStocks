@@ -21,7 +21,7 @@ A Discord bot that scans the whole market and posts a small number of stocks per
 - **Notifications:** EventEmitter (thread-safe Queue) for scheduler job status
 - **Infrastructure:** Docker + Docker Compose
 
-## Repo Layout (monorepo since S001, 2026-07-05)
+## Repo Layout (monorepo)
 
 uv workspace: root `pyproject.toml` lists the members, one `uv.lock`, one shared `.venv` (`uv sync --all-packages`). Python pinned to 3.13 (`.python-version`).
 
@@ -29,10 +29,10 @@ uv workspace: root `pyproject.toml` lists the members, one `uv.lock`, one shared
 legacy/       # v1, moved intact (legacy/src/rocketstocks/, legacy/tests/, legacy/pyproject.toml)
 libs/         # v2 shared libraries: domain, persistence, query, observability, analysis, sources
 services/     # v2 long-running daemons (ingest, bot)
-tools/        # v2 one-shot CLIs (migrate; backfill/research come with their slices)
+tools/        # v2 one-shot CLIs (migrate, backfill, research)
 ```
 
-v2 naming rule (ADR-0001): import name = `rs_` + member dir (`libs/domain` → `rs_domain`); every member is `<root>/<member>/` with `pyproject.toml` + `src/rs_<member>/` + `tests/`. `rs_common`/`rs_utils` grab-bags are banned.
+v2 naming rule: import name = `rs_` + member dir (`libs/domain` → `rs_domain`); every member is `<root>/<member>/` with `pyproject.toml` + `src/rs_<member>/` + `tests/`. `rs_common`/`rs_utils` grab-bags are banned.
 
 ## v1 Package Layout
 
