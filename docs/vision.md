@@ -1,6 +1,6 @@
 # RocketStocks vision and build plan
 
-Status: drafted 2026-10-20 from a first-principles audit; awaiting John's review.
+Status: drafted 2026-10-20 from a first-principles audit; approved 2016-10-20.
 Once approved, this document is the only authority for what RocketStocks is and how it gets built.
 It replaces `docs/foundation/` (charter, roadmap, architecture, specs) and the ADRs in `docs/v2/adr/`.
 When reality disagrees with it, rewrite the affected lines; never append amendments.
