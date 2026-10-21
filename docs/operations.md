@@ -400,6 +400,52 @@ Find rows waiting like this:
 psql -c "SELECT id, symbol, reply_to, sending_at FROM alerts WHERE delivery = 'sending' ORDER BY id"
 ```
 
+### What posts and why
+
+Every hit of the Popularity Trigger is stored as a `candidate` with a verdict, a `raw_score` and a `strength`; only some become Alerts.
+The raw score is how far the hit is from the stock's own Baseline: the median and spread of the stock's mentions and rank over the 14 Eastern days before the hit's day began, so a stock is Unusual against its own normal and never against a cutoff shared by all stocks.
+A stock with fewer than 48 stored readings in that window has no Baseline: its candidates have no score or strength and are `below_bar`.
+Strength is the share of the Trigger's hits over the 30 Eastern days before the hit's day that scored no higher.
+That reference is a replay of the current rule over the stored Popularity, not the `candidate` table, so it is whole from the first day (imported history included) and is the same whatever ingest was doing last month.
+It is computed once per Eastern day and held in memory, so the first poll after a restart takes up to a few minutes and later polls add one day's replay at most.
+If fewer than 7 of the 30 days were polled, or none held a hit, the poll stores its snapshots and then fails with `ReferenceUnavailable`; it does not post.
+
+The bar is a strength, set from the same 30 days so that the typical (median) polled day has about 5 stocks at or above it (`BAR_TARGET_PER_DAY`).
+A stock counts once a day however often it hits, and days without polls are left out, so downtime does not move the bar.
+The verdicts, in the order they are decided:
+
+- `stale`: the hit is more than an hour old when decided (a catch-up after an outage).
+  Recorded, never posted.
+- `reply`: the stock already has its Alert today and this hit escalates, and the stock has had fewer than 3 replies today.
+  Escalation is a sub-rule neither the Alert nor an earlier reply carried, or strength at least `REPLY_STRENGTH_MARGIN` above the highest strength announced so far that day.
+  A reply is a row in `alerts` with `reply_to` set, posts in the Alert's thread, never pings and never uses the budget.
+- `repeat`: the stock already has its Alert today and this hit does not escalate (or the replies are used up).
+- `below_bar`: no Alert yet, and the strength is under the bar.
+  The stock can still get its first Alert later in the day.
+- `over_budget`: no Alert yet, the strength clears the bar, and the day already has 5 Alerts (`DAILY_BUDGET`).
+- `posted`: the rest.
+
+A day is the US Eastern calendar day.
+Hits found at the same boundary are decided strongest first, so the budget goes to the strongest of them.
+The log line `reference for <day>` gives the hits, the polled days and the bar behind a day.
+To see why a stock did not post, read its candidates:
+```
+psql -c "SELECT hit_at, verdict, raw_score, strength FROM candidate WHERE symbol = 'GME' AND day = '2026-10-21' ORDER BY hit_at"
+```
+
+### Tune the selector on the imported history
+
+`scripts/calibrate_selection.py` replays the rule, the score, the bar and the verdicts over every stored Popularity snapshot and prints aggregates only: per Eastern day, the candidates, the stocks hit and the verdict counts; the score percentiles; and a summary of Alerts and replies per day for several bar targets and reply margins.
+It reads `popularity_snapshot` in a read-only transaction through the ingest container's own `RS_DB_URL`, uses only the standard library and psycopg, and needs no rebuild or restart.
+From the host, in the directory with the compose file:
+```
+sudo docker compose -f docker-compose.v2.yml exec -T ingest python - < scripts/calibrate_selection.py > selector-calibration.txt
+```
+Progress goes to the terminal on stderr and the report to the file.
+It takes minutes (the database computes each stock's Baseline for each day), and holds nothing but the hits in memory.
+Pass other settings after the dash: `python - --targets 3,4,5 --margins 0.05,0.1`.
+The constants it recommends changing live in `services/ingest/src/rs_ingest/selector.py`.
+
 ### Daily bars
 
 The `surge_bars` job keeps daily bars for SPY and for every stock the Popularity Trigger ever hit, found by replaying the Trigger over all stored Popularity.
