@@ -120,7 +120,10 @@ async def run_bot(settings: BotSettings) -> int:
         await asyncio.wait({ready, gateway_task}, return_when=asyncio.FIRST_COMPLETED)
         if not ready.done():
             ready.cancel()
-            logger.error("Discord gateway ended before it was ready", exc_info=gateway_task.exception())
+            logger.error(
+                "Discord gateway ended before it was ready",
+                exc_info=None if gateway_task.cancelled() else gateway_task.exception(),
+            )
             return 1
         guild_id = channel.guild.id
         assert client.user is not None  # set by login

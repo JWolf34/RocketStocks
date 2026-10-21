@@ -120,3 +120,22 @@ async def test_without_a_role_lookup_nothing_is_pinged(session_factory, notices)
 
     assert [m.role_ids for m in fake.messages] == [()]
     assert _about_roles(notices) == []
+
+
+async def test_an_alert_waits_when_the_server_is_not_known_and_is_not_called_a_deleted_role(
+    session_factory, notices
+):
+    await _map(session_factory, POPULARITY_SURGE)
+    await _insert(session_factory, _surge_alert())
+    fake = FakeDiscord()
+    roles = _roles(ROLE)
+    roles.guild_known = False
+    worker = _worker(session_factory, fake, roles)
+
+    await worker.sweep()
+    assert fake.messages == []
+    assert _about_roles(notices) == []
+
+    roles.guild_known = True
+    await worker.sweep()
+    assert [m.role_ids for m in fake.messages] == [(ROLE,)]

@@ -233,8 +233,18 @@ class Replies:
         self.sent.append(kwargs)
 
 
-def _discord_role(role_id: int, name: str = "role", *, assignable: bool = True, mentionable: bool = True):
-    return SimpleNamespace(id=role_id, name=name, mentionable=mentionable, is_assignable=lambda: assignable)
+def _discord_role(
+    role_id: int,
+    name: str = "role",
+    *,
+    assignable: bool = True,
+    mentionable: bool = True,
+    manage_roles: bool = True,
+):
+    guild = SimpleNamespace(me=SimpleNamespace(guild_permissions=SimpleNamespace(manage_roles=manage_roles)))
+    return SimpleNamespace(
+        id=role_id, name=name, mentionable=mentionable, is_assignable=lambda: assignable, guild=guild
+    )
 
 
 def _interaction(member: FakeMember, *server_roles) -> tuple[SimpleNamespace, Replies]:
@@ -293,6 +303,16 @@ async def test_setup_roles_add_refuses_an_unmanageable_role(tree, session_factor
     await add.callback(interaction, trigger=POPULARITY_SURGE, role=_discord_role(SURGE_ROLE, assignable=False))
 
     assert "I cannot manage" in replies.sent[0]["content"]
+    assert await _mapped(session_factory) == {}
+
+
+async def test_setup_roles_add_refuses_any_role_while_the_bot_lacks_manage_roles(tree, session_factory):
+    add = tree.get_command("setup").get_command("roles").get_command("add")
+    interaction, replies = _interaction(FakeMember())
+
+    await add.callback(interaction, trigger=POPULARITY_SURGE, role=_discord_role(SURGE_ROLE, manage_roles=False))
+
+    assert "Manage Roles" in replies.sent[0]["content"]
     assert await _mapped(session_factory) == {}
 
 

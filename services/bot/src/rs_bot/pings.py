@@ -41,9 +41,15 @@ class RoleInfo:
     mentionable: bool
 
 
+class GuildUnavailable(Exception):
+    """The server is not known to the gateway right now (starting up, or an outage), so
+    nothing can be said about its roles."""
+
+
 class GuildRoles(Protocol):
     def role(self, role_id: int) -> RoleInfo | None:
-        """The server's role with this id, or None when it does not exist (any more)."""
+        """The server's role with this id, or None when it does not exist (any more).
+        Raises GuildUnavailable when the server itself cannot be read."""
         ...
 
 
@@ -59,19 +65,23 @@ class PingMember(Protocol):
 
 
 def role_info(role: discord.Role) -> RoleInfo:
-    return RoleInfo(role.id, role.name, role.is_assignable(), role.mentionable)
+    # is_assignable covers the hierarchy, integration-owned roles and @everyone, not the permission.
+    assignable = role.is_assignable() and role.guild.me.guild_permissions.manage_roles
+    return RoleInfo(role.id, role.name, assignable, role.mentionable)
 
 
 class DiscordGuildRoles:
-    """`GuildRoles` over a gateway guild. `get_guild` is called on each lookup, so a guild the
-    cache has not loaded yet reads as having no roles rather than being held stale."""
+    """`GuildRoles` over a gateway guild. `get_guild` is called on each lookup, so the cache is
+    never held stale; a guild it does not have is GuildUnavailable, not a role gone missing."""
 
     def __init__(self, get_guild: Callable[[], discord.Guild | None]) -> None:
         self._get_guild = get_guild
 
     def role(self, role_id: int) -> RoleInfo | None:
         guild = self._get_guild()
-        role = None if guild is None else guild.get_role(role_id)
+        if guild is None:
+            raise GuildUnavailable
+        role = guild.get_role(role_id)
         return None if role is None else role_info(role)
 
 

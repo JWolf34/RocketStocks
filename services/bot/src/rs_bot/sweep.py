@@ -34,7 +34,7 @@ from pydantic import ValidationError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from rs_bot.counters import new_counters
-from rs_bot.pings import GuildRoles
+from rs_bot.pings import GuildRoles, GuildUnavailable
 from rs_bot.render import POPULARITY_SURGE, render, render_generic
 from rs_domain import (
     ALERT_STALE_AFTER,
@@ -262,7 +262,13 @@ class SweepWorker:
             embed = render_generic(item)
         else:
             embed = render(item, track_record, track_record_failed=track_record_failed)
-        role_ids, missing_role = await self._role_pings(session, alert)
+        try:
+            role_ids, missing_role = await self._role_pings(session, alert)
+        except GuildUnavailable:
+            # Not a deleted role: wait for the server to be known rather than post without the ping.
+            self._retry_not_before[item.id] = loop.time() + self._retry_gap
+            logger.warning("server unknown to the gateway - alert id=%d waits to be pinged", item.id)
+            return
         try:
             message_id = await self._post(session, repo, item, embed, parent, role_ids)
         except Exception as exc:

@@ -15,7 +15,7 @@ from types import SimpleNamespace
 
 import discord
 
-from rs_bot.pings import RoleInfo
+from rs_bot.pings import GuildUnavailable, RoleInfo
 from rs_bot.render import marked_row_id
 from rs_domain import Alert, FactUnavailable, PopularitySurgePayload, SurgeFacts
 
@@ -131,6 +131,7 @@ class FakeRoles:
 
     def __init__(self) -> None:
         self._roles: dict[int, RoleInfo] = {}
+        self.guild_known = True
 
     def add(
         self, role_id: int, name: str = "role", *, assignable: bool = True, mentionable: bool = True
@@ -142,6 +143,8 @@ class FakeRoles:
         del self._roles[role_id]
 
     def role(self, role_id: int) -> RoleInfo | None:
+        if not self.guild_known:
+            raise GuildUnavailable
         return self._roles.get(role_id)
 
 
