@@ -12,7 +12,6 @@ from rs_persistence.auth_requests import (
 )
 from rs_persistence.base_rates import BaseRateRepository
 from rs_persistence.chains import ChainSnapshotRepository
-from rs_persistence.clients import ServiceClientRepository
 from rs_persistence.daily_bars import DailyBarRepository
 from rs_persistence.engine import build_engine, build_session_factory, psycopg_conninfo
 from rs_persistence.import_verification import (
@@ -29,13 +28,10 @@ from rs_persistence.models import (
     SchwabAuthRequestRow,
     SchwabTokenNoticeRow,
     SchwabTokenRow,
-    ServiceClientRow,
-    StreamBar5m,
     UnpricedSymbolRow,
     chain_snapshot_table,
 )
 from rs_persistence.popularity import PopularityRepository
-from rs_persistence.stream_bars import BarRepository
 from rs_persistence.token_notices import TokenNoticeRepository
 from rs_persistence.token_store import SchwabTokenStore
 
@@ -60,7 +56,6 @@ __all__ = [
     "AlertRepository",
     "AlertRow",
     "AuthRequestRepository",
-    "BarRepository",
     "Base",
     "BaseRateRepository",
     "BaseRateRow",
@@ -78,9 +73,6 @@ __all__ = [
     "SchwabTokenRow",
     "SchwabTokenStore",
     "TokenNoticeRepository",
-    "ServiceClientRepository",
-    "ServiceClientRow",
-    "StreamBar5m",
     "UnpricedSymbolRow",
     "build_engine",
     "build_session_factory",

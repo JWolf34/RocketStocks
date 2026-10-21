@@ -23,7 +23,6 @@ COPY libs/query/pyproject.toml libs/query/
 COPY libs/sources/pyproject.toml libs/sources/
 COPY services/bot/pyproject.toml services/bot/
 COPY services/ingest/pyproject.toml services/ingest/
-COPY services/serve/pyproject.toml services/serve/
 COPY tools/backfill/pyproject.toml tools/backfill/
 COPY tools/migrate/pyproject.toml tools/migrate/
 COPY tools/research/pyproject.toml tools/research/
@@ -49,6 +48,6 @@ COPY --from=builder /app/.venv /app/.venv
 ENV PATH="/app/.venv/bin:$PATH" PYTHONUNBUFFERED=1
 USER app
 # No default CMD. Compose picks the daemon: python -m rs_ingest |
-# rs_serve | rs_bot | rs_migrate upgrade. CMD [] clears the base image's
+# rs_bot | rs_migrate upgrade. CMD [] clears the base image's
 # `python3` REPL default so a bare `docker run` fails loudly instead.
 CMD []

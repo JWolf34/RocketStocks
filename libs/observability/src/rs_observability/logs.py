@@ -106,8 +106,7 @@ def unit_of_work(**fields: Any) -> Iterator[str]:
 
     correlation_id groups one unit of work; cross-service tracing joins on the
     domain keys (`alert_id` in ingest's insert log and bot's post log), never
-    on the id. Yields the id so callers can echo it (serve's
-    `X-Correlation-ID` response header).
+    on the id. Yields the id so callers can echo it.
     """
     correlation_id = str(uuid.uuid4())
     with structlog.contextvars.bound_contextvars(correlation_id=correlation_id, **fields):

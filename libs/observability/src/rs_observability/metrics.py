@@ -4,8 +4,7 @@ The one home for exposition decisions (S004 pin #8): ingest and bot keep
 their plain counter dicts as the increment API — and their counter log
 lines — while DictCounterCollector reads the same dicts at scrape time and
 emits them with Counter type metadata, so rate()/increase() work without
-reopening the accepted S003/S004 internals. serve is untouched: its per-app
-registry behind API-key auth (S005) stands.
+reopening the accepted S003/S004 internals.
 """
 
 import threading

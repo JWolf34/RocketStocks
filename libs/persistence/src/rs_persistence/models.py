@@ -3,11 +3,6 @@
 These are internal to rs_persistence; repositories convert to/from the
 rs_domain Pydantic models so internal fields never leak (ADR-0004).
 
-stream_bars_5m is the detection log (ADR-0021): immutable, never reconciled
-against official REST data, hypertable (created via raw DDL in rev-001).
-Prices are DOUBLE PRECISION — bit-exact float64 round-trip for replay
-(S002 decision); NUMERIC is reserved for future accounting-grade tables.
-
 alerts.posted_at is the bot's delivery cursor (its `posted_at IS NULL` sweep);
 post_attempts caps its retries.
 """
@@ -103,18 +98,6 @@ chain_snapshot_table = Table(
     Column("expiration_type", CHAR(1)),
     Column("non_standard", Boolean),
 )
-
-
-class StreamBar5m(Base):
-    __tablename__ = "stream_bars_5m"
-
-    symbol: Mapped[str] = mapped_column(Text, primary_key=True)
-    bucket: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), primary_key=True)
-    open: Mapped[float]
-    high: Mapped[float]
-    low: Mapped[float]
-    close: Mapped[float]
-    volume: Mapped[int] = mapped_column(BigInteger)
 
 
 class AlertRow(Base):
@@ -257,24 +240,6 @@ class SchwabTokenNoticeRow(Base):
     sent_at: Mapped[datetime] = mapped_column(
         TIMESTAMP(timezone=True), server_default=text("now()")
     )
-
-
-class ServiceClientRow(Base):
-    """One API consumer (ADR-0012); rev-004. Phase 1 reads only api_key_hash +
-    revoked_at; scopes and rate-limit columns are enforced from Phase 3."""
-
-    __tablename__ = "service_clients"
-
-    id: Mapped[int] = mapped_column(BigInteger, Identity(always=True), primary_key=True)
-    name: Mapped[str] = mapped_column(Text, unique=True)
-    api_key_hash: Mapped[str] = mapped_column(Text, unique=True)
-    scopes: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict)
-    rate_limit_rps: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
-    rate_limit_burst: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
-    created_at: Mapped[datetime] = mapped_column(
-        TIMESTAMP(timezone=True), server_default=text("now()")
-    )
-    revoked_at: Mapped[datetime | None] = mapped_column(TIMESTAMP(timezone=True), nullable=True)
 
 
 class SchwabTokenRow(Base):

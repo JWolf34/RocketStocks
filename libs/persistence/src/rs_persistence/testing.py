@@ -83,7 +83,7 @@ async def session_factory(migrated_db_url: str) -> AsyncIterator[async_sessionma
     async with factory() as s:
         await s.execute(
             text(
-                "TRUNCATE alerts, stream_bars_5m, popularity_snapshot, daily_bar,"
+                "TRUNCATE alerts, popularity_snapshot, daily_bar,"
                 " unpriced_symbol, base_rate, schwab_auth_request, import_verification,"
                 " schwab_tokens, schwab_token_notice RESTART IDENTITY"
             )
