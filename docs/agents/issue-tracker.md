@@ -21,9 +21,10 @@ Create a GitHub issue.
 
 Run `gh issue view <number> --comments`.
 
-## Relationship to v2 slice specs
+## Relationship to milestone specs
 
-Note: each milestone ships a short spec in its implementing PR (see "Process rules" in `docs/vision.md`) - a separate, repo-checked-in surface from the GitHub issue tracker described here. `/to-spec` writes those specs; the issue-tracker operations above are for issues/PRDs (`/to-tickets`, `/qa`).
+Note: each milestone ships a short spec in its implementing PR (see "Process rules" in `docs/vision.md`) - a separate, repo-checked-in surface from the GitHub issue tracker described here.
+`/to-spec` writes those specs; the issue-tracker operations above are for issues/PRDs (`/to-tickets`, `/qa`).
 
 ## Wayfinding operations
 

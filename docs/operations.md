@@ -27,7 +27,7 @@ Each procedure lists the exact commands and what to expect.
 ## Variables to set in production
 
 These are all in `.env.example` with a comment.
-Four need your attention:
+Four need setting:
 
 - `RS_BOT_ADMIN_USER_ID`: set it to your own Discord user id.
   Without it, token-age DMs go to the Discord application's owner, who may not be the guild owner, and only the guild owner may run `/setup schwab`.
@@ -343,8 +343,8 @@ Three kinds of data cannot be fetched again:
 - User state such as paper trades, settings and roles.
   These are written by the bot and live in the same database.
 
-Everything else is refetched or recomputed: daily bars are repaired automatically, Alerts can be re-derived, and Baselines, Track records and Reports are rebuilt at will.
-Back up the whole database anyway; it is the simplest way to be sure none of the three is missed.
+Daily bars are repaired automatically, and Baselines, Track records and Reports are rebuilt at will.
+Back up the whole database anyway; it is the simplest way to be sure none of the three is missed, and it keeps the history of posted Alerts too.
 
 A dump also contains the Schwab refresh token (`schwab_tokens`).
 Store backups as you would a credential.
@@ -369,10 +369,11 @@ They are vendor data and never get committed.
 
 Restore into a fresh, empty database: a new volume, with the stack down.
 
-1. Stop the stack and start only the database on an empty volume.
-   If this host already has a volume you are replacing, `$COMPOSE down -v` deletes it, so be sure that is what you want.
+1. Stop the stack, delete the old database volume and start only the database on a new empty one.
+   `down -v` deletes the existing database, so be sure that is what you want.
+   On a new host there is no volume yet, and `$COMPOSE down` alone is enough.
    ```
-   $COMPOSE down
+   $COMPOSE down -v
    $COMPOSE up -d timescaledb
    ```
    Do not run the migrate gate yet: the dump carries the schema.

@@ -5,7 +5,8 @@ written under `data/spike-findings/` (gitignored, local-only, never committed). 
 recordings stay local** under the same gitignored `data/` tree (stream JSONL in
 `data/spike-recordings/`, chain snapshots in `data/chain-snapshots/`) - never committed.
 Measured facts worth keeping are summarized by hand in
-`docs/reference/schwab-facts.md`. These scripts are deleted once
+`docs/reference/schwab-facts.md`.
+These scripts are deleted once
 the Phase-2 session confirms no re-runs are needed.
 
 ## One-time setup (before Monday)

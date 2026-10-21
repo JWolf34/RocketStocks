@@ -34,7 +34,7 @@ Measured against SPY and a handful of other symbols in July and August 2026 unle
 - Naive datetimes are read in the process's local timezone, so the adapter must reject them.
 - `period` is ignored when explicit dates are sent; `needExtendedHoursData` defaults to true.
 - A symbol Schwab does not know (delisted, bogus, or valid on a non-session day) returns HTTP 200 with `empty: true`, never 404, and these cases are indistinguishable.
-- Count covered-but-empty symbol-days per run; a jump is the cheapest signal of a silent source outage.
+- Count covered-but-empty symbol-days per run; a jump is the cheapest indicator of a silent source outage.
 - No-trade buckets are omitted, so a row count under 390 per session is normal (illiquid names returned from 13 percent to 96 percent of buckets).
 - Candle `datetime` is the bucket start in epoch milliseconds UTC.
 - The extended session is 07:00 to 20:00 ET (pre-market before 07:00 is not served), a ceiling of 2.00x the regular-hours bar count; mega-caps saturate it and the illiquid tail is near 1.0x.
