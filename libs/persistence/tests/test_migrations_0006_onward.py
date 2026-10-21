@@ -1,4 +1,4 @@
-"""Migrations 0006-0016 against Timescale: the upgrade/downgrade round trip and
+"""Migrations 0006-0017 against Timescale: the upgrade/downgrade round trip and
 the physical layout (hypertables, compression, constraints)."""
 
 import uuid
@@ -56,7 +56,7 @@ def test_upgrade_downgrade_round_trip(scratch_url):
     assert types == NEW_TYPES
     assert alert_columns >= {
         "id", "symbol", "trigger", "triggered_at", "day", "payload", "posted_at",
-        "rule_version", "reply_to", "post_attempts",
+        "rule_version", "reply_to", "post_attempts", "delivery", "sending_at", "message_id", "thread_id",
     }
     assert "dedup_key" not in alert_columns
 
@@ -323,5 +323,42 @@ def test_0015_adds_bar_request_and_downgrade_drops_it(scratch_url):
 
         command.downgrade(config, "0014")
         assert "bar_request" not in inspect(engine).get_table_names()
+    finally:
+        engine.dispose()
+
+
+def test_0017_marks_posted_rows_posted_and_downgrade_returns_the_old_cursor(scratch_url):
+    config = migration_config(scratch_url)
+    engine = create_engine(scratch_url)
+    try:
+        command.upgrade(config, "0016")
+        with engine.begin() as conn:
+            conn.execute(
+                text(
+                    "INSERT INTO alerts (symbol, trigger, triggered_at, payload, posted_at) VALUES"
+                    " ('AAA', 't', '2026-10-19 15:00+00', '{}', '2026-10-19 15:01+00'),"
+                    " ('BBB', 't', '2026-10-19 15:00+00', '{}', NULL)"
+                )
+            )
+
+        command.upgrade(config, "head")
+        with engine.connect() as conn:
+            rows = conn.execute(
+                text("SELECT symbol, delivery::text, sending_at, message_id, thread_id FROM alerts ORDER BY id")
+            ).all()
+            index = conn.execute(
+                text("SELECT indexdef FROM pg_indexes WHERE indexname = 'ix_alerts_undelivered'")
+            ).scalar_one()
+        assert rows == [("AAA", "posted", None, None, None), ("BBB", "pending", None, None, None)]
+        assert "WHERE (delivery = ANY (ARRAY['pending'::alert_delivery, 'sending'::alert_delivery]))" in index
+
+        command.downgrade(config, "0016")
+        insp = inspect(engine)
+        assert not {"delivery", "sending_at", "message_id", "thread_id"} & {c["name"] for c in insp.get_columns("alerts")}
+        assert {i["name"] for i in insp.get_indexes("alerts")} >= {"ix_alerts_unposted"}
+        with engine.connect() as conn:
+            assert conn.execute(text("SELECT count(*) FROM pg_type WHERE typname = 'alert_delivery'")).scalar_one() == 0
+
+        command.upgrade(config, "head")
     finally:
         engine.dispose()

@@ -2,14 +2,14 @@
 A raw LISTEN connection witnesses that the notify arrives only
 at commit, carrying the alert id."""
 
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, timedelta
 
 import psycopg
 import pytest
 from sqlalchemy import func, select, text
 from sqlalchemy.exc import IntegrityError
 
-from rs_domain import Alert
+from rs_domain import Alert, Delivery
 from rs_persistence import AlertRepository, AlertRow
 from rs_persistence.alerts import alert_from_row
 
@@ -42,6 +42,7 @@ async def test_insert_writes_the_alert_row(session_factory):
     assert row.payload == {"volume": 750_000, "threshold": 500_000}
     assert row.posted_at is None  # the bot stamps this on delivery
     assert row.post_attempts == 0
+    assert (row.delivery, row.sending_at, row.message_id, row.thread_id) == (Delivery.PENDING, None, None, None)
     assert (row.rule_version, row.alert_price, row.quote_time, row.reply_to) == (None,) * 4
 
 
@@ -128,7 +129,7 @@ async def test_a_reply_is_stored_pointing_at_its_alert(session_factory):
     reply = await _insert_committed(session_factory, ALERT.model_copy(update={"reply_to": parent}))
 
     async with session_factory() as s:
-        pending = await AlertRepository(s).list_unposted()
+        pending = await AlertRepository(s).list_undelivered()
     assert [(p.id, p.alert.reply_to) for p in pending] == [(parent, None), (reply, parent)]
 
 
@@ -185,64 +186,162 @@ async def test_custom_channel_routes_the_notify(session_factory, migrated_db_url
     assert [(n.channel, n.payload) for n in got] == [("custom_alerts", str(alert_id))]
 
 
-async def test_list_unposted_returns_pending_in_id_order(session_factory):
-    # The bot's sweep cursor: every row with posted_at IS NULL,
-    # id order, full drain — a posted row leaves the pending set.
+async def test_list_undelivered_returns_pending_and_sending_in_id_order(session_factory):
+    # The bot's sweep cursor: every row still to deliver, id order, full drain - a posted
+    # or stale row leaves it.
     async with session_factory() as s:
         repo = AlertRepository(s)
         id_a = await repo.insert(_alert("AAA"))
         id_b = await repo.insert(_alert("BBB"))
         id_c = await repo.insert(_alert("CCC"))
+        id_d = await repo.insert(_alert("DDD"))
+        id_e = await repo.insert(_alert("EEE"))
         await s.commit()
     async with session_factory() as s:
-        await s.execute(text("UPDATE alerts SET posted_at = now() WHERE id = :id"), {"id": id_b})
+        repo = AlertRepository(s)
+        await repo.mark_sending(id_a)
+        await repo.mark_sending(id_b)
+        await repo.mark_posted(id_b, 77)
+        await repo.mark_stale(id_d)
         await s.commit()
 
     async with session_factory() as s:
-        pending = await AlertRepository(s).list_unposted()
+        pending = await AlertRepository(s).list_undelivered()
 
-    assert [(p.id, p.alert.symbol) for p in pending] == [(id_a, "AAA"), (id_c, "CCC")]
+    assert [(p.id, p.alert.symbol, p.delivery) for p in pending] == [
+        (id_a, "AAA", Delivery.SENDING),
+        (id_c, "CCC", Delivery.PENDING),
+        (id_e, "EEE", Delivery.PENDING),
+    ]
     # The envelope carries the domain Alert reconstructed at the boundary
-    # (UTC-normalized, validated) — not a raw row.
-    assert pending[0].alert == _alert("AAA")
+    # (UTC-normalized, validated) - not a raw row.
+    assert pending[1].alert == _alert("CCC")
 
 
-async def test_mark_posted_stamps_dbside_and_clears_pending(session_factory):
+async def test_mark_sending_keeps_the_first_send_time_and_leaves_the_row_in_the_cursor(session_factory):
+    alert_id = await _insert_committed(session_factory, ALERT)
+
     async with session_factory() as s:
-        alert_id = await AlertRepository(s).insert(ALERT)
+        assert await AlertRepository(s).mark_sending(alert_id)
+        await s.commit()
+    async with session_factory() as s:
+        first = (await s.get_one(AlertRow, alert_id)).sending_at
+    async with session_factory() as s:
+        assert await AlertRepository(s).mark_sending(alert_id)  # a retry marks it again
         await s.commit()
 
     async with session_factory() as s:
-        stamp = await AlertRepository(s).mark_posted(alert_id)
+        row = await s.get_one(AlertRow, alert_id)
+        (pending,) = await AlertRepository(s).list_undelivered()
+    assert (row.delivery, row.sending_at) == (Delivery.SENDING, first)
+    assert first is not None and first.tzinfo is not None
+    assert pending.sending_at == first
+
+
+async def test_mark_posted_records_the_message_stamps_dbside_and_clears_pending(session_factory):
+    alert_id = await _insert_committed(session_factory, ALERT)
+
+    async with session_factory() as s:
+        stamp = await AlertRepository(s).mark_posted(alert_id, 123456789012345678)
         await s.commit()
 
     # DB-side clock: the returned stamp is exactly what the row
     # now holds, tz-aware, and the row has left the pending set.
     assert stamp is not None and stamp.tzinfo is not None
     async with session_factory() as s:
-        row = await s.get(AlertRow, alert_id)
-        assert row.posted_at == stamp
-        assert await AlertRepository(s).list_unposted() == []
+        row = await s.get_one(AlertRow, alert_id)
+        assert (row.delivery, row.posted_at, row.message_id) == (Delivery.POSTED, stamp, 123456789012345678)
+        assert await AlertRepository(s).list_undelivered() == []
 
 
-async def test_mark_posted_is_idempotent(session_factory):
-    # Already-marked and never-existed both return None (caller warns); the
-    # first stamp is never overwritten — the crash-dupe audit trail survives.
-    async with session_factory() as s:
-        alert_id = await AlertRepository(s).insert(ALERT)
-        await s.commit()
+async def test_a_settled_row_is_never_marked_again(session_factory):
+    # Already-settled and never-existed both report nothing done (the caller warns); the
+    # first record is never overwritten - the audit trail survives.
+    alert_id = await _insert_committed(session_factory, ALERT)
 
     async with session_factory() as s:
         repo = AlertRepository(s)
-        first = await repo.mark_posted(alert_id)
+        first = await repo.mark_posted(alert_id, 11)
         await s.commit()
-        assert await repo.mark_posted(alert_id) is None
-        assert await repo.mark_posted(alert_id + 999) is None
+        assert await repo.mark_posted(alert_id, 22) is None
+        assert await repo.mark_posted(alert_id + 999, 22) is None
+        assert not await repo.mark_sending(alert_id)
+        assert not await repo.mark_stale(alert_id)
         await s.commit()
 
     async with session_factory() as s:
-        row = await s.get(AlertRow, alert_id)
-    assert row.posted_at == first
+        row = await s.get_one(AlertRow, alert_id)
+    assert (row.delivery, row.posted_at, row.message_id) == (Delivery.POSTED, first, 11)
+
+
+async def test_a_stale_row_is_recorded_and_not_posted_after(session_factory):
+    alert_id = await _insert_committed(session_factory, ALERT)
+
+    async with session_factory() as s:
+        repo = AlertRepository(s)
+        assert await repo.mark_stale(alert_id)
+        await s.commit()
+        assert await repo.mark_posted(alert_id, 5) is None
+        assert not await repo.mark_stale(alert_id)
+
+    async with session_factory() as s:
+        row = await s.get_one(AlertRow, alert_id)
+    assert (row.delivery, row.posted_at, row.message_id) == (Delivery.STALE, None, None)
+
+
+async def test_delivery_of_reads_where_an_alert_stands_now(session_factory):
+    alert_id = await _insert_committed(session_factory, ALERT)
+    async with session_factory() as s:
+        repo = AlertRepository(s)
+        pending = await repo.delivery_of(alert_id)
+        assert pending is not None and pending.delivery == Delivery.PENDING
+        await repo.mark_posted(alert_id, 31)
+        await repo.set_thread(alert_id, 31)
+        stood = await repo.delivery_of(alert_id)  # same session: fresh, not the cached object
+        assert stood is not None
+        assert (stood.delivery, stood.message_id, stood.thread_id) == (Delivery.POSTED, 31, 31)
+        assert await repo.delivery_of(alert_id + 999) is None
+
+
+async def test_list_unthreaded_names_recently_posted_alerts_without_a_thread(session_factory):
+    ids = [
+        await _insert_committed(session_factory, _alert(symbol))
+        for symbol in ("AAA", "BBB", "CCC", "DDD", "EEE")
+    ]
+    reply = await _insert_committed(session_factory, ALERT.model_copy(update={"reply_to": ids[0]}))
+    async with session_factory() as s:
+        repo = AlertRepository(s)
+        await repo.mark_posted(ids[0], 100)  # no thread yet: listed
+        await repo.mark_posted(ids[1], 101)
+        await repo.set_thread(ids[1], 101)  # has one
+        await repo.mark_posted(reply, 103)  # a reply never starts a thread
+        # Posted before messages were stored: nothing to start a thread from.
+        await s.execute(text("UPDATE alerts SET delivery = 'posted', posted_at = now() WHERE id = :id"), {"id": ids[2]})
+        # Posted too long ago to still matter.
+        await s.execute(
+            text(
+                "UPDATE alerts SET delivery = 'posted', posted_at = now() - interval '2 hours',"
+                " message_id = 104 WHERE id = :id"
+            ),
+            {"id": ids[3]},
+        )
+        await s.commit()  # ids[4] never posted
+
+        got = await repo.list_unthreaded(datetime.now(UTC) - timedelta(hours=1))
+
+    assert got == [(ids[0], 100, "AAA")]
+
+
+async def test_a_reply_is_in_the_cursor_whatever_its_alerts_state(session_factory):
+    parent = await _insert_committed(session_factory, ALERT)
+    reply = await _insert_committed(session_factory, ALERT.model_copy(update={"reply_to": parent}))
+    async with session_factory() as s:
+        await AlertRepository(s).mark_posted(parent, 9)
+        await s.commit()
+
+    async with session_factory() as s:
+        pending = await AlertRepository(s).list_undelivered()
+    assert [(p.id, p.alert.reply_to) for p in pending] == [(reply, parent)]
 
 
 async def test_multiple_alerts_share_one_transaction(session_factory, migrated_db_url):
@@ -278,18 +377,18 @@ async def test_increment_post_attempts_counts_and_caps_the_sweep(session_factory
 
     async with session_factory() as s:
         repo = AlertRepository(s)
-        pending = await repo.list_unposted()
+        pending = await repo.list_undelivered()
         assert [(p.id, p.post_attempts) for p in pending] == [(id_a, 2), (id_b, 0)]
         # At the cap the alert leaves the sweep but stays unposted.
-        assert [p.id for p in await repo.list_unposted(max_attempts=2)] == [id_b]
-        assert [p.id for p in await repo.list_unposted(max_attempts=3)] == [id_a, id_b]
+        assert [p.id for p in await repo.list_undelivered(max_attempts=2)] == [id_b]
+        assert [p.id for p in await repo.list_undelivered(max_attempts=3)] == [id_a, id_b]
 
 
 async def test_increment_post_attempts_ignores_posted_and_unknown(session_factory):
     async with session_factory() as s:
         repo = AlertRepository(s)
         alert_id = await repo.insert(ALERT)
-        await repo.mark_posted(alert_id)
+        await repo.mark_posted(alert_id, 5)
         await s.commit()
 
     async with session_factory() as s:
