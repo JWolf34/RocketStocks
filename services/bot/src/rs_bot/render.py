@@ -63,7 +63,6 @@ def _render_full(
         ("Base rate", _base_rate_text(base_rate, base_rate_failed)),
         ("Next earnings", _earnings_text(payload)),
         ("Benchmark", _benchmark_text(payload)),
-        ("Recent 8-Ks", _filings_text(payload)),
     ]
     parts = [f"alert #{pending.id}", f"rule v{payload.rule_version}"]
     if alert.alert_price is not None:
@@ -160,31 +159,6 @@ def _benchmark_text(payload: AttentionSurgePayload) -> str:
     if isinstance(fact, FactUnavailable):
         return _unavailable(fact)
     return f"{fact.symbol} ${fact.price:,.2f} at {fact.quote_time:%Y-%m-%d %H:%M} UTC"
-
-
-def _filings_text(payload: AttentionSurgePayload) -> str:
-    fact = payload.facts.recent_filings
-    if isinstance(fact, FactUnavailable):
-        return _unavailable(fact)
-    if not fact.filings:
-        return f"none in the last {fact.window_days} days"
-    lines = [
-        f"[{f.form} {f.filing_date:%Y-%m-%d}"
-        + (f" items {', '.join(f.items)}" if f.items else "")
-        + f"]({f.url})"
-        for f in fact.filings
-    ]
-    if len(lines[0]) > MAX_VALUE:
-        # A cut link renders as raw text; show the filing unlinked instead.
-        lines[0] = f"{fact.filings[0].form} {fact.filings[0].filing_date:%Y-%m-%d}"
-    shown: list[str] = []
-    for index, line in enumerate(lines):
-        # Reserve room for the "+N more" tail so the tail is never the part cut off.
-        tail = f"+{len(lines) - index - 1} more"
-        if shown and len("\n".join([*shown, line, tail])) > MAX_VALUE:
-            return "\n".join([*shown, f"+{len(lines) - index} more"])
-        shown.append(line)
-    return "\n".join(shown)
 
 
 def _pct(value: float | None) -> str:

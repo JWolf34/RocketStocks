@@ -9,7 +9,7 @@ import asyncio
 import logging
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
-from datetime import UTC, date, datetime, timedelta
+from datetime import date, datetime, timedelta
 from typing import Protocol
 from zoneinfo import ZoneInfo
 
@@ -18,10 +18,8 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from rs_domain import (
     BenchmarkFact,
     FactUnavailable,
-    FilingFact,
     NextEarningsFact,
     PriceMoveFact,
-    RecentFilingsFact,
     SurgeFacts,
     TradingCalendar,
     VolumeFact,
@@ -29,7 +27,6 @@ from rs_domain import (
 from rs_ingest.rate_limit import RateLimiter
 from rs_persistence import DailyBarRepository
 from rs_sources.earnings import NextEarnings
-from rs_sources.edgar import Filing8K
 from rs_sources.schwab import Quote, SchwabAuthError, TokenMissingError
 
 logger = logging.getLogger(__name__)
@@ -41,18 +38,12 @@ AVERAGE_SESSIONS = 20
 _BAR_LOOKBACK = timedelta(days=45)
 # The newest stored bar must be this recent, or the "20-day" average is old data.
 _MAX_BAR_AGE = timedelta(days=7)
-FILINGS_WINDOW_DAYS = 30
-FILINGS_LIMIT = 3
 BENCHMARK_SYMBOL = "SPY"
 FACT_TIMEOUT = timedelta(seconds=20)
 
 
 class QuoteSource(Protocol):
     async def quote(self, symbol: str) -> Quote | None: ...
-
-
-class FilingSource(Protocol):
-    async def recent_8ks(self, ticker: str, as_of: datetime, limit: int | None = 5) -> list[Filing8K]: ...
 
 
 class EarningsSource(Protocol):
@@ -79,7 +70,6 @@ class SurgeFactsGatherer:
         *,
         quotes: Callable[[], QuoteSource],
         limiter: RateLimiter,
-        filings: FilingSource,
         earnings: EarningsSource,
         session_factory: async_sessionmaker[AsyncSession],
         calendar: TradingCalendar,
@@ -88,7 +78,6 @@ class SurgeFactsGatherer:
     ) -> None:
         self._quotes = quotes
         self._limiter = limiter
-        self._filings = filings
         self._earnings = earnings
         self._session_factory = session_factory
         self._calendar = calendar
@@ -97,10 +86,9 @@ class SurgeFactsGatherer:
         self._token_dead_reason: str | None = None
 
     async def gather(self, symbol: str, as_of: datetime) -> GatheredFacts:
-        quote_result, benchmark, filings, earnings = await asyncio.gather(
+        quote_result, benchmark, earnings = await asyncio.gather(
             self._guarded(self._quote(symbol)),
             self._guarded(self._benchmark()),
-            self._guarded(self._recent_filings(symbol, as_of)),
             self._guarded(self._next_earnings(symbol, as_of)),
         )
         quote: Quote | FactUnavailable = quote_result
@@ -113,7 +101,6 @@ class SurgeFactsGatherer:
             facts=SurgeFacts(
                 price_move=price,
                 volume=volume,
-                recent_filings=filings,
                 next_earnings=earnings,
                 benchmark=benchmark,
             ),
@@ -188,18 +175,6 @@ class SurgeFactsGatherer:
         if not self._calendar.is_session(day):
             return False
         return self._calendar.session_open(day) <= moment < self._calendar.session_close(day)
-
-    async def _recent_filings(self, symbol: str, as_of: datetime) -> RecentFilingsFact:
-        cutoff = (as_of - timedelta(days=FILINGS_WINDOW_DAYS)).astimezone(UTC).date()
-        found = await self._filings.recent_8ks(symbol, as_of, limit=FILINGS_LIMIT)
-        return RecentFilingsFact(
-            window_days=FILINGS_WINDOW_DAYS,
-            filings=tuple(
-                FilingFact(form=f.form, filing_date=f.filing_date, items=f.items, url=f.url)
-                for f in found
-                if f.filing_date >= cutoff
-            ),
-        )
 
     async def _next_earnings(self, symbol: str, as_of: datetime) -> NextEarningsFact | FactUnavailable:
         upcoming = await self._earnings.next_earnings(symbol, as_of)

@@ -29,7 +29,6 @@ from rs_persistence import (
 )
 from rs_sources import ApeWisdomError, ApeWisdomRow, ExchangeCalendar
 from rs_sources.earnings import NextEarnings
-from rs_sources.edgar import Filing8K
 from rs_sources.schwab import Quote, SchwabAuthError
 
 T0 = datetime(2026, 10, 19, 14, 0, tzinfo=UTC)  # a Monday, 10:00 Eastern
@@ -85,11 +84,6 @@ class FakeQuotes:
         return self.result.model_copy(update={"symbol": symbol})
 
 
-class FakeFilings:
-    async def recent_8ks(self, ticker: str, as_of: datetime, limit: int | None = 5) -> list[Filing8K]:
-        return []
-
-
 class FakeEarnings:
     async def next_earnings(self, ticker: str, as_of: datetime) -> NextEarnings:
         return NextEarnings(date=date(2026, 11, 3))
@@ -140,7 +134,6 @@ class Rig:
             gatherer=lambda: SurgeFactsGatherer(
                 quotes=lambda: self.quotes,
                 limiter=self.limiter,
-                filings=FakeFilings(),
                 earnings=FakeEarnings(),
                 session_factory=session_factory,
                 calendar=calendar,

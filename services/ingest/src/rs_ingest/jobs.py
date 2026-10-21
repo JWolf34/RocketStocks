@@ -101,7 +101,6 @@ def _popularity_poll(deps: Dependencies, nasdaq: NasdaqEarningsCalendar) -> Popu
             # Read the client per lookup: a re-login rebuilds it.
             quotes=lambda: SchwabMarketData(deps.schwab.client, deps.calendar),
             limiter=deps.schwab_limiter,
-            filings=edgar,
             earnings=earnings,
             session_factory=deps.session_factory,
             calendar=deps.calendar,

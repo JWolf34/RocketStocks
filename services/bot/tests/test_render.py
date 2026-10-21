@@ -4,6 +4,7 @@ cannot render typed falls back to the generic embed."""
 
 from datetime import UTC, date, datetime
 
+import discord
 import pytest
 
 import rs_bot.render
@@ -15,10 +16,8 @@ from rs_domain import (
     BaseRateInput,
     BenchmarkFact,
     FactUnavailable,
-    FilingFact,
     NextEarningsFact,
     PriceMoveFact,
-    RecentFilingsFact,
     SurgeFacts,
     VolumeFact,
 )
@@ -33,17 +32,6 @@ def _facts(**overrides) -> SurgeFacts:
         "price_move": PriceMoveFact(last_price=12.5, previous_close=10.0, change_pct=25.0, quote_time=T0),
         "volume": VolumeFact(
             volume=3_000_000, average_volume=1_000_000, sessions=20, ratio=3.0, intraday=True
-        ),
-        "recent_filings": RecentFilingsFact(
-            window_days=14,
-            filings=(
-                FilingFact(
-                    form="8-K",
-                    filing_date=date(2026, 7, 1),
-                    items=("2.02", "9.01"),
-                    url="https://example.test/f1",
-                ),
-            ),
         ),
         "next_earnings": NextEarningsFact(date=date(2026, 8, 4), estimated=True),
         "benchmark": BenchmarkFact(symbol="SPY", price=500.0, quote_time=T0),
@@ -119,7 +107,6 @@ def test_full_payload_shows_rule_facts_base_rate_and_provenance():
     assert "$12.50" in fields["Price"] and "+25.00%" in fields["Price"]
     assert "3,000,000" in fields["Volume"] and "3.0x" in fields["Volume"]
     assert "partial day" in fields["Volume"]
-    assert "[8-K 2026-07-01 items 2.02, 9.01](https://example.test/f1)" in fields["Recent 8-Ks"]
     assert fields["Next earnings"] == "2026-08-04 - estimated"
     assert fields["Benchmark"].startswith("SPY $500.00")
     for text in ("alert #42", "rule v1", "alert price $12.50", "quote 2026-07-06 14:30 UTC"):
@@ -134,50 +121,58 @@ def test_rank_jump_names_both_ranks():
 
 def test_every_optional_fact_unavailable_says_why():
     facts = _facts(
-        price_move=GONE, volume=GONE, recent_filings=GONE, next_earnings=GONE, benchmark=GONE
+        price_move=GONE, volume=GONE, next_earnings=GONE, benchmark=GONE
     )
     fields = _fields(render(_pending(facts), _base_rate()))
-    for name in ("Price", "Volume", "Recent 8-Ks", "Next earnings", "Benchmark"):
+    for name in ("Price", "Volume", "Next earnings", "Benchmark"):
         assert fields[name] == "unavailable: quote vendor down"
 
 
-def test_no_recent_filings_is_stated():
-    facts = _facts(recent_filings=RecentFilingsFact(window_days=14, filings=()))
-    assert _fields(render(_pending(facts)))["Recent 8-Ks"] == "none in the last 14 days"
+def test_a_version_1_payload_with_filings_still_renders_typed():
+    pending = _pending()
+    payload = pending.alert.payload | {
+        "version": 1,
+        "facts": pending.alert.payload["facts"]
+        | {
+            "recent_filings": {
+                "status": "ok",
+                "window_days": 14,
+                "filings": [
+                    {
+                        "form": "8-K",
+                        "filing_date": "2026-07-01",
+                        "items": ["2.02"],
+                        "url": "https://example.test/f1",
+                    }
+                ],
+            }
+        },
+    }
+    old = PendingAlert(id=42, alert=pending.alert.model_copy(update={"payload": payload}))
+
+    fields = _fields(render(old, _base_rate()))
+
+    assert "Recent 8-Ks" not in fields
+    assert "$12.50" in fields["Price"]
 
 
-def test_oversized_filing_list_is_cut_to_whole_lines_with_a_count():
-    filings = tuple(
-        FilingFact(
-            form="8-K",
-            filing_date=date(2026, 7, 1),
-            items=("2.02",),
-            url=f"https://example.test/{'x' * 80}/{i}",
-        )
-        for i in range(40)
-    )
-    facts = _facts(recent_filings=RecentFilingsFact(window_days=14, filings=filings))
-    embed = render(_pending(facts), _base_rate())
-    value = _fields(embed)["Recent 8-Ks"]
-
-    *shown, tail = value.split("\n")
-    assert tail == f"+{40 - len(shown)} more"
-    assert 0 < len(shown) < 40
-    assert all(line.endswith(")") for line in shown)  # no link cut in half
-    _assert_within_discord_limits(embed)
-    assert render(_pending(facts), _base_rate()).to_dict() == embed.to_dict()  # deterministic
-
-
-def test_oversized_caveat_and_total_stay_inside_the_limits():
+def test_oversized_caveat_is_clipped_inside_the_limits():
     base_rate = _base_rate().model_copy(update={"survivorship_caveat": "x" * 5000})
-    filings = tuple(
-        FilingFact(form="8-K", filing_date=date(2026, 7, 1), items=(), url=f"https://e.test/{'y' * 60}/{i}")
-        for i in range(40)
-    )
-    facts = _facts(recent_filings=RecentFilingsFact(window_days=14, filings=filings))
-    embed = render(_pending(facts), base_rate)
+    embed = render(_pending(), base_rate)
     _assert_within_discord_limits(embed)
     assert _fields(embed)["Base rate"].endswith("...")
+
+
+def test_fields_over_the_total_are_dropped_from_the_end_deterministically():
+    embed = discord.Embed(title="T")
+    fields = [(f"field {i}", "v" * 1000) for i in range(10)]
+
+    fitted = rs_bot.render._fit(embed, fields)
+
+    assert fitted == fields[: len(fitted)]
+    assert 0 < len(fitted) < 10
+    assert sum(len(n) + len(v) for n, v in fitted) + len("T") <= 6000
+    assert rs_bot.render._fit(embed, fields) == fitted
 
 
 def test_no_base_rate_says_so_explicitly():
@@ -248,11 +243,3 @@ def test_generic_embed_clips_a_huge_payload(size):
         alert=Alert(symbol="X", alert_type="t", triggered_at=T0, payload={"k": "v" * size}),
     )
     assert len(render(pending).description) <= 4096
-
-
-def test_first_filing_line_too_long_is_shown_unlinked_not_cut_mid_link():
-    long_filing = FilingFact(
-        form="8-K", filing_date=date(2026, 7, 1), items=(), url="https://example.test/" + "z" * 1200
-    )
-    facts = _facts(recent_filings=RecentFilingsFact(window_days=14, filings=(long_filing,)))
-    assert _fields(render(_pending(facts)))["Recent 8-Ks"] == "8-K 2026-07-01"

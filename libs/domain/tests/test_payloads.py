@@ -8,10 +8,8 @@ from rs_domain import (
     AttentionSurgePayload,
     BenchmarkFact,
     FactUnavailable,
-    FilingFact,
     NextEarningsFact,
     PriceMoveFact,
-    RecentFilingsFact,
     SurgeFacts,
     VolumeFact,
 )
@@ -27,17 +25,6 @@ def full_facts() -> SurgeFacts:
         volume=VolumeFact(
             volume=3_000_000, average_volume=1_000_000.0, sessions=20, ratio=3.0, intraday=True
         ),
-        recent_filings=RecentFilingsFact(
-            window_days=30,
-            filings=(
-                FilingFact(
-                    form="8-K",
-                    filing_date=date(2026, 10, 15),
-                    items=("2.02", "9.01"),
-                    url="https://www.sec.gov/Archives/edgar/data/1/2/x.htm",
-                ),
-            ),
-        ),
         next_earnings=NextEarningsFact(date=date(2026, 11, 3), estimated=True, time_of_day="pre_market"),
         benchmark=BenchmarkFact(symbol="SPY", price=512.25, quote_time=POLLED_AT),
     )
@@ -46,7 +33,7 @@ def full_facts() -> SurgeFacts:
 def unavailable_facts() -> SurgeFacts:
     reason = FactUnavailable(reason="Schwab token is dead")
     return SurgeFacts(
-        price_move=reason, volume=reason, recent_filings=reason, next_earnings=reason, benchmark=reason
+        price_move=reason, volume=reason, next_earnings=reason, benchmark=reason
     )
 
 
@@ -86,11 +73,34 @@ def test_each_fact_keeps_its_own_variant_after_a_round_trip():
 
 
 def test_payload_records_its_schema_version():
-    assert payload(full_facts()).model_dump(mode="json")["version"] == 1
+    assert payload(full_facts()).model_dump(mode="json")["version"] == 2
+
+
+def test_a_stored_version_1_payload_with_filings_still_parses():
+    facts = full_facts().model_dump(mode="json") | {
+        "recent_filings": {
+            "status": "ok",
+            "window_days": 30,
+            "filings": [
+                {
+                    "form": "8-K",
+                    "filing_date": "2026-10-15",
+                    "items": ["2.02", "9.01"],
+                    "url": "https://www.sec.gov/Archives/edgar/data/1/2/x.htm",
+                }
+            ],
+        }
+    }
+    stored = payload(full_facts()).model_dump(mode="json") | {"version": 1, "facts": facts}
+
+    restored = AttentionSurgePayload.model_validate(stored)
+
+    assert restored.version == 1
+    assert restored.facts == full_facts()
 
 
 def test_rejects_an_unknown_payload_version():
-    stored = payload(full_facts()).model_dump(mode="json") | {"version": 2}
+    stored = payload(full_facts()).model_dump(mode="json") | {"version": 3}
 
     with pytest.raises(ValidationError):
         AttentionSurgePayload.model_validate(stored)
