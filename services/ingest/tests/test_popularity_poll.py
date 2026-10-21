@@ -660,10 +660,10 @@ class TestSelection:
         assert (candidate.raw_score, candidate.strength) == (None, None)
 
     async def test_the_budget_goes_to_the_strongest_of_a_boundary_not_the_first_alphabetically(
-        self, session_factory, calendar, sleeps, notices
+        self, session_factory, sleeps, notices
     ):
         names = ["AAA", "BBB", "CCC", "DDD", "EEE", "FFF"]
-        rig = Rig(session_factory, calendar, sleeps, [row(n, 40 + i, 90) for i, n in enumerate(names)])
+        rig = Rig(session_factory, sleeps, [row(n, 40 + i, 90) for i, n in enumerate(names)])
         for strength, name in zip([0.91, 0.92, 0.93, 0.94, 0.95, 0.96], names, strict=True):
             rig.scorer.by_ticker[name] = scored(strength)
 
@@ -675,10 +675,10 @@ class TestSelection:
         assert sorted(a.symbol for a in await rig.alerts()) == names[1:]
 
     async def test_a_stock_over_budget_stays_so_for_the_day_and_the_budget_is_new_on_the_next_eastern_day(
-        self, session_factory, calendar, sleeps, notices
+        self, session_factory, sleeps, notices
     ):
         names = [f"S{i}" for i in range(DAILY_BUDGET + 1)]
-        rig = Rig(session_factory, calendar, sleeps, [row(n, 40 + i, 90) for i, n in enumerate(names)])
+        rig = Rig(session_factory, sleeps, [row(n, 40 + i, 90) for i, n in enumerate(names)])
         for i, name in enumerate(names):
             rig.scorer.by_ticker[name] = scored(0.99 - i * 0.01)  # S5 is the weakest
         tomorrow = T0 + timedelta(hours=24)
@@ -692,9 +692,9 @@ class TestSelection:
         assert by_time[("S0", tomorrow)] == "posted"
         assert by_time[("S4", tomorrow)] == "over_budget"
 
-    async def test_replies_never_use_the_budget(self, session_factory, calendar, sleeps, notices):
+    async def test_replies_never_use_the_budget(self, session_factory, sleeps, notices):
         names = [f"S{i}" for i in range(DAILY_BUDGET)]
-        rig = Rig(session_factory, calendar, sleeps, [row(n, 40 + i, 90) for i, n in enumerate(names)])
+        rig = Rig(session_factory, sleeps, [row(n, 40 + i, 90) for i, n in enumerate(names)])
         await rig.run_at(T0 + timedelta(seconds=20))
         rig.apewisdom.rows = [both_rules("S0"), *[row(n, 40 + i, 90) for i, n in enumerate(names) if n != "S0"]]
 
@@ -783,9 +783,9 @@ class TestReplies:
         ]
 
     async def test_nothing_is_stored_when_the_alert_the_reply_continues_cannot_be_stored(
-        self, session_factory, calendar, sleeps, make_flaky, notices
+        self, session_factory, sleeps, make_flaky, notices
     ):
-        broken = Rig(session_factory, calendar, sleeps, [both_rules("SURGER")], writer_factory=make_flaky(failures=99))
+        broken = Rig(session_factory, sleeps, [both_rules("SURGER")], writer_factory=make_flaky(failures=99))
         with pytest.raises(ExceptionGroup):
             await broken.poll.run()
 
@@ -814,9 +814,9 @@ class TestEasternDayAcrossDaylightSaving:
         ],
     )
     async def test_one_alert_per_stock_per_eastern_day_and_a_new_day_at_eastern_midnight(
-        self, session_factory, calendar, sleeps, notices, last_of_day, first_of_next
+        self, session_factory, sleeps, notices, last_of_day, first_of_next
     ):
-        rig = Rig(session_factory, calendar, sleeps, listing())
+        rig = Rig(session_factory, sleeps, listing())
         before = last_of_day - timedelta(minutes=30)
 
         for moment in (before, last_of_day, first_of_next):

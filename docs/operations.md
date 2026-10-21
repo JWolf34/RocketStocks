@@ -423,6 +423,7 @@ The verdicts, in the order they are decided:
 - `below_bar`: no Alert yet, and the strength is under the bar.
   The stock can still get its first Alert later in the day.
 - `over_budget`: no Alert yet, the strength clears the bar, and the day already has 5 Alerts (`DAILY_BUDGET`).
+  The budget never frees within a day, so this is final for the stock until the next Eastern day.
 - `posted`: the rest.
 
 A day is the US Eastern calendar day.

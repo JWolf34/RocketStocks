@@ -4,8 +4,8 @@ A pure function from a hit, its strength and what its Eastern day already holds
 to a verdict. A candidate posts at once when its strength clears the bar and the
 day's budget is not used up: an online selector cannot know the day's strongest,
 so the bar is tuned (from the Trigger's trailing 30 days) so a typical day yields
-about the budget. A stock below the bar or over budget earlier can still get its
-first Alert later that day. Once a stock has its Alert, later hits are repeats
+about the budget. A stock below the bar earlier can still get its first Alert
+later that day; one over budget cannot, as the budget never frees within a day. Once a stock has its Alert, later hits are repeats
 unless they escalate, in which case they reply in its thread, up to a few times;
 replies never use the budget.
 """

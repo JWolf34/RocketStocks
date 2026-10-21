@@ -75,13 +75,15 @@ class TestAStockWithoutAnAlertToday:
     def test_below_the_bar_is_below_bar_even_when_the_budget_is_used(self):
         assert verdict(0.5, alerts=DAILY_BUDGET) is Verdict.BELOW_BAR
 
-    def test_a_stock_below_the_bar_or_over_budget_earlier_still_gets_its_first_alert_later(self):
-        # Neither earlier verdict leaves anything on the stock's day, so a later hit
-        # that clears the bar, with budget left, posts.
+    def test_a_stock_below_the_bar_earlier_still_gets_its_first_alert_later(self):
+        # A below-bar hit leaves nothing on the stock's day, so a later hit that
+        # clears the bar, with budget left, posts.
         assert verdict(0.5) is Verdict.BELOW_BAR
-        assert verdict(0.97, alerts=DAILY_BUDGET) is Verdict.OVER_BUDGET
         assert verdict(0.97, alerts=DAILY_BUDGET - 1, stock=None) is Verdict.POSTED
 
+    def test_a_stock_over_budget_stays_so_as_the_budget_never_frees_within_a_day(self):
+        assert verdict(0.97, alerts=DAILY_BUDGET) is Verdict.OVER_BUDGET
+        assert verdict(0.99, alerts=DAILY_BUDGET) is Verdict.OVER_BUDGET
 
 class TestAStockAlreadyAlertedToday:
     def test_a_hit_that_adds_nothing_is_a_repeat(self):

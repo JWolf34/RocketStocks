@@ -10,7 +10,7 @@ Friends receive a few Popularity Alerts a day, each carrying a Track record seed
 - A candidate posts at once when its strength clears a bar set from those 30 days so a typical day yields about the budget (5 to start), and the day's budget is not used up.
 - A day is the US Eastern calendar day, for the budget and for one Alert per stock per day.
 - A later candidate on a stock already alerted that day replies in the Alert's thread only when it escalates: a sub-rule the Alert did not carry, or strength up by a margin tuned at build time, at most a few replies per stock per day.
-- Replies never ping roles and never use the budget; a stock below the bar or over budget earlier can still get its first Alert later that day.
+- Replies never ping roles and never use the budget; a stock below the bar earlier can still get its first Alert later that day, and one over budget cannot, since the budget never frees within a day.
 
 ## Delivery
 
