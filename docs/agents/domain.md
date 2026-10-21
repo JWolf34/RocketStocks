@@ -6,13 +6,13 @@ How the engineering skills should consume this repo's domain documentation when 
 
 This repo has **one** `CONTEXT.md` at the repo root. There is no `CONTEXT-MAP.md`.
 
-**ADRs live at `docs/v2/adr/`** - NOT the default `docs/adr/`. This is a deliberate deviation: the surviving architectural decisions are for the v2 rewrite (the current architecture is `docs/foundation/architecture.md`; see `docs/v2/README.md`). When a skill's default instructions say "read `docs/adr/`", read `docs/v2/adr/` instead.
+**ADRs live at `docs/adr/`**, the default location.
 
 ## Before exploring, read these
 
 - **`CONTEXT.md`** at the repo root - the v2 ubiquitous-language glossary (product, data plane, alerting).
 - **`docs/foundation/architecture.md`** - the current v2 architecture; rationale lives in the foundation map (issue #40) tickets.
-- **`docs/v2/adr/`** - read ADRs that touch the area you're about to work in. Only surviving ADRs are kept (numbers are not contiguous); archived ADRs resolve at git tag `v2-plan-archive-2026-10` via `git show v2-plan-archive-2026-10:docs/v2/adr/NNNN-*.md`.
+- **`docs/adr/`** - read ADRs that touch the area you're about to work in.
 
 If any of these files don't exist, **proceed silently**. Don't flag their absence; don't suggest creating them upfront. The `/domain-modeling` skill (reached via `/grill-with-docs` and `/improve-codebase-architecture`) creates them lazily when terms or decisions actually get resolved.
 
@@ -26,9 +26,7 @@ If any of these files don't exist, **proceed silently**. Don't flag their absenc
     │   ├── architecture.md            ← current v2 architecture (entry point)
     │   ├── research/                  ← vendor stack, signal evidence, API shape
     │   └── specs/                     ← per-slice half-page specs
-    └── v2/
-        ├── README.md                  ← pointer to the above
-        └── adr/                       ← surviving architectural decisions (non-contiguous numbers)
+    └── adr/                           ← architectural decisions
 ```
 
 ## Use the glossary's vocabulary
@@ -41,4 +39,4 @@ If the concept you need isn't in the glossary yet, that's a signal — either yo
 
 If your output contradicts an existing ADR, surface it explicitly rather than silently overriding:
 
-> _Contradicts ADR-0008 (detection in ingest) — but worth reopening because…_
+> _Contradicts ADR-0002 (Triggers in ingest) — but worth reopening because…_
