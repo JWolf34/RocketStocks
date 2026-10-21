@@ -137,8 +137,6 @@ def _popularity_poll(deps: Dependencies, nasdaq: NasdaqEarningsCalendar) -> Popu
             quotes=lambda: MonitoredQuotes(SchwabMarketData(deps.schwab.client, deps.calendar), deps.health),
             limiter=deps.schwab_limiter,
             earnings=earnings,
-            session_factory=deps.session_factory,
-            calendar=deps.calendar,
             on_token_dead=deps.trip_token_gate,
         ),
     )
