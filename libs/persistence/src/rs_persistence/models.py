@@ -194,6 +194,15 @@ class DailyBarRow(Base):
     adjusted: Mapped[bool] = mapped_column(Boolean)
 
 
+class BarRequestRow(Base):
+    """The earliest start already requested of the price vendor for a symbol."""
+
+    __tablename__ = "bar_request"
+
+    symbol: Mapped[str] = mapped_column(Text, primary_key=True)
+    earliest_start: Mapped[date] = mapped_column(Date)
+
+
 class UnpricedSymbolRow(Base):
     __tablename__ = "unpriced_symbol"
 

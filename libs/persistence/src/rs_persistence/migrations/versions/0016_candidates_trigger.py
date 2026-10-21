@@ -18,16 +18,16 @@ break the one-Alert-a-day rule, so the upgrade stops and names them for the
 operator to resolve; nothing is changed until then. The downgrade reverses every
 step (the candidates are dropped, the dedup keys rebuilt from the Alerts).
 
-Revision ID: 0015
-Revises: 0014
+Revision ID: 0016
+Revises: 0015
 """
 
 import sqlalchemy as sa
 from alembic import op
 from sqlalchemy.dialects.postgresql import ENUM, JSONB
 
-revision = "0015"
-down_revision = "0014"
+revision = "0016"
+down_revision = "0015"
 branch_labels = None
 depends_on = None
 

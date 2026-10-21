@@ -53,6 +53,7 @@ def test_registered_for_sunday_evening_chicago_without_schwab():
         http=None,  # type: ignore[arg-type]
         edgar_user_agent="RocketStocks test@example.com",
         trip_token_gate=None,  # type: ignore[arg-type]
+        health=None,  # type: ignore[arg-type]
     )
     register_jobs(cron, deps)
 

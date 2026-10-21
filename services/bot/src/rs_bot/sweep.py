@@ -20,17 +20,33 @@ import logging
 from contextlib import suppress
 from typing import Protocol
 
+import aiohttp
 import discord
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from rs_bot.counters import new_counters
 from rs_bot.render import POPULARITY_SURGE, render, render_generic
 from rs_domain import TrackRecord
-from rs_observability import notify_ops, unit_of_work
+from rs_observability import HealthTracker, Source, notify_ops, unit_of_work
 from rs_persistence import AlertRepository, PendingAlert
 from rs_query import current_track_record
 
 logger = logging.getLogger(__name__)
+
+
+# Discord's answer about one embed it will not take (a malformed or oversized body).
+_REJECTED_EMBED_STATUS = 400
+
+
+def _discord_health(exc: Exception) -> bool | None:
+    """What a failed send says about Discord: True when it answered (reachable), False when it
+    is failing (a 5xx, a 429, a refused permission, a dropped connection), None when it says
+    nothing (a bug in rendering or sending one Alert), so one bad Alert never flaps Discord."""
+    if isinstance(exc, discord.HTTPException):
+        return exc.status == _REJECTED_EMBED_STATUS
+    if isinstance(exc, aiohttp.ClientError | OSError | TimeoutError | discord.ConnectionClosed):
+        return False
+    return None
 
 
 class EmbedSender(Protocol):
@@ -47,12 +63,14 @@ class SweepWorker:
         sender: EmbedSender,
         *,
         sweep_seconds: float,
+        health: HealthTracker,
         max_attempts: int = 5,
         retry_gap_seconds: float | None = None,
         counters: dict[str, int] | None = None,
     ) -> None:
         self._session_factory = session_factory
         self._sender = sender
+        self._health = health
         self._sweep_seconds = sweep_seconds
         self._max_attempts = max_attempts
         self._retry_gap = sweep_seconds if retry_gap_seconds is None else retry_gap_seconds
@@ -128,7 +146,12 @@ class SweepWorker:
                         embed = render(item, track_record, track_record_failed=track_record_failed)
                     try:
                         message_id = await self._sender.send(embed)
-                    except Exception:
+                    except Exception as exc:
+                        reachable = _discord_health(exc)
+                        if reachable:
+                            await self._health.report_ok(Source.DISCORD)
+                        elif reachable is False:
+                            await self._health.report_failed(Source.DISCORD, type(exc).__name__)
                         self.counters["post_failures_total"] += 1
                         attempts = await repo.increment_post_attempts(item.id)
                         await session.commit()
@@ -154,6 +177,7 @@ class SweepWorker:
                                 key=f"alert-post-failed:{item.id}",
                             )
                         continue
+                    await self._health.report_ok(Source.DISCORD)
                     posted_at = await repo.mark_posted(item.id)
                     await session.commit()  # per-row commit: dupe window ≤ 1 alert
                     self.counters["discord_posts_total"] += 1

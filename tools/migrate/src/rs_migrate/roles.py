@@ -51,6 +51,11 @@ GRANTS: dict[str, dict[str, tuple[str, ...]]] = {
         "mcp": _SELECT,
         "research": _SELECT,
     },
+    "bar_request": {
+        "ingest": ("SELECT", "INSERT", "UPDATE"),
+        "mcp": _SELECT,
+        "research": _SELECT,
+    },
     # Written by the backfill tool on the owner DSN; no service touches it.
     "import_verification": {},
     "options_chain_snapshot": {

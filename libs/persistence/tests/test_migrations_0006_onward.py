@@ -1,4 +1,4 @@
-"""Migrations 0006-0015 against Timescale: the upgrade/downgrade round trip and
+"""Migrations 0006-0016 against Timescale: the upgrade/downgrade round trip and
 the physical layout (hypertables, compression, constraints)."""
 
 import uuid
@@ -222,11 +222,11 @@ SURGE_PAYLOAD = (
 )
 
 
-def test_0015_keeps_every_alert_backfills_day_and_one_posted_candidate_per_trigger_alert(scratch_url):
+def test_0016_keeps_every_alert_backfills_day_and_one_posted_candidate_per_trigger_alert(scratch_url):
     config = migration_config(scratch_url)
     engine = create_engine(scratch_url)
     try:
-        command.upgrade(config, "0014")
+        command.upgrade(config, "0015")
         with engine.begin() as conn:
             conn.execute(
                 text(
@@ -272,7 +272,7 @@ def test_0015_keeps_every_alert_backfills_day_and_one_posted_candidate_per_trigg
         )
         assert record == ("popularity_surge", 7)
 
-        command.downgrade(config, "0014")
+        command.downgrade(config, "0015")
         with engine.connect() as conn:
             assert conn.execute(text("SELECT symbol, alert_type, dedup_key FROM alerts ORDER BY id")).all() == [
                 ("GME", "popularity_surge", "popularity_surge:1:GME:20261020T0330Z"),
@@ -288,11 +288,11 @@ def test_0015_keeps_every_alert_backfills_day_and_one_posted_candidate_per_trigg
         engine.dispose()
 
 
-def test_0015_stops_and_names_two_alerts_that_share_a_stock_and_eastern_day(scratch_url):
+def test_0016_stops_and_names_two_alerts_that_share_a_stock_and_eastern_day(scratch_url):
     config = migration_config(scratch_url)
     engine = create_engine(scratch_url)
     try:
-        command.upgrade(config, "0014")
+        command.upgrade(config, "0015")
         with engine.begin() as conn:
             conn.execute(
                 text(
@@ -309,5 +309,19 @@ def test_0015_stops_and_names_two_alerts_that_share_a_stock_and_eastern_day(scra
         with engine.connect() as conn:
             assert conn.execute(text("SELECT count(*) FROM alerts")).scalar_one() == 3
             assert "alert_type" in {c["name"] for c in inspect(conn).get_columns("alerts")}
+    finally:
+        engine.dispose()
+
+
+def test_0015_adds_bar_request_and_downgrade_drops_it(scratch_url):
+    config = migration_config(scratch_url)
+    engine = create_engine(scratch_url)
+    try:
+        command.upgrade(config, "head")
+        assert [c["name"] for c in inspect(engine).get_columns("bar_request")] == ["symbol", "earliest_start"]
+        assert inspect(engine).get_pk_constraint("bar_request")["constrained_columns"] == ["symbol"]
+
+        command.downgrade(config, "0014")
+        assert "bar_request" not in inspect(engine).get_table_names()
     finally:
         engine.dispose()

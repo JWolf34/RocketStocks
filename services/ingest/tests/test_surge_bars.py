@@ -6,14 +6,16 @@ from collections import Counter
 from datetime import UTC, date, datetime, time, timedelta
 
 import pytest
-from sqlalchemy import func, select
+from sqlalchemy import func, select, text
 
 from rs_analysis import popularity_surge
 from rs_domain import PopularityOrigin, PopularitySnapshot
+from rs_ingest import surge_bars
 from rs_ingest.rate_limit import RateLimiter
 from rs_ingest.surge_bars import (
     BENCHMARK,
     EASTERN,
+    LOOKBACK_SESSIONS,
     SurgeBarsError,
     first_event_dates,
     lookback_start,
@@ -370,9 +372,111 @@ async def test_a_weekend_event_on_a_listing_that_starts_monday_is_not_refetched_
     assert schwab.calls == []
 
 
-async def test_the_lookback_is_thirty_sessions_before_the_event(session_factory):
-    start = lookback_start(CALENDAR, date(2026, 10, 14))
-    assert len(CALENDAR.sessions_in_range(start, date(2026, 10, 13))) == 30
+async def test_the_lookback_covers_the_typical_move_window_with_margin():
+    assert LOOKBACK_SESSIONS >= 250 + 10
+
+
+async def test_the_lookback_is_that_many_sessions_before_any_event_day():
+    # Weekdays, weekends and holiday weeks alike: the calendar-day span never comes up short.
+    for offset in range(0, 370):
+        day = date(2026, 1, 1) + timedelta(days=offset)
+        start = lookback_start(CALENDAR, day)
+        before = CALENDAR.sessions_in_range(start, day - timedelta(days=1))
+        assert len(before) >= LOOKBACK_SESSIONS, day
+        assert len(CALENDAR.sessions_in_range(start + timedelta(days=1), day - timedelta(days=1))) < len(before)
+
+
+async def test_a_year_of_bars_is_fetched_before_the_first_event(session_factory):
+    await _seed(session_factory)
+    schwab = FakeSchwab().price("AAA", "BBB", "ZZZ", BENCHMARK)
+
+    await _run(session_factory, schwab, FakeClock(NOW))
+
+    aaa = await _bars(session_factory, "AAA")
+    assert len([d for d in aaa if d < date(2026, 10, 14)]) >= 250
+    assert aaa[-1] == LAST_SESSION
+
+
+async def _store_with_the_old_thirty_session_lookback(session_factory, schwab: FakeSchwab, clock: FakeClock, monkeypatch):
+    """The state a box running the earlier job holds: short lookbacks and no request record."""
+    with monkeypatch.context() as old:
+        old.setattr(surge_bars, "LOOKBACK_SESSIONS", 30)
+        old.setattr(surge_bars, "LOOKBACK_CALENDAR_DAYS", 70)
+        await _run(session_factory, schwab, clock)
+    async with session_factory() as s:
+        await s.execute(text("DELETE FROM bar_request"))
+        await s.commit()
+    schwab.calls.clear()
+
+
+async def test_bars_stored_with_a_short_lookback_are_extended_back_once(session_factory, monkeypatch):
+    await _seed(session_factory)
+    schwab = FakeSchwab().price("AAA", "BBB", "ZZZ", BENCHMARK)
+    clock = FakeClock(NOW)
+    await _store_with_the_old_thirty_session_lookback(session_factory, schwab, clock, monkeypatch)
+    assert len(await _bars(session_factory, "AAA")) < 60
+
+    report = await _run(session_factory, schwab, clock)
+
+    wanted = {s: lookback_start(CALENDAR, d) for s, d in {"AAA": date(2026, 10, 14), "BBB": date(2026, 9, 30), "ZZZ": date(2026, 10, 15)}.items()}
+    wanted[BENCHMARK] = wanted["BBB"]
+    assert sorted(schwab.calls) == sorted((s, start, LAST_SESSION) for s, start in wanted.items())
+    for symbol, start in wanted.items():
+        assert (await _bars(session_factory, symbol))[0] == start
+    assert report.bars_inserted > 0
+
+    schwab.calls.clear()
+    await _run(session_factory, schwab, clock)
+    assert schwab.calls == []
+
+
+async def test_a_listing_younger_than_the_lookback_is_asked_once_and_never_again(session_factory, monkeypatch):
+    await _seed(session_factory)
+    schwab = FakeSchwab().price("AAA", "ZZZ", BENCHMARK).price("BBB", listed=date(2026, 9, 28))
+    clock = FakeClock(NOW)
+    await _store_with_the_old_thirty_session_lookback(session_factory, schwab, clock, monkeypatch)
+
+    await _run(session_factory, schwab, clock)
+    # BBB was asked from the full lookback once and has nothing earlier than its listing.
+    assert [c for c in schwab.calls if c[0] == "BBB"] == [("BBB", lookback_start(CALENDAR, date(2026, 9, 30)), LAST_SESSION)]
+    assert (await _bars(session_factory, "BBB"))[0] == date(2026, 9, 28)
+
+    schwab.calls.clear()
+    clock.current = NOW + timedelta(days=1)
+    await _run(session_factory, schwab, clock)
+    # Only the new day: its short history is complete, not a gap.
+    assert [c for c in schwab.calls if c[0] == "BBB"] == [("BBB", date(2026, 10, 21), date(2026, 10, 21))]
+    assert (await _bars(session_factory, "BBB"))[0] == date(2026, 9, 28)
+
+
+async def test_the_benchmark_already_covering_the_earliest_need_is_not_refetched(session_factory):
+    await _seed(session_factory)
+    schwab = FakeSchwab().price("AAA", "BBB", "ZZZ", BENCHMARK)
+    clock = FakeClock(NOW)
+    # SPY was stored earlier, from before the earliest need, with no request on record.
+    async with session_factory() as s:
+        history = await SchwabMarketData(schwab, CALENDAR).daily_history(BENCHMARK, date(2025, 1, 2), LAST_SESSION)
+        await DailyBarRepository(s).insert_many(surge_bars._to_stored(history, FETCHED))
+        await s.commit()
+    schwab.calls.clear()
+
+    await _run(session_factory, schwab, clock)
+
+    assert BENCHMARK not in schwab.symbols_called()
+    assert (await _bars(session_factory, BENCHMARK))[0] == date(2025, 1, 2)
+
+
+async def test_a_long_catch_up_logs_its_plan_and_progress(session_factory, monkeypatch, caplog):
+    await _seed(session_factory)
+    monkeypatch.setattr(surge_bars, "PROGRESS_EVERY", 2)
+    schwab = FakeSchwab().price("AAA", "BBB", "ZZZ", BENCHMARK)
+
+    with caplog.at_level("INFO", logger="rs_ingest.surge_bars"):
+        await _run(session_factory, schwab, FakeClock(NOW))
+
+    messages = [r.getMessage() for r in caplog.records]
+    assert "surge_bars: 4 of 4 symbols to fetch, one call each" in messages
+    assert "surge_bars: 2 of 4 symbols done" in messages
 
 
 async def test_a_stored_symbol_schwab_stops_answering_for_is_not_a_job_failure(session_factory):

@@ -27,10 +27,6 @@ _EASTERN = ZoneInfo("America/New_York")
 class SchwabResponseError(SourceError):
     """A non-OK or unusable Schwab response; `status_code` is set for the former."""
 
-    def __init__(self, message: str, status_code: int | None = None) -> None:
-        super().__init__(message)
-        self.status_code = status_code
-
 
 class Quote(BaseModel):
     """Latest quote; `previous_close` is the prior session's close."""

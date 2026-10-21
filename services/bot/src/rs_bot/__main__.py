@@ -31,6 +31,7 @@ from rs_bot.token_notices import TokenAgeNotifier
 from rs_domain import SystemClock
 from rs_observability import (
     DictCounterCollector,
+    HealthTracker,
     configure_logging,
     install_excepthooks,
     start_metrics_server,
@@ -121,6 +122,7 @@ async def run_bot(settings: BotSettings) -> int:
             session_factory,
             DiscordChannelSender(channel),
             sweep_seconds=settings.sweep_seconds,
+            health=HealthTracker("bot"),
             max_attempts=settings.post_max_attempts,
             counters=counters,
         )

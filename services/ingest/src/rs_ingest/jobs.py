@@ -15,17 +15,26 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from rs_domain import Clock, TradingCalendar
 from rs_ingest.alert_writer import AlertWriter
 from rs_ingest.cron import CronTable, Daily, Every, Job
+from rs_ingest.monitored import (
+    MonitoredEarningsCalendar,
+    MonitoredFilings,
+    MonitoredPopularitySource,
+    MonitoredQuotes,
+    TalliedHistory,
+    finish_sweep,
+)
 from rs_ingest.popularity_poll import POLL_MINUTES, PopularityPoll
 from rs_ingest.rate_limit import RateLimiter
 from rs_ingest.schwab_session import SchwabSession
-from rs_ingest.surge_bars import EASTERN, sync_surge_bars
+from rs_ingest.surge_bars import EASTERN, SurgeBarsError, sync_surge_bars
 from rs_ingest.surge_facts import SurgeFactsGatherer
 from rs_ingest.track_record import track_record_job
+from rs_observability import HealthTracker, QuietFailure, Source, SweepTally
 from rs_sources import ApeWisdomClient
 from rs_sources.earnings import SCAN_WEEKDAYS, EarningsLookup
 from rs_sources.edgar import EdgarClient
-from rs_sources.nasdaq import NasdaqEarningsCalendar
-from rs_sources.schwab import SchwabMarketData
+from rs_sources.nasdaq import EarningsWarmError, NasdaqEarningsCalendar
+from rs_sources.schwab import SchwabAuthError, SchwabMarketData
 
 
 @dataclass(frozen=True)
@@ -40,17 +49,30 @@ class Dependencies:
     edgar_user_agent: str
     # Pauses the Schwab jobs; for a job that is not itself needs_schwab but met a dead token.
     trip_token_gate: Callable[[str], Awaitable[None]]
+    # Where each source's failures and recoveries become Ops pings.
+    health: HealthTracker
 
 
 def register_jobs(cron: CronTable, deps: Dependencies) -> None:
     async def surge_bars() -> None:
-        await sync_surge_bars(
-            session_factory=deps.session_factory,
-            source=SchwabMarketData(deps.schwab.client, deps.calendar),
-            limiter=deps.schwab_limiter,
-            calendar=deps.calendar,
-            clock=deps.clock,
-        )
+        tally = SweepTally()
+        try:
+            await sync_surge_bars(
+                session_factory=deps.session_factory,
+                source=TalliedHistory(SchwabMarketData(deps.schwab.client, deps.calendar), tally),
+                limiter=deps.schwab_limiter,
+                calendar=deps.calendar,
+                clock=deps.clock,
+            )
+        except SchwabAuthError:
+            raise  # the daemon pauses Schwab jobs on this
+        except Exception as exc:
+            await finish_sweep(deps.health, Source.SCHWAB, tally, exc)
+            if isinstance(exc, SurgeBarsError):
+                # A few stocks failed: the next run retries them, and a stock never pings.
+                raise QuietFailure(str(exc)) from exc
+            raise
+        await finish_sweep(deps.health, Source.SCHWAB, tally)
 
     cron.register(
         Job(
@@ -60,7 +82,8 @@ def register_jobs(cron: CronTable, deps: Dependencies) -> None:
             surge_bars,
             needs_schwab=True,
             run_on_start=True,
-            # A first run after the history import can walk thousands of symbols.
+            # A first run walks every Popularity-hit symbol a year back, one call each at the
+            # shared 100 a minute: 3 hours fits 18,000 calls, and a stopped run resumes per symbol.
             timeout=timedelta(hours=3),
         )
     )
@@ -69,7 +92,15 @@ def register_jobs(cron: CronTable, deps: Dependencies) -> None:
     nasdaq = NasdaqEarningsCalendar(deps.http, deps.clock)
 
     async def warm_earnings_calendar() -> None:
-        await nasdaq.warm(deps.clock.now().astimezone(EASTERN).date(), SCAN_WEEKDAYS)
+        try:
+            fetched = await nasdaq.warm(deps.clock.now().astimezone(EASTERN).date(), SCAN_WEEKDAYS)
+        except EarningsWarmError as exc:
+            await finish_sweep(
+                deps.health, Source.NASDAQ, SweepTally(attempted=exc.attempted, failed=exc.failed), exc
+            )
+            raise QuietFailure(str(exc)) from exc
+        if fetched:  # a window that was still fresh made no request, so it says nothing
+            await deps.health.report_ok(Source.NASDAQ)
 
     cron.register(
         Job(
@@ -91,15 +122,17 @@ def register_jobs(cron: CronTable, deps: Dependencies) -> None:
 
 def _popularity_poll(deps: Dependencies, nasdaq: NasdaqEarningsCalendar) -> PopularityPoll:
     edgar = EdgarClient(deps.http, deps.edgar_user_agent, deps.clock)
-    earnings = EarningsLookup(nasdaq, edgar)
+    earnings = EarningsLookup(
+        MonitoredEarningsCalendar(nasdaq, deps.health), MonitoredFilings(edgar, deps.health)
+    )
     return PopularityPoll(
-        source=ApeWisdomClient(deps.http),
+        source=MonitoredPopularitySource(ApeWisdomClient(deps.http), deps.health),
         session_factory=deps.session_factory,
         clock=deps.clock,
         writer=AlertWriter(deps.session_factory),
         gatherer=lambda: SurgeFactsGatherer(
             # Read the client per lookup: a re-login rebuilds it.
-            quotes=lambda: SchwabMarketData(deps.schwab.client, deps.calendar),
+            quotes=lambda: MonitoredQuotes(SchwabMarketData(deps.schwab.client, deps.calendar), deps.health),
             limiter=deps.schwab_limiter,
             earnings=earnings,
             session_factory=deps.session_factory,
