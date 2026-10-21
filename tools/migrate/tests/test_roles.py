@@ -299,6 +299,21 @@ def test_mcp_is_read_only_and_cannot_see_secrets(roles, statement):
         _denied(conn, statement)
 
 
+def test_ingest_may_replace_a_symbols_daily_bars_but_not_rewrite_them(roles):
+    bar = (
+        "INSERT INTO daily_bar (symbol, session_date, open, high, low, close, volume, fetched_at, adjusted)"
+        " VALUES ('A', '2026-07-06', 1, 1, 1, 1, 1, now(), true)"
+    )
+    with roles.connect("ingest") as conn:
+        conn.execute(bar)
+        conn.execute("DELETE FROM daily_bar WHERE symbol = 'A'")
+        conn.execute(bar)
+        _denied(conn, "UPDATE daily_bar SET close = 2")
+        _denied(conn, "TRUNCATE daily_bar")
+    with roles.connect("bot") as conn:
+        _denied(conn, "DELETE FROM daily_bar")
+
+
 def test_mcp_reads_the_market_data_it_exposes(roles):
     with roles.connect("mcp") as conn:
         for table in ("alerts", "outcome", "track_record", "daily_bar", "popularity_snapshot"):

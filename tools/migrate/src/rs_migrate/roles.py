@@ -48,8 +48,9 @@ GRANTS: dict[str, dict[str, tuple[str, ...]]] = {
         "mcp": _SELECT,
         "research": _SELECT,
     },
+    # Inserted by the bars job, which deletes a symbol's bars to replace them when a split makes them stale.
     "daily_bar": {
-        "ingest": _SELECT_INSERT,
+        "ingest": ("SELECT", "INSERT", "DELETE"),
         "bot": _SELECT,
         "mcp": _SELECT,
         "research": _SELECT,
