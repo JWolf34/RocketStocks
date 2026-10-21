@@ -1,7 +1,8 @@
-"""Migrations 0006-0014 against Timescale: the upgrade/downgrade round trip and
+"""Migrations 0006-0015 against Timescale: the upgrade/downgrade round trip and
 the physical layout (hypertables, compression, constraints)."""
 
 import uuid
+from datetime import UTC, date, datetime
 
 import pytest
 from alembic import command
@@ -53,7 +54,11 @@ def test_upgrade_downgrade_round_trip(scratch_url):
     assert NEW_TABLES <= tables
     assert "outbox" not in tables
     assert types == NEW_TYPES
-    assert alert_columns >= ALERT_COLUMNS_BEFORE | {"rule_version", "dedup_key", "post_attempts"}
+    assert alert_columns >= {
+        "id", "symbol", "trigger", "triggered_at", "day", "payload", "posted_at",
+        "rule_version", "reply_to", "post_attempts",
+    }
+    assert "dedup_key" not in alert_columns
 
     command.downgrade(config, "0005")
     tables, types, alert_columns = _state(scratch_url)
@@ -113,7 +118,7 @@ def test_0014_renames_to_the_glossary_and_rewrites_stored_values_both_ways(scrat
                 )
             )
 
-        command.upgrade(config, "head")
+        command.upgrade(config, "0014")
         with engine.connect() as conn:
             alerts = conn.execute(
                 text("SELECT symbol, alert_type, dedup_key, payload::text FROM alerts ORDER BY symbol")
@@ -187,8 +192,122 @@ def test_market_tables_are_keyed_by_symbol_and_time(sync_engine):
     assert insp.get_pk_constraint("daily_bar")["constrained_columns"] == ["symbol", "session_date"]
 
 
-def test_alerts_dedup_key_is_unique(sync_engine):
-    uniques = {
-        u["name"]: u["column_names"] for u in inspect(sync_engine).get_unique_constraints("alerts")
-    }
-    assert uniques == {"uq_alerts_dedup_key": ["dedup_key"]}
+def test_alerts_hold_one_alert_per_stock_per_eastern_day_and_no_dedup_key(sync_engine):
+    insp = inspect(sync_engine)
+    assert insp.get_unique_constraints("alerts") == []
+    [index] = [i for i in insp.get_indexes("alerts") if i["name"] == "uq_alerts_symbol_day"]
+    assert index["unique"] and index["column_names"] == ["symbol", "day"]
+    with sync_engine.connect() as conn:
+        definition = conn.execute(
+            text("SELECT indexdef FROM pg_indexes WHERE indexname = 'uq_alerts_symbol_day'")
+        ).scalar_one()
+    assert "WHERE (reply_to IS NULL)" in definition
+
+
+def test_candidates_are_indexed_for_a_triggers_window_and_a_stocks_day(sync_engine):
+    indexes = {i["name"]: (i["column_names"], i["unique"]) for i in inspect(sync_engine).get_indexes("candidate")}
+    assert indexes["uq_candidate_hit"] == (["trigger", "rule_version", "symbol", "hit_at"], True)
+    assert indexes["ix_candidate_trigger_hit_at"] == (["trigger", "hit_at"], False)
+    assert indexes["ix_candidate_symbol_day"] == (["symbol", "day"], False)
+    with sync_engine.connect() as conn:
+        verdicts = conn.execute(text("SELECT unnest(enum_range(NULL::candidate_verdict))::text")).scalars().all()
+    assert verdicts == ["posted", "reply", "below_bar", "over_budget", "repeat", "stale"]
+
+
+SURGE_PAYLOAD = (
+    '{"version": 2, "rule_version": "1", "polled_at": "2026-10-20T03:30:00Z", "fired": ["mention_surge"],'
+    ' "rank": 40, "mentions": 90, "rank_24h_ago": null, "mentions_24h_ago": 20, "rank_gain": null,'
+    ' "mention_ratio": 4.5, "mention_multiplier": 3.0, "mention_min_prior": 15,'
+    ' "facts": {"price_move": {"status": "unavailable", "reason": "x"}}}'
+)
+
+
+def test_0015_keeps_every_alert_backfills_day_and_one_posted_candidate_per_trigger_alert(scratch_url):
+    config = migration_config(scratch_url)
+    engine = create_engine(scratch_url)
+    try:
+        command.upgrade(config, "0014")
+        with engine.begin() as conn:
+            conn.execute(
+                text(
+                    "INSERT INTO alerts (symbol, alert_type, triggered_at, payload, rule_version, dedup_key)"
+                    " VALUES ('GME', 'popularity_surge', '2026-10-20 03:30+00', CAST(:payload AS jsonb), '1',"
+                    "         'popularity_surge:1:GME:20261020T0330Z'),"
+                    "        ('TEST', 'staged_test', '2026-10-20 15:00+00', '{}', NULL, NULL)"
+                ),
+                {"payload": SURGE_PAYLOAD},
+            )
+            conn.execute(
+                text(
+                    "INSERT INTO track_record (alert_type, rule_version, computed_at, input, n,"
+                    " survivorship_caveat) VALUES ('popularity_surge', '1', now(), 'logged', 7, 'c')"
+                )
+            )
+
+        command.upgrade(config, "head")
+        with engine.connect() as conn:
+            alerts = conn.execute(text("SELECT id, symbol, trigger, day, reply_to FROM alerts ORDER BY id")).all()
+            candidates = conn.execute(
+                text(
+                    "SELECT trigger, rule_version, symbol, hit_at, day, inputs, verdict::text, decided_at, alert_id"
+                    " FROM candidate"
+                )
+            ).all()
+            record = conn.execute(text("SELECT trigger, n FROM track_record")).one()
+        # 23:30 EDT on the 19th is still the 19th in New York.
+        assert [(a.symbol, a.trigger, a.day, a.reply_to) for a in alerts] == [
+            ("GME", "popularity_surge", date(2026, 10, 19), None),
+            ("TEST", "staged_test", date(2026, 10, 20), None),
+        ]
+        [candidate] = candidates
+        gme = datetime(2026, 10, 20, 3, 30, tzinfo=UTC)
+        assert candidate == (
+            "popularity_surge", "1", "GME", gme, date(2026, 10, 19),
+            {
+                "fired": ["mention_surge"], "rank": 40, "mentions": 90, "rank_24h_ago": None,
+                "mentions_24h_ago": 20, "rank_gain": None, "mention_ratio": 4.5,
+                "mention_multiplier": 3.0, "mention_min_prior": 15,
+            },
+            "posted", gme, alerts[0].id,
+        )
+        assert record == ("popularity_surge", 7)
+
+        command.downgrade(config, "0014")
+        with engine.connect() as conn:
+            assert conn.execute(text("SELECT symbol, alert_type, dedup_key FROM alerts ORDER BY id")).all() == [
+                ("GME", "popularity_surge", "popularity_surge:1:GME:20261020T0330Z"),
+                ("TEST", "staged_test", None),
+            ]
+            assert conn.execute(text("SELECT alert_type FROM track_record")).scalar_one() == "popularity_surge"
+        assert "candidate" not in inspect(engine).get_table_names()
+
+        command.upgrade(config, "head")
+        with engine.connect() as conn:
+            assert conn.execute(text("SELECT count(*) FROM candidate")).scalar_one() == 1
+    finally:
+        engine.dispose()
+
+
+def test_0015_stops_and_names_two_alerts_that_share_a_stock_and_eastern_day(scratch_url):
+    config = migration_config(scratch_url)
+    engine = create_engine(scratch_url)
+    try:
+        command.upgrade(config, "0014")
+        with engine.begin() as conn:
+            conn.execute(
+                text(
+                    "INSERT INTO alerts (symbol, alert_type, triggered_at, payload) VALUES"
+                    " ('GME', 'popularity_surge', '2026-10-19 15:00+00', '{}'),"
+                    " ('GME', 'popularity_surge', '2026-10-20 02:00+00', '{}'),"  # 22:00 EDT the same day
+                    " ('AMC', 'popularity_surge', '2026-10-19 15:00+00', '{}')"
+                )
+            )
+
+        with pytest.raises(RuntimeError, match=r"GME on 2026-10-19: alert ids \[1, 2\]"):
+            command.upgrade(config, "head")
+
+        with engine.connect() as conn:
+            assert conn.execute(text("SELECT count(*) FROM alerts")).scalar_one() == 3
+            assert "alert_type" in {c["name"] for c in inspect(conn).get_columns("alerts")}
+    finally:
+        engine.dispose()

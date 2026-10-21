@@ -20,6 +20,6 @@ async def test_stage_commits_an_unposted_marked_alert_with_notify(migrated_db_ur
     async with session_factory() as s:
         pending = await AlertRepository(s).list_unposted()
     assert [p.id for p in pending] == [alert_id]
-    assert pending[0].alert.symbol == "TEST"
-    assert pending[0].alert.alert_type == "staged_test"
+    assert pending[0].alert.symbol.startswith("TEST-")
+    assert pending[0].alert.trigger == "staged_test"
     assert pending[0].alert.triggered_at.tzinfo is not None

@@ -89,9 +89,9 @@ class SweepWorker:
     ) -> tuple[TrackRecord | None, bool]:
         """(track record, read failed), read once per rule version per sweep."""
         alert = item.alert
-        if alert.alert_type != POPULARITY_SURGE or alert.rule_version is None:
+        if alert.trigger != POPULARITY_SURGE or alert.rule_version is None:
             return None, False
-        key = (alert.alert_type, alert.rule_version)
+        key = (alert.trigger, alert.rule_version)
         if key not in cache:
             try:
                 cache[key] = (await current_track_record(session, *key), False)
@@ -139,7 +139,7 @@ class SweepWorker:
                             attempts,
                             self._max_attempts,
                             item.id,
-                            item.alert.alert_type,
+                            item.alert.trigger,
                             item.alert.symbol,
                             item.alert.triggered_at,
                             item.alert.payload,
@@ -148,7 +148,7 @@ class SweepWorker:
                         if attempts is not None and attempts >= self._max_attempts:
                             self.counters["posts_abandoned_total"] += 1
                             await notify_ops(
-                                f"Alert #{item.id} {item.alert.symbol} {item.alert.alert_type} "
+                                f"Alert #{item.id} {item.alert.symbol} {item.alert.trigger} "
                                 f"failed to post after {attempts} attempts and will not be "
                                 "retried. It is still in the alerts table (posted_at NULL).",
                                 key=f"alert-post-failed:{item.id}",

@@ -1,7 +1,7 @@
 """Alert -> Embed, from the alert row plus the current track record. The bot never
 calls a vendor: every fact was written into the payload at alert time.
 
-A popularity-surge payload is rendered typed; any other alert type, a payload
+A popularity-surge payload is rendered typed; any other Trigger, a payload
 that does not parse, or any render exception falls back to the generic embed:
 an alert can be render-ugly, never render-poisoned.
 
@@ -52,7 +52,7 @@ def _render_full(
     pending: PendingAlert, track_record: TrackRecord | None, track_record_failed: bool
 ) -> discord.Embed:
     alert = pending.alert
-    if alert.alert_type != POPULARITY_SURGE:
+    if alert.trigger != POPULARITY_SURGE:
         return render_generic(pending)
     payload = PopularitySurgePayload.model_validate(alert.payload)
     # Most important first: the fit drops from the end.
@@ -81,7 +81,7 @@ def render_generic(pending: PendingAlert) -> discord.Embed:
     # nothing here depends on the payload's shape.
     alert = pending.alert
     embed = discord.Embed(
-        title=_clip(f"{alert.symbol} · {alert.alert_type}", MAX_NAME),
+        title=_clip(f"{alert.symbol} · {alert.trigger}", MAX_NAME),
         description=_clip(str(alert.payload), MAX_DESCRIPTION),
         timestamp=alert.triggered_at,
     )

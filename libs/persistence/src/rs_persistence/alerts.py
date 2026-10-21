@@ -1,16 +1,16 @@
-"""Alert log: idempotent insert, the bot's delivery cursor, and retry bookkeeping.
+"""Alert log: the insert, the bot's delivery cursor, and retry bookkeeping.
 
 An alert is one row plus a transactional NOTIFY, inside the caller's
 transaction. NOTIFY is only a wake-up hint (payload = the alert id); the
-`posted_at IS NULL` sweep is what makes delivery correct.
+`posted_at IS NULL` sweep is what makes delivery correct. The database allows
+one Alert (a row with no `reply_to`) per stock per Eastern day.
 """
 
 from collections.abc import Collection
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 
 from pydantic import BaseModel, ConfigDict
-from sqlalchemy import func, select, update
-from sqlalchemy.dialects.postgresql import insert as pg_insert
+from sqlalchemy import func, insert, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from rs_domain import Alert
@@ -35,13 +35,13 @@ class PendingAlert(BaseModel):
 def alert_from_row(row: AlertRow) -> Alert:
     return Alert(
         symbol=row.symbol,
-        alert_type=row.alert_type,
+        trigger=row.trigger,
         triggered_at=row.triggered_at.astimezone(UTC),
         payload=row.payload,
         rule_version=row.rule_version,
         alert_price=row.alert_price,
         quote_time=None if row.quote_time is None else row.quote_time.astimezone(UTC),
-        dedup_key=row.dedup_key,
+        reply_to=row.reply_to,
     )
 
 
@@ -54,52 +54,40 @@ class AlertRepository:
         self._session = session
         self._channel = notify_channel
 
-    async def insert(self, alert: Alert) -> int | None:
-        """Store the alert and NOTIFY; returns its id, or None when an alert with the
-        same `dedup_key` already exists (nothing is written or notified then)."""
+    async def insert(self, alert: Alert) -> int:
+        """Store the alert and NOTIFY; returns its id. A second Alert for the same
+        stock and Eastern day raises IntegrityError and writes and notifies nothing:
+        the selector must never ask for it, so it is a bug to surface, not a no-op."""
         # JSON-safe dump: a payload value json.dumps can't encode (a datetime, a
         # Decimal) is coerced here rather than crashing the insert.
         dumped = alert.model_dump(mode="json")
-        alert_id = await self._session.scalar(
-            pg_insert(AlertRow)
+        result = await self._session.execute(
+            insert(AlertRow)
             .values(
                 symbol=alert.symbol,
-                alert_type=alert.alert_type,
+                trigger=alert.trigger,
                 triggered_at=alert.triggered_at,
                 payload=dumped["payload"],
                 rule_version=alert.rule_version,
                 alert_price=alert.alert_price,
                 quote_time=alert.quote_time,
-                dedup_key=alert.dedup_key,
+                reply_to=alert.reply_to,
             )
-            .on_conflict_do_nothing(index_elements=[AlertRow.dedup_key])
             .returning(AlertRow.id)
         )
-        if alert_id is None:
-            return None
+        alert_id = result.scalar_one()
         # NOTIFY payload is the id only - a wake-up hint; the row is the truth.
         await self._session.execute(select(func.pg_notify(self._channel, str(alert_id))))
         return alert_id
 
-    async def list_decisions(
-        self,
-        symbols: Collection[str] | None = None,
-        start: datetime | None = None,
-        end: datetime | None = None,
-    ) -> list[Alert]:
-        """Alert rows as domain Alerts (the semantic decisions), id order,
-        optionally filtered to symbols and a [start, end) triggered_at window.
-        Delivery bookkeeping (id, posted_at, post_attempts) never leaves: the
-        replay comparator diffs decisions, not delivery state."""
-        query = select(AlertRow).order_by(AlertRow.id)
-        if symbols is not None:
-            query = query.where(AlertRow.symbol.in_(symbols))
-        if start is not None:
-            query = query.where(AlertRow.triggered_at >= start)
-        if end is not None:
-            query = query.where(AlertRow.triggered_at < end)
-        rows = (await self._session.scalars(query)).all()
-        return [alert_from_row(row) for row in rows]
+    async def alerted_symbols(self, day: date, symbols: Collection[str]) -> set[str]:
+        """Which of `symbols` already have an Alert (not a reply) on the Eastern `day`."""
+        rows = await self._session.scalars(
+            select(AlertRow.symbol).where(
+                AlertRow.day == day, AlertRow.reply_to.is_(None), AlertRow.symbol.in_(symbols)
+            )
+        )
+        return set(rows)
 
     async def list_unposted(self, max_attempts: int | None = None) -> list[PendingAlert]:
         """Every undelivered alert, id order, no LIMIT - the bot's sweep drains

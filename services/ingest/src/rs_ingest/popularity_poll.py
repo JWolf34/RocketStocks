@@ -1,44 +1,44 @@
 """The popularity poll: store one ApeWisdom snapshot per half-hour boundary,
-judge it with the popularity-surge rule, and write each new alert with its facts.
+judge it with the popularity-surge rule, and store every hit as a candidate
+with the selector's verdict; a posted one is stored with its Alert and facts.
 
 Every step is idempotent on the boundary: snapshots are first-write-wins, the
-rule judges the *stored* rows (so a rerun sees what the first run saw), and an
-alert's `dedup_key` makes its insert a no-op the second time. A rerun after a
-crash therefore finishes the work and never duplicates it.
+rule judges the *stored* rows (so a rerun sees what the first run saw), and a
+hit that already has a candidate is skipped. A candidate and its Alert commit
+in one transaction, so a rerun after a crash finishes the work and never
+duplicates it.
 """
 
 import asyncio
 import logging
 from collections.abc import Callable, Sequence
-from datetime import UTC, datetime, timedelta
-from typing import Protocol
+from dataclasses import dataclass
+from datetime import UTC, date, datetime, timedelta
+from typing import Any, Protocol
 
-from pydantic import ValidationError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from rs_analysis.popularity_surge import (
-    COOLDOWN,
-    SubRule,
-    SurgeEvent,
-    SurgeInputs,
-    evaluate_latest,
-)
+from rs_analysis.popularity_surge import SurgeEvent, evaluate_latest
 from rs_domain import (
     Alert,
+    Candidate,
     Clock,
     PopularityOrigin,
     PopularitySnapshot,
     PopularitySurgePayload,
     SurgeFacts,
+    Verdict,
+    eastern_day,
 )
 from rs_ingest.alert_writer import AlertWriter
+from rs_ingest.selector import DayState, select
 from rs_ingest.surge_facts import SurgeFactsGatherer
-from rs_persistence import AlertRepository, PopularityRepository
+from rs_persistence import AlertRepository, CandidateRepository, PopularityRepository
 from rs_sources import ApeWisdomError, ApeWisdomRow
 
 logger = logging.getLogger(__name__)
 
-ALERT_TYPE = "popularity_surge"
+TRIGGER = "popularity_surge"
 POLL_MINUTES = 30
 POLL_INTERVAL = timedelta(minutes=POLL_MINUTES)
 # Alerts being written at once; each already fans its facts out in parallel.
@@ -59,8 +59,13 @@ def poll_boundary(moment: datetime) -> datetime:
     return moment.replace(minute=moment.minute - moment.minute % POLL_MINUTES, second=0, microsecond=0)
 
 
-def dedup_key(event: SurgeEvent) -> str:
-    return f"{ALERT_TYPE}:{event.rule_version}:{event.ticker}:{event.polled_at:%Y%m%dT%H%MZ}"
+@dataclass(frozen=True)
+class Decision:
+    """A hit and the selector's verdict on it."""
+
+    event: SurgeEvent
+    verdict: Verdict
+    decided_at: datetime
 
 
 class PopularityPoll:
@@ -84,12 +89,13 @@ class PopularityPoll:
         polled_at = poll_boundary(fetched_at)
         rows = await self._fetch()
         inserted = await self._store(rows, polled_at, fetched_at)
-        events = await self._detect(polled_at)
+        decisions = await self._decide(await self._detect(polled_at))
         logger.info(
-            "popularity poll %s: %d rows fetched, %d stored, %d new surge event(s)",
-            polled_at.isoformat(), len(rows), inserted, len(events),
+            "popularity poll %s: %d rows fetched, %d stored, %d new surge hit(s), %d posted",
+            polled_at.isoformat(), len(rows), inserted, len(decisions),
+            sum(d.verdict is Verdict.POSTED for d in decisions),
         )
-        await self._write_alerts(events, polled_at)
+        await self._write(decisions, polled_at)
 
     async def _fetch(self) -> list[ApeWisdomRow]:
         """The listing; a failed or empty fetch raises so the daemon logs and counts it."""
@@ -119,67 +125,103 @@ class PopularityPoll:
         return inserted
 
     async def _detect(self, polled_at: datetime) -> list[SurgeEvent]:
-        """Events with no alert yet for this boundary and the one before it, judged
-        against the stored snapshots and the alert log's 24h cooldown. The earlier
-        boundary catches up an alert whose write failed or whose run was cut short;
-        it goes first so the cooldown sees it when judging this one."""
+        """Hits at this boundary and the one before it that no candidate records yet,
+        judged against the stored snapshots, oldest first. The earlier boundary
+        catches up a hit whose write failed or whose run was cut short."""
         earlier = polled_at - POLL_INTERVAL
         async with self._session_factory() as session:
             snapshots = await PopularityRepository(session).list_between(earlier, polled_at + POLL_INTERVAL)
-            alerts = await AlertRepository(session).list_decisions(
-                start=earlier - COOLDOWN, end=polled_at + POLL_INTERVAL
-            )
-        surge_alerts = [a for a in alerts if a.alert_type == ALERT_TYPE]
-        written = {a.dedup_key for a in surge_alerts}
-        logged = [(a.triggered_at, event) for a in surge_alerts if (event := _prior_event(a))]
+            decided = await CandidateRepository(session).list_window(TRIGGER, earlier, polled_at + POLL_INTERVAL)
+        known = {(c.rule_version, c.symbol, c.hit_at) for c in decided}
 
-        events: list[SurgeEvent] = []
-        for boundary in (earlier, polled_at):
-            # Imported history is never caught up: only a live poll can have missed its alert.
-            judged = [
-                s for s in snapshots
-                if s.polled_at == boundary and (boundary == polled_at or s.origin == PopularityOrigin.LIVE)
-            ]
-            # events found for the earlier boundary count as prior for this one
-            prior = [event for at, event in logged if at < boundary] + events
-            found = (evaluate_latest(snapshot, prior) for snapshot in judged)
-            fresh = [event for event in found if event is not None and dedup_key(event) not in written]
-            events.extend(fresh)
-        return events
+        # Imported history is never caught up: only a live poll can have missed its hit.
+        judged = [
+            s for s in snapshots
+            if s.polled_at == polled_at or (s.polled_at == earlier and s.origin == PopularityOrigin.LIVE)
+        ]
+        hits = (evaluate_latest(snapshot) for snapshot in judged)
+        found = [e for e in hits if e is not None and (e.rule_version, e.ticker, e.polled_at) not in known]
+        return sorted(found, key=lambda e: (e.polled_at, e.ticker))
 
-    async def _write_alerts(self, events: Sequence[SurgeEvent], current: datetime) -> None:
+    async def _decide(self, events: Sequence[SurgeEvent]) -> list[Decision]:
+        """The selector's verdict for each hit, in order, each seeing the Alerts the
+        hits before it would produce."""
+        symbols = {event.ticker for event in events}
+        alerted: set[tuple[date, str]] = set()
+        async with self._session_factory() as session:
+            repo = AlertRepository(session)
+            for day in {eastern_day(event.polled_at) for event in events}:
+                alerted |= {(day, symbol) for symbol in await repo.alerted_symbols(day, symbols)}
+
+        decisions = []
+        for event in events:
+            slot = (eastern_day(event.polled_at), event.ticker)
+            verdict = select(event, DayState(alerted=slot in alerted))
+            if verdict is Verdict.POSTED:
+                alerted.add(slot)
+            decisions.append(Decision(event=event, verdict=verdict, decided_at=self._clock.now()))
+        return decisions
+
+    async def _write(self, decisions: Sequence[Decision], current: datetime) -> None:
+        """Store every decision. A stock's hits go in order and stop at its first
+        failure: a later hit was decided on the assumption that the earlier one
+        is stored, so it waits for the next run to be decided again."""
         gatherer = self._new_gatherer()
         gate = asyncio.Semaphore(WRITE_CONCURRENCY)
+        by_symbol: dict[str, list[Decision]] = {}
+        for decision in decisions:
+            by_symbol.setdefault(decision.event.ticker, []).append(decision)
 
-        async def one(event: SurgeEvent) -> None:
+        async def one_stock(chain: list[Decision]) -> None:
             async with gate:
-                await self._write_alert(event, gatherer, current)
+                for decision in chain:
+                    await self._write_one(decision, gatherer, current)
 
-        results = await asyncio.gather(*(one(event) for event in events), return_exceptions=True)
+        results = await asyncio.gather(*(one_stock(chain) for chain in by_symbol.values()), return_exceptions=True)
         failures = [r for r in results if isinstance(r, Exception)]
         if failures:
-            raise ExceptionGroup(f"{len(failures)} of {len(events)} surge alert(s) not stored", failures)
+            raise ExceptionGroup(f"{len(failures)} of {len(by_symbol)} stock(s) had a hit not stored", failures)
 
-    async def _write_alert(self, event: SurgeEvent, gatherer: SurgeFactsGatherer, current: datetime) -> None:
-        gathered = await gatherer.gather(event.ticker, self._clock.now())
-        payload = _payload(event, gathered.facts)
-        alert_id = await self._writer.write(
-            Alert(
+    async def _write_one(self, decision: Decision, gatherer: SurgeFactsGatherer, current: datetime) -> None:
+        event = decision.event
+        candidate = Candidate(
+            trigger=TRIGGER,
+            rule_version=event.rule_version,
+            symbol=event.ticker,
+            hit_at=event.polled_at,
+            inputs=_inputs(event),
+            verdict=decision.verdict,
+            decided_at=decision.decided_at,
+        )
+        alert = None
+        if decision.verdict is Verdict.POSTED:
+            gathered = await gatherer.gather(event.ticker, self._clock.now())
+            alert = Alert(
                 symbol=event.ticker,
-                alert_type=ALERT_TYPE,
+                trigger=TRIGGER,
                 triggered_at=event.polled_at,
-                payload=payload.model_dump(mode="json"),
+                payload=_payload(event, gathered.facts).model_dump(mode="json"),
                 rule_version=event.rule_version,
                 alert_price=gathered.alert_price,
                 quote_time=gathered.quote_time,
-                dedup_key=dedup_key(event),
             )
-        )
-        if alert_id is None:
-            logger.info("surge alert %s was already stored", dedup_key(event))
+        stored = await self._writer.write(candidate, alert)
+        key = f"{event.ticker} at {event.polled_at.isoformat()}"
+        if stored is None:
+            logger.info("surge hit %s was already stored", key)
+        elif stored.alert_id is None:
+            logger.info("surge hit %s stored as candidate %d (%s)", key, stored.candidate_id, decision.verdict.value)
         else:
             late = f" late for boundary {event.polled_at.isoformat()}" if event.polled_at < current else ""
-            logger.info("surge alert %d stored%s for %s (%s)", alert_id, late, event.ticker, [r.value for r in event.fired])
+            logger.info(
+                "surge alert %d stored%s for %s (%s)",
+                stored.alert_id, late, event.ticker, [r.value for r in event.fired],
+            )
+
+
+def _inputs(event: SurgeEvent) -> dict[str, Any]:
+    """What the rule decided on: the sub-rules that fired and the numbers they saw."""
+    return {"fired": [rule.value for rule in event.fired], **event.inputs.model_dump(mode="json")}
 
 
 def _payload(event: SurgeEvent, facts: SurgeFacts) -> PopularitySurgePayload:
@@ -197,31 +239,4 @@ def _payload(event: SurgeEvent, facts: SurgeFacts) -> PopularitySurgePayload:
         mention_multiplier=inputs.mention_multiplier,
         mention_min_prior=inputs.mention_min_prior,
         facts=facts,
-    )
-
-
-def _prior_event(alert: Alert) -> SurgeEvent | None:
-    """Rebuild the logged event the cooldown reads. An alert whose payload no
-    longer parses is skipped loudly rather than stalling every later poll."""
-    try:
-        payload = PopularitySurgePayload.model_validate(alert.payload)
-    except ValidationError:
-        logger.exception("cannot read the payload of prior %s alert %s; ignoring it for the cooldown",
-                         alert.alert_type, alert.dedup_key)
-        return None
-    return SurgeEvent(
-        ticker=alert.symbol,
-        polled_at=payload.polled_at,
-        fired=tuple(SubRule(rule) for rule in payload.fired),
-        inputs=SurgeInputs(
-            rank=payload.rank,
-            mentions=payload.mentions,
-            rank_24h_ago=payload.rank_24h_ago,
-            mentions_24h_ago=payload.mentions_24h_ago,
-            rank_gain=payload.rank_gain,
-            mention_ratio=payload.mention_ratio,
-            mention_multiplier=payload.mention_multiplier,
-            mention_min_prior=payload.mention_min_prior,
-        ),
-        rule_version=payload.rule_version,
     )

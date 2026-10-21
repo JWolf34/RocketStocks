@@ -2,9 +2,11 @@
 
 from rs_domain._types import UtcDatetime
 from rs_domain.clock import SystemClock
+from rs_domain.days import eastern_day
 from rs_domain.models import (
     Alert,
     AuthRequestState,
+    Candidate,
     ChainSnapshot,
     Dataset,
     OptionQuote,
@@ -16,6 +18,7 @@ from rs_domain.models import (
     TrackRecord,
     TrackRecordInput,
     UnpricedSymbol,
+    Verdict,
 )
 from rs_domain.payloads import (
     BenchmarkFact,
@@ -35,6 +38,7 @@ __all__ = [
     "TrackRecord",
     "TrackRecordInput",
     "BenchmarkFact",
+    "Candidate",
     "ChainSnapshot",
     "Clock",
     "Dataset",
@@ -52,5 +56,7 @@ __all__ = [
     "TradingCalendar",
     "UnpricedSymbol",
     "UtcDatetime",
+    "Verdict",
     "VolumeFact",
+    "eastern_day",
 ]

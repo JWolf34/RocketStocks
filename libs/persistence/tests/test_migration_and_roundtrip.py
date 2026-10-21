@@ -24,14 +24,15 @@ class TestRev001Schema:
         assert columns == {
             "id",
             "symbol",
-            "alert_type",
+            "trigger",
             "triggered_at",
+            "day",
             "payload",
             "posted_at",
             "rule_version",
             "alert_price",
             "quote_time",
-            "dedup_key",
+            "reply_to",
             "post_attempts",
         }
 

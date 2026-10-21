@@ -33,7 +33,7 @@ from rs_persistence import AlertRepository, TrackRecordRepository
 def _alert(symbol: str) -> Alert:
     return Alert(
         symbol=symbol,
-        alert_type="volume_threshold",
+        trigger="volume_threshold",
         triggered_at=datetime(2026, 7, 6, 14, 30, tzinfo=UTC),
         payload={"volume": 750_000, "threshold": 500_000},
     )
@@ -220,7 +220,7 @@ def _surge_alert() -> Alert:
     )
     return Alert(
         symbol="GME",
-        alert_type="popularity_surge",
+        trigger="popularity_surge",
         triggered_at=datetime(2026, 7, 6, 14, 30, tzinfo=UTC),
         payload=payload.model_dump(mode="json"),
         rule_version="1",
@@ -239,7 +239,7 @@ async def test_surge_alert_is_posted_with_the_current_track_record(session_facto
     async with session_factory() as s:
         await TrackRecordRepository(s).insert(
             TrackRecord(
-                alert_type="popularity_surge",
+                trigger="popularity_surge",
                 rule_version="1",
                 computed_at=datetime(2026, 7, 5, tzinfo=UTC),
                 input=TrackRecordInput.RECONSTRUCTED,
@@ -248,7 +248,8 @@ async def test_surge_alert_is_posted_with_the_current_track_record(session_facto
             )
         )
         await s.commit()
-    await _insert(session_factory, _surge_alert().model_copy(update={"dedup_key": "again"}))
+    next_day = datetime(2026, 7, 7, 14, 30, tzinfo=UTC)  # one Alert per stock per Eastern day
+    await _insert(session_factory, _surge_alert().model_copy(update={"triggered_at": next_day}))
     await worker.sweep()
 
     after = {f.name: f.value for f in sender.sent[-1].fields}

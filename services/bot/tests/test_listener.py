@@ -21,7 +21,7 @@ from rs_persistence import AlertRepository
 
 ALERT = Alert(
     symbol="SPY",
-    alert_type="volume_threshold",
+    trigger="volume_threshold",
     triggered_at=datetime(2026, 7, 6, 14, 30, tzinfo=UTC),
     payload={"volume": 750_000, "threshold": 500_000},
 )

@@ -10,6 +10,7 @@ from rs_persistence.auth_requests import (
     AUTH_REQUEST_WINDOW,
     AuthRequestRepository,
 )
+from rs_persistence.candidates import CandidateRepository
 from rs_persistence.chains import ChainSnapshotRepository
 from rs_persistence.daily_bars import DailyBarRepository
 from rs_persistence.engine import build_engine, build_session_factory, psycopg_conninfo
@@ -20,6 +21,7 @@ from rs_persistence.import_verification import (
 from rs_persistence.models import (
     AlertRow,
     Base,
+    CandidateRow,
     DailyBarRow,
     ImportVerificationRow,
     PopularitySnapshotRow,
@@ -57,6 +59,8 @@ __all__ = [
     "AlertRow",
     "AuthRequestRepository",
     "Base",
+    "CandidateRepository",
+    "CandidateRow",
     "TrackRecordRepository",
     "TrackRecordRow",
     "ChainSnapshotRepository",

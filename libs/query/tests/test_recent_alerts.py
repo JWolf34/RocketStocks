@@ -13,13 +13,12 @@ T0 = datetime(2026, 7, 6, 14, 0, tzinfo=UTC)
 def _alert(symbol: str, i: int) -> Alert:
     return Alert(
         symbol=symbol,
-        alert_type="popularity_surge",
-        triggered_at=T0 + timedelta(minutes=30 * i),
+        trigger="popularity_surge",
+        triggered_at=T0 + timedelta(days=i),
         payload={"fired": ["mention_surge"], "i": i},
         rule_version="1",
         alert_price=12.5,
-        quote_time=T0 + timedelta(minutes=30 * i, seconds=3),
-        dedup_key=f"popularity_surge:{symbol}:{i}",
+        quote_time=T0 + timedelta(days=i, seconds=3),
     )
 
 
@@ -61,7 +60,7 @@ async def test_ticker_filter(session_factory):
 
     got = await _all(session_factory, "AAA")
 
-    assert [r.alert.dedup_key for r in got] == ["popularity_surge:AAA:2", "popularity_surge:AAA:0"]
+    assert [r.alert.payload["i"] for r in got] == [2, 0]
     assert await _all(session_factory, "ZZZ") == []
 
 

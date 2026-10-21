@@ -15,19 +15,49 @@ from rs_domain._types import UtcDatetime
 
 
 class Alert(BaseModel):
-    """A detection decision to announce. The versioned-rule fields are optional; a
-    `dedup_key` makes the write idempotent (the same key is stored once)."""
+    """A decision to announce, produced by a Trigger. The versioned-rule fields are
+    optional. `reply_to` is the id of the Alert a reply continues; it is None for
+    an Alert, and the database holds one Alert per stock per Eastern day."""
 
     model_config = ConfigDict(frozen=True)
 
     symbol: str
-    alert_type: str
+    trigger: str
     triggered_at: UtcDatetime
     payload: dict = {}
     rule_version: str | None = None
     alert_price: float | None = None
     quote_time: UtcDatetime | None = None
-    dedup_key: str | None = None
+    reply_to: int | None = None
+
+
+class Verdict(StrEnum):
+    """What the selector decided about a candidate. Values are the DB enum values."""
+
+    POSTED = "posted"
+    REPLY = "reply"
+    BELOW_BAR = "below_bar"
+    OVER_BUDGET = "over_budget"
+    REPEAT = "repeat"
+    STALE = "stale"
+
+
+class Candidate(BaseModel):
+    """One Trigger hit and what the selector made of it. `hit_at` is the Popularity
+    boundary the hit was judged on; `inputs` is what the Trigger decided on,
+    including the sub-rules that fired. `alert_id` is the Alert (or reply) the
+    candidate produced, None when it produced none."""
+
+    model_config = ConfigDict(frozen=True)
+
+    trigger: str
+    rule_version: str
+    symbol: str
+    hit_at: UtcDatetime
+    inputs: dict
+    verdict: Verdict
+    decided_at: UtcDatetime
+    alert_id: int | None = None
 
 
 class Dataset(StrEnum):
@@ -122,7 +152,7 @@ class TrackRecord(BaseModel):
 
     model_config = ConfigDict(frozen=True)
 
-    alert_type: str
+    trigger: str
     rule_version: str
     computed_at: UtcDatetime
     input: TrackRecordInput
