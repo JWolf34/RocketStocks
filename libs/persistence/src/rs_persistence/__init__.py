@@ -19,6 +19,7 @@ from rs_persistence.import_verification import (
 )
 from rs_persistence.models import (
     AlertRow,
+    BarRequestRow,
     Base,
     DailyBarRow,
     ImportVerificationRow,
@@ -57,6 +58,7 @@ __all__ = [
     "AlertRow",
     "AuthRequestRepository",
     "Base",
+    "BarRequestRow",
     "TrackRecordRepository",
     "TrackRecordRow",
     "ChainSnapshotRepository",
