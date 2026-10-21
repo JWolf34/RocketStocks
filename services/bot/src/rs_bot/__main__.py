@@ -7,8 +7,9 @@ in-flight post, exit 0).
 
 Failure modes: DB down at startup = loud exit (the initial sweep is
 crash-loud); LISTEN drop = backoff reconnect + recovery sweep (ListenLoop);
-Discord outage = sends fail, rows stay unposted, the periodic sweep
-self-heals after discord.py resumes. A dead sweep worker or a fatally dead
+Discord outage = sends fail, rows stay queued (a row marked sending is checked
+against channel history before it is sent again), the periodic sweep self-heals after
+discord.py resumes. A dead sweep worker or a fatally dead
 gateway exits 1 loudly — this daemon never limps on silently.
 """
 
@@ -23,6 +24,7 @@ from discord import app_commands
 from pydantic import ValidationError
 
 from rs_bot.counters import new_counters
+from rs_bot.discord_sender import ChannelSender
 from rs_bot.listener import ListenLoop
 from rs_bot.schwab_auth import SchwabAuthFlow, register_setup_commands
 from rs_bot.settings import BotSettings
@@ -44,18 +46,6 @@ from rs_persistence import (
 )
 
 logger = logging.getLogger(__name__)
-
-
-class DiscordChannelSender:
-    """EmbedSender backed by the resolved alert channel (full gateway client).
-    Returns the message id for the per-post audit log."""
-
-    def __init__(self, channel: discord.abc.Messageable) -> None:
-        self._channel = channel
-
-    async def send(self, embed: discord.Embed) -> int:
-        message = await self._channel.send(embed=embed)
-        return message.id
 
 
 class AdminDirectMessenger:
@@ -109,18 +99,20 @@ async def run_bot(settings: BotSettings) -> int:
                 exc,
             )
             return 1
-        if not isinstance(channel, discord.abc.Messageable):
+        if not isinstance(channel, discord.TextChannel):
             logger.error(
-                "alert channel %d is not a messageable channel (%s)",
+                "alert channel %d is not a text channel (%s)",
                 settings.alert_channel_id,
                 type(channel).__name__,
             )
             return 1
         logger.info("resolved alert channel %d (%s)", settings.alert_channel_id, channel)
 
+        assert client.user is not None  # set by login
         worker = SweepWorker(
             session_factory,
-            DiscordChannelSender(channel),
+            ChannelSender(client, channel, client.user.id),
+            clock=SystemClock(),
             sweep_seconds=settings.sweep_seconds,
             health=HealthTracker("bot"),
             max_attempts=settings.post_max_attempts,

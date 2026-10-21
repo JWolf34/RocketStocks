@@ -1,11 +1,12 @@
 """SweepWorker: the single posting path. The sweep drains
-list_unposted in id order; per row render → send → mark_posted → commit. Send
-failures skip-and-continue and are retried each sweep up to a cap, then the
+list_undelivered in id order; per row render → sending mark → send → mark_posted →
+commit. Send failures skip-and-continue and are retried each sweep up to a cap, then the
 alert is abandoned with one ops notice. The wake
 event triggers an off-interval sweep; NOTIFY itself never posts.
 
-Sender is faked at the send-protocol seam — these tests never touch Discord;
-the cursor semantics run against the real ephemeral Postgres."""
+Discord is faked at the AlertSender seam (rs_bot.testing) - these tests never touch it;
+the cursor semantics run against the real ephemeral Postgres. Delivery after a crash,
+threads, replies and the stale rule are in test_delivery."""
 
 import asyncio
 import json
@@ -20,11 +21,11 @@ import pytest
 
 from rs_bot.counters import new_counters
 from rs_bot.sweep import SweepWorker
+from rs_bot.testing import FakeDiscord, FixedClock
+from rs_bot.testing import alert as _alert
+from rs_bot.testing import surge_alert as _surge_alert
 from rs_domain import (
     Alert,
-    FactUnavailable,
-    PopularitySurgePayload,
-    SurgeFacts,
     TrackRecord,
     TrackRecordInput,
 )
@@ -33,30 +34,14 @@ from rs_observability.testing import captured_json_stream, json_records
 from rs_persistence import AlertRepository, TrackRecordRepository
 
 
-def _alert(symbol: str) -> Alert:
-    return Alert(
-        symbol=symbol,
-        trigger="volume_threshold",
-        triggered_at=datetime(2026, 7, 6, 14, 30, tzinfo=UTC),
-        payload={"volume": 750_000, "threshold": 500_000},
-    )
-
-
-class FakeSender:
-    """Send-protocol fake: records embeds, mints message ids, optionally fails
-    on a planted predicate (the poison-skip drills)."""
-
-    def __init__(self, fail_when=None):
-        self.sent = []
-        self.fail_when = fail_when
-        self._next_id = 1000
-
-    async def send(self, embed):
-        if self.fail_when is not None and self.fail_when(embed):
-            raise RuntimeError("planted send failure")
-        self.sent.append(embed)
-        self._next_id += 1
-        return self._next_id
+def _worker(session_factory, discord_fake: FakeDiscord, **overrides) -> SweepWorker:
+    options = {
+        "clock": FixedClock(),
+        "sweep_seconds": 60,
+        "health": HealthTracker("bot"),
+        "counters": new_counters(),
+    } | overrides
+    return SweepWorker(session_factory, discord_fake, **options)
 
 
 async def _insert(session_factory, *alerts: Alert) -> list[int]:
@@ -67,15 +52,15 @@ async def _insert(session_factory, *alerts: Alert) -> list[int]:
     return ids
 
 
-async def _unposted_ids(session_factory) -> list[int]:
+async def _undelivered_ids(session_factory) -> list[int]:
     async with session_factory() as s:
-        return [p.id for p in await AlertRepository(s).list_unposted()]
+        return [p.id for p in await AlertRepository(s).list_undelivered()]
 
 
 async def test_sweep_drains_backlog_in_id_order_and_stamps(session_factory):
     await _insert(session_factory, _alert("AAA"), _alert("BBB"), _alert("CCC"))
-    sender = FakeSender()
-    worker = SweepWorker(session_factory, sender, sweep_seconds=60, health=HealthTracker("bot"), counters=new_counters())
+    sender = FakeDiscord()
+    worker = _worker(session_factory, sender)
 
     await worker.sweep()
 
@@ -84,7 +69,7 @@ async def test_sweep_drains_backlog_in_id_order_and_stamps(session_factory):
         "BBB · volume_threshold",
         "CCC · volume_threshold",
     ]
-    assert await _unposted_ids(session_factory) == []
+    assert await _undelivered_ids(session_factory) == []
     assert worker.counters["discord_posts_total"] == 3
     assert worker.counters["sweeps_total"] == 1
     assert worker.counters["post_failures_total"] == 0
@@ -97,10 +82,9 @@ async def test_sweep_drains_backlog_in_id_order_and_stamps(session_factory):
 
 async def test_poison_send_skips_row_and_retries_next_sweep(session_factory):
     ids = await _insert(session_factory, _alert("AAA"), _alert("BAD"), _alert("CCC"))
-    sender = FakeSender(fail_when=lambda e: "BAD" in e.title)
-    worker = SweepWorker(
-        session_factory, sender, sweep_seconds=60, health=HealthTracker("bot"), retry_gap_seconds=0, counters=new_counters()
-    )
+    sender = FakeDiscord()
+    sender.fail_when = lambda e: "BAD" in e.title
+    worker = _worker(session_factory, sender, retry_gap_seconds=0)
 
     await worker.sweep()
 
@@ -112,12 +96,12 @@ async def test_poison_send_skips_row_and_retries_next_sweep(session_factory):
     assert worker.counters["post_failures_total"] == 1
     assert worker.counters["discord_posts_total"] == 2
     # ...and stays on the cursor for the next sweep (retried while under the cap).
-    assert await _unposted_ids(session_factory) == [ids[1]]
+    assert await _undelivered_ids(session_factory) == [ids[1]]
 
     sender.fail_when = None
     await worker.sweep()
     assert sender.sent[-1].title == "BAD · volume_threshold"
-    assert await _unposted_ids(session_factory) == []
+    assert await _undelivered_ids(session_factory) == []
 
 
 @pytest.fixture
@@ -138,16 +122,9 @@ async def test_deterministic_failure_stops_at_the_cap_with_one_ops_notice(
     session_factory, ops_messages
 ):
     ids = await _insert(session_factory, _alert("BAD"), _alert("CCC"))
-    sender = FakeSender(fail_when=lambda e: "BAD" in e.title)
-    worker = SweepWorker(
-        session_factory,
-        sender,
-        sweep_seconds=60,
-        health=HealthTracker("bot"),
-        max_attempts=3,
-        retry_gap_seconds=0,
-        counters=new_counters(),
-    )
+    sender = FakeDiscord()
+    sender.fail_when = lambda e: "BAD" in e.title
+    worker = _worker(session_factory, sender, max_attempts=3, retry_gap_seconds=0)
 
     for _ in range(6):
         await worker.sweep()
@@ -157,85 +134,61 @@ async def test_deterministic_failure_stops_at_the_cap_with_one_ops_notice(
     assert [e.title for e in sender.sent] == ["CCC · volume_threshold"]  # healthy row behind posts
     assert len(ops_messages) == 1
     assert f"#{ids[0]}" in ops_messages[0] and "BAD" in ops_messages[0]
-    # Out of the sweep, but never marked posted.
-    assert await _unposted_ids(session_factory) == [ids[0]]
+    # Out of the sweep, but never posted.
+    assert await _undelivered_ids(session_factory) == [ids[0]]
     async with session_factory() as s:
-        assert await AlertRepository(s).list_unposted(max_attempts=3) == []
+        assert await AlertRepository(s).list_undelivered(max_attempts=3) == []
+
+
+async def test_a_discord_outage_pings_once_not_once_per_abandoned_alert(session_factory, notices):
+    await _insert(session_factory, _alert("AAA"), _alert("BBB"))
+    sender = FakeDiscord()
+    sender.send_failures = [ConnectionError("down")] * 20
+    worker = _worker(session_factory, sender, max_attempts=2, retry_gap_seconds=0)
+
+    for _ in range(4):
+        await worker.sweep()
+
+    assert worker.counters["posts_abandoned_total"] == 2
+    assert [n.split(" (")[0] for n in notices] == ["Discord is failing"]
 
 
 async def test_a_failed_row_is_not_retried_inside_the_retry_gap(session_factory):
     (alert_id,) = await _insert(session_factory, _alert("BAD"))
-    sender = FakeSender(fail_when=lambda e: True)
-    worker = SweepWorker(session_factory, sender, sweep_seconds=60, health=HealthTracker("bot"), counters=new_counters())
+    sender = FakeDiscord()
+    sender.fail_when = lambda e: True
+    worker = _worker(session_factory, sender)
 
     for _ in range(4):  # a NOTIFY burst: sweeps back to back
         await worker.sweep()
 
     assert worker.counters["post_failures_total"] == 1
-    assert await _unposted_ids(session_factory) == [alert_id]
+    assert await _undelivered_ids(session_factory) == [alert_id]
 
 
 async def test_last_attempt_posts_the_plain_embed(session_factory):
     await _insert(session_factory, _surge_alert())
     shapes = []
 
-    class Rejecting(FakeSender):
-        async def send(self, embed):
+    class Rejecting(FakeDiscord):
+        async def send_alert(self, embed, *, nonce):
             shapes.append(bool(embed.fields))
             if embed.fields:
                 raise RuntimeError("typed embed rejected")
-            return await super().send(embed)
+            return await super().send_alert(embed, nonce=nonce)
 
-    worker = SweepWorker(
-        session_factory,
-        Rejecting(),
-        sweep_seconds=60,
-        health=HealthTracker("bot"),
-        max_attempts=2,
-        retry_gap_seconds=0,
-        counters=new_counters(),
-    )
+    worker = _worker(session_factory, Rejecting(), max_attempts=2, retry_gap_seconds=0)
     await worker.sweep()
     await worker.sweep()
 
     assert shapes == [True, False]
-    assert await _unposted_ids(session_factory) == []
-
-
-def _surge_alert() -> Alert:
-    unavailable = FactUnavailable(reason="test")
-    payload = PopularitySurgePayload(
-        rule_version="1",
-        polled_at=datetime(2026, 7, 6, 14, 30, tzinfo=UTC),
-        fired=("rank_jump",),
-        rank=5,
-        mentions=100,
-        rank_24h_ago=80,
-        mentions_24h_ago=None,
-        rank_gain=75,
-        mention_ratio=None,
-        mention_multiplier=5.0,
-        mention_min_prior=15,
-        facts=SurgeFacts(
-            price_move=unavailable,
-            volume=unavailable,
-            next_earnings=unavailable,
-            benchmark=unavailable,
-        ),
-    )
-    return Alert(
-        symbol="GME",
-        trigger="popularity_surge",
-        triggered_at=datetime(2026, 7, 6, 14, 30, tzinfo=UTC),
-        payload=payload.model_dump(mode="json"),
-        rule_version="1",
-    )
+    assert await _undelivered_ids(session_factory) == []
 
 
 async def test_surge_alert_is_posted_with_the_current_track_record(session_factory):
     await _insert(session_factory, _surge_alert())
-    sender = FakeSender()
-    worker = SweepWorker(session_factory, sender, sweep_seconds=60, health=HealthTracker("bot"), counters=new_counters())
+    sender = FakeDiscord()
+    worker = _worker(session_factory, sender)
 
     await worker.sweep()
     (before,) = sender.sent
@@ -253,8 +206,10 @@ async def test_surge_alert_is_posted_with_the_current_track_record(session_facto
             )
         )
         await s.commit()
-    next_day = datetime(2026, 7, 7, 14, 30, tzinfo=UTC)  # one Alert per stock per Eastern day
-    await _insert(session_factory, _surge_alert().model_copy(update={"triggered_at": next_day}))
+    # One Alert per stock per Eastern day, so the second one is a day later (still fresh).
+    next_hit = datetime(2026, 7, 7, 14, 30, tzinfo=UTC)
+    await _insert(session_factory, _surge_alert().model_copy(update={"triggered_at": next_hit}))
+    worker = _worker(session_factory, sender, clock=FixedClock(datetime(2026, 7, 7, 14, 35, tzinfo=UTC)))
     await worker.sweep()
 
     after = {f.name: f.value for f in sender.sent[-1].fields}
@@ -262,9 +217,9 @@ async def test_surge_alert_is_posted_with_the_current_track_record(session_facto
 
 
 async def test_run_sweeps_on_wake_without_waiting_interval(session_factory):
-    sender = FakeSender()
+    sender = FakeDiscord()
     # Interval far beyond the test timeout: only the wake can trigger the post.
-    worker = SweepWorker(session_factory, sender, sweep_seconds=300, health=HealthTracker("bot"), counters=new_counters())
+    worker = _worker(session_factory, sender, sweep_seconds=300)
     task = asyncio.create_task(worker.run())
     try:
         # run() opens with the unconditional initial sweep.
@@ -282,7 +237,7 @@ async def test_run_sweeps_on_wake_without_waiting_interval(session_factory):
         worker.request_stop()
         async with asyncio.timeout(5):
             await task
-    assert await _unposted_ids(session_factory) == []
+    assert await _undelivered_ids(session_factory) == []
 
 
 # -- unit of work: one posting attempt = one correlation_id ---------------
@@ -294,19 +249,18 @@ def json_stream():
         yield buffer
 
 
-class LoggingSender(FakeSender):
-    """Send-protocol fake that logs like discord.py's internals do — the
-    'retry internals group under the alert' claim needs a third-party-style
-    record emitted inside the attempt."""
+class LoggingDiscord(FakeDiscord):
+    """Logs like discord.py's internals do - the 'retry internals group under the
+    alert' claim needs a third-party-style record emitted inside the attempt."""
 
-    async def send(self, embed):
+    async def send_alert(self, embed, *, nonce):
         logging.getLogger("discord.http").warning("rate limited, retrying")
-        return await super().send(embed)
+        return await super().send_alert(embed, nonce=nonce)
 
 
 async def test_posting_attempt_records_share_one_correlation_id(session_factory, json_stream):
     (alert_id,) = await _insert(session_factory, _alert("SPY"))
-    worker = SweepWorker(session_factory, LoggingSender(), sweep_seconds=60, health=HealthTracker("bot"), counters=new_counters())
+    worker = _worker(session_factory, LoggingDiscord())
 
     await worker.sweep()
 
@@ -323,7 +277,7 @@ async def test_posting_attempt_records_share_one_correlation_id(session_factory,
 
 async def test_each_posting_attempt_is_its_own_unit_of_work(session_factory, json_stream):
     await _insert(session_factory, _alert("AAA"), _alert("BBB"))
-    worker = SweepWorker(session_factory, FakeSender(), sweep_seconds=60, health=HealthTracker("bot"), counters=new_counters())
+    worker = _worker(session_factory, FakeDiscord())
 
     await worker.sweep()
 
@@ -334,8 +288,9 @@ async def test_each_posting_attempt_is_its_own_unit_of_work(session_factory, jso
 
 async def test_send_failure_record_is_correlated_too(session_factory, json_stream):
     (alert_id,) = await _insert(session_factory, _alert("SPY"))
-    sender = FakeSender(fail_when=lambda embed: True)
-    worker = SweepWorker(session_factory, sender, sweep_seconds=60, health=HealthTracker("bot"), counters=new_counters())
+    sender = FakeDiscord()
+    sender.fail_when = lambda embed: True
+    worker = _worker(session_factory, sender)
 
     await worker.sweep()
 
@@ -350,36 +305,16 @@ def _http_error(status: int) -> discord.HTTPException:
     return discord.HTTPException(SimpleNamespace(status=status, reason="test"), "test")
 
 
-class ScriptedSender(FakeSender):
-    """Fails each send with the next planted error (None = succeed); the last entry repeats."""
-
-    def __init__(self, script):
-        super().__init__()
-        self._script = script
-        self.calls = 0
-
-    async def send(self, embed):
-        outcome = self._script[min(self.calls, len(self._script) - 1)]
-        self.calls += 1
-        if outcome is not None:
-            raise outcome
-        return await super().send(embed)
-
-
-def _worker(session_factory, sender) -> SweepWorker:
-    return SweepWorker(
-        session_factory,
-        sender,
-        sweep_seconds=60,
-        health=HealthTracker("bot"),
-        retry_gap_seconds=0,
-        counters=new_counters(),
-    )
+def _scripted(*outcomes: Exception | None) -> FakeDiscord:
+    """Fails each send with the next planted error (None succeeds); then every send succeeds."""
+    sender = FakeDiscord()
+    sender.send_failures = list(outcomes)
+    return sender
 
 
 async def test_discord_pings_once_when_sends_start_failing_and_once_when_they_recover(session_factory, notices):
     await _insert(session_factory, _alert("AAA"), _alert("BBB"))
-    worker = _worker(session_factory, ScriptedSender([ConnectionError("down")] * 4 + [None]))
+    worker = _worker(session_factory, _scripted(*[ConnectionError("down")] * 4), retry_gap_seconds=0)
 
     for _ in range(2):  # two sends fail per sweep, four in all
         await worker.sweep()
@@ -388,14 +323,14 @@ async def test_discord_pings_once_when_sends_start_failing_and_once_when_they_re
 
     await worker.sweep()
 
-    assert await _unposted_ids(session_factory) == []
+    assert await _undelivered_ids(session_factory) == []
     assert len(notices) == 2
     assert notices[1] == "Discord recovered."
 
 
 async def test_an_embed_discord_rejects_is_one_alert_not_a_discord_failure(session_factory, notices):
     await _insert(session_factory, _alert("AAA"), _alert("BBB"))
-    worker = _worker(session_factory, ScriptedSender([_http_error(400), None]))
+    worker = _worker(session_factory, _scripted(_http_error(400)), retry_gap_seconds=0)
 
     await worker.sweep()
 
@@ -405,7 +340,7 @@ async def test_an_embed_discord_rejects_is_one_alert_not_a_discord_failure(sessi
 
 async def test_a_bug_in_one_alerts_send_says_nothing_about_discord(session_factory, notices):
     await _insert(session_factory, _alert("AAA"), _alert("BBB"))
-    worker = _worker(session_factory, ScriptedSender([RuntimeError("bad embed"), None]))
+    worker = _worker(session_factory, _scripted(RuntimeError("bad embed")), retry_gap_seconds=0)
 
     await worker.sweep()
 
@@ -415,7 +350,7 @@ async def test_a_bug_in_one_alerts_send_says_nothing_about_discord(session_facto
 
 async def test_a_dropped_connection_is_a_discord_failure(session_factory, notices):
     await _insert(session_factory, _alert("AAA"))
-    worker = _worker(session_factory, ScriptedSender([aiohttp.ServerDisconnectedError()]))
+    worker = _worker(session_factory, _scripted(aiohttp.ServerDisconnectedError()), retry_gap_seconds=0)
 
     await worker.sweep()
 
@@ -426,7 +361,7 @@ async def test_a_dropped_connection_is_a_discord_failure(session_factory, notice
 @pytest.mark.parametrize("status", [403, 429, 503])
 async def test_a_refused_or_overloaded_discord_is_a_failure(session_factory, notices, status):
     await _insert(session_factory, _alert("AAA"))
-    worker = _worker(session_factory, ScriptedSender([_http_error(status)]))
+    worker = _worker(session_factory, _scripted(_http_error(status)), retry_gap_seconds=0)
 
     await worker.sweep()
 
@@ -436,7 +371,9 @@ async def test_a_refused_or_overloaded_discord_is_a_failure(session_factory, not
 
 async def test_a_rejected_embed_proves_discord_answers_so_it_ends_a_failure(session_factory, notices):
     await _insert(session_factory, _alert("AAA"), _alert("BBB"))
-    worker = _worker(session_factory, ScriptedSender([ConnectionError("down"), _http_error(400), None]))
+    worker = _worker(
+        session_factory, _scripted(ConnectionError("down"), _http_error(400)), retry_gap_seconds=0
+    )
 
     await worker.sweep()  # AAA: down; BBB: Discord answers, if only to say no to the embed
     await worker.sweep()
