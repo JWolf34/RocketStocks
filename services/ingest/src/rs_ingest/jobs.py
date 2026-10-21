@@ -60,7 +60,8 @@ def register_jobs(cron: CronTable, deps: Dependencies) -> None:
             surge_bars,
             needs_schwab=True,
             run_on_start=True,
-            # A first run after the history import can walk thousands of symbols.
+            # A first run walks every Popularity-hit symbol a year back, one call each at the
+            # shared 100 a minute: 3 hours fits 18,000 calls, and a stopped run resumes per symbol.
             timeout=timedelta(hours=3),
         )
     )
