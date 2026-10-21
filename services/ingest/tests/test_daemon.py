@@ -13,6 +13,8 @@ from prometheus_client import CollectorRegistry
 from rs_ingest.cron import CronTable, Every, Job, Weekly
 from rs_ingest.daemon import Daemon, TokenGate
 from rs_ingest.metrics import DaemonMetrics
+from rs_ingest.monitored import MonitoredPopularitySource
+from rs_observability import HealthTracker, QuietFailure, Source, SourceFailed
 from rs_sources.schwab import SchwabAuthError
 
 START = datetime(2026, 10, 19, 12, 7, tzinfo=UTC)
@@ -59,7 +61,12 @@ class Rig:
         self.renewals += 1
 
     def build(self, **overrides: object) -> None:
-        options: dict = {"tick_seconds": 60.0, "token_poll_seconds": 60.0, "sleep": self._sleep}
+        options: dict = {
+            "health": HealthTracker("ingest"),
+            "tick_seconds": 60.0,
+            "token_poll_seconds": 60.0,
+            "sleep": self._sleep,
+        }
         self.daemon = Daemon(
             self.cron, self.gate, self.clock, self.metrics, **(options | overrides)
         )
@@ -211,43 +218,100 @@ class TestFaultIsolation:
 
         assert good.started == [at(12, 30), at(13, 0), at(13, 30)]
 
-    async def test_one_notice_after_k_consecutive_failures_and_one_on_recovery(self, rig, notices):
-        failing = [RuntimeError("secret-token")] * 5 + [None]
+    async def test_a_job_pings_on_its_first_failure_and_once_on_recovery(self, rig, notices):
+        failing = [RuntimeError("secret-token")] * 3 + [None]
         flaky = Recorder(rig.clock, failing)
         rig.cron.register(Job("flaky", Every(30), flaky))
-        rig.build(failure_threshold=3)
+        rig.build()
 
-        await rig.run_until(at(15, 1))  # fails 12:30-14:30, recovers 15:00
+        await rig.run_until(at(14, 1))  # fails 12:30-13:30, recovers 14:00
 
-        assert len(flaky.started) == 6
+        assert len(flaky.started) == 4
         assert len(notices) == 2
-        assert "flaky" in notices[0]
-        assert "3 times in a row" in notices[0]
-        assert "RuntimeError" in notices[0]
+        assert notices[0].startswith("Ingest job flaky is failing (RuntimeError)")
         assert "secret-token" not in notices[0]  # exception text can carry credentials
-        assert "flaky" in notices[1]
-        assert "recovered" in notices[1]
+        assert notices[1] == "Ingest job flaky recovered."
 
-    async def test_failures_below_the_threshold_send_nothing(self, rig, notices):
-        flaky = Recorder(rig.clock, [RuntimeError("x"), RuntimeError("x"), None, RuntimeError("x")])
-        rig.cron.register(Job("flaky", Every(30), flaky))
-        rig.build(failure_threshold=3)
+    async def test_a_job_that_keeps_succeeding_never_pings(self, rig, notices):
+        fine = Recorder(rig.clock)
+        rig.cron.register(Job("fine", Every(30), fine))
+        rig.build()
 
         await rig.run_until(at(14, 1))
 
-        assert len(flaky.started) == 4
+        assert len(fine.started) == 4
         assert notices == []
 
-    async def test_a_success_resets_the_failure_streak(self, rig, notices):
-        script = [RuntimeError("x")] * 2 + [None] + [RuntimeError("x")] * 2
+    async def test_a_job_that_fails_again_after_recovering_pings_again(self, rig, notices):
+        script = [RuntimeError("x"), None, RuntimeError("x")]
         flaky = Recorder(rig.clock, script)
         rig.cron.register(Job("flaky", Every(30), flaky))
-        rig.build(failure_threshold=3)
+        rig.build()
 
-        await rig.run_until(at(14, 31))
+        await rig.run_until(at(13, 31))
 
-        assert len(flaky.started) == 5
+        assert [n.split(" (")[0] for n in notices] == [
+            "Ingest job flaky is failing",
+            "Ingest job flaky recovered.",
+            "Ingest job flaky is failing",
+        ]
+
+    async def test_a_failure_already_pinged_as_a_source_sends_no_job_ping(self, rig, notices):
+        failing = [SourceFailed(Source.APEWISDOM)] * 2 + [None]
+        poll = Recorder(rig.clock, failing)
+        rig.cron.register(Job("poll", Every(30), poll))
+        rig.build()
+
+        await rig.run_until(at(14, 1))
+
+        assert len(poll.started) == 4
         assert notices == []
+        assert rig.runs("poll", "failure") == 2  # still logged and counted as failed runs
+
+    async def test_one_cause_is_one_ping_from_the_source_through_the_daemon(self, rig, notices):
+        health = HealthTracker("ingest")
+
+        class Listing:
+            def __init__(self) -> None:
+                self.script = [ConnectionError("down")] * 3 + [[object()]]
+
+            async def fetch_all(self):
+                outcome = self.script.pop(0) if len(self.script) > 1 else self.script[0]
+                if isinstance(outcome, Exception):
+                    raise outcome
+                return outcome
+
+        source = MonitoredPopularitySource(Listing(), health)
+        rig.cron.register(Job("poll", Every(30), source.fetch_all))
+        rig.build(health=health)
+
+        await rig.run_until(at(14, 1))  # three failed polls, then one that recovers
+
+        assert rig.runs("poll", "failure") == 3
+        assert notices == [
+            "ApeWisdom is failing (ConnectionError). See the ingest logs.",
+            "ApeWisdom recovered.",
+        ]
+
+    async def test_a_quiet_failure_such_as_a_few_stocks_sends_no_job_ping(self, rig, notices):
+        poll = Recorder(rig.clock, [QuietFailure("2 of 900 symbols failed"), None])
+        rig.cron.register(Job("poll", Every(30), poll))
+        rig.build()
+
+        await rig.run_until(at(13, 1))
+
+        assert notices == []
+        assert rig.runs("poll", "failure") == 1
+
+    async def test_a_job_failing_for_its_own_reason_after_a_quiet_failure_still_pings(self, rig, notices):
+        poll = Recorder(rig.clock, [SourceFailed(Source.SCHWAB), RuntimeError("database down")])
+        rig.cron.register(Job("poll", Every(30), poll))
+        rig.build()
+
+        await rig.run_until(at(13, 1))
+
+        assert len(notices) == 1
+        assert notices[0].startswith("Ingest job poll is failing (RuntimeError)")
 
 
 class TestTimeout:
@@ -275,7 +339,7 @@ class TestTimeout:
         assert rig.runs("hang", "timeout") == 1
         assert rig.runs("hang", "success") == 2
 
-    async def test_timeouts_count_toward_the_failure_notice_and_recovery(self, rig, notices):
+    async def test_a_timeout_pings_once_and_the_next_success_recovers(self, rig, notices):
         starts: list[datetime] = []
 
         async def hang_then_recover() -> None:
@@ -284,14 +348,13 @@ class TestTimeout:
                 await asyncio.Future()
 
         rig.cron.register(Job("hang", Every(30), hang_then_recover))
-        rig.build(failure_threshold=3)
+        rig.build()
 
         await rig.run_until(at(14, 31))  # timeouts at 13:00, 13:30, 14:00; success at 14:30
 
         assert len(notices) == 2
-        assert "hang" in notices[0]
-        assert "3 times in a row" in notices[0]
-        assert "recovered" in notices[1]
+        assert notices[0].startswith("Ingest job hang is failing (TimeoutError)")
+        assert notices[1] == "Ingest job hang recovered."
 
     async def test_a_run_within_its_timeout_still_skips_the_overlapping_slot(self, rig, notices):
         starts: list[datetime] = []

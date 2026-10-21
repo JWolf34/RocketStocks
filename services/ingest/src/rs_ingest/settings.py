@@ -28,10 +28,8 @@ class IngestSettings(BaseSettings):
 
     # Prometheus side-port: compose publishes it 127.0.0.1-only.
     metrics_port: int = Field(9090, validation_alias="RS_INGEST_METRICS_PORT")
-    # Daemon supervision: consecutive failures before one ops notice, how often
-    # a dead Schwab token is checked for renewal, and the bound on in-flight
-    # jobs at SIGTERM (compose stop_grace_period must exceed it).
-    job_failure_threshold: int = Field(3, ge=1, validation_alias="RS_INGEST_JOB_FAILURE_THRESHOLD")
+    # Daemon supervision: how often a dead Schwab token is checked for renewal,
+    # and the bound on in-flight jobs at SIGTERM (compose stop_grace_period must exceed it).
     token_poll_seconds: float = Field(60.0, gt=0, validation_alias="RS_INGEST_TOKEN_POLL_SECONDS")
     shutdown_grace_seconds: float = Field(
         30.0, ge=0, validation_alias="RS_INGEST_SHUTDOWN_GRACE_SECONDS"

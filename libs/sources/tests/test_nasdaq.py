@@ -7,7 +7,7 @@ import httpx
 import pytest
 
 from rs_sources.errors import SourceError
-from rs_sources.nasdaq import EarningsTime, NasdaqEarningsCalendar
+from rs_sources.nasdaq import EarningsTime, EarningsWarmError, NasdaqEarningsCalendar
 
 
 def day_payload(*rows):
@@ -165,9 +165,10 @@ async def test_warm_tries_every_day_then_raises_and_keeps_the_good_days(clock):
     fake = FakeNasdaq({"2026-10-22": day_payload(("AAA", None))}, failing={"2026-10-21"})
     calendar = make_calendar(fake, clock)
 
-    with pytest.raises(SourceError):
+    with pytest.raises(EarningsWarmError) as raised:
         await calendar.warm(date(2026, 10, 20), max_weekdays=3)
 
+    assert (raised.value.attempted, raised.value.failed) == (3, 1)
     assert fake.dates() == ["2026-10-20", "2026-10-21", "2026-10-22"]
     count = len(fake.requests)
     # The failed day is still unknown, so "not listed" is not provable from the cache.
