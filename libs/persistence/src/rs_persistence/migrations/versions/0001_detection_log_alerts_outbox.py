@@ -1,8 +1,8 @@
 """rev-001: stream_bars_5m (detection-log hypertable), alerts, outbox.
 
-Hypertable creation is raw DDL — Alembic can't infer it (ADR-0004).
-chunk_time_interval stays at Timescale's default; ADR-0022's compression
-slice owns tuning. outbox is append-only, no processed-marking (ADR-0005).
+Hypertable creation is raw DDL — Alembic can't infer it.
+chunk_time_interval stays at Timescale's default.
+outbox is append-only, no processed-marking.
 
 Revision ID: 0001
 Revises:

@@ -1,12 +1,12 @@
 """Ingest configuration via pydantic-settings.
 
 RS_DB_URL is the same variable rs_migrate consumes; SCHWAB_API_KEY /
-SCHWAB_API_SECRET are the same credentials the Phase-0 spikes read. Ingest's
+SCHWAB_API_SECRET are the same credentials the scripts/spikes tools read. Ingest's
 own tunables carry an RS_INGEST_ prefix so a stray shell export (SYMBOL, ...)
 can never silently reconfigure the daemon.
 
 The .env file is resolved from the working directory — run from the repo root
-in dev (the acceptance runbook does); a missing required variable is a loud
+in dev; a missing required variable is a loud
 exit-1, never a silent default.
 """
 
@@ -26,7 +26,7 @@ class IngestSettings(BaseSettings):
     # EDGAR requires a declared identity (e.g. "RocketStocks you@example.com").
     rs_edgar_user_agent: str = Field(min_length=1)
 
-    # Prometheus side-port (ADR-0015): compose publishes it 127.0.0.1-only.
+    # Prometheus side-port: compose publishes it 127.0.0.1-only.
     metrics_port: int = Field(9090, validation_alias="RS_INGEST_METRICS_PORT")
     # Daemon supervision: consecutive failures before one ops notice, how often
     # a dead Schwab token is checked for renewal, and the bound on in-flight
@@ -40,6 +40,6 @@ class IngestSettings(BaseSettings):
     auth_poll_seconds: float = Field(15.0, gt=0, validation_alias="RS_INGEST_AUTH_POLL_SECONDS")
     # Shared by every Schwab job through one limiter; the default sits under Schwab's per-minute cap.
     schwab_calls_per_minute: int = Field(100, ge=1, validation_alias="RS_INGEST_SCHWAB_CALLS_PER_MINUTE")
-    # The Bus-2 NOTIFY channel is intentionally NOT here: it is a pinned wire
-    # contract shared with the bot (ADR-0005), not a per-deployment tunable —
+    # The alert NOTIFY channel is intentionally NOT here: it is a fixed wire
+    # contract shared with the bot, not a per-deployment tunable —
     # rs_persistence.NOTIFY_CHANNEL is its single source of truth.

@@ -36,7 +36,7 @@ class TestRev001Schema:
         }
 
     def test_alerts_unposted_partial_index(self, sync_engine):
-        # rev-003: the bot cursor's operational index (S004 pin #10) — partial
+        # rev-003: the bot cursor's operational index — partial
         # on posted_at IS NULL, so it stays near-empty in steady state.
         with sync_engine.connect() as conn:
             row = conn.execute(

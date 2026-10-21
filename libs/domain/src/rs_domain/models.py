@@ -1,4 +1,4 @@
-"""Domain models — the validated shapes the rest of v2 consumes (ADR-0004).
+"""Domain models — the validated shapes the rest of v2 consumes.
 
 Prices are float64: the wire delivers JSON floats, the analysis math runs in
 float64, and DOUBLE PRECISION round-trips them bit-exactly. NUMERIC/Decimal is
@@ -31,16 +31,16 @@ class Alert(BaseModel):
 
 
 class Dataset(StrEnum):
-    """Which scan produced a snapshot (ADR-0032 D5). Values are the DB enum
-    values and double as the `source` metric-label key (ADR-0017)."""
+    """Which scan produced a snapshot. Values are the DB enum
+    values and double as the `source` metric-label key."""
 
     CURATED_5M = "curated_5m"
     EOD_FULL = "eod_full"
 
 
 class SourceStatus(StrEnum):
-    """Row-level fetch outcome (ADR-0017, extended by S008: `stale` for the
-    quote_time-regression guard, `skipped` for overrun tombstones)."""
+    """Row-level fetch outcome (`stale` for the quote_time-regression guard,
+    `skipped` for overrun tombstones)."""
 
     OK = "ok"
     PARTIAL = "partial"
@@ -169,7 +169,7 @@ class SchwabAuthRequest(BaseModel):
 
 class OptionQuote(BaseModel):
     """One contract's row within a ChainSnapshot — the payload columns of
-    options_chain_snapshot (S008's binding column list minus the snapshot-level
+    options_chain_snapshot (the stored column list minus the snapshot-level
     provenance). Everything past the contract identity is optional: the wire
     may omit any of it, and a stored NULL is truthful point-in-time capture."""
 
@@ -208,11 +208,11 @@ class OptionQuote(BaseModel):
 
 
 class ChainSnapshot(BaseModel):
-    """One underlying's rows within one cycle (CONTEXT.md: Snapshot) — the unit
+    """One underlying's rows within one cycle — the unit
     a single chain request produces and the grain the stale guard accepts or
-    rejects. `rows` empty means tombstone (CONTEXT.md: Tombstone): the fetch
+    rejects. `rows` empty means tombstone: the fetch
     produced no data (failed/skipped) and persistence writes one payload-less
-    membership row, keeping every (cycle, name) pair present (ADR-0030)."""
+    membership row, keeping every (cycle, name) pair present."""
 
     model_config = ConfigDict(frozen=True)
 

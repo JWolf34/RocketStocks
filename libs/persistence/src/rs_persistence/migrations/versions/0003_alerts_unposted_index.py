@@ -1,6 +1,6 @@
-"""rev-003: partial index on the bot's delivery cursor (S004 pin #10).
+"""rev-003: partial index on the bot's delivery cursor.
 
-alerts.posted_at IS NULL is the Bus-2 consumer cursor (ADR-0005); the sweep's
+alerts.posted_at IS NULL is the bot's consumer cursor; the sweep's
 `SELECT ... WHERE posted_at IS NULL ORDER BY id` hits this index. Partial, so
 it holds only undelivered rows — near-empty in steady state.
 

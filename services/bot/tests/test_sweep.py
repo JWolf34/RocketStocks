@@ -1,11 +1,11 @@
-"""SweepWorker: the single posting path (spec pins #3/#4). The sweep drains
+"""SweepWorker: the single posting path. The sweep drains
 list_unposted in id order; per row render → send → mark_posted → commit. Send
 failures skip-and-continue and are retried each sweep up to a cap, then the
 alert is abandoned with one ops notice. The wake
 event triggers an off-interval sweep; NOTIFY itself never posts.
 
 Sender is faked at the send-protocol seam — these tests never touch Discord;
-the cursor semantics run against the real ephemeral Postgres (ADR-0023 tier)."""
+the cursor semantics run against the real ephemeral Postgres."""
 
 import asyncio
 import json
@@ -101,7 +101,7 @@ async def test_poison_send_skips_row_and_retries_next_sweep(session_factory):
 
     await worker.sweep()
 
-    # The failing row is skipped, healthy rows still post (pin #5b)...
+    # The failing row is skipped, healthy rows still post...
     assert [e.title for e in sender.sent] == [
         "AAA · volume_threshold",
         "CCC · volume_threshold",
@@ -279,7 +279,7 @@ async def test_run_sweeps_on_wake_without_waiting_interval(session_factory):
     assert await _unposted_ids(session_factory) == []
 
 
-# -- S006 unit of work: one posting attempt = one correlation_id ---------------
+# -- unit of work: one posting attempt = one correlation_id ---------------
 
 
 @pytest.fixture

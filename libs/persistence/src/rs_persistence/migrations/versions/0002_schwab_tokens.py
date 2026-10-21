@@ -1,8 +1,7 @@
-"""rev-002: schwab_tokens single-row token store (S003 OQ#2).
+"""rev-002: schwab_tokens single-row token store.
 
 One row (id = 1), token_data JSONB holding exactly what schwab-py's
-token_write_func delivers. `ingest` is the single writer; future readers
-(serve) treat the row as read-only and re-read on 401 (ADR-0024).
+token_write_func delivers. `ingest` is the single writer.
 
 Revision ID: 0002
 Revises: 0001

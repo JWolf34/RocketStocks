@@ -46,7 +46,7 @@ def main(argv: list[str] | None = None) -> int:
 
     args = parser.parse_args(argv)
 
-    # S006: alembic logs via stdlib logging — route it through the one JSON
+    # alembic logs via stdlib logging — route it through the one JSON
     # stream so the compose migrate service's records carry service/timestamp.
     configure_logging("migrate")
 

@@ -1,6 +1,6 @@
 """Entry point: `python -m rs_bot`.
 
-Lifecycle contract (spec): continuous daemon — connect Discord → resolve the
+Lifecycle contract: continuous daemon — connect Discord → resolve the
 alert channel (unresolvable/no-permission → loud exit 1) → start LISTEN →
 unconditional initial sweep → run until SIGTERM (graceful: finish the
 in-flight post, exit 0).
@@ -81,8 +81,8 @@ async def run_bot(settings: BotSettings) -> int:
     tree = app_commands.CommandTree(client)
     listen_task = sweep_task = gateway_task = notice_task = metrics_server = None
     try:
-        # :9091 side-port (ADR-0015), up before Discord so a wedged login is
-        # scrapeable. namespace="" — the ADR names the vocabulary bare.
+        # :9091 side-port, up before Discord so a wedged login is
+        # scrapeable. namespace="" — the counter names are bare.
         metrics_server, _ = start_metrics_server(
             settings.metrics_port, [DictCounterCollector(counters, namespace="")]
         )
