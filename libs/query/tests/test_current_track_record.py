@@ -9,7 +9,7 @@ from rs_query import TRACK_RECORD_LOGGED_MIN_N, current_track_record
 T0 = datetime(2026, 7, 6, 3, 0, tzinfo=UTC)
 
 
-def _rate(input: TrackRecordInput, n: int, day: int = 6, **overrides) -> TrackRecord:
+def _record(input: TrackRecordInput, n: int, day: int = 6, **overrides) -> TrackRecord:
     fields = {
         "alert_type": "popularity_surge",
         "rule_version": "1",
@@ -28,11 +28,11 @@ def _rate(input: TrackRecordInput, n: int, day: int = 6, **overrides) -> TrackRe
     return TrackRecord(**(fields | overrides))
 
 
-async def _seed(session_factory, *rates):
+async def _seed(session_factory, *records):
     async with session_factory() as s:
         repo = TrackRecordRepository(s)
-        for rate in rates:
-            await repo.insert(rate)
+        for record in records:
+            await repo.insert(record)
         await s.commit()
 
 
@@ -50,8 +50,8 @@ def test_threshold_is_thirty():
     [(TRACK_RECORD_LOGGED_MIN_N - 1, TrackRecordInput.RECONSTRUCTED), (TRACK_RECORD_LOGGED_MIN_N, TrackRecordInput.LOGGED)],
 )
 async def test_logged_row_takes_over_at_the_minimum_n(session_factory, logged_n, expected):
-    reconstructed = _rate(TrackRecordInput.RECONSTRUCTED, n=212)
-    logged = _rate(TrackRecordInput.LOGGED, n=logged_n)
+    reconstructed = _record(TrackRecordInput.RECONSTRUCTED, n=212)
+    logged = _record(TrackRecordInput.LOGGED, n=logged_n)
     await _seed(session_factory, reconstructed, logged)
 
     got = await _current(session_factory)
@@ -62,11 +62,11 @@ async def test_logged_row_takes_over_at_the_minimum_n(session_factory, logged_n,
 async def test_latest_row_of_the_chosen_input_wins(session_factory):
     await _seed(
         session_factory,
-        _rate(TrackRecordInput.RECONSTRUCTED, n=100, day=1),
-        _rate(TrackRecordInput.RECONSTRUCTED, n=110, day=8),
-        _rate(TrackRecordInput.LOGGED, n=40, day=2),
-        _rate(TrackRecordInput.LOGGED, n=45, day=9),
-        _rate(TrackRecordInput.LOGGED, n=12, day=5),
+        _record(TrackRecordInput.RECONSTRUCTED, n=100, day=1),
+        _record(TrackRecordInput.RECONSTRUCTED, n=110, day=8),
+        _record(TrackRecordInput.LOGGED, n=40, day=2),
+        _record(TrackRecordInput.LOGGED, n=45, day=9),
+        _record(TrackRecordInput.LOGGED, n=12, day=5),
     )
 
     got = await _current(session_factory)
@@ -79,9 +79,9 @@ async def test_a_thin_latest_logged_row_falls_back_even_if_an_older_one_was_thic
     # The latest study run is the truth; a rerun that measured fewer alerts is not hidden by history.
     await _seed(
         session_factory,
-        _rate(TrackRecordInput.RECONSTRUCTED, n=212),
-        _rate(TrackRecordInput.LOGGED, n=40, day=2),
-        _rate(TrackRecordInput.LOGGED, n=10, day=9),
+        _record(TrackRecordInput.RECONSTRUCTED, n=212),
+        _record(TrackRecordInput.LOGGED, n=40, day=2),
+        _record(TrackRecordInput.LOGGED, n=10, day=9),
     )
 
     got = await _current(session_factory)
@@ -91,23 +91,23 @@ async def test_a_thin_latest_logged_row_falls_back_even_if_an_older_one_was_thic
 
 
 async def test_thin_logged_row_alone_is_not_shown(session_factory):
-    await _seed(session_factory, _rate(TrackRecordInput.LOGGED, n=5))
+    await _seed(session_factory, _record(TrackRecordInput.LOGGED, n=5))
     assert await _current(session_factory) is None
 
 
 async def test_thick_logged_row_is_shown_without_a_reconstructed_row(session_factory):
-    logged = _rate(TrackRecordInput.LOGGED, n=31)
+    logged = _record(TrackRecordInput.LOGGED, n=31)
     await _seed(session_factory, logged)
     assert await _current(session_factory) == logged
 
 
 async def test_scoped_to_alert_type_and_rule_version(session_factory):
-    v1 = _rate(TrackRecordInput.RECONSTRUCTED, n=212)
+    v1 = _record(TrackRecordInput.RECONSTRUCTED, n=212)
     await _seed(
         session_factory,
         v1,
-        _rate(TrackRecordInput.RECONSTRUCTED, n=99, rule_version="2"),
-        _rate(TrackRecordInput.RECONSTRUCTED, n=98, alert_type="large_move"),
+        _record(TrackRecordInput.RECONSTRUCTED, n=99, rule_version="2"),
+        _record(TrackRecordInput.RECONSTRUCTED, n=98, alert_type="large_move"),
     )
 
     assert await _current(session_factory) == v1

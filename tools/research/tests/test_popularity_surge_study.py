@@ -160,8 +160,8 @@ async def _rows(session_factory) -> list[TrackRecordRow]:
         return list((await s.scalars(select(TrackRecordRow).order_by(TrackRecordRow.id))).all())
 
 
-def _by_input(rates: list[TrackRecord]) -> dict[TrackRecordInput, TrackRecord]:
-    return {rate.input: rate for rate in rates}
+def _by_input(records: list[TrackRecord]) -> dict[TrackRecordInput, TrackRecord]:
+    return {record.input: record for record in records}
 
 
 async def test_reconstructed_track_record_is_stored_and_read_back_by_rs_query(session_factory):
@@ -172,7 +172,7 @@ async def test_reconstructed_track_record_is_stored_and_read_back_by_rs_query(se
     async with session_factory() as s:
         stored = await current_track_record(s, "popularity_surge", "1")
     assert stored is not None
-    assert stored == _by_input(result.rates)[TrackRecordInput.RECONSTRUCTED]
+    assert stored == _by_input(result.records)[TrackRecordInput.RECONSTRUCTED]
     assert (stored.input, stored.computed_at) == (TrackRecordInput.RECONSTRUCTED, NOW)
     # AAA, BBB, FFF, GGG and DDD are entered (EEE has no entry session yet); CCC has no bars.
     assert (stored.n, stored.n_unpriced) == (5, 1)
@@ -197,7 +197,7 @@ async def test_logged_track_record_enters_at_the_alert_price(session_factory):
 
     result = await popularity_surge.run(session_factory, FixedClock(), CALENDAR)
 
-    logged = _by_input(result.rates)[TrackRecordInput.LOGGED]
+    logged = _by_input(result.records)[TrackRecordInput.LOGGED]
     assert (logged.n, logged.n_unpriced) == (3, 2)  # a missing alert price, and a symbol with no bars
     aaa = [excess(51, 50, 99, 100), excess(51, 58, 99, 104), excess(51, 68, 99, 109)]
     bbb = [excess(78, 77, 102, 103), excess(78, 73, 102, 107), excess(78, 68, 102, 112)]
@@ -233,7 +233,7 @@ async def test_logged_excess_uses_the_alert_time_spy_quote_and_counts_the_fallba
 
     result = await popularity_surge.compute(session_factory, FixedClock(), CALENDAR)
 
-    logged = _by_input(result.rates)[TrackRecordInput.LOGGED]
+    logged = _by_input(result.records)[TrackRecordInput.LOGGED]
     aaa = [excess(51, 50, 100.5, 100), excess(51, 58, 100.5, 104), excess(51, 68, 100.5, 109)]
     bbb = [excess(78, 77, 102, 103), excess(78, 73, 102, 107), excess(78, 68, 102, 112)]
     for k, day in enumerate((1, 5, 10)):
@@ -251,7 +251,7 @@ async def test_a_missing_spy_bar_is_a_missing_exit_not_a_shifted_horizon(session
 
     result = await popularity_surge.compute(session_factory, FixedClock(), CALENDAR)
 
-    logged = _by_input(result.rates)[TrackRecordInput.LOGGED]
+    logged = _by_input(result.records)[TrackRecordInput.LOGGED]
     assert (logged.n, logged.n_unpriced) == (2, 0)
     assert "1 matured outcomes had no exit price" in logged.survivorship_caveat
     # 1d: only AAA (BBB's exit session has no SPY bar); with the old SPY-session
@@ -301,7 +301,7 @@ async def test_events_whose_ticker_has_no_bars_are_counted_not_dropped(session_f
     result = await popularity_surge.compute(session_factory, FixedClock(), CALENDAR)
 
     # Every replayed event is unpriced, so nothing is measured and nothing is written.
-    assert result.rates == []
+    assert result.records == []
     assert result.events == 7
 
 
@@ -311,14 +311,14 @@ async def test_an_event_before_the_stored_benchmark_history_is_unpriced(session_
 
     result = await popularity_surge.compute(session_factory, FixedClock(), CALENDAR)
 
-    [reconstructed] = result.rates
+    [reconstructed] = result.records
     assert (reconstructed.n, reconstructed.n_unpriced) == (5, 2)
 
 
 async def test_nothing_is_written_when_there_is_nothing_to_measure(session_factory):
     result = await popularity_surge.run(session_factory, FixedClock(), CALENDAR)
 
-    assert result.rates == []
+    assert result.records == []
     assert await _rows(session_factory) == []
 
 
@@ -383,7 +383,7 @@ async def test_imported_rows_without_upvotes_replay_like_any_other(session_facto
 
     result = await popularity_surge.compute(session_factory, FixedClock(), CALENDAR)
 
-    [reconstructed] = result.rates
+    [reconstructed] = result.records
     assert (reconstructed.n, reconstructed.n_unpriced) == (5, 1)
 
 

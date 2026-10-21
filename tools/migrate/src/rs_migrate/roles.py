@@ -39,11 +39,6 @@ GRANTS: dict[str, dict[str, tuple[str, ...]]] = {
         "mcp": _SELECT,
         "research": _SELECT,
     },
-    "track_record": {
-        "bot": _SELECT,
-        "mcp": _SELECT,
-        "research": _SELECT_INSERT,
-    },
     "daily_bar": {
         "ingest": _SELECT_INSERT,
         "bot": _SELECT,
@@ -75,6 +70,11 @@ GRANTS: dict[str, dict[str, tuple[str, ...]]] = {
     # Which expiry DMs went out for which token issue; no secret in it.
     "schwab_token_notice": {
         "bot": _SELECT_INSERT,
+    },
+    "track_record": {
+        "bot": _SELECT,
+        "mcp": _SELECT,
+        "research": _SELECT_INSERT,
     },
     "unpriced_symbol": {
         "ingest": ("SELECT", "INSERT", "UPDATE", "DELETE"),

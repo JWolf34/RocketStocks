@@ -96,8 +96,8 @@ class StoredDailyBar(BaseModel):
 
 
 class UnpricedSymbol(BaseModel):
-    """A symbol the price vendor cannot price, kept so it is counted in the base
-    rate's survivorship caveat and retried slowly instead of in a hot loop."""
+    """A symbol the price vendor cannot price, kept so it is counted in the track
+    record's survivorship caveat and retried slowly instead of in a hot loop."""
 
     model_config = ConfigDict(frozen=True)
 

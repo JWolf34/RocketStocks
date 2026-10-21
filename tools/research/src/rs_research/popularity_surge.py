@@ -136,7 +136,7 @@ def _caveat(summary: Summary, total: int, what: str, benchmark_note: bool) -> st
     return caveat
 
 
-def _rate(
+def _record(
     kind: TrackRecordInput, summary: Summary, total: int, what: str, computed_at: datetime
 ) -> TrackRecord:
     benchmark_note = kind is TrackRecordInput.LOGGED
@@ -214,7 +214,7 @@ def logged_summary(
 
 @dataclass(frozen=True)
 class StudyResult:
-    rates: list[TrackRecord]
+    records: list[TrackRecord]
     events: int
     alerts: int
 
@@ -267,18 +267,18 @@ async def compute(
     spy = closes.xs(BENCHMARK, level="symbol").sort_index()
     sessions, spy_close = _calendar_sessions(calendar, spy)
 
-    rates: list[TrackRecord] = []
+    records: list[TrackRecord] = []
     if events:
         summary, considered = reconstructed_summary(events, sessions, spy_close, closes)
         if summary.n:
-            rates.append(
-                _rate(TrackRecordInput.RECONSTRUCTED, summary, considered, "replayed events", now)
+            records.append(
+                _record(TrackRecordInput.RECONSTRUCTED, summary, considered, "replayed events", now)
             )
     if alerts:
         summary = logged_summary(alerts, sessions, spy_close, closes)
         if summary.n:
-            rates.append(_rate(TrackRecordInput.LOGGED, summary, len(alerts), "posted alerts", now))
-    return StudyResult(rates, len(events), len(alerts))
+            records.append(_record(TrackRecordInput.LOGGED, summary, len(alerts), "posted alerts", now))
+    return StudyResult(records, len(events), len(alerts))
 
 
 async def run(
@@ -287,7 +287,7 @@ async def run(
     """Compute and append the track-record rows (a rerun appends new rows; readers
     take the latest). Nothing is written when there is nothing to measure."""
     result = await compute(session_factory, clock, calendar)
-    if not result.rates:
+    if not result.records:
         logger.warning(
             "popularity_surge event study measured nothing (%d events, %d alerts)",
             result.events,
@@ -296,14 +296,14 @@ async def run(
         return result
     async with session_factory() as session:
         repository = TrackRecordRepository(session)
-        for rate in result.rates:
-            await repository.insert(rate)
+        for record in result.records:
+            await repository.insert(record)
         await session.commit()
-    for rate in result.rates:
+    for record in result.records:
         logger.info(
             "popularity_surge track record written: input=%s n=%d n_unpriced=%d",
-            rate.input.value,
-            rate.n,
-            rate.n_unpriced,
+            record.input.value,
+            record.n,
+            record.n_unpriced,
         )
     return result

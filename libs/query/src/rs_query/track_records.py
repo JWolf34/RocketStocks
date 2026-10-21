@@ -8,7 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from rs_domain import TrackRecord, TrackRecordInput
 from rs_persistence import TrackRecordRow
 
-# The logged rate replaces the reconstructed one once this many real alerts are measured.
+# The logged record replaces the reconstructed one once this many real alerts are measured.
 TRACK_RECORD_LOGGED_MIN_N = 30
 
 
