@@ -1,6 +1,5 @@
 # One shared image for the v2 services and one-shot tools. No default
-# CMD: docker-compose.v2.yml supplies `command:` per service. The frozen v1
-# surface (Dockerfile, docker-compose.yml) is untouched.
+# CMD: docker-compose.yml supplies `command:` per service.
 #
 # Base images are pinned by tag and digest. Bump both together, deliberately:
 #   docker buildx imagetools inspect <image>:<tag>   (top-level Digest line)
@@ -14,7 +13,6 @@ WORKDIR /app
 # workspace graph needs them all), so third-party installs cache across
 # code-only rebuilds. --no-install-workspace defers the members themselves.
 COPY pyproject.toml uv.lock .python-version ./
-COPY legacy/pyproject.toml legacy/
 COPY libs/analysis/pyproject.toml libs/analysis/
 COPY libs/domain/pyproject.toml libs/domain/
 COPY libs/observability/pyproject.toml libs/observability/
@@ -26,17 +24,16 @@ COPY services/ingest/pyproject.toml services/ingest/
 COPY tools/backfill/pyproject.toml tools/backfill/
 COPY tools/migrate/pyproject.toml tools/migrate/
 RUN --mount=type=cache,target=/root/.cache/uv \
-    uv sync --locked --all-packages --no-install-package rocketstocks \
+    uv sync --locked --all-packages \
     --no-dev --no-editable --no-install-workspace
 
 # Member layer: real sources in, members built as wheels into the venv
-# (--no-editable → nothing outside .venv is needed at runtime). rocketstocks
-# (legacy v1) is excluded — it ships via the frozen v1 image.
+# (--no-editable → nothing outside .venv is needed at runtime).
 COPY libs/ libs/
 COPY services/ services/
 COPY tools/ tools/
 RUN --mount=type=cache,target=/root/.cache/uv \
-    uv sync --locked --all-packages --no-install-package rocketstocks \
+    uv sync --locked --all-packages \
     --no-dev --no-editable
 
 # --- runtime: slim python + the venv, nothing else ---------------------------

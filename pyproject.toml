@@ -1,5 +1,5 @@
 [tool.uv.workspace]
-members = ["libs/*", "services/*", "tools/*", "legacy"]
+members = ["libs/*", "services/*", "tools/*"]
 
 [dependency-groups]
 dev = [
@@ -13,17 +13,14 @@ dev = [
     "time-machine>=3.2.0",
 ]
 
-# Bare `pytest` from the root runs everything — legacy suite included, so a
-# muscle-memory `pytest -q` after a v1 bugfix can never false-green on the
-# 7 placeholder tests alone. `pytest legacy/tests` still resolves to
-# legacy/pyproject.toml's own config (rootdir=legacy/).
+# Bare `pytest` from the root runs every member's tests.
 # importlib mode lets same-named test files coexist across members.
 [tool.pytest.ini_options]
-testpaths = ["legacy/tests", "libs", "services", "tools"]
+testpaths = ["libs", "services", "tools"]
 addopts = "--import-mode=importlib"
 asyncio_mode = "auto"
 
-# Type checking over every v2 member's src/ (tests and legacy are out of scope).
+# Type checking over every v2 member's src/ (tests are out of scope).
 # The globs mean a new member is covered the moment its src/ exists.
 [tool.mypy]
 files = ["libs/*/src", "services/*/src", "tools/*/src"]
@@ -45,7 +42,7 @@ module = ["schwab.*", "authlib.*", "pandas.*", "pandas_market_calendars.*", "exc
 ignore_missing_imports = true
 
 # Ruff's defaults (E4, E7, E9, F) plus import sorting, pyupgrade and bugbear.
-# v2 members only; CI lints libs, services and tools, never legacy.
+# CI lints libs, services and tools.
 [tool.ruff]
 # No directory-based first-party detection: a stray ./discord/ (the bot writes
 # attachments there when run from the root) would otherwise reclassify discord.py.
