@@ -434,7 +434,7 @@ psql -c "SELECT hit_at, verdict, raw_score, strength FROM candidate WHERE symbol
 It reads `popularity_snapshot` in a read-only transaction through the ingest container's own `RS_DB_URL`, uses only the standard library and psycopg, and needs no rebuild or restart.
 From the host, in the directory with the compose file:
 ```
-sudo docker compose -f docker-compose.v2.yml exec -T ingest python - < scripts/calibrate_selection.py > selector-calibration.txt
+$COMPOSE exec -T ingest python - < scripts/calibrate_selection.py > selector-calibration.txt
 ```
 Progress goes to the terminal on stderr and the report to the file.
 It takes minutes (the database computes each stock's Baseline for each day), and holds nothing but the hits in memory.

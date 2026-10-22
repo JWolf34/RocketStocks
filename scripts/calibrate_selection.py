@@ -4,7 +4,7 @@ Read-only and self-contained: standard library plus psycopg, so it runs inside t
 deployed ingest container without rebuilding or restarting it, and it prints
 aggregates only (no ticker, no row):
 
-    sudo docker compose -f docker-compose.v2.yml exec -T ingest python - < scripts/calibrate_selection.py
+    docker compose exec -T ingest python - < scripts/calibrate_selection.py
 
 It reads `popularity_snapshot` with RS_DB_URL (ingest's role may SELECT it) in a
 read-only transaction. For each Eastern day it replays popularity-surge rule version 2
