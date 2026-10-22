@@ -7,11 +7,12 @@ Each procedure lists the exact commands and what to expect.
 ## Conventions
 
 - Run everything from the repo root on the deploy VM.
-  `COMPOSE` below means `docker compose -f docker-compose.yml`.
+  `COMPOSE` below means `docker compose -f docker-compose.yml`, with `sudo` in front if your user cannot reach Docker.
 - `.env` holds the variables listed in `.env.example`.
-  Its `RS_DB_URL` is the superuser DSN on `127.0.0.1:5498`, used by host-side tools (`rs_migrate`, `rs_backfill`).
-- Host-side tools run from the shared venv: `uv sync --all-packages`, then `.venv/bin/python -m ...`.
-  Export the DSN into the shell first (do not source `.env`: it has unquoted spaces and CRLF line endings):
+- Tools run inside the image, so the VM needs no Python of its own.
+  `$COMPOSE run --rm --no-deps migrate python -m <tool>` runs one with the superuser DSN the migrate service carries inside the compose network.
+  A file the tool reads goes in as a read-only mount, for example `-v ~/popularity.csv:/import/popularity.csv:ro` before `migrate`.
+- On a development machine the same tools also run from the shared venv (`uv sync --all-packages`, then `.venv/bin/python -m ...`), with `.env`'s `RS_DB_URL`, the superuser DSN on `127.0.0.1:5498`, exported first (do not source `.env`: it has unquoted spaces and CRLF line endings):
   ```
   export RS_DB_URL="$(grep '^RS_DB_URL=' .env | cut -d= -f2- | tr -d '\r')"
   ```
@@ -75,6 +76,30 @@ Compose passes each one through only when it is set in `.env` or the shell.
    psql -c "SELECT polled_at, count(*) FROM popularity_snapshot WHERE origin = 'live' GROUP BY 1 ORDER BY 1 DESC LIMIT 3"
    ```
 7. Set up your backups before the data is worth keeping (see "What to back up and how to restore").
+
+## Upgrade to a new version
+
+Take a backup first (see "How to back up"): migrations change stored rows.
+```
+git fetch && git checkout <branch> && git pull
+$COMPOSE build
+$COMPOSE stop ingest bot
+$COMPOSE run --rm migrate
+$COMPOSE run --rm --no-deps migrate python -m rs_migrate check
+$COMPOSE up -d --wait
+$COMPOSE ps
+```
+Ingest and the bot stop before the migrations so neither writes against a schema it does not know.
+If the build fails with "Workspace member ... is missing a `pyproject.toml`", a package removed upstream left its directory behind holding ignored files such as `__pycache__`; `git clean -fdX -- libs services tools` clears ignored files under those three directories only (never run it at the root, where `.env` is ignored too).
+If `migrate` fails, its log names the problem and nothing has started on the new schema; fix it, or restore the backup and start the previous version again.
+`check` must print nothing, and `ingest` and `bot` must be `healthy`.
+A poll boundary missed while ingest was stopped is caught up once it starts, if it is the one boundary before the current one; older ones are lost.
+
+The compose file was named `docker-compose.v2.yml` before v1 was removed.
+On a VM still running from that name, stop with the old name before pulling, then continue with the new one; the project name `rocketstocks-v2` is unchanged, so the containers and the volume carry over:
+```
+docker compose -f docker-compose.v2.yml stop ingest bot
+```
 
 To stop the stack: `$COMPOSE down` (the volume stays).
 To start over from nothing, `$COMPOSE down -v` deletes the database volume.
@@ -164,16 +189,12 @@ If the request fails:
   A rejected exchange needs a fresh `/setup schwab`.
 - A request left open longer than 10 minutes expires; run the command again.
 
-The local fallback, when Discord or the bot is down, is a login from the host.
-On a host with a browser:
+The local fallback, when Discord or the bot is down, is a login from the VM.
+The manual flow prints the sign-in URL and takes the pasted callback URL at the prompt; it runs in the ingest service, which carries the Schwab credentials and the ingest DSN:
 ```
-.venv/bin/python -m rs_ingest.tools.login
+$COMPOSE run --rm --no-deps -v "$PWD/scripts:/scripts:ro" ingest python /scripts/acceptance/schwab_manual_login.py
 ```
-On a headless host (the deploy VM), the manual flow prints the sign-in URL and takes the pasted callback URL at the prompt:
-```
-.venv/bin/python scripts/acceptance/schwab_manual_login.py
-```
-Both need `SCHWAB_API_KEY`, `SCHWAB_API_SECRET`, `RS_EDGAR_USER_AGENT` and a superuser or ingest `RS_DB_URL` in the environment.
+On a development machine with a browser, `.venv/bin/python -m rs_ingest.tools.login` opens the sign-in itself; it needs `SCHWAB_API_KEY`, `SCHWAB_API_SECRET`, `RS_EDGAR_USER_AGENT` and a superuser or ingest `RS_DB_URL` in the environment.
 Ingest notices the newer token on its next token poll (`RS_INGEST_TOKEN_POLL_SECONDS`).
 
 The Schwab refresh token lives seven days.
@@ -210,7 +231,7 @@ The import refuses to run until `verify-offset` records the zone against live da
    ```
 2. Find and record the zone (it needs at least 99% of the overlap to match one candidate):
    ```
-   .venv/bin/python -m rs_backfill verify-offset --dump ~/popularity.csv
+   $COMPOSE run --rm --no-deps -v ~/popularity.csv:/import/popularity.csv:ro migrate python -m rs_backfill verify-offset --dump /import/popularity.csv
    ```
    Exit 0 prints the winning zone and records it.
    Exit 1 means no candidate cleared the bar or there was too little overlap; wait for more overlap and rerun.
@@ -219,7 +240,7 @@ The import refuses to run until `verify-offset` records the zone against live da
 
 1. Import, naming the recorded zone (for example `America/Chicago`):
    ```
-   .venv/bin/python -m rs_backfill popularity-import --dump ~/popularity.csv --zone <zone>
+   $COMPOSE run --rm --no-deps -v ~/popularity.csv:/import/popularity.csv:ro migrate python -m rs_backfill popularity-import --dump /import/popularity.csv --zone <zone>
    ```
 2. Rerun the same import command.
    It must report `inserted 0`.
@@ -273,7 +294,7 @@ Done when a real Popularity Alert posts and carries a Track record.
 
 If no surge fires for days, stage a clearly marked test Alert through the real write path to prove the posting path (it is not a real Alert; its symbol is `TEST-` and the time, because the database allows one Alert per stock per Eastern day):
 ```
-.venv/bin/python -m rs_bot.tools.stage_alert
+$COMPOSE run --rm --no-deps migrate python -m rs_bot.tools.stage_alert
 ```
 
 ## Rehearsals
@@ -343,7 +364,7 @@ Goal: a send the bot made but did not record is found in history after a restart
 
 1. Post a marked test Alert and let the bot deliver it:
    ```
-   .venv/bin/python -m rs_bot.tools.stage_alert
+   $COMPOSE run --rm --no-deps migrate python -m rs_bot.tools.stage_alert
    psql -c "SELECT id, delivery, message_id, thread_id FROM alerts ORDER BY id DESC LIMIT 1"
    ```
    Expect `posted`, with a message id and a thread id, and one message in Discord with a thread under it.
