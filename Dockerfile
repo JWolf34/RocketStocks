@@ -1,13 +1,49 @@
-FROM python:3.13-slim
+# One shared image for the v2 services and one-shot tools. No default
+# CMD: docker-compose.yml supplies `command:` per service.
+#
+# Base images are pinned by tag and digest. Bump both together, deliberately:
+#   docker buildx imagetools inspect <image>:<tag>   (top-level Digest line)
 
-WORKDIR /RocketStocks
+# --- builder: uv resolves the locked workspace into a self-contained venv ----
+FROM ghcr.io/astral-sh/uv:python3.13-bookworm-slim@sha256:531f855bda2c73cd6ef67d56b733b357cea384185b3022bd09f05e002cd144ca AS builder
+ENV UV_COMPILE_BYTECODE=1 UV_LINK_MODE=copy UV_PYTHON_DOWNLOADS=never
+WORKDIR /app
 
-# Install dependencies first for better layer caching
-COPY legacy/pyproject.toml ./
-COPY legacy/src/ src/
-RUN pip install --no-cache-dir .
+# Dependency layer: only the lockfile + every member's pyproject (the
+# workspace graph needs them all), so third-party installs cache across
+# code-only rebuilds. --no-install-workspace defers the members themselves.
+COPY pyproject.toml uv.lock .python-version ./
+COPY libs/analysis/pyproject.toml libs/analysis/
+COPY libs/domain/pyproject.toml libs/domain/
+COPY libs/observability/pyproject.toml libs/observability/
+COPY libs/persistence/pyproject.toml libs/persistence/
+COPY libs/query/pyproject.toml libs/query/
+COPY libs/sources/pyproject.toml libs/sources/
+COPY services/bot/pyproject.toml services/bot/
+COPY services/ingest/pyproject.toml services/ingest/
+COPY tools/backfill/pyproject.toml tools/backfill/
+COPY tools/migrate/pyproject.toml tools/migrate/
+RUN --mount=type=cache,target=/root/.cache/uv \
+    uv sync --locked --all-packages \
+    --no-dev --no-editable --no-install-workspace
 
-# Copy remaining v1 project files
-COPY legacy/ .
+# Member layer: real sources in, members built as wheels into the venv
+# (--no-editable → nothing outside .venv is needed at runtime).
+COPY libs/ libs/
+COPY services/ services/
+COPY tools/ tools/
+RUN --mount=type=cache,target=/root/.cache/uv \
+    uv sync --locked --all-packages \
+    --no-dev --no-editable
 
-CMD ["python", "-m", "rocketstocks"]
+# --- runtime: slim python + the venv, nothing else ---------------------------
+FROM python:3.13-slim@sha256:70729b46c69b4f1e97c4822c1af3df53a1476cf5ddc6c087c0c10bc3a5678c2f
+RUN groupadd --system app && useradd --system --gid app --home-dir /app app
+WORKDIR /app
+COPY --from=builder /app/.venv /app/.venv
+ENV PATH="/app/.venv/bin:$PATH" PYTHONUNBUFFERED=1
+USER app
+# No default CMD. Compose picks the daemon: python -m rs_ingest |
+# rs_bot | rs_migrate upgrade. CMD [] clears the base image's
+# `python3` REPL default so a bare `docker run` fails loudly instead.
+CMD []

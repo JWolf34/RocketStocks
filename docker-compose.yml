@@ -1,38 +1,138 @@
-version: "3.7"
+# The stack: TimescaleDB + one-shot migrate gate + ingest and bot, all
+# from one shared image (Dockerfile). The project name below is load-bearing:
+# it prefixes the volume, so changing it detaches a running deploy from its data.
+#
+# Interpolated from .env (every variable is documented in .env.example):
+# RS_DB_PASSWORD (the superuser; migrate only, and the host-side RS_DB_URL for
+# local tools), RS_DB_PASSWORD_INGEST / _BOT / _MCP / _RESEARCH (per-service
+# roles, created by migrate; URL-safe because they are interpolated into DSNs
+# unencoded), SCHWAB_API_KEY, SCHWAB_API_SECRET, RS_EDGAR_USER_AGENT,
+# RS_BOT_DISCORD_TOKEN, RS_BOT_ALERT_CHANNEL_ID, RS_BOT_ADMIN_USER_ID,
+# RS_OPS_WEBHOOK_URL. Optional tunables (RS_LOG_*, RS_INGEST_*, RS_BOT_*,
+# RS_OPS_*) are listed with no value: they reach a container only when set in
+# .env or the shell, otherwise the service default applies.
+#
+# Metrics side-ports (9090 ingest, 9091 bot) are published 127.0.0.1-only: the
+# operator scrapes them from the host. Not scraped in-compose.
+
+name: rocketstocks-v2
+
+x-app: &app
+  build:
+    context: .
+    dockerfile: Dockerfile
+  image: rocketstocks-v2
+  environment: &app-env
+    RS_DB_URL: postgresql+psycopg://postgres:${RS_DB_PASSWORD:?set RS_DB_PASSWORD in .env}@timescaledb:5432/rocketstocks
+    TZ: UTC
+    RS_LOG_FORMAT:
+    RS_LOG_LEVEL:
+  depends_on:
+    migrate:
+      condition: service_completed_successfully
 
 services:
-  postgres:
-    image: postgres:17
-    restart: always
-    env_file: .env
+  timescaledb:
+    # Pinned by tag and digest; bump deliberately, together with .github/workflows/ci.yml
+    # (the digest: docker buildx imagetools inspect <image>:<tag>). After a bump,
+    # run ALTER EXTENSION timescaledb UPDATE (docs/operations.md).
+    image: timescale/timescaledb:2.30.2-pg16@sha256:6f139d56042989bd35f50ba5986e492cd32e35cc6778c50be2659add298dc09f
+    restart: unless-stopped
     environment:
-      POSTGRES_USER: ${POSTGRES_USER}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
-      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_PASSWORD: ${RS_DB_PASSWORD:?set RS_DB_PASSWORD in .env}
+      POSTGRES_DB: rocketstocks
+      TZ: UTC
     volumes:
-      - postgres_data:/var/lib/postgresql/data
+      - timescale_data:/var/lib/postgresql/data
+    # Host-side tools reach it via .env's RS_DB_URL.
+    ports:
+      - "127.0.0.1:5498:5432"
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
-      interval: 10s
+      test: ["CMD-SHELL", "pg_isready -U postgres -d rocketstocks"]
+      interval: 5s
       timeout: 5s
-      retries: 5
+      retries: 10
 
-  rocketstocks:
+  # One-shot gate: app services start only after the schema is at head.
+  migrate:
     build:
       context: .
-    restart: always
-    env_file: .env
+      dockerfile: Dockerfile
+    image: rocketstocks-v2
+    command: ["python", "-m", "rs_migrate", "upgrade"]
     environment:
-      POSTGRES_HOST: postgres
-      POSTGRES_PORT: 5432
+      <<: *app-env
+      RS_DB_PASSWORD_INGEST: ${RS_DB_PASSWORD_INGEST:?set RS_DB_PASSWORD_INGEST in .env}
+      RS_DB_PASSWORD_BOT: ${RS_DB_PASSWORD_BOT:?set RS_DB_PASSWORD_BOT in .env}
+      RS_DB_PASSWORD_MCP: ${RS_DB_PASSWORD_MCP:?set RS_DB_PASSWORD_MCP in .env}
+      RS_DB_PASSWORD_RESEARCH: ${RS_DB_PASSWORD_RESEARCH:?set RS_DB_PASSWORD_RESEARCH in .env}
+    restart: "no"
     depends_on:
-      postgres:
+      timescaledb:
         condition: service_healthy
-    volumes:
-      - rocketstocks_data:/RocketStocks/data
-      - rocketstocks_logs:/RocketStocks/logs
+
+  ingest:
+    <<: *app
+    command: ["python", "-m", "rs_ingest"]
+    # The container restart policy backs up the daemon's own supervisor, and
+    # the heartbeat healthcheck catches a hung (not crashed) loop.
+    restart: unless-stopped
+    # Must exceed RS_INGEST_SHUTDOWN_GRACE_SECONDS (30) so SIGTERM can drain.
+    stop_grace_period: 45s
+    healthcheck:
+      test: ["CMD", "python", "-m", "rs_ingest.healthcheck"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    environment:
+      <<: *app-env
+      RS_DB_URL: postgresql+psycopg://rs_ingest:${RS_DB_PASSWORD_INGEST}@timescaledb:5432/rocketstocks
+      SCHWAB_API_KEY: ${SCHWAB_API_KEY}
+      SCHWAB_API_SECRET: ${SCHWAB_API_SECRET}
+      # Must match the callback registered with the Schwab app.
+      SCHWAB_CALLBACK_URL:
+      RS_EDGAR_USER_AGENT: ${RS_EDGAR_USER_AGENT:?set RS_EDGAR_USER_AGENT in .env}
+      RS_OPS_WEBHOOK_URL: ${RS_OPS_WEBHOOK_URL:-}
+      RS_OPS_DEDUP_WINDOW_SECONDS:
+      RS_OPS_TIMEOUT_SECONDS:
+      RS_INGEST_TOKEN_POLL_SECONDS:
+      RS_INGEST_AUTH_POLL_SECONDS:
+      RS_INGEST_SHUTDOWN_GRACE_SECONDS:
+      RS_INGEST_SCHWAB_CALLS_PER_MINUTE:
+      RS_INGEST_HEALTH_MAX_AGE_SECONDS:
+    ports:
+      - "127.0.0.1:9090:9090"
+
+  bot:
+    <<: *app
+    command: ["python", "-m", "rs_bot"]
+    # The bot exits loudly when its gateway or sweep worker dies, so the
+    # restart policy does the supervising; this probes the metrics side-port.
+    restart: unless-stopped
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - import urllib.request; urllib.request.urlopen("http://127.0.0.1:9091/metrics", timeout=5)
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    environment:
+      <<: *app-env
+      RS_DB_URL: postgresql+psycopg://rs_bot:${RS_DB_PASSWORD_BOT}@timescaledb:5432/rocketstocks
+      RS_BOT_DISCORD_TOKEN: ${RS_BOT_DISCORD_TOKEN}
+      RS_BOT_ALERT_CHANNEL_ID: ${RS_BOT_ALERT_CHANNEL_ID}
+      RS_BOT_ADMIN_USER_ID: ${RS_BOT_ADMIN_USER_ID:-}
+      RS_BOT_SWEEP_SECONDS:
+      RS_BOT_POST_MAX_ATTEMPTS:
+      RS_OPS_WEBHOOK_URL: ${RS_OPS_WEBHOOK_URL:-}
+      RS_OPS_DEDUP_WINDOW_SECONDS:
+      RS_OPS_TIMEOUT_SECONDS:
+    ports:
+      - "127.0.0.1:9091:9091"
 
 volumes:
-  postgres_data:
-  rocketstocks_data:
-  rocketstocks_logs:
+  timescale_data:

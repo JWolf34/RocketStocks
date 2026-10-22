@@ -1,14 +1,14 @@
 # Operations
 
 This is the operator's guide to running RocketStocks on the deploy VM.
-It covers deploying the stack, signing in to Schwab, importing v1's Popularity history, the two rehearsals, day-to-day procedures, and what to back up and how to restore it.
+It covers deploying the stack, signing in to Schwab, the one-time import of v1's Popularity history, the two rehearsals, day-to-day procedures, and what to back up and how to restore it.
 Each procedure lists the exact commands and what to expect.
 
 ## Conventions
 
 - Run everything from the repo root on the deploy VM.
-  `COMPOSE` below means `docker compose -f docker-compose.v2.yml`.
-- `.env` holds the v2 variables listed in `.env.example`.
+  `COMPOSE` below means `docker compose -f docker-compose.yml`.
+- `.env` holds the variables listed in `.env.example`.
   Its `RS_DB_URL` is the superuser DSN on `127.0.0.1:5498`, used by host-side tools (`rs_migrate`, `rs_backfill`).
 - Host-side tools run from the shared venv: `uv sync --all-packages`, then `.venv/bin/python -m ...`.
   Export the DSN into the shell first (do not source `.env`: it has unquoted spaces and CRLF line endings):
@@ -18,7 +18,7 @@ Each procedure lists the exact commands and what to expect.
 - SQL snippets run through the database container.
   `psql` below is a shell function; define it once per shell, and note the `-X`, `-At` and heredoc uses pass extra flags to it:
   ```
-  COMPOSE="docker compose -f docker-compose.v2.yml"
+  COMPOSE="docker compose -f docker-compose.yml"
   psql() { $COMPOSE exec -T timescaledb psql -U postgres -d rocketstocks "$@"; }
   ```
 - Never paste real dumps, tokens or webhook URLs into a pull request or the repo.
@@ -181,35 +181,28 @@ The bot DMs you at 24 hours and 6 hours before it expires; re-run `/setup schwab
 
 ## Import v1 Popularity
 
-v1 is muted and still collecting Popularity from ApeWisdom.
-Import its history from 2026-03-03 onward, where its 30-minute polling is near-complete.
+This is a one-time procedure: v1's Popularity history from 2026-03-03 onward, where its 30-minute polling is near-complete.
 Rows before that date are not imported.
+v1's containers are removed, so the steps below can only be rerun from a retained dump file.
+The import is idempotent, so a rerun from the same dump inserts nothing new.
 
-### 1. Dump the v1 table
+### 1. The dump
 
-Dump v1's `popularity` table while v1 is still polling, because the offset check in step 2 needs both stacks polling at the same time.
-The importer reads a CSV with a header row, so export only the window.
-
-From the v1 compose project (the database service is named `postgres`):
+The importer reads a CSV with a header row of v1's `popularity` columns, limited to the window.
+It was exported from v1's database while v1 was still polling, because the offset check in step 2 needs both stacks polling at the same time:
 ```
-docker compose exec -T postgres psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" \
-  -c "COPY (SELECT datetime, rank, ticker, mentions, upvotes, rank_24h_ago, mentions_24h_ago FROM popularity WHERE datetime >= '2026-03-03' ORDER BY datetime, rank) TO STDOUT WITH CSV HEADER" > ~/popularity.csv
-wc -l ~/popularity.csv
+COPY (SELECT datetime, rank, ticker, mentions, upvotes, rank_24h_ago, mentions_24h_ago FROM popularity WHERE datetime >= '2026-03-03' ORDER BY datetime, rank) TO STDOUT WITH CSV HEADER
 ```
 Keep the file outside the repo.
 It is vendor data and never gets committed.
-Note v1's row count and range for the same window, to compare with the import:
-```
-docker compose exec -T postgres psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" \
-  -c "SELECT count(*), min(datetime), max(datetime) FROM popularity WHERE datetime >= '2026-03-03'"
-```
+Note the dump's row count and range (`wc -l`) to compare with the import.
 
 ### 2. Verify the offset
 
 v1 wrote naive local timestamps in a container zone nobody documented.
 The import refuses to run until `verify-offset` records the zone against live data.
 
-1. The v2 poll must have been running alongside v1 long enough to overlap on many rows.
+1. The live poll must have been running alongside v1 long enough to overlap on many rows.
    The default minimum is 1000 overlapping rows (`--min-overlap` changes it).
    Check the live extent:
    ```
@@ -238,8 +231,7 @@ The import refuses to run until `verify-offset` records the zone against live da
    v1 polled on the local wall clock, which skips an hour at the change, and the importer converts each row to UTC, so the right zone gives an unbroken 30-minute series (for `America/Chicago` on 2026-03-08: 07:30, then 08:00 UTC).
    A one-hour hole or a doubled hour means the zone is wrong; stop and rerun `verify-offset`.
 
-Expect: the dump's row count and range match v1's, the first import reports `parsed/inserted/rejected` counts that agree with the dump, and the rerun reports `inserted 0`.
-Once this passes, retiring v1 is an operator step.
+Expect: the first import reports `parsed/inserted/rejected` counts that agree with the dump, and the rerun reports `inserted 0`.
 
 ## Check a live Alert
 

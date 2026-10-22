@@ -30,12 +30,12 @@ def test_token_not_leaked_in_repr(monkeypatch):
     assert settings.discord_token.get_secret_value() == "hunter2"
 
 
-def test_v1_discord_token_is_never_read(monkeypatch):
-    # Coexistence guard: v2 must not fall back to v1's
-    # DISCORD_TOKEN — only RS_BOT_DISCORD_TOKEN may supply the credential.
+def test_unprefixed_discord_token_is_never_read(monkeypatch):
+    # A stray DISCORD_TOKEN export must not supply the credential:
+    # only RS_BOT_DISCORD_TOKEN may.
     _set_required(monkeypatch)
     monkeypatch.delenv("RS_BOT_DISCORD_TOKEN")
-    monkeypatch.setenv("DISCORD_TOKEN", "v1-secret")
+    monkeypatch.setenv("DISCORD_TOKEN", "stray-secret")
     with pytest.raises(ValidationError):
         BotSettings(_env_file=None)
 
