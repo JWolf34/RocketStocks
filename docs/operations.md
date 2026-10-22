@@ -402,7 +402,7 @@ With fewer than 48 polled boundaries in the window (a fresh install in its first
 Strength is the share of the Trigger's hits over the 30 Eastern days before the hit's day that scored no higher.
 That reference is a replay of the current rule over the stored Popularity, not the `candidate` table, so it is whole from the first day (imported history included) and is the same whatever ingest was doing last month.
 It is computed once per Eastern day and held in memory, so the first poll after a restart takes up to a few minutes and later polls add one day's replay at most.
-If fewer than 7 of the 30 days were polled, or none held a hit, the poll stores its snapshots and then fails with `ReferenceUnavailable`; it does not post.
+If fewer than 7 of the 30 days were polled, or none held a hit, there is nothing to rank against: the poll stores its snapshots, records every hit as a `below_bar` candidate with no strength, posts nothing, and then fails with `ReferenceUnavailable`, which sends an Ops ping for the `popularity_poll` job.
 
 The bar is a strength, set from the same 30 days so that the typical (median) polled day has about 5 stocks at or above it (`BAR_TARGET_PER_DAY`).
 A stock counts once a day however often it hits, and days without polls are left out, so downtime does not move the bar.
