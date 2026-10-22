@@ -47,12 +47,12 @@ def verdict(
     decided_at: datetime = NOW,
 ) -> Verdict:
     return select(
-        event or hit(), strength=strength, bar=BAR, day=DayState(alerts=alerts, stock=stock), decided_at=decided_at
+        event or hit(), strength=strength, bar=BAR, day=DayState(alerts_posted=alerts, stock=stock), decided_at=decided_at
     )
 
 
 def alerted(strength: float | None = 0.95, *carried: str, replies: int = 0) -> StockDay:
-    return StockDay(carried=frozenset(carried or {"mention_surge"}), strength=strength, replies=replies)
+    return StockDay(carried=frozenset(carried or {"mention_surge"}), highest_strength=strength, replies=replies)
 
 
 class TestAStockWithoutAnAlertToday:
@@ -115,7 +115,7 @@ class TestAStockAlreadyAlertedToday:
     def test_strength_up_is_measured_from_the_highest_announced_so_far(self):
         after_a_reply = announce(alerted(0.70), ["mention_surge"], 0.81, reply=True)
 
-        assert after_a_reply.strength == 0.81
+        assert after_a_reply.highest_strength == 0.81
         assert verdict(0.81 + REPLY_STRENGTH_MARGIN - 0.001, stock=after_a_reply) is Verdict.REPEAT
 
     def test_a_stock_announced_before_strength_was_stored_escalates_only_by_sub_rule(self):
@@ -163,7 +163,7 @@ class TestEscalation:
         assert found is not None
         assert found.new_rules == (SubRule.RANK_JUMP,)
         assert found.previous_strength == 0.80
-        assert found.by == ("sub_rule", "strength")
+        assert found.strength_up
 
     def test_is_none_when_nothing_is_added(self):
         assert escalation(hit(), 0.9, alerted(0.9)) is None
@@ -173,10 +173,10 @@ class TestAnnounce:
     def test_the_alert_starts_the_stock_day(self):
         after = announce(None, ["mention_surge"], 0.93, reply=False)
 
-        assert after == StockDay(carried=frozenset({"mention_surge"}), strength=0.93, replies=0)
+        assert after == StockDay(carried=frozenset({"mention_surge"}), highest_strength=0.93, replies=0)
 
     def test_a_reply_adds_its_rules_keeps_the_highest_strength_and_counts_itself(self):
         after = announce(alerted(0.95), ["rank_jump"], 0.91, reply=True)
 
-        assert after == StockDay(carried=frozenset({"mention_surge", "rank_jump"}), strength=0.95, replies=1)
+        assert after == StockDay(carried=frozenset({"mention_surge", "rank_jump"}), highest_strength=0.95, replies=1)
 

@@ -91,7 +91,7 @@ def shipped_counts(hits, bar, margin, budget, max_replies) -> dict[str, int]:
         )
         stock = stocks.get(symbol)
         verdict = selector.select(
-            event, strength=strength, bar=bar, day=selector.DayState(alerts=alerts, stock=stock), decided_at=polled_at
+            event, strength=strength, bar=bar, day=selector.DayState(alerts_posted=alerts, stock=stock), decided_at=polled_at
         )
         if verdict is Verdict.POSTED:
             alerts += 1

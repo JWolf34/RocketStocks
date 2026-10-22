@@ -10,6 +10,7 @@ import pytest
 from sqlalchemy import delete, func, insert, select
 
 from rs_analysis.popularity_surge import RULE_VERSION, SubRule
+from rs_analysis.strength import ReferenceUnavailable
 from rs_domain import (
     ALERT_STALE_AFTER,
     Alert,
@@ -655,6 +656,24 @@ class TestSelection:
 
         await rig.poll.run()
 
+        assert await rig.verdicts() == [("SURGER", T0, "below_bar")]
+        [candidate] = await rig.candidates()
+        assert (candidate.raw_score, candidate.strength) == (None, None)
+
+    async def test_with_no_reference_every_hit_is_recorded_below_the_bar_and_the_poll_fails(
+        self, session_factory, sleeps, notices
+    ):
+        class NoReference:
+            async def score(self, events):
+                raise ReferenceUnavailable("only 3 of the 30 days before 2026-07-06 were polled")
+
+        rig = Rig(session_factory, sleeps, listing(), scorer=NoReference())
+
+        with pytest.raises(ReferenceUnavailable, match="polled"):
+            await rig.poll.run()
+
+        assert await rig.snapshots() == 2
+        assert await rig.alerts() == []
         assert await rig.verdicts() == [("SURGER", T0, "below_bar")]
         [candidate] = await rig.candidates()
         assert (candidate.raw_score, candidate.strength) == (None, None)

@@ -20,6 +20,7 @@ from typing import Any, Protocol
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from rs_analysis.popularity_surge import SurgeEvent, evaluate_latest
+from rs_analysis.strength import ReferenceUnavailable
 from rs_domain import (
     Alert,
     Candidate,
@@ -104,7 +105,7 @@ class PopularityPoll:
         polled_at = poll_boundary(fetched_at)
         rows = await self._fetch()
         inserted = await self._store(rows, polled_at, fetched_at)
-        decisions = await self._decide(await self._detect(polled_at))
+        decisions, unranked = await self._decide(await self._detect(polled_at))
         logger.info(
             "popularity poll %s: %d rows fetched, %d stored, %d new surge hit(s), %d posted, %d repl(ies)",
             polled_at.isoformat(), len(rows), inserted, len(decisions),
@@ -112,6 +113,9 @@ class PopularityPoll:
             sum(d.verdict is Verdict.REPLY for d in decisions),
         )
         await self._write(decisions, polled_at)
+        if unranked is not None:
+            # Every hit is recorded, none posted; failing the poll is what tells the operator.
+            raise unranked
 
     async def _fetch(self) -> list[ApeWisdomRow]:
         """The listing; a failed or empty fetch raises so the daemon logs and counts it."""
@@ -159,13 +163,20 @@ class PopularityPoll:
         found = [e for e in hits if e is not None and (e.rule_version, e.ticker, e.polled_at) not in known]
         return sorted(found, key=lambda e: (e.polled_at, e.ticker))
 
-    async def _decide(self, events: Sequence[SurgeEvent]) -> list[Decision]:
+    async def _decide(self, events: Sequence[SurgeEvent]) -> tuple[list[Decision], ReferenceUnavailable | None]:
         """The selector's verdict for each hit. Hits go oldest boundary first and, within
         a boundary, strongest first, so a budget that runs out goes to the strongest
-        and not to the alphabet; each hit sees what the hits before it would announce."""
+        and not to the alphabet; each hit sees what the hits before it would announce.
+        With no reference to rank against, every hit is unranked (so below the bar) and
+        the reason is returned for the poll to fail on once the hits are stored."""
         if not events:
-            return []
-        scored = await self._scorer.score(events)
+            return [], None
+        unranked = None
+        try:
+            scored = await self._scorer.score(events)
+        except ReferenceUnavailable as exc:
+            unranked = exc
+            scored = [Scored(raw_score=None, strength=None, bar=None)] * len(events)
         ranked = sorted(
             zip(events, scored, strict=True),
             key=lambda pair: (pair[0].polled_at, -(pair[1].strength or 0.0), pair[0].ticker),
@@ -195,7 +206,7 @@ class PopularityPoll:
                 event,
                 strength=score.strength,
                 bar=score.bar,
-                day=DayState(alerts=budget_used[day], stock=stock),
+                day=DayState(alerts_posted=budget_used[day], stock=stock),
                 decided_at=now,
             )
             if verdict is Verdict.POSTED:
@@ -214,7 +225,7 @@ class PopularityPoll:
                     else escalation(event, score.strength, stock),
                 )
             )
-        return decisions
+        return decisions, unranked
 
     async def _write(self, decisions: Sequence[Decision], current: datetime) -> None:
         """Store every decision. A stock's hits go in order and stop at its first

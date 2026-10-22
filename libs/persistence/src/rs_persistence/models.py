@@ -148,7 +148,7 @@ class CandidateRow(Base):
     __tablename__ = "candidate"
     __table_args__ = (
         Index("uq_candidate_hit", "trigger", "rule_version", "symbol", "hit_at", unique=True),
-        # A Trigger's candidates in a time window (strength ranks over the trailing 30 days).
+        # A Trigger's candidates in a time window.
         Index("ix_candidate_trigger_hit_at", "trigger", "hit_at"),
         Index("ix_candidate_symbol_day", "symbol", "day"),
         # What an Eastern day has announced (the budget used, what each Alert carried).

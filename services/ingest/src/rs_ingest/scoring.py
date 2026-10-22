@@ -47,11 +47,11 @@ MIN_POLLS_PER_DAY = 24
 @dataclass(frozen=True)
 class Scored:
     """A hit's raw score and strength (None when its stock has no Baseline) and the bar
-    its day is judged against."""
+    its day is judged against (None, with no strength, when there is no reference)."""
 
     raw_score: float | None
     strength: float | None
-    bar: float
+    bar: float | None
 
 
 class Scorer(Protocol):
