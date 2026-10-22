@@ -455,6 +455,88 @@ def test_0020_flags_the_stored_bars_adjusted_and_downgrade_flags_them_unadjusted
         engine.dispose()
 
 
+COMPRESSED_BAR_SYMBOLS = 150
+COMPRESSED_BAR_DAYS = 700  # 105,000 bars, over Timescale's 100,000 decompressed tuples per transaction
+
+
+def _seed_compressed_bars(conn, *, adjusted: bool) -> set[str]:
+    """Years of old bars in compressed chunks, plus one recent bar in a chunk the compression
+    policy has not reached. Returns the chunks that are compressed."""
+    conn.execute(
+        text(
+            "INSERT INTO daily_bar (symbol, session_date, open, high, low, close, volume, fetched_at, adjusted)"
+            " SELECT 'S' || s, DATE '2020-01-01' + d, 10, 11, 9, 10.5, 1000, now(), :adjusted"
+            " FROM generate_series(1, :symbols) s, generate_series(0, :days - 1) d"
+        ),
+        {"symbols": COMPRESSED_BAR_SYMBOLS, "days": COMPRESSED_BAR_DAYS, "adjusted": adjusted},
+    )
+    conn.execute(
+        text(
+            "INSERT INTO daily_bar (symbol, session_date, open, high, low, close, volume, fetched_at, adjusted)"
+            " VALUES ('NEW', CURRENT_DATE, 10, 11, 9, 10.5, 1000, now(), :adjusted)"
+        ),
+        {"adjusted": adjusted},
+    )
+    conn.execute(
+        text(
+            "SELECT compress_chunk(c, if_not_compressed => true)"
+            " FROM show_chunks('daily_bar', older_than => DATE '2024-01-01') c"
+        )
+    )
+    return _compressed_bar_chunks(conn)
+
+
+def _compressed_bar_chunks(conn) -> set[str]:
+    return set(
+        conn.execute(
+            text(
+                "SELECT chunk_name FROM timescaledb_information.chunks"
+                " WHERE hypertable_name = 'daily_bar' AND is_compressed"
+            )
+        ).scalars()
+    )
+
+
+def _partially_compressed_bar_chunks(conn) -> int:
+    """Chunks holding rows outside their compressed form, which is how an UPDATE leaves them."""
+    return conn.execute(
+        text(
+            "SELECT count(*) FROM _timescaledb_catalog.chunk c"
+            " JOIN _timescaledb_catalog.hypertable h ON h.id = c.hypertable_id"
+            " WHERE h.table_name = 'daily_bar' AND c.status & 8 <> 0"
+        )
+    ).scalar_one()
+
+
+@pytest.mark.parametrize(("start", "target", "adjusted"), [("0019", "0020", True), ("0020", "0019", False)])
+def test_0020_flags_more_compressed_bars_than_one_transaction_may_decompress(
+    scratch_url, start, target, adjusted
+):
+    config = migration_config(scratch_url)
+    engine = create_engine(scratch_url)
+    try:
+        command.upgrade(config, start)
+        with engine.begin() as conn:
+            compressed = _seed_compressed_bars(conn, adjusted=not adjusted)
+        assert len(compressed) > 1
+
+        if adjusted:
+            command.upgrade(config, target)
+        else:
+            command.downgrade(config, target)
+
+        with engine.connect() as conn:
+            total = COMPRESSED_BAR_SYMBOLS * COMPRESSED_BAR_DAYS + 1
+            flagged = conn.execute(
+                text("SELECT count(*) FROM daily_bar WHERE adjusted = :a"), {"a": adjusted}
+            ).scalar_one()
+            assert flagged == total
+            assert _compressed_bar_chunks(conn) == compressed
+            assert _partially_compressed_bar_chunks(conn) == 0
+    finally:
+        engine.dispose()
+
+
 def test_0021_adds_candidate_scores_and_keeps_existing_candidates_unscored(scratch_url):
     config = migration_config(scratch_url)
     engine = create_engine(scratch_url)
