@@ -10,7 +10,7 @@ channel's (an Alert's) or the thread's (a reply's) recent history before it send
 anything: found means record it, not found means send, and a failed read means do not
 post and send an Ops ping. Delivery therefore does not post twice.
 
-A row older than `STALE_AFTER` at send time, measured from its hit time, is recorded as
+A row older than `ALERT_STALE_AFTER` at send time, measured from its hit time, is recorded as
 stale and not posted. A send failure is ERROR-logged with the full payload, counted in
 `post_attempts` and skipped (the row stays marked sending, so the retry checks history
 first); at `max_attempts` the row is failed-to-post: it leaves the sweep and the operator
@@ -25,7 +25,7 @@ import asyncio
 import logging
 from collections.abc import Sequence
 from contextlib import suppress
-from datetime import datetime, timedelta
+from datetime import datetime
 from typing import Protocol
 
 import aiohttp
@@ -35,9 +35,10 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from rs_bot.counters import new_counters
 from rs_bot.pings import GuildRoles, GuildUnavailable
-from rs_bot.render import POPULARITY_SURGE, render, render_generic
+from rs_bot.render import render, render_generic
 from rs_domain import (
     ALERT_STALE_AFTER,
+    POPULARITY_SURGE,
     Alert,
     Clock,
     Delivery,
@@ -56,9 +57,6 @@ from rs_persistence import (
 from rs_query import track_records
 
 logger = logging.getLogger(__name__)
-
-# After an outage, an Alert or reply older than this is recorded but not posted.
-STALE_AFTER = ALERT_STALE_AFTER
 
 # Discord's answer about one embed it will not take (a malformed or oversized body).
 _REJECTED_EMBED_STATUS = 400
@@ -122,7 +120,6 @@ class SweepWorker:
         health: HealthTracker,
         max_attempts: int = 5,
         retry_gap_seconds: float | None = None,
-        stale_after: timedelta = STALE_AFTER,
         counters: dict[str, int] | None = None,
         roles: GuildRoles | None = None,
     ) -> None:
@@ -133,7 +130,6 @@ class SweepWorker:
         self._sweep_seconds = sweep_seconds
         self._max_attempts = max_attempts
         self._retry_gap = sweep_seconds if retry_gap_seconds is None else retry_gap_seconds
-        self._stale_after = stale_after
         # The server's roles, to ping the one mapped to an Alert's Trigger; None pings nobody.
         self._roles = roles
         self.counters = counters if counters is not None else new_counters()
@@ -243,7 +239,7 @@ class SweepWorker:
                 await self._record_posted(session, repo, item, found, discord.utils.snowflake_time(found))
                 return
 
-        if self._clock.now() - alert.triggered_at > self._stale_after:
+        if self._clock.now() - alert.triggered_at > ALERT_STALE_AFTER:
             await self._record_stale(session, repo, item, "older than the stale limit")
             return
 
@@ -391,7 +387,7 @@ class SweepWorker:
     async def _thread_stragglers(self, session: AsyncSession, repo: AlertRepository) -> None:
         """Posted Alerts whose thread could not be started, within the stale limit."""
         for alert_id, message_id, symbol in await repo.list_unthreaded(
-            self._clock.now() - self._stale_after
+            self._clock.now() - ALERT_STALE_AFTER
         ):
             if self._stopping.is_set():
                 break

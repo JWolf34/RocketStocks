@@ -2,7 +2,7 @@
 calls a vendor: every fact was written into the payload at alert time.
 
 A popularity-surge Alert is a templated talking point, the reasons, the price, the Track
-record and the next Catalyst; a reply in its thread (`reply_to` set) is a short follow-up
+record and the next Catalyst; a reply in its thread (`reply_to` set) is a short reply
 saying what escalated. Every time is Discord timestamp markup, so each reader sees their own
 zone; a date without a time is shown as a date. Any other Trigger, a payload that does not
 parse, or any render exception falls back to the generic embed: an alert can be render-ugly,
@@ -20,7 +20,9 @@ from datetime import datetime
 
 import discord
 
+from rs_bot.triggers import TRIGGER_LABELS
 from rs_domain import (
+    POPULARITY_SURGE,
     TOO_FEW_CASES_BELOW,
     EscalationPayload,
     FactUnavailable,
@@ -31,8 +33,7 @@ from rs_persistence import PendingAlert
 
 logger = logging.getLogger(__name__)
 
-POPULARITY_SURGE = "popularity_surge"
-TRIGGER_TITLE = "Popularity surge"
+TRIGGER_TITLE = TRIGGER_LABELS[POPULARITY_SURGE]
 
 _RULE_NAME = {"mention_surge": "Mention surge", "rank_jump": "Rank jump"}
 _TIME_OF_DAY = {"pre_market": "before the open", "after_hours": "after the close"}
@@ -102,7 +103,7 @@ def _render_full(
 
 
 def _render_reply(pending: PendingAlert, payload: EscalationPayload) -> discord.Embed:
-    """A short follow-up in the Alert's thread: what escalated and when."""
+    """A short reply in the Alert's thread: what escalated and when."""
     alert = pending.alert
     lines = []
     if payload.new_rules:

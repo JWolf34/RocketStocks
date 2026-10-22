@@ -1,6 +1,6 @@
 """render(PendingAlert, track_record) -> Embed: a popularity-surge Alert rendered typed with
 its talking point, reasons, price, Track record and next Catalyst, a reply in its thread as a
-short follow-up, inside Discord's embed limits. Anything that cannot render typed falls back to
+short reply, inside Discord's embed limits. Anything that cannot render typed falls back to
 the generic embed. Tests assert what the embed says, not its exact bytes."""
 
 import re
@@ -386,7 +386,7 @@ def test_a_reply_says_what_escalated_and_when():
     assert "97" in text and "80" in text
     assert f"<t:{_unix(REPLY_AT)}:f>" in text
     assert "GME" in embed.title
-    assert not embed.fields  # a short follow-up, not a second Alert
+    assert not embed.fields  # a short reply, not a second Alert
     assert "Track record" not in text and "Price" not in text
 
 
