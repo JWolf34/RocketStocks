@@ -8,8 +8,10 @@ to deliver (pending or sending) instead of those with no `posted_at`, so a stale
 leaves it.
 
 Every existing row with a `posted_at` becomes `posted`; its message id was never
-stored, so it stays NULL. The downgrade drops the new columns and type; a stale row
-comes back as an undelivered one with no `posted_at`.
+stored, so it stays NULL. The downgrade drops the new columns and type. The previous
+bot posts every row with no `posted_at`, so a stale row (one deliberately not posted)
+is given its own `triggered_at` as `posted_at` first: it stays in the table and reads
+as handled, and the previous bot does not post it days late.
 
 Revision ID: 0017
 Revises: 0016
@@ -54,6 +56,7 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
+    op.execute("UPDATE alerts SET posted_at = triggered_at WHERE delivery = 'stale' AND posted_at IS NULL")
     op.drop_index("ix_alerts_undelivered", table_name="alerts")
     op.create_index(
         "ix_alerts_unposted", "alerts", ["id"], postgresql_where=sa.text("posted_at IS NULL")

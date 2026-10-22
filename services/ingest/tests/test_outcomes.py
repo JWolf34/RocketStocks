@@ -17,6 +17,7 @@ from sqlalchemy import select, text
 from rs_analysis.outcomes import HORIZONS
 from rs_analysis.popularity_surge import RULE_VERSION
 from rs_domain import (
+    POPULARITY_SURGE,
     Alert,
     Candidate,
     PopularityOrigin,
@@ -37,7 +38,6 @@ from rs_sources import ExchangeCalendar
 
 CALENDAR = ExchangeCalendar()
 SESSIONS = CALENDAR.sessions_in_range(date(2024, 1, 1), date(2026, 12, 31))
-TRIGGER = "popularity_surge"
 # Friday 2026-10-23, 18:00 ET: two hours past the close, so that day's candle is settled.
 NOW = datetime(2026, 10, 23, 22, 0, tzinfo=UTC)
 LAST_SESSION = date(2026, 10, 23)
@@ -288,7 +288,7 @@ async def test_fewer_than_120_sessions_of_history_has_no_move_size_and_is_counte
 
 def _candidate(symbol: str, hit_at: datetime, verdict: Verdict = Verdict.POSTED) -> Candidate:
     return Candidate(
-        trigger=TRIGGER,
+        trigger=POPULARITY_SURGE,
         rule_version=RULE_VERSION,
         symbol=symbol,
         hit_at=hit_at,
@@ -357,7 +357,7 @@ async def test_a_posted_case_is_timed_at_its_post_not_its_hit(session_factory):
     await _store(session_factory, Seed([surge("PST", hit)], stock_bars("PST", date(2026, 7, 8), STOCK_AFTER) + spy_bars(date(2026, 7, 8), SPY_AFTER)))
     async with session_factory() as s:
         alert_id = await AlertRepository(s).insert(
-            Alert(symbol="PST", trigger=TRIGGER, triggered_at=hit, rule_version=RULE_VERSION)
+            Alert(symbol="PST", trigger=POPULARITY_SURGE, triggered_at=hit, rule_version=RULE_VERSION)
         )
         await s.execute(text("UPDATE alerts SET posted_at = :at, delivery = 'posted' WHERE id = :id"), {"at": posted, "id": alert_id})
         await s.commit()
@@ -373,7 +373,7 @@ async def test_a_posted_case_is_timed_at_its_post_not_its_hit(session_factory):
 async def _alert_in(session_factory, symbol: str, hit: datetime, delivery: str) -> None:
     async with session_factory() as s:
         alert_id = await AlertRepository(s).insert(
-            Alert(symbol=symbol, trigger=TRIGGER, triggered_at=hit, rule_version=RULE_VERSION)
+            Alert(symbol=symbol, trigger=POPULARITY_SURGE, triggered_at=hit, rule_version=RULE_VERSION)
         )
         await s.execute(
             text("UPDATE alerts SET delivery = CAST(:delivery AS alert_delivery) WHERE id = :id"),

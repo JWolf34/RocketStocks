@@ -54,9 +54,12 @@ class FakeDiscord:
     def sent(self) -> list[discord.Embed]:
         return [m.embed for m in self.messages if m.from_bot]
 
-    def plant(self, embed: discord.Embed, nonce: int | None, *, where: int = CHANNEL) -> Message:
-        """A message already in Discord, as a previous run of the bot left it."""
-        message = Message(self._mint(), where, embed, nonce)
+    def plant(
+        self, embed: discord.Embed, nonce: int | None, *, where: int = CHANNEL, at: datetime | None = None
+    ) -> Message:
+        """A message already in Discord, as a previous run of the bot left it; `at` gives it a
+        real snowflake id, so the time it was created can be read back from the id."""
+        message = Message(self._mint() if at is None else discord.utils.time_snowflake(at), where, embed, nonce)
         self.messages.append(message)
         return message
 

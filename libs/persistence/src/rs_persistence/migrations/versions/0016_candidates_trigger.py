@@ -16,7 +16,10 @@ payload; a staged test Alert has no rule version, is no hit, and gets none.
 No existing row is dropped. Two existing Alerts on one stock and Eastern day would
 break the one-Alert-a-day rule, so the upgrade stops and names them for the
 operator to resolve; nothing is changed until then. The downgrade reverses every
-step (the candidates are dropped, the dedup keys rebuilt from the Alerts).
+step (the candidates are dropped, the dedup keys rebuilt from the Alerts). The
+previous bot posts every row with no `posted_at` as an Alert of its own, so a reply
+not yet posted is given its own `triggered_at` as `posted_at` before `reply_to` goes:
+the row is kept and reads as handled, and is not posted as a standalone Alert.
 
 Revision ID: 0016
 Revises: 0015
@@ -132,6 +135,7 @@ def downgrade() -> None:
     )
     op.create_unique_constraint("uq_alerts_dedup_key", "alerts", ["dedup_key"])
     op.drop_index("uq_alerts_symbol_day", table_name="alerts")
+    op.execute("UPDATE alerts SET posted_at = triggered_at WHERE reply_to IS NOT NULL AND posted_at IS NULL")
     op.drop_column("alerts", "reply_to")
     op.drop_column("alerts", "day")
     op.alter_column("track_record", "trigger", new_column_name="alert_type")

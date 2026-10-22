@@ -13,7 +13,6 @@ import discord
 from discord import app_commands
 
 from rs_bot.pings import (
-    TRIGGER_LABELS,
     DiscordGuildRoles,
     PingMember,
     PingMenu,
@@ -21,6 +20,7 @@ from rs_bot.pings import (
     role_info,
 )
 from rs_bot.schwab_auth import SchwabAuthFlow, add_schwab_command
+from rs_bot.triggers import TRIGGER_LABELS
 
 SETUP_PERMISSIONS = discord.Permissions(administrator=True)
 MENU_TIMEOUT_SECONDS = 300.0

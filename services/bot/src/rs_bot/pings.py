@@ -18,13 +18,10 @@ from typing import Protocol
 import discord
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from rs_bot.render import POPULARITY_SURGE
+from rs_bot.triggers import TRIGGER_LABELS
 from rs_persistence import TriggerRoleRepository
 
 logger = logging.getLogger(__name__)
-
-# The Triggers a role can be mapped to, with the name members see.
-TRIGGER_LABELS = {POPULARITY_SURGE: "Popularity surge"}
 
 NO_MAPPINGS = (
     "No Alert pings are set up yet. An admin can map a Trigger to a role with /setup roles add."

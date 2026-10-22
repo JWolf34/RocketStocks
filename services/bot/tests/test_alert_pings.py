@@ -8,12 +8,11 @@ from datetime import timedelta
 import httpx
 
 from rs_bot.counters import new_counters
-from rs_bot.render import POPULARITY_SURGE
 from rs_bot.sweep import SweepWorker
 from rs_bot.testing import FakeDiscord, FakeRoles, FixedClock
 from rs_bot.testing import alert as _alert
 from rs_bot.testing import surge_alert as _surge_alert
-from rs_domain import Alert
+from rs_domain import POPULARITY_SURGE, Alert
 from rs_observability import HealthTracker, OpsSettings, configure_ops
 from rs_persistence import AlertRepository, TriggerRoleRepository
 

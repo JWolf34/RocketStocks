@@ -42,6 +42,9 @@ class Verdict(StrEnum):
     STALE = "stale"
 
 
+# The one Trigger so far, by the name stored on its Alerts, candidates and Outcomes.
+POPULARITY_SURGE = "popularity_surge"
+
 # After an outage, an Alert or reply older than this (from its hit) is recorded as stale and
 # never posted. The bot enforces it; the Outcomes job reads it to know a row can no longer post.
 ALERT_STALE_AFTER = timedelta(hours=1)
@@ -221,7 +224,14 @@ class TrackRecord(BaseModel):
 
     @property
     def too_few_cases(self) -> bool:
+        """Too few Outcomes at this horizon to show anything but the count."""
         return self.outcomes < TOO_FEW_CASES_BELOW
+
+    @property
+    def too_few_move_sizes(self) -> bool:
+        """Too few Outcomes with a move size to show the shares and the median multiple,
+        which rest on those alone; the median excess rests on every Outcome."""
+        return self.outcomes - self.no_move_size < TOO_FEW_CASES_BELOW
 
 
 class AuthRequestState(StrEnum):

@@ -315,6 +315,47 @@ def test_0016_stops_and_names_two_alerts_that_share_a_stock_and_eastern_day(scra
         engine.dispose()
 
 
+def test_0016_downgrade_marks_an_unposted_reply_handled_for_the_previous_bot(scratch_url):
+    config = migration_config(scratch_url)
+    engine = create_engine(scratch_url)
+    try:
+        command.upgrade(config, "0016")
+        with engine.begin() as conn:
+            alert_id = conn.execute(
+                text(
+                    "INSERT INTO alerts (symbol, trigger, triggered_at, payload, posted_at)"
+                    " VALUES ('GME', 't', '2026-10-20 15:00+00', '{}', '2026-10-20 15:01+00') RETURNING id"
+                )
+            ).scalar_one()
+            conn.execute(
+                text(
+                    "INSERT INTO alerts (symbol, trigger, triggered_at, payload, reply_to) VALUES"
+                    " ('GME', 't', '2026-10-20 16:00+00', '{}', :alert),"
+                    " ('GME', 't', '2026-10-20 17:00+00', '{}', :alert)"
+                ),
+                {"alert": alert_id},
+            )
+            conn.execute(
+                text("UPDATE alerts SET posted_at = '2026-10-20 17:01+00' WHERE triggered_at = '2026-10-20 17:00+00'")
+            )
+
+        command.downgrade(config, "0015")
+        with engine.connect() as conn:
+            rows = conn.execute(
+                text("SELECT triggered_at, posted_at FROM alerts ORDER BY triggered_at")
+            ).all()
+            old_cursor = conn.execute(text("SELECT count(*) FROM alerts WHERE posted_at IS NULL")).scalar_one()
+        # The unposted reply reads as handled (its own time); the posted ones are untouched.
+        assert rows == [
+            (datetime(2026, 10, 20, 15, tzinfo=UTC), datetime(2026, 10, 20, 15, 1, tzinfo=UTC)),
+            (datetime(2026, 10, 20, 16, tzinfo=UTC), datetime(2026, 10, 20, 16, tzinfo=UTC)),
+            (datetime(2026, 10, 20, 17, tzinfo=UTC), datetime(2026, 10, 20, 17, 1, tzinfo=UTC)),
+        ]
+        assert old_cursor == 0
+    finally:
+        engine.dispose()
+
+
 def test_0015_adds_bar_request_and_downgrade_drops_it(scratch_url):
     config = migration_config(scratch_url)
     engine = create_engine(scratch_url)
@@ -339,11 +380,14 @@ def test_0017_marks_posted_rows_posted_and_downgrade_returns_the_old_cursor(scra
                 text(
                     "INSERT INTO alerts (symbol, trigger, triggered_at, payload, posted_at) VALUES"
                     " ('AAA', 't', '2026-10-19 15:00+00', '{}', '2026-10-19 15:01+00'),"
-                    " ('BBB', 't', '2026-10-19 15:00+00', '{}', NULL)"
+                    " ('BBB', 't', '2026-10-19 15:00+00', '{}', NULL),"
+                    " ('CCC', 't', '2026-10-19 15:00+00', '{}', NULL)"
                 )
             )
 
         command.upgrade(config, "head")
+        with engine.begin() as conn:
+            conn.execute(text("UPDATE alerts SET delivery = 'stale' WHERE symbol = 'CCC'"))
         with engine.connect() as conn:
             rows = conn.execute(
                 text("SELECT symbol, delivery::text, sending_at, message_id, thread_id FROM alerts ORDER BY id")
@@ -351,7 +395,11 @@ def test_0017_marks_posted_rows_posted_and_downgrade_returns_the_old_cursor(scra
             index = conn.execute(
                 text("SELECT indexdef FROM pg_indexes WHERE indexname = 'ix_alerts_undelivered'")
             ).scalar_one()
-        assert rows == [("AAA", "posted", None, None, None), ("BBB", "pending", None, None, None)]
+        assert rows == [
+            ("AAA", "posted", None, None, None),
+            ("BBB", "pending", None, None, None),
+            ("CCC", "stale", None, None, None),
+        ]
         assert "WHERE (delivery = ANY (ARRAY['pending'::alert_delivery, 'sending'::alert_delivery]))" in index
 
         command.downgrade(config, "0016")
@@ -360,6 +408,14 @@ def test_0017_marks_posted_rows_posted_and_downgrade_returns_the_old_cursor(scra
         assert {i["name"] for i in insp.get_indexes("alerts")} >= {"ix_alerts_unposted"}
         with engine.connect() as conn:
             assert conn.execute(text("SELECT count(*) FROM pg_type WHERE typname = 'alert_delivery'")).scalar_one() == 0
+            # The previous bot posts every row without posted_at: the stale one must not be among them.
+            old_cursor = conn.execute(text("SELECT symbol FROM alerts WHERE posted_at IS NULL ORDER BY id")).scalars().all()
+            stale = conn.execute(
+                text("SELECT posted_at = triggered_at FROM alerts WHERE symbol = 'CCC'")
+            ).scalar_one()
+            assert conn.execute(text("SELECT count(*) FROM alerts")).scalar_one() == 3
+        assert old_cursor == ["BBB"]
+        assert stale is True
 
         command.upgrade(config, "head")
     finally:
@@ -451,6 +507,88 @@ def test_0020_flags_the_stored_bars_adjusted_and_downgrade_flags_them_unadjusted
             assert conn.execute(text("SELECT count(*) FROM daily_bar WHERE NOT adjusted")).scalar_one() == 3
 
         command.upgrade(config, "head")
+    finally:
+        engine.dispose()
+
+
+COMPRESSED_BAR_SYMBOLS = 150
+COMPRESSED_BAR_DAYS = 700  # 105,000 bars, over Timescale's 100,000 decompressed tuples per transaction
+
+
+def _seed_compressed_bars(conn, *, adjusted: bool) -> set[str]:
+    """Years of old bars in compressed chunks, plus one recent bar in a chunk the compression
+    policy has not reached. Returns the chunks that are compressed."""
+    conn.execute(
+        text(
+            "INSERT INTO daily_bar (symbol, session_date, open, high, low, close, volume, fetched_at, adjusted)"
+            " SELECT 'S' || s, DATE '2020-01-01' + d, 10, 11, 9, 10.5, 1000, now(), :adjusted"
+            " FROM generate_series(1, :symbols) s, generate_series(0, :days - 1) d"
+        ),
+        {"symbols": COMPRESSED_BAR_SYMBOLS, "days": COMPRESSED_BAR_DAYS, "adjusted": adjusted},
+    )
+    conn.execute(
+        text(
+            "INSERT INTO daily_bar (symbol, session_date, open, high, low, close, volume, fetched_at, adjusted)"
+            " VALUES ('NEW', CURRENT_DATE, 10, 11, 9, 10.5, 1000, now(), :adjusted)"
+        ),
+        {"adjusted": adjusted},
+    )
+    conn.execute(
+        text(
+            "SELECT compress_chunk(c, if_not_compressed => true)"
+            " FROM show_chunks('daily_bar', older_than => DATE '2024-01-01') c"
+        )
+    )
+    return _compressed_bar_chunks(conn)
+
+
+def _compressed_bar_chunks(conn) -> set[str]:
+    return set(
+        conn.execute(
+            text(
+                "SELECT chunk_name FROM timescaledb_information.chunks"
+                " WHERE hypertable_name = 'daily_bar' AND is_compressed"
+            )
+        ).scalars()
+    )
+
+
+def _partially_compressed_bar_chunks(conn) -> int:
+    """Chunks holding rows outside their compressed form, which is how an UPDATE leaves them."""
+    return conn.execute(
+        text(
+            "SELECT count(*) FROM _timescaledb_catalog.chunk c"
+            " JOIN _timescaledb_catalog.hypertable h ON h.id = c.hypertable_id"
+            " WHERE h.table_name = 'daily_bar' AND c.status & 8 <> 0"
+        )
+    ).scalar_one()
+
+
+@pytest.mark.parametrize(("start", "target", "adjusted"), [("0019", "0020", True), ("0020", "0019", False)])
+def test_0020_flags_more_compressed_bars_than_one_transaction_may_decompress(
+    scratch_url, start, target, adjusted
+):
+    config = migration_config(scratch_url)
+    engine = create_engine(scratch_url)
+    try:
+        command.upgrade(config, start)
+        with engine.begin() as conn:
+            compressed = _seed_compressed_bars(conn, adjusted=not adjusted)
+        assert len(compressed) > 1
+
+        if adjusted:
+            command.upgrade(config, target)
+        else:
+            command.downgrade(config, target)
+
+        with engine.connect() as conn:
+            total = COMPRESSED_BAR_SYMBOLS * COMPRESSED_BAR_DAYS + 1
+            flagged = conn.execute(
+                text("SELECT count(*) FROM daily_bar WHERE adjusted = :a"), {"a": adjusted}
+            ).scalar_one()
+            assert flagged == total
+            assert _compressed_bar_chunks(conn) == compressed
+            assert _partially_compressed_bar_chunks(conn) == 0
     finally:
         engine.dispose()
 
