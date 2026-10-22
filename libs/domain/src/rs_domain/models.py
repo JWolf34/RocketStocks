@@ -42,6 +42,9 @@ class Verdict(StrEnum):
     STALE = "stale"
 
 
+# The one Trigger so far, by the name stored on its Alerts, candidates and Outcomes.
+POPULARITY_SURGE = "popularity_surge"
+
 # After an outage, an Alert or reply older than this (from its hit) is recorded as stale and
 # never posted. The bot enforces it; the Outcomes job reads it to know a row can no longer post.
 ALERT_STALE_AFTER = timedelta(hours=1)

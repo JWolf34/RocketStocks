@@ -5,10 +5,10 @@ from datetime import UTC, datetime, time, timedelta
 import httpx
 import pytest
 
+from rs_domain import EASTERN
 from rs_ingest.cron import CronTable, Daily, Every
 from rs_ingest.jobs import Dependencies, register_jobs
 from rs_ingest.rate_limit import RateLimiter
-from rs_ingest.surge_bars import EASTERN
 from rs_observability import HealthTracker, QuietFailure, SourceFailed
 from rs_sources import ExchangeCalendar
 from rs_sources.nasdaq import EARNINGS_URL
