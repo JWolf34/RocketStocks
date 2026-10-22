@@ -735,9 +735,9 @@ class TestReplies:
         assert len(rig.quotes.symbols) == lookups
 
     async def test_strength_up_by_the_margin_replies_and_less_is_a_repeat(self, rig):
-        rig.scorer.by_ticker_and_time[("SURGER", T0)] = scored(0.90)
-        rig.scorer.by_ticker_and_time[("SURGER", T1)] = scored(0.90 + REPLY_STRENGTH_MARGIN - 0.01)
-        rig.scorer.by_ticker_and_time[("SURGER", T2)] = scored(0.90 + REPLY_STRENGTH_MARGIN)
+        rig.scorer.by_ticker_and_time[("SURGER", T0)] = scored(0.80, bar=0.7)
+        rig.scorer.by_ticker_and_time[("SURGER", T1)] = scored(0.80 + REPLY_STRENGTH_MARGIN - 0.01, bar=0.7)
+        rig.scorer.by_ticker_and_time[("SURGER", T2)] = scored(0.80 + REPLY_STRENGTH_MARGIN, bar=0.7)
 
         for at in (T0, T1, T2):
             await rig.run_at(at + timedelta(seconds=20))
@@ -745,17 +745,17 @@ class TestReplies:
         assert [v for *_, v in await rig.verdicts()] == ["posted", "repeat", "reply"]
         payload = EscalationPayload.model_validate((await rig.alerts())[1].payload)
         assert payload.new_rules == ()
-        assert (payload.strength_before, payload.strength_after) == (0.90, 0.90 + REPLY_STRENGTH_MARGIN)
+        assert (payload.strength_before, payload.strength_after) == (0.80, 0.80 + REPLY_STRENGTH_MARGIN)
 
     async def test_a_reply_on_a_new_sub_rule_and_higher_strength_carries_both(self, rig):
-        rig.scorer.by_ticker_and_time[("SURGER", T0)] = scored(0.90)
-        rig.scorer.by_ticker_and_time[("SURGER", T1)] = scored(0.97)
+        rig.scorer.by_ticker_and_time[("SURGER", T0)] = scored(0.80, bar=0.7)
+        rig.scorer.by_ticker_and_time[("SURGER", T1)] = scored(0.97, bar=0.7)
 
         await self._alert_then(rig, [both_rules("SURGER")])
 
         payload = EscalationPayload.model_validate((await rig.alerts())[1].payload)
         assert payload.new_rules == ("rank_jump",)
-        assert (payload.strength_before, payload.strength_after) == (0.90, 0.97)
+        assert (payload.strength_before, payload.strength_after) == (0.80, 0.97)
 
     async def test_a_stock_gets_at_most_a_few_replies_a_day(self, rig):
         boundaries = [T0 + timedelta(minutes=30 * i) for i in range(MAX_REPLIES_PER_STOCK_DAY + 3)]

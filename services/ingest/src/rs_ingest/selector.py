@@ -25,7 +25,7 @@ DAILY_BUDGET = 5
 BAR_TARGET_PER_DAY = DAILY_BUDGET
 # How far a hit's strength must rise above the highest strength already announced for
 # the stock that day to reply on strength alone; strengths are percentiles in [0, 1].
-REPLY_STRENGTH_MARGIN = 0.05
+REPLY_STRENGTH_MARGIN = 0.10
 MAX_REPLIES_PER_STOCK_DAY = 3
 
 

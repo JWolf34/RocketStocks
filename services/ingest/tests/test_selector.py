@@ -107,16 +107,16 @@ class TestAStockAlreadyAlertedToday:
         assert verdict(0.2, event=hit(SubRule.RANK_JUMP), stock=alerted(0.95)) is Verdict.REPLY
 
     def test_strength_up_by_the_margin_is_a_reply(self):
-        stock = alerted(0.90)
+        stock = alerted(0.80)
 
-        assert verdict(0.90 + REPLY_STRENGTH_MARGIN, stock=stock) is Verdict.REPLY
-        assert verdict(0.90 + REPLY_STRENGTH_MARGIN - 0.001, stock=stock) is Verdict.REPEAT
+        assert verdict(0.80 + REPLY_STRENGTH_MARGIN, stock=stock) is Verdict.REPLY
+        assert verdict(0.80 + REPLY_STRENGTH_MARGIN - 0.001, stock=stock) is Verdict.REPEAT
 
     def test_strength_up_is_measured_from_the_highest_announced_so_far(self):
-        after_a_reply = announce(alerted(0.90), ["mention_surge"], 0.96, reply=True)
+        after_a_reply = announce(alerted(0.70), ["mention_surge"], 0.81, reply=True)
 
-        assert after_a_reply.strength == 0.96
-        assert verdict(0.96 + REPLY_STRENGTH_MARGIN - 0.001, stock=after_a_reply) is Verdict.REPEAT
+        assert after_a_reply.strength == 0.81
+        assert verdict(0.81 + REPLY_STRENGTH_MARGIN - 0.001, stock=after_a_reply) is Verdict.REPEAT
 
     def test_a_stock_announced_before_strength_was_stored_escalates_only_by_sub_rule(self):
         unknown = alerted(None)
@@ -158,11 +158,11 @@ class TestEscalation:
     def test_names_the_new_rules_and_what_the_strength_rose_from(self):
         both = hit(SubRule.MENTION_SURGE, SubRule.RANK_JUMP)
 
-        found = escalation(both, 0.99, alerted(0.90))
+        found = escalation(both, 0.99, alerted(0.80))
 
         assert found is not None
         assert found.new_rules == (SubRule.RANK_JUMP,)
-        assert found.previous_strength == 0.90
+        assert found.previous_strength == 0.80
         assert found.by == ("sub_rule", "strength")
 
     def test_is_none_when_nothing_is_added(self):
