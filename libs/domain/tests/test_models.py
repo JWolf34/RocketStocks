@@ -143,7 +143,7 @@ class TestPopularitySnapshot:
 
     def test_rejects_unknown_origin(self):
         with pytest.raises(ValidationError):
-            PopularitySnapshot(**self.fields(origin="legacy"))
+            PopularitySnapshot(**self.fields(origin="unknown"))
 
     def test_rejects_naive_polled_at(self):
         with pytest.raises(ValidationError, match="naive"):
