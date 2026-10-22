@@ -24,11 +24,10 @@ from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import date, datetime, timedelta
 from typing import Protocol
-from zoneinfo import ZoneInfo
 
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from rs_domain import Clock, StoredDailyBar, TradingCalendar
+from rs_domain import Clock, StoredDailyBar, TradingCalendar, eastern_day
 from rs_ingest.rate_limit import RateLimiter
 from rs_ingest.replay import replayed_hits
 from rs_persistence import DailyBarRepository
@@ -37,8 +36,6 @@ from rs_sources.schwab import DailyHistory, SchwabAuthError, SchwabResponseError
 logger = logging.getLogger(__name__)
 
 BENCHMARK = "SPY"
-
-EASTERN = ZoneInfo("America/New_York")
 
 # An Outcome's typical move is measured over the 250 sessions before entry; 270 leaves slack.
 LOOKBACK_SESSIONS = 270
@@ -94,7 +91,7 @@ async def first_event_dates(
     """Eastern date of each surge ticker's first event, over both popularity origins."""
     first: dict[str, date] = {}
     async for event in replayed_hits(session_factory, now):
-        day = event.polled_at.astimezone(EASTERN).date()
+        day = eastern_day(event.polled_at)
         if event.ticker not in first or day < first[event.ticker]:
             first[event.ticker] = day
     return first
@@ -107,7 +104,7 @@ def lookback_start(calendar: TradingCalendar, day: date) -> date:
 
 
 def last_settled_session(calendar: TradingCalendar, now: datetime) -> date:
-    today = now.astimezone(EASTERN).date()
+    today = eastern_day(now)
     for day in reversed(calendar.sessions_in_range(today - timedelta(days=10), today)):
         if calendar.session_close(day) + SETTLE <= now:
             return day

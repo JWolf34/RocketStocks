@@ -9,10 +9,10 @@ from datetime import UTC, datetime, time, timedelta
 import pytest
 from sqlalchemy import select
 
+from rs_domain import EASTERN
 from rs_ingest.cron import CronTable, Daily
 from rs_ingest.jobs import Dependencies, register_jobs
 from rs_ingest.outcomes import main
-from rs_ingest.surge_bars import EASTERN
 from rs_ingest.track_record import (
     COMMAND,
     JOB_NAME,

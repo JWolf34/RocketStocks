@@ -12,7 +12,7 @@ from datetime import time, timedelta
 import httpx
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from rs_domain import Clock, TradingCalendar
+from rs_domain import EASTERN, Clock, TradingCalendar, eastern_day
 from rs_ingest.alert_writer import AlertWriter
 from rs_ingest.cron import CronTable, Daily, Every, Job
 from rs_ingest.monitored import (
@@ -28,7 +28,7 @@ from rs_ingest.rate_limit import RateLimiter
 from rs_ingest.schwab_session import SchwabSession
 from rs_ingest.scoring import PopularityScorer
 from rs_ingest.selector import BAR_TARGET_PER_DAY
-from rs_ingest.surge_bars import EASTERN, SurgeBarsError, sync_surge_bars
+from rs_ingest.surge_bars import SurgeBarsError, sync_surge_bars
 from rs_ingest.surge_facts import SurgeFactsGatherer
 from rs_ingest.track_record import track_record_job
 from rs_observability import HealthTracker, QuietFailure, Source, SweepTally
@@ -97,7 +97,7 @@ def register_jobs(cron: CronTable, deps: Dependencies) -> None:
 
     async def warm_earnings_calendar() -> None:
         try:
-            fetched = await nasdaq.warm(deps.clock.now().astimezone(EASTERN).date(), SCAN_WEEKDAYS)
+            fetched = await nasdaq.warm(eastern_day(deps.clock.now()), SCAN_WEEKDAYS)
         except EarningsWarmError as exc:
             await finish_sweep(
                 deps.health, Source.NASDAQ, SweepTally(attempted=exc.attempted, failed=exc.failed), exc

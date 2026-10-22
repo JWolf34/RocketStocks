@@ -13,9 +13,9 @@ import sys
 from collections.abc import Mapping, Sequence
 from datetime import time, timedelta
 
+from rs_domain import EASTERN
 from rs_ingest.cron import Daily, Job
 from rs_ingest.outcomes import DSN_VARIABLE
-from rs_ingest.surge_bars import EASTERN
 
 logger = logging.getLogger(__name__)
 

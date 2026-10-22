@@ -22,6 +22,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from rs_analysis.popularity_surge import SurgeEvent, evaluate_latest
 from rs_analysis.strength import ReferenceUnavailable
 from rs_domain import (
+    POPULARITY_SURGE,
     Alert,
     Candidate,
     Clock,
@@ -49,7 +50,6 @@ from rs_sources import ApeWisdomError, ApeWisdomRow
 
 logger = logging.getLogger(__name__)
 
-TRIGGER = "popularity_surge"
 POLL_MINUTES = 30
 POLL_INTERVAL = timedelta(minutes=POLL_MINUTES)
 # Alerts being written at once; each already fans its facts out in parallel.
@@ -151,7 +151,7 @@ class PopularityPoll:
         earlier = polled_at - POLL_INTERVAL
         async with self._session_factory() as session:
             snapshots = await PopularityRepository(session).list_between(earlier, polled_at + POLL_INTERVAL)
-            decided = await CandidateRepository(session).list_window(TRIGGER, earlier, polled_at + POLL_INTERVAL)
+            decided = await CandidateRepository(session).list_window(POPULARITY_SURGE, earlier, polled_at + POLL_INTERVAL)
         known = {(c.rule_version, c.symbol, c.hit_at) for c in decided}
 
         # Imported history is never caught up: only a live poll can have missed its hit.
@@ -250,7 +250,7 @@ class PopularityPoll:
     async def _write_one(self, decision: Decision, gatherer: SurgeFactsGatherer, current: datetime) -> None:
         event = decision.event
         candidate = Candidate(
-            trigger=TRIGGER,
+            trigger=POPULARITY_SURGE,
             rule_version=event.rule_version,
             symbol=event.ticker,
             hit_at=event.polled_at,
@@ -267,7 +267,7 @@ class PopularityPoll:
             gathered = await gatherer.gather(event.ticker, self._clock.now())
             alert = Alert(
                 symbol=event.ticker,
-                trigger=TRIGGER,
+                trigger=POPULARITY_SURGE,
                 triggered_at=event.polled_at,
                 payload=_payload(event, gathered.facts).model_dump(mode="json"),
                 rule_version=event.rule_version,
@@ -298,7 +298,7 @@ class PopularityPoll:
             raise RuntimeError(f"{event.ticker} has no Alert on {eastern_day(event.polled_at)} to reply to")
         return Alert(
             symbol=event.ticker,
-            trigger=TRIGGER,
+            trigger=POPULARITY_SURGE,
             triggered_at=event.polled_at,
             payload=_reply_payload(decision, found).model_dump(mode="json"),
             rule_version=event.rule_version,

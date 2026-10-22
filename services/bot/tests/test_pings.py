@@ -13,9 +13,9 @@ from discord import app_commands
 
 from rs_bot.commands import SETUP_PERMISSIONS, register_commands
 from rs_bot.pings import NO_MAPPINGS, PingRoles
-from rs_bot.render import POPULARITY_SURGE
 from rs_bot.schwab_auth import SchwabAuthFlow
 from rs_bot.testing import FakeMember, FakeRoles
+from rs_domain import POPULARITY_SURGE
 from rs_persistence import TriggerRoleRepository
 
 SURGE_ROLE = 501

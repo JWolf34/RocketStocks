@@ -44,6 +44,7 @@ from rs_analysis.outcomes import (
 from rs_analysis.popularity_surge import RULE_VERSION
 from rs_domain import (
     ALERT_STALE_AFTER,
+    POPULARITY_SURGE,
     Clock,
     Delivery,
     Outcome,
@@ -52,11 +53,9 @@ from rs_domain import (
     TradingCalendar,
     eastern_day,
 )
-from rs_ingest.popularity_poll import TRIGGER
 from rs_ingest.replay import replayed_hits
 from rs_ingest.surge_bars import (
     BENCHMARK,
-    EASTERN,
     LOOKBACK_CALENDAR_DAYS,
     last_settled_session,
 )
@@ -101,8 +100,8 @@ async def discover_cases(
         key = (event.ticker, eastern_day(event.polled_at))
         replayed[key] = min(event.polled_at, replayed.get(key, event.polled_at))
     async with session_factory() as session:
-        stored = await CandidateRepository(session).first_hits_by_day(TRIGGER, RULE_VERSION)
-        posts = await AlertRepository(session).posts_by_day(TRIGGER, RULE_VERSION)
+        stored = await CandidateRepository(session).first_hits_by_day(POPULARITY_SURGE, RULE_VERSION)
+        posts = await AlertRepository(session).posts_by_day(POPULARITY_SURGE, RULE_VERSION)
 
     cases: list[Case] = []
     held_back = 0
@@ -136,7 +135,7 @@ async def measure_cases(
         return results, outcomes
 
     start = min(case.day for case in cases) - timedelta(days=LOOKBACK_CALENDAR_DAYS)
-    grid = SessionGrid.build(calendar, start, now.astimezone(EASTERN).date() + timedelta(days=GRID_AHEAD_DAYS))
+    grid = SessionGrid.build(calendar, start, eastern_day(now) + timedelta(days=GRID_AHEAD_DAYS))
     settled = grid.index_of(last_settled_session(calendar, now))
     if settled is None:
         raise OutcomesError("the last settled session is outside the session grid")
@@ -164,7 +163,7 @@ async def measure_cases(
                     if result.measure is not None:
                         outcomes.append(
                             Outcome(
-                                trigger=TRIGGER,
+                                trigger=POPULARITY_SURGE,
                                 rule_version=RULE_VERSION,
                                 symbol=case.symbol,
                                 day=case.day,
@@ -187,7 +186,7 @@ def track_records(
         summary = summarize(results[horizon])
         records.append(
             TrackRecord(
-                trigger=TRIGGER,
+                trigger=POPULARITY_SURGE,
                 rule_version=RULE_VERSION,
                 horizon=horizon,
                 computed_at=computed_at,
@@ -209,12 +208,12 @@ async def refresh_outcomes(
     records = track_records(cases, results, now)
     async with session_factory() as session:
         repo = TrackRecordRepository(session)
-        await repo.replace_outcomes(TRIGGER, RULE_VERSION, outcomes)
+        await repo.replace_outcomes(POPULARITY_SURGE, RULE_VERSION, outcomes)
         await repo.upsert(records)
         await session.commit()
     logger.info(
         "outcomes for %s v%s: %d cases (%d live, %d held back for an Alert that may still post); Outcomes %s",
-        TRIGGER,
+        POPULARITY_SURGE,
         RULE_VERSION,
         len(cases),
         sum(case.live for case in cases),

@@ -5,6 +5,7 @@ the fake Discord, which is what a process killed between a send and its record l
 
 from datetime import UTC, datetime, timedelta
 
+import discord
 from sqlalchemy import text
 
 from rs_bot.counters import new_counters
@@ -66,10 +67,12 @@ async def _mark_sending(session_factory, row_id: int) -> None:
         await s.commit()
 
 
-def _as_posted_before_the_crash(fake: FakeDiscord, row_id: int, alert: Alert, *, where: int = 0):
+def _as_posted_before_the_crash(
+    fake: FakeDiscord, row_id: int, alert: Alert, *, where: int = 0, at: datetime | None = None
+):
     """The message the killed process sent for `row_id`: the embed the bot renders, with the
-    row id as its nonce."""
-    return fake.plant(render(PendingAlert(id=row_id, alert=alert)), nonce=row_id, where=where)
+    row id as its nonce, created at `at` when that matters."""
+    return fake.plant(render(PendingAlert(id=row_id, alert=alert)), nonce=row_id, where=where, at=at)
 
 
 # -- the sending mark and the nonce ------------------------------------------------------
@@ -130,6 +133,31 @@ async def test_a_crash_after_the_send_is_recorded_from_history_not_sent_again(se
     assert row.thread_id == posted.id
     assert worker.counters["posts_reconciled_total"] == 1
     assert notices == []
+
+
+async def test_a_message_found_in_history_is_posted_when_it_was_created_not_when_found(session_factory):
+    alert = _alert("AAA")
+    (row_id,) = await _insert(session_factory, alert)
+    await _mark_sending(session_factory, row_id)
+    fake = FakeDiscord()
+    sent_at = HIT + timedelta(minutes=2)
+    posted = _as_posted_before_the_crash(fake, row_id, alert, at=sent_at)
+
+    await _worker(session_factory, fake).sweep()  # found at 14:35, after the 14:32 send
+
+    row = await _row(session_factory, row_id)
+    assert row.message_id == posted.id
+    assert row.posted_at == discord.utils.snowflake_time(posted.id)
+    assert abs(row.posted_at - sent_at) < timedelta(seconds=1)
+
+
+async def test_a_send_just_made_is_posted_at_the_database_clock(session_factory):
+    (row_id,) = await _insert(session_factory, _alert("AAA"))
+
+    await _worker(session_factory, FakeDiscord()).sweep()
+
+    posted_at = (await _row(session_factory, row_id)).posted_at
+    assert posted_at is not None and posted_at > datetime(2026, 8, 1, tzinfo=UTC)  # real now, not the fixed clock
 
 
 async def test_history_only_matches_the_bots_own_message_for_that_row(session_factory):
@@ -328,12 +356,15 @@ async def test_a_reply_crash_after_the_send_is_recorded_from_the_threads_history
     reply = _reply("AAA", alert_id)
     (reply_id,) = await _insert(session_factory, reply)
     await _mark_sending(session_factory, reply_id)
-    posted = _as_posted_before_the_crash(fake, reply_id, reply, where=thread_id)
+    sent_at = HIT + timedelta(minutes=21)
+    posted = _as_posted_before_the_crash(fake, reply_id, reply, where=thread_id, at=sent_at)
 
     await worker.sweep()
 
     assert fake.in_thread(thread_id) == [posted]
-    assert (await _row(session_factory, reply_id)).message_id == posted.id
+    row = await _row(session_factory, reply_id)
+    assert row.message_id == posted.id
+    assert row.posted_at is not None and abs(row.posted_at - sent_at) < timedelta(seconds=1)
 
 
 async def test_a_reply_waits_for_an_alert_that_has_not_posted_yet(session_factory):

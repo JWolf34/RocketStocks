@@ -9,12 +9,11 @@ import pytest
 from sqlalchemy import func, select, text
 
 from rs_analysis import popularity_surge
-from rs_domain import PopularityOrigin, PopularitySnapshot, StoredDailyBar
+from rs_domain import EASTERN, PopularityOrigin, PopularitySnapshot, StoredDailyBar
 from rs_ingest import surge_bars
 from rs_ingest.rate_limit import RateLimiter
 from rs_ingest.surge_bars import (
     BENCHMARK,
-    EASTERN,
     LOOKBACK_SESSIONS,
     SurgeBarsError,
     first_event_dates,
