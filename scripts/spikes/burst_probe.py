@@ -3,7 +3,7 @@
 Ramps SPY quote-request pace (1/s → 2/s → 4/s, ~120 requests max) until the
 first 429, logging every response's status + full headers (incl. Retry-After)
 to data/spike-recordings/burst-probe-<date>.jsonl. Refuses to run during RTH
-so rate-limit fallout can never touch the live v1 bot's market-hours calls.
+so rate-limit fallout can never touch the live ingest daemon's market-hours calls.
 
     .venv/bin/python scripts/spikes/burst_probe.py
 """
@@ -29,7 +29,7 @@ def in_rth() -> bool:
 
 def main() -> int:
     if in_rth():
-        sys.exit("market is open — run the burst probe AFTER the close (protects the live v1 bot)")
+        sys.exit("market is open — run the burst probe AFTER the close (protects the live ingest daemon)")
     client = build_client()
     out = SPIKE_DATA_DIR / f"burst-probe-{today_tag()}.jsonl"
     out.parent.mkdir(parents=True, exist_ok=True)

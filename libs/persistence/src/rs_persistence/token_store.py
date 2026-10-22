@@ -2,8 +2,7 @@
 
 Owns its transactions (unlike the per-session repositories): schwab-py fires
 the write callback at arbitrary refresh moments, so the store opens a short
-session per operation from the injected factory. v1 pattern:
-legacy/src/rocketstocks/data/schwab_token_store.py.
+session per operation from the injected factory.
 """
 
 import asyncio
@@ -59,7 +58,7 @@ class SchwabTokenStore:
         schwab-py invokes it from inside the running event loop, so the save
         is scheduled as a task rather than awaited. **kwargs absorbs extras
         (e.g. refresh_token) schwab-py passes on auto-refresh; the token dict
-        already contains them (v1-proven behavior).
+        already contains them.
         """
         task = asyncio.get_running_loop().create_task(self.save(token))
         # The loop holds tasks weakly — without this ref a pending save can be

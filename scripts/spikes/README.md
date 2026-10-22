@@ -46,7 +46,7 @@ numbers each cycle).
 ```
 
 The burst probe runs AFTER the close only — never during RTH — so any rate-limit
-fallout can't hit the live v1 bot's market-hours calls (the script refuses to run
+fallout can't hit the live ingest daemon's market-hours calls (the script refuses to run
 while the session is open). Passive 429s during the day are unlikely: the chain
 cadence is ~120 requests/hour against a documented ~120/minute limit, which is
 exactly why the probe exists.
