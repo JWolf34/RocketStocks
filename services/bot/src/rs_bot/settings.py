@@ -1,8 +1,8 @@
 """Bot configuration via pydantic-settings (ingest pattern).
 
 RS_DB_URL is the same variable ingest and rs_migrate consume. The Discord
-credential is RS_BOT_DISCORD_TOKEN — deliberately not v1's DISCORD_TOKEN, so
-v2 can never read v1's credential while both run.
+credential is RS_BOT_DISCORD_TOKEN — deliberately not a bare DISCORD_TOKEN, so
+a stray shell export can never supply it.
 Bot tunables carry an RS_BOT_ prefix so a stray shell export can
 never silently reconfigure the daemon.
 

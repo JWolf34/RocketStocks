@@ -177,7 +177,7 @@ class FakeMember:
             raise self.fail_with
         if role_id in self.forbidden:
             response = SimpleNamespace(status=403, reason="Missing Permissions")
-            raise discord.Forbidden(response, "Missing Permissions")  # type: ignore[arg-type]
+            raise discord.Forbidden(response, "Missing Permissions")
 
 
 class FixedClock:
