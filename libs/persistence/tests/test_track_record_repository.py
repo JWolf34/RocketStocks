@@ -143,3 +143,9 @@ async def test_a_rerun_replaces_the_row_instead_of_adding_one(session_factory):
 def test_too_few_cases_below_thirty_outcomes():
     assert _record(outcomes=29).too_few_cases
     assert not _record(outcomes=30).too_few_cases
+
+
+def test_too_few_move_sizes_counts_only_outcomes_with_a_move_size():
+    assert _record(outcomes=40, no_move_size=11).too_few_move_sizes
+    assert not _record(outcomes=40, no_move_size=10).too_few_move_sizes
+    assert _record(outcomes=29, no_move_size=0).too_few_move_sizes

@@ -252,7 +252,7 @@ Done when a real Popularity Alert posts and carries a Track record.
    a one-line talking point naming the mentions multiple and the rank move;
    the reasons (the Trigger and the sub-rules that fired);
    the price with its As-of time, as a timestamp in your own zone;
-   the Track record as a small table per horizon (1, 5 and 20 days), with its case count and how many are live, and "too few cases" for a horizon under 30 Outcomes;
+   the Track record as a small table per horizon (1, 5 and 20 days), with its case count and how many are live, and "too few cases" for a horizon under 30 Outcomes (the shares and the median multiple show "few" when fewer than 30 of them have a move size, and a "no size" row counts those without one);
    and the next Catalyst, an earnings date marked estimated when it is.
    A fact that could not be gathered shows as `unavailable:` with its reason, and the Ops ping names it.
    The footer opens with `alert #<id>` and names the Trigger version.
@@ -264,6 +264,7 @@ Done when a real Popularity Alert posts and carries a Track record.
    There is one row per horizon (1, 5 and 20 sessions).
    `live_cases` counts the cases the live poll stored; the rest are replayed from imported and stored history, which the rule was written having seen.
    The bot says "too few cases" for a horizon with fewer than 30 `outcomes`.
+   It shows "few" for the shares and the median multiple when `outcomes - no_move_size` is under 30, and counts `no_move_size` in the "no size" row.
 5. To check one Outcome by hand, list a stock's cases and compare with its daily bars:
    ```
    psql -c "SELECT day, horizon, case_at, entry_session, exit_session, stock_return, benchmark_return, excess_return, move_multiple, live FROM outcome WHERE symbol = 'GME' ORDER BY day, horizon"

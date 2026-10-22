@@ -217,27 +217,34 @@ def _earnings_text(payload: PopularitySurgePayload) -> str:
     return text + (", estimated" if fact.estimated else "")
 
 
-def _measures(record: TrackRecord, *, with_unpriced: bool = False) -> list[tuple[str, str]]:
-    """One horizon's cells by row; "n/a" where nothing backs the number."""
+def _measures(
+    record: TrackRecord, *, with_unpriced: bool = False, with_no_size: bool = False
+) -> list[tuple[str, str]]:
+    """One horizon's cells by row; "n/a" where nothing backs the number, "few" where too few
+    Outcomes have a move size to back it."""
 
-    def cell(value: float | None, scale: float, fmt: str, unit: str) -> str:
+    def cell(value: float | None, scale: float, fmt: str, unit: str, *, sized: bool = False) -> str:
+        if sized and record.too_few_move_sizes:
+            return "few"
         return "n/a" if value is None else f"{format(value * scale, fmt)}{unit}"
 
     return [
         ("vs SPY", cell(record.median_excess, 100, "+.1f", "%")),
-        ("2x+", cell(record.share_at_2x, 100, ".0f", "%")),
-        ("ordinary", cell(record.ordinary_share, 100, ".0f", "%")),
-        ("x typical", cell(record.median_multiple, 1, ".1f", "x")),
+        ("2x+", cell(record.share_at_2x, 100, ".0f", "%", sized=True)),
+        ("ordinary", cell(record.ordinary_share, 100, ".0f", "%", sized=True)),
+        ("x typical", cell(record.median_multiple, 1, ".1f", "x", sized=True)),
         ("Outcomes", str(record.outcomes)),
+        *([("no size", str(record.no_move_size))] if with_no_size else []),
         *([("unpriced", str(record.unpriced))] if with_unpriced else []),
     ]
 
 
 def _table(records: Sequence[TrackRecord]) -> str:
     """Horizons as columns, the measures as rows, in a code block so it lines up on a phone."""
-    # The unpriced row appears for every horizon once any has one.
+    # The unpriced and no-size rows appear for every horizon once any has one.
     with_unpriced = any(record.unpriced for record in records)
-    columns = [_measures(record, with_unpriced=with_unpriced) for record in records]
+    with_no_size = any(record.no_move_size for record in records)
+    columns = [_measures(record, with_unpriced=with_unpriced, with_no_size=with_no_size) for record in records]
     rows = [(name, [column[i][1] for column in columns]) for i, (name, _) in enumerate(columns[0])]
     label_width = max(len(name) for name, _ in rows)
     cell_width = max(len(cell) for _, cells in rows for cell in cells) + 2
@@ -260,8 +267,13 @@ def _track_record_text(track_record: Sequence[TrackRecord], failed: bool) -> str
             "vs SPY: median excess return. 2x+: share of cases that moved 2x the stock's typical "
             "move or more, against the same stocks' ordinary share. x typical: median multiple."
         )
-        if any(cell == "n/a" for r in enough for _, cell in _measures(r)):
+        cells = [cell for r in enough for _, cell in _measures(r)]
+        if "n/a" in cells:
             lines.append("n/a: not measurable (too little price history or missing bars).")
+        if "few" in cells:
+            lines.append(f"few: too few cases ({TOO_FEW_CASES_BELOW} needed) with a known typical move.")
+        if any(r.no_move_size for r in enough):
+            lines.append("no size: cases with too little price history to know the stock's typical move.")
     lines.extend(
         f"{r.horizon}d: too few cases ({r.outcomes} Outcomes, {TOO_FEW_CASES_BELOW} needed)"
         for r in track_record

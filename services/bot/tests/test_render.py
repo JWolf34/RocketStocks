@@ -238,6 +238,46 @@ def test_a_horizon_below_thirty_outcomes_says_too_few_cases_and_shows_no_numbers
     assert "20d" not in block and "5d" in block  # the horizons with enough cases keep their numbers
 
 
+def test_a_horizon_with_few_move_sizes_shows_few_for_the_shares_but_keeps_the_excess_and_count():
+    # 40 Outcomes but 15 without a move size: 25 are sized, under 30.
+    thin = _track_record(outcomes=40)
+    thin[1] = thin[1].model_copy(update={"no_move_size": 15})
+
+    value = _fields(render(_pending(), thin))["Track record"]
+
+    block = value.split("```")[1]
+    assert re.search(r"2x\+\s+25%\s+few\s+25%", block)
+    assert re.search(r"ordinary\s+7%\s+few\s+7%", block)
+    assert re.search(r"x typical\s+0.9x\s+few\s+0.9x", block)
+    assert re.search(r"vs SPY\s+-1.2%\s+-1.2%\s+-1.2%", block)  # direction rests on every Outcome
+    assert re.search(r"Outcomes\s+40\s+40\s+40", block)
+    assert "few: too few cases (30 needed) with a known typical move." in value
+    assert max(len(line) for line in block.splitlines()) <= 32
+
+
+def test_exactly_thirty_sized_outcomes_are_enough_for_the_shares():
+    record = _track_record(outcomes=32)[0].model_copy(update={"no_move_size": 2})
+
+    value = _fields(render(_pending(), [record]))["Track record"]
+
+    assert "few" not in value and "25%" in value
+
+
+def test_cases_without_a_move_size_are_counted_in_the_table():
+    value = _fields(render(_pending(), _track_record()))["Track record"]
+
+    assert re.search(r"no size\s+2\s+2\s+2", value)
+    assert "no size: cases with too little price history" in value
+
+
+def test_no_size_row_is_left_out_when_every_case_has_one():
+    records = [r.model_copy(update={"no_move_size": 0}) for r in _track_record()]
+
+    value = _fields(render(_pending(), records))["Track record"]
+
+    assert "no size" not in value
+
+
 def test_every_horizon_too_thin_shows_only_too_few_cases():
     value = _fields(render(_pending(), _track_record(outcomes=10)))["Track record"]
 
