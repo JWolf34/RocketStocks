@@ -315,6 +315,47 @@ def test_0016_stops_and_names_two_alerts_that_share_a_stock_and_eastern_day(scra
         engine.dispose()
 
 
+def test_0016_downgrade_marks_an_unposted_reply_handled_for_the_previous_bot(scratch_url):
+    config = migration_config(scratch_url)
+    engine = create_engine(scratch_url)
+    try:
+        command.upgrade(config, "0016")
+        with engine.begin() as conn:
+            alert_id = conn.execute(
+                text(
+                    "INSERT INTO alerts (symbol, trigger, triggered_at, payload, posted_at)"
+                    " VALUES ('GME', 't', '2026-10-20 15:00+00', '{}', '2026-10-20 15:01+00') RETURNING id"
+                )
+            ).scalar_one()
+            conn.execute(
+                text(
+                    "INSERT INTO alerts (symbol, trigger, triggered_at, payload, reply_to) VALUES"
+                    " ('GME', 't', '2026-10-20 16:00+00', '{}', :alert),"
+                    " ('GME', 't', '2026-10-20 17:00+00', '{}', :alert)"
+                ),
+                {"alert": alert_id},
+            )
+            conn.execute(
+                text("UPDATE alerts SET posted_at = '2026-10-20 17:01+00' WHERE triggered_at = '2026-10-20 17:00+00'")
+            )
+
+        command.downgrade(config, "0015")
+        with engine.connect() as conn:
+            rows = conn.execute(
+                text("SELECT triggered_at, posted_at FROM alerts ORDER BY triggered_at")
+            ).all()
+            old_cursor = conn.execute(text("SELECT count(*) FROM alerts WHERE posted_at IS NULL")).scalar_one()
+        # The unposted reply reads as handled (its own time); the posted ones are untouched.
+        assert rows == [
+            (datetime(2026, 10, 20, 15, tzinfo=UTC), datetime(2026, 10, 20, 15, 1, tzinfo=UTC)),
+            (datetime(2026, 10, 20, 16, tzinfo=UTC), datetime(2026, 10, 20, 16, tzinfo=UTC)),
+            (datetime(2026, 10, 20, 17, tzinfo=UTC), datetime(2026, 10, 20, 17, 1, tzinfo=UTC)),
+        ]
+        assert old_cursor == 0
+    finally:
+        engine.dispose()
+
+
 def test_0015_adds_bar_request_and_downgrade_drops_it(scratch_url):
     config = migration_config(scratch_url)
     engine = create_engine(scratch_url)
@@ -339,11 +380,14 @@ def test_0017_marks_posted_rows_posted_and_downgrade_returns_the_old_cursor(scra
                 text(
                     "INSERT INTO alerts (symbol, trigger, triggered_at, payload, posted_at) VALUES"
                     " ('AAA', 't', '2026-10-19 15:00+00', '{}', '2026-10-19 15:01+00'),"
-                    " ('BBB', 't', '2026-10-19 15:00+00', '{}', NULL)"
+                    " ('BBB', 't', '2026-10-19 15:00+00', '{}', NULL),"
+                    " ('CCC', 't', '2026-10-19 15:00+00', '{}', NULL)"
                 )
             )
 
         command.upgrade(config, "head")
+        with engine.begin() as conn:
+            conn.execute(text("UPDATE alerts SET delivery = 'stale' WHERE symbol = 'CCC'"))
         with engine.connect() as conn:
             rows = conn.execute(
                 text("SELECT symbol, delivery::text, sending_at, message_id, thread_id FROM alerts ORDER BY id")
@@ -351,7 +395,11 @@ def test_0017_marks_posted_rows_posted_and_downgrade_returns_the_old_cursor(scra
             index = conn.execute(
                 text("SELECT indexdef FROM pg_indexes WHERE indexname = 'ix_alerts_undelivered'")
             ).scalar_one()
-        assert rows == [("AAA", "posted", None, None, None), ("BBB", "pending", None, None, None)]
+        assert rows == [
+            ("AAA", "posted", None, None, None),
+            ("BBB", "pending", None, None, None),
+            ("CCC", "stale", None, None, None),
+        ]
         assert "WHERE (delivery = ANY (ARRAY['pending'::alert_delivery, 'sending'::alert_delivery]))" in index
 
         command.downgrade(config, "0016")
@@ -360,6 +408,14 @@ def test_0017_marks_posted_rows_posted_and_downgrade_returns_the_old_cursor(scra
         assert {i["name"] for i in insp.get_indexes("alerts")} >= {"ix_alerts_unposted"}
         with engine.connect() as conn:
             assert conn.execute(text("SELECT count(*) FROM pg_type WHERE typname = 'alert_delivery'")).scalar_one() == 0
+            # The previous bot posts every row without posted_at: the stale one must not be among them.
+            old_cursor = conn.execute(text("SELECT symbol FROM alerts WHERE posted_at IS NULL ORDER BY id")).scalars().all()
+            stale = conn.execute(
+                text("SELECT posted_at = triggered_at FROM alerts WHERE symbol = 'CCC'")
+            ).scalar_one()
+            assert conn.execute(text("SELECT count(*) FROM alerts")).scalar_one() == 3
+        assert old_cursor == ["BBB"]
+        assert stale is True
 
         command.upgrade(config, "head")
     finally:
