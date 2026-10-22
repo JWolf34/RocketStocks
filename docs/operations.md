@@ -356,6 +356,7 @@ Goal: a send the bot made but did not record is found in history after a restart
    ```
 3. Expect the row back at `posted` with the same `message_id` as before and Discord still showing one message.
    The bot log has `was sent before the last stop and never recorded`, and `posts_reconciled_total` is 1 on the metrics port.
+   `posted_at` is the time the message was created in Discord, not the restart time, because the Track record times a case from it.
 
 ## Operating procedures
 

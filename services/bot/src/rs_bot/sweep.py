@@ -239,7 +239,8 @@ class SweepWorker:
                     found,
                 )
                 self.counters["posts_reconciled_total"] += 1
-                await self._record_posted(session, repo, item, found)
+                # The message's own creation time is when it was posted, however late this record is.
+                await self._record_posted(session, repo, item, found, discord.utils.snowflake_time(found))
                 return
 
         if self._clock.now() - alert.triggered_at > self._stale_after:
@@ -338,9 +339,14 @@ class SweepWorker:
         return await self._sender.find_reply(parent.thread_id, item.id, item.sending_at)
 
     async def _record_posted(
-        self, session: AsyncSession, repo: AlertRepository, item: PendingAlert, message_id: int
+        self,
+        session: AsyncSession,
+        repo: AlertRepository,
+        item: PendingAlert,
+        message_id: int,
+        sent_at: datetime | None = None,
     ) -> None:
-        posted_at = await repo.mark_posted(item.id, message_id)
+        posted_at = await repo.mark_posted(item.id, message_id, sent_at)
         await session.commit()  # per-row commit: a crash after this leaves nothing to reconcile
         self.counters["discord_posts_total"] += 1
         if posted_at is None:

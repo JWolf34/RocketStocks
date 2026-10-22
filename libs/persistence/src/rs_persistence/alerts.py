@@ -189,15 +189,23 @@ class AlertRepository:
         )
         return stamp is not None
 
-    async def mark_posted(self, alert_id: int, message_id: int) -> datetime | None:
-        """Record the Discord message and stamp `posted_at` with the DB-side clock (the
-        returned stamp feeds the lag log). The undelivered guard makes it idempotent:
-        None means the row was already settled (or never existed) and the first record
-        stands - the caller warns rather than overwrites."""
+    async def mark_posted(
+        self, alert_id: int, message_id: int, posted_at: datetime | None = None
+    ) -> datetime | None:
+        """Record the Discord message and stamp `posted_at` (the returned stamp feeds the lag
+        log): the DB-side clock for a send just made, or `posted_at` when the message was
+        found already sent, so a late record does not shift the time the Track record
+        measures from. The undelivered guard makes it idempotent: None means the row was
+        already settled (or never existed) and the first record stands - the caller warns
+        rather than overwrites."""
         return await self._session.scalar(
             update(AlertRow)
             .where(AlertRow.id == alert_id, AlertRow.delivery.in_(_UNDELIVERED))
-            .values(delivery=Delivery.POSTED, posted_at=func.now(), message_id=message_id)
+            .values(
+                delivery=Delivery.POSTED,
+                posted_at=func.now() if posted_at is None else posted_at,
+                message_id=message_id,
+            )
             .returning(AlertRow.posted_at)
         )
 

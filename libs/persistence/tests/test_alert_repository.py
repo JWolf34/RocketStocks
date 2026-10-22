@@ -258,6 +258,19 @@ async def test_mark_posted_records_the_message_stamps_dbside_and_clears_pending(
         assert await AlertRepository(s).list_undelivered() == []
 
 
+async def test_mark_posted_takes_the_time_the_message_was_created_when_given(session_factory):
+    alert_id = await _insert_committed(session_factory, ALERT)
+    sent_at = datetime(2026, 7, 6, 14, 32, tzinfo=UTC)
+
+    async with session_factory() as s:
+        stamp = await AlertRepository(s).mark_posted(alert_id, 123456789012345678, sent_at)
+        await s.commit()
+
+    assert stamp == sent_at
+    async with session_factory() as s:
+        assert (await s.get_one(AlertRow, alert_id)).posted_at == sent_at
+
+
 async def test_a_settled_row_is_never_marked_again(session_factory):
     # Already-settled and never-existed both report nothing done (the caller warns); the
     # first record is never overwritten - the audit trail survives.
