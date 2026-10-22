@@ -38,7 +38,7 @@ warn_required_dynamic_aliases = true
 
 # Third-party libraries that ship no types and no stubs.
 [[tool.mypy.overrides]]
-module = ["schwab.*", "authlib.*", "pandas.*", "pandas_market_calendars.*", "exchange_calendars.*"]
+module = ["schwab.*", "authlib.*", "exchange_calendars.*"]
 ignore_missing_imports = true
 
 # Ruff's defaults (E4, E7, E9, F) plus import sorting, pyupgrade and bugbear.
