@@ -1,7 +1,6 @@
-# v2 stack: TimescaleDB + one-shot migrate gate + ingest and bot, all
-# from one shared image (Dockerfile.v2). Lifecycle fully independent of the v1
-# stack (own project name, own volume, DB published on 5498) for burn-in
-# coexistence; at cutover this file renames to docker-compose.yml.
+# The stack: TimescaleDB + one-shot migrate gate + ingest and bot, all
+# from one shared image (Dockerfile). The project name below is load-bearing:
+# it prefixes the volume, so changing it detaches a running deploy from its data.
 #
 # Interpolated from .env (every variable is documented in .env.example):
 # RS_DB_PASSWORD (the superuser; migrate only, and the host-side RS_DB_URL for
@@ -21,7 +20,7 @@ name: rocketstocks-v2
 x-app: &app
   build:
     context: .
-    dockerfile: Dockerfile.v2
+    dockerfile: Dockerfile
   image: rocketstocks-v2
   environment: &app-env
     RS_DB_URL: postgresql+psycopg://postgres:${RS_DB_PASSWORD:?set RS_DB_PASSWORD in .env}@timescaledb:5432/rocketstocks
@@ -58,7 +57,7 @@ services:
   migrate:
     build:
       context: .
-      dockerfile: Dockerfile.v2
+      dockerfile: Dockerfile
     image: rocketstocks-v2
     command: ["python", "-m", "rs_migrate", "upgrade"]
     environment:
