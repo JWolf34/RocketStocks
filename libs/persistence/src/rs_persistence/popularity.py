@@ -1,6 +1,6 @@
 """popularity_snapshot: idempotent bulk insert and history reads."""
 
-from collections.abc import Sequence
+from collections.abc import Collection, Sequence
 from datetime import UTC, datetime
 
 from sqlalchemy import func, select
@@ -81,11 +81,16 @@ class PopularityRepository:
         return [snapshot_from_row(row) for row in rows]
 
     async def list_between(
-        self, start: datetime, end: datetime, origin: PopularityOrigin | None = None
+        self,
+        start: datetime,
+        end: datetime,
+        origin: PopularityOrigin | None = None,
+        min_mentions: int | None = None,
     ) -> list[PopularitySnapshot]:
         """Every ticker's snapshots with polled_at in [start, end), ordered by
-        (polled_at, ticker), optionally only one origin. Unbounded in size: for
-        jobs that replay history; interactive reads go through rs_query."""
+        (polled_at, ticker), optionally only one origin and only those with at
+        least `min_mentions`. Unbounded in size: for jobs that replay history;
+        interactive reads go through rs_query."""
         query = (
             select(PopularitySnapshotRow)
             .where(PopularitySnapshotRow.polled_at >= start, PopularitySnapshotRow.polled_at < end)
@@ -93,4 +98,50 @@ class PopularityRepository:
         )
         if origin is not None:
             query = query.where(PopularitySnapshotRow.origin == origin.value)
+        if min_mentions is not None:
+            query = query.where(PopularitySnapshotRow.mentions >= min_mentions)
         return [snapshot_from_row(row) for row in await self._session.scalars(query)]
+
+    async def readings(
+        self, tickers: Collection[str], start: datetime, end: datetime
+    ) -> dict[str, dict[datetime, tuple[int, int]]]:
+        """Each of `tickers`' (rank, mentions) reading per boundary with polled_at in
+        [start, end); a ticker with none is absent."""
+        result: dict[str, dict[datetime, tuple[int, int]]] = {}
+        rows = await self._session.execute(
+            select(
+                PopularitySnapshotRow.ticker,
+                PopularitySnapshotRow.polled_at,
+                PopularitySnapshotRow.rank,
+                PopularitySnapshotRow.mentions,
+            ).where(
+                PopularitySnapshotRow.ticker.in_(tickers),
+                PopularitySnapshotRow.polled_at >= start,
+                PopularitySnapshotRow.polled_at < end,
+            )
+        )
+        for ticker, polled_at, rank, mentions in rows:
+            result.setdefault(ticker, {})[polled_at.astimezone(UTC)] = (rank, mentions)
+        return result
+
+    async def bottom_ranks(self, start: datetime, end: datetime) -> dict[datetime, int]:
+        """Each polled boundary in [start, end) with the rank one past the last stored
+        there: where a stock absent from that listing stands. A boundary with no stored
+        snapshot is not polled and is not listed."""
+        rows = await self._session.execute(
+            select(PopularitySnapshotRow.polled_at, func.max(PopularitySnapshotRow.rank) + 1)
+            .where(PopularitySnapshotRow.polled_at >= start, PopularitySnapshotRow.polled_at < end)
+            .group_by(PopularitySnapshotRow.polled_at)
+        )
+        return {polled_at.astimezone(UTC): bottom for polled_at, bottom in rows}
+
+    async def count_polls(self, start: datetime, end: datetime) -> int:
+        """How many distinct boundaries have any snapshot with polled_at in [start, end)."""
+        return (
+            await self._session.scalar(
+                select(func.count(func.distinct(PopularitySnapshotRow.polled_at))).where(
+                    PopularitySnapshotRow.polled_at >= start, PopularitySnapshotRow.polled_at < end
+                )
+            )
+            or 0
+        )

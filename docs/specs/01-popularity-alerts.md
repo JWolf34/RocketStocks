@@ -6,11 +6,11 @@ Friends receive a few Popularity Alerts a day, each carrying a Track record seed
 ## Selection
 
 - Every Trigger hit is stored as a candidate with the selector's verdict (posted, reply, below bar, over budget, repeat, stale); `alert_type` becomes `trigger` throughout.
-- Strength is a candidate's percentile among its own Trigger's candidates of the trailing 30 days; the raw score measures distance from the stock's own Popularity Baseline and is defined and tested at build time on the imported history.
+- Strength is a candidate's percentile among its own Trigger's hits of the 30 Eastern days before its day, replayed from stored Popularity; the raw score measures distance from the stock's own Popularity Baseline and is defined and tested at build time on the imported history.
 - A candidate posts at once when its strength clears a bar set from those 30 days so a typical day yields about the budget (5 to start), and the day's budget is not used up.
 - A day is the US Eastern calendar day, for the budget and for one Alert per stock per day.
 - A later candidate on a stock already alerted that day replies in the Alert's thread only when it escalates: a sub-rule the Alert did not carry, or strength up by a margin tuned at build time, at most a few replies per stock per day.
-- Replies never ping roles and never use the budget; a stock below the bar or over budget earlier can still get its first Alert later that day.
+- Replies never ping roles and never use the budget; a stock below the bar earlier can still get its first Alert later that day, and one over budget cannot, since the budget never frees within a day.
 
 ## Delivery
 
@@ -22,7 +22,7 @@ Friends receive a few Popularity Alerts a day, each carrying a Track record seed
 
 ## Outcomes and Track records
 
-- A case is the first candidate of a Trigger version on a stock on an Eastern day, timed at its post if posted, otherwise at its hit.
+- A case is a Trigger version's first candidate on a stock on an Eastern day, timed at the post of the stock's Alert that day if one posted, otherwise at that first hit.
 - Entry is the open of the first session that begins after that time; the h-day exit is the close of the h-th session counting the entry session, for h of 1, 5 and 20; SPY is measured over the same sessions.
 - Direction is excess return over SPY.
 - Move size is the absolute excess move over the stock's typical h-day move: 1.4826 times the median absolute deviation of its daily excess moves over the 250 sessions before entry, times the square root of h; under about 120 sessions there is no move size and the case is counted as such.

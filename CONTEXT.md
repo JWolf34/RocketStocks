@@ -32,6 +32,26 @@ _Avoid_: signal, alert type, detector
 A short Discord post that one stock is worth attention now, with its Triggers as the reasons, a talking point, the Track record and the next Catalyst.
 _Avoid_: notification, signal
 
+**Candidate**:
+A Trigger hit, stored with the selector's verdict on it, posted or not.
+_Avoid_: signal, event
+
+**Strength**:
+A candidate's percentile among its Trigger's hits of the 30 days before its day, by how Unusual each was.
+_Avoid_: score, confidence
+
+**Bar**:
+The strength a candidate must reach to post, set so a typical day yields about the budget.
+_Avoid_: threshold, cutoff
+
+**Budget**:
+The most Alerts posted in one US Eastern day, across all stocks; replies do not count.
+_Avoid_: limit, quota
+
+**Reply**:
+A message in an Alert's thread when a later candidate on the same stock that day escalates (a new sub-rule, or a clear rise in strength); it never pings.
+_Avoid_: update, follow-up
+
 **Report** (final name to be decided):
 The one per-stock view of RocketStocks' own data, attached to Alerts and available on demand.
 _Avoid_: dossier, stock report, data card
@@ -66,12 +86,14 @@ _Avoid_: alert (reserved for stocks)
 
 **Tombstone**:
 A stored record that a fetch was attempted and failed; it means "no observation", never zero.
+A stock missing from a Popularity listing that was fetched is an observation (zero mentions), not a Tombstone.
 
 ## Relationships
 
 - A **Popularity** history is made of **Popularity snapshots**.
 - A stock is **Unusual** when it is far from its own **Baseline**.
 - A **Trigger** decides a stock is worth attention now; an **Alert** carries its **Triggers** as the reasons.
+- Every **Trigger** hit is a **Candidate**; one whose **Strength** clears the **Bar** posts as an **Alert** while the **Budget** lasts, and a later one on an alerted stock that day may become a **Reply**.
 - An **Alert** carries a talking point, the **Track record** and the next **Catalyst**, and comes with a **Report**.
 - An **Outcome** is what a stock did after a **Trigger** hit, posted or not; a **Track record** summarises **Outcomes** for one **Trigger**.
 - An **Alert** is only ever about a stock; a message to the operator is an **Ops ping**.

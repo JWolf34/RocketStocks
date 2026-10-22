@@ -63,7 +63,9 @@ class Candidate(BaseModel):
     """One Trigger hit and what the selector made of it. `hit_at` is the Popularity
     boundary the hit was judged on; `inputs` is what the Trigger decided on,
     including the sub-rules that fired. `alert_id` is the Alert (or reply) the
-    candidate produced, None when it produced none."""
+    candidate produced, None when it produced none. `raw_score` is the hit's distance
+    from the stock's own Baseline and `strength` its percentile among the Trigger's
+    hits of the trailing 30 days; both are None when the stock had no Baseline."""
 
     model_config = ConfigDict(frozen=True)
 
@@ -75,6 +77,8 @@ class Candidate(BaseModel):
     verdict: Verdict
     decided_at: UtcDatetime
     alert_id: int | None = None
+    raw_score: float | None = None
+    strength: float | None = None
 
 
 class Dataset(StrEnum):

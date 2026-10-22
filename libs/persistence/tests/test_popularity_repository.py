@@ -191,3 +191,70 @@ async def test_extent_is_per_origin_and_none_when_empty(session_factory):
         repo = PopularityRepository(s)
         assert await repo.extent(PopularityOrigin.LIVE) == (T0, later)
         assert await repo.extent(PopularityOrigin.V1_IMPORT) == (T0 - timedelta(days=1),) * 2
+
+
+async def test_list_between_can_keep_only_snapshots_with_enough_mentions(session_factory):
+    async with session_factory() as s:
+        await PopularityRepository(s).insert_many([_snap("AAA", mentions=14), _snap("BBB", mentions=15)])
+        await s.commit()
+
+    async with session_factory() as s:
+        got = await PopularityRepository(s).list_between(T0, T0 + timedelta(minutes=30), min_mentions=15)
+    assert [snap.ticker for snap in got] == ["BBB"]
+
+
+async def test_readings_are_the_rank_and_mentions_of_the_named_tickers_per_boundary_in_the_window(session_factory):
+    async with session_factory() as s:
+        await PopularityRepository(s).insert_many(
+            [
+                _snap("AAA", T0 + timedelta(minutes=30), rank=5, mentions=50),
+                _snap("AAA", T0, rank=4, mentions=40),
+                _snap("AAA", T0 + timedelta(minutes=60), rank=6, mentions=60),  # outside the window
+                _snap("BBB", T0, rank=9, mentions=10),
+                _snap("CCC", T0, rank=1, mentions=99),  # not asked for
+            ]
+        )
+        await s.commit()
+
+    async with session_factory() as s:
+        got = await PopularityRepository(s).readings({"AAA", "BBB", "ZZZ"}, T0, T0 + timedelta(minutes=60))
+    assert got == {
+        "AAA": {T0: (4, 40), T0 + timedelta(minutes=30): (5, 50)},
+        "BBB": {T0: (9, 10)},
+    }
+
+
+async def test_bottom_ranks_are_one_past_the_last_stored_at_each_polled_boundary_only(session_factory):
+    async with session_factory() as s:
+        await PopularityRepository(s).insert_many(
+            [
+                _snap("AAA", T0, rank=4),
+                _snap("BBB", T0, rank=9),
+                _snap("AAA", T0 + timedelta(minutes=30), rank=2),
+                _snap("AAA", T0 + timedelta(hours=3), rank=7),  # outside the window
+            ]
+        )
+        await s.commit()
+
+    async with session_factory() as s:
+        got = await PopularityRepository(s).bottom_ranks(T0, T0 + timedelta(hours=1))
+    # The boundary at 14:00 + 1h has no snapshot at all: it is downtime, not listed.
+    assert got == {T0: 10, T0 + timedelta(minutes=30): 3}
+
+
+async def test_count_polls_counts_distinct_boundaries_not_rows(session_factory):
+    async with session_factory() as s:
+        await PopularityRepository(s).insert_many(
+            [
+                _snap("AAA", T0),
+                _snap("BBB", T0),
+                _snap("AAA", T0 + timedelta(minutes=30)),
+                _snap("AAA", T0 + timedelta(hours=2)),
+            ]
+        )
+        await s.commit()
+
+    async with session_factory() as s:
+        repo = PopularityRepository(s)
+        assert await repo.count_polls(T0, T0 + timedelta(hours=1)) == 2
+        assert await repo.count_polls(T0 + timedelta(hours=1), T0 + timedelta(hours=2)) == 0

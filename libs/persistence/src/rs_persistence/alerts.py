@@ -9,7 +9,6 @@ Delivery marks only move a row forward, from pending or sending to posted or sta
 and each guard names the states it may leave, so a second mark never overwrites the first.
 """
 
-from collections.abc import Collection
 from datetime import UTC, date, datetime
 
 from pydantic import BaseModel, ConfigDict
@@ -107,14 +106,11 @@ class AlertRepository:
         await self._session.execute(select(func.pg_notify(self._channel, str(alert_id))))
         return alert_id
 
-    async def alerted_symbols(self, day: date, symbols: Collection[str]) -> set[str]:
-        """Which of `symbols` already have an Alert (not a reply) on the Eastern `day`."""
-        rows = await self._session.scalars(
-            select(AlertRow.symbol).where(
-                AlertRow.day == day, AlertRow.reply_to.is_(None), AlertRow.symbol.in_(symbols)
-            )
+    async def alert_id_of(self, day: date, symbol: str) -> int | None:
+        """The id of the stock's Alert (not a reply) on the Eastern `day`, None when it has none."""
+        return await self._session.scalar(
+            select(AlertRow.id).where(AlertRow.day == day, AlertRow.reply_to.is_(None), AlertRow.symbol == symbol)
         )
-        return set(rows)
 
     async def posts_by_day(self, trigger: str, rule_version: str) -> dict[tuple[str, date], AlertPost]:
         """Each stock's Alert (not a reply) of one Trigger version by Eastern day: how its

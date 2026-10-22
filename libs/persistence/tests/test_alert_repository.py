@@ -133,19 +133,23 @@ async def test_a_reply_is_stored_pointing_at_its_alert(session_factory):
     assert [(p.id, p.alert.reply_to) for p in pending] == [(parent, None), (reply, parent)]
 
 
-async def test_alerted_symbols_names_stocks_with_an_alert_on_that_eastern_day(session_factory):
+async def test_alert_id_of_finds_the_stocks_alert_not_its_reply_on_that_eastern_day(session_factory):
     day = datetime(2026, 7, 6, 14, 30, tzinfo=UTC)
     async with session_factory() as s:
         repo = AlertRepository(s)
-        await repo.insert(ALERT.model_copy(update={"symbol": "AAA", "triggered_at": day}))
-        await repo.insert(ALERT.model_copy(update={"symbol": "BBB", "triggered_at": datetime(2026, 7, 7, 14, 0, tzinfo=UTC)}))
+        aaa = await repo.insert(ALERT.model_copy(update={"symbol": "AAA", "triggered_at": day}))
+        await repo.insert(ALERT.model_copy(update={"symbol": "AAA", "triggered_at": day, "reply_to": aaa}))
+        bbb = await repo.insert(
+            ALERT.model_copy(update={"symbol": "BBB", "triggered_at": datetime(2026, 7, 7, 14, 0, tzinfo=UTC)})
+        )
         await s.commit()
 
     async with session_factory() as s:
         repo = AlertRepository(s)
-        assert await repo.alerted_symbols(date(2026, 7, 6), {"AAA", "BBB", "CCC"}) == {"AAA"}
-        assert await repo.alerted_symbols(date(2026, 7, 7), {"AAA", "BBB"}) == {"BBB"}
-        assert await repo.alerted_symbols(date(2026, 7, 8), {"AAA"}) == set()
+        assert await repo.alert_id_of(date(2026, 7, 6), "AAA") == aaa
+        assert await repo.alert_id_of(date(2026, 7, 7), "BBB") == bbb
+        assert await repo.alert_id_of(date(2026, 7, 6), "BBB") is None
+        assert await repo.alert_id_of(date(2026, 7, 8), "AAA") is None
 
 
 async def test_rollback_persists_nothing(session_factory):

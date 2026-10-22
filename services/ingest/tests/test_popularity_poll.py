@@ -10,8 +10,12 @@ import pytest
 from sqlalchemy import delete, func, insert, select
 
 from rs_analysis.popularity_surge import RULE_VERSION, SubRule
+from rs_analysis.strength import ReferenceUnavailable
 from rs_domain import (
+    ALERT_STALE_AFTER,
     Alert,
+    Candidate,
+    EscalationPayload,
     FactUnavailable,
     PopularitySurgePayload,
     PriceMoveFact,
@@ -19,10 +23,17 @@ from rs_domain import (
 )
 from rs_ingest.alert_writer import AlertWriteError, AlertWriter, RetryPolicy
 from rs_ingest.popularity_poll import PopularityPoll, poll_boundary
+from rs_ingest.scoring import Scored
+from rs_ingest.selector import (
+    DAILY_BUDGET,
+    MAX_REPLIES_PER_STOCK_DAY,
+    REPLY_STRENGTH_MARGIN,
+)
 from rs_ingest.surge_facts import SurgeFactsGatherer
 from rs_persistence import (
     AlertRepository,
     AlertRow,
+    CandidateRepository,
     CandidateRow,
     PopularitySnapshotRow,
 )
@@ -88,6 +99,24 @@ class FakeEarnings:
         return NextEarnings(date=date(2026, 11, 3))
 
 
+class FakeScorer:
+    """Scores every hit the same unless a ticker is given its own `Scored`; the real
+    scorer has its own tests against stored history."""
+
+    def __init__(self, default: Scored | None = None) -> None:
+        self.default = default or Scored(raw_score=9.0, strength=0.99, bar=0.9)
+        self.by_ticker: dict[str, Scored] = {}
+        self.by_ticker_and_time: dict[tuple[str, datetime], Scored] = {}
+        self.before_scoring = lambda: None  # a hook: the clock moves while the poll scores
+
+    async def score(self, events):
+        self.before_scoring()
+        return [
+            self.by_ticker_and_time.get((e.ticker, e.polled_at), self.by_ticker.get(e.ticker, self.default))
+            for e in events
+        ]
+
+
 class Tripped:
     def __init__(self) -> None:
         self.reasons: list[str] = []
@@ -109,13 +138,14 @@ class CountingLimiter:
 
 
 class Rig:
-    def __init__(self, session_factory, sleeps, rows, quotes=None, *, writer_factory=None) -> None:
+    def __init__(self, session_factory, sleeps, rows, quotes=None, *, writer_factory=None, scorer=None) -> None:
         self.session_factory = session_factory
         self.clock = FakeClock(T0 + timedelta(seconds=20))
         self.apewisdom = FakeApeWisdom(rows)
         self.quotes = quotes or FakeQuotes(good_quote())
         self.tripped = Tripped()
         self.limiter = CountingLimiter()
+        self.scorer = scorer or FakeScorer()
         self.sleeps = sleeps
         self.writer = AlertWriter(
             writer_factory or session_factory, policy=RetryPolicy(attempts=3), sleep=sleeps
@@ -125,6 +155,7 @@ class Rig:
             session_factory=session_factory,
             clock=self.clock,
             writer=self.writer,
+            scorer=self.scorer,
             gatherer=lambda: SurgeFactsGatherer(
                 quotes=lambda: self.quotes,
                 limiter=self.limiter,
@@ -268,6 +299,7 @@ class TestIdempotency:
 
 
 T1 = T0 + timedelta(minutes=30)
+T2 = T0 + timedelta(hours=1)
 
 
 class TestCatchUp:
@@ -473,14 +505,27 @@ class TestOneAlertPerStockPerDay:
         assert [a.symbol for a in await rig.alerts()] == ["SURGER", "OTHER"]
 
     async def test_an_alert_the_stock_already_has_today_from_an_earlier_rule_version_holds_the_day(self, rig):
+        earlier = T0 - timedelta(hours=2)
         async with rig.session_factory() as session:
-            await AlertRepository(session).insert(
+            alert_id = await AlertRepository(session).insert(
                 Alert(
                     symbol="SURGER",
                     trigger="popularity_surge",
-                    triggered_at=T0 - timedelta(hours=2),
+                    triggered_at=earlier,
                     payload={"version": 99},
                     rule_version="1",
+                )
+            )
+            await CandidateRepository(session).insert(
+                Candidate(
+                    trigger="popularity_surge",
+                    rule_version="1",
+                    symbol="SURGER",
+                    hit_at=earlier,
+                    inputs={"fired": ["mention_surge"]},
+                    verdict=Verdict.POSTED,
+                    decided_at=earlier,
+                    alert_id=alert_id,
                 )
             )
             await session.commit()
@@ -488,7 +533,7 @@ class TestOneAlertPerStockPerDay:
         await rig.poll.run()
 
         assert len(await rig.alerts()) == 1
-        assert await rig.verdicts() == [("SURGER", T0, "repeat")]
+        assert await rig.verdicts() == [("SURGER", earlier, "posted"), ("SURGER", T0, "repeat")]
 
     async def test_two_hits_of_one_stock_in_one_run_post_the_earlier_and_repeat_the_later(self, rig):
         async with rig.session_factory() as session:
@@ -574,3 +619,232 @@ class TestDurability:
 
         assert len(raised.value.exceptions) == 1
         assert len(await rig.alerts()) == 1
+
+
+def scored(strength: float | None, bar: float = 0.9) -> Scored:
+    return Scored(raw_score=None if strength is None else strength * 10, strength=strength, bar=bar)
+
+
+def both_rules(ticker: str) -> ApeWisdomRow:
+    """Triples its mentions (mention_surge) and jumps 80 places (rank_jump)."""
+    return row(ticker, 40, 90, mentions_24h_ago=20, rank_24h_ago=120)
+
+
+class TestSelection:
+    async def test_every_candidate_keeps_its_raw_score_and_strength(self, rig):
+        rig.scorer.by_ticker["SURGER"] = Scored(raw_score=7.5, strength=0.97, bar=0.9)
+
+        await rig.poll.run()
+
+        [candidate] = await rig.candidates()
+        assert (candidate.raw_score, candidate.strength) == (7.5, 0.97)
+
+    async def test_a_hit_below_the_bar_is_recorded_without_an_alert_and_posts_when_it_later_clears_it(self, rig):
+        rig.scorer.by_ticker["SURGER"] = scored(0.5)
+        await rig.run_at(T0 + timedelta(seconds=20))
+        assert await rig.alerts() == []
+
+        rig.scorer.by_ticker["SURGER"] = scored(0.95)
+        await rig.run_at(T1 + timedelta(seconds=20))
+
+        assert await rig.verdicts() == [("SURGER", T0, "below_bar"), ("SURGER", T1, "posted")]
+        [alert] = await rig.alerts()
+        assert alert.triggered_at == T1
+
+    async def test_a_hit_with_no_baseline_is_below_the_bar(self, rig):
+        rig.scorer.by_ticker["SURGER"] = scored(None)
+
+        await rig.poll.run()
+
+        assert await rig.verdicts() == [("SURGER", T0, "below_bar")]
+        [candidate] = await rig.candidates()
+        assert (candidate.raw_score, candidate.strength) == (None, None)
+
+    async def test_with_no_reference_every_hit_is_recorded_below_the_bar_and_the_poll_fails(
+        self, session_factory, sleeps, notices
+    ):
+        class NoReference:
+            async def score(self, events):
+                raise ReferenceUnavailable("only 3 of the 30 days before 2026-07-06 were polled")
+
+        rig = Rig(session_factory, sleeps, listing(), scorer=NoReference())
+
+        with pytest.raises(ReferenceUnavailable, match="polled"):
+            await rig.poll.run()
+
+        assert await rig.snapshots() == 2
+        assert await rig.alerts() == []
+        assert await rig.verdicts() == [("SURGER", T0, "below_bar")]
+        [candidate] = await rig.candidates()
+        assert (candidate.raw_score, candidate.strength) == (None, None)
+
+    async def test_the_budget_goes_to_the_strongest_of_a_boundary_not_the_first_alphabetically(
+        self, session_factory, sleeps, notices
+    ):
+        names = ["AAA", "BBB", "CCC", "DDD", "EEE", "FFF"]
+        rig = Rig(session_factory, sleeps, [row(n, 40 + i, 90) for i, n in enumerate(names)])
+        for strength, name in zip([0.91, 0.92, 0.93, 0.94, 0.95, 0.96], names, strict=True):
+            rig.scorer.by_ticker[name] = scored(strength)
+
+        await rig.poll.run()
+
+        verdicts = {symbol: verdict for symbol, _, verdict in await rig.verdicts()}
+        assert verdicts["AAA"] == "over_budget"
+        assert list(verdicts.values()).count("posted") == DAILY_BUDGET
+        assert sorted(a.symbol for a in await rig.alerts()) == names[1:]
+
+    async def test_a_stock_over_budget_stays_so_for_the_day_and_the_budget_is_new_on_the_next_eastern_day(
+        self, session_factory, sleeps, notices
+    ):
+        names = [f"S{i}" for i in range(DAILY_BUDGET + 1)]
+        rig = Rig(session_factory, sleeps, [row(n, 40 + i, 90) for i, n in enumerate(names)])
+        for i, name in enumerate(names):
+            rig.scorer.by_ticker[name] = scored(0.99 - i * 0.01)  # S5 is the weakest
+        tomorrow = T0 + timedelta(hours=24)
+        rig.scorer.by_ticker_and_time[("S5", tomorrow)] = scored(1.0)  # the strongest of a new day
+        for moment in (T0, T1, tomorrow):
+            await rig.run_at(moment + timedelta(seconds=20))
+
+        by_time = {(symbol, at): verdict for symbol, at, verdict in await rig.verdicts()}
+        assert by_time[("S5", T0)] == by_time[("S5", T1)] == "over_budget"
+        assert by_time[("S5", tomorrow)] == "posted"  # the day is new, so is the budget
+        assert by_time[("S0", tomorrow)] == "posted"
+        assert by_time[("S4", tomorrow)] == "over_budget"
+
+    async def test_replies_never_use_the_budget(self, session_factory, sleeps, notices):
+        names = [f"S{i}" for i in range(DAILY_BUDGET)]
+        rig = Rig(session_factory, sleeps, [row(n, 40 + i, 90) for i, n in enumerate(names)])
+        await rig.run_at(T0 + timedelta(seconds=20))
+        rig.apewisdom.rows = [both_rules("S0"), *[row(n, 40 + i, 90) for i, n in enumerate(names) if n != "S0"]]
+
+        await rig.run_at(T1 + timedelta(seconds=20))
+
+        assert ("S0", T1, "reply") in await rig.verdicts()
+        assert len([a for a in await rig.alerts() if a.reply_to is None]) == DAILY_BUDGET
+
+
+class TestReplies:
+    async def _alert_then(self, rig: Rig, rows: list[ApeWisdomRow], at: datetime = T1) -> None:
+        await rig.run_at(T0 + timedelta(seconds=20))
+        rig.apewisdom.rows = rows
+        await rig.run_at(at + timedelta(seconds=20))
+
+    async def test_a_new_sub_rule_replies_to_the_days_alert_with_what_escalated(self, rig):
+        await self._alert_then(rig, [both_rules("SURGER")])
+
+        alert, reply = await rig.alerts()
+        assert reply.reply_to == alert.id
+        assert (reply.symbol, reply.trigger, reply.day) == ("SURGER", "popularity_surge", alert.day)
+        assert reply.triggered_at == T1
+        assert reply.alert_price is None
+        payload = EscalationPayload.model_validate(reply.payload)
+        assert payload.new_rules == ("rank_jump",)
+        assert payload.polled_at == T1
+        assert (payload.strength_before, payload.strength_after) == (None, None)  # strength did not rise
+        assert await rig.verdicts() == [("SURGER", T0, "posted"), ("SURGER", T1, "reply")]
+        assert (await rig.candidates())[1].alert_id == reply.id
+
+    async def test_a_reply_looks_up_no_facts(self, rig):
+        await rig.run_at(T0 + timedelta(seconds=20))
+        lookups = len(rig.quotes.symbols)
+        rig.apewisdom.rows = [both_rules("SURGER")]
+
+        await rig.run_at(T1 + timedelta(seconds=20))
+
+        assert len(rig.quotes.symbols) == lookups
+
+    async def test_strength_up_by_the_margin_replies_and_less_is_a_repeat(self, rig):
+        rig.scorer.by_ticker_and_time[("SURGER", T0)] = scored(0.80, bar=0.7)
+        rig.scorer.by_ticker_and_time[("SURGER", T1)] = scored(0.80 + REPLY_STRENGTH_MARGIN - 0.01, bar=0.7)
+        rig.scorer.by_ticker_and_time[("SURGER", T2)] = scored(0.80 + REPLY_STRENGTH_MARGIN, bar=0.7)
+
+        for at in (T0, T1, T2):
+            await rig.run_at(at + timedelta(seconds=20))
+
+        assert [v for *_, v in await rig.verdicts()] == ["posted", "repeat", "reply"]
+        payload = EscalationPayload.model_validate((await rig.alerts())[1].payload)
+        assert payload.new_rules == ()
+        assert (payload.strength_before, payload.strength_after) == (0.80, 0.80 + REPLY_STRENGTH_MARGIN)
+
+    async def test_a_reply_on_a_new_sub_rule_and_higher_strength_carries_both(self, rig):
+        rig.scorer.by_ticker_and_time[("SURGER", T0)] = scored(0.80, bar=0.7)
+        rig.scorer.by_ticker_and_time[("SURGER", T1)] = scored(0.97, bar=0.7)
+
+        await self._alert_then(rig, [both_rules("SURGER")])
+
+        payload = EscalationPayload.model_validate((await rig.alerts())[1].payload)
+        assert payload.new_rules == ("rank_jump",)
+        assert (payload.strength_before, payload.strength_after) == (0.80, 0.97)
+
+    async def test_a_stock_gets_at_most_a_few_replies_a_day(self, rig):
+        boundaries = [T0 + timedelta(minutes=30 * i) for i in range(MAX_REPLIES_PER_STOCK_DAY + 3)]
+        for i, boundary in enumerate(boundaries):
+            rig.scorer.by_ticker_and_time[("SURGER", boundary)] = scored(0.4 + i * (REPLY_STRENGTH_MARGIN + 0.001), bar=0.3)
+
+        for boundary in boundaries:
+            await rig.run_at(boundary + timedelta(seconds=20))
+
+        verdicts = [v for *_, v in await rig.verdicts()]
+        assert verdicts == ["posted", *["reply"] * MAX_REPLIES_PER_STOCK_DAY, *["repeat"] * 2]
+        assert len(await rig.alerts()) == 1 + MAX_REPLIES_PER_STOCK_DAY
+
+    async def test_the_next_eastern_day_starts_with_its_own_alert(self, rig):
+        await self._alert_then(rig, [both_rules("SURGER")])
+        rig.apewisdom.rows = [both_rules("SURGER")]
+
+        await rig.run_at(T0 + timedelta(hours=24, seconds=20))
+
+        alerts = await rig.alerts()
+        assert [(a.reply_to is None, a.day) for a in alerts] == [
+            (True, date(2026, 10, 19)),
+            (False, date(2026, 10, 19)),
+            (True, date(2026, 10, 20)),
+        ]
+
+    async def test_nothing_is_stored_when_the_alert_the_reply_continues_cannot_be_stored(
+        self, session_factory, sleeps, make_flaky, notices
+    ):
+        broken = Rig(session_factory, sleeps, [both_rules("SURGER")], writer_factory=make_flaky(failures=99))
+        with pytest.raises(ExceptionGroup):
+            await broken.poll.run()
+
+        assert await broken.candidates() == []
+        assert await broken.alerts() == []
+
+
+class TestStale:
+    async def test_a_hit_decided_over_an_hour_after_its_boundary_is_recorded_stale_and_posts_nothing(self, rig):
+        rig.scorer.before_scoring = lambda: setattr(rig.clock, "current", T0 + ALERT_STALE_AFTER + timedelta(minutes=1))
+
+        await rig.run_at(T0 + timedelta(seconds=20))
+
+        assert await rig.verdicts() == [("SURGER", T0, "stale")]
+        assert await rig.alerts() == []
+        assert rig.quotes.symbols == []
+
+
+class TestEasternDayAcrossDaylightSaving:
+    # The Eastern day starts 05:00 UTC in winter and 04:00 UTC in summer.
+    @pytest.mark.parametrize(
+        ("last_of_day", "first_of_next"),
+        [
+            (datetime(2026, 11, 2, 4, 30, tzinfo=UTC), datetime(2026, 11, 2, 5, 0, tzinfo=UTC)),  # 23:30 and 00:00 EST
+            (datetime(2026, 3, 9, 3, 30, tzinfo=UTC), datetime(2026, 3, 9, 4, 0, tzinfo=UTC)),  # 23:30 and 00:00 EDT
+        ],
+    )
+    async def test_one_alert_per_stock_per_eastern_day_and_a_new_day_at_eastern_midnight(
+        self, session_factory, sleeps, notices, last_of_day, first_of_next
+    ):
+        rig = Rig(session_factory, sleeps, listing())
+        before = last_of_day - timedelta(minutes=30)
+
+        for moment in (before, last_of_day, first_of_next):
+            await rig.run_at(moment + timedelta(seconds=20))
+
+        assert await rig.verdicts() == [
+            ("SURGER", before, "posted"),
+            ("SURGER", last_of_day, "repeat"),
+            ("SURGER", first_of_next, "posted"),
+        ]
+        days = [a.day for a in await rig.alerts()]
+        assert days[1] - days[0] == timedelta(days=1)

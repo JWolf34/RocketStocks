@@ -149,3 +149,41 @@ async def test_first_hits_by_day_takes_the_earliest_per_stock_and_eastern_day(se
         ("ABC", date(2026, 7, 7)): evening + timedelta(minutes=30),
         ("XYZ", date(2026, 7, 6)): evening,
     }
+
+
+async def test_a_candidate_keeps_its_raw_score_and_strength(session_factory):
+    scored = CANDIDATE.model_copy(update={"raw_score": 7.25, "strength": 0.93})
+    await _insert(session_factory, scored)
+
+    assert await _window(session_factory, "popularity_surge", HIT, HIT + timedelta(minutes=30)) == [scored]
+
+
+async def test_an_unscored_candidate_reads_back_without_a_score(session_factory):
+    await _insert(session_factory, CANDIDATE)
+
+    [read] = await _window(session_factory, "popularity_surge", HIT, HIT + timedelta(minutes=30))
+    assert (read.raw_score, read.strength) == (None, None)
+
+
+async def test_list_announced_gives_an_eastern_days_posted_and_reply_candidates_only(session_factory):
+    base = CANDIDATE.model_copy(update={"hit_at": datetime(2026, 7, 6, 14, 0, tzinfo=UTC)})
+    posted = base.model_copy(update={"verdict": Verdict.POSTED, "symbol": "AAA"})
+    reply = base.model_copy(update={"verdict": Verdict.REPLY, "symbol": "AAA", "hit_at": base.hit_at + timedelta(hours=1)})
+    for candidate in (
+        posted,
+        reply,
+        base.model_copy(update={"verdict": Verdict.BELOW_BAR, "symbol": "BBB"}),
+        base.model_copy(update={"verdict": Verdict.REPEAT, "symbol": "AAA", "hit_at": base.hit_at + timedelta(minutes=30)}),
+        # 23:30 EDT on July 6 is still July 6; 00:00 EDT on July 7 is the next day.
+        posted.model_copy(update={"symbol": "CCC", "hit_at": datetime(2026, 7, 7, 3, 30, tzinfo=UTC)}),
+        posted.model_copy(update={"symbol": "DDD", "hit_at": datetime(2026, 7, 7, 4, 0, tzinfo=UTC)}),
+    ):
+        await _insert(session_factory, candidate)
+
+    async with session_factory() as s:
+        announced = await CandidateRepository(s).list_announced(date(2026, 7, 6))
+    assert [(c.symbol, c.verdict) for c in announced] == [
+        ("AAA", Verdict.POSTED),
+        ("AAA", Verdict.REPLY),
+        ("CCC", Verdict.POSTED),
+    ]

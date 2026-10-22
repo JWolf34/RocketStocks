@@ -80,9 +80,10 @@ class PopularitySurgePayload(BaseModel):
 
 class EscalationPayload(BaseModel):
     """What a reply in an Alert's thread says escalated, written by the selector.
-    `new_rules` are the sub-rules the Alert did not carry; `strength_before` and
-    `strength_after` are the candidate's percentile (0 to 1) among its Trigger's
-    candidates of the trailing 30 days, at the Alert and now, set when strength rose."""
+    `new_rules` are the sub-rules neither the Alert nor an earlier reply carried;
+    `strength_before` is the highest strength announced for the stock that day and
+    `strength_after` the reply's, both percentiles (0 to 1) among the Trigger's hits
+    of the 30 Eastern days before, set only when strength rose by the margin."""
 
     model_config = ConfigDict(frozen=True)
 

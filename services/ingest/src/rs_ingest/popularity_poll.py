@@ -1,6 +1,7 @@
 """The popularity poll: store one ApeWisdom snapshot per half-hour boundary,
 judge it with the popularity-surge rule, and store every hit as a candidate
-with the selector's verdict; a posted one is stored with its Alert and facts.
+with its score, strength and the selector's verdict; a posted one is stored with
+its Alert and facts, a reply with a small payload saying what escalated.
 
 Every step is idempotent on the boundary: snapshots are first-write-wins, the
 rule judges the *stored* rows (so a rerun sees what the first run saw), and a
@@ -19,10 +20,12 @@ from typing import Any, Protocol
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from rs_analysis.popularity_surge import SurgeEvent, evaluate_latest
+from rs_analysis.strength import ReferenceUnavailable
 from rs_domain import (
     Alert,
     Candidate,
     Clock,
+    EscalationPayload,
     PopularityOrigin,
     PopularitySnapshot,
     PopularitySurgePayload,
@@ -31,7 +34,15 @@ from rs_domain import (
     eastern_day,
 )
 from rs_ingest.alert_writer import AlertWriter
-from rs_ingest.selector import DayState, select
+from rs_ingest.scoring import Scored, Scorer
+from rs_ingest.selector import (
+    DayState,
+    Escalation,
+    StockDay,
+    announce,
+    escalation,
+    select,
+)
 from rs_ingest.surge_facts import SurgeFactsGatherer
 from rs_persistence import AlertRepository, CandidateRepository, PopularityRepository
 from rs_sources import ApeWisdomError, ApeWisdomRow
@@ -61,11 +72,14 @@ def poll_boundary(moment: datetime) -> datetime:
 
 @dataclass(frozen=True)
 class Decision:
-    """A hit and the selector's verdict on it."""
+    """A hit, its score and the selector's verdict on it; `escalation` says what a
+    reply adds."""
 
     event: SurgeEvent
+    scored: Scored
     verdict: Verdict
     decided_at: datetime
+    escalation: Escalation | None = None
 
 
 class PopularityPoll:
@@ -77,25 +91,31 @@ class PopularityPoll:
         clock: Clock,
         writer: AlertWriter,
         gatherer: GathererFactory,
+        scorer: Scorer,
     ) -> None:
         self._source = source
         self._session_factory = session_factory
         self._clock = clock
         self._writer = writer
         self._new_gatherer = gatherer
+        self._scorer = scorer
 
     async def run(self) -> None:
         fetched_at = self._clock.now()
         polled_at = poll_boundary(fetched_at)
         rows = await self._fetch()
         inserted = await self._store(rows, polled_at, fetched_at)
-        decisions = await self._decide(await self._detect(polled_at))
+        decisions, unranked = await self._decide(await self._detect(polled_at))
         logger.info(
-            "popularity poll %s: %d rows fetched, %d stored, %d new surge hit(s), %d posted",
+            "popularity poll %s: %d rows fetched, %d stored, %d new surge hit(s), %d posted, %d repl(ies)",
             polled_at.isoformat(), len(rows), inserted, len(decisions),
             sum(d.verdict is Verdict.POSTED for d in decisions),
+            sum(d.verdict is Verdict.REPLY for d in decisions),
         )
         await self._write(decisions, polled_at)
+        if unranked is not None:
+            # Every hit is recorded, none posted; failing the poll is what tells the operator.
+            raise unranked
 
     async def _fetch(self) -> list[ApeWisdomRow]:
         """The listing; a failed or empty fetch raises so the daemon logs and counts it."""
@@ -143,24 +163,69 @@ class PopularityPoll:
         found = [e for e in hits if e is not None and (e.rule_version, e.ticker, e.polled_at) not in known]
         return sorted(found, key=lambda e: (e.polled_at, e.ticker))
 
-    async def _decide(self, events: Sequence[SurgeEvent]) -> list[Decision]:
-        """The selector's verdict for each hit, in order, each seeing the Alerts the
-        hits before it would produce."""
-        symbols = {event.ticker for event in events}
-        alerted: set[tuple[date, str]] = set()
+    async def _decide(self, events: Sequence[SurgeEvent]) -> tuple[list[Decision], ReferenceUnavailable | None]:
+        """The selector's verdict for each hit. Hits go oldest boundary first and, within
+        a boundary, strongest first, so a budget that runs out goes to the strongest
+        and not to the alphabet; each hit sees what the hits before it would announce.
+        With no reference to rank against, every hit is unranked (so below the bar) and
+        the reason is returned for the poll to fail on once the hits are stored."""
+        if not events:
+            return [], None
+        unranked = None
+        try:
+            scored = await self._scorer.score(events)
+        except ReferenceUnavailable as exc:
+            unranked = exc
+            scored = [Scored(raw_score=None, strength=None, bar=None)] * len(events)
+        ranked = sorted(
+            zip(events, scored, strict=True),
+            key=lambda pair: (pair[0].polled_at, -(pair[1].strength or 0.0), pair[0].ticker),
+        )
+        budget_used: dict[date, int] = {}
+        stocks: dict[tuple[date, str], StockDay] = {}
         async with self._session_factory() as session:
-            repo = AlertRepository(session)
+            repo = CandidateRepository(session)
             for day in {eastern_day(event.polled_at) for event in events}:
-                alerted |= {(day, symbol) for symbol in await repo.alerted_symbols(day, symbols)}
+                announced = await repo.list_announced(day)
+                budget_used[day] = sum(c.verdict is Verdict.POSTED for c in announced)
+                for candidate in announced:
+                    key = (day, candidate.symbol)
+                    stocks[key] = announce(
+                        stocks.get(key),
+                        candidate.inputs.get("fired", []),
+                        candidate.strength,
+                        reply=candidate.verdict is Verdict.REPLY,
+                    )
 
         decisions = []
-        for event in events:
-            slot = (eastern_day(event.polled_at), event.ticker)
-            verdict = select(event, DayState(alerted=slot in alerted))
+        for event, score in ranked:
+            day = eastern_day(event.polled_at)
+            stock = stocks.get((day, event.ticker))
+            now = self._clock.now()
+            verdict = select(
+                event,
+                strength=score.strength,
+                bar=score.bar,
+                day=DayState(alerts_posted=budget_used[day], stock=stock),
+                decided_at=now,
+            )
             if verdict is Verdict.POSTED:
-                alerted.add(slot)
-            decisions.append(Decision(event=event, verdict=verdict, decided_at=self._clock.now()))
-        return decisions
+                budget_used[day] += 1
+            if verdict in (Verdict.POSTED, Verdict.REPLY):
+                stocks[(day, event.ticker)] = announce(
+                    stock, [rule.value for rule in event.fired], score.strength, reply=verdict is Verdict.REPLY
+                )
+            decisions.append(
+                Decision(
+                    event=event,
+                    scored=score,
+                    verdict=verdict,
+                    decided_at=now,
+                    escalation=None if verdict is not Verdict.REPLY or stock is None
+                    else escalation(event, score.strength, stock),
+                )
+            )
+        return decisions, unranked
 
     async def _write(self, decisions: Sequence[Decision], current: datetime) -> None:
         """Store every decision. A stock's hits go in order and stop at its first
@@ -192,9 +257,13 @@ class PopularityPoll:
             inputs=_inputs(event),
             verdict=decision.verdict,
             decided_at=decision.decided_at,
+            raw_score=decision.scored.raw_score,
+            strength=decision.scored.strength,
         )
         alert = None
-        if decision.verdict is Verdict.POSTED:
+        if decision.verdict is Verdict.REPLY:
+            alert = await self._reply(decision)
+        elif decision.verdict is Verdict.POSTED:
             gathered = await gatherer.gather(event.ticker, self._clock.now())
             alert = Alert(
                 symbol=event.ticker,
@@ -213,10 +282,28 @@ class PopularityPoll:
             logger.info("surge hit %s stored as candidate %d (%s)", key, stored.candidate_id, decision.verdict.value)
         else:
             late = f" late for boundary {event.polled_at.isoformat()}" if event.polled_at < current else ""
+            what = "reply" if decision.verdict is Verdict.REPLY else "alert"
             logger.info(
-                "surge alert %d stored%s for %s (%s)",
-                stored.alert_id, late, event.ticker, [r.value for r in event.fired],
+                "surge %s %d stored%s for %s (%s)",
+                what, stored.alert_id, late, event.ticker, [r.value for r in event.fired],
             )
+
+    async def _reply(self, decision: Decision) -> Alert:
+        """The reply row for an escalation, continuing the stock's Alert of that Eastern day."""
+        event, found = decision.event, decision.escalation
+        assert found is not None  # the selector only replies to an escalation
+        async with self._session_factory() as session:
+            parent = await AlertRepository(session).alert_id_of(eastern_day(event.polled_at), event.ticker)
+        if parent is None:
+            raise RuntimeError(f"{event.ticker} has no Alert on {eastern_day(event.polled_at)} to reply to")
+        return Alert(
+            symbol=event.ticker,
+            trigger=TRIGGER,
+            triggered_at=event.polled_at,
+            payload=_reply_payload(decision, found).model_dump(mode="json"),
+            rule_version=event.rule_version,
+            reply_to=parent,
+        )
 
 
 def _inputs(event: SurgeEvent) -> dict[str, Any]:
@@ -239,4 +326,14 @@ def _payload(event: SurgeEvent, facts: SurgeFacts) -> PopularitySurgePayload:
         mention_multiplier=inputs.mention_multiplier,
         mention_min_prior=inputs.mention_min_prior,
         facts=facts,
+    )
+
+
+def _reply_payload(decision: Decision, found: Escalation) -> EscalationPayload:
+    """What escalated; the strengths are set only when strength rose by the margin."""
+    return EscalationPayload(
+        polled_at=decision.event.polled_at,
+        new_rules=tuple(rule.value for rule in found.new_rules),
+        strength_before=found.previous_strength if found.strength_up else None,
+        strength_after=decision.scored.strength if found.strength_up else None,
     )
