@@ -77,6 +77,10 @@ Compose passes each one through only when it is set in `.env` or the shell.
    ```
 7. Set up your backups before the data is worth keeping (see "What to back up and how to restore").
 
+To stop the stack: `$COMPOSE down` (the volume stays).
+To start over from nothing, `$COMPOSE down -v` deletes the database volume.
+Do this only while the data is disposable, or after you have a backup you trust.
+
 ## Upgrade to a new version
 
 Take a backup first (see "How to back up"): migrations change stored rows.
@@ -100,10 +104,6 @@ On a VM still running from that name, stop with the old name before pulling, the
 ```
 docker compose -f docker-compose.v2.yml stop ingest bot
 ```
-
-To stop the stack: `$COMPOSE down` (the volume stays).
-To start over from nothing, `$COMPOSE down -v` deletes the database volume.
-Do this only while the data is disposable, or after you have a backup you trust.
 
 The migrate gate also drops the `rs_mcp` and `rs_research` database roles that an earlier release created, wherever they exist.
 If your `.env` still has `RS_DB_PASSWORD_MCP` and `RS_DB_PASSWORD_RESEARCH`, nothing reads them any more and they can be deleted.

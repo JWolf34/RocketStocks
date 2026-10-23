@@ -44,7 +44,7 @@ GRANTS: dict[str, dict[str, tuple[str, ...]]] = {
             "UPDATE (delivery, sending_at, posted_at, message_id, thread_id, post_attempts)",
         ),
     },
-    # Written once by ingest and never changed; the readers rank and report over them.
+    # Written once by ingest and never changed.
     "candidate": {
         "ingest": _SELECT_INSERT,
     },
