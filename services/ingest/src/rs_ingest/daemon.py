@@ -100,8 +100,9 @@ class _JobState:
     next_fire: datetime
     task: asyncio.Task[None] | None = None
     deadline: datetime | None = None  # when the run in `task` times out
-    # A run_on_start job that has not yet had its startup run (it waits out a dead token).
-    start_pending: bool = False
+    # One run is owed: the startup run of a run_on_start job, or a slot that came due while the
+    # job was still running or the Schwab token was dead. Slots missed meanwhile coalesce into it.
+    run_pending: bool = False
 
 
 def _subject(job: Job) -> str:
@@ -161,27 +162,25 @@ class Daemon:
         states = []
         for job in self._cron:
             self._metrics.register_job(job.name)
-            states.append(_JobState(job, job.schedule.next_after(now), start_pending=job.run_on_start))
+            states.append(_JobState(job, job.schedule.next_after(now), run_pending=job.run_on_start))
         return states
 
     def _dispatch_due(self, states: list[_JobState], now: datetime) -> None:
         for state in states:
-            if state.start_pending and not self._paused(state.job):
-                state.start_pending = False
-                self._start(state, now)
-                continue
-            if state.next_fire > now:
-                continue
-            # Slots missed while down or busy are dropped, not replayed.
-            state.next_fire = state.job.schedule.next_after(now)
             name = state.job.name
-            if state.task is not None and not state.task.done():
-                logger.warning("job %s still running at its next slot - skipping", name)
-                self._metrics.job_runs.labels(name, Outcome.SKIPPED_OVERLAP).inc()
-            elif self._paused(state.job):
-                logger.info("job %s skipped - Schwab token is dead", name)
-                self._metrics.job_runs.labels(name, Outcome.SKIPPED_TOKEN_DEAD).inc()
-            else:
+            running = state.task is not None and not state.task.done()
+            if state.next_fire <= now:
+                # Slots missed while the daemon was down are dropped, not replayed.
+                state.next_fire = state.job.schedule.next_after(now)
+                if running:
+                    logger.warning("job %s still running at its next slot - running it again when it finishes", name)
+                    self._metrics.job_runs.labels(name, Outcome.DEFERRED_OVERLAP).inc()
+                elif self._paused(state.job):
+                    logger.info("job %s due while the Schwab token is dead - running it once the token is back", name)
+                    self._metrics.job_runs.labels(name, Outcome.DEFERRED_TOKEN_DEAD).inc()
+                state.run_pending = True
+            if state.run_pending and not running and not self._paused(state.job):
+                state.run_pending = False
                 self._start(state, now)
 
     def _start(self, state: _JobState, now: datetime) -> None:

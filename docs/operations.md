@@ -279,11 +279,12 @@ Goal: Schwab jobs pause, one Ops ping goes out, the Popularity poll continues, a
 3. Wait for the Schwab call, which comes within a minute of the restart.
    Expect, in `$COMPOSE logs ingest`: `Schwab token dead - pausing Schwab jobs`.
    Expect in the ops channel: exactly one Ops ping, "Schwab token is dead ...".
-   Expect `schwab_token_dead 1` on the metrics port and `skipped_token_dead` outcomes for the Schwab jobs.
+   Expect `schwab_token_dead 1` on the metrics port and `deferred_token_dead` outcomes for the Schwab jobs when one of their slots comes due.
 4. Confirm polling continues: a new `popularity_snapshot` boundary appears within 30 minutes.
 5. Recover: run `/setup schwab` (see "Schwab sign-in").
    Expect the log line `Schwab token renewed - resuming Schwab jobs`, one "renewed" Ops ping and `schwab_token_dead 0`.
-6. Confirm the Schwab jobs run again (`cron_job_runs{outcome="success"}` rises for `surge_bars`).
+6. Confirm the Schwab jobs whose slot passed while the token was dead run once right after the renewal (`cron_job_runs{outcome="success"}` rises for `surge_bars`, which refetches the deleted SPY bar).
+   A slot that comes due while the token is dead is deferred, not lost, and several deferred slots run once.
 
 ### Ingest kill mid-poll
 
@@ -295,10 +296,13 @@ Goal: no lost or duplicated rows or Alerts after a restart.
    ```
 2. Kill ingest hard while a poll is running.
    Polls fire on the :00 and :30 UTC boundaries.
+   A slot that comes due while the same job is still running is not dropped: the job runs once more as soon as that run finishes (`cron_job_runs{outcome="deferred_overlap"}` counts these).
+   So a restart a few seconds before a boundary still stores that boundary, shortly after the startup poll ends.
+   Slots that passed while ingest was down stay dropped.
    A poll takes a few seconds, so kill within about two seconds of the boundary.
    Kill the container's main process from the host, which Docker treats as a crash:
    ```
-   sudo kill -9 "$(docker inspect -f '{{.State.Pid}}' rocketstocks-v2-ingest-1)"
+   sudo kill -9 "$(sudo docker inspect -f '{{.State.Pid}}' rocketstocks-v2-ingest-1)"
    ```
    Do not use `$COMPOSE kill` here: Docker treats it as a manual stop, and the restart policy never brings the container back.
 3. Confirm the restart policy brought ingest back (`$COMPOSE ps` shows it up again, with a fresh start time).
@@ -423,6 +427,8 @@ The constants it recommends changing live in `services/ingest/src/rs_ingest/sele
 The `surge_bars` job keeps daily bars for SPY and for every stock the Popularity Trigger ever hit, found by replaying the Trigger over all stored Popularity.
 Each stock gets about 270 sessions before its first hit (a year for its typical move, plus margin) and every session since, up to the last settled one.
 It runs at startup and each weekday 90 minutes after the close, and a rerun with nothing missing makes no Schwab call.
+It logs `surge_bars: replaying the Popularity Trigger to find the stocks to track` when it starts.
+The replay can take several minutes on a large Popularity history, so the next progress line may take that long to appear.
 
 A stock whose stored history starts after the start it needs is extended back once.
 `bar_request` records the earliest start already asked of Schwab per symbol, so a listing younger than the lookback is asked once and not every night.
