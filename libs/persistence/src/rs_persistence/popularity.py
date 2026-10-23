@@ -1,4 +1,4 @@
-"""popularity_snapshot: idempotent bulk insert and history reads."""
+"""popularity_snapshot: idempotent bulk insert and reads."""
 
 from collections.abc import Collection, Sequence
 from datetime import UTC, datetime
@@ -36,7 +36,7 @@ class PopularityRepository:
 
     async def insert_many(self, snapshots: Sequence[PopularitySnapshot]) -> int:
         """Insert snapshots, skipping any whose (polled_at, ticker) already exists
-        (a re-polled boundary, a re-run import); returns how many were inserted."""
+        (a re-polled boundary); returns how many were inserted."""
         inserted = 0
         for start in range(0, len(snapshots), _INSERT_CHUNK):
             chunk = snapshots[start : start + _INSERT_CHUNK]
@@ -49,54 +49,25 @@ class PopularityRepository:
             inserted += len(result.all())
         return inserted
 
-    async def extent(self, origin: PopularityOrigin) -> tuple[datetime, datetime] | None:
-        """Earliest and latest polled_at among one origin's rows, None when it has none."""
-        result = await self._session.execute(
-            select(func.min(PopularitySnapshotRow.polled_at), func.max(PopularitySnapshotRow.polled_at))
-            .where(PopularitySnapshotRow.origin == origin.value)
-        )
-        first, last = result.one()
-        if first is None or last is None:
-            return None
-        return first.astimezone(UTC), last.astimezone(UTC)
-
     async def earliest_polled_at(self) -> datetime | None:
         """The oldest stored boundary across all tickers, or None when empty."""
         earliest = await self._session.scalar(select(func.min(PopularitySnapshotRow.polled_at)))
         return None if earliest is None else earliest.astimezone(UTC)
 
-    async def list_for_ticker(
-        self, ticker: str, start: datetime, end: datetime
-    ) -> list[PopularitySnapshot]:
-        """One ticker's snapshots with polled_at in [start, end), oldest first."""
-        rows = await self._session.scalars(
-            select(PopularitySnapshotRow)
-            .where(
-                PopularitySnapshotRow.ticker == ticker,
-                PopularitySnapshotRow.polled_at >= start,
-                PopularitySnapshotRow.polled_at < end,
-            )
-            .order_by(PopularitySnapshotRow.polled_at)
-        )
-        return [snapshot_from_row(row) for row in rows]
-
     async def list_between(
         self,
         start: datetime,
         end: datetime,
-        origin: PopularityOrigin | None = None,
         min_mentions: int | None = None,
     ) -> list[PopularitySnapshot]:
         """Every ticker's snapshots with polled_at in [start, end), ordered by
-        (polled_at, ticker), optionally only one origin and only those with at
-        least `min_mentions`. Unbounded in size: for jobs that replay history."""
+        (polled_at, ticker), optionally only those with at least `min_mentions`.
+        Unbounded in size: for jobs that replay history."""
         query = (
             select(PopularitySnapshotRow)
             .where(PopularitySnapshotRow.polled_at >= start, PopularitySnapshotRow.polled_at < end)
             .order_by(PopularitySnapshotRow.polled_at, PopularitySnapshotRow.ticker)
         )
-        if origin is not None:
-            query = query.where(PopularitySnapshotRow.origin == origin.value)
         if min_mentions is not None:
             query = query.where(PopularitySnapshotRow.mentions >= min_mentions)
         return [snapshot_from_row(row) for row in await self._session.scalars(query)]

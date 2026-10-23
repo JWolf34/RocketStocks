@@ -21,7 +21,6 @@ COPY libs/query/pyproject.toml libs/query/
 COPY libs/sources/pyproject.toml libs/sources/
 COPY services/bot/pyproject.toml services/bot/
 COPY services/ingest/pyproject.toml services/ingest/
-COPY tools/backfill/pyproject.toml tools/backfill/
 COPY tools/migrate/pyproject.toml tools/migrate/
 RUN --mount=type=cache,target=/root/.cache/uv \
     uv sync --locked --all-packages \

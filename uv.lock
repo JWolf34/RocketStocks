@@ -16,7 +16,6 @@ resolution-markers = [
 [manifest]
 members = [
     "rs-analysis",
-    "rs-backfill",
     "rs-bot",
     "rs-domain",
     "rs-ingest",
@@ -1690,21 +1689,6 @@ requires-dist = [
     { name = "numpy", specifier = ">=2.4.0" },
     { name = "pydantic", specifier = ">=2.13.4" },
     { name = "rs-domain", editable = "libs/domain" },
-]
-
-[[package]]
-name = "rs-backfill"
-version = "0.1.0"
-source = { editable = "tools/backfill" }
-dependencies = [
-    { name = "rs-domain" },
-    { name = "rs-persistence" },
-]
-
-[package.metadata]
-requires-dist = [
-    { name = "rs-domain", editable = "libs/domain" },
-    { name = "rs-persistence", editable = "libs/persistence" },
 ]
 
 [[package]]
