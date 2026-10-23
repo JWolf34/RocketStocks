@@ -6,12 +6,8 @@ from pydantic import ValidationError
 from rs_domain import (
     Alert,
     Candidate,
-    ChainSnapshot,
-    Dataset,
-    OptionQuote,
     PopularityOrigin,
     PopularitySnapshot,
-    SourceStatus,
     Verdict,
     eastern_day,
     eastern_day_start,
@@ -48,61 +44,6 @@ class TestAlert:
         )
         assert alert.triggered_at.tzinfo is UTC
         assert alert.triggered_at == UTC_NOON
-
-
-def make_quote(**overrides):
-    fields = {
-        "option_symbol": "SPY   260717C00560000",
-        "expiry": date(2026, 7, 17),
-        "strike": 560.0,
-        "put_call": "C",
-        "quote_time": UTC_NOON,
-    }
-    fields.update(overrides)
-    return OptionQuote(**fields)
-
-
-def make_snapshot(**overrides):
-    fields = {
-        "underlying": "SPY",
-        "dataset": Dataset.CURATED_5M,
-        "cycle_id": UTC_NOON,
-        "fetched_at": UTC_NOON + timedelta(seconds=12),
-        "source_status": SourceStatus.OK,
-        "rows": (make_quote(),),
-    }
-    fields.update(overrides)
-    return ChainSnapshot(**fields)
-
-
-class TestOptionQuote:
-    def test_minimal_contract_identity_builds(self):
-        quote = OptionQuote(
-            option_symbol="SPY   260717P00500000", expiry=date(2026, 7, 17), strike=500, put_call="P"
-        )
-        assert quote.bid is None and quote.volume is None
-
-    def test_rejects_bad_put_call(self):
-        with pytest.raises(ValidationError):
-            make_quote(put_call="X")
-
-    def test_rejects_negative_volume(self):
-        with pytest.raises(ValidationError):
-            make_quote(volume=-1)
-
-    def test_rejects_naive_quote_time(self):
-        with pytest.raises(ValidationError, match="naive"):
-            make_quote(quote_time=datetime(2026, 7, 6, 16, 0))
-
-
-class TestChainSnapshot:
-    def test_default_rows_empty_is_tombstone_shape(self):
-        tomb = make_snapshot(source_status=SourceStatus.SKIPPED, rows=())
-        assert tomb.rows == ()
-
-    def test_enum_values_are_db_and_metric_vocabulary(self):
-        assert [d.value for d in Dataset] == ["curated_5m", "eod_full"]
-        assert [s.value for s in SourceStatus] == ["ok", "partial", "failed", "stale", "skipped"]
 
 
 class TestPopularitySnapshot:

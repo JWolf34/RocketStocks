@@ -59,15 +59,15 @@ def test_namespace_prefixes_metric_names():
 
 def test_labeled_counters_expose_one_family_with_label_per_key():
     counters = {"completed": 0, "skipped": 0}
-    registry = registry_with(LabeledDictCounterCollector("chain_scan_cycles", "outcome", counters))
+    registry = registry_with(LabeledDictCounterCollector("scan_cycles", "outcome", counters))
     text = scrape(registry)
     # Both label values present from process start (seeded dict), zeros included.
-    assert "# TYPE chain_scan_cycles_total counter" in text
-    assert 'chain_scan_cycles_total{outcome="completed"} 0.0' in text
-    assert 'chain_scan_cycles_total{outcome="skipped"} 0.0' in text
+    assert "# TYPE scan_cycles_total counter" in text
+    assert 'scan_cycles_total{outcome="completed"} 0.0' in text
+    assert 'scan_cycles_total{outcome="skipped"} 0.0' in text
 
     counters["completed"] += 3
-    assert 'chain_scan_cycles_total{outcome="completed"} 3.0' in scrape(registry)
+    assert 'scan_cycles_total{outcome="completed"} 3.0' in scrape(registry)
 
 
 def test_callable_gauge_evaluates_at_scrape_time():
