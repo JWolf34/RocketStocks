@@ -207,22 +207,6 @@ class TrackRecordRow(Base):
     median_excess: Mapped[float | None] = mapped_column(Double)
 
 
-class ImportVerificationRow(Base):
-    """import_verification: one passed `verify-offset` run (append-only); the
-    zone is a candidate name such as "America/Chicago" or "-06:00"."""
-
-    __tablename__ = "import_verification"
-
-    id: Mapped[int] = mapped_column(BigInteger, Identity(always=True), primary_key=True)
-    verified_at: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True))
-    zone: Mapped[str] = mapped_column(Text)
-    overlap_rows: Mapped[int] = mapped_column(Integer)
-    matched_rows: Mapped[int] = mapped_column(Integer)
-    match_rate: Mapped[float] = mapped_column(Double)
-    overlap_start: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True))
-    overlap_end: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True))
-
-
 class SchwabAuthRequestRow(Base):
     """schwab_auth_request: the `/setup schwab` handshake. The callback
     URL carries an OAuth code - treat it as a secret and never log it."""
