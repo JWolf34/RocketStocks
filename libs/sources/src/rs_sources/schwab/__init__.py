@@ -1,9 +1,8 @@
-"""Every Schwab call: client factory, option chains, quote and daily history.
+"""Every Schwab call: client factory, quote and daily history.
 
 The REST adapters keep schwab-py and authlib inside this package.
 """
 
-from rs_sources.schwab.chain import DTE_BOUND, ChainFetchError, SchwabChainFetch
 from rs_sources.schwab.client import (
     SchwabAuthError,
     TokenMissingError,
@@ -22,9 +21,7 @@ from rs_sources.schwab.market_data import (
 from rs_sources.schwab.oauth import CallbackRejected, ExchangeFailed, SchwabOAuth
 
 __all__ = [
-    "DTE_BOUND",
     "CallbackRejected",
-    "ChainFetchError",
     "DailyBar",
     "DailyHistory",
     "ExchangeFailed",
@@ -32,7 +29,6 @@ __all__ = [
     "RejectReason",
     "RejectedBar",
     "SchwabAuthError",
-    "SchwabChainFetch",
     "SchwabMarketData",
     "SchwabOAuth",
     "SchwabResponseError",

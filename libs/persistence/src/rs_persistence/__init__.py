@@ -17,20 +17,14 @@ from rs_persistence.auth_requests import (
     AuthRequestRepository,
 )
 from rs_persistence.candidates import CandidateRepository
-from rs_persistence.chains import ChainSnapshotRepository
 from rs_persistence.daily_bars import DailyBarRepository
 from rs_persistence.engine import build_engine, build_session_factory, psycopg_conninfo
-from rs_persistence.import_verification import (
-    ImportVerification,
-    ImportVerificationRepository,
-)
 from rs_persistence.models import (
     AlertRow,
     BarRequestRow,
     Base,
     CandidateRow,
     DailyBarRow,
-    ImportVerificationRow,
     OutcomeRow,
     PopularitySnapshotRow,
     SchwabAuthRequestRow,
@@ -39,7 +33,6 @@ from rs_persistence.models import (
     TrackRecordRow,
     TriggerRoleRow,
     UnpricedSymbolRow,
-    chain_snapshot_table,
 )
 from rs_persistence.popularity import PopularityRepository
 from rs_persistence.token_notices import TokenNoticeRepository
@@ -76,12 +69,8 @@ __all__ = [
     "CandidateRow",
     "TrackRecordRepository",
     "TrackRecordRow",
-    "ChainSnapshotRepository",
     "DailyBarRepository",
     "DailyBarRow",
-    "ImportVerification",
-    "ImportVerificationRepository",
-    "ImportVerificationRow",
     "OutcomeRow",
     "PendingAlert",
     "PopularityRepository",
@@ -97,6 +86,5 @@ __all__ = [
     "build_engine",
     "build_session_factory",
     "psycopg_conninfo",
-    "chain_snapshot_table",
     "migration_config",
 ]

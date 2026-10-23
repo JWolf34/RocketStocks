@@ -3,6 +3,7 @@
 Aggregate facts measured against the Schwab market-data API.
 Only aggregates are kept here (counts, rates, medians, durations); vendor rows and raw payloads are never committed.
 Measured against SPY and a handful of other symbols in July and August 2026 unless stated.
+The scripts that took these measurements were removed; they are in the repository history before the change that removed them.
 
 ## REST budget
 

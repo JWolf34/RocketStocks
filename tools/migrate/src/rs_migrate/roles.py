@@ -2,12 +2,13 @@
 
 Migrate is the only superuser path. Every other service connects as its own
 least-privilege role, so a compromise of the internet-facing one (bot) cannot
-read the Schwab refresh token, and the read-only role (mcp) cannot write anything.
+read the Schwab refresh token.
 
 GRANTS is the single source of truth: one entry per table, naming what each
 service may do. A table with no entry fails the test suite, so adding a table
 forces a decision. `apply_roles` revokes everything and re-grants from GRANTS in
-one transaction, so it is idempotent and also removes stale privileges.
+one transaction, so it is idempotent and also removes stale privileges. It also
+drops the roles in RETIRED_SERVICES wherever they still exist.
 """
 
 import logging
@@ -20,7 +21,10 @@ from sqlalchemy.engine import make_url
 
 logger = logging.getLogger(__name__)
 
-SERVICES = ("ingest", "bot", "mcp", "research")
+SERVICES = ("ingest", "bot")
+# Roles an earlier release created and nothing connects as any more. Each upgrade
+# drops them where they exist; a deploy that never had them is unaffected.
+RETIRED_SERVICES = ("mcp", "research")
 ROLE_PREFIX = "rs_"
 
 # Compose interpolates these passwords into DSNs unencoded, so reject characters
@@ -39,39 +43,22 @@ GRANTS: dict[str, dict[str, tuple[str, ...]]] = {
             "SELECT",
             "UPDATE (delivery, sending_at, posted_at, message_id, thread_id, post_attempts)",
         ),
-        "mcp": _SELECT,
-        "research": _SELECT,
     },
-    # Written once by ingest and never changed; the readers rank and report over them.
+    # Written once by ingest and never changed.
     "candidate": {
         "ingest": _SELECT_INSERT,
-        "mcp": _SELECT,
-        "research": _SELECT,
     },
     # Inserted by the bars job, which deletes a symbol's bars to replace them when a split makes them stale.
     "daily_bar": {
         "ingest": ("SELECT", "INSERT", "DELETE"),
         "bot": _SELECT,
-        "mcp": _SELECT,
-        "research": _SELECT,
     },
     "bar_request": {
         "ingest": ("SELECT", "INSERT", "UPDATE"),
-        "mcp": _SELECT,
-        "research": _SELECT,
-    },
-    # Written by the backfill tool on the owner DSN; no service touches it.
-    "import_verification": {},
-    "options_chain_snapshot": {
-        "ingest": _SELECT_INSERT,
-        "mcp": _SELECT,
-        "research": _SELECT,
     },
     "popularity_snapshot": {
         "ingest": _SELECT_INSERT,
         "bot": _SELECT,
-        "mcp": _SELECT,
-        "research": _SELECT,
     },
     # callback_url carries a single-use OAuth code: the bot writes it, only
     # ingest consumes it, and no read-only role ever sees it.
@@ -89,15 +76,11 @@ GRANTS: dict[str, dict[str, tuple[str, ...]]] = {
     # Rewritten whole for a Trigger version by the nightly job (delete, insert) and read by the rest.
     "outcome": {
         "ingest": ("SELECT", "INSERT", "DELETE"),
-        "mcp": _SELECT,
-        "research": _SELECT,
     },
     # Upserted per horizon by the nightly job; the bot shows it beside an Alert.
     "track_record": {
         "ingest": ("SELECT", "INSERT", "UPDATE"),
         "bot": _SELECT,
-        "mcp": _SELECT,
-        "research": _SELECT,
     },
     # Which server role an Alert pings per Trigger; the bot's /setup roles writes it.
     "trigger_role": {
@@ -105,8 +88,6 @@ GRANTS: dict[str, dict[str, tuple[str, ...]]] = {
     },
     "unpriced_symbol": {
         "ingest": ("SELECT", "INSERT", "UPDATE", "DELETE"),
-        "mcp": _SELECT,
-        "research": _SELECT,
     },
 }
 
@@ -159,8 +140,25 @@ def apply_roles(
         for service, role in roles.items():
             _ensure_role(conn, role, passwords[service])
             _grant(conn, role, service)
+        for service in RETIRED_SERVICES:
+            _drop_role(conn, role_name(service, prefix))
     logger.info("database roles applied: %s", ", ".join(roles.values()))
     return list(roles.values())
+
+
+def _drop_role(conn: psycopg.Connection, role: str) -> None:
+    """Remove a retired role and everything it was granted; a no-op where it is absent.
+
+    DROP OWNED BY revokes the role's privileges in this database, which DROP ROLE
+    refuses to leave behind. A role holding privileges in another database of the
+    cluster still fails the drop, loudly, rather than being half removed.
+    """
+    if not conn.execute("SELECT 1 FROM pg_roles WHERE rolname = %s", (role,)).fetchone():
+        return
+    name = sql.Identifier(role)
+    conn.execute(sql.SQL("DROP OWNED BY {}").format(name))
+    conn.execute(sql.SQL("DROP ROLE {}").format(name))
+    logger.info("retired database role dropped: %s", role)
 
 
 def _ensure_role(conn: psycopg.Connection, role: str, password: str) -> None:

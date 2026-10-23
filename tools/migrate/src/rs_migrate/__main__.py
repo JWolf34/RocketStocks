@@ -40,7 +40,7 @@ def main(argv: list[str] | None = None) -> int:
     )
     downgrade = sub.add_parser("downgrade", help="migrate down to a revision")
     downgrade.add_argument("revision")
-    sub.add_parser("roles", help="create or update the per-service database roles and grants")
+    sub.add_parser("roles", help="create or update the per-service database roles and grants, and drop retired ones")
     sub.add_parser("current", help="show current revision")
     sub.add_parser("check", help="fail if the ORM models differ from the migrated schema")
 

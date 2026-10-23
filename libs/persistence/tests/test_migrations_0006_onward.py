@@ -1,4 +1,4 @@
-"""Migrations 0006-0021 against Timescale: the upgrade/downgrade round trip and
+"""Migrations 0006-0022 against Timescale: the upgrade/downgrade round trip and
 the physical layout (hypertables, compression, constraints)."""
 
 import uuid
@@ -80,7 +80,6 @@ def test_0012_and_0013_drop_the_dead_tables_and_downgrade_to_empty_ones(scratch_
     try:
         command.upgrade(config, "head")
         assert not {"stream_bars_5m", "service_clients"} & set(inspect(engine).get_table_names())
-        assert "options_chain_snapshot" in inspect(engine).get_table_names()
 
         command.downgrade(config, "0011")
         assert {"stream_bars_5m", "service_clients"} <= set(inspect(engine).get_table_names())
@@ -95,6 +94,90 @@ def test_0012_and_0013_drop_the_dead_tables_and_downgrade_to_empty_ones(scratch_
 
         command.upgrade(config, "head")
         assert not {"stream_bars_5m", "service_clients"} & set(inspect(engine).get_table_names())
+    finally:
+        engine.dispose()
+
+
+DROPPED_BY_0022 = {"options_chain_snapshot", "import_verification"}
+
+
+def _dropped_layout(engine):
+    """Everything migration 0022 drops, as the catalog reports it: columns, the hypertable
+    dimension, compression settings, the compression policy and the two enums."""
+    with engine.connect() as conn:
+
+        def rows(sql):
+            return [tuple(r) for r in conn.execute(text(sql))]
+
+        return {
+            "columns": rows(
+                "SELECT table_name, column_name, data_type, udt_name, is_nullable, column_default,"
+                " is_identity, identity_generation, numeric_precision, numeric_scale"
+                " FROM information_schema.columns WHERE table_schema = 'public'"
+                " AND table_name IN ('options_chain_snapshot', 'import_verification')"
+                " ORDER BY table_name, ordinal_position"
+            ),
+            "constraints": rows(
+                "SELECT conrelid::regclass::text, contype, pg_get_constraintdef(oid) FROM pg_constraint"
+                " WHERE conrelid IN (SELECT oid FROM pg_class WHERE relnamespace = 'public'::regnamespace"
+                " AND relname IN ('options_chain_snapshot', 'import_verification'))"
+                " ORDER BY 1, 2, 3"
+            ),
+            "dimension": rows(
+                "SELECT column_name, time_interval FROM timescaledb_information.dimensions"
+                " WHERE hypertable_name = 'options_chain_snapshot'"
+            ),
+            "compression": rows(
+                "SELECT segmentby, orderby FROM timescaledb_information.hypertable_compression_settings"
+                " WHERE hypertable::text = 'options_chain_snapshot'"
+            ),
+            "jobs": rows(
+                "SELECT proc_name, schedule_interval, config->>'compress_after'"
+                " FROM timescaledb_information.jobs WHERE hypertable_name = 'options_chain_snapshot'"
+            ),
+            "enums": rows(
+                "SELECT t.typname, e.enumlabel FROM pg_enum e JOIN pg_type t ON t.oid = e.enumtypid"
+                " WHERE t.typname IN ('dataset', 'source_status') ORDER BY t.typname, e.enumsortorder"
+            ),
+        }
+
+
+def test_0022_drops_the_chain_and_import_tables_and_downgrades_to_empty_ones_as_they_were(scratch_url):
+    config = migration_config(scratch_url)
+    engine = create_engine(scratch_url)
+    try:
+        command.upgrade(config, "0021")
+        before = _dropped_layout(engine)
+        assert {c[0] for c in before["columns"]} == DROPPED_BY_0022
+        assert before["dimension"] and before["compression"] and before["jobs"] and before["enums"]
+        with engine.begin() as conn:  # rows must not stop the drop
+            conn.execute(
+                text(
+                    "INSERT INTO options_chain_snapshot (underlying, dataset, cycle_id, fetched_at, source_status)"
+                    " VALUES ('SPY', 'eod_full', now(), now(), 'ok')"
+                )
+            )
+            conn.execute(
+                text(
+                    "INSERT INTO import_verification (verified_at, zone, overlap_rows, matched_rows,"
+                    " match_rate, overlap_start, overlap_end) VALUES (now(), 'z', 1, 1, 1, now(), now())"
+                )
+            )
+
+        command.upgrade(config, "0022")
+        gone = _dropped_layout(engine)
+        assert not DROPPED_BY_0022 & set(inspect(engine).get_table_names())
+        assert all(not rows for rows in gone.values())
+
+        command.downgrade(config, "0021")
+        assert DROPPED_BY_0022 <= set(inspect(engine).get_table_names())
+        assert _dropped_layout(engine) == before
+        with engine.connect() as conn:
+            for table in DROPPED_BY_0022:
+                assert conn.execute(text(f"SELECT count(*) FROM {table}")).scalar_one() == 0
+
+        command.upgrade(config, "head")
+        assert not DROPPED_BY_0022 & set(inspect(engine).get_table_names())
     finally:
         engine.dispose()
 

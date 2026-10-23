@@ -1,7 +1,7 @@
 """Ingest configuration via pydantic-settings.
 
 RS_DB_URL is the same variable rs_migrate consumes; SCHWAB_API_KEY /
-SCHWAB_API_SECRET are the same credentials the scripts/spikes tools read. Ingest's
+SCHWAB_API_SECRET are the credentials the Schwab login tools read. Ingest's
 own tunables carry an RS_INGEST_ prefix so a stray shell export (SYMBOL, ...)
 can never silently reconfigure the daemon.
 
