@@ -60,8 +60,6 @@ jobs:
           # Exercises the per-service roles step that follows the upgrade.
           RS_DB_PASSWORD_INGEST: ci-password-ingest-0000
           RS_DB_PASSWORD_BOT: ci-password-bot-000000
-          RS_DB_PASSWORD_MCP: ci-password-mcp-0000000
-          RS_DB_PASSWORD_RESEARCH: ci-password-research-0
         run: |
           uv run python -m rs_migrate upgrade
           uv run python -m rs_migrate check
@@ -109,8 +107,6 @@ jobs:
           RS_DB_PASSWORD=ci-smoke-superuser-0000
           RS_DB_PASSWORD_INGEST=ci-password-ingest-0000
           RS_DB_PASSWORD_BOT=ci-password-bot-000000
-          RS_DB_PASSWORD_MCP=ci-password-mcp-0000000
-          RS_DB_PASSWORD_RESEARCH=ci-password-research-0
           RS_EDGAR_USER_AGENT=RocketStocks ci@example.com
           EOF
 

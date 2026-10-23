@@ -1,7 +1,7 @@
 # Operations
 
 This is the operator's guide to running RocketStocks on the deploy VM.
-It covers deploying the stack, signing in to Schwab, the one-time import of v1's Popularity history, the two rehearsals, day-to-day procedures, and what to back up and how to restore it.
+It covers deploying the stack, signing in to Schwab, the two rehearsals, day-to-day procedures, and what to back up and how to restore it.
 Each procedure lists the exact commands and what to expect.
 
 ## Conventions
@@ -11,7 +11,7 @@ Each procedure lists the exact commands and what to expect.
 - `.env` holds the variables listed in `.env.example`.
 - Tools run inside the image, so the VM needs no Python of its own.
   `$COMPOSE run --rm --no-deps migrate python -m <tool>` runs one with the superuser DSN the migrate service carries inside the compose network.
-  A file the tool reads goes in as a read-only mount, for example `-v ~/popularity.csv:/import/popularity.csv:ro` before `migrate`.
+  A file the tool reads goes in as a read-only mount, for example `-v ~/file:/data/file:ro` before `migrate`.
 - On a development machine the same tools also run from the shared venv (`uv sync --all-packages`, then `.venv/bin/python -m ...`), with `.env`'s `RS_DB_URL`, the superuser DSN on `127.0.0.1:5498`, exported first (do not source `.env`: it has unquoted spaces and CRLF line endings):
   ```
   export RS_DB_URL="$(grep '^RS_DB_URL=' .env | cut -d= -f2- | tr -d '\r')"
@@ -104,6 +104,9 @@ docker compose -f docker-compose.v2.yml stop ingest bot
 To stop the stack: `$COMPOSE down` (the volume stays).
 To start over from nothing, `$COMPOSE down -v` deletes the database volume.
 Do this only while the data is disposable, or after you have a backup you trust.
+
+The migrate gate also drops the `rs_mcp` and `rs_research` database roles that an earlier release created, wherever they exist.
+If your `.env` still has `RS_DB_PASSWORD_MCP` and `RS_DB_PASSWORD_RESEARCH`, nothing reads them any more and they can be deleted.
 
 ## Timescale image bump
 
@@ -200,66 +203,17 @@ Ingest notices the newer token on its next token poll (`RS_INGEST_TOKEN_POLL_SEC
 The Schwab refresh token lives seven days.
 The bot DMs you at 24 hours and 6 hours before it expires; re-run `/setup schwab` then.
 
-## Import v1 Popularity
+## Imported v1 Popularity
 
-This is a one-time procedure: v1's Popularity history from 2026-03-03 onward, where its 30-minute polling is near-complete.
-Rows before that date are not imported.
-v1's containers are removed, so the steps below can only be rerun from a retained dump file.
-The import is idempotent, so a rerun from the same dump inserts nothing new.
-
-### 1. The dump
-
-The importer reads a CSV with a header row of v1's `popularity` columns, limited to the window.
-It was exported from v1's database while v1 was still polling, because the offset check in step 2 needs both stacks polling at the same time:
-```
-COPY (SELECT datetime, rank, ticker, mentions, upvotes, rank_24h_ago, mentions_24h_ago FROM popularity WHERE datetime >= '2026-03-03' ORDER BY datetime, rank) TO STDOUT WITH CSV HEADER
-```
-Keep the file outside the repo.
-It is vendor data and never gets committed.
-Note the dump's row count and range (`wc -l`) to compare with the import.
-
-### 2. Verify the offset
-
-v1 wrote naive local timestamps in a container zone nobody documented.
-The import refuses to run until `verify-offset` records the zone against live data.
-
-1. The live poll must have been running alongside v1 long enough to overlap on many rows.
-   The default minimum is 1000 overlapping rows (`--min-overlap` changes it).
-   Check the live extent:
-   ```
-   psql -c "SELECT min(polled_at), max(polled_at), count(*) FROM popularity_snapshot WHERE origin = 'live'"
-   ```
-2. Find and record the zone (it needs at least 99% of the overlap to match one candidate):
-   ```
-   $COMPOSE run --rm --no-deps -v ~/popularity.csv:/import/popularity.csv:ro migrate python -m rs_backfill verify-offset --dump /import/popularity.csv
-   ```
-   Exit 0 prints the winning zone and records it.
-   Exit 1 means no candidate cleared the bar or there was too little overlap; wait for more overlap and rerun.
-
-### 3. Import
-
-1. Import, naming the recorded zone (for example `America/Chicago`):
-   ```
-   $COMPOSE run --rm --no-deps -v ~/popularity.csv:/import/popularity.csv:ro migrate python -m rs_backfill popularity-import --dump /import/popularity.csv --zone <zone>
-   ```
-2. Rerun the same import command.
-   It must report `inserted 0`.
-3. Cross-check the daylight-saving change inside the window.
-   List the imported boundaries around the March spring-forward Sunday (substitute its date):
-   ```
-   psql -c "SELECT DISTINCT polled_at FROM popularity_snapshot WHERE origin = 'v1_import' AND polled_at >= '<spring-forward date> 04:00+00' AND polled_at < '<spring-forward date> 12:00+00' ORDER BY 1"
-   ```
-   v1 polled on the local wall clock, which skips an hour at the change, and the importer converts each row to UTC, so the right zone gives an unbroken 30-minute series (for `America/Chicago` on 2026-03-08: 07:30, then 08:00 UTC).
-   A one-hour hole or a doubled hour means the zone is wrong; stop and rerun `verify-offset`.
-
-Expect: the first import reports `parsed/inserted/rejected` counts that agree with the dump, and the rerun reports `inserted 0`.
+Popularity from v1 was imported once, from 2026-03-03 onward, and those rows carry `origin = 'v1_import'`.
+The importer was v2 code, removed after the import; it lives in the repository history before the commit that removed it.
 
 ## Check a live Alert
 
 Done when a real Popularity Alert posts and carries a Track record.
 
-1. Leave the stack running with a valid token, the imported history and bars loaded.
-   After the import, and once the daily-bars job has caught up (its log line `surge_bars through ...` with nothing failed), measure the Track record once rather than waiting for the nightly job at 20:00 Eastern:
+1. Leave the stack running with a valid token, Popularity history and bars loaded.
+   Once the daily-bars job has caught up (its log line `surge_bars through ...` with nothing failed), measure the Track record once rather than waiting for the nightly job at 20:00 Eastern:
    ```
    $COMPOSE exec ingest python -m rs_ingest.outcomes
    ```
@@ -451,7 +405,7 @@ To see why a stock did not post, read its candidates:
 psql -c "SELECT hit_at, verdict, raw_score, strength FROM candidate WHERE symbol = 'GME' AND day = '2026-10-21' ORDER BY hit_at"
 ```
 
-### Tune the selector on the imported history
+### Tune the selector on the stored history
 
 `scripts/calibrate_selection.py` replays the rule, the score, the bar and the verdicts over every stored Popularity snapshot and prints aggregates only: per Eastern day, the candidates, the stocks hit and the verdict counts; the score percentiles; and a summary of Alerts and replies per day for several bar targets and reply margins.
 It reads `popularity_snapshot` in a read-only transaction through the ingest container's own `RS_DB_URL`, uses only the standard library and psycopg, and needs no rebuild or restart.
@@ -485,7 +439,7 @@ Count repairs in the run summary (`N repaired`):
 $COMPOSE logs ingest | grep "surge_bars through"
 ```
 
-The first run after an import, or after upgrading from a version with a shorter lookback, makes one call per Popularity-hit stock at the shared 100 calls a minute (thousands of stocks, under an hour per thousand), and the job's timeout is 3 hours.
+The first run on a database that already holds Popularity history, or after upgrading from a version with a shorter lookback, makes one call per Popularity-hit stock at the shared 100 calls a minute (thousands of stocks, under an hour per thousand), and the job's timeout is 3 hours.
 Progress logs every 100 symbols (`surge_bars: N of M symbols done`).
 If the run stops (timeout, a 429, a restart), the next run resumes where it left off, because each symbol's bars and request are committed together.
 Watch it with:
@@ -552,15 +506,14 @@ This section says what is irreplaceable and how to bring it back.
 ### What is irreplaceable
 
 Everything lives in the one Postgres database `rocketstocks` in the `timescaledb` service.
-Three kinds of data cannot be fetched again:
+Two kinds of data cannot be fetched again:
 
 - Popularity snapshots (`popularity_snapshot`): ApeWisdom serves only the current reading, so a missed poll is gone for good.
-- Options chain snapshots (`options_chain_snapshot`): Schwab serves only the current chain.
 - User state such as paper trades, settings and roles.
   These are written by the bot and live in the same database.
 
 Daily bars are repaired automatically, and Baselines, Track records and Reports are rebuilt at will.
-Back up the whole database anyway; it is the simplest way to be sure none of the three is missed, and it keeps the history of posted Alerts too.
+Back up the whole database anyway; it is the simplest way to be sure neither is missed, and it keeps the history of posted Alerts too.
 
 A dump also contains the Schwab refresh token (`schwab_tokens`).
 Store backups as you would a credential.
@@ -618,7 +571,7 @@ Restore into a fresh, empty database: a new volume, with the stack down.
    $COMPOSE ps
    ```
 5. Account for the gap between the backup and now.
-   Popularity snapshots and chain snapshots from that window are lost for good.
+   Popularity snapshots from that window are lost for good.
    Daily bars repair themselves on the next runs.
    If the restored token is older than seven days, run `/setup schwab`.
 
@@ -653,5 +606,4 @@ For a backup taken while they run, expect each restored count to fall between th
 Also check the newest data is where it should be:
 ```
 psql -c "SELECT max(polled_at) FROM popularity_snapshot"
-psql -c "SELECT count(*), max(fetched_at) FROM options_chain_snapshot"
 ```

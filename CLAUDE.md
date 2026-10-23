@@ -18,8 +18,8 @@ Python is pinned to 3.13 (`.python-version`).
 ```
 libs/       # shared libraries: domain, persistence, query, observability, analysis, sources
 services/   # long-running daemons: ingest, bot
-tools/      # one-shot CLIs: migrate, backfill
-scripts/    # CI gates, Schwab spikes and acceptance scripts
+tools/      # one-shot CLIs: migrate
+scripts/    # CI gates, acceptance scripts and the selector calibration
 ```
 
 Naming rule: import name = `rs_` + member dir (`libs/domain` -> `rs_domain`); every member is `<root>/<member>/` with `pyproject.toml` + `src/rs_<member>/` + `tests/`.
@@ -72,7 +72,7 @@ RS_DB_URL=postgresql+psycopg://... .venv/bin/python -m rs_migrate check
 #   docker run -d --rm -p 5499:5432 -e POSTGRES_PASSWORD=t timescale/timescaledb:2.30.2-pg16
 # Set RS_TEST_DB_URL to make DB tests mandatory (unreachable = failure, as in CI).
 # Migrations CLI (DSN via RS_DB_URL; upgrade also applies the per-service roles and
-# needs RS_DB_PASSWORD_{INGEST,BOT,MCP,RESEARCH}, or pass --skip-roles on a bare dev DB):
+# needs RS_DB_PASSWORD_{INGEST,BOT}, or pass --skip-roles on a bare dev DB):
 RS_DB_URL=postgresql+psycopg://... .venv/bin/python -m rs_migrate upgrade
 
 # The stack: TimescaleDB (127.0.0.1:5498) + one-shot migrate gate + ingest/bot
@@ -82,7 +82,6 @@ RS_DB_URL=postgresql+psycopg://... .venv/bin/python -m rs_migrate upgrade
 docker compose up -d
 
 # Operator tools (host-side, shared venv; exact procedures in docs/operations.md)
-.venv/bin/python -m rs_backfill verify-offset --dump PATH   # then popularity-import --dump PATH --zone ZONE
 .venv/bin/python -m rs_ingest.tools.login                   # first Schwab login; later logins use /setup schwab
 ```
 
