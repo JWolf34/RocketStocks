@@ -3,10 +3,12 @@ daemon (rs_ingest.daemon) owns dispatch, fault isolation and the Schwab gate.
 
 Register a job with `CronTable.register(Job(...))`. The job's `run` is a
 zero-argument coroutine function; close over whatever it needs. A scheduled
-slot that passes while the daemon is down or the job is still running is
-skipped, never back-filled; set `run_on_start` for a job that must run once at
-startup to catch up (it still runs one time, not once per missed slot). A run
-that exceeds its `timeout` is cancelled and counts as a failure.
+slot that passes while the daemon is down is skipped, never back-filled; set
+`run_on_start` for a job that must run once at startup to catch up (it still
+runs one time, not once per missed slot). A slot that comes due while the job
+is still running or the Schwab token is dead is deferred: the job runs once
+when it can, however many slots passed. A run that exceeds its `timeout` is
+cancelled and counts as a failure.
 """
 
 from collections.abc import Awaitable, Callable, Iterator

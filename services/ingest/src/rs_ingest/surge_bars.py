@@ -192,6 +192,7 @@ async def sync_surge_bars(
 ) -> SurgeBarsReport:
     now = clock.now()
     last_session = last_settled_session(calendar, now)
+    logger.info("surge_bars: replaying the Popularity Trigger to find the stocks to track")
     needs = _needs(await first_event_dates(session_factory, now), calendar, last_session)
     report = SurgeBarsReport(needed=len(needs))
 

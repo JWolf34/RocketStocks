@@ -2,6 +2,7 @@
 idempotency, a candidate for every hit with one Alert per stock per Eastern day,
 the facts block's degradation, and durable writes."""
 
+import asyncio
 from datetime import UTC, date, datetime, timedelta
 from typing import get_args, get_type_hints
 from zoneinfo import ZoneInfo
@@ -22,6 +23,9 @@ from rs_domain import (
     Verdict,
 )
 from rs_ingest.alert_writer import AlertWriteError, AlertWriter, RetryPolicy
+from rs_ingest.cron import CronTable, Every, Job
+from rs_ingest.daemon import Daemon, TokenGate
+from rs_ingest.metrics import DaemonMetrics
 from rs_ingest.popularity_poll import PopularityPoll, poll_boundary
 from rs_ingest.scoring import Scored
 from rs_ingest.selector import (
@@ -30,6 +34,7 @@ from rs_ingest.selector import (
     REPLY_STRENGTH_MARGIN,
 )
 from rs_ingest.surge_facts import SurgeFactsGatherer
+from rs_observability import HealthTracker
 from rs_persistence import (
     AlertRepository,
     AlertRow,
@@ -300,6 +305,63 @@ class TestIdempotency:
 
 T1 = T0 + timedelta(minutes=30)
 T2 = T0 + timedelta(hours=1)
+
+
+class TestRestartBeforeABoundary:
+    async def test_a_startup_poll_still_running_at_the_boundary_does_not_lose_it(
+        self, session_factory, sleeps, notices
+    ):
+        rig = Rig(session_factory, sleeps, listing())
+        started_at = T1 - timedelta(seconds=8)  # 14:29:52, as on the VM
+        slow_until = T1 + timedelta(seconds=32)  # the startup poll takes 40 seconds
+        rig.clock.current = started_at
+        fetch = rig.apewisdom.fetch_all
+
+        async def slow_first_fetch():
+            if rig.apewisdom.fetches == 0:
+                while rig.clock.now() < slow_until:
+                    await asyncio.sleep(0)
+            return await fetch()
+
+        rig.apewisdom.fetch_all = slow_first_fetch  # type: ignore[method-assign]
+        metrics = DaemonMetrics()
+
+        polls_done = 0
+
+        async def poll() -> None:
+            nonlocal polls_done
+            await rig.poll.run()
+            polls_done += 1
+
+        async def advance(seconds: float) -> None:
+            rig.clock.current += timedelta(seconds=seconds)
+            await asyncio.sleep(0.01)  # real time for the database; the clock is virtual
+            if polls_done == 2:
+                daemon.request_stop()
+
+        async def renewed() -> None: ...
+
+        class NoToken:
+            async def updated_at(self) -> None:
+                return None
+
+        cron = CronTable()
+        cron.register(Job("popularity_poll", Every(30), poll, run_on_start=True))
+        daemon = Daemon(
+            cron,
+            TokenGate(NoToken(), renewed, rig.clock, metrics),
+            rig.clock,
+            metrics,
+            health=HealthTracker("ingest"),
+            sleep=advance,
+            tick_seconds=15.0,
+        )
+
+        await daemon.run()
+
+        async with session_factory() as session:
+            boundaries = set(await session.scalars(select(PopularitySnapshotRow.polled_at)))
+        assert boundaries == {T0, T1}
 
 
 class TestCatchUp:

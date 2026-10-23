@@ -172,7 +172,9 @@ class TestDispatch:
             datetime(2026, 3, 9, 14, 0, tzinfo=UTC),  # 09:00 CDT, DST began on the 8th
         ]
 
-    async def test_a_run_still_going_at_its_next_slot_is_skipped_not_stacked(self, rig, notices):
+    async def test_a_run_still_going_at_its_next_slot_is_not_stacked_and_reruns_once_it_finishes(
+        self, rig, notices
+    ):
         release = asyncio.Event()
         starts: list[datetime] = []
 
@@ -186,8 +188,85 @@ class TestDispatch:
 
         await rig.run_until(at(13, 31))
 
-        assert starts == [at(12, 30), at(13, 30)]
-        assert rig.runs("slow", "skipped_overlap") == 1
+        assert starts[0] == at(12, 30)
+        assert at(13, 10) <= starts[1] <= at(13, 12)  # the 13:00 slot, as soon as the run finished
+        assert starts[2] == at(13, 30)
+        assert len(starts) == 3
+        assert rig.runs("slow", "deferred_overlap") == 1
+
+    async def test_a_startup_run_still_going_at_the_first_slot_runs_again_when_it_finishes(self, notices):
+        rig = Rig(start=at(12, 29) + timedelta(seconds=52))
+        release = asyncio.Event()
+        starts: list[datetime] = []
+
+        async def slow() -> None:
+            starts.append(rig.clock.now())
+            if len(starts) == 1:
+                await release.wait()
+
+        rig.cron.register(Job("poll", Every(30), slow, run_on_start=True))
+        rig.build(tick_seconds=15.0)
+        rig.when(at(12, 30) + timedelta(seconds=32), release.set)
+
+        await rig.run_until(at(12, 40))
+
+        assert len(starts) == 2
+        assert starts[0] == at(12, 29) + timedelta(seconds=52)
+        assert at(12, 30) <= starts[1] <= at(12, 31)
+        assert rig.runs("poll", "deferred_overlap") == 1
+
+    async def test_several_slots_passing_while_busy_coalesce_into_one_rerun(self, rig, notices):
+        release = asyncio.Event()
+        starts: list[datetime] = []
+
+        async def slow() -> None:
+            starts.append(rig.clock.now())
+            if len(starts) == 1:
+                await release.wait()
+
+        rig.cron.register(Job("slow", Every(30), slow, timeout=timedelta(hours=3)))
+        rig.build()
+        rig.when(at(14, 10), release.set)  # 13:00, 13:30 and 14:00 pass while it runs
+
+        await rig.run_until(at(14, 20))
+
+        assert starts[0] == at(12, 30)
+        assert len(starts) == 2
+        assert at(14, 10) <= starts[1] <= at(14, 12)
+        assert rig.runs("slow", "deferred_overlap") == 3
+
+    async def test_a_rerun_waiting_on_a_hung_run_starts_when_the_timeout_frees_the_slot(self, rig, notices):
+        starts: list[datetime] = []
+
+        async def hang_once() -> None:
+            starts.append(rig.clock.now())
+            if len(starts) == 1:
+                await asyncio.Future()
+
+        rig.cron.register(Job("hang", Every(30), hang_once, timeout=timedelta(minutes=45)))
+        rig.build()
+
+        await rig.run_until(at(13, 20))
+
+        # The 13:00 slot waited on the 12:30 run, which timed out at 13:15.
+        assert starts[0] == at(12, 30)
+        assert at(13, 15) <= starts[1] <= at(13, 16)
+        assert len(starts) == 2
+        assert rig.runs("hang", "timeout") == 1
+
+    async def test_slots_missed_while_the_daemon_was_down_are_still_dropped_after_a_busy_start(self, notices):
+        rig = Rig(start=at(12, 59))
+        starts: list[datetime] = []
+
+        async def job() -> None:
+            starts.append(rig.clock.now())
+
+        rig.cron.register(Job("poll", Every(30), job, run_on_start=True))
+        rig.build()
+
+        await rig.run_until(at(13, 1))
+
+        assert starts == [at(12, 59), at(13, 0)]
 
 
 class TestFaultIsolation:
@@ -356,7 +435,7 @@ class TestTimeout:
         assert notices[0].startswith("Ingest job hang is failing (TimeoutError)")
         assert notices[1] == "Ingest job hang recovered."
 
-    async def test_a_run_within_its_timeout_still_skips_the_overlapping_slot(self, rig, notices):
+    async def test_a_run_within_its_timeout_defers_the_overlapping_slot(self, rig, notices):
         starts: list[datetime] = []
 
         async def hang() -> None:
@@ -368,9 +447,10 @@ class TestTimeout:
 
         await rig.run_until(at(13, 31))
 
-        # 13:00 overlaps the 12:30 run (deadline 13:15); 13:30 follows its timeout.
-        assert starts == [at(12, 30), at(13, 30)]
-        assert rig.runs("hang", "skipped_overlap") == 1
+        # 13:00 overlaps the 12:30 run (deadline 13:15), so it runs when the timeout frees the slot;
+        # 13:30 then overlaps that rerun, which hangs until 14:00.
+        assert starts == [at(12, 30), at(13, 15)]
+        assert rig.runs("hang", "deferred_overlap") == 2
         assert rig.runs("hang", "timeout") == 1
 
     async def test_the_cancelled_run_does_not_end_the_daemon_or_its_siblings(self, rig, notices):
@@ -404,7 +484,7 @@ class TestTokenGate:
         assert len(notices) == 1
         assert "Schwab token is dead" in notices[0]
         assert rig.sample("schwab_token_dead") == 1
-        assert rig.runs("bars", "skipped_token_dead") == 2
+        assert rig.runs("bars", "deferred_token_dead") == 2
         assert rig.runs("bars", "failure") == 0  # a dead token is not a job failure streak
 
     async def test_a_token_newer_than_the_failure_resumes_schwab_jobs(self, rig, notices):
@@ -415,11 +495,28 @@ class TestTokenGate:
 
         await rig.run_until(at(14, 31))
 
-        assert schwab.started == [at(12, 30), at(13, 0), at(14, 30)]
+        # The 13:30 and 14:00 slots passed while dead; one run follows the renewal.
+        assert len(schwab.started) == 4
+        assert schwab.started[:2] == [at(12, 30), at(13, 0)]
+        assert at(14, 10) <= schwab.started[2] <= at(14, 12)
+        assert schwab.started[3] == at(14, 30)
         assert not rig.gate.dead
         assert rig.renewals == 1
         assert [("dead" in n) or ("renewed" in n) for n in notices] == [True, True]
         assert rig.sample("schwab_token_dead") == 0
+
+    async def test_slots_due_while_the_token_is_dead_run_once_right_after_the_renewal(self, rig, notices):
+        schwab = Recorder(rig.clock)
+        rig.cron.register(Job("bars", Every(30), schwab, needs_schwab=True))
+        rig.build()
+        await rig.gate.trip("token expired")
+        rig.when(at(13, 10), lambda: setattr(rig, "token_updated_at", at(13, 5)))
+
+        await rig.run_until(at(13, 20))  # the 12:30 and 13:00 slots passed while dead
+
+        assert rig.runs("bars", "deferred_token_dead") == 2
+        assert len(schwab.started) == 1
+        assert at(13, 10) <= schwab.started[0] <= at(13, 12)
 
     async def test_auth_error_from_a_job_not_marked_needs_schwab_still_trips_the_gate(
         self, rig, notices
@@ -443,7 +540,10 @@ class TestTokenGate:
         await rig.run_until(at(13, 31))
 
         assert rig.renewals == 1
-        assert schwab.started == [at(12, 30), at(13, 30)]
+        assert len(schwab.started) == 3
+        assert schwab.started[0] == at(12, 30)
+        assert at(13, 10) <= schwab.started[1] <= at(13, 12)  # the 13:00 slot, once the client was rebuilt
+        assert schwab.started[2] == at(13, 30)
 
     async def test_starts_dead_when_no_token_is_stored_and_resumes_when_one_appears(
         self, rig, notices
@@ -458,7 +558,9 @@ class TestTokenGate:
 
         await rig.run_until(at(13, 31))
 
-        assert schwab.started == [at(13, 30)]
+        assert len(schwab.started) == 2  # the startup run, once the token appeared, then the 13:30 slot
+        assert at(13, 10) <= schwab.started[0] <= at(13, 12)
+        assert schwab.started[1] == at(13, 30)
         assert poll.started == [at(12, 30), at(13, 0), at(13, 30)]
         assert len(notices) == 2  # dead at start, renewed later
 

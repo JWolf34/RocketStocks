@@ -14,8 +14,9 @@ class Outcome(StrEnum):
     FAILURE = "failure"
     TIMEOUT = "timeout"
     AUTH_ERROR = "auth_error"
-    SKIPPED_TOKEN_DEAD = "skipped_token_dead"
-    SKIPPED_OVERLAP = "skipped_overlap"
+    # A slot that could not start (token dead, previous run still going) and runs once it can.
+    DEFERRED_TOKEN_DEAD = "deferred_token_dead"
+    DEFERRED_OVERLAP = "deferred_overlap"
 
 
 LOOP_TICK_METRIC = "daemon_loop_last_tick_timestamp_seconds"

@@ -491,6 +491,17 @@ async def test_a_long_catch_up_logs_its_plan_and_progress(session_factory, monke
     assert "surge_bars: 2 of 4 symbols done" in messages
 
 
+async def test_the_run_says_it_started_before_the_trigger_replay_that_can_take_minutes(session_factory, caplog):
+    await _seed(session_factory)
+    schwab = FakeSchwab().price("AAA", "BBB", "ZZZ", BENCHMARK)
+
+    with caplog.at_level("INFO", logger="rs_ingest.surge_bars"):
+        await _run(session_factory, schwab, FakeClock(NOW))
+
+    messages = [r.getMessage() for r in caplog.records]
+    assert messages[0] == "surge_bars: replaying the Popularity Trigger to find the stocks to track"
+
+
 async def test_a_stored_symbol_schwab_stops_answering_for_is_not_a_job_failure(session_factory):
     await _seed(session_factory)
     schwab = FakeSchwab().price("AAA", "BBB", "ZZZ", BENCHMARK)
