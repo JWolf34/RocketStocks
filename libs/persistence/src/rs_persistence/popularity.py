@@ -89,8 +89,7 @@ class PopularityRepository:
     ) -> list[PopularitySnapshot]:
         """Every ticker's snapshots with polled_at in [start, end), ordered by
         (polled_at, ticker), optionally only one origin and only those with at
-        least `min_mentions`. Unbounded in size: for jobs that replay history;
-        interactive reads go through rs_query."""
+        least `min_mentions`. Unbounded in size: for jobs that replay history."""
         query = (
             select(PopularitySnapshotRow)
             .where(PopularitySnapshotRow.polled_at >= start, PopularitySnapshotRow.polled_at < end)
