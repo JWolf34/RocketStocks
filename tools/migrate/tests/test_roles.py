@@ -21,6 +21,7 @@ from rs_domain import (
 from rs_migrate.__main__ import main
 from rs_migrate.roles import (
     GRANTS,
+    RETIRED_SERVICES,
     SERVICES,
     VIEW_GRANTS,
     RolesConfigError,
@@ -57,7 +58,7 @@ def _conninfo(url: str, role: str | None = None, password: str | None = None) ->
 
 
 class Roles:
-    """The four roles applied to a migrated database under throwaway names."""
+    """The service roles applied to a migrated database under throwaway names."""
 
     def __init__(self, admin_url: str, prefix: str) -> None:
         self.admin_url = admin_url
@@ -192,9 +193,8 @@ def test_applied_privileges_match_the_grants_table(roles):
 # --- acceptance: denied where it matters ------------------------------------
 
 
-@pytest.mark.parametrize("service", ["bot", "mcp", "research"])
-def test_only_ingest_reads_schwab_tokens(roles, service):
-    with roles.connect(service) as conn:
+def test_only_ingest_reads_schwab_tokens(roles):
+    with roles.connect("bot") as conn:
         _denied(conn, "SELECT * FROM schwab_tokens")
         _denied(conn, "SELECT token_data FROM schwab_tokens")
         _denied(conn, "INSERT INTO schwab_tokens (id, token_data) VALUES (1, '{}')")
@@ -218,9 +218,8 @@ def test_bot_reads_token_age_but_never_the_token(roles):
         assert can_write is False
 
 
-@pytest.mark.parametrize("service", ["ingest", "mcp", "research"])
-def test_only_the_bot_reads_token_age(roles, service):
-    with roles.connect(service) as conn:
+def test_only_the_bot_reads_token_age(roles):
+    with roles.connect("ingest") as conn:
         _denied(conn, "SELECT * FROM schwab_token_issue")
 
 
@@ -238,10 +237,9 @@ def test_bot_maps_triggers_to_roles_and_nobody_else_touches_them(roles):
         conn.execute("UPDATE trigger_role SET role_id = 2")
         conn.execute("SELECT * FROM trigger_role")
         conn.execute("DELETE FROM trigger_role")
-    for service in ("ingest", "mcp", "research"):
-        with roles.connect(service) as conn:
-            _denied(conn, "SELECT * FROM trigger_role")
-            _denied(conn, "INSERT INTO trigger_role (trigger, role_id) VALUES ('t', 1)")
+    with roles.connect("ingest") as conn:
+        _denied(conn, "SELECT * FROM trigger_role")
+        _denied(conn, "INSERT INTO trigger_role (trigger, role_id) VALUES ('t', 1)")
 
 
 def test_ingest_reads_and_writes_schwab_tokens(roles):
@@ -250,7 +248,7 @@ def test_ingest_reads_and_writes_schwab_tokens(roles):
         assert conn.execute("SELECT token_data FROM schwab_tokens").fetchone() == ({},)
 
 
-def test_ingest_rewrites_outcomes_and_track_records_and_the_analysts_only_read_them(roles):
+def test_ingest_rewrites_outcomes_and_track_records_and_the_bot_only_reads_track_records(roles):
     outcome = (
         "INSERT INTO outcome (trigger, rule_version, symbol, day, horizon, case_at, hit_at, live,"
         " entry_session, exit_session, stock_return, benchmark_return, excess_return)"
@@ -268,35 +266,11 @@ def test_ingest_rewrites_outcomes_and_track_records_and_the_analysts_only_read_t
         _denied(conn, "UPDATE outcome SET live = false")
         _denied(conn, "DELETE FROM track_record")
         conn.execute(outcome)
-    for service in ("mcp", "research"):
-        with roles.connect(service) as conn:
-            conn.execute("SELECT * FROM outcome")
-            conn.execute("SELECT * FROM track_record")
-            _denied(conn, outcome)
-            _denied(conn, record)
-            _denied(conn, "UPDATE track_record SET outcomes = 2")
     with roles.connect("bot") as conn:
         conn.execute("SELECT * FROM track_record")
         _denied(conn, "SELECT * FROM outcome")
         _denied(conn, record)
-
-
-@pytest.mark.parametrize(
-    "statement",
-    [
-        "INSERT INTO track_record (trigger, rule_version, horizon, computed_at, cases, live_cases,"
-        " outcomes, unpriced, split_excluded, no_move_size) VALUES ('t', '1', 5, now(), 0, 0, 0, 0, 0, 0)",
-        "INSERT INTO alerts (symbol, trigger, triggered_at, payload)"
-        " VALUES ('A', 't', now(), '{}')",
-        "DELETE FROM alerts",
-        "TRUNCATE alerts",
-        "SELECT * FROM schwab_auth_request",
-        "CREATE TABLE intruder (id int)",
-    ],
-)
-def test_mcp_is_read_only_and_cannot_see_secrets(roles, statement):
-    with roles.connect("mcp") as conn:
-        _denied(conn, statement)
+        _denied(conn, "UPDATE track_record SET outcomes = 2")
 
 
 def test_ingest_may_replace_a_symbols_daily_bars_but_not_rewrite_them(roles):
@@ -312,12 +286,6 @@ def test_ingest_may_replace_a_symbols_daily_bars_but_not_rewrite_them(roles):
         _denied(conn, "TRUNCATE daily_bar")
     with roles.connect("bot") as conn:
         _denied(conn, "DELETE FROM daily_bar")
-
-
-def test_mcp_reads_the_market_data_it_exposes(roles):
-    with roles.connect("mcp") as conn:
-        for table in ("alerts", "outcome", "track_record", "daily_bar", "popularity_snapshot"):
-            conn.execute(f"SELECT * FROM {table}")
 
 
 def test_bot_may_only_touch_delivery_columns_of_alerts(roles):
@@ -338,7 +306,7 @@ def test_bot_may_only_touch_delivery_columns_of_alerts(roles):
         _denied(conn, "DELETE FROM alerts")
 
 
-def test_ingest_decides_candidates_once_and_the_analysts_read_them(roles):
+def test_ingest_decides_candidates_once_and_nobody_else_touches_them(roles):
     insert = (
         "INSERT INTO candidate (trigger, rule_version, symbol, hit_at, inputs, verdict, decided_at)"
         " VALUES ('t', '1', 'A', now(), '{}', 'repeat', now())"
@@ -348,10 +316,9 @@ def test_ingest_decides_candidates_once_and_the_analysts_read_them(roles):
         conn.execute("SELECT * FROM candidate")
         _denied(conn, "UPDATE candidate SET verdict = 'posted'")
         _denied(conn, "DELETE FROM candidate")
-    for service in ("mcp", "research"):
-        with roles.connect(service) as conn:
-            conn.execute("SELECT * FROM candidate")
-            _denied(conn, insert)
+    with roles.connect("bot") as conn:
+        _denied(conn, "SELECT * FROM candidate")
+        _denied(conn, insert)
 
 
 def test_bot_may_insert_auth_requests_and_set_the_callback_only(roles):
@@ -385,7 +352,7 @@ def _factory(roles: Roles, service: str):
 
 
 async def test_services_run_their_real_repositories_under_their_roles(roles):
-    ingest, bot, mcp, research = (_factory(roles, s) for s in SERVICES)
+    ingest, bot = (_factory(roles, s) for s in SERVICES)
     alert = Alert(symbol="AAA", trigger="surge", triggered_at=NOW)
     snapshot = PopularitySnapshot(
         polled_at=NOW,
@@ -444,7 +411,7 @@ async def test_services_run_their_real_repositories_under_their_roles(roles):
         assert await repo.expire_older_than(NOW + timedelta(days=1)) == 0
         await s.commit()
 
-    # ingest rewrites a Trigger version's Outcomes and Track record; the others read them.
+    # ingest rewrites a Trigger version's Outcomes and Track record; the bot reads the Track record.
     async with ingest() as s:
         repo = TrackRecordRepository(s)
         await repo.replace_outcomes("surge", "1", [])
@@ -452,9 +419,9 @@ async def test_services_run_their_real_repositories_under_their_roles(roles):
             [TrackRecord(trigger="surge", rule_version="1", horizon=5, computed_at=NOW, cases=0, live_cases=0, outcomes=0)]
         )
         await s.commit()
-    async with research() as s:
+    async with bot() as s:
         assert (await s.scalars(select(TrackRecordRow.horizon))).all() == [5]
-    async with mcp() as s:
+    async with bot() as s:
         got = await PopularityRepository(s).list_between(NOW, NOW + timedelta(minutes=30))
         assert [g.ticker for g in got] == ["AAA"]
 
@@ -498,11 +465,57 @@ def test_applying_twice_is_a_no_op(roles):
 
 def test_a_changed_password_takes_effect_and_stale_grants_are_removed(roles):
     with roles.admin() as conn:
-        conn.execute(f'GRANT SELECT ON schwab_tokens TO "{roles.name("mcp")}"')
-    roles.passwords["mcp"] = f"pw-mcp-{uuid.uuid4().hex}"
+        conn.execute(f'GRANT SELECT ON schwab_tokens TO "{roles.name("bot")}"')
+    roles.passwords["bot"] = f"pw-bot-{uuid.uuid4().hex}"
     roles.apply()
-    with roles.connect("mcp") as conn:
+    with roles.connect("bot") as conn:
         _denied(conn, "SELECT * FROM schwab_tokens")
+
+
+# --- retired roles -----------------------------------------------------------
+
+
+def _existing_roles(roles: Roles, services: tuple[str, ...]) -> set[str]:
+    names = [roles.name(s) for s in services]
+    with roles.admin() as conn:
+        return {
+            r for (r,) in conn.execute("SELECT rolname FROM pg_roles WHERE rolname = ANY(%s)", (names,))
+        }
+
+
+def _create_retired_roles_with_grants(roles: Roles) -> None:
+    with roles.admin() as conn:
+        for service in RETIRED_SERVICES:
+            name = f'"{roles.name(service)}"'
+            conn.execute(f"CREATE ROLE {name} LOGIN PASSWORD 'old-{uuid.uuid4().hex}'")
+            conn.execute(f"GRANT USAGE ON SCHEMA public TO {name}")
+            conn.execute(f"GRANT SELECT ON alerts, candidate, track_record TO {name}")
+            conn.execute(f"GRANT UPDATE (payload) ON alerts TO {name}")
+            conn.execute(f"GRANT SELECT ON schwab_token_issue TO {name}")
+
+
+def test_retired_roles_are_dropped_with_their_grants(roles):
+    _create_retired_roles_with_grants(roles)
+    assert len(_existing_roles(roles, RETIRED_SERVICES)) == len(RETIRED_SERVICES)
+
+    roles.apply()
+
+    assert _existing_roles(roles, RETIRED_SERVICES) == set()
+    assert _existing_roles(roles, SERVICES) == {roles.name(s) for s in SERVICES}
+    for service in SERVICES:  # the live roles are untouched
+        with roles.connect(service) as conn:
+            conn.execute("SELECT 1")
+
+
+def test_dropping_retired_roles_is_idempotent_and_a_no_op_when_they_never_existed(roles):
+    assert _existing_roles(roles, RETIRED_SERVICES) == set()
+    before = _acl_snapshot(roles)
+    roles.apply()  # nothing to drop
+    _create_retired_roles_with_grants(roles)
+    roles.apply()
+    roles.apply()  # already gone
+    assert _existing_roles(roles, RETIRED_SERVICES) == set()
+    assert _acl_snapshot(roles) == before
 
 
 # --- the CLI -----------------------------------------------------------------
@@ -514,10 +527,18 @@ def _all_passwords() -> dict[str, str]:
 
 def test_read_passwords_names_every_missing_variable():
     environ = _all_passwords()
+    del environ["RS_DB_PASSWORD_INGEST"]
     del environ["RS_DB_PASSWORD_BOT"]
-    del environ["RS_DB_PASSWORD_MCP"]
-    with pytest.raises(RolesConfigError, match="RS_DB_PASSWORD_BOT, RS_DB_PASSWORD_MCP"):
+    with pytest.raises(RolesConfigError, match="RS_DB_PASSWORD_INGEST, RS_DB_PASSWORD_BOT"):
         read_passwords(environ)
+
+
+def test_read_passwords_ignores_the_retired_roles_leftover_variables():
+    environ = _all_passwords() | {
+        "RS_DB_PASSWORD_MCP": "left-over-in-an-old-dot-env",
+        "RS_DB_PASSWORD_RESEARCH": "x",
+    }
+    assert read_passwords(environ).keys() == set(SERVICES)
 
 
 @pytest.mark.parametrize("bad", ["short", "has@sign-and-is-long-enough", "a b c d e f g h i j k l"])
