@@ -324,15 +324,17 @@ Goal: a send the bot made but did not record is found in history after a restart
 1. Post a marked test Alert and let the bot deliver it:
    ```
    $COMPOSE run --rm --no-deps migrate python -m rs_bot.tools.stage_alert
-   psql -c "SELECT id, delivery, message_id, thread_id FROM alerts ORDER BY id DESC LIMIT 1"
+   psql -c "SELECT id, delivery, message_id FROM alerts ORDER BY id DESC LIMIT 1"
    ```
-   Expect `posted`, with a message id and a thread id, and one message in Discord with a thread under it.
+   Expect `posted` with a message id, and one message in Discord.
+   Note the row's `id` (not its `message_id`) for the next step.
 2. Put the row back as a crash between the send and its record leaves it:
    ```
    $COMPOSE stop bot
-   psql -c "UPDATE alerts SET delivery = 'sending', posted_at = NULL, message_id = NULL, thread_id = NULL WHERE id = <id>"
+   psql -c "UPDATE alerts SET delivery = 'sending', posted_at = NULL, message_id = NULL WHERE id = <id>"
    $COMPOSE start bot
    ```
+   The `UPDATE` must print `UPDATE 1`; `UPDATE 0` means the id was wrong and nothing is being tested.
 3. Expect the row back at `posted` with the same `message_id` as before and Discord still showing one message.
    The bot log has `was sent before the last stop and never recorded`, and `posts_reconciled_total` is 1 on the metrics port.
    `posted_at` is the time the message was created in Discord, not the restart time, because the Track record times a case from it.
@@ -534,6 +536,12 @@ Use whichever of these fits your host, and store the result off the VM.
   $COMPOSE exec -T timescaledb pg_dump -U postgres -d rocketstocks -Fc > rocketstocks.dump
   ```
   `pg_dump` prints a warning about circular foreign keys on `continuous_agg`; it is expected.
+  Check the file before relying on it: an empty file means the dump failed, even when nothing on screen said so.
+  ```
+  ls -l rocketstocks.dump
+  $COMPOSE exec -T timescaledb pg_restore --list < rocketstocks.dump | tail -1
+  ```
+  The size is far from zero and `pg_restore` prints the dump's last entry, not an error.
 - A block-level, crash-consistent snapshot of the VM disk or the `timescale_data` volume.
   Postgres replays its write-ahead log when it starts from such a snapshot.
 
