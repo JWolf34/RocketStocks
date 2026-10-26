@@ -1,36 +1,20 @@
-"""DB-gated fixtures — shared via rs_persistence.testing (the 5499 pattern;
+"""DB-gated fixtures - shared via rs_persistence.testing (the 5499 pattern;
 see that module for target resolution and gating semantics)."""
 
-import json
+from collections.abc import Iterator
 
-import httpx
 import pytest
 from sqlalchemy.exc import OperationalError
 
-from rs_observability import OpsSettings, configure_ops
-from rs_observability import ops as ops_module
+from rs_observability.testing import captured_ops_pings
 from rs_persistence.testing import migrated_db_url, session_factory  # noqa: F401
 
 
 @pytest.fixture
-def notices(monkeypatch: pytest.MonkeyPatch) -> list[str]:
-    """Ops notices the code under test sent (de-dup off so every send shows)."""
-    sent: list[str] = []
-
-    def handler(request: httpx.Request) -> httpx.Response:
-        sent.append(json.loads(request.content)["content"])
-        return httpx.Response(204)
-
-    monkeypatch.setattr(ops_module, "_notifier", None)
-    configure_ops(
-        OpsSettings(
-            _env_file=None,
-            rs_ops_webhook_url="https://discord.test/api/webhooks/1/secret",
-            rs_ops_dedup_window_seconds=0.0,
-        ),
-        transport=httpx.MockTransport(handler),
-    )
-    return sent
+def notices() -> Iterator[list[str]]:
+    """Ops pings the code under test sent (de-dup off so every send shows)."""
+    with captured_ops_pings() as sent:
+        yield sent
 
 
 class Sleeps:

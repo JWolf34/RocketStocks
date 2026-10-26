@@ -1,9 +1,8 @@
-"""Schwab OAuth token persistence — Postgres single-row store.
+"""Schwab OAuth token persistence - Postgres single-row store.
 
 Owns its transactions (unlike the per-session repositories): schwab-py fires
 the write callback at arbitrary refresh moments, so the store opens a short
-session per operation from the injected factory. v1 pattern:
-legacy/src/rocketstocks/data/schwab_token_store.py.
+session per operation from the injected factory.
 """
 
 import asyncio
@@ -59,10 +58,10 @@ class SchwabTokenStore:
         schwab-py invokes it from inside the running event loop, so the save
         is scheduled as a task rather than awaited. **kwargs absorbs extras
         (e.g. refresh_token) schwab-py passes on auto-refresh; the token dict
-        already contains them (v1-proven behavior).
+        already contains them.
         """
         task = asyncio.get_running_loop().create_task(self.save(token))
-        # The loop holds tasks weakly — without this ref a pending save can be
+        # The loop holds tasks weakly - without this ref a pending save can be
         # GC'd mid-flight and a rotated refresh_token silently lost.
         self._pending.add(task)
         task.add_done_callback(self._on_save_done)
@@ -71,7 +70,7 @@ class SchwabTokenStore:
         self._pending.discard(task)
         if not task.cancelled() and task.exception() is not None:
             logger.error(
-                "Schwab token save failed — DB row may hold a stale token; "
+                "Schwab token save failed - DB row may hold a stale token; "
                 "a restart may require re-login (python -m rs_ingest.tools.login)",
                 exc_info=task.exception(),
             )

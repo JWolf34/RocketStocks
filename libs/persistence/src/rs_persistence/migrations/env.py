@@ -32,7 +32,7 @@ def include_object(
 def _database_url() -> str:
     url = config.get_main_option("sqlalchemy.url")
     if not url:
-        raise RuntimeError("no sqlalchemy.url — build the config via rs_persistence.migration_config()")
+        raise RuntimeError("no sqlalchemy.url - build the config via rs_persistence.migration_config()")
     return url
 
 

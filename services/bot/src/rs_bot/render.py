@@ -1,9 +1,12 @@
-"""Alert -> Embed, from the alert row plus the current track record. The bot never
+"""Alert -> Embed, from the alert row plus the current Track record. The bot never
 calls a vendor: every fact was written into the payload at alert time.
 
-A popularity-surge payload is rendered typed; any other alert type, a payload
-that does not parse, or any render exception falls back to the generic embed:
-an alert can be render-ugly, never render-poisoned.
+A popularity-surge Alert is a templated talking point, the reasons, the price, the Track
+record and the next Catalyst; a reply in its thread (`reply_to` set) is a short reply
+saying what escalated. Every time is Discord timestamp markup, so each reader sees their own
+zone; a date without a time is shown as a date. Any other Trigger, a payload that does not
+parse, or any render exception falls back to the generic embed: an alert can be render-ugly,
+never render-poisoned.
 
 Discord caps an embed at 25 fields, 256-char names, 1024-char values and 6000
 characters in all. Fields are clipped and, if the total is still over, dropped
@@ -11,20 +14,29 @@ from the end, so the same alert always renders the same embed.
 """
 
 import logging
+import re
+from collections.abc import Sequence
+from datetime import datetime
 
 import discord
 
+from rs_bot.triggers import TRIGGER_LABELS
 from rs_domain import (
+    POPULARITY_SURGE,
+    TOO_FEW_CASES_BELOW,
+    EscalationPayload,
     FactUnavailable,
     PopularitySurgePayload,
     TrackRecord,
-    TrackRecordInput,
 )
 from rs_persistence import PendingAlert
 
 logger = logging.getLogger(__name__)
 
-POPULARITY_SURGE = "popularity_surge"
+TRIGGER_TITLE = TRIGGER_LABELS[POPULARITY_SURGE]
+
+_RULE_NAME = {"mention_surge": "Mention surge", "rank_jump": "Rank jump"}
+_TIME_OF_DAY = {"pre_market": "before the open", "after_hours": "after the close"}
 
 MAX_FIELDS = 25
 MAX_NAME = 256
@@ -34,11 +46,26 @@ MAX_FOOTER = 2048
 MAX_TOTAL = 6000
 ELLIPSIS = "..."
 
+# Every embed opens its footer with the row id; delivery finds the bot's own message for a row in
+# channel history by it, because history reads do not reliably carry a send's nonce.
+_FOOTER_ID = re.compile(r"alert #(\d+)(?: \||\Z)")
+
+
+def footer_marker(row_id: int) -> str:
+    return f"alert #{row_id}"
+
+
+def marked_row_id(embed: discord.Embed) -> int | None:
+    """The row id an embed's footer names, or None when it carries none."""
+    match = _FOOTER_ID.match(embed.footer.text or "")
+    return None if match is None else int(match.group(1))
+
 
 def render(
-    pending: PendingAlert, track_record: TrackRecord | None = None, *, track_record_failed: bool = False
+    pending: PendingAlert, track_record: Sequence[TrackRecord] = (), *, track_record_failed: bool = False
 ) -> discord.Embed:
-    """`track_record_failed` says the read errored, so "none measured yet" is not claimed."""
+    """`track_record` is the Trigger version's rows, one per horizon. `track_record_failed`
+    says the read errored, so "none measured yet" is not claimed."""
     try:
         return _render_full(pending, track_record, track_record_failed)
     except Exception:
@@ -49,30 +76,58 @@ def render(
 
 
 def _render_full(
-    pending: PendingAlert, track_record: TrackRecord | None, track_record_failed: bool
+    pending: PendingAlert, track_record: Sequence[TrackRecord], track_record_failed: bool
 ) -> discord.Embed:
     alert = pending.alert
-    if alert.alert_type != POPULARITY_SURGE:
+    if alert.trigger != POPULARITY_SURGE:
         return render_generic(pending)
+    if alert.reply_to is not None:
+        return _render_reply(pending, EscalationPayload.model_validate(alert.payload))
     payload = PopularitySurgePayload.model_validate(alert.payload)
     # Most important first: the fit drops from the end.
     fields = [
         ("Why it fired", _rule_text(payload)),
         ("Price", _price_text(payload)),
-        ("Volume", _volume_text(payload)),
         ("Track record", _track_record_text(track_record, track_record_failed)),
-        ("Next earnings", _earnings_text(payload)),
-        ("Benchmark", _benchmark_text(payload)),
+        ("Next Catalyst", _earnings_text(payload)),
     ]
-    parts = [f"alert #{pending.id}", f"rule v{payload.rule_version}"]
-    if alert.alert_price is not None:
-        parts.append(f"alert price ${alert.alert_price:,.2f}")
-    if alert.quote_time is not None:
-        parts.append(f"quote {alert.quote_time:%Y-%m-%d %H:%M} UTC")
-    embed = discord.Embed(title=f"{alert.symbol} · Popularity surge", timestamp=alert.triggered_at)
-    embed.set_footer(text=_clip(" | ".join(parts), MAX_FOOTER))
+    embed = discord.Embed(
+        title=f"{alert.symbol} · {TRIGGER_TITLE}",
+        description=_clip(_talking_point(alert.symbol, payload), MAX_DESCRIPTION),
+        timestamp=alert.triggered_at,
+    )
+    embed.set_footer(text=_clip(f"{footer_marker(pending.id)} | {POPULARITY_SURGE} v{payload.rule_version}", MAX_FOOTER))
     for name, value in _fit(embed, fields):
         embed.add_field(name=name, value=value, inline=False)
+    return embed
+
+
+def _render_reply(pending: PendingAlert, payload: EscalationPayload) -> discord.Embed:
+    """A short reply in the Alert's thread: what escalated and when."""
+    alert = pending.alert
+    lines = []
+    if payload.new_rules:
+        names = " and ".join(_RULE_NAME[rule].lower() for rule in payload.new_rules)
+        lines.append(f"The {names} rule also fired now; the Alert did not carry it.")
+    if payload.strength_after is not None:
+        lines.append(
+            f"{alert.symbol} is more Unusual than at the Alert: percentile "
+            f"{payload.strength_after * 100:.0f} of this Trigger's hits over the last 30 days"
+            + (
+                "."
+                if payload.strength_before is None
+                else f", up from {payload.strength_before * 100:.0f}."
+            )
+        )
+    if not lines:
+        lines.append("It escalated; the details were not stored.")
+    lines.append(f"As of {_when(payload.polled_at)}")
+    embed = discord.Embed(
+        title=f"{alert.symbol} · escalated",
+        description=_clip("\n".join(lines), MAX_DESCRIPTION),
+        timestamp=alert.triggered_at,
+    )
+    embed.set_footer(text=f"{footer_marker(pending.id)} | reply to #{alert.reply_to}")
     return embed
 
 
@@ -81,11 +136,11 @@ def render_generic(pending: PendingAlert) -> discord.Embed:
     # nothing here depends on the payload's shape.
     alert = pending.alert
     embed = discord.Embed(
-        title=_clip(f"{alert.symbol} · {alert.alert_type}", MAX_NAME),
+        title=_clip(f"{alert.symbol} · {alert.trigger}", MAX_NAME),
         description=_clip(str(alert.payload), MAX_DESCRIPTION),
         timestamp=alert.triggered_at,
     )
-    embed.set_footer(text=f"alert #{pending.id}")
+    embed.set_footer(text=footer_marker(pending.id))
     return embed
 
 
@@ -105,21 +160,40 @@ def _unavailable(fact: FactUnavailable) -> str:
     return f"unavailable: {fact.reason}"
 
 
+def _when(moment: datetime) -> str:
+    """A moment as Discord timestamp markup, so each reader sees their own zone."""
+    unix = int(moment.timestamp())
+    return f"<t:{unix}:f> (<t:{unix}:R>)"
+
+
+def _talking_point(symbol: str, payload: PopularitySurgePayload) -> str:
+    """One templated line on what is Unusual now. It describes; it never advises."""
+    parts = []
+    prior = payload.mentions_24h_ago
+    if "mention_surge" in payload.fired and prior:
+        ratio = payload.mention_ratio or payload.mentions / prior
+        parts.append(f"mentions are {ratio:.1f}x ({prior} to {payload.mentions})")
+    if "rank_jump" in payload.fired and payload.rank_24h_ago:
+        parts.append(f"its rank moved from #{payload.rank_24h_ago} to #{payload.rank}")
+    if not parts:
+        return f"{symbol} is Unusual on Popularity: rank #{payload.rank} with {payload.mentions} mentions."
+    return f"{symbol} is being discussed far more than a day ago: {' and '.join(parts)}."
+
+
 def _rule_text(payload: PopularitySurgePayload) -> str:
-    lines = []
+    lines = [f"Trigger: {TRIGGER_TITLE} v{payload.rule_version}"]
     for rule in payload.fired:
         if rule == "mention_surge":
             lines.append(
-                f"Mention surge: {payload.mentions} mentions vs {payload.mentions_24h_ago} 24h ago "
-                f"({payload.mention_ratio or 0:.1f}x; rule needs {payload.mention_multiplier:g}x "
+                f"- {_RULE_NAME[rule]}: {payload.mentions} mentions vs {payload.mentions_24h_ago} a day ago "
+                f"({payload.mention_ratio or 0:.1f}x; the rule needs {payload.mention_multiplier:g}x "
                 f"from at least {payload.mention_min_prior})"
             )
         else:
             lines.append(
-                f"Rank jump: #{payload.rank} from #{payload.rank_24h_ago} 24h ago "
-                f"(gained {payload.rank_gain})"
+                f"- {_RULE_NAME[rule]}: #{payload.rank_24h_ago} to #{payload.rank} (gained {payload.rank_gain})"
             )
-    lines.append(f"Polled {payload.polled_at:%Y-%m-%d %H:%M} UTC, rank #{payload.rank}")
+    lines.append(f"Popularity as of {_when(payload.polled_at)}")
     return "\n".join(lines)
 
 
@@ -128,66 +202,82 @@ def _price_text(payload: PopularitySurgePayload) -> str:
     if isinstance(fact, FactUnavailable):
         return _unavailable(fact)
     return (
-        f"${fact.last_price:,.2f} ({fact.change_pct:+.2f}% vs previous close "
-        f"${fact.previous_close:,.2f}), quote {fact.quote_time:%Y-%m-%d %H:%M} UTC"
+        f"${fact.last_price:,.2f} ({fact.change_pct:+.2f}% vs previous close ${fact.previous_close:,.2f})\n"
+        f"As of {_when(fact.quote_time)}"
     )
-
-
-def _volume_text(payload: PopularitySurgePayload) -> str:
-    fact = payload.facts.volume
-    if isinstance(fact, FactUnavailable):
-        return _unavailable(fact)
-    text = (
-        f"{fact.volume:,} vs {fact.average_volume:,.0f} average over the last {fact.sessions} "
-        f"sessions ({fact.ratio:.1f}x)"
-    )
-    return text + (" - partial day, the final multiple will be higher" if fact.intraday else "")
 
 
 def _earnings_text(payload: PopularitySurgePayload) -> str:
     fact = payload.facts.next_earnings
     if isinstance(fact, FactUnavailable):
         return _unavailable(fact)
-    text = f"{fact.date:%Y-%m-%d}"
-    if fact.time_of_day:
-        text += f" ({fact.time_of_day.replace('_', ' ')})"
-    return text + (" - estimated" if fact.estimated else "")
+    # A date has no time zone: shown as a date, never as timestamp markup.
+    text = f"Earnings on {fact.date:%b} {fact.date.day}, {fact.date.year}"
+    if fact.time_of_day in _TIME_OF_DAY:
+        text += f" ({_TIME_OF_DAY[fact.time_of_day]})"
+    return text + (", estimated" if fact.estimated else "")
 
 
-def _benchmark_text(payload: PopularitySurgePayload) -> str:
-    fact = payload.facts.benchmark
-    if isinstance(fact, FactUnavailable):
-        return _unavailable(fact)
-    return f"{fact.symbol} ${fact.price:,.2f} at {fact.quote_time:%Y-%m-%d %H:%M} UTC"
+def _measures(
+    record: TrackRecord, *, with_unpriced: bool = False, with_no_size: bool = False
+) -> list[tuple[str, str]]:
+    """One horizon's cells by row; "n/a" where nothing backs the number, "few" where too few
+    Outcomes have a move size to back it."""
 
+    def cell(value: float | None, scale: float, fmt: str, unit: str, *, sized: bool = False) -> str:
+        if sized and record.too_few_move_sizes:
+            return "few"
+        return "n/a" if value is None else f"{format(value * scale, fmt)}{unit}"
 
-def _pct(value: float | None) -> str:
-    return "n/a" if value is None else f"{value * 100:.0f}%"
-
-
-def _excess(value: float | None) -> str:
-    return "n/a" if value is None else f"{value * 100:+.2f}%"
-
-
-def _track_record_text(track_record: TrackRecord | None, failed: bool) -> str:
-    if failed:
-        return "unavailable: the track record could not be read"
-    if track_record is None:
-        return "No track record has been measured for this rule version yet."
-    label = (
-        "measured on past alerts"
-        if track_record.input is TrackRecordInput.LOGGED
-        else "reconstructed from history"
-    )
-    unpriced = f", {track_record.n_unpriced} unpriced" if track_record.n_unpriced else ""
-    horizons = (
-        (1, track_record.hit_rate_1d, track_record.median_excess_1d),
-        (5, track_record.hit_rate_5d, track_record.median_excess_5d),
-        (10, track_record.hit_rate_10d, track_record.median_excess_10d),
-    )
-    rows = [
-        f"{days}d: hit rate {_pct(hit)}, median excess vs SPY {_excess(median)}"
-        for days, hit, median in horizons
+    return [
+        ("vs SPY", cell(record.median_excess, 100, "+.1f", "%")),
+        ("2x+", cell(record.share_at_2x, 100, ".0f", "%", sized=True)),
+        ("ordinary", cell(record.ordinary_share, 100, ".0f", "%", sized=True)),
+        ("x typical", cell(record.median_multiple, 1, ".1f", "x", sized=True)),
+        ("Outcomes", str(record.outcomes)),
+        *([("no size", str(record.no_move_size))] if with_no_size else []),
+        *([("unpriced", str(record.unpriced))] if with_unpriced else []),
     ]
-    header = f"{label} (input: {track_record.input.value}), N={track_record.n}{unpriced}"
-    return "\n".join([header, *rows, track_record.survivorship_caveat])
+
+
+def _table(records: Sequence[TrackRecord]) -> str:
+    """Horizons as columns, the measures as rows, in a code block so it lines up on a phone."""
+    # The unpriced and no-size rows appear for every horizon once any has one.
+    with_unpriced = any(record.unpriced for record in records)
+    with_no_size = any(record.no_move_size for record in records)
+    columns = [_measures(record, with_unpriced=with_unpriced, with_no_size=with_no_size) for record in records]
+    rows = [(name, [column[i][1] for column in columns]) for i, (name, _) in enumerate(columns[0])]
+    label_width = max(len(name) for name, _ in rows)
+    cell_width = max(len(cell) for _, cells in rows for cell in cells) + 2
+    header = " " * label_width + "".join(f"{record.horizon}d".rjust(cell_width) for record in records)
+    body = [name.ljust(label_width) + "".join(cell.rjust(cell_width) for cell in cells) for name, cells in rows]
+    return "```\n" + "\n".join([header, *body]) + "\n```"
+
+
+def _track_record_text(track_record: Sequence[TrackRecord], failed: bool) -> str:
+    if failed:
+        return "unavailable: the Track record could not be read"
+    if not track_record:
+        return "Not measured yet for this Trigger version."
+    first = track_record[0]
+    enough = [r for r in track_record if not r.too_few_cases]
+    lines = [f"{first.cases} cases, {first.live_cases} live (the rest replayed from history)"]
+    if enough:
+        lines.append(_table(enough))
+        lines.append(
+            "vs SPY: median excess return. 2x+: share of cases that moved 2x the stock's typical "
+            "move or more, against the same stocks' ordinary share. x typical: median multiple."
+        )
+        cells = [cell for r in enough for _, cell in _measures(r)]
+        if "n/a" in cells:
+            lines.append("n/a: not measurable (too little price history or missing bars).")
+        if "few" in cells:
+            lines.append(f"few: too few cases ({TOO_FEW_CASES_BELOW} needed) with a known typical move.")
+        if any(r.no_move_size for r in enough):
+            lines.append("no size: cases with too little price history to know the stock's typical move.")
+    lines.extend(
+        f"{r.horizon}d: too few cases ({r.outcomes} Outcomes, {TOO_FEW_CASES_BELOW} needed)"
+        for r in track_record
+        if r.too_few_cases
+    )
+    return "\n".join(lines)

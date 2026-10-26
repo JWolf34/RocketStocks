@@ -1,7 +1,7 @@
 [project]
 name = "rs-query"
 version = "0.1.0"
-description = "RocketStocks v2 read layer: typed, capped, paginated async queries"
+description = "RocketStocks v2 read layer: typed async queries"
 authors = [
     { name = "John Wolf", email = "johnmwolf34@gmail.com" }
 ]

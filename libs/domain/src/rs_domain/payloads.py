@@ -33,33 +33,6 @@ class PriceMoveFact(BaseModel):
     quote_time: UtcDatetime
 
 
-class VolumeFact(BaseModel):
-    """Quote volume against the mean of the last `sessions` stored daily bars.
-    `intraday` is true when the quote came mid-session, so `volume` is a partial
-    day and the ratio understates the day's final multiple."""
-
-    model_config = ConfigDict(frozen=True)
-
-    status: Literal["ok"] = "ok"
-    volume: NonNegativeInt
-    average_volume: float
-    sessions: PositiveInt
-    ratio: float
-    intraday: bool
-
-
-class BenchmarkFact(BaseModel):
-    """The benchmark's price at alert time (SPY), so a later study can measure
-    the move against the market from the same instant as `alert_price`."""
-
-    model_config = ConfigDict(frozen=True)
-
-    status: Literal["ok"] = "ok"
-    symbol: str
-    price: float
-    quote_time: UtcDatetime
-
-
 class NextEarningsFact(BaseModel):
     """`estimated` marks a date derived from the last results filing rather than
     listed by the earnings calendar. `time_of_day` is `pre_market`,
@@ -74,15 +47,13 @@ class NextEarningsFact(BaseModel):
 
 
 class SurgeFacts(BaseModel):
-    """Unknown keys are ignored on read, so a version 1 payload (which also
-    carried a `recent_filings` fact) still parses."""
+    """Unknown keys are ignored on read, so an older payload still parses: version 1 also
+    carried a `recent_filings` fact, versions 1 and 2 a `volume` and a `benchmark` fact."""
 
     model_config = ConfigDict(frozen=True)
 
     price_move: Annotated[PriceMoveFact | FactUnavailable, Field(discriminator="status")]
-    volume: Annotated[VolumeFact | FactUnavailable, Field(discriminator="status")]
     next_earnings: Annotated[NextEarningsFact | FactUnavailable, Field(discriminator="status")]
-    benchmark: Annotated[BenchmarkFact | FactUnavailable, Field(discriminator="status")]
 
 
 class PopularitySurgePayload(BaseModel):
@@ -90,8 +61,9 @@ class PopularitySurgePayload(BaseModel):
 
     model_config = ConfigDict(frozen=True)
 
-    # 2 dropped the `recent_filings` fact; stored version 1 payloads stay readable.
-    version: Literal[1, 2] = 2
+    # 2 dropped the `recent_filings` fact, 3 the `volume` and `benchmark` facts; every stored
+    # version stays readable.
+    version: Literal[1, 2, 3] = 3
     rule_version: str
     polled_at: UtcDatetime
     fired: tuple[Literal["mention_surge", "rank_jump"], ...]
@@ -104,3 +76,19 @@ class PopularitySurgePayload(BaseModel):
     mention_multiplier: float
     mention_min_prior: NonNegativeInt
     facts: SurgeFacts
+
+
+class EscalationPayload(BaseModel):
+    """What a reply in an Alert's thread says escalated, written by the selector.
+    `new_rules` are the sub-rules neither the Alert nor an earlier reply carried;
+    `strength_before` is the highest strength announced for the stock that day and
+    `strength_after` the reply's, both percentiles (0 to 1) among the Trigger's hits
+    of the 30 Eastern days before, set only when strength rose by the margin."""
+
+    model_config = ConfigDict(frozen=True)
+
+    version: Literal[1] = 1
+    polled_at: UtcDatetime
+    new_rules: tuple[Literal["mention_surge", "rank_jump"], ...] = ()
+    strength_before: float | None = None
+    strength_after: float | None = None

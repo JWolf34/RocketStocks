@@ -1,12 +1,12 @@
 """Bot configuration via pydantic-settings (ingest pattern).
 
 RS_DB_URL is the same variable ingest and rs_migrate consume. The Discord
-credential is RS_BOT_DISCORD_TOKEN — deliberately not v1's DISCORD_TOKEN, so
-v2 can never read v1's credential while both run.
+credential is RS_BOT_DISCORD_TOKEN - deliberately not a bare DISCORD_TOKEN, so
+a stray shell export can never supply it.
 Bot tunables carry an RS_BOT_ prefix so a stray shell export can
 never silently reconfigure the daemon.
 
-The .env file is resolved from the working directory — run from the repo root
+The .env file is resolved from the working directory - run from the repo root
 in dev; a missing required variable is a loud exit-1, never a silent default.
 """
 
@@ -32,7 +32,7 @@ class BotSettings(BaseSettings):
     # Prometheus side-port: compose publishes it 127.0.0.1-only.
     metrics_port: int = Field(9091, validation_alias="RS_BOT_METRICS_PORT")
     # The alert NOTIFY channel is intentionally NOT here: it is a fixed wire
-    # contract shared with ingest, not a per-deployment tunable —
+    # contract shared with ingest, not a per-deployment tunable -
     # rs_persistence.NOTIFY_CHANNEL is its single source of truth.
 
     @field_validator("admin_user_id", mode="before")

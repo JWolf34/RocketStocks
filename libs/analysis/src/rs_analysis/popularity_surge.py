@@ -1,19 +1,21 @@
 """Popularity-surge rule: pure, deterministic detection over ApeWisdom popularity snapshots.
 
 `evaluate_latest` is the live entry point and `replay` the research one (it loops
-evaluate_latest, so they cannot disagree). Changing any threshold below bumps
-RULE_VERSION.
+evaluate_latest, so they cannot disagree). The rule judges one snapshot alone: it
+has no memory of earlier hits, so which hits are worth posting is the selector's
+decision, not the Trigger's. Changing any threshold below, or what the rule
+remembers, bumps RULE_VERSION.
 """
 
-from collections.abc import Iterable, Sequence
-from datetime import datetime, timedelta
+from collections.abc import Iterable
+from datetime import datetime
 from enum import StrEnum
 
 from pydantic import BaseModel, ConfigDict
 
 from rs_domain import PopularitySnapshot, UtcDatetime
 
-RULE_VERSION = "1"
+RULE_VERSION = "2"
 
 MIN_MENTIONS = 15
 
@@ -27,8 +29,6 @@ TAIL_RANK = 500
 
 RANK_JUMP_MIN_GAIN = 50
 RANK_JUMP_MIN_RATIO = 1.5
-
-COOLDOWN = timedelta(hours=24)
 
 
 class SubRule(StrEnum):
@@ -61,10 +61,8 @@ class SurgeEvent(BaseModel):
     rule_version: str = RULE_VERSION
 
 
-def evaluate_latest(snapshot: PopularitySnapshot, prior_events: Sequence[SurgeEvent]) -> SurgeEvent | None:
-    """Judge the newest snapshot of a ticker. `prior_events` are the events
-    already emitted for it (other tickers' are ignored); one within COOLDOWN
-    of this snapshot suppresses it."""
+def evaluate_latest(snapshot: PopularitySnapshot) -> SurgeEvent | None:
+    """Judge one snapshot on its own: the event it makes, or None."""
     if snapshot.mentions < MIN_MENTIONS:
         return None
 
@@ -81,10 +79,6 @@ def evaluate_latest(snapshot: PopularitySnapshot, prior_events: Sequence[SurgeEv
     if gain is not None and gain >= RANK_JUMP_MIN_GAIN and gain >= RANK_JUMP_MIN_RATIO * rank:
         fired.append(SubRule.RANK_JUMP)
     if not fired:
-        return None
-
-    window_start = snapshot.polled_at - COOLDOWN
-    if any(e.ticker == snapshot.ticker and e.polled_at > window_start for e in prior_events):
         return None
 
     return SurgeEvent(
@@ -109,16 +103,13 @@ def replay(history: Iterable[PopularitySnapshot]) -> list[SurgeEvent]:
     of tickers, any input order), ordered by (polled_at, ticker)."""
     ordered = sorted(history, key=lambda s: (s.polled_at, s.ticker))
     seen: set[tuple[str, datetime]] = set()
-    emitted: dict[str, list[SurgeEvent]] = {}
     events: list[SurgeEvent] = []
     for snapshot in ordered:
         key = (snapshot.ticker, snapshot.polled_at)
         if key in seen:
             raise ValueError(f"duplicate snapshot for {snapshot.ticker} at {snapshot.polled_at}")
         seen.add(key)
-        prior = emitted.setdefault(snapshot.ticker, [])
-        event = evaluate_latest(snapshot, prior)
+        event = evaluate_latest(snapshot)
         if event is not None:
-            prior.append(event)
             events.append(event)
     return events

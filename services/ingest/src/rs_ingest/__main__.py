@@ -2,7 +2,7 @@
 
 A supervised daemon: runs the cron table until SIGTERM, then lets in-flight
 jobs finish (bounded), drains pending token saves and exits 0. A dead or
-missing Schwab token pauses the Schwab jobs and sends one ops notice instead of
+missing Schwab token pauses the Schwab jobs and sends one Ops ping instead of
 exiting; every other job keeps running and the token is picked up once a
 re-login writes it.
 """
@@ -26,6 +26,7 @@ from rs_ingest.rate_limit import RateLimiter
 from rs_ingest.schwab_session import SchwabSession
 from rs_ingest.settings import LOGIN_HINT, IngestSettings
 from rs_observability import (
+    HealthTracker,
     configure_logging,
     configure_ops,
     install_excepthooks,
@@ -59,11 +60,13 @@ async def run_daemon(settings: IngestSettings) -> int:
         metrics = DaemonMetrics()
         gate = TokenGate(token_store, schwab.reload, clock, metrics)
         cron = CronTable()
+        health = HealthTracker("ingest")
         http = httpx.AsyncClient(timeout=15.0)
         register_jobs(
             cron,
             Dependencies(
                 session_factory=session_factory,
+                db_url=settings.rs_db_url,
                 clock=clock,
                 schwab=schwab,
                 schwab_limiter=RateLimiter(settings.schwab_calls_per_minute),
@@ -71,6 +74,7 @@ async def run_daemon(settings: IngestSettings) -> int:
                 http=http,
                 edgar_user_agent=settings.rs_edgar_user_agent,
                 trip_token_gate=gate.trip,
+                health=health,
             ),
         )
         daemon = Daemon(
@@ -78,7 +82,7 @@ async def run_daemon(settings: IngestSettings) -> int:
             gate,
             clock,
             metrics,
-            failure_threshold=settings.job_failure_threshold,
+            health=health,
             token_poll_seconds=settings.token_poll_seconds,
             shutdown_grace_seconds=settings.shutdown_grace_seconds,
             # A refresh scheduled near shutdown must not be lost.

@@ -16,7 +16,7 @@ from typing import Any, Protocol
 from rs_domain import Clock
 from rs_ingest.cron import CronTable, Job
 from rs_ingest.metrics import DaemonMetrics, Outcome
-from rs_observability import notify_ops, unit_of_work
+from rs_observability import HealthTracker, QuietFailure, notify_ops, unit_of_work
 from rs_sources.schwab import SchwabAuthError
 
 logger = logging.getLogger(__name__)
@@ -99,26 +99,14 @@ class _JobState:
     job: Job
     next_fire: datetime
     task: asyncio.Task[None] | None = None
-    consecutive_failures: int = 0
-    alerted: bool = False
     deadline: datetime | None = None  # when the run in `task` times out
-    # A run_on_start job that has not yet had its startup run (it waits out a dead token).
-    start_pending: bool = False
+    # One run is owed: the startup run of a run_on_start job, or a slot that came due while the
+    # job was still running or the Schwab token was dead. Slots missed meanwhile coalesce into it.
+    run_pending: bool = False
 
-    def note_failure(self, threshold: int) -> bool:
-        """True exactly once per streak: when it reaches the threshold."""
-        self.consecutive_failures += 1
-        if self.consecutive_failures != threshold:
-            return False
-        self.alerted = True
-        return True
 
-    def note_success(self) -> bool:
-        """True when this success ends a streak that had been reported."""
-        was_alerted = self.alerted
-        self.consecutive_failures = 0
-        self.alerted = False
-        return was_alerted
+def _subject(job: Job) -> str:
+    return f"Ingest job {job.name}"
 
 
 class Daemon:
@@ -129,8 +117,8 @@ class Daemon:
         clock: Clock,
         metrics: DaemonMetrics,
         *,
+        health: HealthTracker,
         sleep: Sleep = asyncio.sleep,
-        failure_threshold: int = 3,
         tick_seconds: float = 15.0,
         token_poll_seconds: float = 60.0,
         shutdown_grace_seconds: float = 30.0,
@@ -141,7 +129,7 @@ class Daemon:
         self._clock = clock
         self._metrics = metrics
         self._sleep = sleep
-        self._failure_threshold = failure_threshold
+        self._health = health
         self._tick = timedelta(seconds=tick_seconds)
         self._token_poll = timedelta(seconds=token_poll_seconds)
         self._grace = shutdown_grace_seconds
@@ -174,27 +162,25 @@ class Daemon:
         states = []
         for job in self._cron:
             self._metrics.register_job(job.name)
-            states.append(_JobState(job, job.schedule.next_after(now), start_pending=job.run_on_start))
+            states.append(_JobState(job, job.schedule.next_after(now), run_pending=job.run_on_start))
         return states
 
     def _dispatch_due(self, states: list[_JobState], now: datetime) -> None:
         for state in states:
-            if state.start_pending and not self._paused(state.job):
-                state.start_pending = False
-                self._start(state, now)
-                continue
-            if state.next_fire > now:
-                continue
-            # Slots missed while down or busy are dropped, not replayed.
-            state.next_fire = state.job.schedule.next_after(now)
             name = state.job.name
-            if state.task is not None and not state.task.done():
-                logger.warning("job %s still running at its next slot - skipping", name)
-                self._metrics.job_runs.labels(name, Outcome.SKIPPED_OVERLAP).inc()
-            elif self._paused(state.job):
-                logger.info("job %s skipped - Schwab token is dead", name)
-                self._metrics.job_runs.labels(name, Outcome.SKIPPED_TOKEN_DEAD).inc()
-            else:
+            running = state.task is not None and not state.task.done()
+            if state.next_fire <= now:
+                # Slots missed while the daemon was down are dropped, not replayed.
+                state.next_fire = state.job.schedule.next_after(now)
+                if running:
+                    logger.warning("job %s still running at its next slot - running it again when it finishes", name)
+                    self._metrics.job_runs.labels(name, Outcome.DEFERRED_OVERLAP).inc()
+                elif self._paused(state.job):
+                    logger.info("job %s due while the Schwab token is dead - running it once the token is back", name)
+                    self._metrics.job_runs.labels(name, Outcome.DEFERRED_TOKEN_DEAD).inc()
+                state.run_pending = True
+            if state.run_pending and not running and not self._paused(state.job):
+                state.run_pending = False
                 self._start(state, now)
 
     def _start(self, state: _JobState, now: datetime) -> None:
@@ -283,20 +269,13 @@ class Daemon:
                 await self._record_success(state)
 
     async def _record_failure(self, state: _JobState, exc: Exception) -> None:
-        if not state.note_failure(self._failure_threshold):
-            return
-        name = state.job.name
+        if isinstance(exc, QuietFailure):
+            return  # its cause is a source's or a stock's, which are not job failures to ping about
         # The type only: exception text can carry URLs or credentials.
-        await notify_ops(
-            f"Ingest job {name} has failed {state.consecutive_failures} times in a row "
-            f"(latest: {type(exc).__name__}). See the ingest logs.",
-            key=f"job-failing:{name}",
-        )
+        await self._health.report_failed(_subject(state.job), type(exc).__name__)
 
     async def _record_success(self, state: _JobState) -> None:
-        if state.note_success():
-            name = state.job.name
-            await notify_ops(f"Ingest job {name} recovered.", key=f"job-recovered:{name}")
+        await self._health.report_ok(_subject(state.job))
 
     async def _shutdown(self) -> None:
         # In-flight work gets the grace period, then is cancelled.

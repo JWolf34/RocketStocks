@@ -19,6 +19,8 @@ async def get_json(
         response = await http.get(url, headers=headers, params=params)
         response.raise_for_status()
         return response.json()
+    except httpx.HTTPStatusError as exc:
+        raise SourceError(f"GET {url} failed: {exc!r}", status_code=exc.response.status_code) from exc
     except (httpx.HTTPError, ValueError) as exc:
         raise SourceError(f"GET {url} failed: {exc!r}") from exc
 

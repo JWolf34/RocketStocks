@@ -1,15 +1,16 @@
 """Entry point: `python -m rs_bot`.
 
-Lifecycle contract: continuous daemon — connect Discord → resolve the
+Lifecycle contract: continuous daemon - connect Discord → resolve the
 alert channel (unresolvable/no-permission → loud exit 1) → start LISTEN →
 unconditional initial sweep → run until SIGTERM (graceful: finish the
 in-flight post, exit 0).
 
 Failure modes: DB down at startup = loud exit (the initial sweep is
 crash-loud); LISTEN drop = backoff reconnect + recovery sweep (ListenLoop);
-Discord outage = sends fail, rows stay unposted, the periodic sweep
-self-heals after discord.py resumes. A dead sweep worker or a fatally dead
-gateway exits 1 loudly — this daemon never limps on silently.
+Discord outage = sends fail, rows stay queued (a row marked sending is checked
+against channel history before it is sent again), the periodic sweep self-heals after
+discord.py resumes. A dead sweep worker or a fatally dead
+gateway exits 1 loudly - this daemon never limps on silently.
 """
 
 import asyncio
@@ -22,15 +23,19 @@ import discord
 from discord import app_commands
 from pydantic import ValidationError
 
+from rs_bot.commands import register_commands
 from rs_bot.counters import new_counters
+from rs_bot.discord_sender import ChannelSender
 from rs_bot.listener import ListenLoop
-from rs_bot.schwab_auth import SchwabAuthFlow, register_setup_commands
+from rs_bot.pings import DiscordGuildRoles, PingRoles
+from rs_bot.schwab_auth import SchwabAuthFlow
 from rs_bot.settings import BotSettings
 from rs_bot.sweep import SweepWorker
 from rs_bot.token_notices import TokenAgeNotifier
 from rs_domain import SystemClock
 from rs_observability import (
     DictCounterCollector,
+    HealthTracker,
     configure_logging,
     install_excepthooks,
     start_metrics_server,
@@ -43,18 +48,6 @@ from rs_persistence import (
 )
 
 logger = logging.getLogger(__name__)
-
-
-class DiscordChannelSender:
-    """EmbedSender backed by the resolved alert channel (full gateway client).
-    Returns the message id for the per-post audit log."""
-
-    def __init__(self, channel: discord.abc.Messageable) -> None:
-        self._channel = channel
-
-    async def send(self, embed: discord.Embed) -> int:
-        message = await self._channel.send(embed=embed)
-        return message.id
 
 
 class AdminDirectMessenger:
@@ -73,7 +66,7 @@ class AdminDirectMessenger:
 
 
 async def run_bot(settings: BotSettings) -> int:
-    install_excepthooks()  # the asyncio half — needs asyncio.run()'s loop
+    install_excepthooks()  # the asyncio half - needs asyncio.run()'s loop
     engine = build_engine(settings.rs_db_url)
     counters = new_counters()
     # Default intents only - no privileged intents.
@@ -82,21 +75,26 @@ async def run_bot(settings: BotSettings) -> int:
     listen_task = sweep_task = gateway_task = notice_task = metrics_server = None
     try:
         # :9091 side-port, up before Discord so a wedged login is
-        # scrapeable. namespace="" — the counter names are bare.
+        # scrapeable. namespace="" - the counter names are bare.
         metrics_server, _ = start_metrics_server(
             settings.metrics_port, [DictCounterCollector(counters, namespace="")]
         )
         try:
             await client.login(settings.discord_token.get_secret_value())
         except discord.LoginFailure as exc:
-            logger.error("Discord login failed — check RS_BOT_DISCORD_TOKEN: %s", exc)
+            logger.error("Discord login failed - check RS_BOT_DISCORD_TOKEN: %s", exc)
             return 1
         session_factory = build_session_factory(engine)
-        register_setup_commands(tree, SchwabAuthFlow(session_factory), settings.admin_user_id)
+        register_commands(
+            tree,
+            flow=SchwabAuthFlow(session_factory),
+            pings=PingRoles(session_factory),
+            admin_user_id=settings.admin_user_id,
+        )
         try:
             await tree.sync()
-        except Exception:  # alerts do not need the command, so a failed sync must not stop the bot
-            logger.exception("could not sync slash commands - /setup schwab may be missing")
+        except Exception:  # alerts do not need the commands, so a failed sync must not stop the bot
+            logger.exception("could not sync slash commands - /setup and /pings may be missing")
         gateway_task = asyncio.create_task(client.connect(), name="gateway")
         try:
             channel = await client.fetch_channel(settings.alert_channel_id)
@@ -108,21 +106,36 @@ async def run_bot(settings: BotSettings) -> int:
                 exc,
             )
             return 1
-        if not isinstance(channel, discord.abc.Messageable):
+        if not isinstance(channel, discord.TextChannel):
             logger.error(
-                "alert channel %d is not a messageable channel (%s)",
+                "alert channel %d is not a text channel (%s)",
                 settings.alert_channel_id,
                 type(channel).__name__,
             )
             return 1
         logger.info("resolved alert channel %d (%s)", settings.alert_channel_id, channel)
 
+        # The gateway fills the guild's role cache; an Alert's role ping is checked against it.
+        ready = asyncio.create_task(client.wait_until_ready(), name="ready")
+        await asyncio.wait({ready, gateway_task}, return_when=asyncio.FIRST_COMPLETED)
+        if not ready.done():
+            ready.cancel()
+            logger.error(
+                "Discord gateway ended before it was ready",
+                exc_info=None if gateway_task.cancelled() else gateway_task.exception(),
+            )
+            return 1
+        guild_id = channel.guild.id
+        assert client.user is not None  # set by login
         worker = SweepWorker(
             session_factory,
-            DiscordChannelSender(channel),
+            ChannelSender(client, channel, client.user.id),
+            clock=SystemClock(),
             sweep_seconds=settings.sweep_seconds,
+            health=HealthTracker("bot"),
             max_attempts=settings.post_max_attempts,
             counters=counters,
+            roles=DiscordGuildRoles(lambda: client.get_guild(guild_id)),
         )
         listener = ListenLoop(psycopg_conninfo(settings.rs_db_url), worker.wake, counters=counters)
         listen_task = asyncio.create_task(listener.run(), name="listen")
@@ -135,7 +148,7 @@ async def run_bot(settings: BotSettings) -> int:
         for sig in (signal.SIGTERM, signal.SIGINT):
             loop.add_signal_handler(sig, worker.request_stop)
 
-        # run() opens with the unconditional initial sweep — the backlog
+        # run() opens with the unconditional initial sweep - the backlog
         # reconcile; a DB down at startup crashes it, and we exit 1 below.
         sweep_task = asyncio.create_task(worker.run(), name="sweep")
         done, _ = await asyncio.wait({sweep_task, gateway_task}, return_when=asyncio.FIRST_COMPLETED)
@@ -144,7 +157,7 @@ async def run_bot(settings: BotSettings) -> int:
             if (sweep_exc := sweep_task.exception()) is not None:
                 logger.error("sweep worker crashed", exc_info=sweep_exc)
                 return 1
-            logger.info("shutdown requested — in-flight post finished")
+            logger.info("shutdown requested - in-flight post finished")
             return 0
         # client.connect() returns only on close or a fatal gateway error;
         # transient Discord outages are reconnected inside discord.py.

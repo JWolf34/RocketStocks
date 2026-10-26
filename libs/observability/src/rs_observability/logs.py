@@ -2,8 +2,8 @@
 engine.
 
 configure_logging installs a structlog ProcessorFormatter on the root stdlib
-handler. Module code keeps `logging.getLogger(__name__)` — zero churn in
-existing modules — and third-party stdlib records (uvicorn,
+handler. Module code keeps `logging.getLogger(__name__)` - zero churn in
+existing modules - and third-party stdlib records (uvicorn,
 discord.py, schwab-py, asyncio, alembic) render through the same processor
 chain, including the contextvars merge that carries `correlation_id` and the
 unit-of-work domain keys. New code MAY use `structlog.get_logger()`; both
@@ -36,13 +36,13 @@ def _add_service(service: str) -> Callable[[Any, str, EventDict], EventDict]:
 
 
 def configure_logging(service: str) -> None:
-    """Route ALL logging — stdlib and structlog-native — through one processor
+    """Route ALL logging - stdlib and structlog-native - through one processor
     chain to one stream on stdout. Safe to call more than once: the root
     handler is replaced, never stacked.
 
     RS_LOG_FORMAT ∈ {json, console, auto} (default auto: TTY → pretty console,
     else JSON); RS_LOG_LEVEL names a stdlib level (default INFO). Invalid
-    values raise — loud exit, never a silent default (settings convention).
+    values raise - loud exit, never a silent default (settings convention).
     """
     fmt = os.environ.get("RS_LOG_FORMAT", "auto")
     if fmt not in _FORMATS:
@@ -55,7 +55,7 @@ def configure_logging(service: str) -> None:
         raise ValueError(f"RS_LOG_LEVEL must name a logging level, got {level_name!r}")
 
     # Runs on every record: in-pipeline for structlog-native entries, as the
-    # foreign_pre_chain for stdlib ones — so both carry the same fields.
+    # foreign_pre_chain for stdlib ones - so both carry the same fields.
     shared: list[Processor] = [
         structlog.contextvars.merge_contextvars,
         structlog.stdlib.add_logger_name,
@@ -101,7 +101,7 @@ def configure_logging(service: str) -> None:
 @contextmanager
 def unit_of_work(**fields: Any) -> Iterator[str]:
     """Bind a fresh opaque UUID as `correlation_id` plus the given domain-key
-    fields onto every record logged inside the block — from any logger,
+    fields onto every record logged inside the block - from any logger,
     third-party retry internals included.
 
     correlation_id groups one unit of work; cross-service tracing joins on the

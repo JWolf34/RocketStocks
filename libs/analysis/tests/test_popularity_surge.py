@@ -4,10 +4,8 @@ from datetime import UTC, datetime, timedelta
 import pytest
 
 from rs_analysis.popularity_surge import (
-    COOLDOWN,
     RULE_VERSION,
     SubRule,
-    SurgeEvent,
     evaluate_latest,
     replay,
 )
@@ -39,7 +37,7 @@ def snap(
 
 
 def fired(snapshot: PopularitySnapshot) -> tuple[SubRule, ...]:
-    event = evaluate_latest(snapshot, [])
+    event = evaluate_latest(snapshot)
     return () if event is None else event.fired
 
 
@@ -101,7 +99,7 @@ class TestRankJump:
         assert fired(snap(rank=5, rank_24h_ago=None)) == ()
 
     def test_a_new_entrant_without_prior_rank_still_surges_on_mentions(self):
-        event = evaluate_latest(snap(rank=5, mentions=100, rank_24h_ago=None), [])
+        event = evaluate_latest(snap(rank=5, mentions=100, rank_24h_ago=None))
         assert event is not None
         assert event.fired == (SubRule.MENTION_SURGE,)
         assert event.inputs.rank_gain is None
@@ -109,12 +107,12 @@ class TestRankJump:
 
 class TestEvent:
     def test_both_rules_recorded_in_stable_order(self):
-        event = evaluate_latest(snap(rank=30, rank_24h_ago=200, mentions=60, mentions_24h_ago=20), [])
+        event = evaluate_latest(snap(rank=30, rank_24h_ago=200, mentions=60, mentions_24h_ago=20))
         assert event is not None
         assert event.fired == (SubRule.MENTION_SURGE, SubRule.RANK_JUMP)
 
     def test_event_carries_inputs_and_version(self):
-        event = evaluate_latest(snap(rank=40, rank_24h_ago=100, mentions=60, mentions_24h_ago=20), [])
+        event = evaluate_latest(snap(rank=40, rank_24h_ago=100, mentions=60, mentions_24h_ago=20))
         assert event is not None
         assert (event.ticker, event.polled_at, event.rule_version) == ("ABC", T0, RULE_VERSION)
         inputs = event.inputs
@@ -123,36 +121,24 @@ class TestEvent:
         assert (inputs.mention_multiplier, inputs.mention_min_prior) == (3.0, 15)
 
     def test_inputs_record_tier_thresholds(self):
-        top = evaluate_latest(snap(rank=5, rank_24h_ago=200), [])
-        tail = evaluate_latest(snap(rank=600, mentions=40, mentions_24h_ago=10), [])
+        top = evaluate_latest(snap(rank=5, rank_24h_ago=200))
+        tail = evaluate_latest(snap(rank=600, mentions=40, mentions_24h_ago=10))
         assert top is not None and tail is not None
         assert (top.inputs.mention_multiplier, top.inputs.mention_min_prior) == (5.0, 15)
         assert (tail.inputs.mention_multiplier, tail.inputs.mention_min_prior) == (3.0, 10)
 
 
-class TestCooldown:
+class TestNoMemory:
     def hot(self, **overrides) -> PopularitySnapshot:
         return snap(**{"rank": 100, "mentions": 60, "mentions_24h_ago": 20, **overrides})
 
-    def prior(self, ticker: str = "ABC") -> list[SurgeEvent]:
-        event = evaluate_latest(self.hot(ticker=ticker), [])
-        assert event is not None
-        return [event]
+    def test_a_snapshot_is_judged_alone_whatever_the_ticker_did_before(self):
+        assert evaluate_latest(self.hot(at=T0)) is not None
+        assert evaluate_latest(self.hot(at=T0 + timedelta(minutes=30))) is not None
 
-    def test_suppressed_just_inside_24h(self):
-        later = self.hot(at=T0 + COOLDOWN - timedelta(minutes=30))
-        assert evaluate_latest(later, self.prior()) is None
-
-    def test_fires_again_at_24h(self):
-        later = self.hot(at=T0 + COOLDOWN)
-        assert evaluate_latest(later, self.prior()) is not None
-
-    def test_other_tickers_do_not_cool_down_each_other(self):
-        assert evaluate_latest(self.hot(ticker="XYZ"), self.prior("ABC")) is not None
-
-    def test_suppressed_candidate_does_not_extend_cooldown(self):
+    def test_every_hitting_snapshot_of_a_ticker_is_an_event(self):
         history = [self.hot(at=T0 + timedelta(hours=h)) for h in (0, 12, 24)]
-        assert [e.polled_at for e in replay(history)] == [T0, T0 + timedelta(hours=24)]
+        assert [e.polled_at for e in replay(history)] == [T0, T0 + timedelta(hours=12), T0 + timedelta(hours=24)]
 
 
 class TestReplay:
@@ -165,6 +151,7 @@ class TestReplay:
         ]
         assert [(e.polled_at, e.fired) for e in replay(history)] == [
             (T0 + timedelta(minutes=30), (SubRule.MENTION_SURGE,)),
+            (T0 + timedelta(hours=1), (SubRule.MENTION_SURGE,)),
             (T0 + timedelta(hours=25), (SubRule.RANK_JUMP,)),
         ]
 
@@ -183,11 +170,7 @@ class TestReplay:
             for ticker in ("AAA", "BBB", "CCC")
         ]
 
-        live: list[SurgeEvent] = []
-        for snapshot in history:
-            event = evaluate_latest(snapshot, live)
-            if event is not None:
-                live.append(event)
+        live = [event for snapshot in history if (event := evaluate_latest(snapshot)) is not None]
 
         shuffled = history[:]
         rng.shuffle(shuffled)

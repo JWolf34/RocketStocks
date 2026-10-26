@@ -7,174 +7,93 @@ A Discord bot that scans the whole market and posts a small number of stocks per
 - **[docs/vision.md](docs/vision.md) is the only authority** for what RocketStocks is and what gets built; [CONTEXT.md](CONTEXT.md) is its glossary.
 - Architectural decisions are ADRs in [docs/adr/](docs/adr/).
 - Operations (deploy, Schwab sign-in, Popularity import, rehearsals, backup and restore) are in [docs/operations.md](docs/operations.md).
-- **v1 (`legacy/`) is frozen** (bugfixes only), runs muted collecting Popularity, and retires in milestone 1.
-- **The rest of this file describes v1** except the monorepo layout and the run, test and lint commands.
+- Measured Schwab facts are in [docs/reference/schwab-facts.md](docs/reference/schwab-facts.md); the current milestone spec is in `docs/specs/`.
+- The previous implementation (v1) is gone from the tree; it lives at git tag `v1-final`.
 
-## Tech Stack
+## Repo layout (monorepo)
 
-- **Language:** Python 3.13 (pinned via `.python-version`; managed with uv)
-- **Bot Framework:** discord.py (cog-based extension system)
-- **Scheduler:** APScheduler (AsyncIOScheduler with cron triggers) + discord.ext.tasks loops
-- **Database:** PostgreSQL via psycopg3 (AsyncConnectionPool)
-- **Data Sources:** Charles Schwab API, Tiingo, Stooq, NASDAQ, TradingView, Capitol Trades, News API, ApeWisdom, YFinance
-- **Analysis:** pandas-ta (RSI, MACD, ADX, OBV, RVOL), mplfinance (charts), backtesting.py
-- **Notifications:** EventEmitter (thread-safe Queue) for scheduler job status
-- **Infrastructure:** Docker + Docker Compose
-
-## Repo Layout (monorepo)
-
-uv workspace: root `pyproject.toml` lists the members, one `uv.lock`, one shared `.venv` (`uv sync --all-packages`). Python pinned to 3.13 (`.python-version`).
+uv workspace: the root `pyproject.toml` lists the members, one `uv.lock`, one shared `.venv` (`uv sync --all-packages`).
+Python is pinned to 3.13 (`.python-version`).
 
 ```
-legacy/       # v1, moved intact (legacy/src/rocketstocks/, legacy/tests/, legacy/pyproject.toml)
-libs/         # v2 shared libraries: domain, persistence, query, observability, analysis, sources
-services/     # v2 long-running daemons (ingest, bot)
-tools/        # v2 one-shot CLIs (migrate, backfill, research)
+libs/       # shared libraries: domain, persistence, query, observability, analysis, sources
+services/   # long-running daemons: ingest, bot
+tools/      # one-shot CLIs: migrate
+scripts/    # CI gates, acceptance scripts and the selector calibration
 ```
 
-v2 naming rule: import name = `rs_` + member dir (`libs/domain` → `rs_domain`); every member is `<root>/<member>/` with `pyproject.toml` + `src/rs_<member>/` + `tests/`. `rs_common`/`rs_utils` grab-bags are banned.
+Naming rule: import name = `rs_` + member dir (`libs/domain` -> `rs_domain`); every member is `<root>/<member>/` with `pyproject.toml` + `src/rs_<member>/` + `tests/`.
+`rs_common`/`rs_utils` grab-bags are banned.
+The layer rules between members are import-linter contracts in the root `pyproject.toml`; `lint-imports` enforces them.
 
-## v1 Package Layout
+## Conventions
 
-`src/` layout under `legacy/`, installed via `legacy/pyproject.toml`.
+- Time is injected: no ambient clock reads in `src/` (`scripts/check_clock_discipline.sh`); tests use a fake clock.
+- DB tests run against a real TimescaleDB, never a mock (see Run / Test below).
+- Configuration is pydantic-settings per service (`services/*/src/rs_*/settings.py`), read from the environment or `.env` in the working directory; every variable is documented in `.env.example`.
+- Vendor data is never committed: fixtures are synthetic.
+- No plan citations (`ADR-NNNN`, `grilling #`, `slice N`) in `src/` or `tests/` (`scripts/check_plan_citations.sh`).
+- Schema changes are hand-written Alembic migrations in `libs/persistence`; `rs_migrate check` fails on drift from the ORM models.
 
-```
-legacy/src/rocketstocks/
-├── __main__.py       # Entry point
-├── core/             # Business logic — ZERO discord imports
-├── data/             # Data access — NO discord or core imports
-├── bot/              # Presentation — ALL discord-specific code
-├── api/              # Public data SDK — DataAPI facade + CLI exporter
-└── backtest/         # Signal validation and strategy research
-```
+## Workflow rules
 
-See the documentation index below for per-directory detail.
-
-## Layer Dependency Rules
-
-```
-bot/  → core/  ✓    bot/  → data/  ✓
-core/ ✗ bot/        core/ → data/  ✗  (exception: scheduler/jobs.py)
-data/ ✗ bot/        data/ ✗ core/
-```
-
-**Never import discord in `core/` or `data/`.**
-
-## Key Conventions
-
-- **StockData singleton** — created at `__main__.py:16`, attached at `bot/bot.py:163`; never re-instantiate
-- **Content classes** — return `EmbedSpec` (`core/content/models.py:43`); converted via `bot/senders/embed_utils.py:8`
-- **DB access** — always via `Postgres.execute()` (`data/db.py:61`) or a repository class; `%s` placeholders only
-- **Logger** — `logger = logging.getLogger(__name__)` in every module
-- **Config** — read via pydantic-settings `settings` singleton at `core/config/settings.py:34`; never `os.environ` directly
-
-## Startup Sequence
-
-- `__main__.py:11-26` — creates `StockData`, `EventEmitter`, `NotificationConfig`; calls `run_bot()`
-- `bot/bot.py:150-166` — creates bot, attaches dependencies, calls `bot.run()`
-- `bot/bot.py:58-91` — `setup_hook()` opens DB pool, creates tables, starts APScheduler
-- `bot/bot.py:118-124` — `load()` auto-loads all `.py` files in `bot/cogs/`
-
-## Workflow Rules
-
-**Always create a new branch** before starting a new feature or bug fix. Once complete, run all relevant tests and confirm success. Write new test cases, adjust existing tests, and remove unnecessary tests for any changes you make.
+Always create a new branch before starting a new feature or bug fix.
+Once complete, run all relevant tests and confirm success.
+Write new test cases, adjust existing tests, and remove unnecessary tests for any changes you make.
 
 ## Run / Test / Deploy
 
 ```bash
-# Set up / update the shared venv (installs legacy + all v2 members editable)
+# Set up / update the shared venv (installs every member editable)
 uv sync --all-packages
 
-# Run v1 locally
-.venv/bin/python -m rocketstocks
+# Tests (all members); a single file or member works as usual
+.venv/bin/pytest -q
+.venv/bin/pytest services/ingest -q
 
-# Run v1 tests
-.venv/bin/pytest legacy/tests -q
-
-# Run specific v1 test file
-.venv/bin/pytest legacy/tests/bot/cogs/test_alerts_cog.py -v
-
-# Run v2 member tests only (bare `.venv/bin/pytest` runs EVERYTHING: legacy + v2)
-.venv/bin/pytest libs/ services/ tools/ -q
-
-# Lint v2 members (legacy is never linted — code freeze)
+# Lint
 .venv/bin/ruff check libs services tools
 
-# Type-check v2 members (mypy + pydantic plugin; config in root pyproject.toml)
+# Type-check (mypy + pydantic plugin; config in root pyproject.toml)
 .venv/bin/mypy
 
 # Import-layer contracts (import-linter; contracts in root pyproject.toml).
 # A new member needs a line in root_packages and in each contract that covers it.
 .venv/bin/lint-imports
 
-# Clock-discipline gate (no ambient time in v2 src)
+# Clock-discipline and plan-citation gates
 scripts/check_clock_discipline.sh
-
-# Plan-citation gate (no ADR-NNNN, grilling #, slice N, attention or base_rate in v2 src/tests)
 scripts/check_plan_citations.sh
 
 # Migrations vs ORM models (run against a migrated DB; fails on drift)
 RS_DB_URL=postgresql+psycopg://... .venv/bin/python -m rs_migrate check
 
-# v2 DB tests need a TimescaleDB (skip visibly otherwise); spec container:
+# DB tests need a TimescaleDB (they skip visibly otherwise); spec container:
 #   docker run -d --rm -p 5499:5432 -e POSTGRES_PASSWORD=t timescale/timescaledb:2.30.2-pg16
 # Set RS_TEST_DB_URL to make DB tests mandatory (unreachable = failure, as in CI).
 # Migrations CLI (DSN via RS_DB_URL; upgrade also applies the per-service roles and
-# needs RS_DB_PASSWORD_{INGEST,BOT,MCP,RESEARCH}, or pass --skip-roles on a bare dev DB):
+# needs RS_DB_PASSWORD_{INGEST,BOT}, or pass --skip-roles on a bare dev DB):
 RS_DB_URL=postgresql+psycopg://... .venv/bin/python -m rs_migrate upgrade
 
-# Backtesting CLI
-.venv/bin/python -m rocketstocks.backtest run volume_accumulation --benchmark SPY
-
-# Docker (v1 image builds from legacy/ via the root Dockerfile)
+# The stack: TimescaleDB (127.0.0.1:5498) + one-shot migrate gate + ingest/bot
+# from one image (Dockerfile); JSON logs with correlation_id; metrics on
+# 127.0.0.1:9090 (ingest) / :9091 (bot). Needs the required variables in .env
+# (copy .env.example). Compose project name is rocketstocks-v2; keep it, it names the volume.
 docker compose up -d
 
-# v2 stack: TimescaleDB (127.0.0.1:5498) + one-shot migrate gate +
-# ingest/bot from the shared Dockerfile.v2 image; JSON logs with
-# correlation_id; metrics on 127.0.0.1:9090 (ingest) / :9091 (bot).
-# Needs RS_DB_PASSWORD + service credentials in .env.
-docker compose -f docker-compose.v2.yml up -d
-
-# v2 operator tools (host-side, shared venv; exact procedures in docs/operations.md)
-.venv/bin/python -m rs_backfill verify-offset --dump PATH   # then popularity-import --dump PATH --zone ZONE
+# Operator tools (host-side, shared venv; exact procedures in docs/operations.md)
 .venv/bin/python -m rs_ingest.tools.login                   # first Schwab login; later logins use /setup schwab
-RS_RESEARCH_DB_URL=... .venv/bin/python -m rs_research event-study popularity_surge
 ```
-
-## Environment Variables (`.env`)
-
-```
-DISCORD_TOKEN, POSTGRES_USER, POSTGRES_PASSWORD, POSTGRES_DB, POSTGRES_HOST, POSTGRES_PORT
-SCHWAB_API_KEY, SCHWAB_API_SECRET, TIINGO_API_KEY
-NASDAQ_API_KEY, NEWS_API_KEY
-TZ=America/Chicago
-```
-
-## Database Tables
-
-Auto-created on startup via `data/schema.py:34`. Tables: `tickers`, `ticker_stats`, `upcoming_earnings`, `historical_earnings`, `watchlists`, `popularity`, `popularity_surges`, `alerts`, `reports`, `daily_price_history`, `five_minute_price_history`, `holdings`, `transactions`, `portfolio_snapshots`, `channel_config`, `alert_roles`, `bot_settings`, `market_signals`, `iv_history`, `backtest_runs`, `backtest_results`, `strategy_stats`, `backtest_trades`.
-
-## Documentation Index
-
-| Topic | File |
-|-------|------|
-| **v2** vision, scope, architecture, milestones | [docs/vision.md](docs/vision.md) |
-| Architectural patterns & cross-cutting design | [.claude/docs/architectural_patterns.md](.claude/docs/architectural_patterns.md) |
-| `core/` — analysis, content classes, scheduler, notifications | [.claude/docs/core.md](.claude/docs/core.md) |
-| `data/` — DB wrapper, repositories, API clients | [.claude/docs/data.md](.claude/docs/data.md) |
-| `bot/` — cogs, senders, views, bot lifecycle | [.claude/docs/bot.md](.claude/docs/bot.md) |
-| `backtest/` — strategy framework architecture | [.claude/docs/backtesting.md](.claude/docs/backtesting.md) |
-| Backtesting CLI usage & interpreting results | [.claude/docs/backtesting_guide.md](.claude/docs/backtesting_guide.md) |
-| `api/` — public DataAPI facade, batch fetches, `rocketstocks-data` CLI | [.claude/docs/api.md](.claude/docs/api.md) |
-| `eda/` — exploratory signal research (event detectors + analysis engines) | [.claude/docs/eda.md](.claude/docs/eda.md) |
-| Test structure, fixtures & mocking patterns | [.claude/docs/tests.md](.claude/docs/tests.md) |
 
 ## Agent skills
 
 ### Issue tracker
 
-Issues/PRDs live in GitHub Issues (`JWolf34/RocketStocks`) via the `gh` CLI. Milestone specs (at most about 40 lines) land with the code, not in the tracker. See `docs/agents/issue-tracker.md`.
+Issues/PRDs live in GitHub Issues (`JWolf34/RocketStocks`) via the `gh` CLI.
+Milestone specs (at most about 40 lines) land with the code, not in the tracker.
+See `docs/agents/issue-tracker.md`.
 
 ### Domain docs
 
-Single-context: one root `CONTEXT.md`; ADRs live at `docs/adr/`. See `docs/agents/domain.md`.
+Single-context: one root `CONTEXT.md`; ADRs live at `docs/adr/`.
+See `docs/agents/domain.md`.

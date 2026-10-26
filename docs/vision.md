@@ -40,7 +40,7 @@ RocketStocks is installable by another small private group (nothing hard-wired t
 | **Trigger** | A named, versioned rule that decides a stock is worth attention now | signal, alert type, detector |
 | **Alert** | A short Discord post that one stock is worth attention now, with its Triggers as the reasons, a talking point, the Track record and the next Catalyst | notification, signal |
 | **Report** (final name to be decided) | The one per-stock view of RocketStocks' own data, attached to Alerts and available on demand | dossier, stock report, data card |
-| **Outcome** | What a stock did after an Alert, at 1, 5 and 20 trading days | result, return |
+| **Outcome** | What a stock did after a Trigger hit, posted or not, at 1, 5 and 20 trading days | result, return |
 | **Track record** | Outcomes summarised for one Trigger (and later common Trigger combinations), saying "too few cases" when that is true | base rate, confidence |
 | **Catalyst** | A scheduled event that could move a stock; today only the earnings date | event, news |
 | **Earnings preview** | The weekly post ranking the week's earnings reporters by RocketStocks' data | digest, screener |
@@ -77,7 +77,7 @@ It must also answer: who uses it, how often, which decision it changes, and what
 
 - **Informational only.** RocketStocks describes what happened, why it is Unusual and what followed historically; descriptive direction ("call-heavy activity") is allowed, buy or sell calls, targets and sizes never are.
 - **Wrong is worse than missing, and missing is worse than labelled.** Every number carries its As-of time; a fact that cannot be computed is shown as missing with the reason; a Trigger never fires on missing inputs; an Alert with missing supporting facts posts with them labelled and pings the operator.
-- **Outcomes** start at the next tradable price after the Alert is posted.
+- **Outcomes** follow a Trigger hit, posted or not, and start at the next tradable price after the Alert is posted (or after the hit, when it was not posted).
   Each records excess return over SPY (direction) and move size against the stock's own typical move (was it worth attention), at 1, 5 and 20 trading days.
   A Track record shows "too few cases" below about 30 Outcomes at a horizon.
 - **Cutting Triggers.** A Trigger is a candidate for cutting when its stocks do not move unusually more often than the same stocks do on ordinary days.

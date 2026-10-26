@@ -6,7 +6,7 @@ import httpx
 import pytest
 
 from rs_sources.edgar import EdgarClient
-from rs_sources.errors import SourceError
+from rs_sources.errors import SourceError, is_per_symbol_answer
 
 AS_OF = datetime(2026, 10, 19, 15, 0, tzinfo=UTC)
 USER_AGENT = "RocketStocksTest ops@example.invalid"
@@ -154,8 +154,22 @@ async def test_http_failure_is_a_source_error(clock):
     fake.fail_tickers = True
     client = make_client(fake, clock)
 
-    with pytest.raises(SourceError):
+    with pytest.raises(SourceError) as raised:
         await client.cik("AAA")
+
+    assert raised.value.status_code == 503
+    assert not is_per_symbol_answer(raised.value)
+
+
+async def test_a_404_for_one_symbol_is_a_per_symbol_answer_not_a_source_failure(clock):
+    fake = FakeEdgar(tickers={"0": {"cik_str": 333, "ticker": "CCC", "title": "No Filings Co"}})
+    client = make_client(fake, clock)
+
+    with pytest.raises(SourceError) as raised:
+        await client.recent_8ks("CCC", AS_OF)
+
+    assert raised.value.status_code == 404
+    assert is_per_symbol_answer(raised.value)
 
 
 async def test_declared_user_agent_is_sent(clock):

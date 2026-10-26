@@ -1,7 +1,7 @@
 """ListenLoop: the dead-LISTEN witness. A dedicated autocommit connection holds
 LISTEN; a NOTIFY only sets the sweep's wake event (never posts). Every
 (re)connect sets the wake too, so a severed connection self-heals into a
-recovery sweep rather than a silent dead LISTEN — the structural cover for
+recovery sweep rather than a silent dead LISTEN - the structural cover for
 that failure class.
 
 Real ephemeral Postgres; NOTIFYs are staged through the real AlertRepository
@@ -21,7 +21,7 @@ from rs_persistence import AlertRepository
 
 ALERT = Alert(
     symbol="SPY",
-    alert_type="volume_threshold",
+    trigger="volume_threshold",
     triggered_at=datetime(2026, 7, 6, 14, 30, tzinfo=UTC),
     payload={"volume": 750_000, "threshold": 500_000},
 )

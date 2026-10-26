@@ -1,6 +1,6 @@
 """stage_alert commits through the real AlertRepository path:
 the staged row lands unposted (so the sweep will deliver it) and is clearly
-marked as a drill, and the transactional NOTIFY fires — witnessed by a raw
+marked as a drill, and the transactional NOTIFY fires - witnessed by a raw
 LISTEN connection, same as the acceptance drills rely on."""
 
 import psycopg
@@ -18,8 +18,8 @@ async def test_stage_commits_an_unposted_marked_alert_with_notify(migrated_db_ur
     assert [n.payload for n in got] == [str(alert_id)]
 
     async with session_factory() as s:
-        pending = await AlertRepository(s).list_unposted()
+        pending = await AlertRepository(s).list_undelivered()
     assert [p.id for p in pending] == [alert_id]
-    assert pending[0].alert.symbol == "TEST"
-    assert pending[0].alert.alert_type == "staged_test"
+    assert pending[0].alert.symbol.startswith("TEST-")
+    assert pending[0].alert.trigger == "staged_test"
     assert pending[0].alert.triggered_at.tzinfo is not None

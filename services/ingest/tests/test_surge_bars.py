@@ -6,14 +6,15 @@ from collections import Counter
 from datetime import UTC, date, datetime, time, timedelta
 
 import pytest
-from sqlalchemy import func, select
+from sqlalchemy import func, select, text
 
 from rs_analysis import popularity_surge
-from rs_domain import PopularityOrigin, PopularitySnapshot
+from rs_domain import EASTERN, PopularityOrigin, PopularitySnapshot, StoredDailyBar
+from rs_ingest import surge_bars
 from rs_ingest.rate_limit import RateLimiter
 from rs_ingest.surge_bars import (
     BENCHMARK,
-    EASTERN,
+    LOOKBACK_SESSIONS,
     SurgeBarsError,
     first_event_dates,
     lookback_start,
@@ -53,13 +54,16 @@ def _millis(day: date) -> int:
 
 class FakeSchwab:
     """schwab-py's price-history call over a scripted market: every symbol
-    prices every session in the window from its listing date on; `junk` adds
-    candles the adapter must reject; `broken` answers an error instead."""
+    prices every session in the window from its listing date on, the same
+    price whenever it is asked; `scale` multiplies a symbol's prices (a split
+    after the bars were stored); `junk` adds candles the adapter must reject;
+    `broken` answers an error instead."""
 
     def __init__(self) -> None:
         self.listed: dict[str, date | None] = {}
         self.junk: dict[str, list[dict]] = {}
         self.broken: dict[str, int | Exception] = {}
+        self.scale: dict[str, float] = {}
         self.calls: list[tuple[str, date, date]] = []
 
     def price(self, *symbols: str, listed: date | None = date(2000, 1, 1)) -> "FakeSchwab":
@@ -77,9 +81,17 @@ class FakeSchwab:
             return FakeResponse(status_code=failure)
         listed = self.listed.get(symbol)
         sessions = [] if listed is None else [d for d in CALENDAR.sessions_in_range(start, end) if d >= listed]
+        k = self.scale.get(symbol, 1.0)
         candles = [
-            {"datetime": _millis(d), "open": 10.0 + i, "high": 12.0 + i, "low": 9.0 + i, "close": 11.0 + i, "volume": 1000 + i}
-            for i, d in enumerate(sessions)
+            {
+                "datetime": _millis(d),
+                "open": k * (10.0 + d.toordinal() % 17),
+                "high": k * (12.0 + d.toordinal() % 17),
+                "low": k * (9.0 + d.toordinal() % 17),
+                "close": k * (11.0 + d.toordinal() % 17),
+                "volume": 1000 + d.toordinal() % 17,
+            }
+            for d in sessions
         ]
         return FakeResponse({"candles": candles + self.junk.get(symbol, []), "symbol": symbol})
 
@@ -180,14 +192,14 @@ async def test_stores_bars_for_event_tickers_and_spy_only(session_factory):
     assert (report.needed, report.fetched, report.unpriced) == (4, 4, 1)
 
 
-async def test_stamps_each_bar_with_fetch_time_and_adjustment(session_factory):
+async def test_stamps_each_bar_with_fetch_time_and_stores_it_adjusted(session_factory):
     await _seed(session_factory)
     await _run(session_factory, FakeSchwab().price("AAA", "BBB", "ZZZ", BENCHMARK), FakeClock(NOW))
 
     async with session_factory() as s:
         [bar, *_] = await DailyBarRepository(s).list_range("AAA", date(2026, 10, 20), date(2026, 10, 20))
     assert bar.fetched_at == NOW
-    assert bar.adjusted is False
+    assert bar.adjusted is True
 
 
 async def test_rejects_non_session_and_epoch_zero_bars_without_storing_them(session_factory):
@@ -291,8 +303,10 @@ async def test_the_next_session_fetches_only_the_new_day(session_factory):
     clock.current = NOW + timedelta(days=1)  # Wed 2026-10-21 after the close
     report = await _run(session_factory, schwab, clock)
 
-    assert sorted(schwab.calls) == sorted((s, date(2026, 10, 21), date(2026, 10, 21)) for s in ("AAA", "BBB", "ZZZ", BENCHMARK))
+    # The tail fetch starts three sessions back so that it overlaps the stored bars.
+    assert sorted(schwab.calls) == sorted((s, date(2026, 10, 16), date(2026, 10, 21)) for s in ("AAA", "BBB", "ZZZ", BENCHMARK))
     assert report.bars_inserted == 4
+    assert report.repaired == 0
 
 
 async def test_nothing_is_fetched_before_the_session_has_settled(session_factory):
@@ -370,9 +384,122 @@ async def test_a_weekend_event_on_a_listing_that_starts_monday_is_not_refetched_
     assert schwab.calls == []
 
 
-async def test_the_lookback_is_thirty_sessions_before_the_event(session_factory):
-    start = lookback_start(CALENDAR, date(2026, 10, 14))
-    assert len(CALENDAR.sessions_in_range(start, date(2026, 10, 13))) == 30
+async def test_the_lookback_covers_the_typical_move_window_with_margin():
+    assert LOOKBACK_SESSIONS >= 250 + 10
+
+
+async def test_the_lookback_is_that_many_sessions_before_any_event_day():
+    # Weekdays, weekends and holiday weeks alike: the calendar-day span never comes up short.
+    for offset in range(0, 370):
+        day = date(2026, 1, 1) + timedelta(days=offset)
+        start = lookback_start(CALENDAR, day)
+        before = CALENDAR.sessions_in_range(start, day - timedelta(days=1))
+        assert len(before) >= LOOKBACK_SESSIONS, day
+        assert len(CALENDAR.sessions_in_range(start + timedelta(days=1), day - timedelta(days=1))) < len(before)
+
+
+async def test_a_year_of_bars_is_fetched_before_the_first_event(session_factory):
+    await _seed(session_factory)
+    schwab = FakeSchwab().price("AAA", "BBB", "ZZZ", BENCHMARK)
+
+    await _run(session_factory, schwab, FakeClock(NOW))
+
+    aaa = await _bars(session_factory, "AAA")
+    assert len([d for d in aaa if d < date(2026, 10, 14)]) >= 250
+    assert aaa[-1] == LAST_SESSION
+
+
+async def _store_with_the_old_thirty_session_lookback(session_factory, schwab: FakeSchwab, clock: FakeClock, monkeypatch):
+    """The state a box running the earlier job holds: short lookbacks and no request record."""
+    with monkeypatch.context() as old:
+        old.setattr(surge_bars, "LOOKBACK_SESSIONS", 30)
+        old.setattr(surge_bars, "LOOKBACK_CALENDAR_DAYS", 70)
+        await _run(session_factory, schwab, clock)
+    async with session_factory() as s:
+        await s.execute(text("DELETE FROM bar_request"))
+        await s.commit()
+    schwab.calls.clear()
+
+
+async def test_bars_stored_with_a_short_lookback_are_extended_back_once(session_factory, monkeypatch):
+    await _seed(session_factory)
+    schwab = FakeSchwab().price("AAA", "BBB", "ZZZ", BENCHMARK)
+    clock = FakeClock(NOW)
+    await _store_with_the_old_thirty_session_lookback(session_factory, schwab, clock, monkeypatch)
+    assert len(await _bars(session_factory, "AAA")) < 60
+
+    report = await _run(session_factory, schwab, clock)
+
+    wanted = {s: lookback_start(CALENDAR, d) for s, d in {"AAA": date(2026, 10, 14), "BBB": date(2026, 9, 30), "ZZZ": date(2026, 10, 15)}.items()}
+    wanted[BENCHMARK] = wanted["BBB"]
+    assert sorted(schwab.calls) == sorted((s, start, LAST_SESSION) for s, start in wanted.items())
+    for symbol, start in wanted.items():
+        assert (await _bars(session_factory, symbol))[0] == start
+    assert report.bars_inserted > 0
+
+    schwab.calls.clear()
+    await _run(session_factory, schwab, clock)
+    assert schwab.calls == []
+
+
+async def test_a_listing_younger_than_the_lookback_is_asked_once_and_never_again(session_factory, monkeypatch):
+    await _seed(session_factory)
+    schwab = FakeSchwab().price("AAA", "ZZZ", BENCHMARK).price("BBB", listed=date(2026, 9, 28))
+    clock = FakeClock(NOW)
+    await _store_with_the_old_thirty_session_lookback(session_factory, schwab, clock, monkeypatch)
+
+    await _run(session_factory, schwab, clock)
+    # BBB was asked from the full lookback once and has nothing earlier than its listing.
+    assert [c for c in schwab.calls if c[0] == "BBB"] == [("BBB", lookback_start(CALENDAR, date(2026, 9, 30)), LAST_SESSION)]
+    assert (await _bars(session_factory, "BBB"))[0] == date(2026, 9, 28)
+
+    schwab.calls.clear()
+    clock.current = NOW + timedelta(days=1)
+    await _run(session_factory, schwab, clock)
+    # Only the tail: its short history is complete, not a gap.
+    assert [c for c in schwab.calls if c[0] == "BBB"] == [("BBB", date(2026, 10, 16), date(2026, 10, 21))]
+    assert (await _bars(session_factory, "BBB"))[0] == date(2026, 9, 28)
+
+
+async def test_the_benchmark_already_covering_the_earliest_need_is_not_refetched(session_factory):
+    await _seed(session_factory)
+    schwab = FakeSchwab().price("AAA", "BBB", "ZZZ", BENCHMARK)
+    clock = FakeClock(NOW)
+    # SPY was stored earlier, from before the earliest need, with no request on record.
+    async with session_factory() as s:
+        history = await SchwabMarketData(schwab, CALENDAR).daily_history(BENCHMARK, date(2025, 1, 2), LAST_SESSION)
+        await DailyBarRepository(s).insert_many(surge_bars._to_stored(history, FETCHED))
+        await s.commit()
+    schwab.calls.clear()
+
+    await _run(session_factory, schwab, clock)
+
+    assert BENCHMARK not in schwab.symbols_called()
+    assert (await _bars(session_factory, BENCHMARK))[0] == date(2025, 1, 2)
+
+
+async def test_a_long_catch_up_logs_its_plan_and_progress(session_factory, monkeypatch, caplog):
+    await _seed(session_factory)
+    monkeypatch.setattr(surge_bars, "PROGRESS_EVERY", 2)
+    schwab = FakeSchwab().price("AAA", "BBB", "ZZZ", BENCHMARK)
+
+    with caplog.at_level("INFO", logger="rs_ingest.surge_bars"):
+        await _run(session_factory, schwab, FakeClock(NOW))
+
+    messages = [r.getMessage() for r in caplog.records]
+    assert "surge_bars: 4 of 4 symbols to fetch, one call each" in messages
+    assert "surge_bars: 2 of 4 symbols done" in messages
+
+
+async def test_the_run_says_it_started_before_the_trigger_replay_that_can_take_minutes(session_factory, caplog):
+    await _seed(session_factory)
+    schwab = FakeSchwab().price("AAA", "BBB", "ZZZ", BENCHMARK)
+
+    with caplog.at_level("INFO", logger="rs_ingest.surge_bars"):
+        await _run(session_factory, schwab, FakeClock(NOW))
+
+    messages = [r.getMessage() for r in caplog.records]
+    assert messages[0] == "surge_bars: replaying the Popularity Trigger to find the stocks to track"
 
 
 async def test_a_stored_symbol_schwab_stops_answering_for_is_not_a_job_failure(session_factory):
@@ -467,7 +594,7 @@ async def test_with_no_events_only_the_benchmark_is_tracked(session_factory):
 
 async def test_first_event_dates_agree_with_the_rule_replay(session_factory):
     history = []
-    for hours in range(0, 24 * 21, 6):  # AAA surges repeatedly; the cooldown thins the replay
+    for hours in range(0, 24 * 21, 6):  # AAA surges repeatedly; each hit is its own event
         at = datetime(2026, 9, 1, tzinfo=UTC) + timedelta(hours=hours)
         history.append(_snap("AAA", at, origin=PopularityOrigin.V1_IMPORT if hours % 12 else PopularityOrigin.LIVE))
         history.append(_snap("QUIET", at, mentions=100, prior=100))
@@ -488,3 +615,179 @@ async def test_first_event_dates_agree_with_the_rule_replay(session_factory):
 
 async def test_first_event_dates_is_empty_with_no_history(session_factory):
     assert await first_event_dates(session_factory, NOW) == {}
+
+
+# --- bars stored before a split are repaired by overlap -----------------------------------------
+
+
+async def _closes(session_factory, symbol: str) -> dict[date, float]:
+    async with session_factory() as s:
+        rows = await DailyBarRepository(s).list_range(symbol, date(2000, 1, 1), date(2100, 1, 1))
+    return {r.session_date: r.close for r in rows}
+
+
+async def _stored_then_next_session(session_factory) -> tuple[FakeSchwab, FakeClock, dict[date, float]]:
+    """Bars stored through Tuesday, the clock moved to the next session's close."""
+    await _seed(session_factory)
+    schwab = FakeSchwab().price("AAA", "BBB", "ZZZ", BENCHMARK)
+    clock = FakeClock(NOW)
+    await _run(session_factory, schwab, clock)
+    before = await _closes(session_factory, "AAA")
+    schwab.calls.clear()
+    clock.current = NOW + timedelta(days=1)  # Wed 2026-10-21 after the close
+    return schwab, clock, before
+
+
+async def test_an_overlap_that_matches_makes_no_repair(session_factory):
+    schwab, clock, before = await _stored_then_next_session(session_factory)
+
+    report = await _run(session_factory, schwab, clock)
+
+    assert report.repaired == 0
+    assert sorted(schwab.calls) == sorted((s, date(2026, 10, 16), date(2026, 10, 21)) for s in ("AAA", "BBB", "ZZZ", BENCHMARK))
+    after = await _closes(session_factory, "AAA")
+    assert {d: c for d, c in after.items() if d in before} == before
+    assert max(after) == date(2026, 10, 21)
+
+
+@pytest.mark.parametrize("drift, repaired", [(1.002, 0), (1.05, 1)])
+async def test_a_close_is_a_disagreement_only_beyond_the_tolerance(session_factory, drift, repaired):
+    schwab, clock, _ = await _stored_then_next_session(session_factory)
+    schwab.scale["AAA"] = drift  # a vendor correction, small or not
+
+    report = await _run(session_factory, schwab, clock)
+
+    assert report.repaired == repaired
+
+
+async def test_a_reverse_split_after_storage_replaces_the_stored_bars_with_a_fresh_fetch(session_factory, caplog):
+    schwab, clock, before = await _stored_then_next_session(session_factory)
+    # A bar older than the lookback, left by an earlier job: the fresh fetch will not have it.
+    stale = StoredDailyBar(
+        symbol="AAA", session_date=date(2025, 1, 2), open=11.0, high=12.0, low=10.0, close=11.0,
+        volume=1, fetched_at=FETCHED, adjusted=True,
+    )
+    async with session_factory() as s:
+        await DailyBarRepository(s).insert_many([stale])
+        await s.commit()
+    schwab.scale["AAA"] = 10.0  # 1-for-10 reverse split: every close is now ten times the stored one
+
+    with caplog.at_level("WARNING", logger="rs_ingest.surge_bars"):
+        report = await _run(session_factory, schwab, clock)
+
+    need = lookback_start(CALENDAR, date(2026, 10, 14))
+    assert [c for c in schwab.calls if c[0] == "AAA"] == [
+        ("AAA", date(2026, 10, 16), date(2026, 10, 21)),  # the tail with its overlap
+        ("AAA", need, date(2026, 10, 21)),  # the full fetch it triggered
+    ]
+    after = await _closes(session_factory, "AAA")
+    assert sorted(after) == CALENDAR.sessions_in_range(need, date(2026, 10, 21))
+    assert all(after[d] == pytest.approx(10 * before[d]) for d in before if d in after)
+    assert report.repaired == 1
+    assert any("AAA" in r.getMessage() and "replacing" in r.getMessage() for r in caplog.records)
+    # Only the split symbol was touched, and a rerun finds nothing to do.
+    assert sorted(c for c in schwab.calls if c[0] != "AAA") == sorted(
+        (s, date(2026, 10, 16), date(2026, 10, 21)) for s in ("BBB", "ZZZ", BENCHMARK)
+    )
+    schwab.calls.clear()
+    await _run(session_factory, schwab, clock)
+    assert schwab.calls == []
+
+
+async def test_a_split_found_while_extending_back_needs_no_second_call(session_factory, monkeypatch):
+    await _seed(session_factory)
+    schwab = FakeSchwab().price("AAA", "BBB", "ZZZ", BENCHMARK)
+    clock = FakeClock(NOW)
+    await _store_with_the_old_thirty_session_lookback(session_factory, schwab, clock, monkeypatch)
+    before = await _closes(session_factory, "AAA")
+    schwab.scale["AAA"] = 0.1  # 10-for-1 forward split since
+
+    await _run(session_factory, schwab, clock)
+
+    need = lookback_start(CALENDAR, date(2026, 10, 14))
+    assert [c for c in schwab.calls if c[0] == "AAA"] == [("AAA", need, LAST_SESSION)]
+    after = await _closes(session_factory, "AAA")
+    assert sorted(after) == CALENDAR.sessions_in_range(need, LAST_SESSION)
+    assert all(after[d] == pytest.approx(0.1 * before[d]) for d in before)
+
+
+async def test_an_empty_answer_does_not_wipe_stored_bars(session_factory):
+    schwab, clock, before = await _stored_then_next_session(session_factory)
+    schwab.listed["AAA"] = None  # delisted or halted: Schwab answers with nothing
+
+    report = await _run(session_factory, schwab, clock)
+
+    assert report.repaired == 0
+    assert await _closes(session_factory, "AAA") == before
+    assert "AAA" not in await _unpriced(session_factory)
+
+
+async def test_an_answer_without_the_overlap_sessions_is_not_a_disagreement_but_is_reported_unverified(
+    session_factory, caplog
+):
+    schwab, clock, before = await _stored_then_next_session(session_factory)
+    schwab.scale["AAA"] = 10.0
+    plain = schwab.get_price_history_every_day
+
+    async def only_the_new_session(symbol, start_datetime, end_datetime, **kwargs):
+        # The vendor has nothing for the sessions before Wednesday: nothing to compare against.
+        if symbol != "AAA":
+            return await plain(symbol, start_datetime, end_datetime, **kwargs)
+        return await plain(symbol, start_datetime.replace(day=21), end_datetime, **kwargs)
+
+    schwab.get_price_history_every_day = only_the_new_session
+
+    with caplog.at_level("WARNING", logger="rs_ingest.surge_bars"):
+        report = await _run(session_factory, schwab, clock)
+
+    assert report.repaired == 0
+    after = await _closes(session_factory, "AAA")
+    assert {d: c for d, c in after.items() if d in before} == before  # nothing was deleted
+    # The unverifiable tail is visible, not silent, and costs no second call.
+    assert report.unverified == 1
+    assert any(
+        "AAA" in r.getMessage() and "unverified" in r.getMessage() and "2026-10-20" in r.getMessage()
+        for r in caplog.records
+    )
+    assert [c[0] for c in schwab.calls].count("AAA") == 1
+
+
+async def test_an_answer_with_overlap_is_not_unverified(session_factory):
+    schwab, clock, _ = await _stored_then_next_session(session_factory)
+
+    report = await _run(session_factory, schwab, clock)
+
+    assert report.unverified == 0
+
+
+class _FailsFullFetch:
+    """The tail answers, the fresh full fetch behind it does not."""
+
+    def __init__(self, inner: SchwabMarketData, fails_from: date) -> None:
+        self.inner, self.fails_from = inner, fails_from
+
+    async def daily_history(self, symbol: str, start: date, end: date):
+        if symbol == "AAA" and start < self.fails_from:
+            raise SchwabResponseError(503, "unavailable")
+        return await self.inner.daily_history(symbol, start, end)
+
+
+async def test_a_failed_repair_keeps_the_stored_bars_and_the_new_tail_out_until_it_succeeds(session_factory):
+    schwab, clock, before = await _stored_then_next_session(session_factory)
+    schwab.scale["AAA"] = 10.0
+
+    with pytest.raises(SurgeBarsError, match="1 of 4 symbols failed: AAA"):
+        await sync_surge_bars(
+            session_factory=session_factory,
+            source=_FailsFullFetch(SchwabMarketData(schwab, CALENDAR), date(2026, 10, 16)),
+            limiter=Budget().limiter(),
+            calendar=CALENDAR,
+            clock=clock,
+        )
+
+    # No new-scale bar sits beside the old-scale ones.
+    assert await _closes(session_factory, "AAA") == before
+
+    report = await _run(session_factory, schwab, clock)
+    assert report.repaired == 1
+    assert max(await _closes(session_factory, "AAA")) == date(2026, 10, 21)

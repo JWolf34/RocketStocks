@@ -1,5 +1,5 @@
 """unit_of_work: fresh opaque correlation_id + domain keys as fields.
-Asserted through the rendered stream (rs_observability.testing) —
+Asserted through the rendered stream (rs_observability.testing) -
 binding only matters if the records actually carry the fields. That the
 stream targets stdout is test_logging.py's subject."""
 
@@ -54,8 +54,8 @@ def test_fields_do_not_leak_when_body_raises(stream):
 
 
 def test_all_records_in_the_unit_share_the_id(stream):
-    """The grouping property: every record inside one unit of work — from any
-    logger, e.g. a third-party retry internal — joins on the one id."""
+    """The grouping property: every record inside one unit of work - from any
+    logger, e.g. a third-party retry internal - joins on the one id."""
     with unit_of_work(alert_id=7):
         logging.getLogger("rs_bot.sweep").info("posting")
         logging.getLogger("discord.http").warning("rate limited, retrying")

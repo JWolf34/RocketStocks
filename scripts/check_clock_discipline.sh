@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
 # Clock-discipline gate: domain/detection code never reads ambient
 # time - it receives an injected Clock or concrete event timestamps.
-# Allowlisted: the Clock implementation itself. Tests are exempt (time-machine
-# is the sanctioned escape hatch there).
+# Allowlisted: the Clock implementation itself, and the two rate limiters that
+# pace asyncio.sleep on the event loop's own clock. Tests are exempt
+# (time-machine is the sanctioned escape hatch there).
 #
 # Scope is every v2 member's src/ (libs/*, services/*, tools/*), globbed so a
 # new member is covered the day it appears. A root with no member src dirs is
@@ -11,7 +12,9 @@
 # Banned: wall-clock and monotonic reads (datetime.now/utcnow/today,
 # date.today, time.time, time.monotonic, `from time import time|monotonic`) and
 # aliasing datetime/date/time (`import datetime as dt`), which would hide the
-# calls above from this grep. time.perf_counter (duration measurement) is fine.
+# calls above from this grep, and event-loop clock reads (`loop.time()`,
+# `get_running_loop().time()`), which are ambient time under another name.
+# time.perf_counter (duration measurement) is fine.
 #
 # CLOCK_GATE_ROOT overrides the repo root (the gate's own test uses it).
 set -euo pipefail
@@ -28,11 +31,12 @@ for root in libs services tools; do
   SCOPES+=("${members[@]}")
 done
 
-ALLOWLIST_RE='rs_domain/clock\.py'
+ALLOWLIST_RE='rs_domain/clock\.py|rs_sources/_ratelimit\.py|rs_ingest/rate_limit\.py'
 NOT_ATTR='(^|[^[:alnum:]_.])'
 PATTERN="datetime\.now\(|datetime\.utcnow\(|datetime\.today\(|date\.today\("
 PATTERN+="|${NOT_ATTR}time\.(time|monotonic)(_ns)?\("
 PATTERN+="|from[[:space:]]+time[[:space:]]+import[[:space:]].*(time|monotonic)"
+PATTERN+="|loop\.time\(|get_running_loop\(\)\.time\("
 # Alias forms: on an import line, or alone on a parenthesised-import line
 # (prose like "date as of" must not trip it).
 PATTERN+="|^[[:space:]]*(import|from)[[:space:]].*(datetime|date|time|monotonic)[[:space:]]+as[[:space:]]"

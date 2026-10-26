@@ -24,23 +24,28 @@ class TestRev001Schema:
         assert columns == {
             "id",
             "symbol",
-            "alert_type",
+            "trigger",
             "triggered_at",
+            "day",
             "payload",
             "posted_at",
             "rule_version",
             "alert_price",
             "quote_time",
-            "dedup_key",
+            "reply_to",
             "post_attempts",
+            "delivery",
+            "sending_at",
+            "message_id",
+            "thread_id",
         }
 
-    def test_alerts_unposted_partial_index(self, sync_engine):
-        # rev-003: the bot cursor's operational index — partial
-        # on posted_at IS NULL, so it stays near-empty in steady state.
+    def test_alerts_undelivered_partial_index(self, sync_engine):
+        # The bot cursor's operational index: partial on the rows still to deliver,
+        # so it stays near-empty in steady state.
         with sync_engine.connect() as conn:
-            row = conn.execute(
-                text("SELECT indexdef FROM pg_indexes WHERE indexname = 'ix_alerts_unposted'")
-            ).one_or_none()
-        assert row is not None, "ix_alerts_unposted missing (rev-003)"
-        assert "WHERE (posted_at IS NULL)" in row[0]
+            rows = conn.execute(
+                text("SELECT indexname, indexdef FROM pg_indexes WHERE indexname LIKE 'ix_alerts_%'")
+            ).all()
+        assert [name for name, _ in rows] == ["ix_alerts_undelivered"]
+        assert "'pending'::alert_delivery" in rows[0][1] and "'sending'::alert_delivery" in rows[0][1]

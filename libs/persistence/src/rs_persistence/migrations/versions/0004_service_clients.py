@@ -1,4 +1,4 @@
-"""rev-004: service_clients — per-consumer API keys.
+"""rev-004: service_clients - per-consumer API keys.
 
 Only api_key_hash + revoked_at were read; revocation is an UPDATE of revoked_at.
 

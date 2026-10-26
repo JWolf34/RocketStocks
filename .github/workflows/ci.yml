@@ -8,30 +8,12 @@ on:
       - feat/v2-rewrite
 
 jobs:
-  legacy:
-    name: legacy (v1 suite)
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Set up uv
-        uses: astral-sh/setup-uv@v6
-        with:
-          enable-cache: true
-
-      - name: Sync workspace from lockfile
-        run: uv sync --locked --all-packages
-
-      - name: Run v1 test suite from legacy/
-        run: uv run pytest legacy/tests -q
-
   v2:
     name: v2 (workspace members)
     runs-on: ubuntu-latest
     services:
       timescaledb:
-        # Pinned (not latest-pg16); bump deliberately, together with docker-compose.v2.yml.
+        # Pinned (not latest-pg16); bump deliberately, together with docker-compose.yml.
         image: timescale/timescaledb:2.30.2-pg16@sha256:6f139d56042989bd35f50ba5986e492cd32e35cc6778c50be2659add298dc09f
         env:
           POSTGRES_PASSWORD: t
@@ -53,10 +35,8 @@ jobs:
         with:
           enable-cache: true
 
-      # rocketstocks (legacy) excluded: the v2 members are dependency-free,
-      # so skipping it avoids installing the full v1 scientific stack here.
       - name: Sync workspace from lockfile
-        run: uv sync --locked --all-packages --no-install-package rocketstocks
+        run: uv sync --locked --all-packages
 
       - name: Lint v2 members
         run: uv run ruff check libs services tools
@@ -80,8 +60,6 @@ jobs:
           # Exercises the per-service roles step that follows the upgrade.
           RS_DB_PASSWORD_INGEST: ci-password-ingest-0000
           RS_DB_PASSWORD_BOT: ci-password-bot-000000
-          RS_DB_PASSWORD_MCP: ci-password-mcp-0000000
-          RS_DB_PASSWORD_RESEARCH: ci-password-research-0
         run: |
           uv run python -m rs_migrate upgrade
           uv run python -m rs_migrate check
@@ -91,7 +69,7 @@ jobs:
         run: uv run pytest libs/ services/ tools/ -q
 
   docker:
-    name: docker (v1 + v2 images)
+    name: docker (image)
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
@@ -100,15 +78,12 @@ jobs:
       - name: Validate compose config
         run: |
           cp .env.example .env
-          docker compose -f docker-compose.yml config -q
-
-      - name: Validate v2 compose config
-        run: docker compose -f docker-compose.v2.yml config -q
+          docker compose config -q
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      - name: Build v1 image
+      - name: Build image
         uses: docker/build-push-action@v6
         with:
           context: .
@@ -116,21 +91,11 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
-      # Own cache scope so the two images never evict each other's layers.
-      - name: Build v2 image
-        uses: docker/build-push-action@v6
-        with:
-          context: .
-          file: Dockerfile.v2
-          push: false
-          cache-from: type=gha,scope=v2
-          cache-to: type=gha,mode=max,scope=v2
-
   compose-smoke:
     name: compose smoke (db + migrate gate)
     runs-on: ubuntu-latest
     env:
-      COMPOSE: docker compose -p rs-smoke -f docker-compose.v2.yml
+      COMPOSE: docker compose -p rs-smoke -f docker-compose.yml
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -142,15 +107,13 @@ jobs:
           RS_DB_PASSWORD=ci-smoke-superuser-0000
           RS_DB_PASSWORD_INGEST=ci-password-ingest-0000
           RS_DB_PASSWORD_BOT=ci-password-bot-000000
-          RS_DB_PASSWORD_MCP=ci-password-mcp-0000000
-          RS_DB_PASSWORD_RESEARCH=ci-password-research-0
           RS_EDGAR_USER_AGENT=RocketStocks ci@example.com
           EOF
 
-      - name: Validate v2 compose config
+      - name: Validate compose config
         run: $COMPOSE config -q
 
-      - name: Build the v2 image
+      - name: Build the image
         run: $COMPOSE build migrate
 
       # Starts timescaledb, waits for its healthcheck, then upgrades and applies the roles.

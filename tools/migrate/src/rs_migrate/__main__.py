@@ -1,4 +1,4 @@
-"""Operational migration CLI — a thin wrapper over Alembic against
+"""Operational migration CLI - a thin wrapper over Alembic against
 rs_persistence's in-package migrations. DSN comes from RS_DB_URL.
 
     python -m rs_migrate upgrade [revision=head] [--skip-roles]
@@ -40,13 +40,13 @@ def main(argv: list[str] | None = None) -> int:
     )
     downgrade = sub.add_parser("downgrade", help="migrate down to a revision")
     downgrade.add_argument("revision")
-    sub.add_parser("roles", help="create or update the per-service database roles and grants")
+    sub.add_parser("roles", help="create or update the per-service database roles and grants, and drop retired ones")
     sub.add_parser("current", help="show current revision")
     sub.add_parser("check", help="fail if the ORM models differ from the migrated schema")
 
     args = parser.parse_args(argv)
 
-    # alembic logs via stdlib logging — route it through the one JSON
+    # alembic logs via stdlib logging - route it through the one JSON
     # stream so the compose migrate service's records carry service/timestamp.
     configure_logging("migrate")
 
