@@ -41,7 +41,7 @@ def test_sys_excepthook_logs_full_traceback(stream):
 
 
 def test_sys_excepthook_lets_keyboardinterrupt_through(stream, capsys):
-    """Ctrl-C is not an error condition — no JSON record, default handling."""
+    """Ctrl-C is not an error condition - no JSON record, default handling."""
     install_excepthooks()
     try:
         raise KeyboardInterrupt
@@ -100,6 +100,6 @@ async def test_asyncio_handler_without_exception_still_logs(stream):
 
 
 def test_no_running_loop_installs_sync_hooks_only(stream):
-    """Callable from a sync main() before asyncio.run — must not blow up."""
+    """Callable from a sync main() before asyncio.run - must not blow up."""
     install_excepthooks()
     assert sys.excepthook is not sys.__excepthook__

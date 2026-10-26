@@ -4,7 +4,7 @@ Append-only point-in-time options capture. No primary key: rows are
 immutable and tombstones (payload-less membership rows) carry NULL contract
 identity, so no column set is both unique and non-null. Hypertable DDL is raw;
 1-day chunks; compression after 3 days segmented by
-(dataset, underlying); NO retention policy — forward-only dataset.
+(dataset, underlying); NO retention policy - forward-only dataset.
 
 source_status extends the original three with `stale` (quote_time-regression
 guard) and `skipped` (overrun tombstones).
@@ -30,7 +30,7 @@ def upgrade() -> None:
 
     op.create_table(
         "options_chain_snapshot",
-        # identity — contract columns nullable: a tombstone row has none
+        # identity - contract columns nullable: a tombstone row has none
         sa.Column("underlying", sa.Text, nullable=False),
         sa.Column("option_symbol", sa.Text),
         sa.Column("expiry", sa.Date),

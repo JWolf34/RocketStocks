@@ -1,4 +1,4 @@
-# ruff: noqa: F811 — fixture params named after the imported migrated_db_url
+# ruff: noqa: F811 - fixture params named after the imported migrated_db_url
 # fixture are how pytest injects it, not redefinitions.
 
 import json

@@ -1,7 +1,7 @@
 """Native unhandled-exception capture.
 
 Every path an exception can escape a service unnoticed ends in
-`logger.error(..., exc_info=...)` — a full-traceback record on the one JSON
+`logger.error(..., exc_info=...)` - a full-traceback record on the one JSON
 stream. Framework hooks are separate and already wired (discord.py logs
 through stdlib loggers the stream captures).
 """
@@ -17,8 +17,8 @@ logger = logging.getLogger(__name__)
 
 
 def install_excepthooks() -> None:
-    """Wire `sys.excepthook`, `threading.excepthook`, and — when called with a
-    loop running — the asyncio loop exception handler.
+    """Wire `sys.excepthook`, `threading.excepthook`, and - when called with a
+    loop running - the asyncio loop exception handler.
 
     The asyncio handler can only attach to a live loop, and `asyncio.run()`
     creates one per call: invoke this once at process start (sys/threading)
@@ -54,7 +54,7 @@ def _threading_hook(args: threading.ExceptHookArgs) -> None:
 
 def _asyncio_handler(loop: asyncio.AbstractEventLoop, context: dict[str, Any]) -> None:
     # context always carries "message"; "exception" only when one escaped
-    # (the handler also fires for e.g. resource leaks — still worth a record).
+    # (the handler also fires for e.g. resource leaks - still worth a record).
     logger.error(
         "unhandled exception in asyncio: %s",
         context.get("message"),

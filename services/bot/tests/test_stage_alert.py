@@ -1,6 +1,6 @@
 """stage_alert commits through the real AlertRepository path:
 the staged row lands unposted (so the sweep will deliver it) and is clearly
-marked as a drill, and the transactional NOTIFY fires — witnessed by a raw
+marked as a drill, and the transactional NOTIFY fires - witnessed by a raw
 LISTEN connection, same as the acceptance drills rely on."""
 
 import psycopg

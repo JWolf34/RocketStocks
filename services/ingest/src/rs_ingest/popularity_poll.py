@@ -46,7 +46,7 @@ from rs_ingest.selector import (
 )
 from rs_ingest.surge_facts import SurgeFactsGatherer
 from rs_persistence import AlertRepository, CandidateRepository, PopularityRepository
-from rs_sources import ApeWisdomError, ApeWisdomRow
+from rs_sources import ApeWisdomRow
 
 logger = logging.getLogger(__name__)
 
@@ -57,6 +57,8 @@ WRITE_CONCURRENCY = 4
 
 
 class PopularitySource(Protocol):
+    """The listing; a failed or empty fetch raises, so the daemon logs and counts it."""
+
     async def fetch_all(self) -> list[ApeWisdomRow]: ...
 
 
@@ -103,7 +105,7 @@ class PopularityPoll:
     async def run(self) -> None:
         fetched_at = self._clock.now()
         polled_at = poll_boundary(fetched_at)
-        rows = await self._fetch()
+        rows = await self._source.fetch_all()
         inserted = await self._store(rows, polled_at, fetched_at)
         decisions, unranked = await self._decide(await self._detect(polled_at))
         logger.info(
@@ -116,13 +118,6 @@ class PopularityPoll:
         if unranked is not None:
             # Every hit is recorded, none posted; failing the poll is what tells the operator.
             raise unranked
-
-    async def _fetch(self) -> list[ApeWisdomRow]:
-        """The listing; a failed or empty fetch raises so the daemon logs and counts it."""
-        rows = await self._source.fetch_all()
-        if not rows:
-            raise ApeWisdomError("ApeWisdom returned no rows")
-        return rows
 
     async def _store(self, rows: Sequence[ApeWisdomRow], polled_at: datetime, fetched_at: datetime) -> int:
         snapshots = [

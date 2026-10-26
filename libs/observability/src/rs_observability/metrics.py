@@ -1,8 +1,8 @@
 """Prometheus exposition for the side-port services.
 
 The one home for exposition decisions: ingest and bot keep
-their plain counter dicts as the increment API — and their counter log
-lines — while DictCounterCollector reads the same dicts at scrape time and
+their plain counter dicts as the increment API - and their counter log
+lines - while DictCounterCollector reads the same dicts at scrape time and
 emits them with Counter type metadata, so rate()/increase() work without
 reopening the services' counter internals.
 """
@@ -26,7 +26,7 @@ from prometheus_client.registry import Collector
 class DictCounterCollector(Collector):
     """Read-only bridge from a counter dict to Counter-typed samples.
 
-    Values are read live on every scrape (plain int reads — safe across the
+    Values are read live on every scrape (plain int reads - safe across the
     exposition thread). Names are normalized to the Prometheus counter
     convention: CounterMetricFamily strips a `_total` suffix from the family
     name and every sample gets one, so ingest's bare names (`bars_persisted`)
@@ -48,8 +48,8 @@ class DictCounterCollector(Collector):
 
 class LabeledDictCounterCollector(Collector):
     """One Counter family from a {label_value: count} dict: the dict
-    stays the service's increment API — seeded with every label value at
-    construction so no series appears from nowhere mid-scrape — and each key
+    stays the service's increment API - seeded with every label value at
+    construction so no series appears from nowhere mid-scrape - and each key
     becomes one labeled sample, read live at scrape time. `name` is bare;
     CounterMetricFamily adds the `_total` sample suffix."""
 
@@ -103,7 +103,7 @@ def start_metrics_server(
 ) -> tuple[WSGIServer, threading.Thread]:
     """Threaded prometheus_client exposition on its own registry: the given
     collectors plus the process/platform/GC defaults. Returns the server and
-    its thread (daemonized by prometheus_client) — tests bind port 0 and read
+    its thread (daemonized by prometheus_client) - tests bind port 0 and read
     back `server.server_port`; daemons just let process exit reap it."""
     registry = CollectorRegistry()
     ProcessCollector(registry=registry)

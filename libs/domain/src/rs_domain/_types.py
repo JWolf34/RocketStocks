@@ -19,9 +19,9 @@ def _require_utc(value: datetime) -> datetime:
     boundary and drift off the true instant.
     """
     if value.tzinfo is None:
-        raise ValueError("naive datetime — domain datetimes must be tz-aware UTC")
+        raise ValueError("naive datetime - domain datetimes must be tz-aware UTC")
     if value.utcoffset() != UTC.utcoffset(None):
-        raise ValueError(f"non-UTC datetime (offset {value.utcoffset()}) — convert to UTC at the edge")
+        raise ValueError(f"non-UTC datetime (offset {value.utcoffset()}) - convert to UTC at the edge")
     return value if value.tzinfo is UTC else value.astimezone(UTC)
 
 

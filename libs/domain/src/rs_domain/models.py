@@ -1,4 +1,4 @@
-"""Domain models — the validated shapes the rest of v2 consumes.
+"""Domain models - the validated shapes the rest of v2 consumes.
 
 Prices are float64: the wire delivers JSON floats, the analysis math runs in
 float64, and DOUBLE PRECISION round-trips them bit-exactly. NUMERIC/Decimal is

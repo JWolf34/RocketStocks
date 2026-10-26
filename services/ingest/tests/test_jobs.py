@@ -4,12 +4,14 @@ from datetime import UTC, datetime, time, timedelta
 
 import httpx
 import pytest
+from sqlalchemy import func, select
 
 from rs_domain import EASTERN
 from rs_ingest.cron import CronTable, Daily, Every
 from rs_ingest.jobs import Dependencies, register_jobs
 from rs_ingest.rate_limit import RateLimiter
 from rs_observability import HealthTracker, QuietFailure, SourceFailed
+from rs_persistence import PopularitySnapshotRow
 from rs_sources import ExchangeCalendar
 from rs_sources.nasdaq import EARNINGS_URL
 
@@ -216,3 +218,18 @@ async def test_a_failed_apewisdom_listing_pings_apewisdom_and_fails_the_poll_wit
             await job.run()
 
     assert notices == ["ApeWisdom is failing (ApeWisdomError). See the ingest logs."]
+
+
+async def test_an_empty_apewisdom_listing_is_the_source_failing_and_stores_no_boundary(session_factory, notices):
+    job = _job(
+        session_factory,
+        "popularity_poll",
+        handler=lambda request: httpx.Response(200, json={"pages": 1, "results": []}),
+    )
+
+    with pytest.raises(SourceFailed):
+        await job.run()
+
+    assert notices == ["ApeWisdom is failing (ApeWisdomError). See the ingest logs."]
+    async with session_factory() as session:
+        assert await session.scalar(select(func.count()).select_from(PopularitySnapshotRow)) == 0

@@ -32,7 +32,7 @@ class TradingCalendar(Protocol):
         ...
 
     def session_close(self, day: date) -> datetime:
-        """Close instant for a session day — early closes included; raises if not a session."""
+        """Close instant for a session day - early closes included; raises if not a session."""
         ...
 
     def sessions_in_range(self, start: date, end: date) -> Sequence[date]:

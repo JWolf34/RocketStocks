@@ -1,4 +1,4 @@
-"""Shared pytest fixtures for DB-backed tests — the "5499 pattern", extracted
+"""Shared pytest fixtures for DB-backed tests - the "5499 pattern", extracted
 once a second workspace member (rs_bot) needed a verbatim copy.
 
 Target resolution: RS_TEST_DB_URL, defaulting to the ephemeral
@@ -7,13 +7,13 @@ timescale/timescaledb:2.30.2-pg16).
 
 Gating semantics: with no RS_TEST_DB_URL set and the default container absent,
 tests SKIP (visible, local-dev friendly). When RS_TEST_DB_URL is explicitly
-set — as CI does — an unreachable database FAILS the suite, so a port/env
+set - as CI does - an unreachable database FAILS the suite, so a port/env
 drift can never turn the DB acceptance tests into silent green skips.
 
 Each test session creates a throwaway database, migrates it to head, and
-drops it afterward — reruns never see stale state.
+drops it afterward - reruns never see stale state.
 
-Usage, from a member's tests/conftest.py (a plain import — pytest discovers
+Usage, from a member's tests/conftest.py (a plain import - pytest discovers
 fixtures by name in the conftest namespace; `pytest_plugins` would be rejected
 in a non-rootdir conftest):
 

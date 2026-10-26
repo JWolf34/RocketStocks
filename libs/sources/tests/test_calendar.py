@@ -2,8 +2,8 @@
 
 Dates used:
 - 2026-07-06 (Mon): regular session, EDT (UTC-4) → open 13:30Z, close 20:00Z.
-- 2026-07-03 (Fri): Independence Day observed — holiday.
-- 2026-11-27 (Fri): day after Thanksgiving — 13:00 ET early close, asserted via session-length delta.
+- 2026-07-03 (Fri): Independence Day observed - holiday.
+- 2026-11-27 (Fri): day after Thanksgiving - 13:00 ET early close, asserted via session-length delta.
 - 2026-01-05 (Mon): regular session, EST (UTC-5) → open 14:30Z (DST coverage).
 """
 

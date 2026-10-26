@@ -25,7 +25,7 @@ import asyncio
 import logging
 from collections.abc import Sequence
 from contextlib import suppress
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Protocol
 
 import aiohttp
@@ -129,16 +129,16 @@ class SweepWorker:
         self._health = health
         self._sweep_seconds = sweep_seconds
         self._max_attempts = max_attempts
-        self._retry_gap = sweep_seconds if retry_gap_seconds is None else retry_gap_seconds
+        self._retry_gap = timedelta(seconds=sweep_seconds if retry_gap_seconds is None else retry_gap_seconds)
         # The server's roles, to ping the one mapped to an Alert's Trigger; None pings nobody.
         self._roles = roles
         self.counters = counters if counters is not None else new_counters()
-        # Set by the LISTEN loop on NOTIFY and on every (re)connect — so
-        # "sweep on reconnect" is not a special case.
-        # Monotonic retry gate per alert id (in memory: a restart retries at once).
-        self._retry_not_before: dict[int, float] = {}
+        # Retry gate per alert id (in memory: a restart retries at once).
+        self._retry_not_before: dict[int, datetime] = {}
         # Rows whose unreadable history already pinged the operator (one ping per row).
         self._unreadable_pinged: set[int] = set()
+        # Set by the LISTEN loop on NOTIFY and on every (re)connect - so
+        # "sweep on reconnect" is not a special case.
         self.wake = asyncio.Event()
         self._stopping = asyncio.Event()
 
@@ -179,6 +179,14 @@ class SweepWorker:
                 cache[key] = ([], True)
         return cache[key]
 
+    def _hold(self, alert_id: int) -> None:
+        """Keep an Alert out of the sweep until the retry gap has passed."""
+        self._retry_not_before[alert_id] = self._clock.now() + self._retry_gap
+
+    def _held(self, alert_id: int) -> bool:
+        not_before = self._retry_not_before.get(alert_id)
+        return not_before is not None and not_before > self._clock.now()
+
     async def _report_discord(self, exc: Exception) -> None:
         reachable = _discord_health(exc)
         if reachable:
@@ -193,7 +201,6 @@ class SweepWorker:
         async with self._session_factory() as session:
             repo = AlertRepository(session)
             pending = await repo.list_undelivered(self._max_attempts)
-            loop = asyncio.get_running_loop()
             track_record_cache: dict[tuple[str, str], tuple[list[TrackRecord], bool]] = {}
             for item in pending:
                 if self._stopping.is_set():
@@ -203,9 +210,9 @@ class SweepWorker:
                 # alert_id is the cross-service join key (ingest's insert log
                 # carries the same field).
                 with unit_of_work(alert_id=item.id):
-                    if self._retry_not_before.get(item.id, 0.0) > loop.time():
+                    if self._held(item.id):
                         continue  # failed moments ago; a NOTIFY burst must not burn the cap
-                    await self._deliver(session, repo, item, track_record_cache, loop)
+                    await self._deliver(session, repo, item, track_record_cache)
             await self._thread_stragglers(session, repo)
         if pending:
             logger.info("counters: %s", self.counters)
@@ -216,7 +223,6 @@ class SweepWorker:
         repo: AlertRepository,
         item: PendingAlert,
         track_record_cache: dict[tuple[str, str], tuple[list[TrackRecord], bool]],
-        loop: asyncio.AbstractEventLoop,
     ) -> None:
         alert = item.alert
         # A reply goes where its Alert stands now, which may have changed earlier this sweep.
@@ -225,7 +231,7 @@ class SweepWorker:
             try:
                 found = await self._find(item, parent)
             except Exception as exc:
-                await self._history_unreadable(item, exc, loop)
+                await self._history_unreadable(item, exc)
                 return
             if found is not None:
                 logger.warning(
@@ -263,13 +269,13 @@ class SweepWorker:
             role_ids, missing_role = await self._role_pings(session, alert)
         except GuildUnavailable:
             # Not a deleted role: wait for the server to be known rather than post without the ping.
-            self._retry_not_before[item.id] = loop.time() + self._retry_gap
+            self._hold(item.id)
             logger.warning("server unknown to the gateway - alert id=%d waits to be pinged", item.id)
             return
         try:
             message_id = await self._post(session, repo, item, embed, parent, role_ids)
         except Exception as exc:
-            await self._send_failed(session, repo, item, exc, loop)
+            await self._send_failed(session, repo, item, exc)
             return
         if message_id is None:
             return  # settled meanwhile; nothing was sent
@@ -376,7 +382,7 @@ class SweepWorker:
             thread_id = await self._sender.open_thread(message_id, _thread_name(symbol, alert_id))
         except Exception as exc:
             await self._report_discord(exc)
-            self._retry_not_before[alert_id] = asyncio.get_running_loop().time() + self._retry_gap
+            self._hold(alert_id)
             logger.error(
                 "could not start the thread for alert id=%d message_id=%d", alert_id, message_id, exc_info=True
             )
@@ -392,7 +398,7 @@ class SweepWorker:
             if self._stopping.is_set():
                 break
             with unit_of_work(alert_id=alert_id):
-                if self._retry_not_before.get(alert_id, 0.0) > asyncio.get_running_loop().time():
+                if self._held(alert_id):
                     continue  # failed moments ago
                 await self._open_thread(session, repo, alert_id, message_id, symbol)
 
@@ -420,12 +426,10 @@ class SweepWorker:
             item.alert.triggered_at,
         )
 
-    async def _history_unreadable(
-        self, item: PendingAlert, exc: Exception, loop: asyncio.AbstractEventLoop
-    ) -> None:
+    async def _history_unreadable(self, item: PendingAlert, exc: Exception) -> None:
         """Without the history there is no telling whether the row posted, so it is not sent."""
         await self._report_discord(exc)
-        self._retry_not_before[item.id] = loop.time() + self._retry_gap
+        self._hold(item.id)
         logger.error(
             "could not read history to check alert id=%d %s - not posting it", item.id, item.alert.symbol, exc_info=True
         )
@@ -445,13 +449,12 @@ class SweepWorker:
         repo: AlertRepository,
         item: PendingAlert,
         exc: Exception,
-        loop: asyncio.AbstractEventLoop,
     ) -> None:
         await self._report_discord(exc)
         self.counters["post_failures_total"] += 1
         attempts = await repo.increment_post_attempts(item.id)
         await session.commit()
-        self._retry_not_before[item.id] = loop.time() + self._retry_gap
+        self._hold(item.id)
         logger.error(
             "send failed (attempt %s of %d): alert id=%d %s %s triggered_at=%s payload=%s",
             attempts,

@@ -60,8 +60,8 @@ GRANTS: dict[str, dict[str, tuple[str, ...]]] = {
         "ingest": _SELECT_INSERT,
         "bot": _SELECT,
     },
-    # callback_url carries a single-use OAuth code: the bot writes it, only
-    # ingest consumes it, and no read-only role ever sees it.
+    # callback_url carries a single-use OAuth code: the bot writes it and only
+    # ingest consumes it; no other role has any grant on this table.
     "schwab_auth_request": {
         "ingest": ("SELECT", "UPDATE"),
         "bot": ("SELECT", "INSERT", "UPDATE (state, callback_url)"),

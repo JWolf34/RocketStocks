@@ -1,6 +1,6 @@
 """rev-001: stream_bars_5m (detection-log hypertable), alerts, outbox.
 
-Hypertable creation is raw DDL — Alembic can't infer it.
+Hypertable creation is raw DDL - Alembic can't infer it.
 chunk_time_interval stays at Timescale's default.
 outbox is append-only, no processed-marking.
 

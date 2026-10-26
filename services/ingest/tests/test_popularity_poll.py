@@ -252,14 +252,6 @@ class TestStoringSnapshots:
         assert await rig.alerts() == []
         assert notices == []  # the daemon's failure streak is the ops channel for this
 
-    async def test_an_empty_listing_is_a_failure_not_a_quiet_boundary(self, session_factory, sleeps, notices):
-        rig = Rig(session_factory, sleeps, [])
-
-        with pytest.raises(ApeWisdomError, match="no rows"):
-            await rig.poll.run()
-
-        assert notices == []
-
 
 class TestIdempotency:
     async def test_polling_one_boundary_twice_changes_no_counts(self, rig):

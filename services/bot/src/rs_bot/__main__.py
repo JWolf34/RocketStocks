@@ -1,6 +1,6 @@
 """Entry point: `python -m rs_bot`.
 
-Lifecycle contract: continuous daemon — connect Discord → resolve the
+Lifecycle contract: continuous daemon - connect Discord → resolve the
 alert channel (unresolvable/no-permission → loud exit 1) → start LISTEN →
 unconditional initial sweep → run until SIGTERM (graceful: finish the
 in-flight post, exit 0).
@@ -10,7 +10,7 @@ crash-loud); LISTEN drop = backoff reconnect + recovery sweep (ListenLoop);
 Discord outage = sends fail, rows stay queued (a row marked sending is checked
 against channel history before it is sent again), the periodic sweep self-heals after
 discord.py resumes. A dead sweep worker or a fatally dead
-gateway exits 1 loudly — this daemon never limps on silently.
+gateway exits 1 loudly - this daemon never limps on silently.
 """
 
 import asyncio
@@ -66,7 +66,7 @@ class AdminDirectMessenger:
 
 
 async def run_bot(settings: BotSettings) -> int:
-    install_excepthooks()  # the asyncio half — needs asyncio.run()'s loop
+    install_excepthooks()  # the asyncio half - needs asyncio.run()'s loop
     engine = build_engine(settings.rs_db_url)
     counters = new_counters()
     # Default intents only - no privileged intents.
@@ -75,14 +75,14 @@ async def run_bot(settings: BotSettings) -> int:
     listen_task = sweep_task = gateway_task = notice_task = metrics_server = None
     try:
         # :9091 side-port, up before Discord so a wedged login is
-        # scrapeable. namespace="" — the counter names are bare.
+        # scrapeable. namespace="" - the counter names are bare.
         metrics_server, _ = start_metrics_server(
             settings.metrics_port, [DictCounterCollector(counters, namespace="")]
         )
         try:
             await client.login(settings.discord_token.get_secret_value())
         except discord.LoginFailure as exc:
-            logger.error("Discord login failed — check RS_BOT_DISCORD_TOKEN: %s", exc)
+            logger.error("Discord login failed - check RS_BOT_DISCORD_TOKEN: %s", exc)
             return 1
         session_factory = build_session_factory(engine)
         register_commands(
@@ -148,7 +148,7 @@ async def run_bot(settings: BotSettings) -> int:
         for sig in (signal.SIGTERM, signal.SIGINT):
             loop.add_signal_handler(sig, worker.request_stop)
 
-        # run() opens with the unconditional initial sweep — the backlog
+        # run() opens with the unconditional initial sweep - the backlog
         # reconcile; a DB down at startup crashes it, and we exit 1 below.
         sweep_task = asyncio.create_task(worker.run(), name="sweep")
         done, _ = await asyncio.wait({sweep_task, gateway_task}, return_when=asyncio.FIRST_COMPLETED)
@@ -157,7 +157,7 @@ async def run_bot(settings: BotSettings) -> int:
             if (sweep_exc := sweep_task.exception()) is not None:
                 logger.error("sweep worker crashed", exc_info=sweep_exc)
                 return 1
-            logger.info("shutdown requested — in-flight post finished")
+            logger.info("shutdown requested - in-flight post finished")
             return 0
         # client.connect() returns only on close or a fatal gateway error;
         # transient Discord outages are reconnected inside discord.py.

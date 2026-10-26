@@ -78,25 +78,25 @@ class PopularityScorer:
             by_day: dict[date, set[str]] = {}
             for event in events:
                 by_day.setdefault(eastern_day(event.polled_at), set()).add(event.ticker)
-            normals: dict[date, dict[str, Baseline | None]] = {
-                day: await self._normals(day, tickers) for day, tickers in by_day.items()
+            baselines: dict[date, dict[str, Baseline | None]] = {
+                day: await self._baselines_for(day, tickers) for day, tickers in by_day.items()
             }
             references = {day: await self._reference(day) for day in by_day}
             scored = []
             for event in events:
                 day = eastern_day(event.polled_at)
                 reference = references[day]
-                normal = normals[day][event.ticker]
-                if normal is None:
+                event_baseline = baselines[day][event.ticker]
+                if event_baseline is None:
                     scored.append(Scored(raw_score=None, strength=None, bar=reference.bar))
                     continue
-                score = raw_score(event.inputs.rank, event.inputs.mentions, normal)
+                score = raw_score(event.inputs.rank, event.inputs.mentions, event_baseline)
                 scored.append(Scored(raw_score=score, strength=reference.strength(score), bar=reference.bar))
             if by_day:
                 self._prune(max(by_day))
             return scored
 
-    async def _normals(self, day: date, tickers: set[str]) -> dict[str, Baseline | None]:
+    async def _baselines_for(self, day: date, tickers: set[str]) -> dict[str, Baseline | None]:
         """The Baselines of `tickers` as of the start of `day`."""
         missing = {ticker for ticker in tickers if (day, ticker) not in self._baselines}
         if missing:
@@ -154,11 +154,11 @@ class PopularityScorer:
                 # The rule ignores a reading under MIN_MENTIONS, so it is not loaded.
                 snapshots = await repo.list_between(start, end, min_mentions=MIN_MENTIONS)
             events = [event for event in map(evaluate_latest, snapshots) if event is not None]
-            normals = await self._normals(day, {event.ticker for event in events})
+            baselines = await self._baselines_for(day, {event.ticker for event in events})
             hits = [
-                ScoredHit(day=day, symbol=event.ticker, score=raw_score(event.inputs.rank, event.inputs.mentions, normal))
+                ScoredHit(day=day, symbol=event.ticker, score=raw_score(event.inputs.rank, event.inputs.mentions, event_baseline))
                 for event in events
-                if (normal := normals[event.ticker]) is not None
+                if (event_baseline := baselines[event.ticker]) is not None
             ]
             self._replayed[day] = (polls >= MIN_POLLS_PER_DAY, hits)
         return self._replayed[day]

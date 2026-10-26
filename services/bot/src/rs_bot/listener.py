@@ -1,11 +1,11 @@
 """The LISTEN half of alert delivery: a dedicated psycopg AsyncConnection in
 autocommit holds LISTEN and turns every NOTIFY into a wake of the sweep worker.
-The payload (alert id) is logged, never consumed as the work item — the row
+The payload (alert id) is logged, never consumed as the work item - the row
 is the truth, the sweep is the consumer.
 
 Cover for a dead LISTEN is structural: a dropped connection reconnects with capped
 backoff, and EVERY (re)connect sets the wake event, so "sweep on reconnect"
-is not a special case — anything committed while the LISTEN was dead is
+is not a special case - anything committed while the LISTEN was dead is
 picked up by the recovery sweep the moment the connection heals.
 
 Shutdown is by task cancellation: CancelledError is a BaseException, so the
@@ -50,7 +50,7 @@ class ListenLoop:
                     await conn.execute(f'LISTEN "{self._channel}"')
                     backoff = self._initial_backoff
                     logger.info("LISTEN established on %s", self._channel)
-                    self._wake.set()  # recovery sweep — (re)connect always sweeps
+                    self._wake.set()  # recovery sweep - (re)connect always sweeps
                     async for notify in conn.notifies():
                         self._counters["notify_wakes_total"] += 1
                         logger.info("notify wake: channel=%s payload=%s", notify.channel, notify.payload)
@@ -58,7 +58,7 @@ class ListenLoop:
             except Exception:
                 self._counters["listen_reconnects_total"] += 1
                 logger.warning(
-                    "LISTEN connection lost — reconnecting in %.1fs (reconnects=%d)",
+                    "LISTEN connection lost - reconnecting in %.1fs (reconnects=%d)",
                     backoff,
                     self._counters["listen_reconnects_total"],
                     exc_info=True,

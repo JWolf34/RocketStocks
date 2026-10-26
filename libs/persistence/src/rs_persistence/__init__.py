@@ -45,7 +45,7 @@ def migration_config(db_url: str) -> Config:
     """Alembic config targeting the in-package migrations.
 
     Built programmatically (no alembic.ini) so it works identically for
-    editable installs, wheels, and Docker images — the migrations ship
+    editable installs, wheels, and Docker images - the migrations ship
     inside the package.
     """
     config = Config()

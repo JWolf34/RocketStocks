@@ -6,13 +6,13 @@ where there is no runnable browser ("could not locate runnable browser"). This
 uses schwab-py's MANUAL flow instead:
 
   1. it prints an authorization URL,
-  2. you open that URL in ANY browser — your Windows host, a phone — log in,
+  2. you open that URL in ANY browser - your Windows host, a phone - log in,
   3. Schwab redirects to the callback (https://127.0.0.1:8182/...). The page
      won't load (nothing is listening), but the browser's ADDRESS BAR now holds
-     the full redirect URL with ?code=... — copy that entire URL,
+     the full redirect URL with ?code=... - copy that entire URL,
   4. paste it back at the terminal prompt.
 
-The token is written straight into the DB row (`schwab_tokens`, id=1) — the
+The token is written straight into the DB row (`schwab_tokens`, id=1) - the
 exact sink `python -m rs_ingest.tools.login` uses, so `ingest` picks it up.
 
     cd <repo root>            # IngestSettings loads .env from the cwd
@@ -56,10 +56,10 @@ def main() -> int:
         token = json.loads(token_path.read_text())
 
     if "token" not in token:
-        print("manual flow produced no schwab-py token wrapper — aborting")
+        print("manual flow produced no schwab-py token wrapper - aborting")
         return 1
     asyncio.run(_store(settings, token))
-    print("✅ token stored in schwab_tokens (id=1) — ingest can authenticate now")
+    print("✅ token stored in schwab_tokens (id=1) - ingest can authenticate now")
     return 0
 
 
