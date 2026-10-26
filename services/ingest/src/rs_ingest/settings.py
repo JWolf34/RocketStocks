@@ -5,7 +5,7 @@ SCHWAB_API_SECRET are the credentials the Schwab login tools read. Ingest's
 own tunables carry an RS_INGEST_ prefix so a stray shell export (SYMBOL, ...)
 can never silently reconfigure the daemon.
 
-The .env file is resolved from the working directory — run from the repo root
+The .env file is resolved from the working directory - run from the repo root
 in dev; a missing required variable is a loud
 exit-1, never a silent default.
 """
@@ -39,5 +39,5 @@ class IngestSettings(BaseSettings):
     # Shared by every Schwab job through one limiter; the default sits under Schwab's per-minute cap.
     schwab_calls_per_minute: int = Field(100, ge=1, validation_alias="RS_INGEST_SCHWAB_CALLS_PER_MINUTE")
     # The alert NOTIFY channel is intentionally NOT here: it is a fixed wire
-    # contract shared with the bot, not a per-deployment tunable —
+    # contract shared with the bot, not a per-deployment tunable -
     # rs_persistence.NOTIFY_CHANNEL is its single source of truth.

@@ -4,7 +4,7 @@
     python -m rs_ingest.tools.login          # browser OAuth flow (first login;
                                              # later logins use /setup schwab)
 
-The browser flow runs schwab-py's login against a temp file, then imports it —
+The browser flow runs schwab-py's login against a temp file, then imports it -
 same code path as --from-file, and we stay off schwab-py's token internals.
 """
 

@@ -1,4 +1,4 @@
-"""SQLAlchemy declarative models — the persistence shapes.
+"""SQLAlchemy declarative models - the persistence shapes.
 
 These are internal to rs_persistence; repositories convert to/from the
 rs_domain Pydantic models so internal fields never leak.

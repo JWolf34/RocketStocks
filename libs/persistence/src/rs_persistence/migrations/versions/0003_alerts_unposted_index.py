@@ -2,7 +2,7 @@
 
 alerts.posted_at IS NULL is the bot's consumer cursor; the sweep's
 `SELECT ... WHERE posted_at IS NULL ORDER BY id` hits this index. Partial, so
-it holds only undelivered rows — near-empty in steady state.
+it holds only undelivered rows - near-empty in steady state.
 
 Revision ID: 0003
 Revises: 0002

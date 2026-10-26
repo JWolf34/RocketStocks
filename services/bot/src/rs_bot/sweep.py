@@ -133,7 +133,7 @@ class SweepWorker:
         # The server's roles, to ping the one mapped to an Alert's Trigger; None pings nobody.
         self._roles = roles
         self.counters = counters if counters is not None else new_counters()
-        # Set by the LISTEN loop on NOTIFY and on every (re)connect — so
+        # Set by the LISTEN loop on NOTIFY and on every (re)connect - so
         # "sweep on reconnect" is not a special case.
         # Monotonic retry gate per alert id (in memory: a restart retries at once).
         self._retry_not_before: dict[int, float] = {}

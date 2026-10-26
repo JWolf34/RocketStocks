@@ -74,7 +74,7 @@ async def test_sweep_drains_backlog_in_id_order_and_stamps(session_factory):
     assert worker.counters["sweeps_total"] == 1
     assert worker.counters["post_failures_total"] == 0
 
-    # An immediate second sweep posts nothing — the cursor holds.
+    # An immediate second sweep posts nothing - the cursor holds.
     await worker.sweep()
     assert len(sender.sent) == 3
     assert worker.counters["discord_posts_total"] == 3

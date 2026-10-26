@@ -166,7 +166,7 @@ async def test_listen_receives_notify_only_at_commit(session_factory, migrated_d
 
         async with session_factory() as s:
             alert_id = await AlertRepository(s).insert(ALERT)
-            # NOTIFY is transactional — nothing may arrive before the commit.
+            # NOTIFY is transactional - nothing may arrive before the commit.
             assert [n async for n in listener.notifies(timeout=0.3, stop_after=1)] == []
             await s.commit()
 
@@ -178,7 +178,7 @@ async def test_listen_receives_notify_only_at_commit(session_factory, migrated_d
 
 
 async def test_custom_channel_routes_the_notify(session_factory, migrated_db_url):
-    # The notify_channel seam must actually move the NOTIFY — guards against a
+    # The notify_channel seam must actually move the NOTIFY - guards against a
     # regression that hard-codes 'alerts' into the pg_notify call.
     raw_dsn = migrated_db_url.replace("+psycopg", "")
     async with await psycopg.AsyncConnection.connect(raw_dsn, autocommit=True) as listener:

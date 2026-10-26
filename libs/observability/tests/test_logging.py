@@ -1,7 +1,7 @@
 """configure_logging: stdlib front door, structlog engine.
 
-Every test drives the pipeline the way services do — `logging.getLogger`
-module loggers (the zero-churn front door) — and asserts on the rendered
+Every test drives the pipeline the way services do - `logging.getLogger`
+module loggers (the zero-churn front door) - and asserts on the rendered
 stdout stream, because the stream IS the interface: one JSON line per record
 carrying service/level/timestamp/logger/event plus any bound fields.
 """
@@ -89,7 +89,7 @@ def test_exception_renders_full_traceback(monkeypatch, capsys):
 
 
 def test_structlog_front_door_shares_the_stream(monkeypatch, capsys):
-    """New code MAY use structlog.get_logger() — same pipeline, same fields."""
+    """New code MAY use structlog.get_logger() - same pipeline, same fields."""
     monkeypatch.setenv("RS_LOG_FORMAT", "json")
     configure_logging("ingest")
     structlog.get_logger("rs_new.module").info("native", symbol="SPY")
@@ -124,7 +124,7 @@ def test_http_client_request_logs_are_not_emitted_at_info(monkeypatch, capsys):
 
 def test_reconfigure_replaces_the_root_handler(monkeypatch, capsys):
     """Idempotent: calling twice (or after basicConfig) still yields exactly
-    one stream — never doubled records."""
+    one stream - never doubled records."""
     monkeypatch.setenv("RS_LOG_FORMAT", "json")
     logging.basicConfig(level=logging.INFO)
     configure_logging("ingest")

@@ -1,4 +1,4 @@
-"""Operational migration CLI — a thin wrapper over Alembic against
+"""Operational migration CLI - a thin wrapper over Alembic against
 rs_persistence's in-package migrations. DSN comes from RS_DB_URL.
 
     python -m rs_migrate upgrade [revision=head] [--skip-roles]
@@ -46,7 +46,7 @@ def main(argv: list[str] | None = None) -> int:
 
     args = parser.parse_args(argv)
 
-    # alembic logs via stdlib logging — route it through the one JSON
+    # alembic logs via stdlib logging - route it through the one JSON
     # stream so the compose migrate service's records carry service/timestamp.
     configure_logging("migrate")
 

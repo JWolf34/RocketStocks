@@ -2,7 +2,7 @@
 rendered JSON stream configure_logging produces.
 
 Correlation/unit-of-work fields merge at FORMAT time, so caplog's raw records
-never see them — tests must assert on rendered output. And a handler created
+never see them - tests must assert on rendered output. And a handler created
 inside a pytest fixture binds a sys.stdout object pytest may swap before the
 test body runs, so capsys can't see it either. This helper sidesteps both:
 the root handler is pointed at a StringIO, and all mutated global state (env,
@@ -53,7 +53,7 @@ def captured_json_stream(service: str) -> Iterator[io.StringIO]:
 
 
 def json_records(stream: io.StringIO) -> list[dict]:
-    """Every record on the captured stream, parsed — one dict per line."""
+    """Every record on the captured stream, parsed - one dict per line."""
     return [json.loads(line) for line in stream.getvalue().strip().splitlines()]
 
 

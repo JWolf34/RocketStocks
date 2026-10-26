@@ -97,7 +97,7 @@ def test_start_metrics_server_serves_collectors_and_defaults():
             body = response.read().decode()
         assert "sweeps_total 2.0" in body
         # Platform/GC defaults prove the registry carries the standard
-        # collectors (process_* appears only on Linux — asserted in-container).
+        # collectors (process_* appears only on Linux - asserted in-container).
         assert "python_info" in body
     finally:
         server.shutdown()
