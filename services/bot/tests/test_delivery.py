@@ -464,50 +464,13 @@ def _facts(**unavailable: str) -> SurgeFacts:
     return SurgeFacts(**(fine | {name: FactUnavailable(reason=why) for name, why in unavailable.items()}))
 
 
-async def test_an_alert_posted_with_missing_facts_pings_once_naming_the_stock_and_facts(
-    session_factory, notices
-):
-    (row_id,) = await _insert(
-        session_factory,
-        _surge_alert(_facts(price_move="Schwab has no quote for this symbol", next_earnings="no upcoming earnings date found")),
-    )
-    worker = _worker(session_factory, FakeDiscord())
+async def test_an_alert_posted_with_facts_unavailable_shows_them_and_pings_no_one(session_factory, notices):
+    # One stock's missing fact is not a source failing: the reader sees it, the operator is not pinged.
+    await _insert(session_factory, _surge_alert(_facts(next_earnings="no upcoming earnings date found")))
+    fake = FakeDiscord()
 
-    await worker.sweep()
-    await worker.sweep()
+    await _worker(session_factory, fake).sweep()
 
-    (ping,) = notices
-    assert f"#{row_id}" in ping and "GME" in ping
-    assert "price move (Schwab has no quote for this symbol)" in ping
-    assert "next earnings (no upcoming earnings date found)" in ping
-
-
-async def test_an_alert_with_every_fact_pings_no_one(session_factory, notices):
-    await _insert(session_factory, _surge_alert(_facts()))
-
-    await _worker(session_factory, FakeDiscord()).sweep()
-
+    (message,) = fake.messages
+    assert any("unavailable: no upcoming earnings date found" in field.value for field in message.embed.fields)
     assert notices == []
-
-
-async def test_an_alert_that_did_not_post_does_not_ping_about_facts(session_factory, notices):
-    await _insert(session_factory, _surge_alert(_facts(price_move="timed out after 5s")))
-
-    await _worker(session_factory, FakeDiscord(), now=HIT + timedelta(hours=2)).sweep()
-
-    assert notices == []
-
-
-async def test_a_reply_does_not_ping_about_facts(session_factory, notices):
-    (alert_id,) = await _insert(session_factory, _surge_alert(_facts()))
-    worker = _worker(session_factory, FakeDiscord())
-    await worker.sweep()
-    reply = _surge_alert(_facts(price_move="timed out after 5s")).model_copy(
-        update={"reply_to": alert_id, "triggered_at": HIT + timedelta(minutes=30)}
-    )
-    await _insert(session_factory, reply)
-
-    await worker.sweep()
-
-    assert notices == []
-

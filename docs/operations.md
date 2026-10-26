@@ -229,7 +229,8 @@ Done when a real Popularity Alert posts and carries a Track record.
    the price with its As-of time, as a timestamp in your own zone;
    the Track record as a small table per horizon (1, 5 and 20 days), with its case count and how many are live, and "too few cases" for a horizon under 30 Outcomes (the shares and the median multiple show "few" when fewer than 30 of them have a move size, and a "no size" row counts those without one);
    and the next Catalyst, an earnings date marked estimated when it is.
-   A fact that could not be gathered shows as `unavailable:` with its reason, and the Ops ping names it.
+   A fact that could not be gathered shows as `unavailable:` with its reason.
+   It sends no Ops ping of its own: one stock without a fact (an ETF has no earnings date) is not a source failing, and a failing source has its own ping ("Ops pings to expect").
    The footer opens with `alert #<id>` and names the Trigger version.
    Volume does not appear: it moves to the Report.
 4. Confirm which Track record it showed:
@@ -495,8 +496,6 @@ Which pings to expect, by cause:
 - `Alert #<id> ... failed to post after N attempts ...`: the procedure above.
   It is sent only when Discord is not already reported failing.
 - `Alert #<id> ... may or may not have posted ...`: the history check above could not be read.
-- `Alert #<id> <stock> <trigger> posted with facts unavailable: ...`: the Alert posted, and the ping names which supporting facts were missing and why.
-  It is sent once per Alert, when it posts.
 - The nightly Track record job failing (`Ingest job track_record is failing ...`); the stored Track record stays as it was until the next successful run.
 - `Alert #<id> <stock> <trigger> posted without its role ping: the role mapped to <trigger> ... no longer exists`: see "Discord permissions and role pings".
   It is sent once per missing role, not once per Alert, so a deleted role does not ping for every Alert until it is mapped again.

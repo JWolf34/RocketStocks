@@ -14,7 +14,7 @@ We decided on one policy for both.
 - **A Trigger never fires on missing inputs.**
 - **Missing facts are labelled.**
   Every number shown carries its As-of time; a fact that cannot be computed is shown as missing with the reason.
-  An Alert whose supporting facts are missing still posts, with them labelled, and pings the operator.
+  An Alert whose supporting facts are missing still posts, with them labelled; the operator hears of it only through the failing source's own Ops ping.
 - **Freshness lives on stored rows**, as a fetch time and a status (`ok` or one of a small set of non-ok reasons), and in per-source health metrics.
   In-process data carries no freshness of its own.
 - **Ops pings** fire when a source starts failing and again when it clears.

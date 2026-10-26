@@ -30,7 +30,6 @@ from typing import Protocol
 
 import aiohttp
 import discord
-from pydantic import ValidationError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from rs_bot.counters import new_counters
@@ -42,9 +41,6 @@ from rs_domain import (
     Alert,
     Clock,
     Delivery,
-    FactUnavailable,
-    PopularitySurgePayload,
-    SurgeFacts,
     TrackRecord,
 )
 from rs_observability import HealthTracker, Source, notify_ops, unit_of_work
@@ -91,22 +87,6 @@ class AlertSender(Protocol):
     async def find_alert(self, row_id: int, since: datetime) -> int | None: ...
 
     async def find_reply(self, thread_id: int, row_id: int, since: datetime) -> int | None: ...
-
-
-def _missing_facts(alert: Alert) -> list[str]:
-    """The supporting facts an Alert's payload says were unavailable, with their reasons."""
-    if alert.trigger != POPULARITY_SURGE:
-        return []
-    try:
-        facts = PopularitySurgePayload.model_validate(alert.payload).facts
-    except ValidationError:
-        return []
-    missing = []
-    for name in SurgeFacts.model_fields:
-        fact = getattr(facts, name)
-        if isinstance(fact, FactUnavailable):
-            missing.append(f"{name.replace('_', ' ')} ({fact.reason})")
-    return missing
 
 
 class SweepWorker:
@@ -366,7 +346,6 @@ class SweepWorker:
         if item.alert.reply_to is not None:
             return
         await self._open_thread(session, repo, item.id, message_id, item.alert.symbol)
-        await self._ping_missing_facts(item)
 
     async def _open_thread(
         self,
@@ -401,15 +380,6 @@ class SweepWorker:
                 if self._held(alert_id):
                     continue  # failed moments ago
                 await self._open_thread(session, repo, alert_id, message_id, symbol)
-
-    async def _ping_missing_facts(self, item: PendingAlert) -> None:
-        missing = _missing_facts(item.alert)
-        if missing:
-            await notify_ops(
-                f"Alert #{item.id} {item.alert.symbol} {item.alert.trigger} posted with facts "
-                f"unavailable: {', '.join(missing)}.",
-                key=f"missing-facts:{item.id}",
-            )
 
     async def _record_stale(
         self, session: AsyncSession, repo: AlertRepository, item: PendingAlert, why: str
