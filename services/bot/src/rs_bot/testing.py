@@ -10,7 +10,7 @@ Test-support only (the rs_persistence.testing pattern): runtime code must never 
 
 from collections.abc import Awaitable, Callable, Sequence
 from dataclasses import dataclass, field
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
 
 import discord
@@ -189,6 +189,9 @@ class FixedClock:
 
     def now(self) -> datetime:
         return self._now
+
+    def advance(self, by: timedelta) -> None:
+        self._now += by
 
 
 def alert(symbol: str) -> Alert:

@@ -38,6 +38,9 @@ def tree(tmp_path: Path) -> Path:
         "from datetime import UTC, datetime as dt",
         "    datetime as dt,",
         "import time as t",
+        "x = loop.time()",
+        "x = asyncio.get_running_loop().time()",
+        "x = self._loop.time()",
     ],
 )
 @pytest.mark.parametrize("member", ["libs/a", "services/b", "tools/c"])
@@ -65,6 +68,16 @@ def test_the_clock_implementation_is_allowlisted(tree):
     clock = tree / "libs/a/src/rs_domain/clock.py"
     clock.parent.mkdir(parents=True)
     clock.write_text("x = datetime.now(UTC)\n")
+    assert _run(tree).returncode == 0
+
+
+@pytest.mark.parametrize(
+    "path", ["libs/a/src/rs_sources/_ratelimit.py", "services/b/src/rs_ingest/rate_limit.py"]
+)
+def test_the_rate_limiters_may_read_the_loop_clock(tree, path):
+    limiter = tree / path
+    limiter.parent.mkdir(parents=True, exist_ok=True)
+    limiter.write_text("x = asyncio.get_running_loop().time()\n")
     assert _run(tree).returncode == 0
 
 

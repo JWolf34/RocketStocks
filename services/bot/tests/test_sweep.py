@@ -12,7 +12,7 @@ import asyncio
 import json
 import logging
 import re
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
 
 import aiohttp
@@ -157,12 +157,20 @@ async def test_a_failed_row_is_not_retried_inside_the_retry_gap(session_factory)
     (alert_id,) = await _insert(session_factory, _alert("BAD"))
     sender = FakeDiscord()
     sender.fail_when = lambda e: True
-    worker = _worker(session_factory, sender)
+    clock = FixedClock()
+    worker = _worker(session_factory, sender, clock=clock)  # the gap is one sweep interval, 60s
 
     for _ in range(4):  # a NOTIFY burst: sweeps back to back
         await worker.sweep()
-
     assert worker.counters["post_failures_total"] == 1
+
+    clock.advance(timedelta(seconds=59))
+    await worker.sweep()
+    assert worker.counters["post_failures_total"] == 1
+
+    clock.advance(timedelta(seconds=1))
+    await worker.sweep()
+    assert worker.counters["post_failures_total"] == 2
     assert await _undelivered_ids(session_factory) == [alert_id]
 
 
