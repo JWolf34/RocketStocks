@@ -56,6 +56,10 @@ GRANTS: dict[str, dict[str, tuple[str, ...]]] = {
     "bar_request": {
         "ingest": ("SELECT", "INSERT", "UPDATE"),
     },
+    # Written by the nightly snapshot and the backfill; ingest's Catalyst lookup reads it. No bot reader yet.
+    "earnings_snapshot": {
+        "ingest": _SELECT_INSERT,
+    },
     "popularity_snapshot": {
         "ingest": _SELECT_INSERT,
         "bot": _SELECT,

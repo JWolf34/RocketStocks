@@ -35,6 +35,8 @@ from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 from rs_domain import (
     AuthRequestState,
     Delivery,
+    EarningsOrigin,
+    EarningsTime,
     PopularityOrigin,
     Verdict,
 )
@@ -151,6 +153,30 @@ class BarRequestRow(Base):
 
     symbol: Mapped[str] = mapped_column(Text, primary_key=True)
     earliest_start: Mapped[date] = mapped_column(Date)
+
+
+class EarningsSnapshotRow(Base):
+    """earnings_snapshot: Nasdaq's earnings calendar as of `snapshot_date` (the Eastern fetch
+    date), one row per ticker and report date. `origin` is in the key so a backfill run on a
+    night the nightly snapshot also ran stores beside it, not over it."""
+
+    __tablename__ = "earnings_snapshot"
+
+    origin: Mapped[str] = mapped_column(
+        ENUM(*(m.value for m in EarningsOrigin), name="earnings_origin", create_type=False), primary_key=True
+    )
+    snapshot_date: Mapped[date] = mapped_column(Date, primary_key=True)
+    ticker: Mapped[str] = mapped_column(Text, primary_key=True)
+    report_date: Mapped[date] = mapped_column(Date, primary_key=True)
+    time_of_day: Mapped[str | None] = mapped_column(
+        ENUM(*(m.value for m in EarningsTime), name="earnings_time", create_type=False)
+    )
+    fiscal_quarter: Mapped[str | None] = mapped_column(Text)
+    eps_forecast: Mapped[float | None] = mapped_column(Double)
+    estimate_count: Mapped[int | None] = mapped_column(Integer)
+    eps_actual: Mapped[float | None] = mapped_column(Double)
+    surprise_pct: Mapped[float | None] = mapped_column(Double)
+    fetched_at: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True))
 
 
 class UnpricedSymbolRow(Base):

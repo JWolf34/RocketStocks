@@ -3,6 +3,7 @@
 from rs_domain._types import UtcDatetime
 from rs_domain.clock import SystemClock
 from rs_domain.days import EASTERN, eastern_day, eastern_day_start
+from rs_domain.earnings import EarningsOrigin, EarningsTime, StoredEarnings
 from rs_domain.models import (
     ALERT_STALE_AFTER,
     POPULARITY_SURGE,
@@ -46,6 +47,8 @@ __all__ = [
     "Candidate",
     "Clock",
     "Delivery",
+    "EarningsOrigin",
+    "EarningsTime",
     "EscalationPayload",
     "FactUnavailable",
     "NextEarningsFact",
@@ -55,6 +58,7 @@ __all__ = [
     "PriceMoveFact",
     "SchwabAuthRequest",
     "StoredDailyBar",
+    "StoredEarnings",
     "SurgeFacts",
     "SystemClock",
     "TradingCalendar",

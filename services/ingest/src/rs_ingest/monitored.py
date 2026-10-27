@@ -18,10 +18,9 @@ from rs_ingest.surge_bars import DailyHistorySource
 from rs_ingest.surge_facts import QuoteSource
 from rs_observability import HealthTracker, Source, SourceFailed, SweepTally
 from rs_sources import ApeWisdomError, ApeWisdomRow
-from rs_sources.earnings import EarningsCalendar, FilingSource
+from rs_sources.earnings import FilingSource
 from rs_sources.edgar import Filing8K
 from rs_sources.errors import is_per_symbol_answer
-from rs_sources.nasdaq import ScheduledEarnings
 from rs_sources.schwab import (
     DailyHistory,
     Quote,
@@ -30,7 +29,7 @@ from rs_sources.schwab import (
     TokenMissingError,
 )
 
-SCHWAB_RATE_LIMITED = 429
+RATE_LIMITED = 429
 # Raised by a dead or missing token: the token gate pings for these, not the Schwab health.
 _TOKEN_ERRORS = (SchwabAuthError, TokenMissingError)
 
@@ -103,26 +102,11 @@ class TalliedHistory:
             if is_per_symbol_answer(exc):
                 self._tally.record_ok()
             else:
-                rate_limited = isinstance(exc, SchwabResponseError) and exc.status_code == SCHWAB_RATE_LIMITED
+                rate_limited = isinstance(exc, SchwabResponseError) and exc.status_code == RATE_LIMITED
                 self._tally.record_failure(source_wide=rate_limited)
             raise
         self._tally.record_ok()
         return history
-
-
-class MonitoredEarningsCalendar:
-    """The Nasdaq calendar as the earnings lookup reads it. The lookup falls back to EDGAR
-    on a failure, so the error is re-raised unchanged."""
-
-    def __init__(self, calendar: EarningsCalendar, health: HealthTracker) -> None:
-        self._calendar = calendar
-        self._health = health
-
-    async def next_for(self, ticker: str, start: date, max_weekdays: int) -> ScheduledEarnings | None:
-        # One request per day, not per symbol: a 404 here is the endpoint, not a stock.
-        return await _observed(
-            self._health, Source.NASDAQ, self._calendar.next_for(ticker, start, max_weekdays), per_symbol=False
-        )
 
 
 class MonitoredFilings:

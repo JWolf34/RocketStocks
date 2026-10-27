@@ -1,4 +1,4 @@
-"""Migrations 0006-0023 against Timescale: the upgrade/downgrade round trip and
+"""Migrations 0006-0024 against Timescale: the upgrade/downgrade round trip and
 the physical layout (hypertables, compression, constraints)."""
 
 import uuid
