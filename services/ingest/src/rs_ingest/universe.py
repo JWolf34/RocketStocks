@@ -5,17 +5,16 @@ The snapshot of a session is every non-test listing of `nasdaqlisted.txt` and
 `options.txt` or a symbol of Cboe's options directory (an exact match; there is no alias
 table). It is stored whole, by the session's date.
 
-The listing files are updated through the day, so a snapshot only takes files whose File
-Creation Time is after that session's close (an early close counts). `take` retries every
-15 minutes and gives up at 20:00 ET: the night then uses the previous snapshot and Ops is
-pinged. A listing file far smaller than the previous snapshot's is a cut download and is
-treated like a stale one.
+The files are updated through the day, so a file belongs to a session only when its File
+Creation Time is after that session's close (an early close counts) and before the next
+session's open. `take` keeps retrying whatever it has not yet accepted (the listing files,
+`options.txt`, Cboe's directory) every 15 minutes and gives up at 20:00 ET. A file far smaller
+than the previous snapshot's is a cut download and is treated like a stale or unreadable one.
 
-Optionable sources are held to a softer rule, because a failure there must never flip
-thousands of listings to non-optionable. `options.txt` older than the close is waited for
-like the listings. Anything else wrong with either source (a failed request, a truncated
-file) is not waited for: the night keeps every symbol the previous snapshot called
-optionable, adds what the working source says, records that it did so, and pings Ops.
+At the give-up, listing files that never qualified mean the night uses the previous snapshot and
+Ops is pinged. An optionable source that never qualified must never flip thousands of listings
+to non-optionable: the snapshot is taken with every symbol the previous snapshot called
+optionable plus what the working source says, it records that it did so, and Ops is pinged.
 A source can therefore only add optionable names on a bad night, never remove them.
 """
 
@@ -82,8 +81,12 @@ class _Unusable(Exception):
         self.reason = reason
 
 
-class _Stale(_Unusable):
-    """A whole file stamped before the session's close: it may simply not be updated yet."""
+@dataclass(frozen=True)
+class _Window:
+    """The instants a file may be stamped to belong to the session: after its close, before the next open."""
+
+    close: datetime
+    next_open: datetime
 
 
 class UniverseSnapshotter:
@@ -118,29 +121,22 @@ class UniverseSnapshotter:
         if existing is not None:
             return UniverseUse(session, existing.snapshot_date, existing.as_of, fresh=True)
 
-        close = self._calendar.session_close(session)
+        window = self._window(session)
         give_up = datetime.combine(session, GIVE_UP_AT, tzinfo=EASTERN).astimezone(UTC)
         listings: tuple[ListingFile, ListingFile] | None = None
         options: OptionsFile | None = None
-        listings_problem = options_problem = ""
-        options_settled = False  # accepted, or failed in a way waiting will not mend
+        cboe: frozenset[str] | None = None
+        listings_problem = options_problem = cboe_problem = ""
         while True:
             if listings is None:
-                try:
-                    listings = await self._listing_files(close, previous)
-                except _Unusable as exc:
-                    listings_problem = exc.reason
-            if listings is not None and not options_settled:
-                try:
-                    options = await self._options_file(close, previous)
-                    options_settled = True
-                except _Stale as exc:
-                    options_problem = exc.reason
-                except _Unusable as exc:
-                    options_problem = exc.reason
-                    options_settled = True
+                listings, listings_problem = await _try(self._listing_files(window, previous))
+            # The big file is only fetched once the listings qualify, so the wait costs it nothing.
+            if listings is not None and options is None:
+                options, options_problem = await _try(self._options_file(window, previous))
+            if listings is not None and cboe is None:
+                cboe, cboe_problem = await _try(self._cboe_file(previous))
             now = self._clock.now()
-            if (listings is not None and options_settled) or now >= give_up:
+            if (listings is not None and options is not None and cboe is not None) or now >= give_up:
                 break
             await self._sleep(min(RETRY_EVERY, give_up - now).total_seconds())
 
@@ -149,8 +145,11 @@ class UniverseSnapshotter:
             await self._health.report_failed(Source.NASDAQ_TRADER, f"listing files: {listings_problem}")
             return await self._previous(session)
 
-        cboe, cboe_problem = await self._cboe(previous)
         return await self._store(session, listings, options, options_problem, cboe, cboe_problem)
+
+    def _window(self, session: date) -> _Window:
+        following = self._calendar.sessions_in_range(session + timedelta(days=1), session + timedelta(days=10))
+        return _Window(self._calendar.session_close(session), self._calendar.session_open(following[0]))
 
     async def _previous(self, session: date) -> UniverseUse:
         async with self._session_factory() as db:
@@ -229,29 +228,34 @@ class UniverseSnapshotter:
         return UniverseUse(session, session, snapshot.as_of, fresh=True)
 
     async def _listing_files(
-        self, close: datetime, previous: UniverseCounts | None
+        self, window: _Window, previous: UniverseCounts | None
     ) -> tuple[ListingFile, ListingFile]:
         nasdaq = await _read("nasdaqlisted.txt", self._directory.nasdaq_listed())
-        _accept_stamp("nasdaqlisted.txt", nasdaq.created_at, close)
+        _accept_stamp("nasdaqlisted.txt", nasdaq.created_at, window)
         _accept_size("nasdaqlisted.txt", len(nasdaq.listings), previous.nasdaq_listed if previous else None)
         other = await _read("otherlisted.txt", self._directory.other_listed())
-        _accept_stamp("otherlisted.txt", other.created_at, close)
+        _accept_stamp("otherlisted.txt", other.created_at, window)
         _accept_size("otherlisted.txt", len(other.listings), previous.other_listed if previous else None)
         return nasdaq, other
 
-    async def _options_file(self, close: datetime, previous: UniverseCounts | None) -> OptionsFile:
+    async def _options_file(self, window: _Window, previous: UniverseCounts | None) -> OptionsFile:
         options = await _read("options.txt", self._directory.option_underlyings())
-        _accept_stamp("options.txt", options.created_at, close)
+        _accept_stamp("options.txt", options.created_at, window)
         _accept_size("options.txt", len(options.underlyings), previous.options_symbols if previous else None)
         return options
 
-    async def _cboe(self, previous: UniverseCounts | None) -> tuple[frozenset[str] | None, str]:
-        try:
-            symbols = await _read("Cboe options directory", self._directory.cboe_underlyings())
-            _accept_size("Cboe options directory", len(symbols), previous.cboe_symbols if previous else None)
-        except _Unusable as exc:
-            return None, exc.reason
-        return symbols, ""
+    async def _cboe_file(self, previous: UniverseCounts | None) -> frozenset[str]:
+        symbols = await _read("Cboe options directory", self._directory.cboe_underlyings())
+        _accept_size("Cboe options directory", len(symbols), previous.cboe_symbols if previous else None)
+        return symbols
+
+
+async def _try[T](call: Awaitable[T]) -> tuple[T | None, str]:
+    """The accepted file, or None with the reason it cannot be used yet."""
+    try:
+        return await call, ""
+    except _Unusable as exc:
+        return None, exc.reason
 
 
 async def _read[T](name: str, call: Awaitable[T]) -> T:
@@ -262,11 +266,14 @@ async def _read[T](name: str, call: Awaitable[T]) -> T:
         raise _Unusable(f"{name} could not be read") from exc
 
 
-def _accept_stamp(name: str, created_at: datetime, close: datetime) -> None:
-    if created_at <= close:
-        stamp = created_at.astimezone(EASTERN).strftime("%Y-%m-%d %H:%M ET")
-        logger.info("%s is stamped %s, not after the close yet", name, stamp)
-        raise _Stale(f"{name} not updated since the close")
+def _accept_stamp(name: str, created_at: datetime, window: _Window) -> None:
+    if window.close < created_at < window.next_open:
+        return
+    stamp = created_at.astimezone(EASTERN).strftime("%Y-%m-%d %H:%M ET")
+    logger.info("%s is stamped %s, outside the session's evening", name, stamp)
+    if created_at <= window.close:
+        raise _Unusable(f"{name} not updated since the close")
+    raise _Unusable(f"{name} is stamped after the next open")
 
 
 def _accept_size(name: str, size: int, previous: int | None) -> None:

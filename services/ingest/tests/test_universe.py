@@ -302,12 +302,60 @@ async def test_a_failed_options_file_keeps_the_previous_optionable_names_adds_cb
 
     snapshot = await stored(session_factory)
     assert snapshot is not None and use.fresh
-    assert evening.sleeps == []  # a failure is not waited for
+    assert evening.sleeps == WAITS_TO_GIVE_UP  # retried until the give-up, then carried
     assert snapshot.optionable_carried
     assert snapshot.counts.options_symbols is None and snapshot.counts.cboe_symbols == 2
     # AAA stays optionable from the previous snapshot, CCC is new from Cboe; OLD left the listings.
     assert flags(snapshot) == {"AAA": True, "BBB": False, "CCC": True, "DDD": False}
     assert notices == ["Nasdaq Trader is failing (options.txt could not be read). See the ingest logs."]
+
+
+async def test_a_transient_options_failure_is_retried_and_the_snapshot_is_fresh_not_carried(
+    session_factory, notices
+):
+    await seed_previous(session_factory)
+    evening = Evening(session_factory, et(18, 5))
+    evening.host.statuses["options.txt"] = 503
+    evening.on_sleep = lambda now: evening.host.statuses.clear()
+
+    use = await evening.snapshotter().take()
+
+    snapshot = await stored(session_factory)
+    assert snapshot is not None and use.fresh and not snapshot.optionable_carried
+    assert evening.sleeps == [MINUTES_15]
+    assert snapshot.counts.options_symbols == 2
+    assert flags(snapshot) == {"AAA": True, "BBB": False, "CCC": True, "DDD": False}  # OLD is not carried
+    assert notices == []
+
+
+async def test_a_cut_options_download_is_retried_until_it_is_whole(session_factory, notices):
+    await seed_previous(session_factory)
+    evening = Evening(session_factory, et(18, 5))
+    whole = evening.host.bodies["options.txt"]
+    evening.host.bodies["options.txt"] = whole.rsplit("File Creation", 1)[0]  # no footer: cut short
+    evening.on_sleep = lambda now: evening.host.bodies.update({"options.txt": whole})
+
+    await evening.snapshotter().take()
+
+    snapshot = await stored(session_factory)
+    assert snapshot is not None and not snapshot.optionable_carried
+    assert evening.sleeps == [MINUTES_15]
+    assert notices == []
+
+
+async def test_a_transient_cboe_failure_is_retried_and_the_snapshot_is_not_carried(session_factory, notices):
+    await seed_previous(session_factory)
+    evening = Evening(session_factory, et(18, 5))
+    evening.host.statuses["cboe"] = 503
+    evening.on_sleep = lambda now: evening.host.statuses.clear()
+
+    await evening.snapshotter().take()
+
+    snapshot = await stored(session_factory)
+    assert snapshot is not None and not snapshot.optionable_carried
+    assert snapshot.counts.cboe_symbols == 2
+    assert evening.sleeps == [MINUTES_15]
+    assert notices == []
 
 
 async def test_a_truncated_options_file_is_judged_against_the_last_good_count(session_factory, notices):
@@ -333,6 +381,7 @@ async def test_a_failed_cboe_directory_carries_the_previous_names_and_pings_unde
 
     snapshot = await stored(session_factory)
     assert snapshot is not None and use.fresh and snapshot.optionable_carried
+    assert evening.sleeps == WAITS_TO_GIVE_UP  # a Cboe failure that lasts to 20:00 carries
     assert snapshot.counts.cboe_symbols is None and snapshot.counts.options_symbols == 2
     assert flags(snapshot) == {"AAA": True, "BBB": False, "CCC": False, "DDD": False}
     assert notices == ["Cboe is failing (Cboe options directory could not be read). See the ingest logs."]
@@ -433,3 +482,27 @@ async def test_a_run_after_the_give_up_time_makes_one_attempt_without_waiting(se
     assert (stale.snapshot_date, stale.fresh) == (FRIDAY, False)
     assert (late.snapshot_date, late.fresh) == (MONDAY, True)
     assert len(notices) == 2  # failing, then recovered
+
+
+async def test_files_stamped_after_the_next_session_opened_are_not_that_sessions(session_factory, notices):
+    await seed_previous(session_factory)
+    tuesday = date(2026, 10, 27)
+    # Monday's evening ended without a snapshot; a restart the next afternoon still belongs to it.
+    evening = Evening(session_factory, et(12, 30, tuesday))
+    evening.publish(et(12, 0, tuesday))  # stamped after Tuesday's 09:30 open
+
+    use = await evening.snapshotter().take()
+
+    assert (use.session, use.snapshot_date, use.fresh) == (MONDAY, FRIDAY, False)
+    snapshot = await stored(session_factory)
+    assert snapshot is not None and snapshot.snapshot_date == FRIDAY
+    assert "stamped after the next open" in notices[0]
+
+
+async def test_a_file_stamped_over_the_weekend_still_belongs_to_fridays_session(session_factory):
+    evening = Evening(session_factory, et(18, 5, FRIDAY))
+    evening.publish(et(9, 0, date(2026, 10, 24)))  # Saturday morning, before Monday's open
+
+    use = await evening.snapshotter().take()
+
+    assert (use.snapshot_date, use.fresh) == (FRIDAY, True)

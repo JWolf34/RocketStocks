@@ -461,14 +461,17 @@ psql -c "SELECT count(*) AS asked FROM bar_request"
 
 The `universe_snapshot` job stores the Universe once per trading session: every non-test listing of Nasdaq Trader's `nasdaqlisted.txt` and `otherlisted.txt`, marked optionable when its symbol is an underlying in `options.txt` or a symbol in Cboe's options directory (an exact match).
 It runs each evening at 18:05 ET and at startup, takes the last session whose evening (18:05 ET) has started, and does nothing when that session already has its snapshot, so weekends, holidays and a restart before 18:05 ET are no-ops.
-The listing files are re-stamped through the day, so the job accepts them only once both carry a File Creation Time after the session's close (an early close counts), and retries every 15 minutes.
-At 20:00 ET it gives up: the night uses the previous snapshot, the run is logged as failed, and Ops gets `Nasdaq Trader is failing (listing files: ...)`.
-A listing file with under 90 percent of the previous snapshot's entries is treated as truncated, the same as a stale one.
+The files are re-stamped through the day, so a file belongs to a session only when its File Creation Time is after the session's close (an early close counts) and before the next session's open.
+The job keeps retrying every 15 minutes whatever it has not yet accepted: the two listing files, then `options.txt` and the Cboe directory.
+A source that is stale, unreadable (a 503, a cut download) or looks truncated is retried like any other.
+A file with under 90 percent of the previous snapshot's entries is treated as truncated.
 A real change that large keeps being rejected until someone looks, which is what the ping asks for.
 
-A bad optionable source never turns optionable names off.
-`options.txt` stamped before the close is waited for like the listings; if it is still old at 20:00 ET, or either optionable source fails or looks truncated, the snapshot is taken with the names the previous snapshot called optionable plus whatever the working source says.
-`universe_snapshot.optionable_carried` is true for such a night, and Ops gets `Nasdaq Trader is failing (...)` or `Cboe is failing (...)`; Nasdaq Trader and Cboe ping separately from the Nasdaq earnings calendar.
+At 20:00 ET it gives up.
+If the listing files never qualified, the night uses the previous snapshot, the run is logged as failed, and Ops gets `Nasdaq Trader is failing (listing files: ...)`.
+If only an optionable source never qualified, the snapshot is taken with the names the previous snapshot called optionable plus whatever the working source says, so a bad source never turns optionable names off.
+`universe_snapshot.optionable_carried` is true for such a night, and Ops gets `Nasdaq Trader is failing (...)` for `options.txt` or `Cboe is failing (...)`; Nasdaq Trader and Cboe ping separately from the Nasdaq earnings calendar.
+A run after 20:00 ET (a restart) makes one attempt without waiting, and files stamped after the next session opened are not the missed session's, so the night stays on the previous snapshot.
 
 Read the result and the night's counts:
 ```
