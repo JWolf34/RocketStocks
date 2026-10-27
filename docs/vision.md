@@ -8,12 +8,12 @@ When reality disagrees with it, rewrite the affected lines; never append amendme
 ## Purpose
 
 RocketStocks scans the whole market for stocks worth your time that you would not otherwise hear about.
-For each one it provides its own data, including how similar alerts played out before, so an AI research pass can build a full picture fast.
+For each one it shows its own data, including how similar alerts played out before, and it hands an AI research pass trusted collected data on any stock, so a full picture comes fast.
 The goal is an educated decision, not a guaranteed edge.
 
 **The one job:** post a small number of stocks per day that are worth talking about, in a private Discord server.
 Each Alert is short, with a talking point and an honest Track record, and comes with a Report of RocketStocks' own data: Popularity, options, price and volume, Catalysts and Track record.
-The same data is available to John's own AI research.
+Its collected data is available to John's own AI research for any stock; its judgments (Alerts, Outcomes, Track records) stay in Discord, and the analysis belongs to the research agent.
 
 It is working when:
 
@@ -25,7 +25,7 @@ It is working when:
 
 John and his friends are both primary users, in one private Discord server per installation.
 Discord is the main surface; friends use Alerts, Reports and (later) paper trading there.
-John's research runs in his own Claude, on RocketStocks' data, at no cost to the app.
+John's research runs in his own Claude, on RocketStocks' collected data, at no cost to the app.
 RocketStocks is installable by another small private group (nothing hard-wired to one server), but it is never a hosted multi-server bot.
 
 ## Glossary
@@ -59,7 +59,7 @@ RocketStocks is installable by another small private group (nothing hard-wired t
 - The Report, attached to every Alert and on demand with `/report TICKER`, including a Popularity-plus-price chart.
 - Track records and the rule for cutting Triggers.
 - The weekly Earnings preview, ranked by options-implied move, Popularity and past earnings reactions.
-- Export of all collected data to John's Claude through a read-only MCP server.
+- Export of all collected data (Popularity, the Universe, daily bars, options chains, earnings calendar with EPS estimates and actuals), never RocketStocks' judgments, to John's Claude through a read-only MCP server.
 - The daily Universe snapshot, daily bars for every in-scope listing seeded back to 1990, the nightly full options chain sweep, and intraday polling.
 - `/setup` (channels, roles, Schwab sign-in) and Ops pings.
 - Paper trading, kept small (buy, sell, positions, Leaderboard), built after the core loop and treated as an experiment: it stays only if people use it.
@@ -97,7 +97,7 @@ It must also answer: who uses it, how often, which decision it changes, and what
 - **ingest** (long-running): the only Schwab caller and token holder, with an in-process schedule and one shared Schwab rate budget.
   - Every 30 minutes: Popularity snapshot.
   - Every 15 minutes in market hours: a batch quote of the whole Universe for Unusual price and volume, and chains for the stocks that currently stand out.
-  - Nightly: the Universe snapshot, daily bars, the full chain sweep, Baselines, Outcomes and Track records.
+  - Nightly: the Universe snapshot, daily bars, the full chain sweep, earnings dates, Baselines, Outcomes and Track records.
   - Trigger hits become candidates; a selector applies one-per-stock-per-day, the daily budget, ranking and the stale rule, then writes Alerts.
   - Open-interest Triggers fire in a morning post, because open interest settles once a day.
 - **bot** (long-running): owns Discord; delivers Alerts with their Report in a thread, `/report`, `/setup`, role pings, the Earnings preview and later `/trade`.
@@ -123,8 +123,8 @@ Every source failure sends an Ops ping when it starts and another when it clears
 A dead Schwab token pauses Schwab jobs and the rest keep running; signing in again through `/setup schwab` resumes them.
 Everything restarts unattended; there is no high availability, and hours of downtime are acceptable when the operator is told.
 
-**Scale.** Only history grows: keep every chain contract compressed, indefinitely, and measure real compressed growth on the first nightly sweep (an estimate in the old slice 2 spec is 20-40 MB a night).
-If the measurement projects the disk filling within about two years, keep only contracts with open interest or volume before collecting further.
+**Scale.** Only history grows: keep every chain contract compressed, indefinitely, and measure real compressed growth on the first nightly sweep (the old 20-40 MB a night estimate assumed unmeasured compression; at the only measured 4.7x, chains are about 12-21 GB a year).
+If the measurement projects the disk past 80% within about two years, grow the disk; keep only contracts with open interest or volume only if the host has no room.
 Triggers must be cheap to add and cut without disturbing Track records.
 Stocks covered (about 13,000 listings, about 5,480 optionable), users, installations, request load and latency do not need to scale.
 
@@ -187,7 +187,7 @@ Evidence paths below refer to tag `v2-foundation-archive-2026-10`.
 - **Specs:** spec 01 is archived.
   Spec 02 is superseded; its evidenced decisions (1990 seed, bar scope, rate budget and job order, split check, chain-size probe, resume, dead token mid-sweep, deadline, statuses, storage measurement, host-level disk alarm) feed milestone 3.
 - **`CLAUDE.md`, `CONTEXT.md`, memories:** the v2 section of `CLAUDE.md` shrinks to a pointer here; `CONTEXT.md` becomes the glossary above; project memories about the old plan and build process are rewritten or deleted.
-- **Code:** delete the unwired stream, chain-scanner and replay code; remove the `serve` service (REST route, API keys, client provisioning), since milestone 2 builds the MCP server; drop the EDGAR filing fact, keeping the EDGAR adapter only as the earnings-date fallback; rename to the glossary; strip plan citations; add a CI grep gate that fails on `ADR-NNNN`, `grilling #`, `slice N`, `attention` and `base_rate` in v2 source.
+- **Code:** delete the unwired stream, chain-scanner and replay code; remove the `serve` service (REST route, API keys, client provisioning), since milestone 3 builds the MCP server; drop the EDGAR filing fact, keeping the EDGAR adapter only as the earnings-date fallback; rename to the glossary; strip plan citations; add a CI grep gate that fails on `ADR-NNNN`, `grilling #`, `slice N`, `attention` and `base_rate` in v2 source.
 - **Branches and worktrees:** `slice-2/symbol-master-eod-scan`, `plan/v2-foundation`, `slice-1/attention-surge` and the `s1/*` branches are deleted locally and remotely once the tag exists; the 15 agent worktrees and `worktree-agent-*` branches are removed; `.claude/handoffs/` is cleared.
 - **Tracker:** slice-1 tracker #57 and the foundation map tickets are closed as superseded, linking this document.
 - **v1:** stays muted, collecting Popularity, until v2's Popularity poll runs on portainer; then it is stopped and its containers removed, freeing about 35 GB.
@@ -212,12 +212,12 @@ Each ends in something used; there are no dates.
 1. **Popularity Alerts in the friends' server.**
    Deploy v2 on portainer with the ops webhook set; import v1 Popularity from 2026-03-03; ship the Alert shape (one per stock per day, thread replies, daily budget, stale rule, role pings by Trigger) and Track records with both Outcome measures at 1/5/20 days; then retire v1.
    Done when friends receive Popularity Alerts carrying a seeded Track record, and the token-expiry and ingest-restart rehearsals pass on portainer.
-2. **John's research through MCP.**
-   A read-only MCP server over `rs_query`: Popularity history, Alerts, Track records and daily bars.
-   Done when John completes an NBIS-style research session in which Claude pulls RocketStocks data through MCP.
-3. **Nightly sweep.**
-   Daily Universe snapshot with the optionable flag; daily bars for every in-scope listing from 1990 with the split check; the full chain sweep with probes, ladder, Tombstones, deadline and resume; real compressed growth measured against the disk.
-   Done when a recorded night finishes inside its deadline and John's Claude can read any stock's bars and chains through MCP.
+2. **Nightly sweep.**
+   Daily Universe snapshot with the optionable flag; daily bars for every in-scope listing from 1990 with the split check; the full chain sweep with probes, ladder, Tombstones, deadline and resume; the earnings calendar (dates, EPS estimates and actuals) stored as collected history; real compressed growth measured against the disk.
+   Done when a recorded evening and the next morning's open-interest pass finish inside their deadlines and compressed growth is measured against the disk; its use is observed in milestone 3.
+3. **John's research through MCP.**
+   A read-only MCP server over `rs_query` serving collected data for any stock: Popularity history, the Universe, daily bars, options chains and earnings dates; no Alerts, Outcomes or Track records.
+   Done when John's research agent, working from its own instructions, builds an analysis of a stock he picks from data pulled through MCP.
 4. **The Report.**
    `/report TICKER` and a Report in every Alert's thread: Popularity-plus-price chart, price and volume against Baseline and against the market, next earnings, past Alerts on the stock and the Track record.
    Done when friends open Reports from Alerts and on demand.
