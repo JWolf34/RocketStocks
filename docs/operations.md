@@ -460,7 +460,7 @@ psql -c "SELECT count(*) AS asked FROM bar_request"
 ### The Universe snapshot
 
 The `universe_snapshot` job stores the Universe once per trading session: every non-test listing of Nasdaq Trader's `nasdaqlisted.txt` and `otherlisted.txt`, marked optionable when its symbol is an underlying in `options.txt` or a symbol in Cboe's options directory (an exact match).
-It runs each evening at 18:05 ET and at startup, takes the last session whose close has passed, and does nothing when that session already has its snapshot, so weekends and holidays are no-ops.
+It runs each evening at 18:05 ET and at startup, takes the last session whose evening (18:05 ET) has started, and does nothing when that session already has its snapshot, so weekends, holidays and a restart before 18:05 ET are no-ops.
 The listing files are re-stamped through the day, so the job accepts them only once both carry a File Creation Time after the session's close (an early close counts), and retries every 15 minutes.
 At 20:00 ET it gives up: the night uses the previous snapshot, the run is logged as failed, and Ops gets `Nasdaq Trader is failing (listing files: ...)`.
 A listing file with under 90 percent of the previous snapshot's entries is treated as truncated, the same as a stale one.

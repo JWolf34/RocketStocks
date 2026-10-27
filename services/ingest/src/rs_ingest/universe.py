@@ -43,6 +43,9 @@ from rs_sources.symbol_directory import ListingFile, OptionsFile, SymbolDirector
 
 logger = logging.getLogger(__name__)
 
+# The evening's start, Eastern wall clock on the session's date: the job's daily slot. A run
+# before it belongs to the session before, so a restart in the afternoon never waits for hours.
+EVENING_STARTS_AT = time(18, 5)
 RETRY_EVERY = timedelta(minutes=15)
 # Eastern wall clock on the session's date; the last attempt is made at this moment.
 GIVE_UP_AT = time(20, 0)
@@ -60,7 +63,7 @@ Sleep = Callable[[float], Awaitable[None]]
 class UniverseUse:
     """Which snapshot the night's passes read.
 
-    `session` is the session the night belongs to (the last one closed). `fresh` is True when
+    `session` is the session the night belongs to (the last one whose evening has started). `fresh` is True when
     the snapshot is that session's own and False when the night falls back to the one before;
     `snapshot_date` and `as_of` are None only when no snapshot exists at all.
     """
@@ -102,12 +105,12 @@ class UniverseSnapshotter:
         self._sleep = sleep
 
     async def take(self) -> UniverseUse:
-        """Take the snapshot of the last closed session if it has none yet.
+        """Take the snapshot of the session whose evening last started if it has none yet.
 
-        Weekends, holidays and a session whose snapshot is stored find nothing to do. Past the
-        give-up time one attempt is made without waiting.
+        Weekends, holidays, the hours before 18:05 ET and a session whose snapshot is stored find
+        nothing to do. Past the give-up time one attempt is made without waiting.
         """
-        session = _last_closed_session(self._calendar, self._clock.now())
+        session = _last_evening_session(self._calendar, self._clock.now())
         async with self._session_factory() as db:
             repo = UniverseRepository(db)
             existing = await repo.header(session)
@@ -272,9 +275,9 @@ def _accept_size(name: str, size: int, previous: int | None) -> None:
         raise _Unusable(f"{name} looks truncated ({size} entries against {previous})")
 
 
-def _last_closed_session(calendar: TradingCalendar, now: datetime) -> date:
+def _last_evening_session(calendar: TradingCalendar, now: datetime) -> date:
     today = eastern_day(now)
     for day in reversed(calendar.sessions_in_range(today - timedelta(days=10), today)):
-        if calendar.session_close(day) <= now:
+        if datetime.combine(day, EVENING_STARTS_AT, tzinfo=EASTERN) <= now:
             return day
-    raise RuntimeError(f"no closed session in the 10 days before {today}")
+    raise RuntimeError(f"no session evening has started in the 10 days before {today}")

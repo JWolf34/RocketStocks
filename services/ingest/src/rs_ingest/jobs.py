@@ -31,7 +31,7 @@ from rs_ingest.selector import BAR_TARGET_PER_DAY
 from rs_ingest.surge_bars import SurgeBarsError, sync_surge_bars
 from rs_ingest.surge_facts import SurgeFactsGatherer
 from rs_ingest.track_record import track_record_job
-from rs_ingest.universe import UniverseSnapshotter
+from rs_ingest.universe import EVENING_STARTS_AT, UniverseSnapshotter
 from rs_observability import HealthTracker, QuietFailure, Source, SweepTally
 from rs_sources import ApeWisdomClient
 from rs_sources.earnings import SCAN_WEEKDAYS, EarningsLookup
@@ -109,7 +109,7 @@ def register_jobs(cron: CronTable, deps: Dependencies) -> None:
             "universe_snapshot",
             # Once the listing files are stamped after the close (about 18:01 ET); weekends and
             # holidays find the last session's snapshot stored and do nothing.
-            Daily(time(18, 5), EASTERN),
+            Daily(EVENING_STARTS_AT, EASTERN),
             universe_snapshot,
             # A restart during the evening still takes the night's snapshot.
             run_on_start=True,

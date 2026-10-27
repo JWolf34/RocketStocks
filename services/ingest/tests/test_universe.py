@@ -409,9 +409,10 @@ async def test_a_holiday_finds_the_last_sessions_snapshot_and_makes_no_request(s
     assert evening.host.requests == []
 
 
-async def test_before_the_close_the_night_belongs_to_the_session_before(session_factory):
+@pytest.mark.parametrize("start", [et(10, 0), et(16, 30), et(18, 4)])
+async def test_before_the_evening_starts_the_night_belongs_to_the_session_before(session_factory, start):
     await seed_previous(session_factory)
-    evening = Evening(session_factory, et(10, 0))  # Monday morning
+    evening = Evening(session_factory, start)  # Monday, even after the close: no hours-long wait
 
     use = await evening.snapshotter().take()
 
