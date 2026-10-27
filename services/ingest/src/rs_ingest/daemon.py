@@ -100,8 +100,9 @@ class _JobState:
     next_fire: datetime
     task: asyncio.Task[None] | None = None
     deadline: datetime | None = None  # when the run in `task` times out
-    # One run is owed: the startup run of a run_on_start job, or a slot that came due while the
-    # job was still running or the Schwab token was dead. Slots missed meanwhile coalesce into it.
+    # One run is owed: the startup run of a run_on_start job, a slot that came due while the
+    # job was still running or the Schwab token was dead, or a Schwab run the dead token killed.
+    # Slots missed meanwhile coalesce into it.
     run_pending: bool = False
 
 
@@ -257,6 +258,10 @@ class Daemon:
                     return  # cancelled by the timeout check, which already recorded it
                 raise
             except SchwabAuthError as exc:
+                if job.needs_schwab:
+                    # The run died half done: it is owed again once the gate reopens. A job that is
+                    # not paused by the gate must not be re-queued, or it would loop while dead.
+                    state.run_pending = True
                 self._metrics.job_runs.labels(job.name, Outcome.AUTH_ERROR).inc()
                 await self._gate.trip(f"job {job.name}: {exc}")
             except Exception as exc:

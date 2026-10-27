@@ -284,8 +284,8 @@ Goal: Schwab jobs pause, one Ops ping goes out, the Popularity poll continues, a
 4. Confirm polling continues: a new `popularity_snapshot` boundary appears within 30 minutes.
 5. Recover: run `/setup schwab` (see "Schwab sign-in").
    Expect the log line `Schwab token renewed - resuming Schwab jobs`, one "renewed" Ops ping and `schwab_token_dead 0`.
-6. Confirm the Schwab jobs whose slot passed while the token was dead run once right after the renewal (`cron_job_runs{outcome="success"}` rises for `surge_bars`, which refetches the deleted SPY bar).
-   A slot that comes due while the token is dead is deferred, not lost, and several deferred slots run once.
+6. Confirm the Schwab jobs run once right after the renewal (`cron_job_runs{outcome="success"}` rises for `surge_bars`, which refetches the deleted SPY bar).
+   The run the dead token killed (`auth_error`) is owed again, and a slot that comes due while the token is dead is deferred, not lost; the killed run and any deferred slots together run once.
 
 ### Ingest kill mid-poll
 
