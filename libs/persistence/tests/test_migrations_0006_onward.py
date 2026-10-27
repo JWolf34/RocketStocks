@@ -1,4 +1,4 @@
-"""Migrations 0006-0022 against Timescale: the upgrade/downgrade round trip and
+"""Migrations 0006-0023 against Timescale: the upgrade/downgrade round trip and
 the physical layout (hypertables, compression, constraints)."""
 
 import uuid
@@ -701,6 +701,37 @@ def test_0021_adds_candidate_scores_and_keeps_existing_candidates_unscored(scrat
         insp = inspect(engine)
         assert not {"raw_score", "strength"} & {c["name"] for c in insp.get_columns("candidate")}
         assert "ix_candidate_announced_day" not in {i["name"] for i in insp.get_indexes("candidate")}
+
+        command.upgrade(config, "head")
+    finally:
+        engine.dispose()
+
+
+def test_0023_adds_the_universe_tables_and_downgrade_drops_them(scratch_url):
+    config = migration_config(scratch_url)
+    engine = create_engine(scratch_url)
+    try:
+        command.upgrade(config, "0022")
+        assert not {"universe_snapshot", "universe_listing"} & set(inspect(engine).get_table_names())
+
+        command.upgrade(config, "0023")
+        insp = inspect(engine)
+        assert insp.get_pk_constraint("universe_snapshot")["constrained_columns"] == ["snapshot_date"]
+        assert insp.get_pk_constraint("universe_listing")["constrained_columns"] == ["snapshot_date", "symbol"]
+        assert {c["name"]: c["nullable"] for c in insp.get_columns("universe_listing")} == {
+            "snapshot_date": False,
+            "symbol": False,
+            "security_name": False,
+            "exchange": False,
+            "etf": False,
+            "financial_status": True,
+            "cqs_symbol": True,
+            "nasdaq_symbol": True,
+            "optionable": False,
+        }
+
+        command.downgrade(config, "0022")
+        assert not {"universe_snapshot", "universe_listing"} & set(inspect(engine).get_table_names())
 
         command.upgrade(config, "head")
     finally:

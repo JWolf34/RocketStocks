@@ -86,6 +86,13 @@ GRANTS: dict[str, dict[str, tuple[str, ...]]] = {
     "trigger_role": {
         "bot": ("SELECT", "INSERT", "UPDATE", "DELETE"),
     },
+    # Stored whole each evening by ingest and never changed; no bot reader exists yet.
+    "universe_snapshot": {
+        "ingest": _SELECT_INSERT,
+    },
+    "universe_listing": {
+        "ingest": _SELECT_INSERT,
+    },
     "unpriced_symbol": {
         "ingest": ("SELECT", "INSERT", "UPDATE", "DELETE"),
     },

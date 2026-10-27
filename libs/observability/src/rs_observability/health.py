@@ -31,6 +31,9 @@ class Source(StrEnum):
     APEWISDOM = "ApeWisdom"
     SCHWAB = "Schwab"
     NASDAQ = "Nasdaq"
+    # The symbol files, on another host than the earnings API: each fails and recovers on its own.
+    NASDAQ_TRADER = "Nasdaq Trader"
+    CBOE = "Cboe"
     EDGAR = "EDGAR"
     DISCORD = "Discord"
 
