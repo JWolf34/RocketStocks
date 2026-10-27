@@ -457,6 +457,28 @@ $COMPOSE logs -f ingest | grep surge_bars
 psql -c "SELECT count(*) AS asked FROM bar_request"
 ```
 
+### The Universe snapshot
+
+The `universe_snapshot` job stores the Universe once per trading session: every non-test listing of Nasdaq Trader's `nasdaqlisted.txt` and `otherlisted.txt`, marked optionable when its symbol is an underlying in `options.txt` or a symbol in Cboe's options directory (an exact match).
+It runs each evening at 18:05 ET and at startup, takes the last session whose close has passed, and does nothing when that session already has its snapshot, so weekends and holidays are no-ops.
+The listing files are re-stamped through the day, so the job accepts them only once both carry a File Creation Time after the session's close (an early close counts), and retries every 15 minutes.
+At 20:00 ET it gives up: the night uses the previous snapshot, the run is logged as failed, and Ops gets `Nasdaq Trader is failing (listing files: ...)`.
+A listing file with under 90 percent of the previous snapshot's entries is treated as truncated, the same as a stale one.
+A real change that large keeps being rejected until someone looks, which is what the ping asks for.
+
+A bad optionable source never turns optionable names off.
+`options.txt` stamped before the close is waited for like the listings; if it is still old at 20:00 ET, or either optionable source fails or looks truncated, the snapshot is taken with the names the previous snapshot called optionable plus whatever the working source says.
+`universe_snapshot.optionable_carried` is true for such a night, and Ops gets `Nasdaq Trader is failing (...)` or `Cboe is failing (...)`; Nasdaq Trader and Cboe ping separately from the Nasdaq earnings calendar.
+
+Read the result and the night's counts:
+```
+$COMPOSE logs ingest | grep "Universe of"
+psql -c "SELECT * FROM universe_snapshot ORDER BY snapshot_date DESC LIMIT 5"
+```
+The log line reads `Universe of <date>: N listings (...), N optionable, N optionable symbols joined no listing`; about 13,000 listings, about 5,440 optionable and about 40 unjoined (index products, OTC names) is the shape to expect.
+Listings keep the file's own symbol (`BRK.B`, `ABR$D`); `cqs_symbol` and `nasdaq_symbol` hold the other two spellings from `otherlisted.txt`.
+The snapshot is about 13,000 rows a day, a few hundred MB a year; it is derived from files that cannot be fetched again for a past date, so it is in the backup set.
+
 ### Logs, metrics and health
 
 - Logs are JSON on stdout: `$COMPOSE logs -f ingest bot`.
@@ -469,7 +491,7 @@ psql -c "SELECT count(*) AS asked FROM bar_request"
 ### Ops pings to expect
 
 A source pings once when it starts failing and once when it clears; repeated failures in between say nothing.
-The sources are ApeWisdom, Schwab, Nasdaq, EDGAR and Discord.
+The sources are ApeWisdom, Schwab, Nasdaq (the earnings calendar), Nasdaq Trader (the symbol files), Cboe (its options directory), EDGAR and Discord.
 A ping reads `<source> is failing (<reason>). See the <service> logs.` and later `<source> recovered.`.
 The reason is an exception type or a count, never vendor text; the logs have the detail.
 
@@ -487,6 +509,8 @@ Which pings to expect, by cause:
   The Alert still posts, with the missing facts labelled.
 - `Nasdaq is failing ...` and `EDGAR is failing ...`: the earnings calendar or the filings lookup failed.
   The next-earnings fact falls back to the EDGAR estimate, then to missing.
+- `Nasdaq Trader is failing ...` and `Cboe is failing ...`: the Universe snapshot could not use the listing files or `options.txt` (Nasdaq Trader), or the Cboe directory.
+  See "The Universe snapshot" for what the night then uses.
 - `Discord is failing ...`: the bot's sends or history reads failed for a reason other than one Alert (a rejected embed is one Alert).
   Undelivered Alerts stay queued and the sweep retries them; one older than an hour when Discord returns is recorded as stale and not posted.
 - `Ingest job <name> is failing (<type>)` and `Ingest job <name> recovered.`: a job failed for a reason that is not a source, such as the database being down or a bug.
