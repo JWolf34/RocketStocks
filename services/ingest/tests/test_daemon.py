@@ -518,6 +518,65 @@ class TestTokenGate:
         assert len(schwab.started) == 1
         assert at(13, 10) <= schwab.started[0] <= at(13, 12)
 
+    async def test_a_run_killed_by_a_dead_token_runs_once_after_the_renewal(self, rig, notices):
+        schwab = Recorder(rig.clock, [SchwabAuthError("rejected"), None])
+        rig.cron.register(Job("bars", Every(30), schwab, needs_schwab=True))
+        rig.build()
+        rig.when(at(12, 40), lambda: setattr(rig, "token_updated_at", at(12, 35)))
+
+        await rig.run_until(at(13, 1))
+
+        assert schwab.started[0] == at(12, 30)
+        assert at(12, 40) <= schwab.started[1] <= at(12, 42)  # the killed run, not the 13:00 slot
+        assert schwab.started[2:] == [at(13, 0)]
+        assert rig.runs("bars", "auth_error") == 1
+        assert rig.runs("bars", "success") == 2
+
+    async def test_a_killed_run_and_a_slot_due_during_the_outage_do_not_run_twice_after_the_renewal(
+        self, rig, notices
+    ):
+        schwab = Recorder(rig.clock, [SchwabAuthError("rejected"), None])
+        rig.cron.register(Job("bars", Every(30), schwab, needs_schwab=True))
+        rig.build()
+        rig.when(at(13, 10), lambda: setattr(rig, "token_updated_at", at(13, 5)))
+
+        await rig.run_until(at(13, 20))  # the 13:00 slot passed while dead
+
+        assert len(schwab.started) == 2
+        assert schwab.started[0] == at(12, 30)
+        assert at(13, 10) <= schwab.started[1] <= at(13, 12)
+        assert rig.runs("bars", "deferred_token_dead") == 1
+        assert rig.runs("bars", "auth_error") == 1
+        assert rig.runs("bars", "success") == 1
+
+    async def test_a_stale_client_error_after_the_renewal_neither_trips_the_gate_nor_pings(
+        self, rig, notices
+    ):
+        killer = Recorder(rig.clock, [SchwabAuthError("rejected")] + [None] * 10)
+        release = asyncio.Event()
+        stale_starts: list[datetime] = []
+
+        async def stale() -> None:
+            stale_starts.append(rig.clock.now())
+            if len(stale_starts) == 1:
+                await release.wait()  # still holding the old client while the sign-in lands
+                raise SchwabAuthError("old client rejected")
+
+        rig.cron.register(Job("killer", Every(60), killer, needs_schwab=True, run_on_start=True))
+        rig.cron.register(Job("stale", Every(60), stale, needs_schwab=True, run_on_start=True))
+        rig.build()
+        rig.when(at(12, 20), lambda: setattr(rig, "token_updated_at", at(12, 15)))
+        rig.when(at(12, 30), release.set)
+
+        await rig.run_until(at(12, 45))
+
+        assert not rig.gate.dead
+        assert rig.renewals == 1
+        assert [("dead" in n) or ("renewed" in n) for n in notices] == [True, True]
+        assert len(stale_starts) == 2
+        assert at(12, 30) <= stale_starts[1] <= at(12, 32)  # re-run at once with the new client
+        assert rig.runs("stale", "auth_error") == 1
+
     async def test_auth_error_from_a_job_not_marked_needs_schwab_still_trips_the_gate(
         self, rig, notices
     ):
@@ -525,9 +584,10 @@ class TestTokenGate:
         rig.cron.register(Job("sneaky", Every(30), sneaky))
         rig.build()
 
-        await rig.run_until(at(12, 31))
+        await rig.run_until(at(12, 40))
 
         assert rig.gate.dead
+        assert sneaky.started == [at(12, 30)]  # not paused by the gate, so not re-queued while dead
 
     async def test_a_failed_client_rebuild_keeps_the_gate_closed_and_retries(self, rig, notices):
         schwab = Recorder(rig.clock, [SchwabAuthError("rejected")] + [None] * 10)

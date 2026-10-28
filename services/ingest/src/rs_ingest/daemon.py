@@ -51,13 +51,19 @@ class TokenGate:
         self._clock = clock
         self._metrics = metrics
         self._dead_since: datetime | None = None
+        self._renewed_at: datetime | None = None
 
     @property
     def dead(self) -> bool:
         return self._dead_since is not None
 
-    async def trip(self, reason: str) -> None:
+    async def trip(self, reason: str, *, run_started: datetime | None = None) -> None:
+        """Close the gate. `run_started` is when the failing run began: a run that began before the
+        last renewal held the old client, so its error says nothing about the new token."""
         if self._dead_since is not None:
+            return
+        if run_started is not None and self._renewed_at is not None and self._renewed_at > run_started:
+            logger.warning("Schwab auth error from a run begun before the last renewal - ignoring it: %s", reason)
             return
         self._dead_since = self._clock.now()
         self._metrics.token_dead.set(1)
@@ -89,6 +95,7 @@ class TokenGate:
             logger.exception("could not rebuild the Schwab client from the new token; gate stays closed")
             return
         self._dead_since = None
+        self._renewed_at = self._clock.now()
         self._metrics.token_dead.set(0)
         logger.info("Schwab token renewed - resuming Schwab jobs")
         await notify_ops("Schwab token renewed. Schwab jobs resumed.", key="schwab-token-renewed")
@@ -100,8 +107,9 @@ class _JobState:
     next_fire: datetime
     task: asyncio.Task[None] | None = None
     deadline: datetime | None = None  # when the run in `task` times out
-    # One run is owed: the startup run of a run_on_start job, or a slot that came due while the
-    # job was still running or the Schwab token was dead. Slots missed meanwhile coalesce into it.
+    # One run is owed: the startup run of a run_on_start job, a slot that came due while the
+    # job was still running or the Schwab token was dead, or a Schwab run the dead token killed.
+    # Slots missed meanwhile coalesce into it.
     run_pending: bool = False
 
 
@@ -185,7 +193,7 @@ class Daemon:
 
     def _start(self, state: _JobState, now: datetime) -> None:
         state.deadline = now + state.job.time_limit
-        state.task = self._spawn(self._execute(state), state.job.name)
+        state.task = self._spawn(self._execute(state, now), state.job.name)
 
     def _expire_timeouts(self, states: list[_JobState], now: datetime) -> None:
         for state in states:
@@ -247,7 +255,7 @@ class Daemon:
                 task.cancel()
             await asyncio.gather(sleeper, stopper, return_exceptions=True)
 
-    async def _execute(self, state: _JobState) -> None:
+    async def _execute(self, state: _JobState, started: datetime) -> None:
         job = state.job
         with unit_of_work(job_name=job.name):
             try:
@@ -257,8 +265,12 @@ class Daemon:
                     return  # cancelled by the timeout check, which already recorded it
                 raise
             except SchwabAuthError as exc:
+                if job.needs_schwab:
+                    # The run died half done: it is owed again once the gate reopens. Only a
+                    # needs_schwab job waits for the gate; any other would re-run at once, in a loop.
+                    state.run_pending = True
                 self._metrics.job_runs.labels(job.name, Outcome.AUTH_ERROR).inc()
-                await self._gate.trip(f"job {job.name}: {exc}")
+                await self._gate.trip(f"job {job.name}: {exc}", run_started=started)
             except Exception as exc:
                 logger.exception("job %s failed", job.name)
                 self._metrics.job_runs.labels(job.name, Outcome.FAILURE).inc()
