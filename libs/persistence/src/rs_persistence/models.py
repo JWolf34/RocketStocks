@@ -162,6 +162,40 @@ class UnpricedSymbolRow(Base):
     reason: Mapped[str] = mapped_column(Text)
 
 
+class UniverseSnapshotRow(Base):
+    """universe_snapshot: one row per session date the Universe was taken, with the source
+    counts the next night's truncation guard compares against."""
+
+    __tablename__ = "universe_snapshot"
+
+    snapshot_date: Mapped[date] = mapped_column(Date, primary_key=True)
+    as_of: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True))
+    nasdaq_listed: Mapped[int] = mapped_column(Integer)
+    other_listed: Mapped[int] = mapped_column(Integer)
+    options_symbols: Mapped[int | None] = mapped_column(Integer)
+    cboe_symbols: Mapped[int | None] = mapped_column(Integer)
+    optionable_carried: Mapped[bool] = mapped_column(Boolean)
+
+
+class UniverseListingRow(Base):
+    """universe_listing: every non-test listing of a snapshot; no spans, a listing that
+    leaves is simply absent from later dates."""
+
+    __tablename__ = "universe_listing"
+
+    snapshot_date: Mapped[date] = mapped_column(
+        Date, ForeignKey("universe_snapshot.snapshot_date", ondelete="CASCADE"), primary_key=True
+    )
+    symbol: Mapped[str] = mapped_column(Text, primary_key=True)
+    security_name: Mapped[str] = mapped_column(Text)
+    exchange: Mapped[str] = mapped_column(Text)
+    etf: Mapped[bool] = mapped_column(Boolean)
+    financial_status: Mapped[str | None] = mapped_column(Text)
+    cqs_symbol: Mapped[str | None] = mapped_column(Text)
+    nasdaq_symbol: Mapped[str | None] = mapped_column(Text)
+    optionable: Mapped[bool] = mapped_column(Boolean)
+
+
 class OutcomeRow(Base):
     """outcome: what one case did at one horizon. Derived from daily bars and rewritten
     whole for a Trigger version by the nightly job."""

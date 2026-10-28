@@ -52,5 +52,7 @@ The scripts that took these measurements were removed; they are in the repositor
 - `options.txt` is about 95 MB and took about 85 seconds; it carried 4,182 distinct underlyings, and Cboe carried 5,319 symbols, which includes about 25 index products.
 - The optionable union was about 5,480 names, of which about 5,440 join to an active listing; neither directory is a superset.
 - `options.txt` strips dots from class shares (`BRKB`) while the listing files and Cboe keep them; a derived dot-strip alias table (raw match first, alias only on a miss, drop ambiguous aliases) recovered 2 extra optionable names on that day.
-- The Nasdaq files carry a creation-time footer; Cboe has no as-of stamp.
+- The Nasdaq files carry a creation-time footer (`File Creation Time: MMDDYYYYHH:MM` in Eastern time, followed by trailing pipes); Cboe has no as-of stamp.
+- The Nasdaq files are re-stamped through the day (stamps of 12:11 ET were served at midday on 2026-10-27), so a file is the session's only once its stamp is after the close.
+- Re-measured 2026-10-27: `options.txt` was 87 MB and a streamed, line-by-line parse that keeps only the underlying set took about 0.5 seconds; the Cboe download URL answers 200 directly (no redirect) with LF line ends.
 - Test issues, dotted symbols and three symbologies per row in `otherlisted.txt` exist; the file line endings are CRLF.
