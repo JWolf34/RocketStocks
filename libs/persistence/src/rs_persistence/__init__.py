@@ -18,6 +18,7 @@ from rs_persistence.auth_requests import (
 )
 from rs_persistence.candidates import CandidateRepository
 from rs_persistence.daily_bars import DailyBarRepository
+from rs_persistence.earnings_snapshots import EarningsSnapshotRepository
 from rs_persistence.engine import build_engine, build_session_factory, psycopg_conninfo
 from rs_persistence.models import (
     AlertRow,
@@ -25,6 +26,7 @@ from rs_persistence.models import (
     Base,
     CandidateRow,
     DailyBarRow,
+    EarningsSnapshotRow,
     OutcomeRow,
     PopularitySnapshotRow,
     SchwabAuthRequestRow,
@@ -74,6 +76,8 @@ __all__ = [
     "TrackRecordRow",
     "DailyBarRepository",
     "DailyBarRow",
+    "EarningsSnapshotRepository",
+    "EarningsSnapshotRow",
     "OutcomeRow",
     "PendingAlert",
     "PopularityRepository",

@@ -482,6 +482,31 @@ The log line reads `Universe of <date>: N listings (...), N optionable, N option
 Listings keep the file's own symbol (`BRK.B`, `ABR$D`); `cqs_symbol` and `nasdaq_symbol` hold the other two spellings from `otherlisted.txt`.
 The snapshot is about 13,000 rows a day, a few hundred MB a year; it is derived from files that cannot be fetched again for a past date, so it is in the backup set.
 
+### Earnings calendar
+
+The `earnings_snapshot` job reads Nasdaq's earnings calendar each trading evening at 20:30 Eastern (and once at startup when the slot has passed) and stores it in `earnings_snapshot`, dated by that Eastern day with origin `nightly`.
+It makes no Schwab calls and reads every weekday from a week back to 65 weekdays ahead (about 13 weeks, well past the about 8 weeks Nasdaq lists), about 70 requests.
+The horizon is fixed because the end of the window cannot be told from a quiet stretch inside it, such as the Christmas to New Year week.
+A day that fails is asked again after 30 seconds and after 2 minutes before it counts as failed.
+A snapshot is stored whole or not at all, a weekend or holiday does nothing, and a rerun on a night already snapshotted does nothing.
+Each run logs `earnings snapshot <date>: N rows over M days, last listed day <date>; values not parsed: {...}`, where the field counts are values that came back `N/A`, empty, unreadable or missing, and `symbol` counts rows skipped for lacking a ticker.
+The Alert's next Catalyst reads the latest `nightly` snapshot, trusts it for two trading sessions, and otherwise estimates from EDGAR at read time (the estimate is never stored).
+
+Load the history once, from 2008-01-01 (the earliest year Nasdaq serves), after the first deploy:
+```
+$COMPOSE exec ingest python -m rs_ingest.tools.earnings_backfill
+```
+It asks for one weekday at a time at the adapter's 0.25 second spacing, so about 4,900 requests take roughly an hour.
+Its rows carry origin `backfill`, the real fetch time, and the Eastern day they were fetched as their snapshot date, so a run over several days is one snapshot per day it ran and never shadows a `nightly` snapshot; readers of "the latest snapshot" ask for `nightly`.
+A day that fails is asked again after 30 seconds and after 2 minutes, then left for a rerun.
+Run it in a terminal that survives a dropped connection; it resumes, so if it stops (a restart, a failed day, ten failed days in a row), run the same command again.
+A rerun skips weekdays that already have backfill rows and asks again for every weekday Nasdaq answered with nothing (holidays and any other day with no listings), which takes a minute or two.
+`--start` and `--end` (`YYYY-MM-DD`) bound a run; it ends with a one-line summary, and exit status 1 means some days failed.
+Check it with:
+```
+psql -c "SELECT origin, count(*), min(report_date), max(report_date) FROM earnings_snapshot GROUP BY origin"
+```
+
 ### Logs, metrics and health
 
 - Logs are JSON on stdout: `$COMPOSE logs -f ingest bot`.
@@ -510,8 +535,10 @@ Which pings to expect, by cause:
   The poll fails without a second ping; a boundary is missed until the next poll.
 - `Schwab is failing ...`: quotes for an Alert's facts failed, or more than about 5% of the daily-bar sweep did.
   The Alert still posts, with the missing facts labelled.
-- `Nasdaq is failing ...` and `EDGAR is failing ...`: the earnings calendar or the filings lookup failed.
-  The next-earnings fact falls back to the EDGAR estimate, then to missing.
+- `Nasdaq is failing ...`: the nightly earnings snapshot stored nothing, because a calendar day still failed after two retries or the calendar listed no earnings at all.
+  The snapshot is whole or nothing, so this pings when the first night stores nothing, and `Nasdaq recovered.` follows the first night that stores a snapshot; the next-earnings fact trusts the last snapshot for two trading sessions, then falls back to the EDGAR estimate.
+- `EDGAR is failing ...`: the filings lookup failed.
+  The next-earnings fact is then missing for a stock the stored calendar does not list.
 - `Nasdaq Trader is failing ...` and `Cboe is failing ...`: the Universe snapshot could not use the listing files or `options.txt` (Nasdaq Trader), or the Cboe directory.
   See "The Universe snapshot" for what the night then uses.
 - `Discord is failing ...`: the bot's sends or history reads failed for a reason other than one Alert (a rejected embed is one Alert).
@@ -540,11 +567,13 @@ This section says what is irreplaceable and how to bring it back.
 ### What is irreplaceable
 
 Everything lives in the one Postgres database `rocketstocks` in the `timescaledb` service.
-Two kinds of data cannot be fetched again:
+These kinds of data cannot be fetched again:
 
 - Popularity snapshots (`popularity_snapshot`): ApeWisdom serves only the current reading, so a missed poll is gone for good.
 - User state such as paper trades, settings and roles.
   These are written by the bot and live in the same database.
+- Universe snapshots (`universe_snapshot` and `universe_listing`): the listing files serve only the current day, so a missed night cannot be rebuilt.
+- Nightly earnings snapshots (`earnings_snapshot` rows with origin `nightly`): they record what Nasdaq's calendar said on each date, which cannot be fetched again; the `backfill` rows can.
 
 Daily bars are repaired automatically, and Baselines, Track records and Reports are rebuilt at will.
 Back up the whole database anyway; it is the simplest way to be sure neither is missed, and it keeps the history of posted Alerts too.

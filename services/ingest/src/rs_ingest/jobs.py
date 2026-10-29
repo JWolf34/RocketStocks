@@ -5,6 +5,7 @@ what it needs from `Dependencies`. Read `deps.schwab.client` inside the run,
 never at registration, so a job picks up the client rebuilt after a re-login.
 """
 
+import asyncio
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from datetime import time, timedelta
@@ -12,11 +13,17 @@ from datetime import time, timedelta
 import httpx
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from rs_domain import EASTERN, Clock, TradingCalendar, eastern_day
+from rs_domain import EASTERN, Clock, TradingCalendar
 from rs_ingest.alert_writer import AlertWriter
 from rs_ingest.cron import CronTable, Daily, Every, Job
+from rs_ingest.earnings_snapshot import (
+    SNAPSHOT_AT,
+    EarningsSnapshotError,
+    RetryingDays,
+    StoredEarningsCalendar,
+    snapshot_earnings,
+)
 from rs_ingest.monitored import (
-    MonitoredEarningsCalendar,
     MonitoredFilings,
     MonitoredPopularitySource,
     MonitoredQuotes,
@@ -32,11 +39,17 @@ from rs_ingest.surge_bars import SurgeBarsError, sync_surge_bars
 from rs_ingest.surge_facts import SurgeFactsGatherer
 from rs_ingest.track_record import track_record_job
 from rs_ingest.universe import EVENING_STARTS_AT, UniverseSnapshotter
-from rs_observability import HealthTracker, QuietFailure, Source, SweepTally
+from rs_observability import (
+    HealthTracker,
+    QuietFailure,
+    Source,
+    SourceFailed,
+    SweepTally,
+)
 from rs_sources import ApeWisdomClient
-from rs_sources.earnings import SCAN_WEEKDAYS, EarningsLookup
+from rs_sources.earnings import EarningsLookup
 from rs_sources.edgar import EdgarClient
-from rs_sources.nasdaq import EarningsWarmError, NasdaqEarningsCalendar
+from rs_sources.nasdaq import NasdaqEarningsCalendar
 from rs_sources.schwab import SchwabAuthError, SchwabMarketData
 from rs_sources.symbol_directory import SymbolDirectory
 
@@ -57,6 +70,8 @@ class Dependencies:
     trip_token_gate: Callable[[str], Awaitable[None]]
     # Where each source's failures and recoveries become Ops pings.
     health: HealthTracker
+    # The pause between a failed Nasdaq day and its retry; tests replace it.
+    sleep: Callable[[float], Awaitable[None]] = asyncio.sleep
 
 
 def register_jobs(cron: CronTable, deps: Dependencies) -> None:
@@ -118,42 +133,47 @@ def register_jobs(cron: CronTable, deps: Dependencies) -> None:
             timeout=timedelta(hours=2, minutes=30),
         )
     )
-    # One calendar for the warm job and the poll's lookups, so they share a cache.
-    nasdaq = NasdaqEarningsCalendar(deps.http, deps.clock)
 
-    async def warm_earnings_calendar() -> None:
+    async def earnings_snapshot() -> None:
         try:
-            fetched = await nasdaq.warm(eastern_day(deps.clock.now()), SCAN_WEEKDAYS)
-        except EarningsWarmError as exc:
-            await finish_sweep(
-                deps.health, Source.NASDAQ, SweepTally(attempted=exc.attempted, failed=exc.failed), exc
+            report = await snapshot_earnings(
+                session_factory=deps.session_factory,
+                source=RetryingDays(NasdaqEarningsCalendar(deps.http, deps.clock), sleep=deps.sleep),
+                calendar=deps.calendar,
+                clock=deps.clock,
             )
-            raise QuietFailure(str(exc)) from exc
-        if fetched:  # a window that was still fresh made no request, so it says nothing
+        except EarningsSnapshotError as exc:
+            # The snapshot is whole or nothing, so a night that stores nothing is Nasdaq failing:
+            # a failure that repeats every night must reach Ops, not only the logs.
+            await deps.health.report_failed(Source.NASDAQ, exc.reason)
+            raise SourceFailed(Source.NASDAQ) from exc
+        if report is not None:  # a night with nothing due says nothing about Nasdaq
             await deps.health.report_ok(Source.NASDAQ)
 
     cron.register(
         Job(
-            "earnings_calendar_warm",
-            # Under the 6h cache TTL, so the window is refreshed before it lapses.
-            Every(120),
-            warm_earnings_calendar,
+            "earnings_snapshot",
+            # After the close and the after-hours reports; weekends and holidays find nothing to do.
+            Daily(SNAPSHOT_AT, EASTERN),
+            earnings_snapshot,
+            # A restart after the slot still takes the night's snapshot; before it, nothing is due.
             run_on_start=True,
-            # 30 days at 0.25s spacing plus latency; a hung endpoint must not hold the slot.
-            timeout=timedelta(minutes=10),
+            # About 70 days at 0.25s spacing plus latency; a day that fails ends the run after its
+            # retries, and a hung endpoint must not hold the slot.
+            timeout=timedelta(minutes=30),
         )
     )
-    poll = _popularity_poll(deps, nasdaq)
+    poll = _popularity_poll(deps)
     # Runs at startup too: a restart mid-boundary finishes that boundary's alerts.
     cron.register(
         Job("popularity_poll", Every(POLL_MINUTES), poll.run, run_on_start=True, timeout=timedelta(minutes=20))
     )
 
 
-def _popularity_poll(deps: Dependencies, nasdaq: NasdaqEarningsCalendar) -> PopularityPoll:
+def _popularity_poll(deps: Dependencies) -> PopularityPoll:
     edgar = EdgarClient(deps.http, deps.edgar_user_agent, deps.clock)
     earnings = EarningsLookup(
-        MonitoredEarningsCalendar(nasdaq, deps.health), MonitoredFilings(edgar, deps.health)
+        StoredEarningsCalendar(deps.session_factory, deps.calendar), MonitoredFilings(edgar, deps.health)
     )
     return PopularityPoll(
         source=MonitoredPopularitySource(ApeWisdomClient(deps.http), deps.health),
