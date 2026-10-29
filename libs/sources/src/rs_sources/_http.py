@@ -7,6 +7,13 @@ import httpx
 
 from rs_sources.errors import SourceError
 
+# The bot-filtered public endpoints (Nasdaq's earnings calendar, Cboe's download) refuse a
+# bare client; one browser-like identity serves them all.
+BROWSER_USER_AGENT = (
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+    "(KHTML, like Gecko) Chrome/96.0.4664.45 Safari/537.36"
+)
+
 
 async def get_json(
     http: httpx.AsyncClient,

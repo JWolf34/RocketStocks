@@ -18,12 +18,7 @@ def _header_from_row(row: UniverseSnapshotRow) -> UniverseHeader:
     return UniverseHeader(
         snapshot_date=row.snapshot_date,
         as_of=row.as_of.astimezone(UTC),
-        counts=UniverseCounts(
-            nasdaq_listed=row.nasdaq_listed,
-            other_listed=row.other_listed,
-            options_symbols=row.options_symbols,
-            cboe_symbols=row.cboe_symbols,
-        ),
+        counts=UniverseCounts.model_validate(row, from_attributes=True),
         optionable_carried=row.optionable_carried,
     )
 
@@ -81,19 +76,7 @@ class UniverseRepository:
             .where(UniverseListingRow.snapshot_date == header.snapshot_date)
             .order_by(UniverseListingRow.symbol)
         )
-        listings = tuple(
-            UniverseListing(
-                symbol=row.symbol,
-                security_name=row.security_name,
-                exchange=row.exchange,
-                etf=row.etf,
-                financial_status=row.financial_status,
-                cqs_symbol=row.cqs_symbol,
-                nasdaq_symbol=row.nasdaq_symbol,
-                optionable=row.optionable,
-            )
-            for row in rows
-        )
+        listings = tuple(UniverseListing.model_validate(row, from_attributes=True) for row in rows)
         return UniverseSnapshot(**header.model_dump(), listings=listings)
 
     async def optionable_symbols(self, day: date) -> set[str]:
