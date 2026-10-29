@@ -3,7 +3,7 @@ Schwab token gate, the heartbeat and graceful shutdown. Time is virtual - the
 rig's sleep advances the clock - so hours of schedule run in milliseconds."""
 
 import asyncio
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime, time, timedelta
 from zoneinfo import ZoneInfo
 
@@ -45,6 +45,8 @@ class Rig:
         for collector in self.metrics.collectors():
             self.registry.register(collector)
         self.token_updated_at: datetime | None = None
+        self.freshness_error: Exception | None = None
+        self.during_read: Callable[[], Awaitable[None]] | None = None  # runs once, inside the next read
         self.renewals = 0
         self.renewal_error: Exception | None = None
         self.gate = TokenGate(self, self._renewed, self.clock, self.metrics)
@@ -53,7 +55,13 @@ class Rig:
         self._timeline: list[tuple[datetime, Callable[[], None]]] = []
 
     async def updated_at(self) -> datetime | None:
-        return self.token_updated_at
+        if self.freshness_error is not None:
+            raise self.freshness_error
+        stamp = self.token_updated_at
+        if self.during_read is not None:
+            hook, self.during_read = self.during_read, None
+            await hook()
+        return stamp
 
     async def _renewed(self) -> None:
         if self.renewal_error is not None:
@@ -473,7 +481,7 @@ class TestTokenGate:
         poll = Recorder(rig.clock)
         rig.cron.register(Job("bars", Every(30), schwab, needs_schwab=True))
         rig.cron.register(Job("poll", Every(30), poll))
-        rig.token_updated_at = at(12, 45)  # older than the 13:00 failure: not a renewal
+        rig.token_updated_at = at(12, 45)  # the same token stays stored: not a renewal
         rig.build()
 
         await rig.run_until(at(14, 1))
@@ -589,10 +597,81 @@ class TestTokenGate:
         assert rig.gate.dead
         assert sneaky.started == [at(12, 30)]  # not paused by the gate, so not re-queued while dead
 
+    async def test_the_gate_compares_token_ages_in_the_database_clock_not_the_daemons(self, rig, notices):
+        schwab = Recorder(rig.clock, [SchwabAuthError("rejected")] + [None] * 10)
+        rig.cron.register(Job("bars", Every(30), schwab, needs_schwab=True))
+        rig.token_updated_at = at(11, 0)  # the database's clock runs behind the daemon's
+        rig.build()
+        # Written after the old token but stamped before the failure on the daemon's clock.
+        rig.when(at(12, 40), lambda: setattr(rig, "token_updated_at", at(12, 20)))
+
+        await rig.run_until(at(12, 50))
+
+        assert not rig.gate.dead
+        assert rig.renewals == 1
+
+    async def test_the_same_token_still_stored_keeps_the_gate_closed(self, rig, notices):
+        schwab = Recorder(rig.clock, [SchwabAuthError("rejected")] + [None] * 10)
+        rig.cron.register(Job("bars", Every(30), schwab, needs_schwab=True))
+        rig.token_updated_at = at(13, 0)  # stamped after the failure on the daemon's clock
+        rig.build()
+
+        await rig.run_until(at(14, 0))
+
+        assert rig.gate.dead
+        assert rig.renewals == 0
+        assert len(schwab.started) == 1
+
+    async def test_the_first_readable_token_age_reopens_a_gate_tripped_while_it_was_unreadable(self, rig, notices):
+        schwab = Recorder(rig.clock, [SchwabAuthError("rejected")] + [None] * 10)
+        rig.cron.register(Job("bars", Every(30), schwab, needs_schwab=True))
+        rig.token_updated_at = at(11, 0)
+        rig.freshness_error = RuntimeError("database unreachable")
+        rig.build()
+        # A sign-in during the outage is indistinguishable from the old token, so any stamp reopens.
+        rig.when(at(12, 40), lambda: setattr(rig, "freshness_error", None))
+
+        await rig.run_until(at(12, 55))
+
+        assert not rig.gate.dead
+        assert rig.renewals == 1
+        assert at(12, 40) <= schwab.started[1] <= at(12, 42)
+
+    async def test_a_renewal_during_the_trips_token_read_leaves_no_stale_baseline(self, rig, notices):
+        rig.token_updated_at = at(11, 0)
+        rig.build()
+        rig.during_read = rig.gate.renewed  # /setup schwab lands while the trip reads the stored token
+        await rig.gate.trip("first")
+        assert not rig.gate.dead
+        assert rig.renewals == 1
+
+        # The next trip cannot read the stamp; had the first read's 11:00 been kept as its baseline,
+        # an older stamp would not reopen the gate.
+        rig.freshness_error = RuntimeError("database unreachable")
+        await rig.gate.trip("second")
+        rig.freshness_error = None
+        rig.token_updated_at = at(10, 0)
+        await rig.gate.poll()
+
+        assert not rig.gate.dead
+        assert rig.renewals == 2
+
+    async def test_a_poll_during_the_trips_token_read_does_not_reopen_the_gate(self, rig, notices):
+        rig.token_updated_at = at(11, 0)
+        rig.build()
+        rig.during_read = rig.gate.poll  # the poll lands while the trip is still reading its baseline
+
+        await rig.gate.trip("rejected")
+
+        assert rig.gate.dead
+        assert rig.renewals == 0
+        await rig.gate.poll()
+        assert rig.gate.dead  # the same token is still stored
+
     async def test_a_failed_client_rebuild_keeps_the_gate_closed_and_retries(self, rig, notices):
         schwab = Recorder(rig.clock, [SchwabAuthError("rejected")] + [None] * 10)
         rig.cron.register(Job("bars", Every(30), schwab, needs_schwab=True))
-        rig.token_updated_at = at(12, 40)
+        rig.when(at(12, 40), lambda: setattr(rig, "token_updated_at", at(12, 40)))
         rig.renewal_error = RuntimeError("token row unreadable")
         rig.build()
         rig.when(at(13, 10), lambda: setattr(rig, "renewal_error", None))
