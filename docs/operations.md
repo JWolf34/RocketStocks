@@ -460,18 +460,31 @@ psql -c "SELECT count(*) AS asked FROM bar_request"
 ### The Universe snapshot
 
 The `universe_snapshot` job stores the Universe once per trading session: every non-test listing of Nasdaq Trader's `nasdaqlisted.txt` and `otherlisted.txt`, marked optionable when its symbol is an underlying in `options.txt` or a symbol in Cboe's options directory (an exact match).
-It runs each evening at 18:05 ET and at startup, takes the last session whose evening (18:05 ET) has started, and does nothing when that session already has its snapshot, so weekends, holidays and a restart before 18:05 ET are no-ops.
+The job fires every calendar day at 18:05 ET and at startup.
+Each run takes the last session whose evening (18:05 ET) has started and does nothing when that session already has its snapshot.
+So a restart before 18:05 ET finds the previous evening's snapshot stored and does nothing, and a Saturday 18:05 run retries a Friday that was missed.
+
 The files are re-stamped through the day, so a file belongs to a session only when its File Creation Time is after the session's close (an early close counts) and before the next session's open.
+Cboe's directory has no stamp, so a stale Cboe directory counts as that day's.
 The job keeps retrying every 15 minutes whatever it has not yet accepted: the two listing files, then `options.txt` and the Cboe directory.
 A source that is stale, unreadable (a 503, a cut download) or looks truncated is retried like any other.
-A file with under 90 percent of the previous snapshot's entries is treated as truncated.
-A real change that large keeps being rejected until someone looks, which is what the ping asks for.
 
-At 20:00 ET it gives up.
-If the listing files never qualified, the night uses the previous snapshot, the run is logged as failed, and Ops gets `Nasdaq Trader is failing (listing files: ...)`.
+A cut download is already caught by its missing footer, so the size guard only fires on a complete but much smaller file: one with under 90 percent of the previous snapshot's entries is treated as truncated.
+If Ops says a file looks truncated and the file is genuinely that much smaller, take the snapshot by hand with the guard off, the same evening or before the next open (the stamp rule still applies):
+```
+$COMPOSE run --rm --no-deps ingest python -m rs_ingest.tools.universe_snapshot --accept-shrink
+```
+It runs the nightly code for the current session, refuses a stale or cut file as usual, does nothing if the session already has its snapshot, and exits 0 once the snapshot is stored.
+Between 18:05 and 20:00 ET it waits and retries every 15 minutes until the files qualify or 20:00, like the job; after 20:00 it makes one attempt and exits 1 if the night still has no snapshot.
+
+At 20:00 ET the job gives up.
+If the listing files never qualified, the night uses the previous snapshot, the run is logged as failed, and Ops gets `Nasdaq Trader is failing (<file> ...)`.
 If only an optionable source never qualified, the snapshot is taken with the names the previous snapshot called optionable plus whatever the working source says, so a bad source never turns optionable names off.
-`universe_snapshot.optionable_carried` is true for such a night, and Ops gets `Nasdaq Trader is failing (...)` for `options.txt` or `Cboe is failing (...)`; Nasdaq Trader and Cboe ping separately from the Nasdaq earnings calendar.
-A run after 20:00 ET (a restart) makes one attempt without waiting, and files stamped after the next session opened are not the missed session's, so the night stays on the previous snapshot.
+`universe_snapshot.optionable_carried` is true for such a night, and Ops gets `Nasdaq options list is failing (...)` for `options.txt` or `Cboe is failing (...)` for Cboe.
+Nasdaq Trader, the Nasdaq options list and Cboe each ping and recover on their own, apart from the Nasdaq earnings calendar.
+A run that starts after the give-up (a restart the next afternoon, or the first deploy) makes one attempt without waiting, and a failure pings Ops like any other night's, so a source that is down when the box comes back is not hidden.
+The one case that pings nothing is a file already stamped after the next session opened: it is a later day's file, so none of the missed night can be fetched any more, and the night stays on the previous snapshot (or carries that source's names).
+When no snapshot exists at all the run fails with `no Universe snapshot exists yet`, and a later pass skips the night.
 
 Read the result and the night's counts:
 ```
@@ -494,7 +507,7 @@ The snapshot is about 13,000 rows a day, a few hundred MB a year; it is derived 
 ### Ops pings to expect
 
 A source pings once when it starts failing and once when it clears; repeated failures in between say nothing.
-The sources are ApeWisdom, Schwab, Nasdaq (the earnings calendar), Nasdaq Trader (the symbol files), Cboe (its options directory), EDGAR and Discord.
+The sources are ApeWisdom, Schwab, Nasdaq (the earnings calendar), Nasdaq Trader (the listing files), the Nasdaq options list (`options.txt`), Cboe (its options directory), EDGAR and Discord.
 A ping reads `<source> is failing (<reason>). See the <service> logs.` and later `<source> recovered.`.
 The reason is an exception type or a count, never vendor text; the logs have the detail.
 
@@ -512,7 +525,7 @@ Which pings to expect, by cause:
   The Alert still posts, with the missing facts labelled.
 - `Nasdaq is failing ...` and `EDGAR is failing ...`: the earnings calendar or the filings lookup failed.
   The next-earnings fact falls back to the EDGAR estimate, then to missing.
-- `Nasdaq Trader is failing ...` and `Cboe is failing ...`: the Universe snapshot could not use the listing files or `options.txt` (Nasdaq Trader), or the Cboe directory.
+- `Nasdaq Trader is failing ...`, `Nasdaq options list is failing ...` and `Cboe is failing ...`: the Universe snapshot could not use the listing files, `options.txt` or the Cboe directory.
   See "The Universe snapshot" for what the night then uses.
 - `Discord is failing ...`: the bot's sends or history reads failed for a reason other than one Alert (a rejected embed is one Alert).
   Undelivered Alerts stay queued and the sweep retries them; one older than an hour when Discord returns is recorded as stale and not posted.

@@ -16,17 +16,13 @@ import httpx
 from pydantic import BaseModel, ConfigDict
 
 from rs_domain import Clock
-from rs_sources._http import get_json
+from rs_sources._http import BROWSER_USER_AGENT, get_json
 from rs_sources._ratelimit import MinInterval
 from rs_sources.errors import SourceError
 
 logger = logging.getLogger(__name__)
 
 EARNINGS_URL = "https://api.nasdaq.com/api/calendar/earnings"
-BROWSER_USER_AGENT = (
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
-    "(KHTML, like Gecko) Chrome/96.0.4664.45 Safari/537.36"
-)
 
 
 class EarningsTime(StrEnum):

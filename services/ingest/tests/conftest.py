@@ -1,12 +1,15 @@
 """DB-gated fixtures - shared via rs_persistence.testing (the 5499 pattern;
 see that module for target resolution and gating semantics)."""
 
-from collections.abc import Iterator
+from collections.abc import Awaitable, Callable, Iterator
+from datetime import UTC, date, datetime, time
 
 import pytest
 from sqlalchemy.exc import OperationalError
 
+from rs_domain import EASTERN, UniverseCounts, UniverseListing, UniverseSnapshot
 from rs_observability.testing import captured_ops_pings
+from rs_persistence import UniverseRepository
 from rs_persistence.testing import migrated_db_url, session_factory  # noqa: F401
 
 
@@ -70,3 +73,40 @@ def make_flaky(session_factory):  # noqa: F811 - the fixture imported above
         return FlakyFactory(session_factory, failures, error or dropped)
 
     return build
+
+
+@pytest.fixture
+def seed_previous(session_factory) -> Callable[..., Awaitable[None]]:  # noqa: F811 - the fixture imported above
+    """Store the snapshot before: AAA and OLD optionable, source counts 2 / 2 / 2 / 2 unless overridden.
+
+    Call it as `await seed_previous(day=..., nasdaq_listed=..., ...)`; `day` defaults to Friday 2026-10-23.
+    """
+
+    async def seed(day: date = date(2026, 10, 23), **counts: int | None) -> None:
+        listings = tuple(
+            UniverseListing(
+                symbol=symbol,
+                security_name=symbol,
+                exchange="Q",
+                etf=False,
+                financial_status="N",
+                cqs_symbol=None,
+                nasdaq_symbol=None,
+                optionable=symbol in {"AAA", "OLD"},
+            )
+            for symbol in ("AAA", "BBB", "CCC", "DDD", "OLD")
+        )
+        defaults = {"nasdaq_listed": 2, "other_listed": 2, "options_symbols": 2, "cboe_symbols": 2}
+        async with session_factory() as s:
+            await UniverseRepository(s).save(
+                UniverseSnapshot(
+                    snapshot_date=day,
+                    as_of=datetime.combine(day, time(18, 1), tzinfo=EASTERN).astimezone(UTC),
+                    counts=UniverseCounts(**(defaults | counts)),
+                    optionable_carried=False,
+                    listings=listings,
+                )
+            )
+            await s.commit()
+
+    return seed
