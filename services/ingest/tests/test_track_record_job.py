@@ -46,7 +46,7 @@ def test_registered_after_the_bars_job_without_schwab_and_runs_at_startup():
     register_jobs(cron, deps)
 
     [job] = [j for j in cron if j.name == JOB_NAME]
-    [bars] = [j for j in cron if j.name == "surge_bars"]
+    [bars] = [j for j in cron if j.name == "daily_bars"]
 
     assert job.needs_schwab is False
     assert job.run_on_start is True
