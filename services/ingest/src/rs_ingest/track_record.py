@@ -51,7 +51,8 @@ async def run_outcomes(
 def track_record_job(db_url: str) -> Job:
     return Job(
         JOB_NAME,
-        # After the daily bars job (17:30 Eastern), whose steady-state run takes minutes.
+        # The daily bars job (17:30 Eastern) fetches SPY and the Triggered stocks, the only bars this
+        # job reads, before the rest of the Universe, so it need not wait for the whole pass.
         Daily(time(20, 0), EASTERN),
         lambda: run_outcomes(db_url),
         needs_schwab=False,

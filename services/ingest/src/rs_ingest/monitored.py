@@ -13,8 +13,8 @@ own Ops ping through the token gate.
 from collections.abc import Awaitable
 from datetime import date, datetime
 
+from rs_ingest.daily_bars import DailyHistorySource
 from rs_ingest.popularity_poll import PopularitySource
-from rs_ingest.surge_bars import DailyHistorySource
 from rs_ingest.surge_facts import QuoteSource
 from rs_observability import HealthTracker, Source, SourceFailed, SweepTally
 from rs_sources import ApeWisdomError, ApeWisdomRow
