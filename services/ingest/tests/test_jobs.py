@@ -89,7 +89,7 @@ async def test_daily_bars_runs_daily_after_the_close_and_once_at_startup(session
 
     assert job.schedule == Daily(time(17, 30), EASTERN)
     assert job.needs_schwab and job.run_on_start
-    assert job.time_limit == timedelta(hours=3)
+    assert job.time_limit == timedelta(hours=11)
 
 
 async def test_the_poll_is_a_non_schwab_half_hourly_job_that_catches_up_at_start(session_factory):
