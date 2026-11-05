@@ -66,14 +66,16 @@ async def test_the_universe_snapshot_runs_each_evening_and_at_startup_without_sc
     assert job.time_limit >= timedelta(minutes=115) + timedelta(minutes=15)
 
 
-async def test_a_night_that_falls_back_fails_quietly_because_ops_was_already_pinged(session_factory, notices):
+async def test_a_night_that_falls_back_pings_ops_and_fails_the_run_quietly_naming_a_missing_snapshot(
+    session_factory, notices
+):
     host = FakeDirectoryHost()
     host.statuses["nasdaqlisted.txt"] = 503
 
-    with pytest.raises(QuietFailure):
+    with pytest.raises(QuietFailure, match="no Universe snapshot exists yet"):
         await _job(session_factory, host).run()
 
-    assert len(notices) == 1 and notices[0].startswith("Nasdaq Trader is failing")
+    assert notices == ["Nasdaq Trader is failing (nasdaqlisted.txt could not be read). See the ingest logs."]
 
 
 async def test_a_fresh_snapshot_ends_the_run_normally_and_stores_it(session_factory, notices):

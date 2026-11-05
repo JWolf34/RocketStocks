@@ -11,6 +11,7 @@ import logging
 from collections.abc import Awaitable, Callable, Coroutine, Sequence
 from dataclasses import dataclass
 from datetime import datetime, timedelta
+from enum import Enum
 from typing import Any, Protocol
 
 from rs_domain import Clock
@@ -30,13 +31,24 @@ class TokenFreshness(Protocol):
     async def updated_at(self) -> datetime | None: ...
 
 
+class _Pending(Enum):
+    """What a gate's baseline holds before it has the stored token's updated_at."""
+
+    UNREAD = "could not be read when the gate tripped"
+    READING = "the trip is reading it right now"
+
+
 class TokenGate:
     """Shared "Schwab token is dead" state.
 
     A SchwabAuthError from any job trips it; needs_schwab jobs are skipped
-    while it is tripped. It clears when the stored token is newer than the
-    failure (polled) or when `renewed()` is called directly, after
-    `on_renewed` has rebuilt whatever holds the old token.
+    while it is tripped. It clears when the stored token's `updated_at` moves
+    past the one stored when it tripped (polled; both are the database's
+    clock, never compared with this process's) or when `renewed()` is called
+    directly, after `on_renewed` has rebuilt whatever holds the old token.
+    When that stamp could not be read at the trip, the first readable one
+    clears the gate: a gate stuck closed after a real sign-in costs more than
+    one wasted Schwab run, which fails and trips it again with a readable stamp.
     """
 
     def __init__(
@@ -50,51 +62,75 @@ class TokenGate:
         self._on_renewed = on_renewed
         self._clock = clock
         self._metrics = metrics
-        self._dead_since: datetime | None = None
+        self._dead = False
         self._renewed_at: datetime | None = None
+        # The stored token's updated_at when the gate tripped: None when no token was stored.
+        self._baseline: datetime | None | _Pending = _Pending.UNREAD
+        # Counts renewals, so a read that began before one is not applied after it.
+        self._epoch = 0
 
     @property
     def dead(self) -> bool:
-        return self._dead_since is not None
+        return self._dead
 
     async def trip(self, reason: str, *, run_started: datetime | None = None) -> None:
         """Close the gate. `run_started` is when the failing run began: a run that began before the
         last renewal held the old client, so its error says nothing about the new token."""
-        if self._dead_since is not None:
+        if self._dead:
             return
         if run_started is not None and self._renewed_at is not None and self._renewed_at > run_started:
             logger.warning("Schwab auth error from a run begun before the last renewal - ignoring it: %s", reason)
             return
-        self._dead_since = self._clock.now()
+        self._dead = True
+        self._baseline = _Pending.READING  # set before any await, so no poll sees the previous trip's state
         self._metrics.token_dead.set(1)
         logger.error("Schwab token dead - pausing Schwab jobs: %s", reason)
+        await self._record_baseline()
         await notify_ops(
             f"Schwab token is dead ({reason}). Schwab jobs are paused and other jobs keep "
             "running. Run /setup schwab in Discord to resume.",
             key="schwab-token-dead",
         )
 
-    async def poll(self) -> None:
-        dead_since = self._dead_since
-        if dead_since is None:
-            return
+    async def _read_stored_token(self) -> tuple[bool, datetime | None]:
+        """(read ok, the stored token's updated_at), or (False, None) when it could not be read."""
         try:
-            updated_at = await self._freshness.updated_at()
+            return True, await self._freshness.updated_at()
         except Exception:
             logger.exception("could not read the Schwab token age; gate stays closed")
-            return
-        if updated_at is not None and updated_at > dead_since:
+            return False, None
+
+    async def _record_baseline(self) -> None:
+        epoch = self._epoch
+        ok, updated_at = await self._read_stored_token()
+        if epoch == self._epoch:  # not renewed while reading: the gate is still this trip's
+            self._baseline = updated_at if ok else _Pending.UNREAD
+
+    async def _stored_token_is_newer(self) -> bool:
+        epoch = self._epoch
+        ok, updated_at = await self._read_stored_token()
+        if not ok or updated_at is None or epoch != self._epoch:
+            return False
+        baseline = self._baseline
+        if baseline is _Pending.READING:
+            return False
+        return baseline is _Pending.UNREAD or baseline is None or updated_at > baseline
+
+    async def poll(self) -> None:
+        if self._dead and await self._stored_token_is_newer():
             await self.renewed()
 
     async def renewed(self) -> None:
-        if self._dead_since is None:
+        if not self._dead:
             return
         try:
             await self._on_renewed()
         except Exception:
             logger.exception("could not rebuild the Schwab client from the new token; gate stays closed")
             return
-        self._dead_since = None
+        self._dead = False
+        self._baseline = _Pending.UNREAD
+        self._epoch += 1
         self._renewed_at = self._clock.now()
         self._metrics.token_dead.set(0)
         logger.info("Schwab token renewed - resuming Schwab jobs")

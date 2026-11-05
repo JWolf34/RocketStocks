@@ -29,6 +29,7 @@ import httpx
 from pydantic import BaseModel, ConfigDict
 
 from rs_domain import EASTERN, UtcDatetime
+from rs_sources._http import BROWSER_USER_AGENT
 from rs_sources.errors import SourceError
 
 logger = logging.getLogger(__name__)
@@ -36,10 +37,6 @@ logger = logging.getLogger(__name__)
 NASDAQ_TRADER_URL = "https://www.nasdaqtrader.com/dynamic/SymDir/"
 # The direct download; the page's `?download=csv` link redirects twice before reaching it.
 CBOE_OPTIONS_URL = "https://www.cboe.com/us/options/symboldir/equity-index-options/download/"
-CBOE_USER_AGENT = (
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
-    "(KHTML, like Gecko) Chrome/96.0.4664.45 Safari/537.36"
-)
 # nasdaqlisted.txt carries no exchange column; every row is a Nasdaq listing (the tape's code for Nasdaq).
 NASDAQ_EXCHANGE: Final = "Q"
 
@@ -196,7 +193,7 @@ class SymbolDirectory:
 
     async def cboe_underlyings(self) -> frozenset[str]:
         """The symbols of Cboe's equity and index options directory (class shares with a dot)."""
-        headers = {"User-Agent": CBOE_USER_AGENT}
+        headers = {"User-Agent": BROWSER_USER_AGENT}
         lines = [
             line
             async for batch in _line_batches(self._http, self._cboe_options_url, headers)

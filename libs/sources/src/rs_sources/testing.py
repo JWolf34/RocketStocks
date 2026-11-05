@@ -3,8 +3,7 @@ host that serves them through httpx.MockTransport.
 
 The rows are hand-written shapes, never vendor data: pipe-delimited with a header, CRLF
 line ends and the `File Creation Time` footer for Nasdaq Trader's files, a quoted CSV with a
-padded header for Cboe's. Test-support only: pytest is a dev dependency, so runtime code
-must never import this module.
+padded header for Cboe's. Test-support only: it ships in the package, but only tests import it.
 """
 
 from collections.abc import AsyncIterator, Iterable, Sequence
@@ -65,7 +64,7 @@ def options_file(underlyings: Iterable[str], stamp: datetime, *, series: int = 2
 
 
 def cboe_file(symbols: Sequence[str]) -> str:
-    rows = [f'"{symbol} COMPANY","{symbol}","Citadel Securities LLC","8/1","-"' for symbol in symbols]
+    rows = [f'"{symbol} COMPANY","{symbol}","Example Market Maker LLC","8/1","-"' for symbol in symbols]
     return "\n".join([CBOE_HEADER, *rows]) + "\n"
 
 

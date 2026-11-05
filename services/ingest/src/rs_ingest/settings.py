@@ -10,6 +10,8 @@ in dev; a missing required variable is a loud
 exit-1, never a silent default.
 """
 
+from datetime import time
+
 from pydantic import Field, SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -38,6 +40,8 @@ class IngestSettings(BaseSettings):
     auth_poll_seconds: float = Field(15.0, gt=0, validation_alias="RS_INGEST_AUTH_POLL_SECONDS")
     # Shared by every Schwab job through one limiter; the default sits under Schwab's per-minute cap.
     schwab_calls_per_minute: int = Field(100, ge=1, validation_alias="RS_INGEST_SCHWAB_CALLS_PER_MINUTE")
+    # Central clock time the nightly daily bars pass stops at, so it never runs into the morning pass.
+    daily_bars_stop_at: time = Field(time(3, 0), validation_alias="RS_INGEST_DAILY_BARS_STOP_AT")
     # The alert NOTIFY channel is intentionally NOT here: it is a fixed wire
     # contract shared with the bot, not a per-deployment tunable -
     # rs_persistence.NOTIFY_CHANNEL is its single source of truth.

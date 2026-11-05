@@ -75,6 +75,7 @@ async def run_daemon(settings: IngestSettings) -> int:
                 edgar_user_agent=settings.rs_edgar_user_agent,
                 trip_token_gate=gate.trip,
                 health=health,
+                daily_bars_stop_at=settings.daily_bars_stop_at,
             ),
         )
         daemon = Daemon(

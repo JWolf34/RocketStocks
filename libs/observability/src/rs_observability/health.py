@@ -31,8 +31,10 @@ class Source(StrEnum):
     APEWISDOM = "ApeWisdom"
     SCHWAB = "Schwab"
     NASDAQ = "Nasdaq"
-    # The symbol files, on another host than the earnings API: each fails and recovers on its own.
+    # The symbol files, on another host than the earnings API: each fails and recovers on its own,
+    # and the listing files apart from `options.txt` (one failing night must not hide the other's).
     NASDAQ_TRADER = "Nasdaq Trader"
+    NASDAQ_OPTIONS = "Nasdaq options list"
     CBOE = "Cboe"
     EDGAR = "EDGAR"
     DISCORD = "Discord"
