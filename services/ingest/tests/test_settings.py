@@ -1,3 +1,5 @@
+from datetime import time
+
 import pytest
 from pydantic import ValidationError
 
@@ -32,6 +34,14 @@ def test_supervision_defaults_and_env_overrides(monkeypatch):
     monkeypatch.setenv("RS_INGEST_SHUTDOWN_GRACE_SECONDS", "10")
     settings = IngestSettings(_env_file=None)
     assert settings.shutdown_grace_seconds == 10.0
+
+
+def test_daily_bars_stop_time_defaults_to_3am_and_reads_the_environment(monkeypatch):
+    _set_required(monkeypatch)
+    assert IngestSettings(_env_file=None).daily_bars_stop_at == time(3, 0)
+
+    monkeypatch.setenv("RS_INGEST_DAILY_BARS_STOP_AT", "04:30")
+    assert IngestSettings(_env_file=None).daily_bars_stop_at == time(4, 30)
 
 
 def test_secret_not_leaked_in_repr(monkeypatch):

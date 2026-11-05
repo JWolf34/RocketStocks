@@ -213,7 +213,7 @@ The importer was v2 code, removed after the import; it lives in the repository h
 Done when a real Popularity Alert posts and carries a Track record.
 
 1. Leave the stack running with a valid token, Popularity history and bars loaded.
-   Once the daily-bars job has caught up (its log line `surge_bars through ...` with nothing failed), measure the Track record once rather than waiting for the nightly job at 20:00 Eastern:
+   Once the daily-bars job has caught up (its log line `daily_bars through ...` with nothing failed; SPY and the Triggered stocks come first, so the Track record does not wait for the rest of the Universe), measure the Track record once rather than waiting for the nightly job at 20:00 Eastern:
    ```
    $COMPOSE exec ingest python -m rs_ingest.outcomes
    ```
@@ -276,7 +276,7 @@ Goal: Schwab jobs pause, one Ops ping goes out, the Popularity poll continues, a
    $COMPOSE restart ingest
    ```
    The restart makes ingest reload the broken token; the zero `expires_at` forces a refresh on the first Schwab call.
-   Deleting SPY's newest bar guarantees that call: the surge-bars job runs at startup but calls Schwab only for missing bars, and it refetches the deleted bar once the token is back.
+   Deleting SPY's newest bar guarantees that call: the daily-bars job runs at startup but calls Schwab only for missing bars, and it refetches the deleted bar once the token is back.
 3. Wait for the Schwab call, which comes within a minute of the restart.
    Expect, in `$COMPOSE logs ingest`: `Schwab token dead - pausing Schwab jobs`.
    Expect in the ops channel: exactly one Ops ping, "Schwab token is dead ...".
@@ -284,7 +284,7 @@ Goal: Schwab jobs pause, one Ops ping goes out, the Popularity poll continues, a
 4. Confirm polling continues: a new `popularity_snapshot` boundary appears within 30 minutes.
 5. Recover: run `/setup schwab` (see "Schwab sign-in").
    Expect the log line `Schwab token renewed - resuming Schwab jobs`, one "renewed" Ops ping and `schwab_token_dead 0`.
-6. Confirm the Schwab jobs run once right after the renewal (`cron_job_runs{outcome="success"}` rises for `surge_bars`, which refetches the deleted SPY bar).
+6. Confirm the Schwab jobs run once right after the renewal (`cron_job_runs{outcome="success"}` rises for `daily_bars`, which refetches the deleted SPY bar).
    The run the dead token killed (`auth_error`) is owed again, and a slot that comes due while the token is dead is deferred, not lost; the killed run and any deferred slots together run once.
 
 ### Ingest kill mid-poll
@@ -427,33 +427,39 @@ The constants it recommends changing live in `services/ingest/src/rs_ingest/sele
 
 ### Daily bars
 
-The `surge_bars` job keeps daily bars for SPY and for every stock the Popularity Trigger ever hit, found by replaying the Trigger over all stored Popularity.
-Each stock gets about 270 sessions before its first hit (a year for its typical move, plus margin) and every session since, up to the last settled one.
+The `daily_bars` job keeps daily bars for every listing of the latest Universe.
+SPY goes first, then every stock the Popularity Trigger ever hit (found by replaying the Trigger over all stored Popularity, and kept up even after it leaves the Universe), then the rest of the Universe in symbol order.
+A symbol with no bars asks Schwab from 1990-01-01 and gets what it has, about 30 years for an old listing; a later night fetches only the sessions since the last settled one.
 It runs at startup and each weekday 90 minutes after the close, and a rerun with nothing missing makes no Schwab call.
-It logs `surge_bars: replaying the Popularity Trigger to find the stocks to track` when it starts.
+It logs `daily_bars: replaying the Popularity Trigger to find the stocks to fetch first` when it starts.
 The replay can take several minutes on a large Popularity history, so the next progress line may take that long to appear.
 
-A stock whose stored history starts after the start it needs is extended back once.
-`bar_request` records the earliest start already asked of Schwab per symbol, so a listing younger than the lookback is asked once and not every night.
+Bars of a listing that has left the Universe are kept; the job just stops asking for them.
+A stock whose stored history starts after 1990 is extended back once.
+`bar_request` records the earliest start already asked of Schwab per symbol, so a listing younger than the seed is asked once and not every night.
+Each symbol is fetched, written and committed on its own, so no write decompresses more than that symbol's history (Timescale aborts a transaction that decompresses over 100,000 rows).
+The price-history spelling of a Universe symbol is one function, `price_history_symbol` in `services/ingest/src/rs_ingest/daily_bars.py`; bars are always stored under the Universe's own symbol.
+
+The pass stops itself at `RS_INGEST_DAILY_BARS_STOP_AT` (default 03:00 America/Chicago), before the morning pass starts, and logs `stop time ... reached with N of M symbols left`.
+The next evening's run skips every symbol that is already current and resumes with the rest, so the first seed takes as many nights as the Universe needs at the shared call rate (about 2 hours per 13,000 calls at 100 a minute, more when other Schwab jobs share the budget).
+The job's timeout is 11 hours, a backstop just past the stop time.
 
 Schwab's daily history is split-adjusted as of the moment it is fetched, so bars are stored with `adjusted` true.
 A split after bars were stored leaves them at the old scale beside new bars at the new scale, and reverse splits are common among Popularity stocks.
 So a tail fetch starts 3 sessions before the newest stored bar, on the same call, and compares the closes of the overlap with the stored ones.
-If any differs by more than 1 percent, the stock's stored bars are deleted and replaced by a fresh full fetch from its needed start, in one transaction, and the job logs `stored bars no longer match Schwab` with the stock and the first disagreement.
+If any differs by more than 1 percent, the stock's stored bars are deleted and replaced by a fresh full fetch from 1990, in one transaction, and the job logs `stored bars no longer match Schwab` with the stock and the first disagreement.
 If that fetch fails the stored bars stay as they were and the next run tries again; an empty answer (a delisted or halted stock) never replaces or deletes anything.
 A stock already at the last settled session is not checked until the next session adds a bar, so a split can sit unrepaired for up to a day, and in that window the Track record job's split guard does not cover it, because its bars are marked adjusted.
-An answer that lacks every overlap session (a halted stock) cannot be compared, so its new bars are stored, the job logs `storing the new bars unverified` with the stored and answered dates, and the run summary counts it in `N unverified`; nothing is refetched for it.
+An answer that shares no session with the stored bars is a ticker reused by another company (or a stock halted for the whole overlap), and replaces the stored history the same way: the job logs `no session in common with the stored bars` and the run summary counts it in `N replaced (reused ticker)`.
 Count repairs in the run summary (`N repaired`):
 ```
-$COMPOSE logs ingest | grep "surge_bars through"
+$COMPOSE logs ingest | grep "daily_bars through"
 ```
 
-The first run on a database that already holds Popularity history, or after upgrading from a version with a shorter lookback, makes one call per Popularity-hit stock at the shared 100 calls a minute (thousands of stocks, under an hour per thousand), and the job's timeout is 3 hours.
-Progress logs every 100 symbols (`surge_bars: N of M symbols done`).
-If the run stops (timeout, a 429, a restart), the next run resumes where it left off, because each symbol's bars and request are committed together.
+If the run stops (the stop time, a 429, a restart), the next run resumes where it left off, because each symbol's bars and request are committed together.
 Watch it with:
 ```
-$COMPOSE logs -f ingest | grep surge_bars
+$COMPOSE logs -f ingest | grep daily_bars
 psql -c "SELECT count(*) AS asked FROM bar_request"
 ```
 

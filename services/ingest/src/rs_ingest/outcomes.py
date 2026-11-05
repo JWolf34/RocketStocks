@@ -53,12 +53,8 @@ from rs_domain import (
     TradingCalendar,
     eastern_day,
 )
+from rs_ingest.daily_bars import BENCHMARK, last_settled_session
 from rs_ingest.replay import replayed_hits
-from rs_ingest.surge_bars import (
-    BENCHMARK,
-    LOOKBACK_CALENDAR_DAYS,
-    last_settled_session,
-)
 from rs_observability import configure_logging
 from rs_persistence import (
     AlertRepository,
@@ -73,6 +69,9 @@ from rs_sources import ExchangeCalendar
 logger = logging.getLogger(__name__)
 
 DSN_VARIABLE = "RS_DB_URL"
+# Calendar days that always hold the 250 sessions a case's typical move is measured over (plus
+# slack, holiday weeks included): the grid starts this long before the first case.
+LOOKBACK_CALENDAR_DAYS = 400
 # Calendar days of sessions past today the grid holds: a case entered tomorrow
 # still needs its 20th session, with holidays to spare.
 GRID_AHEAD_DAYS = 60
@@ -148,7 +147,7 @@ async def measure_cases(
         bars = DailyBarRepository(session)
         benchmark_bars = await bars.list_range(BENCHMARK, grid.days[0], grid.days[-1])
         if not benchmark_bars:
-            raise OutcomesError(f"no {BENCHMARK} daily bars stored; the surge-bars job has not fetched the benchmark")
+            raise OutcomesError(f"no {BENCHMARK} daily bars stored; the daily-bars job has not fetched the benchmark")
         benchmark = align(grid, benchmark_bars)
         for symbol in sorted(by_symbol):
             stock = align(grid, await bars.list_range(symbol, grid.days[0], grid.days[-1]))

@@ -81,15 +81,15 @@ def no_request_spacing(monkeypatch):
     monkeypatch.setattr("rs_sources._ratelimit.MinInterval.wait", instant)
 
 
-async def test_surge_bars_runs_daily_after_the_close_and_once_at_startup(session_factory):
+async def test_daily_bars_runs_daily_after_the_close_and_once_at_startup(session_factory):
     cron = CronTable()
     register_jobs(cron, _deps(session_factory, SwappableSession(RecordingClient())))
 
-    job = next(job for job in cron if job.name == "surge_bars")
+    job = next(job for job in cron if job.name == "daily_bars")
 
     assert job.schedule == Daily(time(17, 30), EASTERN)
     assert job.needs_schwab and job.run_on_start
-    assert job.time_limit == timedelta(hours=3)
+    assert job.time_limit == timedelta(hours=11)
 
 
 async def test_the_poll_is_a_non_schwab_half_hourly_job_that_catches_up_at_start(session_factory):
@@ -109,7 +109,7 @@ async def test_a_run_uses_the_client_current_at_run_time_not_registration_time(s
     session = SwappableSession(old)
     cron = CronTable()
     register_jobs(cron, _deps(session_factory, session))
-    job = next(job for job in cron if job.name == "surge_bars")
+    job = next(job for job in cron if job.name == "daily_bars")
 
     session.client = rebuilt  # a re-login rebuilt the client
     with pytest.raises(QuietFailure):  # the recording client fails its first call on purpose
@@ -131,7 +131,7 @@ async def test_earnings_calendar_warm_runs_at_startup_and_often_enough_to_beat_t
 
 
 async def test_a_single_failed_symbol_fails_the_bars_run_without_a_ping(session_factory, notices):
-    job = _job(session_factory, "surge_bars")  # only SPY is needed, and the recording client fails it
+    job = _job(session_factory, "daily_bars")  # only SPY is needed, and the recording client fails it
 
     with pytest.raises(QuietFailure):
         await job.run()
@@ -142,7 +142,7 @@ async def test_a_single_failed_symbol_fails_the_bars_run_without_a_ping(session_
 async def test_schwab_rate_limiting_the_bars_run_pings_schwab_once_and_fails_the_job_quietly(
     session_factory, notices
 ):
-    job = _job(session_factory, "surge_bars", schwab=RespondingClient(429))
+    job = _job(session_factory, "daily_bars", schwab=RespondingClient(429))
 
     for _ in range(2):
         with pytest.raises(SourceFailed):
@@ -153,7 +153,7 @@ async def test_schwab_rate_limiting_the_bars_run_pings_schwab_once_and_fails_the
 
 
 async def test_a_symbol_schwab_refuses_is_not_a_failure_and_does_not_fail_the_bars_run(session_factory, notices):
-    job = _job(session_factory, "surge_bars", schwab=RespondingClient(404))
+    job = _job(session_factory, "daily_bars", schwab=RespondingClient(404))
 
     await job.run()
 
