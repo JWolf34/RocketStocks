@@ -31,7 +31,7 @@ from rs_ingest.selector import BAR_TARGET_PER_DAY
 from rs_ingest.surge_bars import SurgeBarsError, sync_surge_bars
 from rs_ingest.surge_facts import SurgeFactsGatherer
 from rs_ingest.track_record import track_record_job
-from rs_ingest.universe import EVENING_STARTS_AT, UniverseSnapshotter
+from rs_ingest.universe import EVENING_STARTS_AT, MAX_WAIT, UniverseSnapshotter
 from rs_observability import HealthTracker, QuietFailure, Source, SweepTally
 from rs_sources import ApeWisdomClient
 from rs_sources.earnings import SCAN_WEEKDAYS, EarningsLookup
@@ -101,8 +101,9 @@ def register_jobs(cron: CronTable, deps: Dependencies) -> None:
     async def universe_snapshot() -> None:
         use = await universe.take()
         if not use.fresh:
-            # The Ops ping went out as the snapshot was given up on; the run still counts as failed.
-            raise QuietFailure(f"the Universe of {use.session} is not available; the night uses {use.snapshot_date}")
+            # The source's own Ops ping (or the superseded-file log line) already covers it, so the job
+            # failure stays quiet; the run still counts as failed.
+            raise QuietFailure(f"the Universe of {use.session} is not available; {use.night_uses}")
 
     cron.register(
         Job(
@@ -113,9 +114,7 @@ def register_jobs(cron: CronTable, deps: Dependencies) -> None:
             universe_snapshot,
             # A restart during the evening still takes the night's snapshot.
             run_on_start=True,
-            # The wait for fresh files ends at 20:00 ET, 115 minutes after the slot; the rest is
-            # the downloads of a possibly retried 90 MB file and the write.
-            timeout=timedelta(hours=2, minutes=30),
+            timeout=MAX_WAIT + timedelta(minutes=30),
         )
     )
     # One calendar for the warm job and the poll's lookups, so they share a cache.

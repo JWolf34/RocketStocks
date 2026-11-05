@@ -62,6 +62,8 @@ class DaemonProcess:
             "NO_PROXY": "127.0.0.1,localhost",  # the healthcheck probe still reaches the metrics port
             "RS_INGEST_METRICS_PORT": str(self.port),
             "RS_INGEST_TOKEN_POLL_SECONDS": "0.2",
+            # A job retrying against the refused proxy must not hold shutdown past the test's wait.
+            "RS_INGEST_SHUTDOWN_GRACE_SECONDS": "2",
             "RS_LOG_FORMAT": "json",
         }
         self.process = subprocess.Popen(
