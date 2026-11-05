@@ -198,7 +198,7 @@ The manual flow prints the sign-in URL and takes the pasted callback URL at the 
 $COMPOSE run --rm --no-deps -v "$PWD/scripts:/scripts:ro" ingest python /scripts/acceptance/schwab_manual_login.py
 ```
 On a development machine with a browser, `.venv/bin/python -m rs_ingest.tools.login` opens the sign-in itself; it needs `SCHWAB_API_KEY`, `SCHWAB_API_SECRET`, `RS_EDGAR_USER_AGENT` and a superuser or ingest `RS_DB_URL` in the environment.
-Ingest notices the newer token on its next token poll (`RS_INGEST_TOKEN_POLL_SECONDS`).
+Ingest notices the new token on its next token poll (`RS_INGEST_TOKEN_POLL_SECONDS`): it resumes Schwab jobs when the stored token's database timestamp is newer than when they were paused.
 
 The Schwab refresh token lives seven days.
 The bot DMs you at 24 hours and 6 hours before it expires; re-run `/setup schwab` then.
