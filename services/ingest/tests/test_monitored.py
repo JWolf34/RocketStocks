@@ -6,7 +6,6 @@ import httpx
 import pytest
 
 from rs_ingest.monitored import (
-    MonitoredEarningsCalendar,
     MonitoredFilings,
     MonitoredPopularitySource,
     MonitoredQuotes,
@@ -67,11 +66,6 @@ class Quotes:
 class History:
     def __init__(self, *script):
         self.daily_history = Scripted(*script)
-
-
-class Calendar:
-    def __init__(self, *script):
-        self.next_for = Scripted(*script)
 
 
 class Filings:
@@ -220,33 +214,7 @@ class TestSchwabHistory:
         assert (tally.attempted, tally.failed) == (0, 0)
 
 
-class TestEarningsSources:
-    async def test_a_failing_nasdaq_calendar_pings_once_and_the_lookup_still_sees_the_error(self, health, notices):
-        calendar = MonitoredEarningsCalendar(Calendar(SourceError("GET failed")), health)
-
-        for _ in range(2):
-            with pytest.raises(SourceError):
-                await calendar.next_for("AAA", START, 30)
-
-        assert notices == ["Nasdaq is failing (SourceError). See the ingest logs."]
-
-    async def test_a_nasdaq_404_is_the_endpoint_not_a_stock(self, health, notices):
-        calendar = MonitoredEarningsCalendar(Calendar(SourceError("GET failed", status_code=404)), health)
-
-        with pytest.raises(SourceError):
-            await calendar.next_for("AAA", START, 30)
-
-        assert len(notices) == 1
-
-    async def test_a_ticker_not_on_the_calendar_is_ok(self, health, notices):
-        calendar = MonitoredEarningsCalendar(Calendar(SourceError("x"), None), health)
-
-        with pytest.raises(SourceError):
-            await calendar.next_for("AAA", START, 30)
-        assert await calendar.next_for("AAA", START, 30) is None
-
-        assert verbs(notices) == ["Nasdaq is failing", "Nasdaq recovered."]
-
+class TestEdgarFilings:
     async def test_failing_edgar_pings_edgar_once_and_recovers(self, health, notices):
         filings = MonitoredFilings(
             Filings(SourceError("GET failed", status_code=503), SourceError("GET failed", status_code=503), []),
@@ -268,17 +236,6 @@ class TestEarningsSources:
                 await filings.recent_8ks("ZZZ", AS_OF)
 
         assert notices == []
-
-    async def test_nasdaq_and_edgar_ping_separately(self, health, notices):
-        calendar = MonitoredEarningsCalendar(Calendar(SourceError("x")), health)
-        filings = MonitoredFilings(Filings(SourceError("y")), health)
-
-        with pytest.raises(SourceError):
-            await calendar.next_for("AAA", START, 30)
-        with pytest.raises(SourceError):
-            await filings.recent_8ks("AAA", AS_OF)
-
-        assert verbs(notices) == ["Nasdaq is failing", "EDGAR is failing"]
 
 
 class TestFinishSweep:
