@@ -8,6 +8,7 @@ from rs_sources.schwab.client import (
     TokenMissingError,
     TokenStore,
     build_schwab_client,
+    translate_auth_errors,
 )
 from rs_sources.schwab.market_data import (
     DailyBar,
@@ -35,4 +36,5 @@ __all__ = [
     "TokenMissingError",
     "TokenStore",
     "build_schwab_client",
+    "translate_auth_errors",
 ]
