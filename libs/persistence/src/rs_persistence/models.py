@@ -16,6 +16,7 @@ from datetime import date, datetime
 from typing import Any
 
 from sqlalchemy import (
+    CHAR,
     BigInteger,
     Boolean,
     Computed,
@@ -34,9 +35,11 @@ from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 from rs_domain import (
     AuthRequestState,
+    ChainPass,
     Delivery,
     EarningsOrigin,
     EarningsTime,
+    FetchStatus,
     PopularityOrigin,
     Verdict,
 )
@@ -177,6 +180,61 @@ class EarningsSnapshotRow(Base):
     eps_actual: Mapped[float | None] = mapped_column(Double)
     surprise_pct: Mapped[float | None] = mapped_column(Double)
     fetched_at: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True))
+
+
+class ChainFetchRow(Base):
+    """chain_fetch: how one pass's fetch of one underlying ended for one session. A failure
+    status is a Tombstone; an empty chain is an observation with no contract rows."""
+
+    __tablename__ = "chain_fetch"
+
+    session_date: Mapped[date] = mapped_column(Date, primary_key=True)
+    chain_pass: Mapped[str] = mapped_column(
+        ENUM(*(m.value for m in ChainPass), name="chain_pass", create_type=False), primary_key=True
+    )
+    underlying: Mapped[str] = mapped_column(Text, primary_key=True)
+    status: Mapped[str] = mapped_column(
+        ENUM(*(m.value for m in FetchStatus), name="chain_fetch_status", create_type=False)
+    )
+    attempts: Mapped[int] = mapped_column(SmallInteger)
+    contract_count: Mapped[int] = mapped_column(Integer)
+    fetched_at: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True))
+
+
+class OptionContractRow(Base):
+    """option_contract hypertable, partitioned by session_date: one contract of one chain
+    for one session. Never a placeholder; a chain that could not be fetched has only a
+    chain_fetch row."""
+
+    __tablename__ = "option_contract"
+
+    session_date: Mapped[date] = mapped_column(Date, primary_key=True)
+    underlying: Mapped[str] = mapped_column(Text, primary_key=True)
+    option_symbol: Mapped[str] = mapped_column(Text, primary_key=True)
+    expiry: Mapped[date] = mapped_column(Date)
+    strike: Mapped[float] = mapped_column(Double)
+    put_call: Mapped[str] = mapped_column(CHAR(1))
+    bid: Mapped[float] = mapped_column(Double)
+    ask: Mapped[float] = mapped_column(Double)
+    last: Mapped[float] = mapped_column(Double)
+    mark: Mapped[float] = mapped_column(Double)
+    bid_size: Mapped[int] = mapped_column(Integer)
+    ask_size: Mapped[int] = mapped_column(Integer)
+    last_size: Mapped[int] = mapped_column(Integer)
+    volume: Mapped[int] = mapped_column(BigInteger)
+    open_interest: Mapped[int] = mapped_column(BigInteger)
+    quote_time: Mapped[datetime | None] = mapped_column(TIMESTAMP(timezone=True))
+    trade_time: Mapped[datetime | None] = mapped_column(TIMESTAMP(timezone=True))
+    iv: Mapped[float | None] = mapped_column(Double)
+    delta: Mapped[float | None] = mapped_column(Double)
+    gamma: Mapped[float | None] = mapped_column(Double)
+    theta: Mapped[float | None] = mapped_column(Double)
+    vega: Mapped[float | None] = mapped_column(Double)
+    rho: Mapped[float | None] = mapped_column(Double)
+    underlying_price: Mapped[float | None] = mapped_column(Double)
+    multiplier: Mapped[int | None] = mapped_column(SmallInteger)
+    expiration_type: Mapped[str | None] = mapped_column(CHAR(1))
+    non_standard: Mapped[bool | None] = mapped_column(Boolean)
 
 
 class UnpricedSymbolRow(Base):
