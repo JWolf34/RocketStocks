@@ -1,34 +1,29 @@
-"""Next-earnings lookup: Nasdaq calendar first, EDGAR-cadence estimate second.
+"""Next-earnings lookup: the stored Nasdaq calendar first, EDGAR-cadence estimate second.
 
-Nasdaq's unofficial calendar is the primary source. When it fails or does not
-list the ticker, the estimate is the last 8-K with Item 2.02 (results of
-operations) plus one quarter, labelled `estimated`. With neither, the answer
-is an explicit unknown (date None), never a guess.
+The calendar is the nightly snapshot of Nasdaq's, read through `StoredCalendar`
+(which also decides when a snapshot is too old to trust). When it does not list
+the ticker, the estimate is the last 8-K with Item 2.02 (results of operations)
+plus one quarter, labelled `estimated`, computed at read time and never stored.
+With neither, the answer is an explicit unknown (date None), never a guess.
 """
 
-import asyncio
 import logging
 from calendar import monthrange
-from datetime import date, datetime, timedelta
+from datetime import date, datetime
 from typing import Protocol
 from zoneinfo import ZoneInfo
 
 from pydantic import BaseModel, ConfigDict
 
+from rs_domain import EarningsTime, StoredEarnings
 from rs_sources._http import require_aware
 from rs_sources.edgar import EIGHT_K_FORM, RESULTS_OF_OPERATIONS_ITEM, Filing8K
 from rs_sources.errors import SourceError
-from rs_sources.nasdaq import EarningsTime, ScheduledEarnings
 
 logger = logging.getLogger(__name__)
 
 # Nasdaq lists dates on the US market calendar, so "today" is the Eastern date.
 _MARKET_ZONE = ZoneInfo("America/New_York")
-
-
-SCAN_WEEKDAYS = 30
-# A cold Nasdaq scan stops here so the EDGAR estimate still fits the caller's budget.
-NASDAQ_BUDGET = timedelta(seconds=8)
 
 
 class NextEarnings(BaseModel):
@@ -45,8 +40,10 @@ class NextEarnings(BaseModel):
         return cls(date=None)
 
 
-class EarningsCalendar(Protocol):
-    async def next_for(self, ticker: str, start: date, max_weekdays: int) -> ScheduledEarnings | None: ...
+class StoredCalendar(Protocol):
+    async def next_listed(self, ticker: str, today: date) -> StoredEarnings | None:
+        """The ticker's first listing on or after `today` in the latest snapshot fresh enough to trust."""
+        ...
 
 
 class FilingSource(Protocol):
@@ -54,33 +51,17 @@ class FilingSource(Protocol):
 
 
 class EarningsLookup:
-    def __init__(
-        self,
-        nasdaq: EarningsCalendar,
-        filings: FilingSource,
-        *,
-        scan_weekdays: int = SCAN_WEEKDAYS,
-        nasdaq_budget: timedelta = NASDAQ_BUDGET,
-    ) -> None:
-        self._nasdaq = nasdaq
+    def __init__(self, calendar: StoredCalendar, filings: FilingSource) -> None:
+        self._calendar = calendar
         self._filings = filings
-        self._scan_weekdays = scan_weekdays
-        self._nasdaq_budget = nasdaq_budget.total_seconds()
 
     async def next_earnings(self, ticker: str, as_of: datetime) -> NextEarnings:
         """The ticker's next earnings date as of `as_of` (tz-aware); never raises on source failure."""
         require_aware(as_of)
         today = as_of.astimezone(_MARKET_ZONE).date()
-        try:
-            async with asyncio.timeout(self._nasdaq_budget):
-                scheduled = await self._nasdaq.next_for(ticker, today, self._scan_weekdays)
-        except SourceError:
-            logger.warning("Nasdaq earnings lookup failed for %s; estimating from EDGAR", ticker, exc_info=True)
-        except TimeoutError:
-            logger.warning("Nasdaq earnings scan for %s ran past its budget; estimating from EDGAR", ticker)
-        else:
-            if scheduled is not None:
-                return NextEarnings(date=scheduled.date, time_of_day=scheduled.time_of_day)
+        listed = await self._calendar.next_listed(ticker, today)
+        if listed is not None:
+            return NextEarnings(date=listed.report_date, time_of_day=listed.time_of_day)
         return await self._estimate(ticker, as_of, today)
 
     async def _estimate(self, ticker: str, as_of: datetime, today: date) -> NextEarnings:

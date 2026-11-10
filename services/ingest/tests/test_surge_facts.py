@@ -3,10 +3,9 @@
 import asyncio
 from datetime import UTC, date, datetime, timedelta
 
-from rs_domain import FactUnavailable, NextEarningsFact, PriceMoveFact
+from rs_domain import EarningsTime, FactUnavailable, NextEarningsFact, PriceMoveFact
 from rs_ingest.surge_facts import SurgeFactsGatherer
 from rs_sources.earnings import NextEarnings
-from rs_sources.nasdaq import EarningsTime
 from rs_sources.schwab import Quote, SchwabAuthError, TokenMissingError
 
 NOW = datetime(2026, 10, 19, 15, 0, tzinfo=UTC)
