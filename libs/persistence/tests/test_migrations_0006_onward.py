@@ -1,4 +1,4 @@
-"""Migrations 0006-0024 against Timescale: the upgrade/downgrade round trip and
+"""Migrations 0006-0025 against Timescale: the upgrade/downgrade round trip and
 the physical layout (hypertables, compression, constraints)."""
 
 import uuid
@@ -250,7 +250,7 @@ def sync_engine(migrated_db_url):
     engine.dispose()
 
 
-@pytest.mark.parametrize("table", ["popularity_snapshot", "daily_bar"])
+@pytest.mark.parametrize("table", ["popularity_snapshot", "daily_bar", "option_contract"])
 def test_market_tables_are_compressed_hypertables_without_retention(sync_engine, table):
     with sync_engine.connect() as conn:
         compressed = conn.execute(
@@ -732,6 +732,81 @@ def test_0023_adds_the_universe_tables_and_downgrade_drops_them(scratch_url):
 
         command.downgrade(config, "0022")
         assert not {"universe_snapshot", "universe_listing"} & set(inspect(engine).get_table_names())
+
+        command.upgrade(config, "head")
+    finally:
+        engine.dispose()
+
+
+def test_option_contract_layout_chunks_by_week_and_compresses_by_underlying(sync_engine):
+    with sync_engine.connect() as conn:
+        dimension = conn.execute(
+            text(
+                "SELECT column_name, time_interval FROM timescaledb_information.dimensions"
+                " WHERE hypertable_name = 'option_contract'"
+            )
+        ).one()
+        segmentby, orderby = conn.execute(
+            text(
+                "SELECT segmentby, orderby FROM timescaledb_information.hypertable_compression_settings"
+                " WHERE hypertable::text = 'option_contract'"
+            )
+        ).one()
+        compress_after = conn.execute(
+            text(
+                "SELECT config->>'compress_after' FROM timescaledb_information.jobs"
+                " WHERE hypertable_name = 'option_contract' AND proc_name = 'policy_compression'"
+            )
+        ).scalar_one()
+    assert dimension.column_name == "session_date" and dimension.time_interval.days == 7
+    assert segmentby == "underlying"
+    assert orderby == "option_symbol,session_date DESC"
+    assert compress_after == "3 days"
+    insp = inspect(sync_engine)
+    assert insp.get_pk_constraint("option_contract")["constrained_columns"] == [
+        "session_date",
+        "underlying",
+        "option_symbol",
+    ]
+    assert insp.get_pk_constraint("chain_fetch")["constrained_columns"] == [
+        "session_date",
+        "chain_pass",
+        "underlying",
+    ]
+
+
+def test_0025_adds_the_chain_tables_and_downgrade_drops_them(scratch_url):
+    config = migration_config(scratch_url)
+    engine = create_engine(scratch_url)
+    try:
+        command.upgrade(config, "0024")
+        assert not {"option_contract", "chain_fetch"} & set(inspect(engine).get_table_names())
+
+        command.upgrade(config, "0025")
+        insp = inspect(engine)
+        contract_nullable = {c["name"]: c["nullable"] for c in insp.get_columns("option_contract")}
+        assert {name for name, nullable in contract_nullable.items() if nullable} == {
+            "quote_time",
+            "trade_time",
+            "iv",
+            "delta",
+            "gamma",
+            "theta",
+            "vega",
+            "rho",
+            "underlying_price",
+            "multiplier",
+            "expiration_type",
+            "non_standard",
+        }
+        assert not any(c["nullable"] for c in insp.get_columns("chain_fetch"))
+
+        command.downgrade(config, "0024")
+        assert not {"option_contract", "chain_fetch"} & set(inspect(engine).get_table_names())
+        with engine.connect() as conn:
+            assert not conn.execute(
+                text("SELECT 1 FROM pg_type WHERE typname IN ('chain_pass', 'chain_fetch_status')")
+            ).all()
 
         command.upgrade(config, "head")
     finally:
