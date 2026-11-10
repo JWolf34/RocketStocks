@@ -104,7 +104,7 @@ def normalize_chain(underlying: str, payload: Mapping[str, Any]) -> OptionChain:
                     continue
                 seen.add(contract.option_symbol)
                 contracts.append(contract)
-    contracts.sort(key=lambda c: (c.expiry, c.strike, c.put_call))
+    contracts.sort(key=lambda c: (c.expiry, c.strike, c.put_call, c.option_symbol))
     return OptionChain(
         underlying=underlying,
         underlying_price=underlying_price,
@@ -150,8 +150,8 @@ def _contract(underlying: str, expiry_key: str, raw: Any, underlying_price: floa
             rho=_measure(raw.get("rho")),
             underlying_price=underlying_price,
             multiplier=_multiplier(raw.get("multiplier")),
-            expiration_type=raw.get("expirationType"),
-            non_standard=raw.get("nonStandard"),
+            expiration_type=_code(raw.get("expirationType")),
+            non_standard=_flag(raw.get("nonStandard")),
         )
     except (KeyError, TypeError, ValueError, ValidationError):
         return None
@@ -167,6 +167,15 @@ def _number(value: Any) -> float | None:
 def _measure(value: Any) -> float | None:
     number = _number(value)
     return None if number is None or number == _NO_VALUE else number
+
+
+def _code(value: Any) -> str | None:
+    """A one-letter code (the expiration type), or None for anything else."""
+    return value if isinstance(value, str) and len(value) == 1 else None
+
+
+def _flag(value: Any) -> bool | None:
+    return value if isinstance(value, bool) else None
 
 
 def _multiplier(value: Any) -> int | None:

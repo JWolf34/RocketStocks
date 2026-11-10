@@ -285,3 +285,19 @@ class TestNormalize:
     def test_an_expiry_map_that_is_not_a_mapping_is_an_error(self):
         with pytest.raises(SchwabResponseError, match="not a mapping"):
             normalize_chain("AAA", chain_payload(callExpDateMap=[1]))
+
+
+class TestContextFields:
+    @pytest.mark.parametrize("code", ["", "RW", 5, None])
+    def test_an_odd_expiration_type_is_none_and_costs_no_contract(self, code):
+        chain = normalize_chain("AAA", chain_payload(calls=[contract(expirationType=code)]))
+        assert [c.expiration_type for c in chain.contracts] == [None] and chain.skipped == 0
+
+    def test_a_non_boolean_non_standard_flag_is_none(self):
+        chain = normalize_chain("AAA", chain_payload(calls=[contract(nonStandard="no")]))
+        assert chain.contracts[0].non_standard is None
+
+    def test_tied_contracts_are_ordered_by_option_symbol(self):
+        payload = chain_payload(calls=[contract(symbol="AAA1  261120C00100000"), contract()])
+        chain = normalize_chain("AAA", payload)
+        assert [c.option_symbol for c in chain.contracts] == ["AAA   261120C00100000", "AAA1  261120C00100000"]

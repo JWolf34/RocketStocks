@@ -15,7 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from rs_domain import ChainFetchRecord, ChainPass, FetchStatus, OptionContract
 from rs_persistence.models import ChainFetchRow, OptionContractRow
 
-# 28 bound parameters per contract row; stay far below the protocol's 65535 limit.
+# 27 bound parameters per contract row; stay far below the protocol's 65535 limit.
 _INSERT_CHUNK = 1500
 
 
@@ -51,8 +51,12 @@ class ChainRepository:
         """Store the record and its contracts unless the underlying already has a record for
         that pass and session; returns whether anything was stored.
 
-        `contracts` must be exactly the record's `contract_count` contracts of its underlying.
+        `contracts` must be exactly the record's `contract_count` contracts of its underlying,
+        and only the evening pass has contract rows to store: the morning pass keeps its
+        records here and its open interest elsewhere.
         """
+        if contracts and record.chain_pass is not ChainPass.EVENING:
+            raise ValueError(f"{record.underlying}: only the evening pass stores contract rows")
         if len(contracts) != record.contract_count:
             raise ValueError(f"{record.underlying}: record counts {record.contract_count}, got {len(contracts)}")
         if any(contract.underlying != record.underlying for contract in contracts):
@@ -92,6 +96,11 @@ class ChainRepository:
         rows = await self._session.scalars(
             select(OptionContractRow)
             .where(OptionContractRow.session_date == session_date, OptionContractRow.underlying == underlying)
-            .order_by(OptionContractRow.expiry, OptionContractRow.strike, OptionContractRow.put_call)
+            .order_by(
+                OptionContractRow.expiry,
+                OptionContractRow.strike,
+                OptionContractRow.put_call,
+                OptionContractRow.option_symbol,
+            )
         )
         return [_contract_from_row(row) for row in rows]

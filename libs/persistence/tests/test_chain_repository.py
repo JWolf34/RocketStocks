@@ -143,3 +143,20 @@ async def test_a_chunk_of_stored_contracts_compresses_and_reads_back(session_fac
         await s.execute(text(f"SELECT compress_chunk('{chunk}')"))
         assert await ChainRepository(s).contracts(NIGHT, "AAA") == chain
         await s.rollback()
+
+
+async def test_only_the_evening_pass_stores_contract_rows(session_factory):
+    async with session_factory() as s:
+        with pytest.raises(ValueError, match="only the evening pass"):
+            await ChainRepository(s).store(_record(count=1, chain_pass=ChainPass.MORNING), [_contract()])
+
+
+async def test_contracts_that_tie_on_expiry_strike_and_side_read_back_in_option_symbol_order(session_factory):
+    adjusted = _contract(option_symbol="AAA1  261120C00100000")
+    standard = _contract()
+    await _store(session_factory, _record(count=2), [adjusted, standard])
+
+    async with session_factory() as s:
+        got = await ChainRepository(s).contracts(NIGHT, "AAA")
+
+    assert [c.option_symbol for c in got] == sorted([adjusted.option_symbol, standard.option_symbol])
