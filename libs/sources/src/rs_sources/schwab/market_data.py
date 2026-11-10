@@ -87,6 +87,19 @@ class DailyHistory(BaseModel):
     rejects: tuple[RejectedBar, ...] = ()
 
 
+def response_payload(response: Any, symbol: str) -> dict[str, Any]:
+    """The JSON object of a 200 response; SchwabResponseError for any other outcome."""
+    if response.status_code != 200:
+        raise SchwabResponseError(f"{symbol}: HTTP {response.status_code}", response.status_code)
+    try:
+        payload = response.json()
+    except ValueError as exc:
+        raise SchwabResponseError(f"{symbol}: response is not JSON") from exc
+    if not isinstance(payload, dict):
+        raise SchwabResponseError(f"{symbol}: unexpected response shape")
+    return payload
+
+
 def _utc_from_millis(millis: int) -> datetime:
     return datetime.fromtimestamp(millis / 1000, tz=UTC)
 
@@ -103,7 +116,7 @@ class SchwabMarketData:
         symbol = symbol.strip().upper()
         with translate_auth_errors():
             response = await self._client.get_quotes([symbol])
-        payload = self._json(response, symbol)
+        payload = response_payload(response, symbol)
         entry = payload.get(symbol)
         if not isinstance(entry, dict) or not isinstance(entry.get("quote"), dict):
             return None
@@ -136,7 +149,7 @@ class SchwabMarketData:
                 end_datetime=window_end,
                 need_extended_hours_data=False,
             )
-        payload = self._json(response, symbol)
+        payload = response_payload(response, symbol)
         bars: list[DailyBar] = []
         rejects: list[RejectedBar] = []
         seen: set[date] = set()
@@ -194,15 +207,3 @@ class SchwabMarketData:
             )
         except (KeyError, ValidationError):
             return reject(RejectReason.MALFORMED)
-
-    @staticmethod
-    def _json(response: Any, symbol: str) -> dict[str, Any]:
-        if response.status_code != 200:
-            raise SchwabResponseError(f"{symbol}: HTTP {response.status_code}", response.status_code)
-        try:
-            payload = response.json()
-        except ValueError as exc:
-            raise SchwabResponseError(f"{symbol}: response is not JSON") from exc
-        if not isinstance(payload, dict):
-            raise SchwabResponseError(f"{symbol}: unexpected response shape")
-        return payload
