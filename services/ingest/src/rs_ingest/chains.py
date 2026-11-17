@@ -40,6 +40,7 @@ from rs_domain import (
     TradingCalendar,
 )
 from rs_ingest.daily_bars import stop_time
+from rs_ingest.monitored import RATE_LIMITED
 from rs_ingest.rate_limit import RateLimiter
 from rs_ingest.universe import EVENING_STARTS_AT, last_evening_session
 from rs_observability import SweepTally
@@ -60,7 +61,6 @@ DEADLINE_AT = time(3, 0)
 LADDER_DAYS = (30, 180)
 # Calls spent on one request of the ladder (the whole chain, then each range): fetch, retry once.
 ATTEMPTS = 2
-RATE_LIMITED = 429
 # Progress is logged this often during a long pass.
 PROGRESS_EVERY = 500
 
