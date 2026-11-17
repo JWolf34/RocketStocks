@@ -1,0 +1,655 @@
+"""The evening chain pass against a real database, the real exchange calendar and the real
+Schwab chain adapter over a fake schwab-py client: the roster, the ladder (retry, expiry ranges,
+Tombstone), 400s and empty chains, resume, the deadline, the dead token and the sweep tally."""
+
+from datetime import UTC, date, datetime, time, timedelta
+
+import pytest
+from sqlalchemy import func, select
+
+from rs_domain import (
+    EASTERN,
+    ChainPass,
+    FetchStatus,
+    UniverseCounts,
+    UniverseListing,
+    UniverseSnapshot,
+)
+from rs_ingest.chains import (
+    ATTEMPTS,
+    chain_deadline,
+    expiry_ranges,
+    sweep_evening_chains,
+)
+from rs_ingest.rate_limit import RateLimiter
+from rs_observability import SweepTally, SweepVerdict
+from rs_persistence import ChainRepository, OptionContractRow, UniverseRepository
+from rs_sources import ExchangeCalendar
+from rs_sources.schwab import (
+    SchwabAuthError,
+    SchwabOptionChains,
+    SchwabResponseError,
+    TokenMissingError,
+)
+
+CALENDAR = ExchangeCalendar()
+# Tuesday 2026-11-17, 18:30 ET: the evening of that session has started.
+SESSION = date(2026, 11, 17)
+NOW = datetime(2026, 11, 17, 23, 30, tzinfo=UTC)
+# 03:00 CST the next morning.
+DEADLINE = datetime(2026, 11, 18, 9, 0, tzinfo=UTC)
+QUOTED = int(datetime(2026, 11, 17, 21, 0, tzinfo=UTC).timestamp() * 1000)
+
+NEAR = SESSION + timedelta(days=10)
+MID = SESSION + timedelta(days=60)
+FAR = SESSION + timedelta(days=300)
+EXPIRIES = (NEAR, MID, FAR)
+
+
+class FakeClock:
+    def __init__(self, now: datetime) -> None:
+        self.current = now
+
+    def now(self) -> datetime:
+        return self.current
+
+
+class FakeResponse:
+    def __init__(self, payload=None, status_code=200):
+        self.status_code = status_code
+        self._payload = payload
+
+    def json(self):
+        return self._payload
+
+
+def _raw(symbol: str, expiry: date, side: str) -> dict:
+    letter = side[0]
+    return {
+        "putCall": side,
+        "symbol": f"{symbol.replace('/', ''):<6}{expiry:%y%m%d}{letter}00100000",
+        "strikePrice": 100.0,
+        "bid": 1.1,
+        "ask": 1.2,
+        "last": 1.15,
+        "mark": 1.15,
+        "bidSize": 10,
+        "askSize": 12,
+        "lastSize": 1,
+        "totalVolume": 250,
+        "openInterest": 4000,
+        "quoteTimeInLong": QUOTED,
+        "tradeTimeInLong": QUOTED - 60_000,
+        "volatility": 31.5,
+        "delta": 0.5,
+        "gamma": 0.04,
+        "theta": -0.05,
+        "vega": 0.1,
+        "rho": 0.01,
+        "multiplier": 100.0,
+        "expirationType": "R",
+        "nonStandard": False,
+    }
+
+
+def chain_payload(symbol: str, expiries=EXPIRIES) -> dict:
+    """A chain with one call and one put on each of the expiries."""
+
+    def side_map(side: str) -> dict:
+        return {f"{e.isoformat()}:{(e - SESSION).days}": {"100.0": [_raw(symbol, e, side)]} for e in expiries}
+
+    return {
+        "symbol": symbol,
+        "status": "SUCCESS",
+        "underlyingPrice": 99.5,
+        "isChainTruncated": False,
+        "callExpDateMap": side_map("CALL"),
+        "putExpDateMap": side_map("PUT"),
+    }
+
+
+class FakeSchwab:
+    """schwab-py's option chain call over a scripted market.
+
+    Every symbol answers with one call and one put on each of NEAR, MID and FAR, bounded by the
+    request's dates. `script[symbol]` is a list of answers handed out one per call before the
+    default applies: a status code, an exception, or a payload.
+    """
+
+    class Options:
+        class ContractType:
+            ALL = "ALL"
+
+    def __init__(self) -> None:
+        self.script: dict[str, list] = {}
+        self.calls: list[tuple[str, date | None, date | None]] = []
+        self.empty: set[str] = set()
+
+    async def get_option_chain(self, symbol, *, contract_type=None, from_date=None, to_date=None):
+        self.calls.append((symbol, from_date, to_date))
+        queued = self.script.get(symbol)
+        if queued:
+            answer = queued.pop(0)
+            if isinstance(answer, Exception):
+                raise answer
+            if isinstance(answer, int):
+                return FakeResponse(status_code=answer)
+            if answer is not None:
+                return FakeResponse(answer)
+        expiries = () if symbol in self.empty else tuple(
+            e for e in EXPIRIES if (from_date is None or e >= from_date) and (to_date is None or e <= to_date)
+        )
+        return FakeResponse(chain_payload(symbol, expiries))
+
+    def symbols_called(self) -> list[str]:
+        return [symbol for symbol, _, _ in self.calls]
+
+
+class Budget:
+    """A limiter in virtual time that records how long it made callers wait."""
+
+    def __init__(self) -> None:
+        self.t = 0.0
+        self.waited = 0.0
+
+    async def sleep(self, seconds: float) -> None:
+        self.waited += seconds
+        self.t += seconds
+
+    def limiter(self, calls_per_minute: int = 60) -> RateLimiter:
+        return RateLimiter(calls_per_minute, now=lambda: self.t, sleep=self.sleep)
+
+
+def _listing(symbol: str, optionable: bool) -> UniverseListing:
+    return UniverseListing(
+        symbol=symbol,
+        security_name=f"{symbol} Inc.",
+        exchange="Q",
+        etf=False,
+        financial_status="N",
+        cqs_symbol=None,
+        nasdaq_symbol=None,
+        optionable=optionable,
+    )
+
+
+async def _universe(session_factory, optionable: tuple[str, ...], others: tuple[str, ...] = ("PLAIN",), day=SESSION):
+    listings = tuple(_listing(s, True) for s in optionable) + tuple(_listing(s, False) for s in others)
+    snapshot = UniverseSnapshot(
+        snapshot_date=day,
+        as_of=datetime.combine(day, time(18, 1), tzinfo=EASTERN).astimezone(UTC),
+        counts=UniverseCounts(nasdaq_listed=len(listings), other_listed=0, options_symbols=len(optionable), cboe_symbols=0),
+        optionable_carried=False,
+        listings=listings,
+    )
+    async with session_factory() as s:
+        await UniverseRepository(s).save(snapshot)
+        await s.commit()
+
+
+async def _run(
+    session_factory,
+    schwab: FakeSchwab,
+    clock: FakeClock | None = None,
+    tally: SweepTally | None = None,
+    budget: Budget | None = None,
+    source=None,
+):
+    return await sweep_evening_chains(
+        session_factory=session_factory,
+        source=source or SchwabOptionChains(schwab),
+        limiter=(budget or Budget()).limiter(),
+        calendar=CALENDAR,
+        clock=clock or FakeClock(NOW),
+        tally=tally if tally is not None else SweepTally(),
+    )
+
+
+async def _record(session_factory, symbol: str, session: date = SESSION):
+    async with session_factory() as s:
+        return await ChainRepository(s).record(session, ChainPass.EVENING, symbol)
+
+
+async def _contract_rows(session_factory, symbol: str) -> int:
+    async with session_factory() as s:
+        return await s.scalar(
+            select(func.count()).select_from(OptionContractRow).where(OptionContractRow.underlying == symbol)
+        )
+
+
+async def _contracts(session_factory, symbol: str):
+    async with session_factory() as s:
+        return await ChainRepository(s).contracts(SESSION, symbol)
+
+
+# --- the roster -------------------------------------------------------------------------------------
+
+
+async def test_every_optionable_underlying_of_the_latest_universe_is_fetched_whole_and_recorded(session_factory):
+    await _universe(session_factory, ("CCC", "AAA", "BRK.B"), others=("PLAIN", "ZZZ"))
+    schwab = FakeSchwab()
+
+    report = await _run(session_factory, schwab)
+
+    # Sorted, the optionable listings only, each in one unfiltered call under Schwab's own spelling.
+    assert schwab.calls == [("AAA", None, None), ("BRK/B", None, None), ("CCC", None, None)]
+    assert (report.session, report.roster, report.ok, report.tombstones) == (SESSION, 3, 3, 0)
+    assert (report.contracts, report.calls) == (18, 3)
+    record = await _record(session_factory, "BRK.B")
+    assert (record.status, record.attempts, record.contract_count, record.fetched_at) == (FetchStatus.OK, 1, 6, NOW)
+    # The contracts are stored under the Universe's symbol, not the request's spelling.
+    assert {c.underlying for c in await _contracts(session_factory, "BRK.B")} == {"BRK.B"}
+    assert await _record(session_factory, "PLAIN") is None
+
+
+async def test_only_the_latest_universe_is_the_roster(session_factory):
+    await _universe(session_factory, ("OLD", "AAA"), day=date(2026, 11, 16))
+    await _universe(session_factory, ("AAA", "NEW"), day=SESSION)
+    schwab = FakeSchwab()
+
+    await _run(session_factory, schwab)
+
+    assert schwab.symbols_called() == ["AAA", "NEW"]
+
+
+async def test_without_a_universe_the_pass_makes_no_call(session_factory):
+    schwab = FakeSchwab()
+
+    report = await _run(session_factory, schwab)
+
+    assert schwab.calls == []
+    assert (report.roster, report.calls) == (0, 0)
+
+
+async def test_a_weekend_run_belongs_to_fridays_session(session_factory):
+    friday = date(2026, 11, 13)
+    await _universe(session_factory, ("AAA",), day=friday)
+    saturday_noon = datetime(2026, 11, 14, 17, 0, tzinfo=UTC)
+
+    # Friday's deadline passed at 03:00 Central Saturday: the pass only records what was missed.
+    report = await _run(session_factory, FakeSchwab(), FakeClock(saturday_noon))
+
+    assert report.session == friday
+    assert (await _record(session_factory, "AAA", friday)).status is FetchStatus.FAILED
+
+
+# --- the ladder -------------------------------------------------------------------------------------
+
+
+async def test_a_failed_fetch_is_retried_once(session_factory):
+    await _universe(session_factory, ("AAA",))
+    schwab = FakeSchwab()
+    schwab.script["AAA"] = [502]
+
+    await _run(session_factory, schwab)
+
+    assert schwab.calls == [("AAA", None, None), ("AAA", None, None)]
+    record = await _record(session_factory, "AAA")
+    assert (record.status, record.attempts, record.contract_count) == (FetchStatus.OK, 2, 6)
+
+
+async def test_a_chain_that_fails_twice_is_fetched_in_three_expiry_ranges_the_last_open_ended(session_factory):
+    await _universe(session_factory, ("AAA",))
+    schwab = FakeSchwab()
+    schwab.script["AAA"] = [502, TimeoutError("read timed out")]
+
+    await _run(session_factory, schwab)
+
+    assert schwab.calls == [
+        ("AAA", None, None),
+        ("AAA", None, None),
+        ("AAA", SESSION, SESSION + timedelta(days=30)),
+        ("AAA", SESSION + timedelta(days=31), SESSION + timedelta(days=180)),
+        ("AAA", SESSION + timedelta(days=181), None),
+    ]
+    record = await _record(session_factory, "AAA")
+    assert (record.status, record.attempts, record.contract_count) == (FetchStatus.OK, 5, 6)
+    # The whole chain, assembled from its parts in expiry order.
+    assert [c.expiry for c in await _contracts(session_factory, "AAA")] == [NEAR, NEAR, MID, MID, FAR, FAR]
+
+
+def test_the_ladder_ranges_cover_every_expiry_from_the_session_without_a_gap_or_overlap():
+    (a0, a1), (b0, b1), (c0, c1) = expiry_ranges(SESSION)
+
+    assert (a0, c1) == (SESSION, None)
+    assert b0 == a1 + timedelta(days=1)
+    assert c0 == b1 + timedelta(days=1)
+
+
+async def test_each_range_is_retried_once(session_factory):
+    await _universe(session_factory, ("AAA",))
+    schwab = FakeSchwab()
+    # The whole chain fails twice, then the middle range fails once.
+    schwab.script["AAA"] = [502, 502, None, 503]
+
+    await _run(session_factory, schwab)
+
+    assert len(schwab.calls) == 2 + 4  # whole x2, near, mid x2, far
+    record = await _record(session_factory, "AAA")
+    assert (record.status, record.attempts, record.contract_count) == (FetchStatus.OK, 6, 6)
+
+
+async def test_a_range_that_fails_twice_makes_the_underlying_a_tombstone_with_no_partial_chain(session_factory):
+    await _universe(session_factory, ("AAA", "BBB"))
+    schwab = FakeSchwab()
+    # AAA: whole x2 fail, near answers, mid fails x2.
+    schwab.script["AAA"] = [502, 502, None, 502, 502]
+
+    tally = SweepTally()
+    report = await _run(session_factory, schwab, tally=tally)
+
+    assert schwab.calls[:6] == [
+        ("AAA", None, None),
+        ("AAA", None, None),
+        ("AAA", SESSION, SESSION + timedelta(days=30)),
+        ("AAA", SESSION + timedelta(days=31), SESSION + timedelta(days=180)),
+        ("AAA", SESSION + timedelta(days=31), SESSION + timedelta(days=180)),
+        ("BBB", None, None),
+    ]  # the far range is never asked, and the next underlying goes on
+    record = await _record(session_factory, "AAA")
+    assert (record.status, record.attempts, record.contract_count) == (FetchStatus.FAILED, 5, 0)
+    assert record.status.is_tombstone
+    assert await _contract_rows(session_factory, "AAA") == 0
+    assert (report.failed, report.ok, tally.failed) == (1, 1, 1)
+
+
+async def test_an_unexpected_error_is_retried_like_any_failed_call(session_factory):
+    await _universe(session_factory, ("AAA",))
+    schwab = FakeSchwab()
+    schwab.script["AAA"] = [{"unexpected": "not a chain"}, ValueError("boom")]
+
+    await _run(session_factory, schwab)
+
+    assert len(schwab.calls) == 2 + 3
+    assert (await _record(session_factory, "AAA")).status is FetchStatus.OK
+
+
+async def test_a_repeated_option_symbol_across_ranges_is_stored_once(session_factory):
+    await _universe(session_factory, ("AAA",))
+    schwab = FakeSchwab()
+    # Whole chain fails twice; the near range answers with a chain that also holds MID's contracts.
+    schwab.script["AAA"] = [502, 502, chain_payload("AAA", (NEAR, MID))]
+
+    await _run(session_factory, schwab)
+
+    record = await _record(session_factory, "AAA")
+    assert (record.status, record.contract_count) == (FetchStatus.OK, 6)
+
+
+@pytest.mark.parametrize("status", [400, 404])
+async def test_a_symbol_schwab_refuses_is_recorded_rejected_and_never_retried(session_factory, status):
+    await _universe(session_factory, ("AAA",))
+    schwab = FakeSchwab()
+    schwab.script["AAA"] = [status]
+
+    tally = SweepTally()
+    report = await _run(session_factory, schwab, tally=tally)
+
+    assert len(schwab.calls) == 1
+    record = await _record(session_factory, "AAA")
+    assert (record.status, record.attempts, record.contract_count) == (FetchStatus.REJECTED, 1, 0)
+    assert record.status.is_tombstone
+    assert (report.rejected, tally.failed, tally.attempted) == (1, 0, 1)
+
+
+async def test_a_400_found_inside_the_ladder_stops_it(session_factory):
+    await _universe(session_factory, ("AAA",))
+    schwab = FakeSchwab()
+    schwab.script["AAA"] = [502, 502, 400]
+
+    await _run(session_factory, schwab)
+
+    assert len(schwab.calls) == 3
+    record = await _record(session_factory, "AAA")
+    assert (record.status, record.attempts) == (FetchStatus.REJECTED, 3)
+
+
+async def test_an_empty_chain_is_an_observation_recorded_once_and_never_retried(session_factory):
+    await _universe(session_factory, ("AAA",))
+    schwab = FakeSchwab()
+    schwab.empty.add("AAA")
+
+    tally = SweepTally()
+    report = await _run(session_factory, schwab, tally=tally)
+
+    assert len(schwab.calls) == 1
+    record = await _record(session_factory, "AAA")
+    assert (record.status, record.attempts, record.contract_count) == (FetchStatus.EMPTY, 1, 0)
+    assert not record.status.is_tombstone
+    assert await _contract_rows(session_factory, "AAA") == 0
+    assert (report.empty, tally.failed) == (1, 0)
+
+
+async def test_ranges_that_all_answer_with_nothing_are_an_empty_chain_not_a_tombstone(session_factory):
+    await _universe(session_factory, ("AAA",))
+    schwab = FakeSchwab()
+    schwab.script["AAA"] = [502, 502]
+    schwab.empty.add("AAA")
+
+    await _run(session_factory, schwab)
+
+    record = await _record(session_factory, "AAA")
+    assert (record.status, record.attempts) == (FetchStatus.EMPTY, 5)
+
+
+async def test_every_call_waits_on_the_shared_budget(session_factory):
+    await _universe(session_factory, ("AAA", "BBB"))
+    budget = Budget()
+    schwab = FakeSchwab()
+    schwab.script["AAA"] = [502]
+
+    await _run(session_factory, schwab, budget=budget)
+
+    # 3 calls at 1 per second: the first is free, the other two each wait a second.
+    assert budget.waited == pytest.approx(2.0)
+
+
+# --- resume -----------------------------------------------------------------------------------------
+
+
+async def test_a_rerun_skips_every_underlying_already_recorded_whatever_its_status(session_factory):
+    await _universe(session_factory, ("AAA", "BAD", "EMP", "DEAD"))
+    schwab = FakeSchwab()
+    schwab.script["BAD"] = [400]
+    schwab.empty.add("EMP")
+    schwab.script["DEAD"] = [502] * ATTEMPTS * 4
+    await _run(session_factory, schwab)
+    before = [await _record(session_factory, s) for s in ("AAA", "BAD", "EMP", "DEAD")]
+    schwab.calls.clear()
+
+    report = await _run(session_factory, schwab)
+
+    assert schwab.calls == []
+    assert (report.already_recorded, report.calls) == (4, 0)
+    assert [await _record(session_factory, s) for s in ("AAA", "BAD", "EMP", "DEAD")] == before
+    assert await _contract_rows(session_factory, "AAA") == 6
+
+
+async def test_a_pass_a_dead_token_killed_propagates_and_resumes_without_repeating_work(session_factory):
+    await _universe(session_factory, ("AAA", "BBB", "CCC", "DDD"))
+    schwab = FakeSchwab()
+    schwab.script["CCC"] = [SchwabAuthError("refresh token rejected")]
+
+    tally = SweepTally()
+    with pytest.raises(SchwabAuthError):
+        await _run(session_factory, schwab, tally=tally)
+
+    # Never a Tombstone: CCC has no record, AAA and BBB were committed before the token died.
+    assert schwab.symbols_called() == ["AAA", "BBB", "CCC"]
+    assert [(await _record(session_factory, s)) is None for s in ("AAA", "BBB", "CCC", "DDD")] == [
+        False,
+        False,
+        True,
+        True,
+    ]
+    assert (tally.attempted, tally.failed) == (2, 0)
+    schwab.calls.clear()
+
+    report = await _run(session_factory, schwab)
+
+    assert schwab.symbols_called() == ["CCC", "DDD"]
+    assert (report.already_recorded, report.ok) == (2, 2)
+
+
+@pytest.mark.parametrize("error", [SchwabAuthError("rejected"), TokenMissingError("no token stored")])
+async def test_a_dead_token_inside_the_ladder_is_not_a_tombstone(session_factory, error):
+    await _universe(session_factory, ("AAA",))
+    schwab = FakeSchwab()
+    schwab.script["AAA"] = [502, 502, error]
+
+    with pytest.raises(type(error)):
+        await _run(session_factory, schwab)
+
+    assert len(schwab.calls) == 3
+    assert await _record(session_factory, "AAA") is None
+    assert await _contract_rows(session_factory, "AAA") == 0
+
+
+async def test_being_over_budget_stops_the_pass_without_a_tombstone_and_speaks_for_the_source(session_factory):
+    await _universe(session_factory, ("AAA", "BBB", "CCC"))
+    schwab = FakeSchwab()
+    schwab.script["BBB"] = [429]
+
+    tally = SweepTally()
+    with pytest.raises(SchwabResponseError, match="429"):
+        await _run(session_factory, schwab, tally=tally)
+
+    assert schwab.symbols_called() == ["AAA", "BBB"]
+    assert await _record(session_factory, "AAA") is not None
+    assert await _record(session_factory, "BBB") is None
+    assert tally.verdict is SweepVerdict.FAILING
+
+
+# --- the deadline -----------------------------------------------------------------------------------
+
+
+def test_the_deadline_is_the_first_3am_central_after_the_evening_starts():
+    # Tuesday 2026-11-17 evening: 03:00 CST Wednesday is 09:00 UTC.
+    assert chain_deadline(SESSION) == DEADLINE
+    # Friday's evening ends on Saturday morning.
+    assert chain_deadline(date(2026, 11, 13)) == datetime(2026, 11, 14, 9, 0, tzinfo=UTC)
+    # Before the clocks fall back (2026-11-01) it is 03:00 CDT, 08:00 UTC.
+    assert chain_deadline(date(2026, 10, 20)) == datetime(2026, 10, 21, 8, 0, tzinfo=UTC)
+    assert chain_deadline(SESSION, time(4, 30)) == datetime(2026, 11, 18, 10, 30, tzinfo=UTC)
+
+
+class Ticking:
+    """The chain adapter, with the clock moving on `step` after every call."""
+
+    def __init__(self, inner: SchwabOptionChains, clock: FakeClock, step: timedelta) -> None:
+        self.inner, self.clock, self.step = inner, clock, step
+
+    async def chain(self, symbol, start=None, end=None):
+        try:
+            return await self.inner.chain(symbol, start, end)
+        finally:
+            self.clock.current += self.step
+
+
+async def test_past_the_deadline_the_pass_writes_only_tombstones_and_makes_no_call(session_factory):
+    await _universe(session_factory, ("AAA", "BBB", "CCC"))
+    schwab = FakeSchwab()
+    tally = SweepTally()
+
+    report = await _run(session_factory, schwab, FakeClock(DEADLINE), tally)
+
+    assert schwab.calls == []
+    for symbol in ("AAA", "BBB", "CCC"):
+        record = await _record(session_factory, symbol)
+        assert (record.status, record.attempts, record.contract_count) == (FetchStatus.FAILED, 0, 0)
+        assert record.fetched_at == DEADLINE
+    assert (report.past_deadline, report.calls) == (3, 0)
+    assert (tally.attempted, tally.failed) == (3, 3)
+
+
+async def test_a_pass_that_reaches_the_deadline_tombstones_what_is_left(session_factory):
+    await _universe(session_factory, ("AAA", "BBB", "CCC", "DDD"))
+    schwab = FakeSchwab()
+    # The clock is 2 hours a call and 3.5 hours from the deadline: calls 1 and 2 are made, the third is not.
+    clock = FakeClock(DEADLINE - timedelta(hours=3, minutes=30))
+    source = Ticking(SchwabOptionChains(schwab), clock, timedelta(hours=2))
+
+    tally = SweepTally()
+    report = await _run(session_factory, schwab, clock, tally, source=source)
+
+    assert schwab.symbols_called() == ["AAA", "BBB"]
+    assert [(await _record(session_factory, s)).status for s in ("AAA", "BBB", "CCC", "DDD")] == [
+        FetchStatus.OK,
+        FetchStatus.OK,
+        FetchStatus.FAILED,
+        FetchStatus.FAILED,
+    ]
+    assert [(await _record(session_factory, s)).attempts for s in ("CCC", "DDD")] == [0, 0]
+    assert (report.ok, report.past_deadline) == (2, 2)
+    assert tally.verdict is SweepVerdict.FAILING
+
+
+async def test_a_deadline_inside_a_ladder_tombstones_that_underlying_with_the_calls_it_made(session_factory):
+    await _universe(session_factory, ("AAA",))
+    schwab = FakeSchwab()
+    schwab.script["AAA"] = [502, 502]
+    clock = FakeClock(DEADLINE - timedelta(hours=2, minutes=30))
+    source = Ticking(SchwabOptionChains(schwab), clock, timedelta(hours=1))
+
+    report = await _run(session_factory, schwab, clock, source=source)
+
+    # Two whole-chain calls fail, the first range is asked, then the deadline passes.
+    assert len(schwab.calls) == 3
+    record = await _record(session_factory, "AAA")
+    assert (record.status, record.attempts, record.contract_count) == (FetchStatus.FAILED, 3, 0)
+    assert await _contract_rows(session_factory, "AAA") == 0
+    assert report.past_deadline == 1
+
+
+async def test_a_missed_night_is_never_caught_up(session_factory):
+    await _universe(session_factory, ("AAA", "BBB", "CCC"))
+    schwab = FakeSchwab()
+    schwab.script["BBB"] = [SchwabAuthError("refresh token rejected")]
+    with pytest.raises(SchwabAuthError):
+        await _run(session_factory, schwab)
+    schwab.calls.clear()
+
+    # The token is renewed only after the deadline: what was done stays, the rest is recorded as missed.
+    morning = FakeClock(DEADLINE + timedelta(hours=5))
+    report = await _run(session_factory, schwab, morning)
+
+    assert schwab.calls == []
+    assert [(await _record(session_factory, s)).status for s in ("AAA", "BBB", "CCC")] == [
+        FetchStatus.OK,
+        FetchStatus.FAILED,
+        FetchStatus.FAILED,
+    ]
+    assert (report.already_recorded, report.past_deadline) == (1, 2)
+
+
+# --- the sweep tally --------------------------------------------------------------------------------
+
+
+async def test_a_few_tombstones_among_many_underlyings_do_not_fail_the_pass(session_factory):
+    symbols = tuple(f"S{n:02d}" for n in range(40))
+    await _universe(session_factory, symbols)
+    schwab = FakeSchwab()
+    schwab.script["S01"] = [502] * 5
+    schwab.script["S02"] = [400]
+    schwab.empty.add("S03")
+    tally = SweepTally()
+
+    await _run(session_factory, schwab, tally=tally)
+
+    # One Tombstone in 40 is 2.5 percent; a 400 and an empty chain are Schwab answering.
+    assert (tally.attempted, tally.failed) == (40, 1)
+    assert tally.verdict is SweepVerdict.HEALTHY
+
+
+async def test_more_than_about_five_percent_of_underlyings_failing_fails_the_pass(session_factory):
+    symbols = tuple(f"S{n:02d}" for n in range(20))
+    await _universe(session_factory, symbols)
+    schwab = FakeSchwab()
+    for symbol in ("S01", "S05", "S09"):
+        schwab.script[symbol] = [502] * 5
+    tally = SweepTally()
+
+    await _run(session_factory, schwab, tally=tally)
+
+    assert (tally.attempted, tally.failed) == (20, 3)
+    assert tally.verdict is SweepVerdict.FAILING

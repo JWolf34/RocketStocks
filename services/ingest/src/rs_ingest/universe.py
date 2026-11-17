@@ -198,7 +198,7 @@ class UniverseSnapshotter:
         nothing to do. Past the give-up time one attempt is made without waiting. `accept_shrink`
         turns the size guard off for this call; the stamp rule and the footer still apply.
         """
-        session = _last_evening_session(self._calendar, self._clock.now())
+        session = last_evening_session(self._calendar, self._clock.now())
         async with self._session_factory() as db:
             repo = UniverseRepository(db)
             existing = await repo.header(session)
@@ -348,7 +348,7 @@ def _accept_stamp(file: _File, created_at: datetime, window: _Window) -> None:
     raise _Unusable(f"{file.name} is stamped after the next open", superseded=True)
 
 
-def _last_evening_session(calendar: TradingCalendar, now: datetime) -> date:
+def last_evening_session(calendar: TradingCalendar, now: datetime) -> date:
     today = eastern_day(now)
     for day in reversed(calendar.sessions_in_range(today - SESSION_SEARCH, today)):
         if datetime.combine(day, EVENING_STARTS_AT, tzinfo=EASTERN) <= now:
