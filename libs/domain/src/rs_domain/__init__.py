@@ -1,6 +1,7 @@
 """RocketStocks v2 domain models and ports."""
 
 from rs_domain._types import UtcDatetime
+from rs_domain.chains import ChainFetchRecord, ChainPass, FetchStatus, OptionContract
 from rs_domain.clock import SystemClock
 from rs_domain.days import EASTERN, eastern_day, eastern_day_start
 from rs_domain.earnings import EarningsOrigin, EarningsTime, StoredEarnings
@@ -45,13 +46,17 @@ __all__ = [
     "TOO_FEW_CASES_BELOW",
     "TrackRecord",
     "Candidate",
+    "ChainFetchRecord",
+    "ChainPass",
     "Clock",
     "Delivery",
     "EarningsOrigin",
     "EarningsTime",
     "EscalationPayload",
     "FactUnavailable",
+    "FetchStatus",
     "NextEarningsFact",
+    "OptionContract",
     "Outcome",
     "PopularityOrigin",
     "PopularitySnapshot",

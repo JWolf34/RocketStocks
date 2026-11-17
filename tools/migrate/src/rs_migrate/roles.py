@@ -53,6 +53,13 @@ GRANTS: dict[str, dict[str, tuple[str, ...]]] = {
         "ingest": ("SELECT", "INSERT", "DELETE"),
         "bot": _SELECT,
     },
+    # Written whole per underlying by the chain passes (a record and its contracts, never changed); no bot reader yet.
+    "chain_fetch": {
+        "ingest": _SELECT_INSERT,
+    },
+    "option_contract": {
+        "ingest": _SELECT_INSERT,
+    },
     "bar_request": {
         "ingest": ("SELECT", "INSERT", "UPDATE"),
     },
