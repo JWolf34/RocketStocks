@@ -8,13 +8,13 @@ Every night RocketStocks records the whole market's listings, daily bars, option
 - Through ingest's own client: chain sizes and failures on a sample (including the `BRK/B` spelling), bar depth from 1990, and each chain just after the close, at about 18:05 ET and before the open (does volume persist, do quotes, underlying price and implied volatility change, when does open interest change).
 - Its results rewrite `docs/reference/schwab-facts.md` in place; if the morning chain still carries closing volume and quotes, John sees the numbers and may drop the evening sweep.
 
-## Evening: Universe, then chains, then bars, each when the one before finishes
+## Evening: chains and the Universe from 18:05 ET, then bars
 
 - **Universe**, from 18:05 ET: once `nasdaqlisted.txt` and `otherlisted.txt` carry a File Creation Time after the session's close (retried every 15 minutes; by 20:00 ET the night uses the previous snapshot and Ops is pinged), every non-test listing is stored by date with its security name, flags and the File Creation Time as As-of; no class classifier and no listing spans.
 - A listing is optionable when it appears that day in Nasdaq's `options.txt` or Cboe's equity options symbol directory; the files are never committed.
-- **Chains**: every optionable listing's full chain, unfiltered, through the ladder (fetch, retry once, split into three expiry ranges with the last open-ended, retry each, then a Tombstone); a 400 or an empty chain is recorded, never retried.
-- Deadline 03:00 Central until the probe gives the settle time; anything unfetched by then is a Tombstone, and a missed night is never caught up.
-- **Bars** for every listing in the latest Universe, SPY and Triggered stocks first; Outcomes start when the pass finishes, and it stops before the morning pass and resumes the next evening.
+- **Chains**, from 18:05 ET over the optionable listings of the latest stored Universe (they do not wait for the night's): every optionable listing's full chain, unfiltered, through the ladder (fetch, retry once, split into three expiry ranges with the last open-ended, retry each, then a Tombstone); a 400 or an empty chain is recorded, never retried.
+- Deadline 19:00 ET, before Schwab resets the session's volume to zero (between 19:00 and 21:00 ET); anything unfetched by then is a Tombstone, and a missed night is never caught up.
+- **Bars**, once chains finish, for every listing in the latest Universe, SPY and Triggered stocks first; Outcomes start when the pass finishes, and it stops before the morning pass and resumes the next evening.
 - A symbol with no bars asks from 1990 (this is the seed), one statement per symbol so none decompresses past Timescale's 100,000-row cap.
 - Tails keep the overlap split check; a tail sharing no session with the stored bars (a reused ticker) also replaces the whole history; bars of a listing that leaves the Universe are kept, and survivorship-free history waits for a vendor.
 - **Earnings calendar** (Nasdaq, no Schwab calls, runs beside them): a dated snapshot from a week back to the end of the forward window, per row ticker, report date, time of day, fiscal quarter, EPS forecast, estimate count, actual EPS and surprise; unparseable values are null and counted.
@@ -22,13 +22,13 @@ Every night RocketStocks records the whole market's listings, daily bars, option
 
 ## Morning
 
-- Once open interest has settled, a second pass fetches every optionable chain and stores only open interest, named by the session it settled for; its deadline is the 09:30 ET open.
+- Once open interest has settled (07:00 ET), a second pass fetches every optionable chain and stores only open interest, named by the session it settled for; its deadline is the 09:30 ET open.
 - A failed morning loses nothing: the evening sweep carries the same open interest a session later.
 
 ## Records, failures, resume
 
 - Every chain pass writes one fetch record per optionable underlying (status, attempts, contract count, fetch time); a Tombstone is a failure status, an empty chain is an observation, and contract rows never carry nulls.
-- One shared Schwab budget (100 calls a minute) covers about 5,500 chain and 13,000 bar calls each evening and about 5,500 chain calls each morning; bars yield to chains.
+- One shared Schwab budget (120 calls a minute, the documented limit) covers about 5,500 chain and 13,000 bar calls each evening and about 5,500 chain calls each morning; the evening chains take about 46 minutes of it alone, and bars yield to chains.
 - Ops pings fire per source on first failure and on recovery; a pass counts as failing above about 5% of its underlyings.
 - The daemon re-runs any Schwab job a dead token killed once sign-in reopens the gate, and runs the passes on start after a restart; every Schwab job skips work already recorded and writes only Tombstones past its deadline.
 
