@@ -493,9 +493,11 @@ A 429, a dead token or a missing one stops the pass without a Tombstone for the 
 
 Nothing runs a stopped pass again once the next session's starts (a 429, a database failure, a token signed in again only the next day), and a daemon that was down for several sessions never runs theirs.
 So every pass, before its own session, writes Tombstones with no attempts for the optionable underlyings that earlier sessions of the same pass left with no record, a month back at most and never before the pass's first record.
-An earlier session's roster is its own Universe, the newest snapshot stored on or before it, so its count can differ by a few dozen names from the roster the stopped pass read.
+An earlier session's roster is the Universe its pass reads when it starts at its slot: the evening's is the snapshot before the session's own (or the session's, when there is none before), and the morning's is the session's own.
+A pass restarted after the night's Universe landed read that one instead, so the two can differ by a few dozen names.
 These Tombstones belong to the earlier sessions and are not judged with the pass that writes them; the log says `<pass> chains of <date>: N optionable underlyings of the Universe of <date> had no record; Tombstoned as missed`.
-A fetch record therefore explains every optionable underlying of every session from the first night on.
+A fetch record therefore explains every optionable underlying of every session from a pass's first record on, as long as no gap between two runs of the pass is longer than a month.
+A pass whose very first run stopped before recording anything leaves that one session unexplained.
 
 Read a night:
 ```

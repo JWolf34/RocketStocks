@@ -6,9 +6,10 @@ nothing. State lives in process, so after a restart a still-failing subject
 pings once more.
 
 A failure here is a source failing, or more than about 5% of a sweep's
-per-stock requests failing, each sweep judged against its own requests. One stock failing (a 404, no data for that symbol)
-is never reported as a failure of its source: the caller reports such an answer
-as ok, because the source did answer.
+per-stock requests failing, each sweep judged against its own requests. One
+stock failing (a 404, no data for that symbol) is never reported as a failure
+of its source: the caller reports such an answer as ok, because the source did
+answer.
 """
 
 import logging

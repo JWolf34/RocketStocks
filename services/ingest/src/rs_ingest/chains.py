@@ -49,6 +49,7 @@ from rs_domain import (
     OpenInterest,
     OptionContract,
     TradingCalendar,
+    UniverseHeader,
     eastern_day,
 )
 from rs_ingest.rate_limit import RateLimiter
@@ -269,20 +270,19 @@ async def _tombstone_earlier_sessions(
     """Tombstone every optionable underlying an earlier session of the pass left with no record.
 
     A pass a 429 or a failure stopped, and the sessions the daemon was down for, are never run
-    again, and every earlier session is past its deadline. Each session's roster is its own
-    Universe (the newest snapshot taken on or before it), looking back at most LEFTOVER_LOOK_BACK
-    and never before the pass's first record. Returns how many Tombstones were written.
+    again, and every earlier session is past its deadline. Each session's roster is the Universe
+    its pass reads when it starts at its slot, looking back at most LEFTOVER_LOOK_BACK and never
+    before the pass's first record. Returns how many Tombstones were written.
     """
     async with session_factory() as db:
         first = await ChainRepository(db).first_session(chain_pass)
-    if first is None:
+    if first is None or first >= session:
         return 0
     start = max(first, session - LEFTOVER_LOOK_BACK)
-    end = session - timedelta(days=1)
     written = 0
-    for day in calendar.sessions_in_range(start, end) if start <= end else ():
+    for day in calendar.sessions_in_range(start, session - timedelta(days=1)):
         async with session_factory() as db:
-            header = await UniverseRepository(db).latest_header(on_or_before=day)
+            header = await _slot_universe(UniverseRepository(db), chain_pass, day)
             if header is None:
                 continue
             missed = await ChainRepository(db).tombstone_unrecorded(day, chain_pass, header.snapshot_date, clock.now())
@@ -291,10 +291,22 @@ async def _tombstone_earlier_sessions(
             logger.warning(
                 "%s chains of %s: %d optionable underlyings of the Universe of %s had no record; "
                 "Tombstoned as missed: %s",
-                chain_pass.value, day, len(missed), header.snapshot_date, _head(missed),
+                chain_pass.value, day, len(missed), header.snapshot_date, _first_names(missed),
             )
             written += len(missed)
     return written
+
+
+async def _slot_universe(universe: UniverseRepository, chain_pass: ChainPass, session: date) -> UniverseHeader | None:
+    """The Universe a pass of `session` reads when it starts at its slot.
+
+    The evening starts before the night's snapshot is stored, so it reads the one before (or the
+    night's, when there is none before); the morning starts after, so it reads the night's.
+    """
+    after_night = session + timedelta(days=1)
+    if chain_pass is ChainPass.EVENING:
+        return await universe.latest_header(before=session) or await universe.latest_header(before=after_night)
+    return await universe.latest_header(before=after_night)
 
 
 class _Ladder:
@@ -420,7 +432,8 @@ def _count(report: ChainPassReport, tally: SweepTally, fetched: _Fetched) -> Non
                 report.rejected += 1
 
 
-def _head(symbols: Sequence[str]) -> str:
+def _first_names(symbols: Sequence[str]) -> str:
+    """The first LOGGED_NAMES of `symbols`, and how many more there are."""
     shown = ", ".join(symbols[:LOGGED_NAMES])
     return shown + (f" (+{len(symbols) - LOGGED_NAMES} more)" if len(symbols) > LOGGED_NAMES else "")
 

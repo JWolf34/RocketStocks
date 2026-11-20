@@ -685,17 +685,34 @@ async def test_an_outage_of_several_sessions_leaves_a_record_per_underlying_per_
     assert schwab.symbols_called() == ["AAA", "BBB"]  # Thursday's own chains, and nothing for the sessions missed
 
 
-async def test_an_earlier_session_is_tombstoned_over_its_own_universe(session_factory):
+async def test_an_earlier_session_is_tombstoned_over_the_universe_its_pass_reads_at_its_slot(session_factory):
     await _universe(session_factory, ("AAA",), day=date(2026, 11, 13))
     await _run(session_factory, FakeSchwab(), FakeClock(datetime(2026, 11, 13, 23, 30, tzinfo=UTC)))
-    # Tuesday's Universe lists NEW; Monday's roster was still Friday's.
+    await _run_morning(session_factory, FakeSchwab(), FakeClock(datetime(2026, 11, 16, 12, 30, tzinfo=UTC)))
+    # Tuesday's Universe lists NEW. Tuesday's evening starts before it is stored and reads
+    # Friday's; Tuesday's morning, on Wednesday, reads Tuesday's.
     await _universe(session_factory, ("AAA", "NEW"), day=SESSION)
 
     await _run(session_factory, FakeSchwab(), FakeClock(THURSDAY_EVENING))
+    await _run_morning(session_factory, FakeSchwab(), FakeClock(datetime(2026, 11, 19, 12, 30, tzinfo=UTC)))
 
     assert set(await _statuses(session_factory, date(2026, 11, 16))) == {"AAA"}
-    assert set(await _statuses(session_factory, SESSION)) == {"AAA", "NEW"}
+    assert set(await _statuses(session_factory, SESSION)) == {"AAA"}
     assert set(await _statuses(session_factory, date(2026, 11, 18))) == {"AAA", "NEW"}
+    assert set(await _statuses(session_factory, date(2026, 11, 16), ChainPass.MORNING)) == {"AAA"}
+    assert set(await _statuses(session_factory, SESSION, ChainPass.MORNING)) == {"AAA", "NEW"}
+
+
+async def test_a_complete_evening_on_last_nights_universe_leaves_nothing_to_tombstone(session_factory):
+    await _universe(session_factory, ("AAA",), day=date(2026, 11, 16))
+    await _run(session_factory, FakeSchwab())  # Tuesday's evening, before Tuesday's Universe is stored
+    await _universe(session_factory, ("AAA", "NEW"), day=SESSION)
+
+    report = await _run(session_factory, FakeSchwab(), FakeClock(NEXT_EVENING))
+
+    # NEW became optionable on Tuesday, after Tuesday's chains began: no chain was owed for it that night.
+    assert report.earlier_tombstones == 0
+    assert await _statuses(session_factory, SESSION) == {"AAA": (FetchStatus.OK, 1)}
 
 
 async def test_no_session_before_the_passs_first_record_is_tombstoned(session_factory):
