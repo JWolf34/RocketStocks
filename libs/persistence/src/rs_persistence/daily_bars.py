@@ -114,16 +114,21 @@ class DailyBarRepository:
         have = await self.latest_session_dates(symbols)
         return sorted(set(symbols) - have.keys())
 
-    async def record_unpriced(self, symbol: str, reason: str, now: datetime) -> None:
-        """Note a failed pricing attempt: the first call sets first_seen, later
-        calls only advance last_attempt and replace the reason."""
+    async def record_unpriced(self, symbol: str, reason: str, now: datetime, *, requested_as: str) -> None:
+        """Note a failed pricing attempt asked under the spelling `requested_as`: the
+        first call sets first_seen, later calls only advance last_attempt and replace
+        the reason and the spelling."""
         stmt = pg_insert(UnpricedSymbolRow).values(
-            symbol=symbol, first_seen=now, last_attempt=now, reason=reason
+            symbol=symbol, first_seen=now, last_attempt=now, reason=reason, requested_as=requested_as
         )
         await self._session.execute(
             stmt.on_conflict_do_update(
                 index_elements=[UnpricedSymbolRow.symbol],
-                set_={"last_attempt": stmt.excluded.last_attempt, "reason": stmt.excluded.reason},
+                set_={
+                    "last_attempt": stmt.excluded.last_attempt,
+                    "reason": stmt.excluded.reason,
+                    "requested_as": stmt.excluded.requested_as,
+                },
             )
         )
 
@@ -138,6 +143,7 @@ class DailyBarRepository:
                 first_seen=row.first_seen.astimezone(UTC),
                 last_attempt=row.last_attempt.astimezone(UTC),
                 reason=row.reason,
+                requested_as=row.requested_as,
             )
             for row in rows
         ]
