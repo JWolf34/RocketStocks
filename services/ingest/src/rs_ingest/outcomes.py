@@ -249,7 +249,7 @@ def main() -> int:
     try:
         asyncio.run(_run(dsn))
     except Exception:
-        logger.exception("outcomes job failed")
+        logger.exception("the Outcomes and Track record run failed")
         return 1
     return 0
 

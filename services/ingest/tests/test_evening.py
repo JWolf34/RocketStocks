@@ -1,6 +1,5 @@
 """The evening sequence: stages in order, failures kept, a dead token ending the run."""
 
-
 import pytest
 
 from rs_ingest.evening import run_evening

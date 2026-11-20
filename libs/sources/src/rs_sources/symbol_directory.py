@@ -115,7 +115,8 @@ class OptionsFile(BaseModel):
 
 class CboeEntry(BaseModel):
     """One row of Cboe's options directory: the symbol as Cboe spells it (class shares with a
-    dot) and the company or product name. A symbol can have several rows, one per market maker."""
+    dot) and the company or product name (empty when the file has no name column). A symbol can
+    have several rows, one per market maker."""
 
     model_config = ConfigDict(frozen=True)
 
@@ -215,19 +216,22 @@ class SymbolDirectory:
 
 
 def parse_cboe_directory(lines: Iterable[str]) -> tuple[CboeEntry, ...]:
-    """The rows of Cboe's directory CSV with a symbol, in file order; raises SourceError when a
-    column is missing or no row has a symbol."""
+    """The rows of Cboe's directory CSV with a symbol, in file order; raises SourceError when the
+    symbol column is missing or no row has a symbol."""
     # Header cells are padded with a leading space and fields are quoted.
     rows = csv.reader((line for line in lines if line.strip()), skipinitialspace=True)
     header = [cell.strip() for cell in next(rows, [])]
-    for column in (_CBOE_SYMBOL_COLUMN, _CBOE_NAME_COLUMN):
-        if column not in header:
-            raise SourceError(f"Cboe options directory has no {column!r} column")
-    symbol_at, name_at = header.index(_CBOE_SYMBOL_COLUMN), header.index(_CBOE_NAME_COLUMN)
+    if _CBOE_SYMBOL_COLUMN not in header:
+        raise SourceError(f"Cboe options directory has no {_CBOE_SYMBOL_COLUMN!r} column")
+    symbol_at = header.index(_CBOE_SYMBOL_COLUMN)
+    name_at = header.index(_CBOE_NAME_COLUMN) if _CBOE_NAME_COLUMN in header else None
     entries = tuple(
-        CboeEntry(symbol=row[symbol_at].strip(), name=row[name_at].strip())
+        CboeEntry(
+            symbol=row[symbol_at].strip(),
+            name=row[name_at].strip() if name_at is not None and len(row) > name_at else "",
+        )
         for row in rows
-        if len(row) > max(symbol_at, name_at) and row[symbol_at].strip()
+        if len(row) > symbol_at and row[symbol_at].strip()
     )
     if not entries:
         raise SourceError("Cboe options directory has no rows")

@@ -1,9 +1,9 @@
 """Runs a plan: the survey (chain sizes, bar depth) while the clock waits for each timed sample.
 
-Every chain, in the survey and in the timed samples, goes down ingest's ladder
-(`rs_ingest.chains`): fetch, fetch again once if the answer was a gateway error or a timeout,
-then fetch the three expiry ranges (the last open-ended), each tried twice. Bars are asked from
-ingest's seed start. A sample that is due goes before the next call of
+Every chain, in the survey and in the timed samples, goes down the ladder with ingest's attempts
+and expiry ranges (`rs_ingest.chains`): fetch, fetch again once if the answer was a gateway
+error or a timeout, then fetch the three expiry ranges (the last open-ended), each tried twice.
+Bars are asked from ingest's seed start. A sample that is due goes before the next call of
 anything else, between the parts of a ladder included.
 
 Every call waits on the limiter, builds its client from the stored token (a survey reuses one

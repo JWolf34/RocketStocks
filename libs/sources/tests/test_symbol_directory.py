@@ -233,12 +233,12 @@ async def test_cboe_without_a_symbol_column_is_a_source_error():
         await directory_for(host).cboe_underlyings()
 
 
-async def test_cboe_without_a_name_column_is_a_source_error():
+async def test_cboe_without_a_name_column_still_gives_its_symbols():
     host = FakeDirectoryHost()
     host.bodies["cboe"] = ' Name, Stock Symbol\n"A CO","AAA"\n'
 
-    with pytest.raises(SourceError, match="Company Name"):
-        await directory_for(host).cboe_underlyings()
+    assert await directory_for(host).cboe_underlyings() == frozenset({"AAA"})
+    assert await directory_for(host).cboe_directory() == (CboeEntry(symbol="AAA", name=""),)
 
 
 async def test_the_cboe_directory_keeps_every_row_with_its_name_in_file_order():

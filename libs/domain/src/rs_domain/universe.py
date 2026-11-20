@@ -1,5 +1,5 @@
 """The Universe as stored: every non-test listing of one session date, with the snapshot's
-header (its As-of, the source counts, whether the optionable names were carried over).
+header (its As-of time, the source counts, whether the optionable names were carried over).
 """
 
 from datetime import date
