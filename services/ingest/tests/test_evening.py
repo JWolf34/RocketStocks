@@ -1,4 +1,4 @@
-"""The evening sequence: stages in order, failures kept, a dead token ending the run."""
+"""The evening sequence: stages in order, failures kept, a dead or missing token ending the run."""
 
 from datetime import UTC, date, datetime
 
@@ -6,7 +6,7 @@ import pytest
 
 from rs_ingest.evening import evening_start, run_evening
 from rs_observability import QuietFailure, SourceFailed
-from rs_sources.schwab import SchwabAuthError
+from rs_sources.schwab import SchwabAuthError, TokenMissingError
 
 
 class Stages:
@@ -50,10 +50,11 @@ async def test_a_failed_stage_does_not_hold_back_the_stages_after_it_and_is_rais
     assert s.judged == [boom]
 
 
-async def test_a_dead_token_ends_the_evening_at_once_without_judging_it():
-    s = Stages(chains=SchwabAuthError("refresh token rejected"))
+@pytest.mark.parametrize("error", [SchwabAuthError("refresh token rejected"), TokenMissingError("no token stored")])
+async def test_a_dead_or_missing_token_ends_the_evening_at_once_without_judging_it(error):
+    s = Stages(chains=error)
 
-    with pytest.raises(SchwabAuthError):
+    with pytest.raises(type(error)):
         await run_evening([s.stage("chains"), s.stage("bars"), s.stage("outcomes")], s.judge)
 
     assert s.order == ["chains"]
