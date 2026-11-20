@@ -26,21 +26,19 @@ import logging
 from collections import Counter
 from collections.abc import Awaitable, Callable, Iterator
 from dataclasses import dataclass, field
-from datetime import date, datetime, time, timedelta
+from datetime import date, time, timedelta
 from typing import Protocol
 
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from rs_domain import (
-    EASTERN,
     Clock,
     EarningsOrigin,
     StoredEarnings,
     TradingCalendar,
-    eastern_day,
 )
-from rs_ingest.universe import SESSION_SEARCH
+from rs_ingest.universe import last_evening_session
 from rs_persistence import EarningsSnapshotRepository
 from rs_sources.errors import SourceError
 from rs_sources.nasdaq import EarningsDay
@@ -123,15 +121,6 @@ def _next_weekday(day: date) -> date:
     return day
 
 
-def _latest_evening(calendar: TradingCalendar, now: datetime) -> date:
-    """The latest session whose evening has reached SNAPSHOT_AT; a weekend or holiday has none."""
-    today = eastern_day(now)
-    for day in reversed(calendar.sessions_in_range(today - SESSION_SEARCH, today)):
-        if datetime.combine(day, SNAPSHOT_AT, tzinfo=EASTERN) <= now:
-            return day
-    raise RuntimeError(f"no session evening has reached {SNAPSHOT_AT} in the {SESSION_SEARCH.days} days before {today}")
-
-
 async def snapshot_earnings(
     *,
     session_factory: async_sessionmaker[AsyncSession],
@@ -140,7 +129,8 @@ async def snapshot_earnings(
     clock: Clock,
 ) -> SnapshotReport | None:
     """Take the latest evening's snapshot; None when that evening already has one."""
-    evening = _latest_evening(calendar, clock.now())
+    # A weekend or holiday has no evening of its own, so it finds the last session's.
+    evening = last_evening_session(calendar, clock.now(), SNAPSHOT_AT)
     async with session_factory() as session:
         if await EarningsSnapshotRepository(session).has_snapshot(EarningsOrigin.NIGHTLY, evening):
             return None

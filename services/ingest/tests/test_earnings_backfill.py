@@ -22,7 +22,7 @@ MONDAY, TUESDAY, WEDNESDAY, THURSDAY, FRIDAY = (date(2008, 1, d) for d in range(
 LATE_NIGHT = datetime(2026, 11, 4, 4, 30, tzinfo=UTC)
 
 
-def reported(ticker: str, day: date) -> EarningsReport:
+def earnings_report(ticker: str, day: date) -> EarningsReport:
     return EarningsReport(
         ticker=ticker,
         report_date=day,
@@ -77,7 +77,7 @@ async def test_each_weekday_is_asked_once_and_weekends_are_not(session_factory):
 
 
 async def test_rows_are_labelled_backfill_with_the_fetch_time_and_the_eastern_fetch_date(session_factory):
-    nasdaq = FakeNasdaq({TUESDAY: [reported("AAA", TUESDAY), reported("BBB", TUESDAY)]})
+    nasdaq = FakeNasdaq({TUESDAY: [earnings_report("AAA", TUESDAY), earnings_report("BBB", TUESDAY)]})
 
     report = await run(session_factory, nasdaq)
 
@@ -91,7 +91,7 @@ async def test_rows_are_labelled_backfill_with_the_fetch_time_and_the_eastern_fe
 
 
 async def test_a_rerun_skips_days_already_stored_and_asks_again_only_for_days_without_rows(session_factory):
-    days = {MONDAY: [reported("A", MONDAY)], WEDNESDAY: [reported("B", WEDNESDAY)]}
+    days = {MONDAY: [earnings_report("A", MONDAY)], WEDNESDAY: [earnings_report("B", WEDNESDAY)]}
     await run(session_factory, FakeNasdaq(days))
 
     again = FakeNasdaq(days)
@@ -104,7 +104,7 @@ async def test_a_rerun_skips_days_already_stored_and_asks_again_only_for_days_wi
 
 
 async def test_a_failed_day_is_left_for_the_rerun_and_the_rest_are_stored(session_factory):
-    days = {d: [reported("A", d)] for d in (MONDAY, TUESDAY, WEDNESDAY, THURSDAY, FRIDAY)}
+    days = {d: [earnings_report("A", d)] for d in (MONDAY, TUESDAY, WEDNESDAY, THURSDAY, FRIDAY)}
     first = await run(session_factory, FakeNasdaq(days, failing={WEDNESDAY}))
 
     assert first.failed == [WEDNESDAY]
@@ -119,7 +119,7 @@ async def test_a_failed_day_is_left_for_the_rerun_and_the_rest_are_stored(sessio
 
 
 async def test_a_transient_failure_is_retried_so_it_leaves_no_hole(session_factory):
-    days = {d: [reported("A", d)] for d in (MONDAY, TUESDAY, WEDNESDAY)}
+    days = {d: [earnings_report("A", d)] for d in (MONDAY, TUESDAY, WEDNESDAY)}
     nasdaq = FakeNasdaq(days, fail_times={TUESDAY: 2})
     sleeps = []
 
@@ -161,12 +161,12 @@ async def test_a_backfill_row_does_not_displace_a_nightly_row_of_the_same_report
                     snapshot_date=date(2026, 11, 3),
                     origin=EarningsOrigin.NIGHTLY,
                     fetched_at=LATE_NIGHT,
-                    **reported("A", MONDAY).model_dump(),
+                    **earnings_report("A", MONDAY).model_dump(),
                 )
             ]
         )
 
-    await run(session_factory, FakeNasdaq({MONDAY: [reported("A", MONDAY)]}))
+    await run(session_factory, FakeNasdaq({MONDAY: [earnings_report("A", MONDAY)]}))
 
     assert sorted(r.origin for r in await stored_rows(session_factory)) == ["backfill", "nightly"]
 
