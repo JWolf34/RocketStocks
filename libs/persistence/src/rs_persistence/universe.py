@@ -58,11 +58,13 @@ class UniverseRepository:
         row = await self._session.get(UniverseSnapshotRow, day)
         return _header_from_row(row) if row is not None else None
 
-    async def latest_header(self) -> UniverseHeader | None:
-        """The newest snapshot without its listings; None before the first."""
-        row = await self._session.scalar(
-            select(UniverseSnapshotRow).order_by(UniverseSnapshotRow.snapshot_date.desc()).limit(1)
-        )
+    async def latest_header(self, before: date | None = None) -> UniverseHeader | None:
+        """The newest snapshot without its listings, or the newest dated before `before`;
+        None when there is none."""
+        query = select(UniverseSnapshotRow)
+        if before is not None:
+            query = query.where(UniverseSnapshotRow.snapshot_date < before)
+        row = await self._session.scalar(query.order_by(UniverseSnapshotRow.snapshot_date.desc()).limit(1))
         return _header_from_row(row) if row is not None else None
 
     async def latest(self) -> UniverseSnapshot | None:

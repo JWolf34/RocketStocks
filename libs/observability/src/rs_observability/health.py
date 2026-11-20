@@ -6,9 +6,10 @@ nothing. State lives in process, so after a restart a still-failing subject
 pings once more.
 
 A failure here is a source failing, or more than about 5% of a sweep's
-per-stock requests failing. One stock failing (a 404, no data for that symbol)
-is never reported as a failure of its source: the caller reports such an answer
-as ok, because the source did answer.
+per-stock requests failing, each sweep judged against its own requests. One
+stock failing (a 404, no data for that symbol) is never reported as a failure
+of its source: the caller reports such an answer as ok, because the source did
+answer.
 """
 
 import logging
@@ -67,12 +68,14 @@ class SweepTally:
     """The outcome of every per-stock request in one sweep.
 
     `source_wide` marks a failure that speaks for the whole source however few
-    requests were made, such as being rate limited.
+    requests were made, such as being rate limited. `unit` names what one entry
+    counts, for the Ops ping.
     """
 
     attempted: int = 0
     failed: int = 0
     source_wide: bool = False
+    unit: str = "requests"
 
     def record_ok(self) -> None:
         self.attempted += 1
@@ -126,12 +129,20 @@ class HealthTracker:
         logger.warning("%s is failing (%s)", subject, reason)
         await notify_ops(f"{subject} is failing ({reason}). See the {self._service} logs.")
 
-    async def report_sweep(self, subject: str, tally: SweepTally) -> bool:
-        """Judge a finished sweep; True when the subject is failing because of it."""
-        verdict = tally.verdict
-        if verdict is SweepVerdict.FAILING:
-            await self.report_failed(subject, f"{tally.failed} of {tally.attempted} requests failed")
+    async def report_sweep(self, subject: str, *tallies: SweepTally) -> bool:
+        """Judge finished sweeps of one subject, each against its own requests, in one report;
+        True when the subject is failing because of them.
+
+        One failing sweep fails the subject, and a healthy one clears it only when none failed,
+        so sweeps run back to back ping once, not a failure and a recovery minutes apart.
+        """
+        verdicts = [tally.verdict for tally in tallies]
+        if SweepVerdict.FAILING in verdicts:
+            failing = [tally for tally in tallies if tally.verdict is SweepVerdict.FAILING]
+            await self.report_failed(
+                subject, ", ".join(f"{tally.failed} of {tally.attempted} {tally.unit} failed" for tally in failing)
+            )
             return True
-        if verdict is SweepVerdict.HEALTHY:
+        if SweepVerdict.HEALTHY in verdicts:
             await self.report_ok(subject)
         return False

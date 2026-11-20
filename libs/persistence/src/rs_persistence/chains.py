@@ -8,9 +8,9 @@ recorded for the pass and stores nothing.
 """
 
 from collections.abc import Sequence
-from datetime import UTC, date
+from datetime import UTC, date, datetime
 
-from sqlalchemy import select
+from sqlalchemy import func, literal, select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -25,6 +25,7 @@ from rs_persistence.models import (
     ChainFetchRow,
     OptionContractRow,
     OptionOpenInterestRow,
+    UniverseListingRow,
 )
 
 # 27 bound parameters per contract row; stay far below the protocol's 65535 limit.
@@ -127,6 +128,40 @@ class ChainRepository:
             )
         )
         return set(underlyings)
+
+    async def first_session(self, chain_pass: ChainPass) -> date | None:
+        """The earliest session a pass has any record for; None before its first."""
+        return await self._session.scalar(
+            select(func.min(ChainFetchRow.session_date)).where(ChainFetchRow.chain_pass == chain_pass.value)
+        )
+
+    async def tombstone_unrecorded(
+        self, session_date: date, chain_pass: ChainPass, snapshot_date: date, fetched_at: datetime
+    ) -> list[str]:
+        """Write a Tombstone with no attempts for every optionable listing of the Universe of
+        `snapshot_date` that the pass has no record for in `session_date`; returns their
+        underlyings. Records already there, whatever their status, are kept."""
+        c = ChainFetchRow.__table__.c
+        # Typed literals: the enum columns take no untyped text.
+        tombstones = select(
+            literal(session_date, c.session_date.type),
+            literal(chain_pass.value, c.chain_pass.type),
+            UniverseListingRow.symbol,
+            literal(FetchStatus.FAILED.value, c.status.type),
+            literal(0, c.attempts.type),
+            literal(0, c.contract_count.type),
+            literal(fetched_at, c.fetched_at.type),
+        ).where(UniverseListingRow.snapshot_date == snapshot_date, UniverseListingRow.optionable)
+        written = await self._session.scalars(
+            pg_insert(ChainFetchRow)
+            .from_select(
+                [c.session_date, c.chain_pass, c.underlying, c.status, c.attempts, c.contract_count, c.fetched_at],
+                tombstones,
+            )
+            .on_conflict_do_nothing()
+            .returning(ChainFetchRow.underlying)
+        )
+        return sorted(written)
 
     async def record(self, session_date: date, chain_pass: ChainPass, underlying: str) -> ChainFetchRecord | None:
         row = await self._session.get(ChainFetchRow, (session_date, chain_pass.value, underlying))

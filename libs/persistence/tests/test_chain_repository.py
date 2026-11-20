@@ -11,12 +11,16 @@ from rs_domain import (
     FetchStatus,
     OpenInterest,
     OptionContract,
+    UniverseCounts,
+    UniverseListing,
+    UniverseSnapshot,
 )
 from rs_persistence import (
     ChainFetchRow,
     ChainRepository,
     OptionContractRow,
     OptionOpenInterestRow,
+    UniverseRepository,
 )
 
 NIGHT = date(2026, 11, 9)
@@ -262,3 +266,94 @@ async def test_a_chunk_of_open_interest_compresses_and_reads_back(session_factor
         await s.execute(text(f"SELECT compress_chunk('{chunk}')"))
         assert await ChainRepository(s).open_interest(NIGHT, "AAA") == rows
         await s.rollback()
+
+
+# --- Tombstones for what an earlier session left unrecorded ------------------------------------------
+
+# The next session's evening, when it Tombstones what NIGHT left unrecorded.
+LATER = datetime(2026, 11, 10, 23, 5, tzinfo=UTC)
+
+
+async def _universe(session_factory, day: date, optionable: tuple[str, ...], others: tuple[str, ...] = ()) -> None:
+    listings = tuple(
+        UniverseListing(
+            symbol=symbol,
+            security_name=f"{symbol} Inc.",
+            exchange="Q",
+            etf=False,
+            financial_status="N",
+            cqs_symbol=None,
+            nasdaq_symbol=None,
+            optionable=symbol in optionable,
+        )
+        for symbol in (*optionable, *others)
+    )
+    snapshot = UniverseSnapshot(
+        snapshot_date=day,
+        as_of=FETCHED,
+        counts=UniverseCounts(nasdaq_listed=len(listings), other_listed=0, options_symbols=0, cboe_symbols=0),
+        optionable_carried=False,
+        listings=listings,
+    )
+    async with session_factory() as s:
+        await UniverseRepository(s).save(snapshot)
+        await s.commit()
+
+
+async def _tombstone(session_factory, chain_pass: ChainPass = ChainPass.EVENING) -> list[str]:
+    async with session_factory() as s:
+        written = await ChainRepository(s).tombstone_unrecorded(NIGHT, chain_pass, NIGHT, LATER)
+        await s.commit()
+    return written
+
+
+async def test_every_unrecorded_optionable_listing_gets_a_tombstone_with_no_attempts(session_factory):
+    await _universe(session_factory, NIGHT, ("AAA", "BBB", "CCC", "DDD"), others=("PLAIN",))
+    await _store(session_factory, _record("AAA", FetchStatus.EMPTY))
+    await _store(session_factory, _record("BBB", FetchStatus.REJECTED))
+
+    assert await _tombstone(session_factory) == ["CCC", "DDD"]
+
+    async with session_factory() as s:
+        repo = ChainRepository(s)
+        assert await repo.recorded_underlyings(NIGHT, ChainPass.EVENING) == {"AAA", "BBB", "CCC", "DDD"}
+        tombstone = await repo.record(NIGHT, ChainPass.EVENING, "CCC")
+        kept = await repo.record(NIGHT, ChainPass.EVENING, "AAA")
+        # The other pass of the session is its own.
+        assert await repo.recorded_underlyings(NIGHT, ChainPass.MORNING) == set()
+    assert tombstone == ChainFetchRecord(
+        session_date=NIGHT,
+        chain_pass=ChainPass.EVENING,
+        underlying="CCC",
+        status=FetchStatus.FAILED,
+        attempts=0,
+        contract_count=0,
+        fetched_at=LATER,
+    )
+    assert kept is not None and (kept.status, kept.fetched_at) == (FetchStatus.EMPTY, FETCHED)
+
+
+async def test_tombstoning_again_writes_nothing(session_factory):
+    await _universe(session_factory, NIGHT, ("AAA", "BBB"))
+
+    assert await _tombstone(session_factory, ChainPass.MORNING) == ["AAA", "BBB"]
+    assert await _tombstone(session_factory, ChainPass.MORNING) == []
+
+
+async def test_a_realistic_roster_is_tombstoned_in_one_statement(session_factory):
+    symbols = tuple(f"S{n:04d}" for n in range(6_000))
+    await _universe(session_factory, NIGHT, symbols)
+
+    assert len(await _tombstone(session_factory)) == 6_000
+
+
+async def test_the_first_session_of_a_pass_is_its_earliest_record(session_factory):
+    async with session_factory() as s:
+        assert await ChainRepository(s).first_session(ChainPass.EVENING) is None
+    await _store(session_factory, _record("AAA", FetchStatus.EMPTY, session_date=date(2026, 11, 10)))
+    await _store(session_factory, _record("AAA", FetchStatus.FAILED, session_date=NIGHT))
+    await _store_morning(session_factory, _morning("AAA", FetchStatus.EMPTY, session_date=date(2026, 11, 6)))
+
+    async with session_factory() as s:
+        assert await ChainRepository(s).first_session(ChainPass.EVENING) == NIGHT
+        assert await ChainRepository(s).first_session(ChainPass.MORNING) == date(2026, 11, 6)

@@ -1,4 +1,4 @@
-"""Every Schwab call: client factory, quote, daily history and option chains.
+"""Every Schwab call: client factory, quote, daily history and option chains, and how one failed.
 
 The REST adapters keep schwab-py and authlib inside this package.
 """
@@ -10,6 +10,7 @@ from rs_sources.schwab.client import (
     build_schwab_client,
     translate_auth_errors,
 )
+from rs_sources.schwab.failures import TOKEN_ERRORS, SchwabFailure, schwab_failure
 from rs_sources.schwab.market_data import (
     DailyBar,
     DailyHistory,
@@ -28,6 +29,7 @@ from rs_sources.schwab.option_chain import (
 )
 
 __all__ = [
+    "TOKEN_ERRORS",
     "CallbackRejected",
     "DailyBar",
     "DailyHistory",
@@ -37,6 +39,7 @@ __all__ = [
     "RejectReason",
     "RejectedBar",
     "SchwabAuthError",
+    "SchwabFailure",
     "SchwabMarketData",
     "SchwabOptionChains",
     "SchwabOAuth",
@@ -45,6 +48,7 @@ __all__ = [
     "TokenStore",
     "build_schwab_client",
     "normalize_chain",
+    "schwab_failure",
     "schwab_chain_symbol",
     "translate_auth_errors",
 ]

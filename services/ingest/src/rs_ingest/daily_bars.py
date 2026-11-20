@@ -41,7 +41,12 @@ from rs_domain import Clock, StoredDailyBar, TradingCalendar, eastern_day
 from rs_ingest.rate_limit import RateLimiter
 from rs_ingest.replay import replayed_hits
 from rs_persistence import DailyBarRepository, UniverseRepository
-from rs_sources.schwab import DailyHistory, SchwabAuthError, SchwabResponseError
+from rs_sources.schwab import (
+    DailyHistory,
+    SchwabFailure,
+    SchwabResponseError,
+    schwab_failure,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -73,8 +78,6 @@ OVERLAP_CALENDAR_DAYS = 10
 # (5-for-4) moves it by 20 percent, so 1 percent sits well clear of both. A false alarm costs
 # one extra call.
 CLOSE_TOLERANCE = 0.01
-# Schwab answers these for a symbol it will never price; anything else is transient.
-PERMANENT_STATUSES = frozenset({400, 404})
 
 
 class DailyHistorySource(Protocol):
@@ -252,23 +255,24 @@ async def sync_daily_bars(
             raise _Stopped
         try:
             history = await source.daily_history(price_history_symbol(symbol), start, last_session)
-        except SchwabAuthError:
-            raise  # the daemon pauses Schwab jobs on this
-        except SchwabResponseError as exc:
-            if exc.status_code == 429:
-                raise  # over budget: stop, the next run resumes
-            if exc.status_code in PERMANENT_STATUSES:
-                # A 400 can also be our own bad request, so the reason stays visible in the log.
-                logger.warning("%s: Schwab refuses the symbol: %s", symbol, exc)
-                if symbol not in stored:
-                    await _record_unpriced(session_factory, symbol, f"http_{exc.status_code}", clock.now())
-                    report.unpriced += 1
-                return None
-            logger.warning("%s: daily history failed: %s", symbol, exc)
-            report.failed.append(symbol)
-            return None
-        except Exception:
-            logger.exception("%s: daily history failed", symbol)
+        except Exception as exc:
+            match schwab_failure(exc):
+                case SchwabFailure.TOKEN:
+                    raise  # the daemon pauses Schwab jobs on this
+                case SchwabFailure.RATE_LIMITED:
+                    raise  # over budget: stop, the next run resumes
+                case SchwabFailure.PER_SYMBOL if isinstance(exc, SchwabResponseError):
+                    # Schwab will never price the symbol. A 400 can also be our own bad request,
+                    # so the reason stays visible in the log.
+                    logger.warning("%s: Schwab refuses the symbol: %s", symbol, exc)
+                    if symbol not in stored:
+                        await _record_unpriced(session_factory, symbol, f"http_{exc.status_code}", clock.now())
+                        report.unpriced += 1
+                    return None
+                case SchwabFailure.TRANSIENT if isinstance(exc, SchwabResponseError):
+                    logger.warning("%s: daily history failed: %s", symbol, exc)
+                case SchwabFailure.TRANSIENT:
+                    logger.exception("%s: daily history failed", symbol)
             report.failed.append(symbol)
             return None
         report.rejected.update(r.reason.value for r in history.rejects)
