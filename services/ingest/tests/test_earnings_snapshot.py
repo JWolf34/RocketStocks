@@ -20,7 +20,7 @@ from rs_sources import ExchangeCalendar
 from rs_sources.earnings import EarningsLookup, NextEarnings
 from rs_sources.edgar import Filing8K
 from rs_sources.errors import SourceError
-from rs_sources.nasdaq import EarningsDay, EarningsListing
+from rs_sources.nasdaq import EarningsDay, EarningsEntry
 
 CALENDAR = ExchangeCalendar()
 # Tuesday 2026-10-27, 20:45 Eastern: past the snapshot slot, and already the 28th in UTC.
@@ -37,7 +37,7 @@ class FakeClock:
         return self.current
 
 
-def listing(ticker: str, day: date, **overrides) -> EarningsListing:
+def earnings_entry(ticker: str, day: date, **overrides) -> EarningsEntry:
     fields = {
         "ticker": ticker,
         "report_date": day,
@@ -48,14 +48,15 @@ def listing(ticker: str, day: date, **overrides) -> EarningsListing:
         "eps_actual": None,
         "surprise_pct": None,
     }
-    return EarningsListing(**(fields | overrides))
+    return EarningsEntry(**(fields | overrides))
 
 
 class FakeNasdaq:
-    """A scripted calendar: `days` maps a date to its listings; `failing` days raise."""
+    """A scripted calendar: `days` maps a date to its entries; `failing` days raise."""
 
-    def __init__(self, days=None, failing=(), unparsed=None, fail_times=None):
+    def __init__(self, days=None, failing=(), unparsed=None, fail_times=None, fetched_at=FETCH_TIME):
         self.days = days or {}
+        self.fetched_at = fetched_at
         self.failing = set(failing)
         # Days that fail their first n requests, then answer.
         self.fail_times = dict(fail_times or {})
@@ -71,26 +72,26 @@ class FakeNasdaq:
             raise SourceError("GET failed", status_code=503)
         return EarningsDay(
             day=day,
-            fetched_at=FETCH_TIME,
-            listings=tuple(self.days.get(day, ())),
+            fetched_at=self.fetched_at,
+            entries=tuple(self.days.get(day, ())),
             unparsed=self.unparsed.get(day, {}),
         )
 
 
 def window_days():
-    """A realistic window: a listing on every weekday from 10-28 to 12-03 except Thanksgiving, and
+    """A realistic window: an entry on every weekday from 10-28 to 12-03 except Thanksgiving, and
     a past reporter that already published."""
-    days = {date(2026, 10, 22): [listing("PAST", date(2026, 10, 22), eps_actual=1.3, surprise_pct=4.0)]}
+    days = {date(2026, 10, 22): [earnings_entry("PAST", date(2026, 10, 22), eps_actual=1.3, surprise_pct=4.0)]}
     day = date(2026, 10, 28)
     while day <= date(2026, 12, 3):
         if day.weekday() < 5 and day != date(2026, 11, 26):
-            days[day] = [listing(f"T{day:%m%d}", day)]
+            days[day] = [earnings_entry(f"T{day:%m%d}", day)]
         day += timedelta(days=1)
-    days[date(2026, 10, 29)].append(listing("BBB", date(2026, 10, 29), time_of_day=None))
+    days[date(2026, 10, 29)].append(earnings_entry("BBB", date(2026, 10, 29), time_of_day=None))
     return days
 
 
-ROWS = sum(len(listings) for listings in window_days().values())
+ROWS = sum(len(entries) for entries in window_days().values())
 
 
 async def take(session_factory, nasdaq, now=EVENING):
@@ -123,11 +124,11 @@ async def test_the_snapshot_reads_a_week_back_and_a_fixed_horizon_forward(sessio
     assert len(nasdaq.requested) == len(set(nasdaq.requested))
     assert all(day.weekday() < 5 for day in nasdaq.requested)
     assert report is not None
-    assert (report.rows, report.last_listed_day, report.snapshot_date) == (ROWS, date(2026, 12, 3), TONIGHT)
+    assert (report.rows, report.last_entry_day, report.snapshot_date) == (ROWS, date(2026, 12, 3), TONIGHT)
     assert report.days_read == len(weekdays_back) + FORWARD_WEEKDAYS
 
 
-async def test_every_listing_is_stored_with_the_eastern_snapshot_date_and_its_fetch_time(session_factory):
+async def test_every_entry_is_stored_with_the_evenings_snapshot_date_and_its_fetch_time(session_factory):
     await take(session_factory, FakeNasdaq(window_days()))
 
     rows = await stored_rows(session_factory)
@@ -141,21 +142,21 @@ async def test_every_listing_is_stored_with_the_eastern_snapshot_date_and_its_fe
 
 
 async def test_a_thin_stretch_inside_the_window_does_not_end_the_read(session_factory):
-    # No listings from 12-04 to 12-31 (a quiet holiday stretch), then more in January.
-    days = window_days() | {date(2027, 1, 5): [listing("LATE", date(2027, 1, 5))]}
+    # No entries from 12-04 to 12-31 (a quiet holiday stretch), then more in January.
+    days = window_days() | {date(2027, 1, 5): [earnings_entry("LATE", date(2027, 1, 5))]}
 
     report = await take(session_factory, FakeNasdaq(days))
 
-    assert report is not None and report.last_listed_day == date(2027, 1, 5)
+    assert report is not None and report.last_entry_day == date(2027, 1, 5)
     assert any(r.ticker == "LATE" for r in await stored_rows(session_factory))
 
 
-async def test_the_last_listed_day_is_logged(session_factory, caplog):
+async def test_the_last_entry_day_is_logged(session_factory, caplog):
     with caplog.at_level(logging.INFO, logger="rs_ingest.earnings_snapshot"):
         await take(session_factory, FakeNasdaq(window_days()))
 
     [line] = [r.getMessage() for r in caplog.records if "earnings snapshot" in r.getMessage()]
-    assert "last listed day 2026-12-03" in line
+    assert "last entry day 2026-12-03" in line
 
 
 async def test_unparsed_values_are_summed_over_the_window_and_logged_per_field(session_factory, caplog):
@@ -173,22 +174,69 @@ async def test_unparsed_values_are_summed_over_the_window_and_logged_per_field(s
 
 
 @pytest.mark.parametrize(
-    ("label", "now"),
+    ("label", "now", "evening"),
     [
-        ("Saturday evening", datetime(2026, 11, 1, 1, 0, tzinfo=UTC)),
-        ("Thanksgiving evening", datetime(2026, 11, 27, 2, 0, tzinfo=UTC)),
-        ("Sunday evening", datetime(2026, 11, 2, 2, 0, tzinfo=UTC)),
-        ("before the slot", datetime(2026, 10, 27, 23, 59, tzinfo=UTC)),  # 19:59 ET
-        ("the morning", datetime(2026, 10, 27, 14, 0, tzinfo=UTC)),
+        ("at the slot", datetime(2026, 10, 28, 0, 30, tzinfo=UTC), TONIGHT),
+        ("past midnight", datetime(2026, 10, 28, 4, 30, tzinfo=UTC), TONIGHT),  # 00:30 ET on the 28th
+        ("the next morning", datetime(2026, 10, 28, 11, 30, tzinfo=UTC), TONIGHT),
+        ("the next day before the slot", datetime(2026, 10, 28, 23, 59, tzinfo=UTC), TONIGHT),  # 19:59 ET
+        ("Saturday evening", datetime(2026, 11, 1, 1, 0, tzinfo=UTC), date(2026, 10, 30)),
+        ("Sunday evening", datetime(2026, 11, 2, 2, 0, tzinfo=UTC), date(2026, 10, 30)),
+        ("Thanksgiving evening", datetime(2026, 11, 27, 2, 0, tzinfo=UTC), date(2026, 11, 25)),
     ],
 )
-async def test_nothing_is_due_off_a_trading_evening(session_factory, label, now):
+async def test_a_run_takes_the_latest_evening_past_its_slot(session_factory, label, now, evening):
+    nasdaq = FakeNasdaq(window_days(), fetched_at=now)
+
+    report = await take(session_factory, nasdaq, now)
+
+    assert report is not None and report.snapshot_date == evening
+    assert nasdaq.requested[0] == evening - timedelta(days=7)  # the window is the evening's
+    rows = await stored_rows(session_factory)
+    assert {(r.snapshot_date, r.fetched_at) for r in rows} == {(evening, now)}
+
+
+async def test_a_restart_the_morning_after_a_missed_slot_takes_that_evenings_snapshot_once(session_factory):
+    # Nothing ran on Monday or Tuesday evening; ingest comes back at 07:30 ET on Wednesday.
+    morning = datetime(2026, 10, 28, 11, 30, tzinfo=UTC)
+    nasdaq = FakeNasdaq(window_days(), fetched_at=morning)
+
+    report = await take(session_factory, nasdaq, morning)
+
+    assert report is not None and (report.snapshot_date, report.rows) == (TONIGHT, ROWS)
+    weekdays_back = [date(2026, 10, d) for d in (20, 21, 22, 23, 26, 27)]
+    assert nasdaq.requested == weekdays_back + forward_weekdays()  # Tuesday evening's window
+
+    # A second restart that morning, and Wednesday's own slot, take nothing more for Tuesday.
+    again = FakeNasdaq(window_days())
+    assert await take(session_factory, again, morning + timedelta(hours=2)) is None
+    assert again.requested == []
+    wednesday = datetime(2026, 10, 29, 0, 30, tzinfo=UTC)
+    later = await take(session_factory, FakeNasdaq(window_days(), fetched_at=wednesday), wednesday)
+    assert later is not None and later.snapshot_date == date(2026, 10, 28)
+
+    rows = await stored_rows(session_factory)
+    by_evening = {(r.snapshot_date, r.fetched_at) for r in rows}
+    assert by_evening == {(TONIGHT, morning), (date(2026, 10, 28), wednesday)}  # Monday is not caught up
+    assert sum(r.snapshot_date == TONIGHT for r in rows) == ROWS
+
+
+@pytest.mark.parametrize(
+    ("label", "evening", "now"),
+    [
+        ("Saturday", datetime(2026, 10, 31, 0, 30, tzinfo=UTC), datetime(2026, 11, 1, 1, 0, tzinfo=UTC)),
+        ("Thanksgiving", datetime(2026, 11, 26, 1, 30, tzinfo=UTC), datetime(2026, 11, 27, 2, 0, tzinfo=UTC)),
+    ],
+)
+async def test_a_weekend_or_holiday_finds_the_last_evenings_snapshot_and_does_nothing(
+    session_factory, label, evening, now
+):
+    await take(session_factory, FakeNasdaq(window_days()), evening)
     nasdaq = FakeNasdaq(window_days())
 
     assert await take(session_factory, nasdaq, now) is None
 
     assert nasdaq.requested == []
-    assert await stored_rows(session_factory) == []
 
 
 async def test_a_rerun_on_a_night_already_snapshotted_does_nothing(session_factory):
@@ -209,7 +257,7 @@ async def test_a_backfill_run_the_same_day_does_not_count_as_the_nights_snapshot
                     snapshot_date=TONIGHT,
                     origin=EarningsOrigin.BACKFILL,
                     fetched_at=FETCH_TIME,
-                    **listing("OLD", date(2008, 1, 15)).model_dump(),
+                    **earnings_entry("OLD", date(2008, 1, 15)).model_dump(),
                 )
             ]
         )
@@ -244,7 +292,7 @@ async def test_a_failed_forward_day_stores_nothing(session_factory):
     assert await stored_rows(session_factory) == []
 
 
-async def test_a_window_with_no_listings_at_all_stores_nothing(session_factory):
+async def test_a_window_with_no_entries_at_all_stores_nothing(session_factory):
     with pytest.raises(EarningsSnapshotError) as raised:
         await take(session_factory, FakeNasdaq())
 
@@ -288,14 +336,14 @@ async def test_a_day_that_fails_three_times_stores_nothing(session_factory):
 # --- the stored calendar the Catalyst reads ---
 
 
-async def store_snapshot(session_factory, snapshot_date: date, *listings: EarningsListing, origin=EarningsOrigin.NIGHTLY):
+async def store_snapshot(session_factory, snapshot_date: date, *entries: EarningsEntry, origin=EarningsOrigin.NIGHTLY):
     async with session_factory() as session, session.begin():
         await EarningsSnapshotRepository(session).insert_many(
             [
                 StoredEarnings(
                     snapshot_date=snapshot_date, origin=origin, fetched_at=FETCH_TIME, **item.model_dump()
                 )
-                for item in listings
+                for item in entries
             ]
         )
 
@@ -304,17 +352,17 @@ def stored_calendar(session_factory) -> StoredEarningsCalendar:
     return StoredEarningsCalendar(session_factory, CALENDAR)
 
 
-async def test_the_first_listing_on_or_after_today_in_the_latest_snapshot_is_returned(session_factory):
-    await store_snapshot(session_factory, date(2026, 10, 26), listing("AAA", date(2026, 11, 5)))
+async def test_the_first_entry_on_or_after_today_in_the_latest_snapshot_is_returned(session_factory):
+    await store_snapshot(session_factory, date(2026, 10, 26), earnings_entry("AAA", date(2026, 11, 5)))
     await store_snapshot(
         session_factory,
         TONIGHT,
-        listing("AAA", date(2026, 10, 22), eps_actual=1.0),
-        listing("AAA", date(2026, 10, 29), time_of_day=EarningsTime.PRE_MARKET),
-        listing("AAA", date(2027, 1, 28)),
+        earnings_entry("AAA", date(2026, 10, 22), eps_actual=1.0),
+        earnings_entry("AAA", date(2026, 10, 29), time_of_day=EarningsTime.PRE_MARKET),
+        earnings_entry("AAA", date(2027, 1, 28)),
     )
 
-    found = await stored_calendar(session_factory).next_listed("aaa", TONIGHT)
+    found = await stored_calendar(session_factory).next_earnings("aaa", TONIGHT)
 
     assert found is not None
     assert (found.report_date, found.time_of_day, found.snapshot_date) == (
@@ -325,37 +373,37 @@ async def test_the_first_listing_on_or_after_today_in_the_latest_snapshot_is_ret
 
 
 async def test_a_company_reporting_today_is_listed_for_today(session_factory):
-    await store_snapshot(session_factory, TONIGHT, listing("AAA", TONIGHT))
+    await store_snapshot(session_factory, TONIGHT, earnings_entry("AAA", TONIGHT))
 
-    found = await stored_calendar(session_factory).next_listed("AAA", TONIGHT)
+    found = await stored_calendar(session_factory).next_earnings("AAA", TONIGHT)
 
     assert found is not None and found.report_date == TONIGHT
 
 
 async def test_a_ticker_absent_from_a_fresh_snapshot_is_none(session_factory):
-    await store_snapshot(session_factory, TONIGHT, listing("AAA", date(2026, 10, 29)))
+    await store_snapshot(session_factory, TONIGHT, earnings_entry("AAA", date(2026, 10, 29)))
 
-    assert await stored_calendar(session_factory).next_listed("ZZZ", TONIGHT) is None
+    assert await stored_calendar(session_factory).next_earnings("ZZZ", TONIGHT) is None
 
 
 async def test_a_ticker_whose_only_rows_are_past_is_none(session_factory):
-    await store_snapshot(session_factory, TONIGHT, listing("AAA", date(2026, 10, 22)))
+    await store_snapshot(session_factory, TONIGHT, earnings_entry("AAA", date(2026, 10, 22)))
 
-    assert await stored_calendar(session_factory).next_listed("AAA", TONIGHT) is None
+    assert await stored_calendar(session_factory).next_earnings("AAA", TONIGHT) is None
 
 
 async def test_no_snapshot_at_all_is_none(session_factory):
-    assert await stored_calendar(session_factory).next_listed("AAA", TONIGHT) is None
+    assert await stored_calendar(session_factory).next_earnings("AAA", TONIGHT) is None
 
 
 async def test_backfill_rows_are_never_the_latest_snapshot(session_factory):
-    await store_snapshot(session_factory, date(2026, 10, 26), listing("AAA", date(2026, 11, 5)))
+    await store_snapshot(session_factory, date(2026, 10, 26), earnings_entry("AAA", date(2026, 11, 5)))
     # A backfill run today stores rows dated today, some of them in the future of an old report.
     await store_snapshot(
-        session_factory, TONIGHT, listing("AAA", date(2026, 10, 30)), origin=EarningsOrigin.BACKFILL
+        session_factory, TONIGHT, earnings_entry("AAA", date(2026, 10, 30)), origin=EarningsOrigin.BACKFILL
     )
 
-    found = await stored_calendar(session_factory).next_listed("AAA", TONIGHT)
+    found = await stored_calendar(session_factory).next_earnings("AAA", TONIGHT)
 
     assert found is not None and found.report_date == date(2026, 11, 5)
 
@@ -381,9 +429,9 @@ async def test_backfill_rows_are_never_the_latest_snapshot(session_factory):
     ],
 )
 async def test_a_snapshot_is_trusted_for_two_trading_sessions(session_factory, snapshot, today, fresh):
-    await store_snapshot(session_factory, snapshot, listing("AAA", date(2027, 1, 1)))
+    await store_snapshot(session_factory, snapshot, earnings_entry("AAA", date(2027, 1, 1)))
 
-    found = await stored_calendar(session_factory).next_listed("AAA", today)
+    found = await stored_calendar(session_factory).next_earnings("AAA", today)
 
     assert (found is not None) == fresh
 
@@ -419,7 +467,7 @@ AS_OF = datetime(2026, 10, 27, 15, 0, tzinfo=UTC)
 
 async def test_the_catalyst_reads_the_fresh_snapshot_not_the_estimate(session_factory):
     await store_snapshot(
-        session_factory, date(2026, 10, 26), listing("AAA", date(2026, 11, 3), time_of_day=EarningsTime.PRE_MARKET)
+        session_factory, date(2026, 10, 26), earnings_entry("AAA", date(2026, 11, 3), time_of_day=EarningsTime.PRE_MARKET)
     )
 
     result = await lookup(session_factory).next_earnings("AAA", AS_OF)
@@ -428,7 +476,7 @@ async def test_the_catalyst_reads_the_fresh_snapshot_not_the_estimate(session_fa
 
 
 async def test_a_ticker_missing_from_a_fresh_snapshot_gets_the_edgar_estimate(session_factory):
-    await store_snapshot(session_factory, date(2026, 10, 26), listing("BBB", date(2026, 11, 3)))
+    await store_snapshot(session_factory, date(2026, 10, 26), earnings_entry("BBB", date(2026, 11, 3)))
 
     result = await lookup(session_factory).next_earnings("AAA", AS_OF)
 
@@ -436,7 +484,7 @@ async def test_a_ticker_missing_from_a_fresh_snapshot_gets_the_edgar_estimate(se
 
 
 async def test_a_snapshot_more_than_two_sessions_old_falls_back_to_the_estimate_and_stores_nothing(session_factory):
-    await store_snapshot(session_factory, date(2026, 10, 22), listing("AAA", date(2026, 11, 3)))
+    await store_snapshot(session_factory, date(2026, 10, 22), earnings_entry("AAA", date(2026, 11, 3)))
 
     result = await lookup(session_factory).next_earnings("AAA", AS_OF)  # Tuesday: Thursday's snapshot is 3 sessions old
 

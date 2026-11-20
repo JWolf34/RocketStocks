@@ -10,23 +10,26 @@ It resumes: a weekday that already has backfill rows is skipped, so a rerun afte
 a stop, a failure or a dead endpoint carries on where it left off (a weekday Nasdaq
 had nothing for leaves no rows and is asked again). A day that fails is asked again twice,
 after 30 seconds and after 2 minutes; one that still fails is left for the rerun, and ten
-failed days in a row stop the run.
+failed days in a row stop the run. It reads ingest's settings like the daemon (the environment,
+or `.env` in the working directory), so the daemon's required variables must be set; it uses
+only `RS_DB_URL`.
 """
 
 import argparse
 import asyncio
 import logging
-import os
 import sys
 from collections import Counter
 from dataclasses import dataclass, field
 from datetime import date, timedelta
 
 import httpx
+from pydantic import ValidationError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from rs_domain import EarningsOrigin, StoredEarnings, SystemClock, eastern_day
 from rs_ingest.earnings_snapshot import DaySource, RetryingDays, weekdays
+from rs_ingest.settings import IngestSettings
 from rs_observability import configure_logging
 from rs_persistence import (
     EarningsSnapshotRepository,
@@ -38,7 +41,6 @@ from rs_sources.nasdaq import NasdaqEarningsCalendar
 
 logger = logging.getLogger(__name__)
 
-DSN_VARIABLE = "RS_DB_URL"
 EARLIEST_DAY = date(2008, 1, 1)
 # Progress is logged this often.
 PROGRESS_EVERY = 100
@@ -90,9 +92,9 @@ async def backfill_earnings(
                 snapshot_date=eastern_day(fetched.fetched_at),
                 origin=EarningsOrigin.BACKFILL,
                 fetched_at=fetched.fetched_at,
-                **listing.model_dump(),
+                **item.model_dump(),
             )
-            for listing in fetched.listings
+            for item in fetched.entries
         ]
         if rows:
             async with session_factory() as session, session.begin():
@@ -106,8 +108,8 @@ async def backfill_earnings(
     return report
 
 
-async def _run(dsn: str, start: date, end: date) -> BackfillReport:
-    engine = build_engine(dsn)
+async def _run(settings: IngestSettings, start: date, end: date) -> BackfillReport:
+    engine = build_engine(settings.rs_db_url)
     clock = SystemClock()
     try:
         async with httpx.AsyncClient(timeout=15.0) as http:
@@ -128,12 +130,13 @@ def main() -> int:
     parser.add_argument("--start", type=date.fromisoformat, default=EARLIEST_DAY, help="first day (default 2008-01-01)")
     parser.add_argument("--end", type=date.fromisoformat, default=None, help="last day (default: yesterday, Eastern)")
     args = parser.parse_args()
-    dsn = os.environ.get(DSN_VARIABLE)
-    if not dsn:
-        print(f"{DSN_VARIABLE} is not set", file=sys.stderr)
+    try:
+        settings = IngestSettings()
+    except ValidationError as exc:
+        logger.error("invalid configuration: %s", exc)
         return 2
     end = args.end or eastern_day(SystemClock().now()) - timedelta(days=1)
-    report = asyncio.run(_run(dsn, args.start, end))
+    report = asyncio.run(_run(settings, args.start, end))
     print(
         f"{args.start} to {end}: {report.days_total} weekdays, {report.skipped} already stored, "
         f"{report.fetched} fetched ({report.rows} rows), {len(report.failed)} failed"

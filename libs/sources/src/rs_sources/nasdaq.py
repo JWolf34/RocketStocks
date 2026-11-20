@@ -41,8 +41,8 @@ _NUMBER = re.compile(r"-?(\d+\.?\d*|\.\d+)")
 _QUARTER = re.compile(r"([A-Z][a-z]{2})/(\d{4})")
 
 
-class EarningsListing(BaseModel):
-    """A company's earnings report as Nasdaq's calendar lists it for one date."""
+class EarningsEntry(BaseModel):
+    """One company's entry in Nasdaq's earnings calendar for one date."""
 
     model_config = ConfigDict(frozen=True)
 
@@ -58,13 +58,13 @@ class EarningsListing(BaseModel):
 
 @dataclass(frozen=True)
 class EarningsDay:
-    """One date's answer. `unparsed` counts, per listing field, the values that came back
+    """One date's answer. `unparsed` counts, per entry field, the values that came back
     `N/A`, empty, unreadable or missing, and under `symbol` the rows skipped for lacking a
     usable ticker; a field a forward day does not carry (actuals) is not counted."""
 
     day: date
     fetched_at: datetime
-    listings: tuple[EarningsListing, ...]
+    entries: tuple[EarningsEntry, ...]
     unparsed: Mapping[str, int]
 
 
@@ -75,7 +75,7 @@ class NasdaqEarningsCalendar:
         self._limiter = MinInterval(min_interval)
 
     async def day(self, day: date) -> EarningsDay:
-        """Everything Nasdaq lists for `day`; no listings means Nasdaq has none for it.
+        """Everything Nasdaq lists for `day`; no entries means Nasdaq has none for it.
 
         A failed request or an unexpected shape raises SourceError, because a gap
         would make "nothing listed" unprovable.
@@ -88,11 +88,11 @@ class NasdaqEarningsCalendar:
             params={"date": day.isoformat()},
         )
         fetched_at = self._clock.now()
-        listings, unparsed = _parse_day(payload, day)
-        return EarningsDay(day=day, fetched_at=fetched_at, listings=listings, unparsed=unparsed)
+        entries, unparsed = _parse_day(payload, day)
+        return EarningsDay(day=day, fetched_at=fetched_at, entries=entries, unparsed=unparsed)
 
 
-def _parse_day(payload: Any, day: date) -> tuple[tuple[EarningsListing, ...], Counter[str]]:
+def _parse_day(payload: Any, day: date) -> tuple[tuple[EarningsEntry, ...], Counter[str]]:
     try:
         data = payload["data"]
         if data is None:
@@ -106,12 +106,12 @@ def _parse_day(payload: Any, day: date) -> tuple[tuple[EarningsListing, ...], Co
     except (KeyError, TypeError, AttributeError) as exc:
         raise SourceError(f"Nasdaq earnings calendar for {day} has an unexpected shape") from exc
     unparsed: Counter[str] = Counter()
-    listings: dict[str, EarningsListing] = {}
+    entries: dict[str, EarningsEntry] = {}
     for row in rows:
-        listing = _parse_row(row, day, unparsed)
-        if listing is not None:
-            listings.setdefault(listing.ticker, listing)
-    return tuple(listings.values()), unparsed
+        entry = _parse_row(row, day, unparsed)
+        if entry is not None:
+            entries.setdefault(entry.ticker, entry)
+    return tuple(entries.values()), unparsed
 
 
 def _is_no_record(payload: Any) -> bool:
@@ -120,8 +120,8 @@ def _is_no_record(payload: Any) -> bool:
     return status.get("rCode") == 200 and any(message.get("code") == NO_RECORD_CODE for message in messages)
 
 
-def _parse_row(row: Any, day: date, unparsed: Counter[str]) -> EarningsListing | None:
-    """The row's listing, or None (counted under `symbol`) when it has no usable ticker."""
+def _parse_row(row: Any, day: date, unparsed: Counter[str]) -> EarningsEntry | None:
+    """The row's entry, or None (counted under `symbol`) when it has no usable ticker."""
     symbol = row.get("symbol") if isinstance(row, dict) else None
     if not isinstance(symbol, str) or not symbol.strip():
         unparsed["symbol"] += 1
@@ -131,7 +131,7 @@ def _parse_row(row: Any, day: date, unparsed: Counter[str]) -> EarningsListing |
     wire_time = row.get("time")
     if not isinstance(wire_time, str) or wire_time not in _TIME_OF_DAY:
         unparsed["time_of_day"] += 1
-    return EarningsListing(
+    return EarningsEntry(
         ticker=symbol.strip().upper(),
         report_date=day,
         time_of_day=_TIME_OF_DAY.get(wire_time) if isinstance(wire_time, str) else None,

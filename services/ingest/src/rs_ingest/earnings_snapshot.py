@@ -2,12 +2,18 @@
 
 Each trading evening the job reads every weekday from a week back to a fixed
 horizon past Nasdaq's forward window and stores the lot as one snapshot dated that
-Eastern day. A past day carries actual EPS and surprise, so the week back picks up
+evening's session. A past day carries actual EPS and surprise, so the week back picks up
 what reporters published after an earlier snapshot. The horizon is fixed because
 the window's end cannot be told from a quiet stretch inside it (a holiday week
-answers the same way as the days past the end); the last listed day is logged.
+answers the same way as the days past the end); the last entry day is logged.
 A snapshot is stored whole or not at all: a day that still fails after its retries
 ends the night, nothing is stored, and the previous snapshot stays the latest.
+
+A run is for the latest evening whose slot has passed, and does nothing when that evening
+has its snapshot. So a restart after the slot, overnight or the next day, still takes the
+missed evening's snapshot (each row keeps its real fetch time), and one evening never gets
+two; an evening older than the latest is not caught up, because the calendar can only be
+read as it is now.
 
 The Alert's next Catalyst reads the latest nightly snapshot through
 `StoredEarningsCalendar`, and trusts it for `FRESH_FOR_SESSIONS` trading sessions;
@@ -20,20 +26,19 @@ import logging
 from collections import Counter
 from collections.abc import Awaitable, Callable, Iterator
 from dataclasses import dataclass, field
-from datetime import date, datetime, time, timedelta
+from datetime import date, time, timedelta
 from typing import Protocol
 
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from rs_domain import (
-    EASTERN,
     Clock,
     EarningsOrigin,
     StoredEarnings,
     TradingCalendar,
-    eastern_day,
 )
+from rs_ingest.universe import last_evening_session
 from rs_persistence import EarningsSnapshotRepository
 from rs_sources.errors import SourceError
 from rs_sources.nasdaq import EarningsDay
@@ -59,7 +64,7 @@ class DaySource(Protocol):
 
 class RetryingDays:
     """A day source that asks again, after each pause in `delays`, when a day fails; the last
-    failure is raised. Wrapped by the tally, so a day that fails every time counts once."""
+    failure is raised."""
 
     def __init__(
         self,
@@ -95,7 +100,7 @@ class EarningsSnapshotError(Exception):
 class SnapshotReport:
     snapshot_date: date
     days_read: int
-    last_listed_day: date
+    last_entry_day: date
     rows: int
     unparsed: Counter[str] = field(default_factory=Counter)
 
@@ -116,11 +121,6 @@ def _next_weekday(day: date) -> date:
     return day
 
 
-def _snapshot_due(calendar: TradingCalendar, now: datetime) -> bool:
-    """A snapshot is taken on a trading evening, from SNAPSHOT_AT; a weekend or holiday has none."""
-    return calendar.is_session(eastern_day(now)) and now.astimezone(EASTERN).time() >= SNAPSHOT_AT
-
-
 async def snapshot_earnings(
     *,
     session_factory: async_sessionmaker[AsyncSession],
@@ -128,57 +128,55 @@ async def snapshot_earnings(
     calendar: TradingCalendar,
     clock: Clock,
 ) -> SnapshotReport | None:
-    """Take tonight's snapshot; None when nothing is due (not a trading evening, or already taken)."""
-    now = clock.now()
-    today = eastern_day(now)
-    if not _snapshot_due(calendar, now):
-        return None
+    """Take the latest evening's snapshot; None when that evening already has one."""
+    # A weekend or holiday has no evening of its own, so it finds the last session's.
+    evening = last_evening_session(calendar, clock.now(), SNAPSHOT_AT)
     async with session_factory() as session:
-        if await EarningsSnapshotRepository(session).has_snapshot(EarningsOrigin.NIGHTLY, today):
+        if await EarningsSnapshotRepository(session).has_snapshot(EarningsOrigin.NIGHTLY, evening):
             return None
 
-    days = await _read_window(source, today)
-    listings = [(day, listing) for day in days for listing in day.listings]
-    if not listings:
+    days = await _read_window(source, evening)
+    entries = [(day, item) for day in days for item in day.entries]
+    if not entries:
         raise EarningsSnapshotError(
-            f"Nasdaq earnings snapshot for {today}: no earnings listed on any of {len(days)} days; nothing stored",
+            f"Nasdaq earnings snapshot for {evening}: no earnings listed on any of {len(days)} days; nothing stored",
             reason="no earnings listed",
         )
     rows = [
         StoredEarnings(
-            snapshot_date=today,
+            snapshot_date=evening,
             origin=EarningsOrigin.NIGHTLY,
             fetched_at=day.fetched_at,
-            **listing.model_dump(),
+            **item.model_dump(),
         )
-        for day, listing in listings
+        for day, item in entries
     ]
     async with session_factory() as session, session.begin():
         stored = await EarningsSnapshotRepository(session).insert_many(rows)
     unparsed = sum((Counter(day.unparsed) for day in days), Counter[str]())
     report = SnapshotReport(
-        snapshot_date=today,
+        snapshot_date=evening,
         days_read=len(days),
-        last_listed_day=max(day.day for day in days if day.listings),
+        last_entry_day=max(day.day for day in days if day.entries),
         rows=stored,
         unparsed=unparsed,
     )
     logger.info(
-        "earnings snapshot %s: %d rows over %d days, last listed day %s; values not parsed: %s",
-        today,
+        "earnings snapshot %s: %d rows over %d days, last entry day %s; values not parsed: %s",
+        evening,
         report.rows,
         report.days_read,
-        report.last_listed_day,
+        report.last_entry_day,
         dict(sorted(unparsed.items())) or "none",
     )
     return report
 
 
-async def _read_window(source: DaySource, today: date) -> list[EarningsDay]:
+async def _read_window(source: DaySource, evening: date) -> list[EarningsDay]:
     """Every day of the window, in order. A day that fails ends the read: the snapshot is whole
     or nothing, so there is no use reading on (and a dead endpoint costs one day's retries)."""
-    wanted = list(weekdays(today - timedelta(days=PAST_DAYS), today))
-    day = today
+    wanted = list(weekdays(evening - timedelta(days=PAST_DAYS), evening))
+    day = evening
     for _ in range(FORWARD_WEEKDAYS):
         day = _next_weekday(day)
         wanted.append(day)
@@ -189,7 +187,7 @@ async def _read_window(source: DaySource, today: date) -> list[EarningsDay]:
         except SourceError as exc:
             logger.warning("Nasdaq earnings calendar failed for %s", day, exc_info=True)
             raise EarningsSnapshotError(
-                f"Nasdaq earnings snapshot for {today}: {day} failed to read after {len(days)} good day(s); nothing stored",
+                f"Nasdaq earnings snapshot for {evening}: {day} failed to read after {len(days)} good day(s); nothing stored",
                 reason="a calendar day failed",
             ) from exc
     return days
@@ -202,8 +200,8 @@ class StoredEarningsCalendar:
         self._session_factory = session_factory
         self._calendar = calendar
 
-    async def next_listed(self, ticker: str, today: date) -> StoredEarnings | None:
-        """The ticker's first listing on or after `today` in the latest nightly snapshot, or None
+    async def next_earnings(self, ticker: str, today: date) -> StoredEarnings | None:
+        """The ticker's first entry on or after `today` in the latest nightly snapshot, or None
         when there is no snapshot, it is more than FRESH_FOR_SESSIONS sessions old, or it does
         not list the ticker. A database error is logged and also None, so the lookup still
         estimates from EDGAR."""

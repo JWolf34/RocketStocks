@@ -14,7 +14,7 @@ from rs_sources.errors import SourceError
 AS_OF = datetime(2026, 10, 19, 15, 0, tzinfo=UTC)
 
 
-def listed(report_date, time_of_day=None):
+def earnings_entry(report_date, time_of_day=None):
     return StoredEarnings(
         snapshot_date=date(2026, 10, 18),
         origin=EarningsOrigin.NIGHTLY,
@@ -37,7 +37,7 @@ class FakeCalendar:
         self.result = result
         self.calls: list[tuple[str, date]] = []
 
-    async def next_listed(self, ticker, today):
+    async def next_earnings(self, ticker, today):
         self.calls.append((ticker, today))
         return self.result
 
@@ -64,7 +64,7 @@ def eight_k(filed, items=("2.02", "9.01"), form="8-K"):
 
 
 async def test_a_listed_date_is_returned_unestimated_with_time_of_day():
-    calendar = FakeCalendar(listed(date(2026, 10, 29), EarningsTime.AFTER_HOURS))
+    calendar = FakeCalendar(earnings_entry(date(2026, 10, 29), EarningsTime.AFTER_HOURS))
     lookup = EarningsLookup(calendar, FakeFilings(error=True))
 
     result = await lookup.next_earnings("AAA", AS_OF)
