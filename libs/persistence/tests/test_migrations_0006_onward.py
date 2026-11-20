@@ -1,4 +1,4 @@
-"""Migrations 0006-0025 against Timescale: the upgrade/downgrade round trip and
+"""Migrations 0006-0026 against Timescale: the upgrade/downgrade round trip and
 the physical layout (hypertables, compression, constraints)."""
 
 import uuid
@@ -250,7 +250,7 @@ def sync_engine(migrated_db_url):
     engine.dispose()
 
 
-@pytest.mark.parametrize("table", ["popularity_snapshot", "daily_bar", "option_contract"])
+@pytest.mark.parametrize("table", ["popularity_snapshot", "daily_bar", "option_contract", "option_open_interest"])
 def test_market_tables_are_compressed_hypertables_without_retention(sync_engine, table):
     with sync_engine.connect() as conn:
         compressed = conn.execute(
@@ -807,6 +807,58 @@ def test_0025_adds_the_chain_tables_and_downgrade_drops_them(scratch_url):
             assert not conn.execute(
                 text("SELECT 1 FROM pg_type WHERE typname IN ('chain_pass', 'chain_fetch_status')")
             ).all()
+
+        command.upgrade(config, "head")
+    finally:
+        engine.dispose()
+
+
+def test_option_open_interest_layout_matches_the_contracts_it_is_read_with(sync_engine):
+    with sync_engine.connect() as conn:
+        dimension = conn.execute(
+            text(
+                "SELECT column_name, time_interval FROM timescaledb_information.dimensions"
+                " WHERE hypertable_name = 'option_open_interest'"
+            )
+        ).one()
+        segmentby, orderby = conn.execute(
+            text(
+                "SELECT segmentby, orderby FROM timescaledb_information.hypertable_compression_settings"
+                " WHERE hypertable::text = 'option_open_interest'"
+            )
+        ).one()
+        compress_after = conn.execute(
+            text(
+                "SELECT config->>'compress_after' FROM timescaledb_information.jobs"
+                " WHERE hypertable_name = 'option_open_interest' AND proc_name = 'policy_compression'"
+            )
+        ).scalar_one()
+    assert dimension.column_name == "session_date" and dimension.time_interval.days == 7
+    assert segmentby == "underlying"
+    assert orderby == "option_symbol,session_date DESC"
+    assert compress_after == "3 days"
+    insp = inspect(sync_engine)
+    assert insp.get_pk_constraint("option_open_interest")["constrained_columns"] == [
+        "session_date",
+        "underlying",
+        "option_symbol",
+    ]
+    assert not any(c["nullable"] for c in insp.get_columns("option_open_interest"))
+
+
+def test_0026_adds_the_open_interest_table_and_downgrade_drops_it(scratch_url):
+    config = migration_config(scratch_url)
+    engine = create_engine(scratch_url)
+    try:
+        command.upgrade(config, "0025")
+        assert "option_open_interest" not in set(inspect(engine).get_table_names())
+
+        command.upgrade(config, "0026")
+        assert "option_open_interest" in set(inspect(engine).get_table_names())
+
+        command.downgrade(config, "0025")
+        assert "option_open_interest" not in set(inspect(engine).get_table_names())
+        assert {"option_contract", "chain_fetch"} <= set(inspect(engine).get_table_names())
 
         command.upgrade(config, "head")
     finally:

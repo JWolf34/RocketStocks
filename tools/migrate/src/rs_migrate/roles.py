@@ -60,6 +60,9 @@ GRANTS: dict[str, dict[str, tuple[str, ...]]] = {
     "option_contract": {
         "ingest": _SELECT_INSERT,
     },
+    "option_open_interest": {
+        "ingest": _SELECT_INSERT,
+    },
     "bar_request": {
         "ingest": ("SELECT", "INSERT", "UPDATE"),
     },

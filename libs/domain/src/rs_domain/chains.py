@@ -1,5 +1,6 @@
 """Options chains as stored: one contract row per contract per session, one fetch record per
-underlying per pass.
+underlying per pass. The evening pass stores whole contracts; the morning pass stores only each
+contract's open interest, named by the session it settled for.
 
 A contract row is an observation and never a placeholder: a chain that could not be fetched
 is a fetch record with a failure status (a Tombstone), and an empty chain is a fetch record
@@ -86,12 +87,33 @@ class OptionContract(BaseModel):
     non_standard: bool | None
 
 
+class OpenInterest(BaseModel):
+    """One contract's open interest as the morning pass settled it, and nothing else.
+
+    The session it belongs to is the fetch record's: the session whose trading it settled.
+    """
+
+    model_config = ConfigDict(frozen=True)
+
+    underlying: str
+    option_symbol: str
+    open_interest: NonNegativeInt
+
+    @classmethod
+    def of(cls, contract: OptionContract) -> Self:
+        return cls(
+            underlying=contract.underlying,
+            option_symbol=contract.option_symbol,
+            open_interest=contract.open_interest,
+        )
+
+
 class ChainFetchRecord(BaseModel):
     """The outcome of one pass's fetch of one underlying for one session.
 
     `attempts` counts the Schwab calls spent (0 for an underlying never tried before the
-    deadline); `contract_count` is the contracts stored, so it is positive exactly when the
-    status is `ok`.
+    deadline); `contract_count` is the contracts (or, for the morning pass, the open-interest
+    rows) stored, so it is positive exactly when the status is `ok`.
     """
 
     model_config = ConfigDict(frozen=True)
