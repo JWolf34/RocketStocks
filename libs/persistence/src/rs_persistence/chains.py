@@ -1,8 +1,10 @@
-"""chain_fetch and option_contract: one underlying's chain and the record of fetching it.
+"""chain_fetch, option_contract and option_open_interest: one underlying's chain and the record
+of fetching it.
 
-A chain and its fetch record are stored together, so a record that says `ok` always has its
-contracts and a stored contract always has a record. Both are write-once: a rerun finds the
-underlying already recorded and stores nothing.
+The evening pass stores a chain's contracts and the morning pass only its open interest. Either
+is stored together with its fetch record, so a record that says `ok` always has its rows and a
+stored row always has a record. Both are write-once: a rerun finds the underlying already
+recorded for the pass and stores nothing.
 """
 
 from collections.abc import Sequence
@@ -12,11 +14,23 @@ from sqlalchemy import select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from rs_domain import ChainFetchRecord, ChainPass, FetchStatus, OptionContract
-from rs_persistence.models import ChainFetchRow, OptionContractRow
+from rs_domain import (
+    ChainFetchRecord,
+    ChainPass,
+    FetchStatus,
+    OpenInterest,
+    OptionContract,
+)
+from rs_persistence.models import (
+    ChainFetchRow,
+    OptionContractRow,
+    OptionOpenInterestRow,
+)
 
 # 27 bound parameters per contract row; stay far below the protocol's 65535 limit.
 _INSERT_CHUNK = 1500
+# Four per open-interest row.
+_OPEN_INTEREST_CHUNK = 5000
 
 
 def _record_from_row(row: ChainFetchRow) -> ChainFetchRecord:
@@ -52,8 +66,8 @@ class ChainRepository:
         that pass and session; returns whether anything was stored.
 
         `contracts` must be exactly the record's `contract_count` contracts of its underlying,
-        and only the evening pass has contract rows to store: the morning pass keeps its
-        records here and its open interest elsewhere.
+        and only the evening pass has contract rows to store: the morning pass stores its
+        open interest with `store_open_interest`.
         """
         if contracts and record.chain_pass is not ChainPass.EVENING:
             raise ValueError(f"{record.underlying}: only the evening pass stores contract rows")
@@ -61,13 +75,7 @@ class ChainRepository:
             raise ValueError(f"{record.underlying}: record counts {record.contract_count}, got {len(contracts)}")
         if any(contract.underlying != record.underlying for contract in contracts):
             raise ValueError(f"{record.underlying}: contracts of another underlying")
-        stored = await self._session.scalar(
-            pg_insert(ChainFetchRow)
-            .values(record.model_dump())
-            .on_conflict_do_nothing()
-            .returning(ChainFetchRow.underlying)
-        )
-        if stored is None:
+        if not await self._store_record(record):
             return False
         for start in range(0, len(contracts), _INSERT_CHUNK):
             chunk = contracts[start : start + _INSERT_CHUNK]
@@ -77,6 +85,39 @@ class ChainRepository:
                 )
             )
         return True
+
+    async def store_open_interest(self, record: ChainFetchRecord, interest: Sequence[OpenInterest] = ()) -> bool:
+        """Store the morning record and its open interest, named by the record's session, unless
+        the underlying already has a morning record for that session; returns whether anything
+        was stored.
+
+        `interest` must be exactly the record's `contract_count` rows of its underlying.
+        """
+        if record.chain_pass is not ChainPass.MORNING:
+            raise ValueError(f"{record.underlying}: only the morning pass stores open interest alone")
+        if len(interest) != record.contract_count:
+            raise ValueError(f"{record.underlying}: record counts {record.contract_count}, got {len(interest)}")
+        if any(row.underlying != record.underlying for row in interest):
+            raise ValueError(f"{record.underlying}: open interest of another underlying")
+        if not await self._store_record(record):
+            return False
+        for start in range(0, len(interest), _OPEN_INTEREST_CHUNK):
+            chunk = interest[start : start + _OPEN_INTEREST_CHUNK]
+            await self._session.execute(
+                pg_insert(OptionOpenInterestRow).values(
+                    [{"session_date": record.session_date, **row.model_dump()} for row in chunk]
+                )
+            )
+        return True
+
+    async def _store_record(self, record: ChainFetchRecord) -> bool:
+        stored = await self._session.scalar(
+            pg_insert(ChainFetchRow)
+            .values(record.model_dump())
+            .on_conflict_do_nothing()
+            .returning(ChainFetchRow.underlying)
+        )
+        return stored is not None
 
     async def recorded_underlyings(self, session_date: date, chain_pass: ChainPass) -> set[str]:
         """Every underlying a pass has a record for in a session, Tombstones included."""
@@ -104,3 +145,15 @@ class ChainRepository:
             )
         )
         return [_contract_from_row(row) for row in rows]
+
+    async def open_interest(self, session_date: date, underlying: str) -> list[OpenInterest]:
+        """The morning's open interest of one underlying for a session, ordered by option symbol."""
+        rows = await self._session.scalars(
+            select(OptionOpenInterestRow)
+            .where(OptionOpenInterestRow.session_date == session_date, OptionOpenInterestRow.underlying == underlying)
+            .order_by(OptionOpenInterestRow.option_symbol)
+        )
+        return [
+            OpenInterest(underlying=row.underlying, option_symbol=row.option_symbol, open_interest=row.open_interest)
+            for row in rows
+        ]

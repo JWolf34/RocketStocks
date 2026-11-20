@@ -1,8 +1,8 @@
-"""chains: the evening chain pass, one fetch record per optionable underlying.
+"""chains: the evening chain pass and the morning open-interest pass, one fetch record per
+optionable underlying.
 
-The roster is the optionable listings of the latest Universe snapshot; the caller runs the pass
-once the night's Universe is stored. Every chain is fetched whole and unfiltered, and what
-Schwab will not serve whole goes down a ladder: fetch, retry once, split into three expiry
+The roster is the optionable listings of the latest Universe snapshot. Every chain is fetched
+whole and unfiltered, and what Schwab will not serve whole goes down a ladder: fetch, retry once, split into three expiry
 ranges (the last open-ended), retry each range once, then a Tombstone. A chain is stored only
 whole: when any range fails twice the underlying is a Tombstone and none of its ranges is kept.
 
@@ -12,10 +12,16 @@ and is never a Tombstone, and so does a 429, so a pass that ran out of budget or
 and the next run resumes with what is not recorded.
 
 An underlying and its record are committed together, so a rerun, a restart or a pass a dead
-token killed skips every underlying already recorded for the session. The pass is owed until
-its deadline (the first 03:00 Central after the session's evening starts, unless configured);
-past it the pass writes only Tombstones, so a night that was missed is recorded as missed and
-is never caught up.
+token killed skips every underlying already recorded for the session and pass. A pass is owed
+until its deadline; past it the pass writes only Tombstones, so a night that was missed is
+recorded as missed and is never caught up.
+
+The evening pass stores each whole contract for the session and is owed until the first 03:00
+Central after the session's evening starts, unless configured. The morning pass runs the same
+ladder from 07:00 ET, once Schwab's open interest has settled, on each trading day's morning,
+and stores only each contract's open interest, named by the session it settled for (the last
+session before the morning) in its own table; its deadline is that morning's open. A failed
+morning loses nothing, because the evening pass carries the same open interest a session later.
 
 The pass reports every underlying's outcome into the `SweepTally` it is given, one entry per
 underlying (not per call), for the job to judge once the pass ends: above about 5% of the
@@ -36,13 +42,15 @@ from rs_domain import (
     ChainPass,
     Clock,
     FetchStatus,
+    OpenInterest,
     OptionContract,
     TradingCalendar,
+    eastern_day,
 )
 from rs_ingest.daily_bars import stop_time
 from rs_ingest.monitored import RATE_LIMITED
 from rs_ingest.rate_limit import RateLimiter
-from rs_ingest.universe import EVENING_STARTS_AT, last_evening_session
+from rs_ingest.universe import EVENING_STARTS_AT, SESSION_SEARCH, last_evening_session
 from rs_observability import SweepTally
 from rs_persistence import ChainRepository, UniverseRepository
 from rs_sources.errors import PER_SYMBOL_STATUSES
@@ -57,6 +65,9 @@ logger = logging.getLogger(__name__)
 
 # Central clock time the pass's deadline falls at, until the probe gives the settle time.
 DEADLINE_AT = time(3, 0)
+# Eastern clock time the morning pass starts, once open interest has settled (the sweep probe saw
+# it settle between 06:00 and 07:00 and hold until the open).
+MORNING_STARTS_AT = time(7, 0)
 # Days after the session that end the first two expiry ranges of the ladder; the third is open-ended.
 LADDER_DAYS = (30, 180)
 # Calls spent on one request of the ladder (the whole chain, then each range): fetch, retry once.
@@ -82,6 +93,7 @@ class ChainPassReport:
     failed: int = 0
     # Tombstones written because the deadline came before the chain could be fetched.
     past_deadline: int = 0
+    # Contracts stored (the morning pass's open-interest rows, one per contract).
     contracts: int = 0
     calls: int = 0
 
@@ -121,6 +133,23 @@ def expiry_ranges(session: date) -> tuple[tuple[date, date | None], ...]:
     )
 
 
+def morning_slot(calendar: TradingCalendar, now: datetime) -> tuple[date, datetime]:
+    """The morning pass owed at `now`: the session its open interest settled for and its deadline.
+
+    The latest trading day whose 07:00 ET has passed owns the morning; the session is the one
+    before it and the deadline is its open. A weekend or holiday owns no morning, so it belongs
+    to the last trading day's.
+    """
+    today = eastern_day(now)
+    for day in reversed(calendar.sessions_in_range(today - SESSION_SEARCH, today)):
+        if datetime.combine(day, MORNING_STARTS_AT, tzinfo=EASTERN) <= now:
+            settled = calendar.sessions_in_range(day - SESSION_SEARCH, day - timedelta(days=1))
+            if not settled:
+                raise RuntimeError(f"no session in the {SESSION_SEARCH.days} days before the morning of {day}")
+            return settled[-1], calendar.session_open(day)
+    raise RuntimeError(f"no session morning has started in the {SESSION_SEARCH.days} days before {today}")
+
+
 async def sweep_evening_chains(
     *,
     session_factory: async_sessionmaker[AsyncSession],
@@ -132,29 +161,74 @@ async def sweep_evening_chains(
     deadline_at: time = DEADLINE_AT,
 ) -> ChainPassReport:
     session = last_evening_session(calendar, clock.now())
+    return await _sweep(
+        ChainPass.EVENING,
+        session,
+        chain_deadline(session, deadline_at),
+        session_factory=session_factory,
+        source=source,
+        limiter=limiter,
+        clock=clock,
+        tally=tally,
+    )
+
+
+async def sweep_morning_open_interest(
+    *,
+    session_factory: async_sessionmaker[AsyncSession],
+    source: ChainSource,
+    limiter: RateLimiter,
+    calendar: TradingCalendar,
+    clock: Clock,
+    tally: SweepTally,
+) -> ChainPassReport:
+    session, deadline = morning_slot(calendar, clock.now())
+    return await _sweep(
+        ChainPass.MORNING,
+        session,
+        deadline,
+        session_factory=session_factory,
+        source=source,
+        limiter=limiter,
+        clock=clock,
+        tally=tally,
+    )
+
+
+async def _sweep(
+    chain_pass: ChainPass,
+    session: date,
+    deadline: datetime,
+    *,
+    session_factory: async_sessionmaker[AsyncSession],
+    source: ChainSource,
+    limiter: RateLimiter,
+    clock: Clock,
+    tally: SweepTally,
+) -> ChainPassReport:
     report = ChainPassReport(session=session)
+    label = f"{chain_pass.value} chains of {session}"
     async with session_factory() as db:
         universe = UniverseRepository(db)
         header = await universe.latest_header()
         if header is None:
-            logger.warning("chains of %s: no Universe stored yet, nothing to fetch", session)
+            logger.warning("%s: no Universe stored yet, nothing to fetch", label)
             return report
         roster = sorted(await universe.optionable_symbols(header.snapshot_date))
-        recorded = await ChainRepository(db).recorded_underlyings(session, ChainPass.EVENING)
+        recorded = await ChainRepository(db).recorded_underlyings(session, chain_pass)
     report.roster = len(roster)
     todo = [symbol for symbol in roster if symbol not in recorded]
     report.already_recorded = len(roster) - len(todo)
 
-    deadline = chain_deadline(session, deadline_at)
     logger.info(
-        "chains of %s: %d optionable underlyings from the Universe of %s, %d already recorded, deadline %s",
-        session, len(roster), header.snapshot_date, report.already_recorded, deadline,
+        "%s: %d optionable underlyings from the Universe of %s, %d already recorded, deadline %s",
+        label, len(roster), header.snapshot_date, report.already_recorded, deadline,
     )
     ladder = _Ladder(source, limiter, clock, deadline, session, report)
     try:  # the partial report is worth logging when a 429 or a dead token ends the pass
         for done, symbol in enumerate(todo):
             if done and done % PROGRESS_EVERY == 0:
-                logger.info("chains of %s: %d of %d underlyings done", session, done, len(todo))
+                logger.info("%s: %d of %d underlyings done", label, done, len(todo))
             if clock.now() >= deadline:
                 fetched = _Fetched(FetchStatus.FAILED, past_deadline=True)
             else:
@@ -165,10 +239,10 @@ async def sweep_evening_chains(
                         raise
                     tally.record_failure(source_wide=True)
                     raise
-            await _store(session_factory, clock, session, symbol, fetched)
+            await _store(session_factory, clock, chain_pass, session, symbol, fetched)
             _count(report, tally, fetched)
     finally:
-        _log(report)
+        _log(label, report)
     return report
 
 
@@ -250,13 +324,14 @@ def _fetched(contracts: Sequence[OptionContract], attempts: int) -> _Fetched:
 async def _store(
     session_factory: async_sessionmaker[AsyncSession],
     clock: Clock,
+    chain_pass: ChainPass,
     session: date,
     symbol: str,
     fetched: _Fetched,
 ) -> None:
     record = ChainFetchRecord(
         session_date=session,
-        chain_pass=ChainPass.EVENING,
+        chain_pass=chain_pass,
         underlying=symbol,
         status=fetched.status,
         attempts=fetched.attempts,
@@ -264,7 +339,11 @@ async def _store(
         fetched_at=clock.now(),
     )
     async with session_factory() as db:
-        await ChainRepository(db).store(record, fetched.contracts)
+        repository = ChainRepository(db)
+        if chain_pass is ChainPass.EVENING:
+            await repository.store(record, fetched.contracts)
+        else:
+            await repository.store_open_interest(record, [OpenInterest.of(c) for c in fetched.contracts])
         await db.commit()
 
 
@@ -288,11 +367,11 @@ def _count(report: ChainPassReport, tally: SweepTally, fetched: _Fetched) -> Non
                 report.rejected += 1
 
 
-def _log(report: ChainPassReport) -> None:
+def _log(label: str, report: ChainPassReport) -> None:
     logger.info(
-        "chains of %s: %d underlyings in the roster, %d already recorded, %d ok, %d empty, %d rejected, "
-        "%d failed, %d past the deadline, %d contracts stored, %d calls",
-        report.session,
+        "%s: %d underlyings in the roster, %d already recorded, %d ok, %d empty, %d rejected, "
+        "%d failed, %d past the deadline, %d contracts or open-interest rows stored, %d calls",
+        label,
         report.roster,
         report.already_recorded,
         report.ok,

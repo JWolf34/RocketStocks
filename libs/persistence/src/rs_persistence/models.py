@@ -237,6 +237,18 @@ class OptionContractRow(Base):
     non_standard: Mapped[bool | None] = mapped_column(Boolean)
 
 
+class OptionOpenInterestRow(Base):
+    """option_open_interest hypertable, partitioned by session_date: one contract's open
+    interest as the morning pass settled it, for the session whose trading it settled."""
+
+    __tablename__ = "option_open_interest"
+
+    session_date: Mapped[date] = mapped_column(Date, primary_key=True)
+    underlying: Mapped[str] = mapped_column(Text, primary_key=True)
+    option_symbol: Mapped[str] = mapped_column(Text, primary_key=True)
+    open_interest: Mapped[int] = mapped_column(BigInteger)
+
+
 class UnpricedSymbolRow(Base):
     __tablename__ = "unpriced_symbol"
 

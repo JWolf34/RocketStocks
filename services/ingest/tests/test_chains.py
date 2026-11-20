@@ -1,6 +1,7 @@
-"""The evening chain pass against a real database, the real exchange calendar and the real
-Schwab chain adapter over a fake schwab-py client: the roster, the ladder (retry, expiry ranges,
-Tombstone), 400s and empty chains, resume, the deadline, the dead token and the sweep tally."""
+"""The evening chain pass and the morning open-interest pass against a real database, the real
+exchange calendar and the real Schwab chain adapter over a fake schwab-py client: the roster, the
+ladder (retry, expiry ranges, Tombstone), 400s and empty chains, resume, the deadline, the dead
+token and the sweep tally."""
 
 from datetime import UTC, date, datetime, time, timedelta
 
@@ -19,7 +20,9 @@ from rs_ingest.chains import (
     ATTEMPTS,
     chain_deadline,
     expiry_ranges,
+    morning_slot,
     sweep_evening_chains,
+    sweep_morning_open_interest,
 )
 from rs_ingest.rate_limit import RateLimiter
 from rs_observability import SweepTally, SweepVerdict
@@ -650,6 +653,284 @@ async def test_more_than_about_five_percent_of_underlyings_failing_fails_the_pas
     tally = SweepTally()
 
     await _run(session_factory, schwab, tally=tally)
+
+    assert (tally.attempted, tally.failed) == (20, 3)
+    assert tally.verdict is SweepVerdict.FAILING
+
+
+# --- the morning open-interest pass -----------------------------------------------------------------
+
+# Wednesday 2026-11-18, 07:30 ET: open interest of Tuesday's session has settled; the open is 09:30 ET.
+MORNING_NOW = datetime(2026, 11, 18, 12, 30, tzinfo=UTC)
+OPEN = datetime(2026, 11, 18, 14, 30, tzinfo=UTC)
+
+
+async def _run_morning(
+    session_factory,
+    schwab: FakeSchwab,
+    clock: FakeClock | None = None,
+    tally: SweepTally | None = None,
+    source=None,
+):
+    return await sweep_morning_open_interest(
+        session_factory=session_factory,
+        source=source or SchwabOptionChains(schwab),
+        limiter=Budget().limiter(),
+        calendar=CALENDAR,
+        clock=clock or FakeClock(MORNING_NOW),
+        tally=tally if tally is not None else SweepTally(),
+    )
+
+
+async def _morning_record(session_factory, symbol: str, session: date = SESSION):
+    async with session_factory() as s:
+        return await ChainRepository(s).record(session, ChainPass.MORNING, symbol)
+
+
+async def _open_interest(session_factory, symbol: str, session: date = SESSION):
+    async with session_factory() as s:
+        return await ChainRepository(s).open_interest(session, symbol)
+
+
+def _slot(now: datetime) -> tuple[date, datetime]:
+    return morning_slot(CALENDAR, now)
+
+
+def test_a_morning_settles_the_session_before_it_and_is_owed_until_its_open():
+    assert _slot(MORNING_NOW) == (SESSION, OPEN)
+    # The slot starts at 07:00 ET exactly (12:00 UTC); a minute earlier still belongs to Tuesday's morning.
+    assert _slot(datetime(2026, 11, 18, 12, 0, tzinfo=UTC)) == (SESSION, OPEN)
+    assert _slot(datetime(2026, 11, 18, 11, 59, tzinfo=UTC)) == (
+        date(2026, 11, 16),
+        datetime(2026, 11, 17, 14, 30, tzinfo=UTC),
+    )
+    # Hours after the open the morning is still that morning's, until the next 07:00.
+    assert _slot(datetime(2026, 11, 18, 23, 0, tzinfo=UTC)) == (SESSION, OPEN)
+
+
+def test_a_monday_morning_settles_fridays_session_and_a_weekend_belongs_to_fridays_morning():
+    assert _slot(datetime(2026, 11, 16, 12, 30, tzinfo=UTC)) == (
+        date(2026, 11, 13),
+        datetime(2026, 11, 16, 14, 30, tzinfo=UTC),
+    )
+    assert _slot(datetime(2026, 11, 14, 17, 0, tzinfo=UTC)) == (
+        date(2026, 11, 12),
+        datetime(2026, 11, 13, 14, 30, tzinfo=UTC),
+    )
+
+
+def test_the_morning_after_a_holiday_settles_the_session_before_it_and_the_holiday_owns_none():
+    # Thanksgiving is Thursday 2026-11-26: Friday's morning settles Wednesday; Thursday belongs to Wednesday's morning.
+    assert _slot(datetime(2026, 11, 27, 12, 30, tzinfo=UTC)) == (
+        date(2026, 11, 25),
+        datetime(2026, 11, 27, 14, 30, tzinfo=UTC),
+    )
+    assert _slot(datetime(2026, 11, 26, 15, 0, tzinfo=UTC)) == (
+        date(2026, 11, 24),
+        datetime(2026, 11, 25, 14, 30, tzinfo=UTC),
+    )
+
+
+def test_the_open_follows_daylight_saving():
+    # 09:30 EDT is 13:30 UTC.
+    assert _slot(datetime(2026, 10, 21, 12, 0, tzinfo=UTC)) == (
+        date(2026, 10, 20),
+        datetime(2026, 10, 21, 13, 30, tzinfo=UTC),
+    )
+
+
+async def test_the_morning_stores_only_open_interest_named_by_the_session_it_settled(session_factory):
+    await _universe(session_factory, ("CCC", "AAA", "BRK.B"), others=("PLAIN",))
+    schwab = FakeSchwab()
+
+    report = await _run_morning(session_factory, schwab)
+
+    assert schwab.calls == [("AAA", None, None), ("BRK/B", None, None), ("CCC", None, None)]
+    assert (report.session, report.roster, report.ok, report.tombstones, report.contracts) == (SESSION, 3, 3, 0, 18)
+    record = await _morning_record(session_factory, "BRK.B")
+    assert (record.status, record.attempts, record.contract_count, record.fetched_at) == (
+        FetchStatus.OK,
+        1,
+        6,
+        MORNING_NOW,
+    )
+    rows = await _open_interest(session_factory, "BRK.B")
+    assert len(rows) == 6
+    assert {(row.underlying, row.open_interest) for row in rows} == {("BRK.B", 4000)}
+    # No contract rows and no evening record: the morning never stores what the evening owns.
+    assert await _contract_rows(session_factory, "BRK.B") == 0
+    assert await _record(session_factory, "BRK.B") is None
+    # Named by the settled session, never the date it was fetched.
+    assert await _open_interest(session_factory, "BRK.B", date(2026, 11, 18)) == []
+
+
+async def test_the_morning_and_the_evening_each_record_every_underlying_once(session_factory):
+    await _universe(session_factory, ("AAA",))
+    schwab = FakeSchwab()
+    await _run(session_factory, schwab)
+
+    report = await _run_morning(session_factory, schwab)
+
+    assert report.already_recorded == 0 and report.ok == 1
+    assert (await _record(session_factory, "AAA")).chain_pass is ChainPass.EVENING
+    assert (await _morning_record(session_factory, "AAA")).chain_pass is ChainPass.MORNING
+    assert await _contract_rows(session_factory, "AAA") == 6
+    assert len(await _open_interest(session_factory, "AAA")) == 6
+
+
+async def test_without_a_universe_the_morning_makes_no_call(session_factory):
+    schwab = FakeSchwab()
+
+    report = await _run_morning(session_factory, schwab)
+
+    assert schwab.calls == []
+    assert (report.roster, report.calls) == (0, 0)
+
+
+async def test_the_morning_uses_the_same_ladder_and_stores_a_chain_only_whole(session_factory):
+    await _universe(session_factory, ("AAA", "RETRY", "SPLIT", "DEAD"))
+    schwab = FakeSchwab()
+    schwab.script["RETRY"] = [502]
+    schwab.script["SPLIT"] = [502, 502]
+    # Whole twice, then the first range fine, then the second range twice.
+    schwab.script["DEAD"] = [502, 502, None, 502, 502]
+
+    await _run_morning(session_factory, schwab)
+
+    assert (await _morning_record(session_factory, "RETRY")).attempts == 2
+    split = await _morning_record(session_factory, "SPLIT")
+    assert (split.status, split.attempts, split.contract_count) == (FetchStatus.OK, 5, 6)
+    ranges = [(start, end) for symbol, start, end in schwab.calls if symbol == "SPLIT"]
+    assert ranges == [(None, None), (None, None), *expiry_ranges(SESSION)]
+    assert len(await _open_interest(session_factory, "SPLIT")) == 6
+    dead = await _morning_record(session_factory, "DEAD")
+    assert dead.status is FetchStatus.FAILED and dead.contract_count == 0
+    # A range that failed twice leaves no partial open interest behind.
+    assert await _open_interest(session_factory, "DEAD") == []
+
+
+async def test_a_400_and_an_empty_chain_are_recorded_once_and_never_retried_in_the_morning(session_factory):
+    await _universe(session_factory, ("BAD", "EMP"))
+    schwab = FakeSchwab()
+    schwab.script["BAD"] = [400]
+    schwab.empty.add("EMP")
+
+    await _run_morning(session_factory, schwab)
+
+    assert schwab.symbols_called().count("BAD") == 1
+    assert (await _morning_record(session_factory, "BAD")).status is FetchStatus.REJECTED
+    empty = await _morning_record(session_factory, "EMP")
+    assert (empty.status, empty.contract_count) == (FetchStatus.EMPTY, 0)
+    assert await _open_interest(session_factory, "EMP") == []
+
+
+async def test_a_morning_rerun_skips_every_underlying_it_recorded_whatever_its_status(session_factory):
+    await _universe(session_factory, ("AAA", "BAD", "DEAD"))
+    schwab = FakeSchwab()
+    schwab.script["BAD"] = [400]
+    schwab.script["DEAD"] = [502] * ATTEMPTS * 4
+    await _run_morning(session_factory, schwab)
+    schwab.calls.clear()
+
+    report = await _run_morning(session_factory, schwab)
+
+    assert schwab.calls == []
+    assert (report.already_recorded, report.calls) == (3, 0)
+    assert len(await _open_interest(session_factory, "AAA")) == 6
+
+
+async def test_a_morning_a_dead_token_killed_resumes_without_repeating_work(session_factory):
+    await _universe(session_factory, ("AAA", "BBB", "CCC"))
+    schwab = FakeSchwab()
+    schwab.script["BBB"] = [SchwabAuthError("refresh token rejected")]
+    tally = SweepTally()
+
+    with pytest.raises(SchwabAuthError):
+        await _run_morning(session_factory, schwab, tally=tally)
+
+    assert [(await _morning_record(session_factory, s)) is None for s in ("AAA", "BBB", "CCC")] == [False, True, True]
+    assert (tally.attempted, tally.failed) == (1, 0)
+    schwab.calls.clear()
+
+    report = await _run_morning(session_factory, schwab)
+
+    assert schwab.symbols_called() == ["BBB", "CCC"]
+    assert (report.already_recorded, report.ok) == (1, 2)
+
+
+async def test_being_over_budget_stops_the_morning_without_a_tombstone(session_factory):
+    await _universe(session_factory, ("AAA", "BBB"))
+    schwab = FakeSchwab()
+    schwab.script["BBB"] = [429]
+    tally = SweepTally()
+
+    with pytest.raises(SchwabResponseError, match="429"):
+        await _run_morning(session_factory, schwab, tally=tally)
+
+    assert await _morning_record(session_factory, "AAA") is not None
+    assert await _morning_record(session_factory, "BBB") is None
+    assert tally.verdict is SweepVerdict.FAILING
+
+
+async def test_at_the_open_the_morning_writes_only_tombstones_and_makes_no_call(session_factory):
+    await _universe(session_factory, ("AAA", "BBB"))
+    schwab = FakeSchwab()
+    tally = SweepTally()
+
+    report = await _run_morning(session_factory, schwab, FakeClock(OPEN), tally)
+
+    assert schwab.calls == []
+    for symbol in ("AAA", "BBB"):
+        record = await _morning_record(session_factory, symbol)
+        assert (record.status, record.attempts, record.contract_count) == (FetchStatus.FAILED, 0, 0)
+        assert await _open_interest(session_factory, symbol) == []
+    assert (report.past_deadline, report.calls) == (2, 0)
+    assert tally.verdict is SweepVerdict.FAILING
+
+
+async def test_a_morning_that_reaches_the_open_tombstones_what_is_left(session_factory):
+    await _universe(session_factory, ("AAA", "BBB", "CCC", "DDD"))
+    schwab = FakeSchwab()
+    # An hour a call and 100 minutes to the open: two calls are made, the third finds the open.
+    clock = FakeClock(OPEN - timedelta(minutes=100))
+    source = Ticking(SchwabOptionChains(schwab), clock, timedelta(hours=1))
+
+    report = await _run_morning(session_factory, schwab, clock, source=source)
+
+    assert schwab.symbols_called() == ["AAA", "BBB"]
+    assert [(await _morning_record(session_factory, s)).status for s in ("AAA", "BBB", "CCC", "DDD")] == [
+        FetchStatus.OK,
+        FetchStatus.OK,
+        FetchStatus.FAILED,
+        FetchStatus.FAILED,
+    ]
+    assert (report.ok, report.past_deadline) == (2, 2)
+
+
+async def test_a_missed_morning_is_never_caught_up_and_loses_nothing_the_evening_holds(session_factory):
+    await _universe(session_factory, ("AAA", "BBB"))
+    schwab = FakeSchwab()
+    await _run(session_factory, schwab)
+    schwab.calls.clear()
+
+    # The daemon comes back at noon: the morning is recorded as missed, and the evening's open interest stands.
+    report = await _run_morning(session_factory, schwab, FakeClock(OPEN + timedelta(hours=2, minutes=30)))
+
+    assert schwab.calls == []
+    assert report.past_deadline == 2
+    assert (await _morning_record(session_factory, "AAA")).status is FetchStatus.FAILED
+    assert (await _record(session_factory, "AAA")).status is FetchStatus.OK
+    assert await _contract_rows(session_factory, "AAA") == 6
+
+
+async def test_more_than_about_five_percent_of_morning_underlyings_failing_fails_the_pass(session_factory):
+    await _universe(session_factory, tuple(f"S{n:02d}" for n in range(20)))
+    schwab = FakeSchwab()
+    for symbol in ("S01", "S05", "S09"):
+        schwab.script[symbol] = [502] * 5
+    tally = SweepTally()
+
+    await _run_morning(session_factory, schwab, tally=tally)
 
     assert (tally.attempted, tally.failed) == (20, 3)
     assert tally.verdict is SweepVerdict.FAILING

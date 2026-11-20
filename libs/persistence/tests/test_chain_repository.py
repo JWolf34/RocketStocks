@@ -5,8 +5,19 @@ from datetime import UTC, date, datetime
 import pytest
 from sqlalchemy import func, select, text
 
-from rs_domain import ChainFetchRecord, ChainPass, FetchStatus, OptionContract
-from rs_persistence import ChainFetchRow, ChainRepository, OptionContractRow
+from rs_domain import (
+    ChainFetchRecord,
+    ChainPass,
+    FetchStatus,
+    OpenInterest,
+    OptionContract,
+)
+from rs_persistence import (
+    ChainFetchRow,
+    ChainRepository,
+    OptionContractRow,
+    OptionOpenInterestRow,
+)
 
 NIGHT = date(2026, 11, 9)
 FETCHED = datetime(2026, 11, 9, 23, 30, tzinfo=UTC)
@@ -160,3 +171,94 @@ async def test_contracts_that_tie_on_expiry_strike_and_side_read_back_in_option_
         got = await ChainRepository(s).contracts(NIGHT, "AAA")
 
     assert [c.option_symbol for c in got] == sorted([adjusted.option_symbol, standard.option_symbol])
+
+
+def _interest(underlying: str = "AAA", symbol: str = "AAA   261120C00100000", open_interest: int = 4_000) -> OpenInterest:
+    return OpenInterest(underlying=underlying, option_symbol=symbol, open_interest=open_interest)
+
+
+def _morning(underlying: str = "AAA", status: FetchStatus = FetchStatus.OK, count: int = 0, **overrides):
+    return _record(underlying, status, count, chain_pass=ChainPass.MORNING, **overrides)
+
+
+async def _store_morning(session_factory, record, interest=()) -> bool:
+    async with session_factory() as s:
+        stored = await ChainRepository(s).store_open_interest(record, interest)
+        await s.commit()
+    return stored
+
+
+def test_open_interest_is_taken_from_a_contract_and_keeps_nothing_else():
+    assert OpenInterest.of(_contract(open_interest=77)) == _interest(open_interest=77, symbol=_contract().option_symbol)
+
+
+async def test_the_morning_stores_open_interest_with_its_record_and_no_contract_rows(session_factory):
+    rows = [_interest(symbol="AAA   261120C00100000", open_interest=0), _interest(symbol="AAA   261120P00100000")]
+    record = _morning(count=2)
+
+    assert await _store_morning(session_factory, record, rows) is True
+
+    async with session_factory() as s:
+        repo = ChainRepository(s)
+        assert await repo.open_interest(NIGHT, "AAA") == rows
+        assert await repo.record(NIGHT, ChainPass.MORNING, "AAA") == record
+        assert await repo.record(NIGHT, ChainPass.EVENING, "AAA") is None
+        assert await s.scalar(select(func.count()).select_from(OptionContractRow)) == 0
+        assert await repo.open_interest(date(2026, 11, 10), "AAA") == []
+
+
+async def test_the_morning_stores_an_underlying_once_per_session_and_beside_the_evening(session_factory):
+    await _store(session_factory, _record(count=1), [_contract()])
+    assert await _store_morning(session_factory, _morning(count=1), [_interest()]) is True
+
+    again = await _store_morning(session_factory, _morning(count=1, attempts=2), [_interest(open_interest=9)])
+
+    assert again is False
+    async with session_factory() as s:
+        [kept] = await ChainRepository(s).open_interest(NIGHT, "AAA")
+        assert kept.open_interest == 4_000
+        assert await s.scalar(select(func.count()).select_from(OptionOpenInterestRow)) == 1
+        assert await s.scalar(select(func.count()).select_from(OptionContractRow)) == 1
+
+
+async def test_a_morning_tombstone_and_an_empty_chain_have_no_open_interest_rows(session_factory):
+    await _store_morning(session_factory, _morning("BAD", FetchStatus.FAILED, attempts=3))
+    await _store_morning(session_factory, _morning("EMP", FetchStatus.EMPTY))
+
+    async with session_factory() as s:
+        repo = ChainRepository(s)
+        assert await s.scalar(select(func.count()).select_from(OptionOpenInterestRow)) == 0
+        assert await repo.recorded_underlyings(NIGHT, ChainPass.MORNING) == {"BAD", "EMP"}
+        assert await repo.recorded_underlyings(NIGHT, ChainPass.EVENING) == set()
+
+
+async def test_the_morning_record_and_its_open_interest_must_agree(session_factory):
+    async with session_factory() as s:
+        repo = ChainRepository(s)
+        with pytest.raises(ValueError, match="counts 2, got 1"):
+            await repo.store_open_interest(_morning(count=2), [_interest()])
+        with pytest.raises(ValueError, match="another underlying"):
+            await repo.store_open_interest(_morning(count=1), [_interest("BBB")])
+        with pytest.raises(ValueError, match="only the morning pass"):
+            await repo.store_open_interest(_record(count=1), [_interest()])
+        assert await s.scalar(select(func.count()).select_from(ChainFetchRow)) == 0
+
+
+async def test_open_interest_larger_than_one_insert_statement_is_stored_whole(session_factory):
+    rows = [_interest(symbol=f"AAA{n:06d}") for n in range(12_001)]
+
+    await _store_morning(session_factory, _morning(count=len(rows)), rows)
+
+    async with session_factory() as s:
+        assert await s.scalar(select(func.count()).select_from(OptionOpenInterestRow)) == 12_001
+
+
+async def test_a_chunk_of_open_interest_compresses_and_reads_back(session_factory):
+    rows = [_interest(symbol="AAA   261120C00100000"), _interest(symbol="AAA   261120P00100000", open_interest=5)]
+    await _store_morning(session_factory, _morning(count=2), rows)
+
+    async with session_factory() as s:
+        chunk = await s.scalar(text("SELECT show_chunks('option_open_interest')::text LIMIT 1"))
+        await s.execute(text(f"SELECT compress_chunk('{chunk}')"))
+        assert await ChainRepository(s).open_interest(NIGHT, "AAA") == rows
+        await s.rollback()
