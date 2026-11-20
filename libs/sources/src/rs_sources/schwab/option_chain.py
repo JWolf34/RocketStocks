@@ -17,20 +17,13 @@ from pydantic import BaseModel, ConfigDict, ValidationError
 from rs_domain import OptionContract
 from rs_sources.schwab.client import translate_auth_errors
 from rs_sources.schwab.market_data import SchwabResponseError, response_payload
+from rs_sources.schwab.symbols import schwab_symbol
 
 logger = logging.getLogger(__name__)
 
 # Schwab's "no value" for volatility and the greeks.
 _NO_VALUE = -999.0
 _PUT_CALL: dict[str, Literal["C", "P"]] = {"CALL": "C", "PUT": "P"}
-
-
-def schwab_chain_symbol(symbol: str) -> str:
-    """The spelling Schwab's chain endpoint accepts for a Universe symbol.
-
-    Class shares are slashed (`BRK.B` is `BRK/B`); the dotted and dot-less spellings answer 400.
-    """
-    return symbol.strip().upper().replace(".", "/")
 
 
 class OptionChain(BaseModel):
@@ -64,7 +57,7 @@ class SchwabOptionChains:
         if start is not None and end is not None and start > end:
             raise ValueError(f"start {start} is after end {end}")
         underlying = symbol.strip().upper()
-        spelled = schwab_chain_symbol(underlying)
+        spelled = schwab_symbol(underlying)
         with translate_auth_errors():
             response = await self._client.get_option_chain(
                 spelled,
