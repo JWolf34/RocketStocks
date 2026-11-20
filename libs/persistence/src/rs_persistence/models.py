@@ -159,9 +159,10 @@ class BarRequestRow(Base):
 
 
 class EarningsSnapshotRow(Base):
-    """earnings_snapshot: Nasdaq's earnings calendar as of `snapshot_date` (the Eastern fetch
-    date), one row per ticker and report date. `origin` is in the key so a backfill run on a
-    night the nightly snapshot also ran stores beside it, not over it."""
+    """earnings_snapshot: Nasdaq's earnings calendar as of `snapshot_date` (the session evening
+    a nightly snapshot is for, the Eastern fetch date of a backfill), one row per ticker and
+    report date. `origin` is in the key so a backfill run on a night the nightly snapshot also
+    ran stores beside it, not over it."""
 
     __tablename__ = "earnings_snapshot"
 

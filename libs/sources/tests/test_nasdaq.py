@@ -8,7 +8,7 @@ import pytest
 
 from rs_domain import EarningsTime
 from rs_sources.errors import SourceError
-from rs_sources.nasdaq import EarningsListing, NasdaqEarningsCalendar
+from rs_sources.nasdaq import EarningsReport, NasdaqEarningsCalendar
 
 NO_RECORD = {
     "data": None,
@@ -78,8 +78,8 @@ async def fetch(clock, *rows, day=date(2026, 10, 22)):
 async def test_a_past_day_parses_forecast_actual_and_surprise(clock):
     result = await fetch(clock, past_row("aaa "))
 
-    assert result.listings == (
-        EarningsListing(
+    assert result.reports == (
+        EarningsReport(
             ticker="AAA",
             report_date=date(2026, 10, 22),
             time_of_day=EarningsTime.AFTER_HOURS,
@@ -98,10 +98,10 @@ async def test_a_past_day_parses_forecast_actual_and_surprise(clock):
 async def test_a_forward_day_has_no_actuals_and_that_is_not_a_null(clock):
     result = await fetch(clock, forward_row())
 
-    [listing] = result.listings
-    assert (listing.time_of_day, listing.eps_forecast, listing.estimate_count) == (EarningsTime.PRE_MARKET, 0.64, 12)
-    assert listing.fiscal_quarter == "2026-12"
-    assert listing.eps_actual is None and listing.surprise_pct is None
+    [report] = result.reports
+    assert (report.time_of_day, report.eps_forecast, report.estimate_count) == (EarningsTime.PRE_MARKET, 0.64, 12)
+    assert report.fiscal_quarter == "2026-12"
+    assert report.eps_actual is None and report.surprise_pct is None
     assert dict(result.unparsed) == {}
 
 
@@ -120,8 +120,8 @@ async def test_a_forward_day_has_no_actuals_and_that_is_not_a_null(clock):
 async def test_amounts_parse_with_parentheses_as_negative(clock, wire, expected):
     result = await fetch(clock, past_row(eps=wire, surprise=wire, epsForecast=wire))
 
-    [listing] = result.listings
-    assert (listing.eps_actual, listing.surprise_pct, listing.eps_forecast) == (expected, expected, expected)
+    [report] = result.reports
+    assert (report.eps_actual, report.surprise_pct, report.eps_forecast) == (expected, expected, expected)
     assert dict(result.unparsed) == {}
 
 
@@ -129,9 +129,9 @@ async def test_amounts_parse_with_parentheses_as_negative(clock, wire, expected)
 async def test_unparseable_amounts_are_null_and_counted_per_field(clock, wire):
     result = await fetch(clock, past_row(eps=wire, surprise=wire, epsForecast=wire, noOfEsts=wire))
 
-    [listing] = result.listings
-    assert listing.eps_actual is None and listing.surprise_pct is None
-    assert listing.eps_forecast is None and listing.estimate_count is None
+    [report] = result.reports
+    assert report.eps_actual is None and report.surprise_pct is None
+    assert report.eps_forecast is None and report.estimate_count is None
     expected = {"eps_actual": 1, "surprise_pct": 1, "eps_forecast": 1, "estimate_count": 1}
     # 7 is a number but not text: Nasdaq serves display text, so anything else is unreadable too.
     assert dict(result.unparsed) == expected
@@ -139,9 +139,9 @@ async def test_unparseable_amounts_are_null_and_counted_per_field(clock, wire):
 
 @pytest.mark.parametrize(("wire", "expected"), [("7", 7), ("12", 12), ("0", 0), ("N/A", None), ("2.5", None), ("-1", None)])
 async def test_estimate_counts_are_whole_non_negative_numbers(clock, wire, expected):
-    [listing] = (await fetch(clock, past_row(noOfEsts=wire))).listings
+    [report] = (await fetch(clock, past_row(noOfEsts=wire))).reports
 
-    assert listing.estimate_count == expected
+    assert report.estimate_count == expected
 
 
 @pytest.mark.parametrize(
@@ -150,7 +150,7 @@ async def test_estimate_counts_are_whole_non_negative_numbers(clock, wire, expec
 async def test_fiscal_quarters_parse_to_the_month_they_end(clock, wire, expected):
     result = await fetch(clock, past_row(fiscalQuarterEnding=wire))
 
-    assert result.listings[0].fiscal_quarter == expected
+    assert result.reports[0].fiscal_quarter == expected
     assert dict(result.unparsed) == ({} if expected else {"fiscal_quarter": 1})
 
 
@@ -172,20 +172,20 @@ async def test_unparsed_values_are_summed_over_the_rows_of_a_day(clock):
 async def test_time_of_day_mapping(clock, wire, expected, counted):
     result = await fetch(clock, past_row(time=wire))
 
-    assert result.listings[0].time_of_day == expected
+    assert result.reports[0].time_of_day == expected
     assert dict(result.unparsed) == ({"time_of_day": 1} if counted else {})
 
 
 async def test_a_ticker_listed_twice_in_a_day_keeps_the_first(clock):
     result = await fetch(clock, past_row("AAA", eps="$1.00"), past_row("aaa", eps="$9.00"), past_row("BBB"))
 
-    assert [(item.ticker, item.eps_actual) for item in result.listings] == [("AAA", 1.0), ("BBB", 1.33)]
+    assert [(item.ticker, item.eps_actual) for item in result.reports] == [("AAA", 1.0), ("BBB", 1.33)]
 
 
 async def test_weekend_rows_null_is_an_empty_day(clock):
     result = await fetch(clock)
 
-    assert result.listings == ()
+    assert result.reports == ()
 
 
 async def test_no_record_found_is_an_empty_day(clock):
@@ -193,7 +193,7 @@ async def test_no_record_found_is_an_empty_day(clock):
 
     result = await make_calendar(fake, clock).day(date(2026, 12, 25))
 
-    assert result.listings == ()
+    assert result.reports == ()
 
 
 @pytest.mark.parametrize(
@@ -222,7 +222,7 @@ async def test_a_row_without_a_usable_symbol_is_skipped_and_counted_and_the_rest
     row = bad if not isinstance(bad, dict) else past_row() | bad
     result = await fetch(clock, past_row("AAA"), row, past_row("BBB"))
 
-    assert [item.ticker for item in result.listings] == ["AAA", "BBB"]
+    assert [item.ticker for item in result.reports] == ["AAA", "BBB"]
     assert dict(result.unparsed) == {"symbol": 1}
 
 
@@ -231,7 +231,7 @@ async def test_a_row_with_no_symbol_key_at_all_is_skipped(clock):
 
     result = await fetch(clock, row, past_row("BBB"))
 
-    assert [item.ticker for item in result.listings] == ["BBB"]
+    assert [item.ticker for item in result.reports] == ["BBB"]
     assert dict(result.unparsed) == {"symbol": 1}
 
 
@@ -251,15 +251,15 @@ async def test_a_missing_value_is_null_and_counted_and_never_costs_the_day(clock
 
     result = await fetch(clock, row, past_row("BBB"))
 
-    assert [item.ticker for item in result.listings] == ["AAA", "BBB"]
+    assert [item.ticker for item in result.reports] == ["AAA", "BBB"]
     assert dict(result.unparsed) == {field: 1}
 
 
 async def test_a_row_with_every_figure_missing_still_lists_the_ticker(clock):
     result = await fetch(clock, {"symbol": "aaa"})
 
-    [listing] = result.listings
-    assert (listing.ticker, listing.report_date, listing.eps_forecast, listing.eps_actual) == (
+    [report] = result.reports
+    assert (report.ticker, report.report_date, report.eps_forecast, report.eps_actual) == (
         "AAA",
         date(2026, 10, 22),
         None,
@@ -271,7 +271,7 @@ async def test_a_row_with_every_figure_missing_still_lists_the_ticker(clock):
 async def test_an_unhashable_time_value_is_null_and_counted(clock):
     result = await fetch(clock, forward_row() | {"time": ["x"]})
 
-    assert result.listings[0].time_of_day is None
+    assert result.reports[0].time_of_day is None
     assert dict(result.unparsed) == {"time_of_day": 1}
 
 

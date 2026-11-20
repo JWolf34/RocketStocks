@@ -589,12 +589,14 @@ The snapshot is about 13,000 rows a day, a few hundred MB a year; it is derived 
 
 ### Earnings calendar
 
-The `earnings_snapshot` job reads Nasdaq's earnings calendar each trading evening at 20:30 Eastern (and once at startup when the slot has passed) and stores it in `earnings_snapshot`, dated by that Eastern day with origin `nightly`.
+The `earnings_snapshot` job reads Nasdaq's earnings calendar each trading evening at 20:30 Eastern and stores it in `earnings_snapshot`, dated by that evening's session with origin `nightly`.
+It also runs at startup and takes the snapshot of the latest trading evening whose 20:30 has passed when that evening has none, so a restart overnight or the next day still records the missed evening; its rows carry their real fetch time, and an evening never gets two snapshots.
+Only the latest evening is caught up: an older missed evening has no snapshot, because the calendar can only be read as it is now.
 It makes no Schwab calls and reads every weekday from a week back to 65 weekdays ahead (about 13 weeks, well past the about 8 weeks Nasdaq lists), about 70 requests.
 The horizon is fixed because the end of the window cannot be told from a quiet stretch inside it, such as the Christmas to New Year week.
 A day that fails is asked again after 30 seconds and after 2 minutes before it counts as failed.
-A snapshot is stored whole or not at all, a weekend or holiday does nothing, and a rerun on a night already snapshotted does nothing.
-Each run logs `earnings snapshot <date>: N rows over M days, last listed day <date>; values not parsed: {...}`, where the field counts are values that came back `N/A`, empty, unreadable or missing, and `symbol` counts rows skipped for lacking a ticker.
+A snapshot is stored whole or not at all, and a run whose latest evening already has its snapshot (a rerun, a weekend or a holiday) does nothing.
+Each run logs `earnings snapshot <date>: N rows over M days, last report day <date>; values not parsed: {...}`, where the field counts are values that came back `N/A`, empty, unreadable or missing, and `symbol` counts rows skipped for lacking a ticker.
 The Alert's next Catalyst reads the latest `nightly` snapshot, trusts it for two trading sessions, and otherwise estimates from EDGAR at read time (the estimate is never stored).
 
 Load the history once, from 2008-01-01 (the earliest year Nasdaq serves), after the first deploy:

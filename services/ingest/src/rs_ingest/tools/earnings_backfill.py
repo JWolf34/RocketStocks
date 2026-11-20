@@ -90,9 +90,9 @@ async def backfill_earnings(
                 snapshot_date=eastern_day(fetched.fetched_at),
                 origin=EarningsOrigin.BACKFILL,
                 fetched_at=fetched.fetched_at,
-                **listing.model_dump(),
+                **item.model_dump(),
             )
-            for listing in fetched.listings
+            for item in fetched.reports
         ]
         if rows:
             async with session_factory() as session, session.begin():
