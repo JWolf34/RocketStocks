@@ -10,9 +10,9 @@ from sqlalchemy.exc import OperationalError
 from rs_domain import EASTERN
 from rs_ingest.tools.sweep_probe.planning import build_plan
 from rs_ingest.tools.sweep_probe.store import Outcome
-from rs_ingest.tools.sweep_probe.symbols import Listing
 from rs_sources import ExchangeCalendar
 from rs_sources.schwab import SchwabAuthError, TokenMissingError
+from rs_sources.symbol_directory import CboeEntry
 
 TODAY = date(2026, 10, 28)
 
@@ -351,7 +351,7 @@ async def test_without_two_qualifying_chains_the_first_sampled_listings_fill_in(
 
 
 async def test_the_whole_schedule_runs_in_virtual_time_within_the_budget(harness, wire):
-    listings = [Listing(f"S{n:03d}", "x") for n in range(80)]
+    listings = [CboeEntry(symbol=f"S{n:03d}", name="x") for n in range(80)]
     harness.clock._now = datetime(2026, 10, 28, 14, 0, tzinfo=EASTERN).astimezone(UTC)
     plan = build_plan(
         now=harness.clock.now(), calendar=ExchangeCalendar(), listings=listings, seed=5, sample_size=50, start=None

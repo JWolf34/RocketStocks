@@ -3,12 +3,13 @@
 import pytest
 
 from rs_ingest.tools.sweep_probe.symbols import (
-    Listing,
     chain_spellings,
     draw_sample,
     is_index_product,
     parse_directory,
 )
+from rs_sources.errors import SourceError
+from rs_sources.symbol_directory import CboeEntry
 
 # Header cells have leading spaces and fields are quoted, as in the real file.
 DIRECTORY = """Company Name, Stock Symbol, DPM Name, Post/Station, Global Trading Hours DPM
@@ -28,11 +29,11 @@ def test_the_reader_keeps_equities_and_funds_and_drops_index_products():
     listings = parse_directory(DIRECTORY)
 
     assert [listing.symbol for listing in listings] == ["AAPL", "BRK.B", "IWM", "UUP"]
-    assert listings[1] == Listing("BRK.B", "BERKSHIRE HATHAWAY INC DEL CL B NEW")
+    assert listings[1] == CboeEntry(symbol="BRK.B", name="BERKSHIRE HATHAWAY INC DEL CL B NEW")
 
 
 def test_an_unexpected_header_is_loud():
-    with pytest.raises(ValueError, match="unexpected Cboe directory header"):
+    with pytest.raises(SourceError, match="Stock Symbol"):
         parse_directory('"Name","Ticker"\n"x","y"\n')
 
 
@@ -53,7 +54,7 @@ def test_class_shares_are_asked_for_with_schwabs_slash_spelling_first_then_their
 
 
 def test_the_sample_is_a_function_of_the_seed():
-    listings = [Listing(f"S{n:03d}", "x") for n in range(200)]
+    listings = [CboeEntry(symbol=f"S{n:03d}", name="x") for n in range(200)]
 
     first = draw_sample(listings, seed=7, size=50, exclude=frozenset())
 
@@ -63,7 +64,7 @@ def test_the_sample_is_a_function_of_the_seed():
 
 
 def test_named_symbols_are_not_drawn_again_under_either_spelling():
-    listings = [Listing("BRK.B", "x"), Listing("AAPL", "x"), Listing("ZZZ", "x")]
+    listings = [CboeEntry(symbol="BRK.B", name="x"), CboeEntry(symbol="AAPL", name="x"), CboeEntry(symbol="ZZZ", name="x")]
 
     drawn = draw_sample(listings, seed=1, size=1, exclude=frozenset({"AAPL", "BRK/B"}))
 
@@ -72,4 +73,4 @@ def test_named_symbols_are_not_drawn_again_under_either_spelling():
 
 def test_asking_for_more_than_exists_is_an_error():
     with pytest.raises(ValueError, match="eligible"):
-        draw_sample([Listing("AAA", "x")], seed=1, size=2, exclude=frozenset())
+        draw_sample([CboeEntry(symbol="AAA", name="x")], seed=1, size=2, exclude=frozenset())
