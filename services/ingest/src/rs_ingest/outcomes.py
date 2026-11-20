@@ -147,7 +147,7 @@ async def measure_cases(
         bars = DailyBarRepository(session)
         benchmark_bars = await bars.list_range(BENCHMARK, grid.days[0], grid.days[-1])
         if not benchmark_bars:
-            raise OutcomesError(f"no {BENCHMARK} daily bars stored; the daily-bars job has not fetched the benchmark")
+            raise OutcomesError(f"no {BENCHMARK} daily bars stored; the evening sweep has not fetched the benchmark's bars")
         benchmark = align(grid, benchmark_bars)
         for symbol in sorted(by_symbol):
             stock = align(grid, await bars.list_range(symbol, grid.days[0], grid.days[-1]))

@@ -1,16 +1,14 @@
-"""The nightly Track record job: schedule, the subprocess boundary and failure reporting."""
+"""The Track record run: its place in the evening sweep, the subprocess boundary and failure reporting."""
 
 import asyncio
 import json
 import os
 import sys
-from datetime import UTC, datetime, time, timedelta
 
 import pytest
 from sqlalchemy import select
 
-from rs_domain import EASTERN
-from rs_ingest.cron import CronTable, Daily
+from rs_ingest.cron import CronTable
 from rs_ingest.jobs import Dependencies, register_jobs
 from rs_ingest.outcomes import main
 from rs_ingest.track_record import (
@@ -28,7 +26,7 @@ def python(code: str) -> list[str]:
     return [sys.executable, "-c", code]
 
 
-def test_registered_after_the_bars_job_without_schwab_and_runs_at_startup():
+def test_it_is_the_last_stage_of_the_evening_sweep_not_a_job_of_its_own():
     cron = CronTable()
     # Registration only builds clients; none of these collaborators is touched.
     deps = Dependencies(
@@ -45,18 +43,8 @@ def test_registered_after_the_bars_job_without_schwab_and_runs_at_startup():
     )
     register_jobs(cron, deps)
 
-    [job] = [j for j in cron if j.name == JOB_NAME]
-    [bars] = [j for j in cron if j.name == "daily_bars"]
-
-    assert job.needs_schwab is False
-    assert job.run_on_start is True
-    assert job.time_limit == timedelta(hours=2)
-    assert job.schedule == Daily(time(20, 0), EASTERN)
-    assert bars.schedule == Daily(time(17, 30), EASTERN)
-    # Tuesday 2026-10-20, 20:00 EDT
-    assert job.schedule.next_after(datetime(2026, 10, 20, 12, 0, tzinfo=UTC)) == datetime(
-        2026, 10, 21, 0, 0, tzinfo=UTC
-    )
+    assert JOB_NAME not in {job.name for job in cron}
+    assert deps.run_outcomes is run_outcomes
 
 
 def test_the_subprocess_environment_is_an_allowlist_plus_the_database_url():

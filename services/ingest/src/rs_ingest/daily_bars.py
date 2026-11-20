@@ -23,8 +23,8 @@ are replaced by a fresh full fetch. The overlap rides on the call the tail needs
 that shares no session with the stored bars at all is a ticker reused by another company and
 replaces the history the same way; the old company's bars are not kept.
 
-The pass stops at the stop time (STOP_AT unless configured), before the morning pass starts, and the
-next run resumes it.
+The pass stops at the stop time (STOP_AT unless configured), before the morning pass starts at
+07:00 ET, and the next evening resumes it.
 """
 
 import logging
@@ -49,8 +49,8 @@ BENCHMARK = "SPY"
 
 # A symbol with no bars asks from here; Schwab serves what it has (about 30 years of daily history).
 SEED_START = date(1990, 1, 1)
-# The pass stops at the next 03:00 Central after it starts, before the morning pass begins. This is
-# the chain deadline until the probe settles when open interest does. The clock time is a setting
+# The pass stops at the first 03:00 Central after the evening it belongs to starts (04:00 ET), three
+# hours before the morning pass begins at 07:00 ET. The clock time is a setting
 # (RS_INGEST_DAILY_BARS_STOP_AT); the zone is fixed.
 STOP_ZONE = ZoneInfo("America/Chicago")
 STOP_AT = time(3, 0)
