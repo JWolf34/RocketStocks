@@ -71,6 +71,24 @@ async def test_the_latest_universe_is_the_newest_date(session_factory):
     assert missing is None
 
 
+async def test_the_latest_header_on_or_before_a_day_is_the_newest_snapshot_up_to_it(session_factory):
+    async with session_factory() as s:
+        repo = UniverseRepository(s)
+        await repo.save(_snapshot(date(2026, 10, 23), [_listing("OLD")]))
+        await repo.save(_snapshot(date(2026, 10, 27), [_listing("NEW")]))
+        await s.commit()
+
+        found = [await repo.latest_header(on_or_before=date(2026, 10, d)) for d in (22, 23, 26, 27, 30)]
+
+    assert [None if h is None else h.snapshot_date for h in found] == [
+        None,
+        date(2026, 10, 23),
+        date(2026, 10, 23),
+        date(2026, 10, 27),
+        date(2026, 10, 27),
+    ]
+
+
 async def test_saving_a_date_that_has_a_snapshot_changes_nothing(session_factory):
     async with session_factory() as s:
         repo = UniverseRepository(s)
