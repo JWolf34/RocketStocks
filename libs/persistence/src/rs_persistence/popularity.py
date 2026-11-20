@@ -4,14 +4,11 @@ from collections.abc import Collection, Sequence
 from datetime import UTC, datetime
 
 from sqlalchemy import func, select
-from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from rs_domain import PopularityOrigin, PopularitySnapshot
+from rs_persistence._bulk import insert_rows
 from rs_persistence.models import PopularitySnapshotRow
-
-# 9 bound parameters per row; stay far below the protocol's 65535 limit.
-_INSERT_CHUNK = 5000
 
 
 def snapshot_from_row(row: PopularitySnapshotRow) -> PopularitySnapshot:
@@ -37,17 +34,12 @@ class PopularityRepository:
     async def insert_many(self, snapshots: Sequence[PopularitySnapshot]) -> int:
         """Insert snapshots, skipping any whose (polled_at, ticker) already exists
         (a re-polled boundary); returns how many were inserted."""
-        inserted = 0
-        for start in range(0, len(snapshots), _INSERT_CHUNK):
-            chunk = snapshots[start : start + _INSERT_CHUNK]
-            result = await self._session.scalars(
-                pg_insert(PopularitySnapshotRow)
-                .values([s.model_dump(mode="python") for s in chunk])
-                .on_conflict_do_nothing()
-                .returning(PopularitySnapshotRow.ticker)
-            )
-            inserted += len(result.all())
-        return inserted
+        return await insert_rows(
+            self._session,
+            PopularitySnapshotRow,
+            (snapshot.model_dump(mode="python") for snapshot in snapshots),
+            skip_existing=True,
+        )
 
     async def earliest_polled_at(self) -> datetime | None:
         """The oldest stored boundary across all tickers, or None when empty."""

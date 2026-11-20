@@ -21,16 +21,12 @@ from rs_domain import (
     OpenInterest,
     OptionContract,
 )
+from rs_persistence._bulk import insert_rows
 from rs_persistence.models import (
     ChainFetchRow,
     OptionContractRow,
     OptionOpenInterestRow,
 )
-
-# 27 bound parameters per contract row; stay far below the protocol's 65535 limit.
-_INSERT_CHUNK = 1500
-# Four per open-interest row.
-_OPEN_INTEREST_CHUNK = 5000
 
 
 def _record_from_row(row: ChainFetchRow) -> ChainFetchRecord:
@@ -77,13 +73,11 @@ class ChainRepository:
             raise ValueError(f"{record.underlying}: contracts of another underlying")
         if not await self._store_record(record):
             return False
-        for start in range(0, len(contracts), _INSERT_CHUNK):
-            chunk = contracts[start : start + _INSERT_CHUNK]
-            await self._session.execute(
-                pg_insert(OptionContractRow).values(
-                    [{"session_date": record.session_date, **contract.model_dump()} for contract in chunk]
-                )
-            )
+        await insert_rows(
+            self._session,
+            OptionContractRow,
+            ({"session_date": record.session_date, **contract.model_dump()} for contract in contracts),
+        )
         return True
 
     async def store_open_interest(self, record: ChainFetchRecord, interest: Sequence[OpenInterest] = ()) -> bool:
@@ -101,13 +95,11 @@ class ChainRepository:
             raise ValueError(f"{record.underlying}: open interest of another underlying")
         if not await self._store_record(record):
             return False
-        for start in range(0, len(interest), _OPEN_INTEREST_CHUNK):
-            chunk = interest[start : start + _OPEN_INTEREST_CHUNK]
-            await self._session.execute(
-                pg_insert(OptionOpenInterestRow).values(
-                    [{"session_date": record.session_date, **row.model_dump()} for row in chunk]
-                )
-            )
+        await insert_rows(
+            self._session,
+            OptionOpenInterestRow,
+            ({"session_date": record.session_date, **row.model_dump()} for row in interest),
+        )
         return True
 
     async def _store_record(self, record: ChainFetchRecord) -> bool:
