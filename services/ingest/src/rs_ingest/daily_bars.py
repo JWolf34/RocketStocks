@@ -1,10 +1,10 @@
 """daily_bars: daily history for every listing of the latest Universe, seeded from 1990.
 
 Each run is a catch-up, not a per-day append: it works out from the stored bars and requests
-what is missing up to the last settled session and fetches only that, so the daily slot, the
+what is missing up to the last settled session and fetches only that, so the evening's run, the
 startup run and a rerun are the same code, a rerun with nothing new makes no Schwab call, and a
 pass that stopped resumes where it left off. SPY goes first, then the stocks the Popularity
-Trigger ever hit (the Outcomes job reads only those), then the rest of the Universe.
+Trigger ever hit (the Outcomes read only those), then the rest of the Universe.
 
 A symbol with no bars asks from SEED_START and Schwab serves what it has: the seed is the same
 one call as a tail, with more rows. A symbol whose history begins after the seed is extended

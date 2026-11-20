@@ -706,7 +706,7 @@ The evening (a trading day; a restart during the evening resumes, so the night s
 | by 19:00 | the last `chain_fetch.fetched_at` of the pass is before 19:00 |
 | 20:30 | `earnings snapshot <date>: N rows ...` |
 | about 20:40 to 21:00 | the bars finish when about 13,000 calls are done; on the first night they may run on, and stop at 04:00 ET |
-| after the bars | `track_record finished` |
+| after the bars | `the Outcomes and Track record run finished` |
 
 Check it afterwards, in this order:
 

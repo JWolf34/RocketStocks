@@ -364,7 +364,7 @@ async def test_a_rerun_after_a_dead_token_fetches_only_the_underlyings_not_yet_r
 async def test_a_failed_stage_does_not_hold_back_the_stages_after_it(session_factory, seed_previous):
     await seed_previous(day=EVENING_SESSION)
     calls: list[str] = []
-    outcomes = OutcomesRuns(calls, error=RuntimeError("the outcomes job exited with status 1"))
+    outcomes = OutcomesRuns(calls, error=RuntimeError("the Outcomes and Track record run exited with status 1"))
 
     job = _job(session_factory, "evening_sweep", schwab=EveningClient(calls), clock=EVE, outcomes=outcomes)
     with pytest.raises(RuntimeError, match="status 1"):

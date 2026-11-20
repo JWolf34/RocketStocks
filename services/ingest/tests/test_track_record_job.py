@@ -13,7 +13,6 @@ from rs_ingest.jobs import Dependencies, register_jobs
 from rs_ingest.outcomes import main
 from rs_ingest.track_record import (
     COMMAND,
-    JOB_NAME,
     run_outcomes,
     subprocess_environment,
 )
@@ -43,7 +42,7 @@ def test_it_is_the_last_stage_of_the_evening_sweep_not_a_job_of_its_own():
     )
     register_jobs(cron, deps)
 
-    assert JOB_NAME not in {job.name for job in cron}
+    assert "track_record" not in {job.name for job in cron}
     assert deps.run_outcomes is run_outcomes
 
 
