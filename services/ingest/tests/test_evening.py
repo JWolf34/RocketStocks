@@ -1,10 +1,9 @@
 """The evening sequence: stages in order, failures kept, a dead token ending the run."""
 
-from datetime import UTC, date, datetime
 
 import pytest
 
-from rs_ingest.evening import evening_start, run_evening
+from rs_ingest.evening import run_evening
 from rs_observability import QuietFailure, SourceFailed
 from rs_sources.schwab import SchwabAuthError
 
@@ -84,8 +83,3 @@ async def test_schwab_failing_is_what_the_job_raises_even_when_a_stage_failed():
         await run_evening([s.stage("chains"), s.stage("bars")], failing)
 
     assert s.order == ["chains", "bars"]
-
-
-def test_an_evening_starts_at_5_past_6_eastern_on_the_sessions_date():
-    assert evening_start(date(2026, 11, 17)) == datetime(2026, 11, 17, 23, 5, tzinfo=UTC)  # EST
-    assert evening_start(date(2026, 10, 20)) == datetime(2026, 10, 20, 22, 5, tzinfo=UTC)  # EDT

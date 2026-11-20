@@ -23,23 +23,23 @@ are replaced by a fresh full fetch. The overlap rides on the call the tail needs
 that shares no session with the stored bars at all is a ticker reused by another company and
 replaces the history the same way; the old company's bars are not kept.
 
-The pass stops at the stop time (STOP_AT unless configured), before the morning pass starts at
-07:00 ET, and the next evening resumes it.
+The pass stops at the stop time (`rs_ingest.sessions.bars_stop_time`), before the morning pass
+starts at 07:00 ET, and the next evening resumes it.
 """
 
 import logging
 from collections import Counter
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass, field
-from datetime import date, datetime, time, timedelta
+from datetime import date, datetime, timedelta
 from typing import Protocol
-from zoneinfo import ZoneInfo
 
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from rs_domain import Clock, StoredDailyBar, TradingCalendar, eastern_day
+from rs_domain import Clock, StoredDailyBar, TradingCalendar
 from rs_ingest.rate_limit import RateLimiter
 from rs_ingest.replay import replayed_hits
+from rs_ingest.sessions import last_settled_session
 from rs_persistence import DailyBarRepository, UniverseRepository
 from rs_sources.schwab import DailyHistory, SchwabAuthError, SchwabResponseError
 
@@ -49,15 +49,8 @@ BENCHMARK = "SPY"
 
 # A symbol with no bars asks from here; Schwab serves what it has (about 30 years of daily history).
 SEED_START = date(1990, 1, 1)
-# The pass stops at the first 03:00 Central after the evening it belongs to starts (04:00 ET), three
-# hours before the morning pass begins at 07:00 ET. The clock time is a setting
-# (RS_INGEST_DAILY_BARS_STOP_AT); the zone is fixed.
-STOP_ZONE = ZoneInfo("America/Chicago")
-STOP_AT = time(3, 0)
 # Progress is logged this often during a long catch-up.
 PROGRESS_EVERY = 100
-# A session's candle is trusted this long after the close; the daily slot is 90 minutes after.
-SETTLE = timedelta(hours=1)
 # A symbol Schwab cannot price is asked about again this often, never sooner.
 UNPRICED_RETRY = timedelta(days=7)
 # Schwab's daily history is split-adjusted as of the fetch (measured on four known splits).
@@ -114,12 +107,6 @@ def price_history_symbol(symbol: str) -> str:
     return symbol
 
 
-def stop_time(now: datetime, at: time = STOP_AT) -> datetime:
-    """The next `at` Central after `now`."""
-    today = datetime.combine(now.astimezone(STOP_ZONE).date(), at, tzinfo=STOP_ZONE)
-    return today if today > now else today + timedelta(days=1)
-
-
 async def triggered_tickers(session_factory: async_sessionmaker[AsyncSession], now: datetime) -> set[str]:
     """Every ticker the Popularity Trigger ever hit, over both popularity origins."""
     return {event.ticker async for event in replayed_hits(session_factory, now)}
@@ -137,14 +124,6 @@ async def bar_scope(
     listed = {listing.symbol for listing in universe.listings} if universe is not None else set()
     first = [BENCHMARK, *sorted(set(triggered) - {BENCHMARK})]
     return first + sorted(listed - set(first))
-
-
-def last_settled_session(calendar: TradingCalendar, now: datetime) -> date:
-    today = eastern_day(now)
-    for day in reversed(calendar.sessions_in_range(today - timedelta(days=10), today)):
-        if calendar.session_close(day) + SETTLE <= now:
-            return day
-    raise RuntimeError(f"no settled session in the 10 days before {today}")
 
 
 def _overlap_start(calendar: TradingCalendar, last: date) -> date:

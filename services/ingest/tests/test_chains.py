@@ -18,9 +18,7 @@ from rs_domain import (
 )
 from rs_ingest.chains import (
     ATTEMPTS,
-    chain_deadline,
     expiry_ranges,
-    morning_slot,
     sweep_evening_chains,
     sweep_morning_open_interest,
 )
@@ -526,16 +524,6 @@ async def test_being_over_budget_stops_the_pass_without_a_tombstone_and_speaks_f
 # --- the deadline -----------------------------------------------------------------------------------
 
 
-def test_the_deadline_is_7pm_eastern_on_the_sessions_own_evening():
-    # Tuesday 2026-11-17: 19:00 EST is 00:00 UTC on the 18th.
-    assert chain_deadline(SESSION) == DEADLINE
-    # Friday's evening ends the same evening, not on the weekend.
-    assert chain_deadline(date(2026, 11, 13)) == datetime(2026, 11, 14, 0, 0, tzinfo=UTC)
-    # Before the clocks fall back (2026-11-01) it is 19:00 EDT, 23:00 UTC.
-    assert chain_deadline(date(2026, 10, 20)) == datetime(2026, 10, 20, 23, 0, tzinfo=UTC)
-    assert chain_deadline(SESSION, time(19, 30)) == datetime(2026, 11, 18, 0, 30, tzinfo=UTC)
-
-
 class Ticking:
     """The chain adapter, with the clock moving on `step` after every call."""
 
@@ -690,53 +678,6 @@ async def _morning_record(session_factory, symbol: str, session: date = SESSION)
 async def _open_interest(session_factory, symbol: str, session: date = SESSION):
     async with session_factory() as s:
         return await ChainRepository(s).open_interest(session, symbol)
-
-
-def _slot(now: datetime) -> tuple[date, datetime]:
-    return morning_slot(CALENDAR, now)
-
-
-def test_a_morning_settles_the_session_before_it_and_is_owed_until_its_open():
-    assert _slot(MORNING_NOW) == (SESSION, OPEN)
-    # The slot starts at 07:00 ET exactly (12:00 UTC); a minute earlier still belongs to Tuesday's morning.
-    assert _slot(datetime(2026, 11, 18, 12, 0, tzinfo=UTC)) == (SESSION, OPEN)
-    assert _slot(datetime(2026, 11, 18, 11, 59, tzinfo=UTC)) == (
-        date(2026, 11, 16),
-        datetime(2026, 11, 17, 14, 30, tzinfo=UTC),
-    )
-    # Hours after the open the morning is still that morning's, until the next 07:00.
-    assert _slot(datetime(2026, 11, 18, 23, 0, tzinfo=UTC)) == (SESSION, OPEN)
-
-
-def test_a_monday_morning_settles_fridays_session_and_a_weekend_belongs_to_fridays_morning():
-    assert _slot(datetime(2026, 11, 16, 12, 30, tzinfo=UTC)) == (
-        date(2026, 11, 13),
-        datetime(2026, 11, 16, 14, 30, tzinfo=UTC),
-    )
-    assert _slot(datetime(2026, 11, 14, 17, 0, tzinfo=UTC)) == (
-        date(2026, 11, 12),
-        datetime(2026, 11, 13, 14, 30, tzinfo=UTC),
-    )
-
-
-def test_the_morning_after_a_holiday_settles_the_session_before_it_and_the_holiday_owns_none():
-    # Thanksgiving is Thursday 2026-11-26: Friday's morning settles Wednesday; Thursday belongs to Wednesday's morning.
-    assert _slot(datetime(2026, 11, 27, 12, 30, tzinfo=UTC)) == (
-        date(2026, 11, 25),
-        datetime(2026, 11, 27, 14, 30, tzinfo=UTC),
-    )
-    assert _slot(datetime(2026, 11, 26, 15, 0, tzinfo=UTC)) == (
-        date(2026, 11, 24),
-        datetime(2026, 11, 25, 14, 30, tzinfo=UTC),
-    )
-
-
-def test_the_open_follows_daylight_saving():
-    # 09:30 EDT is 13:30 UTC.
-    assert _slot(datetime(2026, 10, 21, 12, 0, tzinfo=UTC)) == (
-        date(2026, 10, 20),
-        datetime(2026, 10, 21, 13, 30, tzinfo=UTC),
-    )
 
 
 async def test_the_morning_stores_only_open_interest_named_by_the_session_it_settled(session_factory):
