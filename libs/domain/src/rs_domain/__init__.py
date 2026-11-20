@@ -25,10 +25,6 @@ from rs_domain.models import (
     SchwabAuthRequest,
     StoredDailyBar,
     TrackRecord,
-    UniverseCounts,
-    UniverseHeader,
-    UniverseListing,
-    UniverseSnapshot,
     UnpricedSymbol,
     Verdict,
 )
@@ -41,6 +37,12 @@ from rs_domain.payloads import (
     SurgeFacts,
 )
 from rs_domain.ports import Clock, TradingCalendar
+from rs_domain.universe import (
+    UniverseCounts,
+    UniverseHeader,
+    UniverseListing,
+    UniverseSnapshot,
+)
 
 __all__ = [
     "ALERT_STALE_AFTER",
