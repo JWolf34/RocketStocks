@@ -2,27 +2,21 @@
 
 Every night RocketStocks records the whole market's listings, daily bars, options chains and earnings calendar, so later milestones and John's research can read any stock.
 `docs/vision.md` is the authority; this spec holds only what a builder cannot decide alone, and is rewritten in place when reality differs.
+The probe through ingest's own client is recorded in `docs/reference/schwab-facts.md`; the morning chain does not carry the session's volume, so the evening sweep stays.
 
-## Probe first
-
-- Through ingest's own client: chain sizes and failures on a sample (including the `BRK/B` spelling), bar depth from 1990, and each chain just after the close, at about 18:05 ET and before the open (does volume persist, do quotes, underlying price and implied volatility change, when does open interest change).
-- Its results rewrite `docs/reference/schwab-facts.md` in place; if the morning chain still carries closing volume and quotes, John sees the numbers and may drop the evening sweep.
-
-## Evening: chains and the Universe from 18:05 ET, then bars
+## The passes: evening from 18:05 ET, morning from 07:00 ET
 
 - **Universe**, from 18:05 ET: once `nasdaqlisted.txt` and `otherlisted.txt` carry a File Creation Time after the session's close (retried every 15 minutes; by 20:00 ET the night uses the previous snapshot and Ops is pinged), every non-test listing is stored by date with its security name, flags and the File Creation Time as As-of; no class classifier and no listing spans.
-- A listing is optionable when it appears that day in Nasdaq's `options.txt` or Cboe's equity options symbol directory; the files are never committed.
+- A file with under 90% of the previous snapshot's entries is refused like a stale one, and an operator who knows the shrink is real takes the night's snapshot with `python -m rs_ingest.tools.universe_snapshot --accept-shrink`.
+- A listing is optionable when it appears that day in Nasdaq's `options.txt` or Cboe's equity options symbol directory (never committed); when either source has not qualified by 20:00 ET the previous snapshot's optionable names are kept beside the other source's, the snapshot records it and Ops is pinged, so a bad night only adds optionable names.
 - **Chains**, from 18:05 ET over the optionable listings of the latest stored Universe (they do not wait for the night's): every optionable listing's full chain, unfiltered, through the ladder (fetch, retry once, split into three expiry ranges with the last open-ended, retry each, then a Tombstone); a 400 or an empty chain is recorded, never retried.
-- Deadline 19:00 ET, before Schwab resets the session's volume to zero (between 19:00 and 21:00 ET); anything unfetched by then is a Tombstone, and a missed night is never caught up.
-- **Bars**, once chains finish, for every listing in the latest Universe, SPY and Triggered stocks first; Outcomes start when the pass finishes, and it stops before the morning pass and resumes the next evening.
-- A symbol with no bars asks from 1990 (this is the seed), one statement per symbol so none decompresses past Timescale's 100,000-row cap.
+- Deadline 19:00 ET, from the probe: Schwab resets the session's volume to zero between 19:00 and 21:00 ET; anything unfetched by then is a Tombstone, and a missed night is never caught up.
+- **Bars**, once chains finish, for every listing in the latest Universe, SPY and Triggered stocks first, stopping before the morning pass and resuming the next evening; the Outcomes and the Track record run after them inside the same Schwab-gated evening job.
+- A symbol with no bars asks from 1990 (this is the seed), one statement per symbol so none decompresses past Timescale's 100,000-row cap; Schwab is asked for class shares as `BRK/B` for chains and bars alike, and everything is stored under the Universe's `BRK.B`.
 - Tails keep the overlap split check; a tail sharing no session with the stored bars (a reused ticker) also replaces the whole history; bars of a listing that leaves the Universe are kept, and survivorship-free history waits for a vendor.
 - **Earnings calendar** (Nasdaq, no Schwab calls, runs beside them): a dated snapshot from a week back to the end of the forward window, per row ticker, report date, time of day, fiscal quarter, EPS forecast, estimate count, actual EPS and surprise; unparseable values are null and counted.
 - A one-time backfill stores the same fields from 2008, labelled with its real fetch time; the EDGAR estimate is computed at read time, and the Alert's next Catalyst reads the latest snapshot, falling back to the estimate when it is more than two sessions old.
-
-## Morning
-
-- Once open interest has settled (07:00 ET), a second pass fetches every optionable chain and stores only open interest, named by the session it settled for; its deadline is the 09:30 ET open.
+- **Morning**, once open interest has settled (07:00 ET): a second pass fetches every optionable chain and stores only open interest, named by the session it settled for; its deadline is the 09:30 ET open.
 - A failed morning loses nothing: the evening sweep carries the same open interest a session later.
 
 ## Records, failures, resume
