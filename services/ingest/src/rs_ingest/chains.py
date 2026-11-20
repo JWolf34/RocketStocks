@@ -16,8 +16,9 @@ token killed skips every underlying already recorded for the session and pass. A
 until its deadline; past it the pass writes only Tombstones, so a night that was missed is
 recorded as missed and is never caught up.
 
-The evening pass stores each whole contract for the session and is owed until the first 03:00
-Central after the session's evening starts, unless configured. The morning pass runs the same
+The evening pass stores each whole contract for the session. It starts when the session's evening
+does (18:05 ET) and is owed until 19:00 ET, before Schwab resets the session's volume to zero
+(between 19:00 and 21:00 ET). The morning pass runs the same
 ladder from 07:00 ET, once Schwab's open interest has settled, on each trading day's morning,
 and stores only each contract's open interest, named by the session it settled for (the last
 session before the morning) in its own table; its deadline is that morning's open. A failed
@@ -47,10 +48,9 @@ from rs_domain import (
     TradingCalendar,
     eastern_day,
 )
-from rs_ingest.daily_bars import stop_time
 from rs_ingest.monitored import RATE_LIMITED
 from rs_ingest.rate_limit import RateLimiter
-from rs_ingest.universe import EVENING_STARTS_AT, SESSION_SEARCH, last_evening_session
+from rs_ingest.universe import SESSION_SEARCH, last_evening_session
 from rs_observability import SweepTally
 from rs_persistence import ChainRepository, UniverseRepository
 from rs_sources.errors import PER_SYMBOL_STATUSES
@@ -63,8 +63,9 @@ from rs_sources.schwab import (
 
 logger = logging.getLogger(__name__)
 
-# Central clock time the pass's deadline falls at, until the probe gives the settle time.
-DEADLINE_AT = time(3, 0)
+# Eastern clock time on the session's date the evening pass is owed until: past it Schwab's volume
+# for the session starts to be reset to zero (the sweep probe saw it between 19:00 and 21:00).
+DEADLINE_AT = time(19, 0)
 # Eastern clock time the morning pass starts, once open interest has settled (the sweep probe saw
 # it settle between 06:00 and 07:00 and hold until the open).
 MORNING_STARTS_AT = time(7, 0)
@@ -119,8 +120,8 @@ class _Fetched:
 
 
 def chain_deadline(session: date, at: time = DEADLINE_AT) -> datetime:
-    """The first `at` Central after `session`'s evening starts."""
-    return stop_time(datetime.combine(session, EVENING_STARTS_AT, tzinfo=EASTERN), at)
+    """`at` Eastern on `session`'s date: the evening pass's deadline."""
+    return datetime.combine(session, at, tzinfo=EASTERN)
 
 
 def expiry_ranges(session: date) -> tuple[tuple[date, date | None], ...]:

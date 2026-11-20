@@ -1,4 +1,5 @@
-"""The nightly Track record job: `rs_ingest.outcomes` as a subprocess of the same image.
+"""The nightly Track record run: `rs_ingest.outcomes` as a subprocess of the same image, the
+last stage of the evening sweep (`rs_ingest.evening`).
 
 It runs out of process on purpose. Replaying the rule over the stored Popularity is
 CPU-heavy Python that would stall the daemon's event loop, and holding that history
@@ -11,10 +12,7 @@ import logging
 import os
 import sys
 from collections.abc import Mapping, Sequence
-from datetime import time, timedelta
 
-from rs_domain import EASTERN
-from rs_ingest.cron import Daily, Job
 from rs_ingest.outcomes import DSN_VARIABLE
 
 logger = logging.getLogger(__name__)
@@ -46,16 +44,3 @@ async def run_outcomes(
     if code != 0:
         raise RuntimeError(f"{JOB_NAME}: the outcomes job exited with status {code}")
     logger.info("%s finished", JOB_NAME)
-
-
-def track_record_job(db_url: str) -> Job:
-    return Job(
-        JOB_NAME,
-        # The daily bars job (17:30 Eastern) fetches SPY and the Triggered stocks, the only bars this
-        # job reads, before the rest of the Universe, so it need not wait for the whole pass.
-        Daily(time(20, 0), EASTERN),
-        lambda: run_outcomes(db_url),
-        needs_schwab=False,
-        run_on_start=True,
-        timeout=timedelta(hours=2),
-    )

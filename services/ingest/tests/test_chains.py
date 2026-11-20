@@ -39,8 +39,8 @@ CALENDAR = ExchangeCalendar()
 # Tuesday 2026-11-17, 18:30 ET: the evening of that session has started.
 SESSION = date(2026, 11, 17)
 NOW = datetime(2026, 11, 17, 23, 30, tzinfo=UTC)
-# 03:00 CST the next morning.
-DEADLINE = datetime(2026, 11, 18, 9, 0, tzinfo=UTC)
+# 19:00 EST that evening: Schwab resets the session's volume to zero from here.
+DEADLINE = datetime(2026, 11, 18, 0, 0, tzinfo=UTC)
 QUOTED = int(datetime(2026, 11, 17, 21, 0, tzinfo=UTC).timestamp() * 1000)
 
 NEAR = SESSION + timedelta(days=10)
@@ -526,14 +526,14 @@ async def test_being_over_budget_stops_the_pass_without_a_tombstone_and_speaks_f
 # --- the deadline -----------------------------------------------------------------------------------
 
 
-def test_the_deadline_is_the_first_3am_central_after_the_evening_starts():
-    # Tuesday 2026-11-17 evening: 03:00 CST Wednesday is 09:00 UTC.
+def test_the_deadline_is_7pm_eastern_on_the_sessions_own_evening():
+    # Tuesday 2026-11-17: 19:00 EST is 00:00 UTC on the 18th.
     assert chain_deadline(SESSION) == DEADLINE
-    # Friday's evening ends on Saturday morning.
-    assert chain_deadline(date(2026, 11, 13)) == datetime(2026, 11, 14, 9, 0, tzinfo=UTC)
-    # Before the clocks fall back (2026-11-01) it is 03:00 CDT, 08:00 UTC.
-    assert chain_deadline(date(2026, 10, 20)) == datetime(2026, 10, 21, 8, 0, tzinfo=UTC)
-    assert chain_deadline(SESSION, time(4, 30)) == datetime(2026, 11, 18, 10, 30, tzinfo=UTC)
+    # Friday's evening ends the same evening, not on the weekend.
+    assert chain_deadline(date(2026, 11, 13)) == datetime(2026, 11, 14, 0, 0, tzinfo=UTC)
+    # Before the clocks fall back (2026-11-01) it is 19:00 EDT, 23:00 UTC.
+    assert chain_deadline(date(2026, 10, 20)) == datetime(2026, 10, 20, 23, 0, tzinfo=UTC)
+    assert chain_deadline(SESSION, time(19, 30)) == datetime(2026, 11, 18, 0, 30, tzinfo=UTC)
 
 
 class Ticking:
@@ -568,9 +568,9 @@ async def test_past_the_deadline_the_pass_writes_only_tombstones_and_makes_no_ca
 async def test_a_pass_that_reaches_the_deadline_tombstones_what_is_left(session_factory):
     await _universe(session_factory, ("AAA", "BBB", "CCC", "DDD"))
     schwab = FakeSchwab()
-    # The clock is 2 hours a call and 3.5 hours from the deadline: calls 1 and 2 are made, the third is not.
-    clock = FakeClock(DEADLINE - timedelta(hours=3, minutes=30))
-    source = Ticking(SchwabOptionChains(schwab), clock, timedelta(hours=2))
+    # The clock is 30 minutes a call and 50 minutes from the deadline: calls 1 and 2 are made, the third is not.
+    clock = FakeClock(DEADLINE - timedelta(minutes=50))
+    source = Ticking(SchwabOptionChains(schwab), clock, timedelta(minutes=30))
 
     tally = SweepTally()
     report = await _run(session_factory, schwab, clock, tally, source=source)
@@ -591,8 +591,8 @@ async def test_a_deadline_inside_a_ladder_tombstones_that_underlying_with_the_ca
     await _universe(session_factory, ("AAA",))
     schwab = FakeSchwab()
     schwab.script["AAA"] = [502, 502]
-    clock = FakeClock(DEADLINE - timedelta(hours=2, minutes=30))
-    source = Ticking(SchwabOptionChains(schwab), clock, timedelta(hours=1))
+    clock = FakeClock(DEADLINE - timedelta(minutes=25))
+    source = Ticking(SchwabOptionChains(schwab), clock, timedelta(minutes=10))
 
     report = await _run(session_factory, schwab, clock, source=source)
 

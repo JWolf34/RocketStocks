@@ -28,7 +28,7 @@ def test_supervision_defaults_and_env_overrides(monkeypatch):
     _set_required(monkeypatch)
     settings = IngestSettings(_env_file=None)
     assert settings.token_poll_seconds == 60.0
-    assert settings.schwab_calls_per_minute == 100
+    assert settings.schwab_calls_per_minute == 120
     assert settings.shutdown_grace_seconds == 30.0
 
     monkeypatch.setenv("RS_INGEST_SHUTDOWN_GRACE_SECONDS", "10")
