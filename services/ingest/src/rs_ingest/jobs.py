@@ -62,7 +62,7 @@ from rs_sources import ApeWisdomClient
 from rs_sources.earnings import EarningsLookup
 from rs_sources.edgar import EdgarClient
 from rs_sources.nasdaq import NasdaqEarningsCalendar
-from rs_sources.schwab import SchwabAuthError, SchwabMarketData, SchwabOptionChains
+from rs_sources.schwab import TOKEN_ERRORS, SchwabMarketData, SchwabOptionChains
 from rs_sources.symbol_directory import SymbolDirectory
 
 logger = logging.getLogger(__name__)
@@ -95,9 +95,11 @@ class Dependencies:
 
 def register_jobs(cron: CronTable, deps: Dependencies) -> None:
     async def evening_sweep() -> None:
-        # One tally for the whole evening: Schwab's health is judged once, so a stage that
+        # Each pass is judged against its own underlyings or requests, so a Tombstone-heavy
+        # chain pass is not diluted by the bars; both are judged once, at the end, so a pass that
         # failed and the next that went well do not ping a failure and a recovery minutes apart.
-        tally = SweepTally()
+        chain_tally = SweepTally(unit="chains")
+        bar_tally = SweepTally(unit="bar requests")
         session = last_evening_session(deps.calendar, deps.clock.now())
         stop_at = stop_time(evening_start(session), deps.daily_bars_stop_at)
 
@@ -108,7 +110,7 @@ def register_jobs(cron: CronTable, deps: Dependencies) -> None:
                 limiter=deps.schwab_limiter,
                 calendar=deps.calendar,
                 clock=deps.clock,
-                tally=tally,
+                tally=chain_tally,
             )
 
         async def bars() -> None:
@@ -120,7 +122,7 @@ def register_jobs(cron: CronTable, deps: Dependencies) -> None:
             try:
                 await sync_daily_bars(
                     session_factory=deps.session_factory,
-                    source=TalliedHistory(SchwabMarketData(deps.schwab.client, deps.calendar), tally),
+                    source=TalliedHistory(SchwabMarketData(deps.schwab.client, deps.calendar), bar_tally),
                     limiter=deps.schwab_limiter,
                     calendar=deps.calendar,
                     clock=deps.clock,
@@ -131,7 +133,7 @@ def register_jobs(cron: CronTable, deps: Dependencies) -> None:
                 raise QuietFailure(str(exc)) from exc
 
         async def judge(error: Exception | None) -> None:
-            await finish_sweep(deps.health, Source.SCHWAB, tally, error)
+            await finish_sweep(deps.health, Source.SCHWAB, chain_tally, bar_tally, error=error)
 
         await run_evening(
             [
@@ -161,7 +163,7 @@ def register_jobs(cron: CronTable, deps: Dependencies) -> None:
     )
 
     async def morning_open_interest() -> None:
-        tally = SweepTally()
+        tally = SweepTally(unit="chains")
         try:
             await sweep_morning_open_interest(
                 session_factory=deps.session_factory,
@@ -171,10 +173,10 @@ def register_jobs(cron: CronTable, deps: Dependencies) -> None:
                 clock=deps.clock,
                 tally=tally,
             )
-        except SchwabAuthError:
-            raise  # the daemon pauses Schwab jobs on this
+        except TOKEN_ERRORS:
+            raise  # the daemon pauses Schwab jobs on a dead or missing token
         except Exception as exc:
-            await finish_sweep(deps.health, Source.SCHWAB, tally, exc)
+            await finish_sweep(deps.health, Source.SCHWAB, tally, error=exc)
             raise
         await finish_sweep(deps.health, Source.SCHWAB, tally)
 
