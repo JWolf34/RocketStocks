@@ -21,10 +21,6 @@ def record(status: FetchStatus, count: int, **overrides) -> ChainFetchRecord:
     return ChainFetchRecord(**(fields | overrides))
 
 
-def test_only_failure_statuses_are_tombstones():
-    assert {s for s in FetchStatus if s.is_tombstone} == {FetchStatus.REJECTED, FetchStatus.FAILED}
-
-
 @pytest.mark.parametrize("status", list(FetchStatus))
 def test_a_record_counts_contracts_exactly_when_it_is_ok(status):
     count = 5 if status is FetchStatus.OK else 0

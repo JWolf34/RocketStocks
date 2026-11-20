@@ -90,10 +90,6 @@ class ChainPassReport:
     contracts: int = 0
     calls: int = 0
 
-    @property
-    def tombstones(self) -> int:
-        return self.rejected + self.failed + self.past_deadline
-
 
 class _Rejected(Exception):
     """Schwab answered 400 or 404 for the symbol."""

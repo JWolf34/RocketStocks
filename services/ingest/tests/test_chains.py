@@ -234,7 +234,7 @@ async def test_every_optionable_underlying_of_the_latest_universe_is_fetched_who
 
     # Sorted, the optionable listings only, each in one unfiltered call under Schwab's own spelling.
     assert schwab.calls == [("AAA", None, None), ("BRK/B", None, None), ("CCC", None, None)]
-    assert (report.session, report.roster, report.ok, report.tombstones) == (SESSION, 3, 3, 0)
+    assert (report.session, report.roster, report.ok, report.rejected, report.failed) == (SESSION, 3, 3, 0, 0)
     assert (report.contracts, report.calls) == (18, 3)
     record = await _record(session_factory, "BRK.B")
     assert (record.status, record.attempts, record.contract_count, record.fetched_at) == (FetchStatus.OK, 1, 6, NOW)
@@ -349,7 +349,6 @@ async def test_a_range_that_fails_twice_makes_the_underlying_a_tombstone_with_no
     ]  # the far range is never asked, and the next underlying goes on
     record = await _record(session_factory, "AAA")
     assert (record.status, record.attempts, record.contract_count) == (FetchStatus.FAILED, 5, 0)
-    assert record.status.is_tombstone
     assert await _contract_rows(session_factory, "AAA") == 0
     assert (report.failed, report.ok, tally.failed) == (1, 1, 1)
 
@@ -389,7 +388,6 @@ async def test_a_symbol_schwab_refuses_is_recorded_rejected_and_never_retried(se
     assert len(schwab.calls) == 1
     record = await _record(session_factory, "AAA")
     assert (record.status, record.attempts, record.contract_count) == (FetchStatus.REJECTED, 1, 0)
-    assert record.status.is_tombstone
     assert (report.rejected, tally.failed, tally.attempted) == (1, 0, 1)
 
 
@@ -416,7 +414,6 @@ async def test_an_empty_chain_is_an_observation_recorded_once_and_never_retried(
     assert len(schwab.calls) == 1
     record = await _record(session_factory, "AAA")
     assert (record.status, record.attempts, record.contract_count) == (FetchStatus.EMPTY, 1, 0)
-    assert not record.status.is_tombstone
     assert await _contract_rows(session_factory, "AAA") == 0
     assert (report.empty, tally.failed) == (1, 0)
 
@@ -687,7 +684,7 @@ async def test_the_morning_stores_only_open_interest_named_by_the_session_it_set
     report = await _run_morning(session_factory, schwab)
 
     assert schwab.calls == [("AAA", None, None), ("BRK/B", None, None), ("CCC", None, None)]
-    assert (report.session, report.roster, report.ok, report.tombstones, report.contracts) == (SESSION, 3, 3, 0, 18)
+    assert (report.session, report.roster, report.ok, report.failed, report.contracts) == (SESSION, 3, 3, 0, 18)
     record = await _morning_record(session_factory, "BRK.B")
     assert (record.status, record.attempts, record.contract_count, record.fetched_at) == (
         FetchStatus.OK,
