@@ -257,6 +257,7 @@ class UnpricedSymbolRow(Base):
     first_seen: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True))
     last_attempt: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True))
     reason: Mapped[str] = mapped_column(Text)
+    requested_as: Mapped[str] = mapped_column(Text)
 
 
 class UniverseSnapshotRow(Base):

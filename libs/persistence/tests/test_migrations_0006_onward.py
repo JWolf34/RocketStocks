@@ -1,4 +1,4 @@
-"""Migrations 0006-0026 against Timescale: the upgrade/downgrade round trip and
+"""Migrations 0006-0027 against Timescale: the upgrade/downgrade round trip and
 the physical layout (hypertables, compression, constraints)."""
 
 import uuid
@@ -859,6 +859,34 @@ def test_0026_adds_the_open_interest_table_and_downgrade_drops_it(scratch_url):
         command.downgrade(config, "0025")
         assert "option_open_interest" not in set(inspect(engine).get_table_names())
         assert {"option_contract", "chain_fetch"} <= set(inspect(engine).get_table_names())
+
+        command.upgrade(config, "head")
+    finally:
+        engine.dispose()
+
+
+def test_0027_backfills_the_requested_spelling_with_the_symbol_and_downgrade_drops_it(scratch_url):
+    config = migration_config(scratch_url)
+    engine = create_engine(scratch_url)
+    try:
+        command.upgrade(config, "0026")
+        with engine.begin() as conn:
+            conn.execute(
+                text(
+                    "INSERT INTO unpriced_symbol (symbol, first_seen, last_attempt, reason)"
+                    " VALUES ('BRK.B', :at, :at, 'no_history')"
+                ),
+                {"at": datetime(2026, 11, 17, 23, 0, tzinfo=UTC)},
+            )
+
+        command.upgrade(config, "0027")
+        with engine.connect() as conn:
+            assert conn.execute(text("SELECT symbol, requested_as FROM unpriced_symbol")).all() == [("BRK.B", "BRK.B")]
+        (column,) = [c for c in inspect(engine).get_columns("unpriced_symbol") if c["name"] == "requested_as"]
+        assert column["nullable"] is False
+
+        command.downgrade(config, "0026")
+        assert "requested_as" not in {c["name"] for c in inspect(engine).get_columns("unpriced_symbol")}
 
         command.upgrade(config, "head")
     finally:

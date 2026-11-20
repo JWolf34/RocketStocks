@@ -523,7 +523,8 @@ Bars of a listing that has left the Universe are kept; the job just stops asking
 A stock whose stored history starts after 1990 is extended back once.
 `bar_request` records the earliest start already asked of Schwab per symbol, so a listing younger than the seed is asked once and not every night.
 Each symbol is fetched, written and committed on its own, so no write decompresses more than that symbol's history (Timescale aborts a transaction that decompresses over 100,000 rows).
-The price-history spelling of a Universe symbol is one function, `price_history_symbol` in `services/ingest/src/rs_ingest/daily_bars.py`; bars are always stored under the Universe's own symbol.
+Schwab's spelling of a Universe symbol is one function, `schwab_symbol` in `libs/sources/src/rs_sources/schwab/symbols.py`, used by both the chains and the bars: class shares are slashed (`BRK.B` is asked as `BRK/B`), and bars are always stored under the Universe's own symbol.
+A symbol Schwab cannot price is recorded in `unpriced_symbol` with the spelling it was asked under and is left alone for a week, unless that spelling has changed since, in which case the next run asks again.
 
 The pass stops itself at the first `RS_INGEST_DAILY_BARS_STOP_AT` (default 03:00 America/Chicago, 04:00 ET) after its evening starts, three hours before the morning pass starts at 07:00 ET, and logs `stop time ... reached with N of M symbols left`.
 The next evening's run skips every symbol that is already current and resumes with the rest, so the first seed takes as many nights as the Universe needs at the shared call rate (about 108 minutes per 13,000 calls at 120 a minute, and the chains go first).

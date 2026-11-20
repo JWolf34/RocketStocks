@@ -10,7 +10,7 @@ from rs_sources.schwab import (
     SchwabOptionChains,
     SchwabResponseError,
     normalize_chain,
-    schwab_chain_symbol,
+    schwab_symbol,
 )
 
 QUOTED_MS = int(datetime(2026, 11, 9, 21, 0, tzinfo=UTC).timestamp() * 1000)
@@ -103,7 +103,7 @@ class TestSpelling:
         [("BRK.B", "BRK/B"), ("aapl", "AAPL"), (" BF.B ", "BF/B"), ("SPY", "SPY")],
     )
     def test_class_shares_are_slashed(self, symbol, spelled):
-        assert schwab_chain_symbol(symbol) == spelled
+        assert schwab_symbol(symbol) == spelled
 
 
 class TestFetch:
