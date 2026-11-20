@@ -8,10 +8,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import InstrumentedAttribute
 
 from rs_domain import UniverseCounts, UniverseHeader, UniverseListing, UniverseSnapshot
+from rs_persistence._bulk import insert_rows
 from rs_persistence.models import UniverseListingRow, UniverseSnapshotRow
-
-# 9 bound parameters per row; stay far below the protocol's 65535 limit.
-_INSERT_CHUNK = 5000
 
 
 def _header_from_row(row: UniverseSnapshotRow) -> UniverseHeader:
@@ -44,13 +42,11 @@ class UniverseRepository:
         )
         if stored is None:
             return False
-        for start in range(0, len(snapshot.listings), _INSERT_CHUNK):
-            chunk = snapshot.listings[start : start + _INSERT_CHUNK]
-            await self._session.execute(
-                pg_insert(UniverseListingRow).values(
-                    [{"snapshot_date": snapshot.snapshot_date, **listing.model_dump()} for listing in chunk]
-                )
-            )
+        await insert_rows(
+            self._session,
+            UniverseListingRow,
+            ({"snapshot_date": snapshot.snapshot_date, **listing.model_dump()} for listing in snapshot.listings),
+        )
         return True
 
     async def header(self, day: date) -> UniverseHeader | None:

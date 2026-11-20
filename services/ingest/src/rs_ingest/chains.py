@@ -32,13 +32,12 @@ underlyings Tombstoned is Schwab failing.
 import logging
 from collections.abc import Sequence
 from dataclasses import dataclass
-from datetime import date, datetime, time, timedelta
+from datetime import date, datetime, timedelta
 from typing import Protocol
 
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from rs_domain import (
-    EASTERN,
     ChainFetchRecord,
     ChainPass,
     Clock,
@@ -46,11 +45,10 @@ from rs_domain import (
     OpenInterest,
     OptionContract,
     TradingCalendar,
-    eastern_day,
 )
 from rs_ingest.monitored import RATE_LIMITED
 from rs_ingest.rate_limit import RateLimiter
-from rs_ingest.universe import SESSION_SEARCH, last_evening_session
+from rs_ingest.sessions import chain_deadline, last_evening_session, morning_slot
 from rs_observability import SweepTally
 from rs_persistence import ChainRepository, UniverseRepository
 from rs_sources.errors import PER_SYMBOL_STATUSES
@@ -63,12 +61,6 @@ from rs_sources.schwab import (
 
 logger = logging.getLogger(__name__)
 
-# Eastern clock time on the session's date the evening pass is owed until: past it Schwab's volume
-# for the session starts to be reset to zero (the sweep probe saw it between 19:00 and 21:00).
-DEADLINE_AT = time(19, 0)
-# Eastern clock time the morning pass starts, once open interest has settled (the sweep probe saw
-# it settle between 06:00 and 07:00 and hold until the open).
-MORNING_STARTS_AT = time(7, 0)
 # Days after the session that end the first two expiry ranges of the ladder; the third is open-ended.
 LADDER_DAYS = (30, 180)
 # Calls spent on one request of the ladder (the whole chain, then each range): fetch, retry once.
@@ -98,10 +90,6 @@ class ChainPassReport:
     contracts: int = 0
     calls: int = 0
 
-    @property
-    def tombstones(self) -> int:
-        return self.rejected + self.failed + self.past_deadline
-
 
 class _Rejected(Exception):
     """Schwab answered 400 or 404 for the symbol."""
@@ -119,11 +107,6 @@ class _Fetched:
     past_deadline: bool = False
 
 
-def chain_deadline(session: date, at: time = DEADLINE_AT) -> datetime:
-    """`at` Eastern on `session`'s date: the evening pass's deadline."""
-    return datetime.combine(session, at, tzinfo=EASTERN)
-
-
 def expiry_ranges(session: date) -> tuple[tuple[date, date | None], ...]:
     """The ladder's three expiry ranges: within 30 days of the session, 31 to 180 days, and everything after."""
     near, mid = LADDER_DAYS
@@ -134,23 +117,6 @@ def expiry_ranges(session: date) -> tuple[tuple[date, date | None], ...]:
     )
 
 
-def morning_slot(calendar: TradingCalendar, now: datetime) -> tuple[date, datetime]:
-    """The morning pass owed at `now`: the session its open interest settled for and its deadline.
-
-    The latest trading day whose 07:00 ET has passed owns the morning; the session is the one
-    before it and the deadline is its open. A weekend or holiday owns no morning, so it belongs
-    to the last trading day's.
-    """
-    today = eastern_day(now)
-    for day in reversed(calendar.sessions_in_range(today - SESSION_SEARCH, today)):
-        if datetime.combine(day, MORNING_STARTS_AT, tzinfo=EASTERN) <= now:
-            settled = calendar.sessions_in_range(day - SESSION_SEARCH, day - timedelta(days=1))
-            if not settled:
-                raise RuntimeError(f"no session in the {SESSION_SEARCH.days} days before the morning of {day}")
-            return settled[-1], calendar.session_open(day)
-    raise RuntimeError(f"no session morning has started in the {SESSION_SEARCH.days} days before {today}")
-
-
 async def sweep_evening_chains(
     *,
     session_factory: async_sessionmaker[AsyncSession],
@@ -159,13 +125,12 @@ async def sweep_evening_chains(
     calendar: TradingCalendar,
     clock: Clock,
     tally: SweepTally,
-    deadline_at: time = DEADLINE_AT,
 ) -> ChainPassReport:
     session = last_evening_session(calendar, clock.now())
     return await _sweep(
         ChainPass.EVENING,
         session,
-        chain_deadline(session, deadline_at),
+        chain_deadline(session),
         session_factory=session_factory,
         source=source,
         limiter=limiter,

@@ -7,7 +7,7 @@ import httpx
 import pytest
 
 from rs_sources.errors import SourceError
-from rs_sources.symbol_directory import NASDAQ_EXCHANGE, SymbolDirectory
+from rs_sources.symbol_directory import NASDAQ_EXCHANGE, CboeEntry, SymbolDirectory
 from rs_sources.testing import (
     CBOE_HEADER,
     NASDAQ_LISTED_HEADER,
@@ -231,3 +231,24 @@ async def test_cboe_without_a_symbol_column_is_a_source_error():
 
     with pytest.raises(SourceError, match="Stock Symbol"):
         await directory_for(host).cboe_underlyings()
+
+
+async def test_cboe_without_a_name_column_still_gives_its_symbols():
+    host = FakeDirectoryHost()
+    host.bodies["cboe"] = ' Name, Stock Symbol\n"A CO","AAA"\n'
+
+    assert await directory_for(host).cboe_underlyings() == frozenset({"AAA"})
+    assert await directory_for(host).cboe_directory() == (CboeEntry(symbol="AAA", name=""),)
+
+
+async def test_the_cboe_directory_keeps_every_row_with_its_name_in_file_order():
+    host = FakeDirectoryHost()
+    host.bodies["cboe"] = cboe_file(["BRK.B", "AAA", "BRK.B"])
+
+    entries = await directory_for(host).cboe_directory()
+
+    assert entries == (
+        CboeEntry(symbol="BRK.B", name="BRK.B COMPANY"),
+        CboeEntry(symbol="AAA", name="AAA COMPANY"),
+        CboeEntry(symbol="BRK.B", name="BRK.B COMPANY"),
+    )

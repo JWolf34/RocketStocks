@@ -42,10 +42,6 @@ class FetchStatus(StrEnum):
     REJECTED = "rejected"
     FAILED = "failed"
 
-    @property
-    def is_tombstone(self) -> bool:
-        return self in (FetchStatus.REJECTED, FetchStatus.FAILED)
-
 
 class OptionContract(BaseModel):
     """One contract of a chain as Schwab quoted it.

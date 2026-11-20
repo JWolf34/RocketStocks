@@ -12,21 +12,13 @@ The Universe and the earnings snapshot are their own jobs and run beside the seq
 
 import logging
 from collections.abc import Awaitable, Callable, Sequence
-from datetime import date, datetime
 
-from rs_domain import EASTERN
-from rs_ingest.universe import EVENING_STARTS_AT
 from rs_observability import QuietFailure
 from rs_sources.schwab import SchwabAuthError
 
 logger = logging.getLogger(__name__)
 
 Stage = Callable[[], Awaitable[object]]
-
-
-def evening_start(session: date) -> datetime:
-    """The moment `session`'s evening begins."""
-    return datetime.combine(session, EVENING_STARTS_AT, tzinfo=EASTERN)
 
 
 async def run_evening(

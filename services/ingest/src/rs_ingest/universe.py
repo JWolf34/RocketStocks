@@ -41,8 +41,8 @@ from rs_domain import (
     UniverseCounts,
     UniverseListing,
     UniverseSnapshot,
-    eastern_day,
 )
+from rs_ingest.sessions import EVENING_STARTS_AT, SESSION_SEARCH, last_evening_session
 from rs_observability import HealthTracker, Source
 from rs_persistence import UniverseRepository
 from rs_sources.errors import SourceError
@@ -50,16 +50,11 @@ from rs_sources.symbol_directory import ListingFile, OptionsFile, SymbolDirector
 
 logger = logging.getLogger(__name__)
 
-# The evening's start, Eastern wall clock on the session's date: the job's daily slot. A run
-# before it belongs to the session before, so a restart in the afternoon never waits for hours.
-EVENING_STARTS_AT = time(18, 5)
 RETRY_EVERY = timedelta(minutes=15)
 # Eastern wall clock on the session's date; the last attempt is made at this moment.
 GIVE_UP_AT = time(20, 0)
 # The longest a run waits: from the evening's start to the give-up.
 MAX_WAIT = datetime.combine(date.min, GIVE_UP_AT) - datetime.combine(date.min, EVENING_STARTS_AT)
-# Calendar days that always hold a session (the longest market closure is four days).
-SESSION_SEARCH = timedelta(days=10)
 # A file with less than this share of the previous snapshot's entries is truncated. Day to day
 # the listings move by tens of names in about 13,000 (the largest real change in one night
 # is a few hundred), so 10 percent is far outside ordinary change and well inside any cut-off
@@ -346,11 +341,3 @@ def _accept_stamp(file: _File, created_at: datetime, window: _Window) -> None:
     if created_at <= window.close:
         raise _Unusable(f"{file.name} not updated since the close")
     raise _Unusable(f"{file.name} is stamped after the next open", superseded=True)
-
-
-def last_evening_session(calendar: TradingCalendar, now: datetime) -> date:
-    today = eastern_day(now)
-    for day in reversed(calendar.sessions_in_range(today - SESSION_SEARCH, today)):
-        if datetime.combine(day, EVENING_STARTS_AT, tzinfo=EASTERN) <= now:
-            return day
-    raise RuntimeError(f"no session evening has started in the {SESSION_SEARCH.days} days before {today}")

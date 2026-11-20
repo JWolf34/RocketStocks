@@ -19,7 +19,8 @@ from rs_ingest.tools.sweep_probe.store import (
     slug,
     stamp,
 )
-from rs_ingest.tools.sweep_probe.symbols import Listing, chain_spellings, draw_sample
+from rs_ingest.tools.sweep_probe.symbols import chain_spellings, draw_sample
+from rs_sources.symbol_directory import CboeEntry
 
 NAMED_CHAINS = ("SPY", "QQQ", "IWM", "TSLA", "NVDA", "META", "AMD", "AAPL", "BRK/B")
 # The chain endpoint is also asked for the other spellings of a class share.
@@ -75,7 +76,7 @@ def build_plan(
     *,
     now: datetime,
     calendar: TradingCalendar,
-    listings: list[Listing],
+    listings: list[CboeEntry],
     seed: int,
     sample_size: int,
     start: datetime | None,

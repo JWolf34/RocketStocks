@@ -18,9 +18,7 @@ from rs_domain import (
 )
 from rs_ingest.chains import (
     ATTEMPTS,
-    chain_deadline,
     expiry_ranges,
-    morning_slot,
     sweep_evening_chains,
     sweep_morning_open_interest,
 )
@@ -236,7 +234,7 @@ async def test_every_optionable_underlying_of_the_latest_universe_is_fetched_who
 
     # Sorted, the optionable listings only, each in one unfiltered call under Schwab's own spelling.
     assert schwab.calls == [("AAA", None, None), ("BRK/B", None, None), ("CCC", None, None)]
-    assert (report.session, report.roster, report.ok, report.tombstones) == (SESSION, 3, 3, 0)
+    assert (report.session, report.roster, report.ok, report.rejected, report.failed) == (SESSION, 3, 3, 0, 0)
     assert (report.contracts, report.calls) == (18, 3)
     record = await _record(session_factory, "BRK.B")
     assert (record.status, record.attempts, record.contract_count, record.fetched_at) == (FetchStatus.OK, 1, 6, NOW)
@@ -351,7 +349,6 @@ async def test_a_range_that_fails_twice_makes_the_underlying_a_tombstone_with_no
     ]  # the far range is never asked, and the next underlying goes on
     record = await _record(session_factory, "AAA")
     assert (record.status, record.attempts, record.contract_count) == (FetchStatus.FAILED, 5, 0)
-    assert record.status.is_tombstone
     assert await _contract_rows(session_factory, "AAA") == 0
     assert (report.failed, report.ok, tally.failed) == (1, 1, 1)
 
@@ -391,7 +388,6 @@ async def test_a_symbol_schwab_refuses_is_recorded_rejected_and_never_retried(se
     assert len(schwab.calls) == 1
     record = await _record(session_factory, "AAA")
     assert (record.status, record.attempts, record.contract_count) == (FetchStatus.REJECTED, 1, 0)
-    assert record.status.is_tombstone
     assert (report.rejected, tally.failed, tally.attempted) == (1, 0, 1)
 
 
@@ -418,7 +414,6 @@ async def test_an_empty_chain_is_an_observation_recorded_once_and_never_retried(
     assert len(schwab.calls) == 1
     record = await _record(session_factory, "AAA")
     assert (record.status, record.attempts, record.contract_count) == (FetchStatus.EMPTY, 1, 0)
-    assert not record.status.is_tombstone
     assert await _contract_rows(session_factory, "AAA") == 0
     assert (report.empty, tally.failed) == (1, 0)
 
@@ -524,16 +519,6 @@ async def test_being_over_budget_stops_the_pass_without_a_tombstone_and_speaks_f
 
 
 # --- the deadline -----------------------------------------------------------------------------------
-
-
-def test_the_deadline_is_7pm_eastern_on_the_sessions_own_evening():
-    # Tuesday 2026-11-17: 19:00 EST is 00:00 UTC on the 18th.
-    assert chain_deadline(SESSION) == DEADLINE
-    # Friday's evening ends the same evening, not on the weekend.
-    assert chain_deadline(date(2026, 11, 13)) == datetime(2026, 11, 14, 0, 0, tzinfo=UTC)
-    # Before the clocks fall back (2026-11-01) it is 19:00 EDT, 23:00 UTC.
-    assert chain_deadline(date(2026, 10, 20)) == datetime(2026, 10, 20, 23, 0, tzinfo=UTC)
-    assert chain_deadline(SESSION, time(19, 30)) == datetime(2026, 11, 18, 0, 30, tzinfo=UTC)
 
 
 class Ticking:
@@ -692,53 +677,6 @@ async def _open_interest(session_factory, symbol: str, session: date = SESSION):
         return await ChainRepository(s).open_interest(session, symbol)
 
 
-def _slot(now: datetime) -> tuple[date, datetime]:
-    return morning_slot(CALENDAR, now)
-
-
-def test_a_morning_settles_the_session_before_it_and_is_owed_until_its_open():
-    assert _slot(MORNING_NOW) == (SESSION, OPEN)
-    # The slot starts at 07:00 ET exactly (12:00 UTC); a minute earlier still belongs to Tuesday's morning.
-    assert _slot(datetime(2026, 11, 18, 12, 0, tzinfo=UTC)) == (SESSION, OPEN)
-    assert _slot(datetime(2026, 11, 18, 11, 59, tzinfo=UTC)) == (
-        date(2026, 11, 16),
-        datetime(2026, 11, 17, 14, 30, tzinfo=UTC),
-    )
-    # Hours after the open the morning is still that morning's, until the next 07:00.
-    assert _slot(datetime(2026, 11, 18, 23, 0, tzinfo=UTC)) == (SESSION, OPEN)
-
-
-def test_a_monday_morning_settles_fridays_session_and_a_weekend_belongs_to_fridays_morning():
-    assert _slot(datetime(2026, 11, 16, 12, 30, tzinfo=UTC)) == (
-        date(2026, 11, 13),
-        datetime(2026, 11, 16, 14, 30, tzinfo=UTC),
-    )
-    assert _slot(datetime(2026, 11, 14, 17, 0, tzinfo=UTC)) == (
-        date(2026, 11, 12),
-        datetime(2026, 11, 13, 14, 30, tzinfo=UTC),
-    )
-
-
-def test_the_morning_after_a_holiday_settles_the_session_before_it_and_the_holiday_owns_none():
-    # Thanksgiving is Thursday 2026-11-26: Friday's morning settles Wednesday; Thursday belongs to Wednesday's morning.
-    assert _slot(datetime(2026, 11, 27, 12, 30, tzinfo=UTC)) == (
-        date(2026, 11, 25),
-        datetime(2026, 11, 27, 14, 30, tzinfo=UTC),
-    )
-    assert _slot(datetime(2026, 11, 26, 15, 0, tzinfo=UTC)) == (
-        date(2026, 11, 24),
-        datetime(2026, 11, 25, 14, 30, tzinfo=UTC),
-    )
-
-
-def test_the_open_follows_daylight_saving():
-    # 09:30 EDT is 13:30 UTC.
-    assert _slot(datetime(2026, 10, 21, 12, 0, tzinfo=UTC)) == (
-        date(2026, 10, 20),
-        datetime(2026, 10, 21, 13, 30, tzinfo=UTC),
-    )
-
-
 async def test_the_morning_stores_only_open_interest_named_by_the_session_it_settled(session_factory):
     await _universe(session_factory, ("CCC", "AAA", "BRK.B"), others=("PLAIN",))
     schwab = FakeSchwab()
@@ -746,7 +684,7 @@ async def test_the_morning_stores_only_open_interest_named_by_the_session_it_set
     report = await _run_morning(session_factory, schwab)
 
     assert schwab.calls == [("AAA", None, None), ("BRK/B", None, None), ("CCC", None, None)]
-    assert (report.session, report.roster, report.ok, report.tombstones, report.contracts) == (SESSION, 3, 3, 0, 18)
+    assert (report.session, report.roster, report.ok, report.failed, report.contracts) == (SESSION, 3, 3, 0, 18)
     record = await _morning_record(session_factory, "BRK.B")
     assert (record.status, record.attempts, record.contract_count, record.fetched_at) == (
         FetchStatus.OK,

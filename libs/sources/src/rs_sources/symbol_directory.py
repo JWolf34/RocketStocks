@@ -20,7 +20,7 @@ import asyncio
 import csv
 import logging
 import re
-from collections.abc import AsyncGenerator, AsyncIterator
+from collections.abc import AsyncGenerator, AsyncIterator, Iterable
 from contextlib import aclosing
 from datetime import UTC, datetime
 from typing import Final
@@ -72,6 +72,7 @@ _OPTIONS_HEADER = (
 )
 _UNDERLYING_COLUMN = _OPTIONS_HEADER.index("Underlying Symbol")
 _CBOE_SYMBOL_COLUMN = "Stock Symbol"
+_CBOE_NAME_COLUMN = "Company Name"
 
 _FOOTER = re.compile(r"File Creation Time:\s*(\d{8})(\d{2}:\d{2})")
 
@@ -110,6 +111,17 @@ class OptionsFile(BaseModel):
 
     created_at: UtcDatetime
     underlyings: frozenset[str]
+
+
+class CboeEntry(BaseModel):
+    """One row of Cboe's options directory: the symbol as Cboe spells it (class shares with a
+    dot) and the company or product name (empty when the file has no name column). A symbol can
+    have several rows, one per market maker."""
+
+    model_config = ConfigDict(frozen=True)
+
+    symbol: str
+    name: str
 
 
 class SymbolDirectory:
@@ -191,25 +203,39 @@ class SymbolDirectory:
             raise SourceError("options.txt has no rows")
         return OptionsFile(created_at=created_at, underlyings=frozenset(underlyings))
 
+    async def cboe_directory(self) -> tuple[CboeEntry, ...]:
+        """Every row of Cboe's equity and index options directory, in file order."""
+        headers = {"User-Agent": BROWSER_USER_AGENT}
+        return parse_cboe_directory(
+            [line async for batch in _line_batches(self._http, self._cboe_options_url, headers) for line in batch]
+        )
+
     async def cboe_underlyings(self) -> frozenset[str]:
         """The symbols of Cboe's equity and index options directory (class shares with a dot)."""
-        headers = {"User-Agent": BROWSER_USER_AGENT}
-        lines = [
-            line
-            async for batch in _line_batches(self._http, self._cboe_options_url, headers)
-            for line in batch
-            if line.strip()
-        ]
-        # Header cells are padded with a leading space and fields are quoted.
-        rows = csv.reader(lines, skipinitialspace=True)
-        header = [cell.strip() for cell in next(rows, [])]
-        if _CBOE_SYMBOL_COLUMN not in header:
-            raise SourceError(f"Cboe options directory has no {_CBOE_SYMBOL_COLUMN!r} column")
-        column = header.index(_CBOE_SYMBOL_COLUMN)
-        symbols = frozenset(row[column].strip() for row in rows if len(row) > column and row[column].strip())
-        if not symbols:
-            raise SourceError("Cboe options directory has no rows")
-        return symbols
+        return frozenset(entry.symbol for entry in await self.cboe_directory())
+
+
+def parse_cboe_directory(lines: Iterable[str]) -> tuple[CboeEntry, ...]:
+    """The rows of Cboe's directory CSV with a symbol, in file order; raises SourceError when the
+    symbol column is missing or no row has a symbol."""
+    # Header cells are padded with a leading space and fields are quoted.
+    rows = csv.reader((line for line in lines if line.strip()), skipinitialspace=True)
+    header = [cell.strip() for cell in next(rows, [])]
+    if _CBOE_SYMBOL_COLUMN not in header:
+        raise SourceError(f"Cboe options directory has no {_CBOE_SYMBOL_COLUMN!r} column")
+    symbol_at = header.index(_CBOE_SYMBOL_COLUMN)
+    name_at = header.index(_CBOE_NAME_COLUMN) if _CBOE_NAME_COLUMN in header else None
+    entries = tuple(
+        CboeEntry(
+            symbol=row[symbol_at].strip(),
+            name=row[name_at].strip() if name_at is not None and len(row) > name_at else "",
+        )
+        for row in rows
+        if len(row) > symbol_at and row[symbol_at].strip()
+    )
+    if not entries:
+        raise SourceError("Cboe options directory has no rows")
+    return entries
 
 
 def _listing_file(name: str, created_at: datetime | None, listings: list[Listing], skipped: int) -> ListingFile:

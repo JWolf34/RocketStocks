@@ -24,11 +24,11 @@ from rs_ingest import daily_bars
 from rs_ingest.daily_bars import (
     BENCHMARK,
     DailyBarsError,
-    stop_time,
     sync_daily_bars,
     triggered_tickers,
 )
 from rs_ingest.rate_limit import RateLimiter
+from rs_ingest.sessions import bars_stop_time
 from rs_persistence import (
     DailyBarRepository,
     DailyBarRow,
@@ -215,7 +215,7 @@ async def _run(
         limiter=(budget or Budget()).limiter(),
         calendar=CALENDAR,
         clock=clock,
-        stop_at=stop_at or stop_time(clock.now()),
+        stop_at=stop_at or bars_stop_time(clock.now()),
     )
 
 
@@ -436,17 +436,6 @@ async def test_the_benchmark_already_covering_the_seed_is_not_refetched(session_
 
 
 # --- the stop time and the resume ------------------------------------------------------------------
-
-
-def test_the_pass_stops_at_the_next_3am_central():
-    # Wednesday 2026-10-21 03:00 CDT is 08:00 UTC.
-    assert stop_time(NOW) == datetime(2026, 10, 21, 8, 0, tzinfo=UTC)
-    assert stop_time(datetime(2026, 10, 21, 7, 59, tzinfo=UTC)) == datetime(2026, 10, 21, 8, 0, tzinfo=UTC)
-    assert stop_time(datetime(2026, 10, 21, 8, 0, tzinfo=UTC)) == datetime(2026, 10, 22, 8, 0, tzinfo=UTC)
-    # After the clocks fall back (2026-11-01) 03:00 CST is 09:00 UTC.
-    assert stop_time(datetime(2026, 11, 1, 5, 0, tzinfo=UTC)) == datetime(2026, 11, 1, 9, 0, tzinfo=UTC)
-    # The clock time is configurable: 04:30 CDT is 09:30 UTC.
-    assert stop_time(NOW, time(4, 30)) == datetime(2026, 10, 21, 9, 30, tzinfo=UTC)
 
 
 class Ticking:
@@ -768,7 +757,7 @@ async def test_a_dead_token_propagates_so_the_daemon_can_pause_schwab_jobs(sessi
             limiter=Budget().limiter(),
             calendar=CALENDAR,
             clock=FakeClock(NOW),
-            stop_at=stop_time(NOW),
+            stop_at=bars_stop_time(NOW),
         )
     assert schwab.calls == []
 
@@ -794,7 +783,7 @@ async def test_a_run_a_dead_token_killed_is_safe_to_rerun_and_repeats_no_work(se
             limiter=Budget().limiter(),
             calendar=CALENDAR,
             clock=FakeClock(NOW),
-            stop_at=stop_time(NOW),
+            stop_at=bars_stop_time(NOW),
         )
     schwab.calls.clear()
 
@@ -994,7 +983,7 @@ async def test_a_failed_repair_keeps_the_stored_bars_and_the_new_tail_out_until_
             limiter=Budget().limiter(),
             calendar=CALENDAR,
             clock=clock,
-            stop_at=stop_time(clock.now()),
+            stop_at=bars_stop_time(clock.now()),
         )
 
     # No new-scale bar sits beside the old-scale ones.

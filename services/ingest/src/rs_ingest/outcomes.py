@@ -53,8 +53,9 @@ from rs_domain import (
     TradingCalendar,
     eastern_day,
 )
-from rs_ingest.daily_bars import BENCHMARK, last_settled_session
+from rs_ingest.daily_bars import BENCHMARK
 from rs_ingest.replay import replayed_hits
+from rs_ingest.sessions import last_settled_session
 from rs_observability import configure_logging
 from rs_persistence import (
     AlertRepository,
@@ -248,7 +249,7 @@ def main() -> int:
     try:
         asyncio.run(_run(dsn))
     except Exception:
-        logger.exception("outcomes job failed")
+        logger.exception("the Outcomes and Track record run failed")
         return 1
     return 0
 

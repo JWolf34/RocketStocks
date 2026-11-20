@@ -16,13 +16,9 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from rs_domain import EASTERN, Clock, TradingCalendar
 from rs_ingest.alert_writer import AlertWriter
-from rs_ingest.chains import (
-    MORNING_STARTS_AT,
-    sweep_evening_chains,
-    sweep_morning_open_interest,
-)
+from rs_ingest.chains import sweep_evening_chains, sweep_morning_open_interest
 from rs_ingest.cron import CronTable, Daily, Every, Job
-from rs_ingest.daily_bars import STOP_AT, DailyBarsError, stop_time, sync_daily_bars
+from rs_ingest.daily_bars import DailyBarsError, sync_daily_bars
 from rs_ingest.earnings_snapshot import (
     SNAPSHOT_AT,
     EarningsSnapshotError,
@@ -30,7 +26,7 @@ from rs_ingest.earnings_snapshot import (
     StoredEarningsCalendar,
     snapshot_earnings,
 )
-from rs_ingest.evening import evening_start, run_evening
+from rs_ingest.evening import run_evening
 from rs_ingest.monitored import (
     MonitoredFilings,
     MonitoredPopularitySource,
@@ -43,14 +39,17 @@ from rs_ingest.rate_limit import RateLimiter
 from rs_ingest.schwab_session import SchwabSession
 from rs_ingest.scoring import PopularityScorer
 from rs_ingest.selector import BAR_TARGET_PER_DAY
-from rs_ingest.surge_facts import SurgeFactsGatherer
-from rs_ingest.track_record import run_outcomes as run_outcomes_subprocess
-from rs_ingest.universe import (
+from rs_ingest.sessions import (
+    BARS_STOP_AT,
     EVENING_STARTS_AT,
-    MAX_WAIT,
-    UniverseSnapshotter,
+    MORNING_STARTS_AT,
+    bars_stop_time,
+    evening_start,
     last_evening_session,
 )
+from rs_ingest.surge_facts import SurgeFactsGatherer
+from rs_ingest.track_record import run_outcomes as run_outcomes_subprocess
+from rs_ingest.universe import MAX_WAIT, UniverseSnapshotter
 from rs_observability import (
     HealthTracker,
     QuietFailure,
@@ -86,7 +85,7 @@ class Dependencies:
     health: HealthTracker
     # Central clock time after the evening starts that the daily bars pass stops at, before the
     # morning pass starts at 07:00 ET.
-    daily_bars_stop_at: time = STOP_AT
+    daily_bars_stop_at: time = BARS_STOP_AT
     # The Outcomes and Track record run, given the database URL; tests replace it.
     run_outcomes: Callable[[str], Awaitable[None]] = run_outcomes_subprocess
     # The pause between a failed Nasdaq day and its retry; tests replace it.
@@ -99,7 +98,7 @@ def register_jobs(cron: CronTable, deps: Dependencies) -> None:
         # failed and the next that went well do not ping a failure and a recovery minutes apart.
         tally = SweepTally()
         session = last_evening_session(deps.calendar, deps.clock.now())
-        stop_at = stop_time(evening_start(session), deps.daily_bars_stop_at)
+        stop_at = bars_stop_time(evening_start(session), deps.daily_bars_stop_at)
 
         async def chains() -> None:
             await sweep_evening_chains(

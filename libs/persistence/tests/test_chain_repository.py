@@ -117,9 +117,9 @@ async def test_a_tombstone_and_an_empty_chain_are_records_without_contract_rows(
     async with session_factory() as s:
         repo = ChainRepository(s)
         assert await s.scalar(select(func.count()).select_from(OptionContractRow)) == 1
-        assert (await repo.record(NIGHT, ChainPass.EVENING, "BAD")).status.is_tombstone
-        assert (await repo.record(NIGHT, ChainPass.EVENING, "REJ")).status.is_tombstone
-        assert not (await repo.record(NIGHT, ChainPass.EVENING, "EMP")).status.is_tombstone
+        assert (await repo.record(NIGHT, ChainPass.EVENING, "BAD")).status is FetchStatus.FAILED
+        assert (await repo.record(NIGHT, ChainPass.EVENING, "REJ")).status is FetchStatus.REJECTED
+        assert (await repo.record(NIGHT, ChainPass.EVENING, "EMP")).status is FetchStatus.EMPTY
         assert await repo.contracts(NIGHT, "BAD") == []
         assert await repo.recorded_underlyings(NIGHT, ChainPass.EVENING) == {"AAA", "BAD", "REJ", "EMP"}
         assert await repo.recorded_underlyings(NIGHT, ChainPass.MORNING) == set()

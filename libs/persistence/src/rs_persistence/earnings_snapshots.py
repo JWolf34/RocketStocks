@@ -9,14 +9,11 @@ from collections.abc import Sequence
 from datetime import UTC, date
 
 from sqlalchemy import func, select
-from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from rs_domain import EarningsOrigin, EarningsTime, StoredEarnings
+from rs_persistence._bulk import insert_rows
 from rs_persistence.models import EarningsSnapshotRow
-
-# 11 bound parameters per row; stay far below the protocol's 65535 limit.
-_INSERT_CHUNK = 2000
 
 
 def stored_earnings_from_row(row: EarningsSnapshotRow) -> StoredEarnings:
@@ -43,17 +40,9 @@ class EarningsSnapshotRepository:
 
     async def insert_many(self, rows: Sequence[StoredEarnings]) -> int:
         """Insert rows, skipping any whose key already exists; returns how many were inserted."""
-        inserted = 0
-        for start in range(0, len(rows), _INSERT_CHUNK):
-            chunk = rows[start : start + _INSERT_CHUNK]
-            result = await self._session.scalars(
-                pg_insert(EarningsSnapshotRow)
-                .values([row.model_dump(mode="python") for row in chunk])
-                .on_conflict_do_nothing()
-                .returning(EarningsSnapshotRow.ticker)
-            )
-            inserted += len(result.all())
-        return inserted
+        return await insert_rows(
+            self._session, EarningsSnapshotRow, (row.model_dump(mode="python") for row in rows), skip_existing=True
+        )
 
     async def has_snapshot(self, origin: EarningsOrigin, snapshot_date: date) -> bool:
         found = await self._session.scalar(

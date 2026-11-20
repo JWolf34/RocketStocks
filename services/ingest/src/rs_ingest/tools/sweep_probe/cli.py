@@ -25,16 +25,14 @@ from rs_ingest.tools.sweep_probe.preflight import PreflightError, preflight
 from rs_ingest.tools.sweep_probe.runner import ProbeRunner
 from rs_ingest.tools.sweep_probe.store import Plan, ProbeDir
 from rs_ingest.tools.sweep_probe.summary import build_summary
-from rs_ingest.tools.sweep_probe.symbols import (
-    Listing,
-    download_directory,
-    parse_directory,
-)
+from rs_ingest.tools.sweep_probe.symbols import equity_listings, parse_directory
 from rs_ingest.tools.sweep_probe.tokens import ReadOnlyTokenStore
 from rs_observability import configure_logging
 from rs_persistence import SchwabTokenStore, build_engine, build_session_factory
 from rs_sources import ExchangeCalendar
+from rs_sources.errors import SourceError
 from rs_sources.schwab import build_schwab_client
+from rs_sources.symbol_directory import CboeEntry, SymbolDirectory
 
 logger = logging.getLogger(__name__)
 
@@ -42,7 +40,6 @@ DEFAULT_SEED = 42
 DEFAULT_SAMPLE_SIZE = 50
 DEFAULT_CALLS_PER_MINUTE = 20
 DEFAULT_REQUEST_TIMEOUT = 60.0
-USER_AGENT = "RocketStocks sweep-probe"
 
 
 def _parser() -> argparse.ArgumentParser:
@@ -90,11 +87,11 @@ def _start(text: str) -> datetime:
     return moment if moment.tzinfo is not None else moment.replace(tzinfo=EASTERN)
 
 
-async def _listings(symbols_file: Path | None) -> list[Listing]:
+async def _listings(symbols_file: Path | None) -> list[CboeEntry]:
     if symbols_file is not None:
         return parse_directory(symbols_file.read_text(encoding="utf-8"))
     async with httpx.AsyncClient(timeout=DEFAULT_REQUEST_TIMEOUT, follow_redirects=True) as http:
-        return parse_directory(await download_directory(http, USER_AGENT))
+        return equity_listings(await SymbolDirectory(http).cboe_directory())
 
 
 async def _new_plan(args: argparse.Namespace, clock: SystemClock) -> Plan:
@@ -155,6 +152,6 @@ def main(argv: list[str] | None = None) -> int:
     configure_logging("sweep_probe")
     try:
         return asyncio.run(_run(args))
-    except (PreflightError, ValueError, ValidationError, httpx.HTTPError) as exc:
+    except (PreflightError, SourceError, ValueError, ValidationError, httpx.HTTPError) as exc:
         logger.error("sweep probe stopped: %s", exc)
         return 1

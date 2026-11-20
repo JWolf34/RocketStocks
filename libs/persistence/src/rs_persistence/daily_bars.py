@@ -10,10 +10,8 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from rs_domain import StoredDailyBar, UnpricedSymbol
+from rs_persistence._bulk import insert_rows
 from rs_persistence.models import BarRequestRow, DailyBarRow, UnpricedSymbolRow
-
-# 9 bound parameters per row; stay far below the protocol's 65535 limit.
-_INSERT_CHUNK = 5000
 
 
 def daily_bar_from_row(row: DailyBarRow) -> StoredDailyBar:
@@ -40,17 +38,9 @@ class DailyBarRepository:
     async def insert_many(self, bars: Sequence[StoredDailyBar]) -> int:
         """Insert bars, skipping any whose (symbol, session_date) already exists
         (first write wins); returns how many were inserted."""
-        inserted = 0
-        for start in range(0, len(bars), _INSERT_CHUNK):
-            chunk = bars[start : start + _INSERT_CHUNK]
-            result = await self._session.scalars(
-                pg_insert(DailyBarRow)
-                .values([b.model_dump(mode="python") for b in chunk])
-                .on_conflict_do_nothing()
-                .returning(DailyBarRow.symbol)
-            )
-            inserted += len(result.all())
-        return inserted
+        return await insert_rows(
+            self._session, DailyBarRow, (bar.model_dump(mode="python") for bar in bars), skip_existing=True
+        )
 
     async def replace_symbol(self, symbol: str, bars: Sequence[StoredDailyBar]) -> int:
         """Delete every stored bar of `symbol` and insert `bars`, in the caller's

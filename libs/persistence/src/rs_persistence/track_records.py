@@ -9,10 +9,8 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from rs_domain import Outcome, TrackRecord
+from rs_persistence._bulk import insert_rows
 from rs_persistence.models import OutcomeRow, TrackRecordRow
-
-# 16 bound parameters per row; stay far below the protocol's 65535 limit.
-_INSERT_CHUNK = 2000
 
 
 def track_record_from_row(row: TrackRecordRow) -> TrackRecord:
@@ -46,11 +44,7 @@ class TrackRecordRepository:
         await self._session.execute(
             delete(OutcomeRow).where(OutcomeRow.trigger == trigger, OutcomeRow.rule_version == rule_version)
         )
-        for start in range(0, len(outcomes), _INSERT_CHUNK):
-            chunk = outcomes[start : start + _INSERT_CHUNK]
-            await self._session.execute(
-                pg_insert(OutcomeRow).values([o.model_dump(mode="python") for o in chunk])
-            )
+        await insert_rows(self._session, OutcomeRow, (outcome.model_dump(mode="python") for outcome in outcomes))
 
     async def upsert(self, records: Sequence[TrackRecord]) -> None:
         """Write each horizon's row, replacing the one already stored for it."""
