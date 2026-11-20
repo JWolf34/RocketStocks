@@ -1,7 +1,7 @@
 # Operations
 
 This is the operator's guide to running RocketStocks on the deploy VM.
-It covers deploying the stack, signing in to Schwab, the two rehearsals, day-to-day procedures, and what to back up and how to restore it.
+It covers deploying the stack, signing in to Schwab, the two rehearsals, the nightly sweep and the night that records it, day-to-day procedures, disk space, and what to back up and how to restore it.
 Each procedure lists the exact commands and what to expect.
 
 ## Conventions
@@ -213,7 +213,7 @@ The importer was v2 code, removed after the import; it lives in the repository h
 Done when a real Popularity Alert posts and carries a Track record.
 
 1. Leave the stack running with a valid token, Popularity history and bars loaded.
-   Once the daily-bars job has caught up (its log line `daily_bars through ...` with nothing failed; SPY and the Triggered stocks come first, so the Track record does not wait for the rest of the Universe), measure the Track record once rather than waiting for the nightly job at 20:00 Eastern:
+   Once the evening sweep's bars have caught up (its log line `daily_bars through ...` with nothing failed; SPY and the Triggered stocks come first, so the Track record does not wait for the rest of the Universe), measure the Track record once rather than waiting for the sweep to reach it:
    ```
    $COMPOSE exec ingest python -m rs_ingest.outcomes
    ```
@@ -246,7 +246,7 @@ Done when a real Popularity Alert posts and carries a Track record.
    psql -c "SELECT day, horizon, case_at, entry_session, exit_session, stock_return, benchmark_return, excess_return, move_multiple, live FROM outcome WHERE symbol = 'GME' ORDER BY day, horizon"
    ```
    The entry is the open of `entry_session` and the exit the close of `exit_session` in `daily_bar`; SPY is measured over the same sessions.
-   A large `unpriced` count means bars are missing (run the daily-bars job and then the Track record job again); a `split_excluded` count means stored bars are not marked split-adjusted and those cases were left out rather than measured.
+   A large `unpriced` count means bars are missing (let the evening sweep run its bars and then the Track record again); a `split_excluded` count means stored bars are not marked split-adjusted and those cases were left out rather than measured.
 
 If no surge fires for days, stage a clearly marked test Alert through the real write path to prove the posting path (it is not a real Alert; its symbol is `TEST-` and the time, because the database allows one Alert per stock per Eastern day):
 ```
@@ -260,42 +260,54 @@ Do them in this order, with a healthy stack and a fresh token.
 
 ### Token expiry
 
-Goal: Schwab jobs pause, one Ops ping goes out, the Popularity poll continues, and recovery works after a re-login.
+Goal: Schwab jobs pause with a pass in flight, one Ops ping goes out, the Popularity poll continues, and after a re-login the pass resumes without a lost or duplicated record.
 
-1. Note the baseline:
+Do it while a Schwab pass is running, so the token dies in the middle of it.
+The morning pass (07:00 to 09:30 ET) has the roomier window and is the better choice.
+The evening chains (18:05 to 19:00 ET) work too, but the sign-in must be back before 19:00 ET: past it the chains' deadline has passed and every underlying left becomes a Tombstone.
+Either needs a stored Universe (see "The nightly sweep").
+
+1. Note the baseline, and run the last query twice a minute apart to see the pass is in flight (`recorded` rises by about a hundred a minute):
    ```
    curl -s 127.0.0.1:9090/metrics | grep -E "schwab_token_dead|cron_job_runs"
    psql -c "SELECT max(polled_at) FROM popularity_snapshot"
+   psql -c "SELECT chain_pass, session_date, count(*) AS recorded, count(*) FILTER (WHERE status = 'failed') AS tombstones FROM chain_fetch GROUP BY 1, 2 ORDER BY 2 DESC, 1 LIMIT 2"
    ```
+   Write down `recorded` and `tombstones` of the pass that is running.
 2. Kill the refresh token.
    Waiting seven days works; this forces it.
    schwab-py stores `{"creation_timestamp": ..., "token": {...}}`; check the shape first with `psql -c "SELECT jsonb_object_keys(token_data) FROM schwab_tokens"`.
    ```
    psql -c "UPDATE schwab_tokens SET token_data = jsonb_set(jsonb_set(token_data, '{token,refresh_token}', '\"expired\"'), '{token,expires_at}', '0')"
-   psql -c "DELETE FROM daily_bar WHERE symbol = 'SPY' AND session_date = (SELECT max(session_date) FROM daily_bar WHERE symbol = 'SPY')"
    $COMPOSE restart ingest
    ```
-   The restart makes ingest reload the broken token; the zero `expires_at` forces a refresh on the first Schwab call.
-   Deleting SPY's newest bar guarantees that call: the daily-bars job runs at startup but calls Schwab only for missing bars, and it refetches the deleted bar once the token is back.
-3. Wait for the Schwab call, which comes within a minute of the restart.
-   Expect, in `$COMPOSE logs ingest`: `Schwab token dead - pausing Schwab jobs`.
+   The restart makes ingest reload the broken token and stops the pass in flight; the zero `expires_at` forces a refresh on the first Schwab call.
+   Ingest runs its Schwab jobs at startup, and the one that owes work (the evening sweep in the evening, the morning pass in the morning) makes that call within a minute, resuming the pass.
+3. Expect, in `$COMPOSE logs ingest`: `Schwab token dead - pausing Schwab jobs`.
    Expect in the ops channel: exactly one Ops ping, "Schwab token is dead ...".
-   Expect `schwab_token_dead 1` on the metrics port and `deferred_token_dead` outcomes for the Schwab jobs when one of their slots comes due.
+   Expect `schwab_token_dead 1` and `cron_job_runs{job_name="evening_sweep",outcome="auth_error"}` (or `morning_open_interest`) on the metrics port, and `deferred_token_dead` outcomes for the Schwab jobs when one of their slots comes due.
+   Run the chain query of step 1 again: `recorded` and `tombstones` are the baseline's, and they stay there.
+   The underlying whose call met the dead token has no record, not a Tombstone.
+   In the evening no `daily_bars:` log line follows the restart, because the bars start only when the chains finish.
 4. Confirm polling continues: a new `popularity_snapshot` boundary appears within 30 minutes.
 5. Recover: run `/setup schwab` (see "Schwab sign-in").
    Expect the log line `Schwab token renewed - resuming Schwab jobs`, one "renewed" Ops ping and `schwab_token_dead 0`.
-6. Confirm the Schwab jobs run once right after the renewal (`cron_job_runs{outcome="success"}` rises for `daily_bars`, which refetches the deleted SPY bar).
-   The run the dead token killed (`auth_error`) is owed again, and a slot that comes due while the token is dead is deferred, not lost; the killed run and any deferred slots together run once.
+6. Confirm the killed run goes again once, right after the renewal: `outcome="success"` rises for the same job, and its log line `chains of <date>: N optionable underlyings from the Universe of ..., M already recorded` has `M` equal to the `recorded` of step 1, up to the underlyings the restart cost.
+   The pass ends with `recorded` equal to the Universe's optionable count and `tombstones` unchanged, provided the sign-in came before the pass's deadline.
+   A slot that comes due while the token is dead is deferred, not lost; the killed run and any deferred slots together run once.
 
 ### Ingest kill mid-poll
 
-Goal: no lost or duplicated rows or Alerts after a restart.
+Goal: no lost or duplicated rows or Alerts after a restart, and a Schwab pass in flight picks up where it stopped.
 
-1. Capture counts and the newest boundary:
+Do it while a chain pass is running (the evening chains from 18:10 to 18:50 ET, or the morning pass from 07:10 to 09:00 ET), so one kill covers the poll and the pass.
+
+1. Capture counts and the newest boundary, and the chain pass's progress:
    ```
    psql -c "SELECT (SELECT count(*) FROM popularity_snapshot) AS snapshots, (SELECT count(*) FROM candidate) AS candidates, (SELECT count(*) FROM alerts) AS alerts"
+   psql -c "SELECT chain_pass, session_date, count(*) AS recorded, count(*) FILTER (WHERE status = 'failed') AS tombstones FROM chain_fetch GROUP BY 1, 2 ORDER BY 2 DESC, 1 LIMIT 2"
    ```
-2. Kill ingest hard while a poll is running.
+2. Kill ingest hard while a poll is running and the pass is mid-way.
    Polls fire on the :00 and :30 UTC boundaries.
    A slot that comes due while the same job is still running is not dropped: the job runs once more as soon as that run finishes (`cron_job_runs{outcome="deferred_overlap"}` counts these).
    So a restart a few seconds before a boundary still stores that boundary, shortly after the startup poll ends.
@@ -307,7 +319,7 @@ Goal: no lost or duplicated rows or Alerts after a restart.
    ```
    Do not use `$COMPOSE kill` here: Docker treats it as a manual stop, and the restart policy never brings the container back.
 3. Confirm the restart policy brought ingest back (`$COMPOSE ps` shows it up again, with a fresh start time).
-   Ingest runs the poll at startup, so it finishes the interrupted boundary.
+   Ingest runs the poll and every Schwab pass at startup, so it finishes the interrupted boundary and resumes the pass: its log line `chains of <date>: ... M already recorded` has `M` equal to the `recorded` of step 1 (the underlying in flight at the kill had no record and is fetched again).
 4. Repeat the count query.
    Expect: snapshot rows for the interrupted boundary are present exactly once (the key is `polled_at, ticker` with `ON CONFLICT DO NOTHING`), every hit has exactly one `candidate` (its key is the Trigger, rule version, stock and hit time), and a rerun of the same boundary added no Alert.
    A candidate and the Alert it produced commit in one transaction, so a kill leaves both or neither.
@@ -316,6 +328,7 @@ Goal: no lost or duplicated rows or Alerts after a restart.
    psql -c "SELECT (SELECT count(*) FROM candidate WHERE verdict = 'posted' AND alert_id IS NULL) AS posted_without_alert, (SELECT count(*) FROM (SELECT symbol, day FROM alerts WHERE reply_to IS NULL GROUP BY 1, 2 HAVING count(*) > 1) d) AS stocks_alerted_twice_a_day"
    ```
    Both counts must be 0 and each boundary's `count` must equal its `count(DISTINCT ticker)`.
+   The chain query of step 1 must show `recorded` never falling and `tombstones` unchanged, and the pass finishing at the Universe's optionable count; a chain is stored with its fetch record in one transaction, so a kill leaves both or neither.
 5. A graceful stop is a separate, simpler check: `$COMPOSE stop ingest` must exit within `stop_grace_period` (45s) with a clean shutdown log.
 
 ### Bot restart after an unrecorded send
@@ -425,12 +438,83 @@ It takes minutes (the database computes each stock's Baseline for each day), and
 Pass other settings after the dash: `python - --targets 3,4,5 --margins 0.05,0.1`.
 The constants it recommends changing live in `services/ingest/src/rs_ingest/selector.py`.
 
+### The nightly sweep
+
+Every trading evening ingest records the whole market, and the next morning it records the settled open interest.
+Three jobs and one more run beside each other:
+
+| Eastern time | Job | What it does |
+| --- | --- | --- |
+| 18:05 | `evening_sweep` | The chains, then the bars when the chains finish, then the Outcomes and Track record when the bars finish |
+| 18:05 to 20:00 | `universe_snapshot` | The night's Universe, once the listing files are stamped after the close; it makes no Schwab calls and does not hold the chains back |
+| 20:30 | `earnings_snapshot` | The earnings calendar; it makes no Schwab calls |
+| 07:00 | `morning_open_interest` | The morning pass: every optionable chain again, keeping only open interest |
+
+The three Schwab passes share one budget of `RS_INGEST_SCHWAB_CALLS_PER_MINUTE` (default 120, Schwab's documented limit), which is why they run one after the other: about 5,500 chain calls take about 46 minutes alone, and about 13,000 bar calls about 108 minutes.
+Each stage starts when the one before ends, whether it ended well or not: a stage that failed does not hold back the next, which reads what is stored and skips what is recorded, and the failure is raised once the last stage has run.
+A dead Schwab token ends the whole run at once instead; the daemon pauses Schwab jobs and runs the sweep again when the sign-in reopens the gate, and every stage skips what it had already recorded.
+
+After a restart, every Schwab job runs on start and skips the work already recorded.
+That includes a restart outside a pass's window, with these results:
+
+- Chains started after 19:00 ET write only Tombstones: the volume they would carry is gone, so the night is recorded as missed and is never caught up.
+- The morning pass started after the 09:30 ET open does the same for that morning.
+- A first deploy, or a restart that follows a night the daemon missed, therefore records that night's optionable underlyings as Tombstones with no attempts, and the pass counts as failing: Ops gets `Schwab is failing (N of N requests failed)` once.
+  It is the record that the night was missed, not a fault; the next full evening recovers it.
+- A restart on a weekend or holiday finds the last session's passes recorded and does nothing.
+- The bars do not start after their stop time (03:00 Central of the evening they belong to), so a restart the next morning or on a weekend leaves them to the next evening.
+- The Outcomes and Track record are recomputed from storage each time they run, so they always run.
+
+The Universe snapshot and the earnings snapshot have their own sections below.
+
+### Option chains
+
+The chains are the irreplaceable part of the sweep: Schwab serves only the current chain, so a missed night cannot be fetched again.
+
+**The evening pass** fetches, for every optionable listing of the latest stored Universe, the whole chain unfiltered, and stores each contract for the session (the Eastern date of the evening) in `option_contract`.
+It starts at 18:05 ET over the latest Universe stored when it starts, which is last night's until the night's snapshot lands; it does not wait for the night's.
+Its deadline is 19:00 ET, because Schwab resets the session's volume to zero between 19:00 and 21:00 ET (`docs/reference/schwab-facts.md`).
+A chain that Schwab will not serve whole goes down a ladder: fetch, retry once, split into three expiry ranges (the last open-ended), retry each, then a Tombstone.
+A 400 or an empty chain is recorded at once and never retried.
+Anything unfetched at the deadline is a Tombstone with no attempts.
+
+**The morning pass** starts at 07:00 ET, once open interest has settled, runs the same ladder over the same roster and stores only open interest in `option_open_interest`, under the session it settled for (the last session before the morning).
+Its deadline is the 09:30 ET open.
+A failed morning loses nothing, because the evening sweep carries the same open interest a session later.
+
+Every pass writes one `chain_fetch` row per optionable underlying: its pass (`evening` or `morning`), session, status, attempts, contract count and fetch time.
+`ok` is a stored chain, `empty` is Schwab saying there are no contracts, `rejected` is a 400 or 404 for the symbol, and `failed` is a Tombstone (the ladder ran out, or the deadline came first).
+Contract rows never hold nulls or placeholders, so a Tombstone has a fetch record and no contracts.
+A pass counts as failing, with an Ops ping `Schwab is failing`, when more than about 5% of the underlyings a run handled (and at least two) are Tombstones or the run was rate limited; a 400 or an empty chain is Schwab answering.
+Because one tally covers the whole evening sweep (chains and bars), a Tombstone-heavy chain pass is judged against all its calls.
+A 429 or a dead token stops the pass without a Tombstone for the underlying in flight.
+
+Read a night:
+```
+$COMPOSE logs ingest | grep -E "(evening|morning) chains of"
+psql -c "SELECT chain_pass, session_date, count(*) AS recorded, count(*) FILTER (WHERE status = 'ok') AS ok, count(*) FILTER (WHERE status = 'empty') AS empty, count(*) FILTER (WHERE status = 'rejected') AS rejected, count(*) FILTER (WHERE status = 'failed') AS tombstones, min(fetched_at AT TIME ZONE 'America/New_York') AS first_at, max(fetched_at AT TIME ZONE 'America/New_York') AS last_at FROM chain_fetch GROUP BY 1, 2 ORDER BY 2 DESC, 1 LIMIT 4"
+```
+The log line reads `<pass> chains of <date>: N underlyings in the roster, M already recorded, ... calls`.
+`recorded` should equal the optionable count of the Universe the pass read:
+```
+psql -c "SELECT snapshot_date, count(*) AS optionable FROM universe_listing WHERE optionable AND snapshot_date = (SELECT max(snapshot_date) FROM universe_snapshot) GROUP BY 1"
+```
+It can differ by a few dozen names when the night's Universe landed after the pass began and the roster was last night's.
+Look at the Tombstones, which are the underlyings with no chain:
+```
+psql -c "SELECT underlying, status, attempts, fetched_at AT TIME ZONE 'America/New_York' AS at FROM chain_fetch WHERE session_date = '<date>' AND chain_pass = 'evening' AND status IN ('failed', 'rejected') ORDER BY status, underlying LIMIT 50"
+```
+An `attempts` of 0 is a Tombstone written past the deadline.
+A healthy night ends with `last_at` before 19:00 ET for the evening pass and before 09:30 ET for the morning, and a handful of Tombstones at most.
+
+Chains are stored compressed and kept indefinitely, so the tables only grow; see "Disk space".
+
 ### Daily bars
 
-The `daily_bars` job keeps daily bars for every listing of the latest Universe.
+The evening sweep's bars stage keeps daily bars for every listing of the latest Universe.
 SPY goes first, then every stock the Popularity Trigger ever hit (found by replaying the Trigger over all stored Popularity, and kept up even after it leaves the Universe), then the rest of the Universe in symbol order.
 A symbol with no bars asks Schwab from 1990-01-01 and gets what it has, about 30 years for an old listing; a later night fetches only the sessions since the last settled one.
-It runs at startup and each weekday 90 minutes after the close, and a rerun with nothing missing makes no Schwab call.
+It starts when the evening's chains finish (so about 19:00 ET or earlier) and on start after a restart, and a rerun with nothing missing makes no Schwab call.
 It logs `daily_bars: replaying the Popularity Trigger to find the stocks to fetch first` when it starts.
 The replay can take several minutes on a large Popularity history, so the next progress line may take that long to appear.
 
@@ -440,9 +524,10 @@ A stock whose stored history starts after 1990 is extended back once.
 Each symbol is fetched, written and committed on its own, so no write decompresses more than that symbol's history (Timescale aborts a transaction that decompresses over 100,000 rows).
 The price-history spelling of a Universe symbol is one function, `price_history_symbol` in `services/ingest/src/rs_ingest/daily_bars.py`; bars are always stored under the Universe's own symbol.
 
-The pass stops itself at `RS_INGEST_DAILY_BARS_STOP_AT` (default 03:00 America/Chicago), before the morning pass starts, and logs `stop time ... reached with N of M symbols left`.
-The next evening's run skips every symbol that is already current and resumes with the rest, so the first seed takes as many nights as the Universe needs at the shared call rate (about 2 hours per 13,000 calls at 100 a minute, more when other Schwab jobs share the budget).
-The job's timeout is 11 hours, a backstop just past the stop time.
+The pass stops itself at the first `RS_INGEST_DAILY_BARS_STOP_AT` (default 03:00 America/Chicago, 04:00 ET) after its evening starts, three hours before the morning pass starts at 07:00 ET, and logs `stop time ... reached with N of M symbols left`.
+The next evening's run skips every symbol that is already current and resumes with the rest, so the first seed takes as many nights as the Universe needs at the shared call rate (about 108 minutes per 13,000 calls at 120 a minute, and the chains go first).
+A run that starts after that stop time (a restart the next day) skips the bars and leaves them to the next evening.
+The sweep's timeout is 13 hours, a backstop just past the bars' stop time and the Outcomes after it.
 
 Schwab's daily history is split-adjusted as of the moment it is fetched, so bars are stored with `adjusted` true.
 A split after bars were stored leaves them at the old scale beside new bars at the new scale, and reverse splits are common among Popularity stocks.
@@ -526,6 +611,120 @@ Check it with:
 psql -c "SELECT origin, count(*), min(report_date), max(report_date) FROM earnings_snapshot GROUP BY origin"
 ```
 
+### The sweep probe
+
+The probe measures Schwab, not RocketStocks: chain sizes and failures on a sample, bar depth, and each chain at intervals from the close to the open.
+Its results are the aggregates in `docs/reference/schwab-facts.md`; run it again when a number there is in doubt or Schwab changes behaviour.
+It reads the Schwab token without writing it, keeps to 20 calls a minute by default, and its output holds vendor payloads, so it goes in a directory outside the repo and is never committed.
+
+1. Check the plan without touching Schwab or the database:
+   ```
+   mkdir -p ~/sweep-probe
+   $COMPOSE run --rm --no-deps --user "$(id -u):$(id -g)" -v ~/sweep-probe:/probe ingest python -m rs_ingest.tools.sweep_probe run --out /probe --dry-run
+   ```
+2. Start it detached.
+   Its first Schwab call is a check, and it exits non-zero at once when the token or Schwab does not answer.
+   By default the first sample is five minutes after the next session's close and it samples through the next morning, so start it before a close:
+   ```
+   $COMPOSE run -d --no-deps --user "$(id -u):$(id -g)" -v ~/sweep-probe:/probe ingest python -m rs_ingest.tools.sweep_probe run --out /probe
+   ```
+   A rerun with the same `--out` resumes where it stopped.
+   Its rate limit is its own and not ingest's shared budget, so run it when no pass of the nightly sweep is running, or the two together can pass Schwab's 120 a minute.
+3. Print the aggregates and copy the numbers you need into `docs/reference/schwab-facts.md` (aggregates only, never rows or payloads):
+   ```
+   $COMPOSE run --rm --no-deps --user "$(id -u):$(id -g)" -v ~/sweep-probe:/probe ingest python -m rs_ingest.tools.sweep_probe summary /probe
+   ```
+
+### Disk space
+
+The chains add about 1.9 million contract rows a night (about 9.7 million a five-session week), kept compressed and indefinitely.
+The disk was 502 GB with 270 GB free and growable on 2026-10-27.
+The plan is that the whole disk, projected from measured growth, stays under 80% for two years; if it does not, grow the disk, and only if the host has no room keep only contracts that have open interest or volume.
+
+**Set the alarm.**
+Disk alarms are the host's own tool, not the stack's.
+Alarm when the filesystem holding the database volume passes 70% used, so there are weeks left to grow it before it fills.
+Find that filesystem:
+```
+sudo docker volume inspect rocketstocks-v2_timescale_data -f '{{ .Mountpoint }}'
+df -h <the mountpoint it printed>
+```
+When Postgres runs out of disk, every write fails: ingest's jobs, the poll and the bot.
+
+**Measure growth after the first recorded night.**
+The compression policy compresses a chunk three days after its data, so compress the first night's chunk by hand to see the real ratio now, and size every table:
+```
+psql -c "SELECT compress_chunk(c, if_not_compressed => true) FROM show_chunks('option_contract') c"
+psql -c "SELECT compress_chunk(c, if_not_compressed => true) FROM show_chunks('option_open_interest') c"
+psql -c "SELECT total_chunks, number_compressed_chunks, pg_size_pretty(before_compression_total_bytes) AS before, pg_size_pretty(after_compression_total_bytes) AS after FROM hypertable_compression_stats('option_contract')"
+psql -c "SELECT c.relname AS table_name, pg_size_pretty(s.bytes) AS size FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace LEFT JOIN timescaledb_information.hypertables h ON h.hypertable_schema = n.nspname AND h.hypertable_name = c.relname CROSS JOIN LATERAL (SELECT CASE WHEN h.hypertable_name IS NULL THEN pg_total_relation_size(c.oid) ELSE hypertable_size(c.oid) END AS bytes) s WHERE n.nspname = 'public' AND c.relkind = 'r' ORDER BY s.bytes DESC LIMIT 12"
+psql -c "SELECT pg_size_pretty(pg_database_size('rocketstocks'))"
+df -h <the mountpoint>
+```
+Take the same sizes again after the first week and note both sets on the operator ticket.
+Project the whole database, not only the chains: a night's compressed chain size times about 500 sessions for two years, plus the other tables' own growth (the bars seed is a one-off, the Universe adds a few hundred MB a year), against the free space on `df`.
+If the projection passes 80% of the disk, grow it.
+
+**Grow the disk.**
+The first step depends on the host and is yours; the steps after it run inside the VM.
+1. Take a backup first (see "How to back up").
+2. Grow the virtual disk in the hypervisor, or the volume at your provider, by the amount the projection needs.
+3. In the VM, make the kernel see the new size and grow the partition and filesystem that hold the Docker volume.
+   `lsblk` and `df -hT` name the disk, partition, the volume group if any, and the filesystem type; the commands below are for a plain partition and `ext4`, so adapt the middle ones to what you see:
+   ```
+   lsblk
+   df -hT <the mountpoint>
+   echo 1 | sudo tee /sys/class/block/<disk, for example sda>/device/rescan
+   sudo growpart /dev/<disk> <partition number>
+   sudo resize2fs /dev/<partition>
+   ```
+   With LVM, run `sudo pvresize /dev/<partition>`, `sudo lvextend -r -l +100%FREE /dev/<vg>/<lv>` instead of the last two lines; with `xfs`, `sudo xfs_growfs <mountpoint>` instead of `resize2fs`.
+4. `df -h <the mountpoint>` shows the new size, and the stack never needed to stop: `$COMPOSE ps` still shows `ingest` and `bot` healthy.
+   Raise the alarm's threshold only if you want it to track the new size; it is a percentage and already does.
+
+### The night that records the sweep
+
+This is the checklist for the evening that proves the sweep (the milestone's recorded night) and the morning after it.
+Do the one-time steps first, on any day before it.
+
+One-time, before the night:
+
+1. Deploy this version (see "Upgrade to a new version") with a fresh Schwab sign-in, so the token does not run out mid-night.
+2. Have a Universe stored: the chains read the latest one and fetch nothing without it.
+   Either wait for one evening's `universe_snapshot` or take it by hand (see "The Universe snapshot") and confirm `psql -c "SELECT snapshot_date, count(*) FROM universe_listing WHERE optionable GROUP BY 1 ORDER BY 1 DESC LIMIT 1"` shows about 5,400.
+3. Load the earnings calendar's history once (see "Earnings calendar"); it makes no Schwab calls and takes about an hour.
+4. Set the disk alarm and note `df` (see "Disk space").
+5. Check `.env`: `RS_INGEST_SCHWAB_CALLS_PER_MINUTE` unset or 120, and `RS_INGEST_DAILY_BARS_STOP_AT` unset or 03:00.
+
+The evening (a trading day; a restart during the evening resumes, so the night survives one):
+
+| Eastern time | Expect |
+| --- | --- |
+| 18:05 | `evening_sweep` and `universe_snapshot` start; `evening chains of <date>: N optionable underlyings ...` in the log |
+| about 18:50 | the chains finish; `evening chains of <date>: ...` summary line; the bars start (`daily_bars: replaying the Popularity Trigger ...`) |
+| by 19:00 | the last `chain_fetch.fetched_at` of the pass is before 19:00 |
+| 20:30 | `earnings snapshot <date>: N rows ...` |
+| about 20:40 to 21:00 | the bars finish when about 13,000 calls are done; on the first night they may run on, and stop at 04:00 ET |
+| after the bars | `track_record finished` |
+
+Check it afterwards, in this order:
+
+1. The chain pass: the "Read a night" queries in "Option chains": `recorded` equals the optionable count, `last_at` is before 19:00, and every underlying without a chain is a Tombstone you can read.
+2. The bars: the log line `daily_bars through <date>: ... 0 left at the stop time, 0 failed`; on the first nights `left at the stop time` shows what is left for the next evening, and the seed is complete when a run reports nothing to fetch.
+   `psql -c "SELECT count(DISTINCT symbol) FROM daily_bar"` is about the Universe's size, about 13,000.
+3. The earnings calendar: `psql -c "SELECT origin, count(*), min(report_date), max(report_date) FROM earnings_snapshot GROUP BY origin"` shows `nightly` and `backfill`.
+4. The Track record rewrote: `psql -c "SELECT max(computed_at) FROM track_record"`.
+5. The job runs: `curl -s 127.0.0.1:9090/metrics | grep cron_job_runs` shows `evening_sweep` and `earnings_snapshot` with `outcome="success"` for the night and no `failure`.
+6. Growth: compress the night's chunk and measure it (see "Disk space").
+
+The next morning:
+
+1. Between 07:00 and 09:30 ET the `morning_open_interest` job runs: the log line `morning chains of <date>: ...` and `psql -c "SELECT count(*) FROM option_open_interest"` rising.
+2. After it ends, the "Read a night" query shows the `morning` row with `last_at` before 09:30 and every underlying recorded.
+   The `<date>` is the evening's session, the one the open interest settled for.
+
+If a pass was missed (the stack down, a dead token past the deadline), its underlyings are Tombstones and the night is not recorded; run the next evening instead.
+
 ### Logs, metrics and health
 
 - Logs are JSON on stdout: `$COMPOSE logs -f ingest bot`.
@@ -552,7 +751,7 @@ Which pings to expect, by cause:
 
 - `ApeWisdom is failing ...`: the Popularity poll could not fetch the listing, or fetched it empty.
   The poll fails without a second ping; a boundary is missed until the next poll.
-- `Schwab is failing ...`: quotes for an Alert's facts failed, or more than about 5% of the daily-bar sweep did.
+- `Schwab is failing ...`: quotes for an Alert's facts failed, or more than about 5% of the evening sweep's chain and bar requests did (a chain Tombstone counts, one written past its deadline too), or of the morning pass's.
   The Alert still posts, with the missing facts labelled.
 - `Nasdaq is failing ...`: the nightly earnings snapshot stored nothing, because a calendar day still failed after two retries or the calendar listed no earnings at all.
   The snapshot is whole or nothing, so this pings when the first night stores nothing, and `Nasdaq recovered.` follows the first night that stores a snapshot; the next-earnings fact trusts the last snapshot for two trading sessions, then falls back to the EDGAR estimate.
@@ -569,7 +768,9 @@ Which pings to expect, by cause:
 - `Alert #<id> ... failed to post after N attempts ...`: the procedure above.
   It is sent only when Discord is not already reported failing.
 - `Alert #<id> ... may or may not have posted ...`: the history check above could not be read.
-- The nightly Track record job failing (`Ingest job track_record is failing ...`); the stored Track record stays as it was until the next successful run.
+- The evening sweep or the morning pass failing for a reason that is not Schwab (`Ingest job evening_sweep is failing ...`, `Ingest job morning_open_interest is failing ...`).
+  When the Outcomes stage is what failed, the stored Track record stays as it was until the next successful run.
+  A few bar symbols failing fails the run without a ping of its own, because one stock never pings.
 - `Alert #<id> <stock> <trigger> posted without its role ping: the role mapped to <trigger> ... no longer exists`: see "Discord permissions and role pings".
   It is sent once per missing role, not once per Alert, so a deleted role does not ping for every Alert until it is mapped again.
 
@@ -593,8 +794,10 @@ These kinds of data cannot be fetched again:
   These are written by the bot and live in the same database.
 - Universe snapshots (`universe_snapshot` and `universe_listing`): the listing files serve only the current day, so a missed night cannot be rebuilt.
 - Nightly earnings snapshots (`earnings_snapshot` rows with origin `nightly`): they record what Nasdaq's calendar said on each date, which cannot be fetched again; the `backfill` rows can.
+- Option chains (`option_contract`, the morning's `option_open_interest` and the `chain_fetch` records beside them): Schwab serves only the current chain, so a missed night is gone.
+  They are by far the largest tables; see "Disk space" before sizing a backup.
 
-Daily bars are repaired automatically, and Baselines, Track records and Reports are rebuilt at will.
+Daily bars are repaired automatically (the seed from 1990 is one evening or two of calls), and Baselines, Track records and Reports are rebuilt at will.
 Back up the whole database anyway; it is the simplest way to be sure neither is missed, and it keeps the history of posted Alerts too.
 
 A dump also contains the Schwab refresh token (`schwab_tokens`).
