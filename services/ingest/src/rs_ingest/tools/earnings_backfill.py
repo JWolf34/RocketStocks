@@ -94,7 +94,7 @@ async def backfill_earnings(
                 fetched_at=fetched.fetched_at,
                 **item.model_dump(),
             )
-            for item in fetched.reports
+            for item in fetched.entries
         ]
         if rows:
             async with session_factory() as session, session.begin():

@@ -598,7 +598,7 @@ The horizon is fixed because the end of the window cannot be told from a quiet s
 A day that fails is asked again after 30 seconds and after 2 minutes before it counts as failed.
 A snapshot is stored whole or not at all, and a run whose latest evening already has its snapshot (a rerun, a weekend or a holiday) does nothing.
 A weekend or holiday run whose latest evening has none tries that evening again, so a Friday that failed is retried at 20:30 on Saturday and Sunday; Ops hears once while Nasdaq keeps failing.
-Each run logs `earnings snapshot <date>: N rows over M days, last report day <date>; values not parsed: {...}`, where the field counts are values that came back `N/A`, empty, unreadable or missing, and `symbol` counts rows skipped for lacking a ticker.
+Each run logs `earnings snapshot <date>: N rows over M days, last entry day <date>; values not parsed: {...}`, where the field counts are values that came back `N/A`, empty, unreadable or missing, and `symbol` counts rows skipped for lacking a ticker.
 The Alert's next Catalyst reads the latest `nightly` snapshot, trusts it for two trading sessions, and otherwise estimates from EDGAR at read time (the estimate is never stored).
 
 Load the history once, from 2008-01-01 (the earliest year Nasdaq serves), after the first deploy:
@@ -610,7 +610,7 @@ It asks for one weekday at a time at the adapter's 0.25 second spacing, so about
 Its rows carry origin `backfill`, the real fetch time, and the Eastern day they were fetched as their snapshot date, so a run over several days is one snapshot per day it ran and never shadows a `nightly` snapshot; readers of "the latest snapshot" ask for `nightly`.
 A day that fails is asked again after 30 seconds and after 2 minutes, then left for a rerun.
 Run it in a terminal that survives a dropped connection; it resumes, so if it stops (a restart, a failed day, ten failed days in a row), run the same command again.
-A rerun skips weekdays that already have backfill rows and asks again for every weekday Nasdaq answered with nothing (holidays and any other day with no reports), which takes a minute or two.
+A rerun skips weekdays that already have backfill rows and asks again for every weekday Nasdaq answered with nothing (holidays and any other day with no entries), which takes a minute or two.
 `--start` and `--end` (`YYYY-MM-DD`) bound a run; it ends with a one-line summary, and exit status 1 means some days failed.
 Check it with:
 ```

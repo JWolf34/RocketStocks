@@ -41,8 +41,8 @@ class NextEarnings(BaseModel):
 
 
 class StoredCalendar(Protocol):
-    async def next_report(self, ticker: str, today: date) -> StoredEarnings | None:
-        """The ticker's first report on or after `today` in the latest snapshot fresh enough to trust."""
+    async def next_earnings(self, ticker: str, today: date) -> StoredEarnings | None:
+        """The ticker's first entry on or after `today` in the latest snapshot fresh enough to trust."""
         ...
 
 
@@ -59,7 +59,7 @@ class EarningsLookup:
         """The ticker's next earnings date as of `as_of` (tz-aware); never raises on source failure."""
         require_aware(as_of)
         today = as_of.astimezone(_MARKET_ZONE).date()
-        stored = await self._calendar.next_report(ticker, today)
+        stored = await self._calendar.next_earnings(ticker, today)
         if stored is not None:
             return NextEarnings(date=stored.report_date, time_of_day=stored.time_of_day)
         return await self._estimate(ticker, as_of, today)

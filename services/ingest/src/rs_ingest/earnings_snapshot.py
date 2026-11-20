@@ -5,7 +5,7 @@ horizon past Nasdaq's forward window and stores the lot as one snapshot dated th
 evening's session. A past day carries actual EPS and surprise, so the week back picks up
 what reporters published after an earlier snapshot. The horizon is fixed because
 the window's end cannot be told from a quiet stretch inside it (a holiday week
-answers the same way as the days past the end); the last report day is logged.
+answers the same way as the days past the end); the last entry day is logged.
 A snapshot is stored whole or not at all: a day that still fails after its retries
 ends the night, nothing is stored, and the previous snapshot stays the latest.
 
@@ -100,7 +100,7 @@ class EarningsSnapshotError(Exception):
 class SnapshotReport:
     snapshot_date: date
     days_read: int
-    last_report_day: date
+    last_entry_day: date
     rows: int
     unparsed: Counter[str] = field(default_factory=Counter)
 
@@ -136,8 +136,8 @@ async def snapshot_earnings(
             return None
 
     days = await _read_window(source, evening)
-    reports = [(day, item) for day in days for item in day.reports]
-    if not reports:
+    entries = [(day, item) for day in days for item in day.entries]
+    if not entries:
         raise EarningsSnapshotError(
             f"Nasdaq earnings snapshot for {evening}: no earnings listed on any of {len(days)} days; nothing stored",
             reason="no earnings listed",
@@ -149,7 +149,7 @@ async def snapshot_earnings(
             fetched_at=day.fetched_at,
             **item.model_dump(),
         )
-        for day, item in reports
+        for day, item in entries
     ]
     async with session_factory() as session, session.begin():
         stored = await EarningsSnapshotRepository(session).insert_many(rows)
@@ -157,16 +157,16 @@ async def snapshot_earnings(
     report = SnapshotReport(
         snapshot_date=evening,
         days_read=len(days),
-        last_report_day=max(day.day for day in days if day.reports),
+        last_entry_day=max(day.day for day in days if day.entries),
         rows=stored,
         unparsed=unparsed,
     )
     logger.info(
-        "earnings snapshot %s: %d rows over %d days, last report day %s; values not parsed: %s",
+        "earnings snapshot %s: %d rows over %d days, last entry day %s; values not parsed: %s",
         evening,
         report.rows,
         report.days_read,
-        report.last_report_day,
+        report.last_entry_day,
         dict(sorted(unparsed.items())) or "none",
     )
     return report
@@ -200,8 +200,8 @@ class StoredEarningsCalendar:
         self._session_factory = session_factory
         self._calendar = calendar
 
-    async def next_report(self, ticker: str, today: date) -> StoredEarnings | None:
-        """The ticker's first report on or after `today` in the latest nightly snapshot, or None
+    async def next_earnings(self, ticker: str, today: date) -> StoredEarnings | None:
+        """The ticker's first entry on or after `today` in the latest nightly snapshot, or None
         when there is no snapshot, it is more than FRESH_FOR_SESSIONS sessions old, or it does
         not list the ticker. A database error is logged and also None, so the lookup still
         estimates from EDGAR."""
