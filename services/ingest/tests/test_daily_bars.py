@@ -296,7 +296,7 @@ async def test_bars_of_a_listing_that_left_the_universe_are_kept_and_no_longer_a
     assert await _bars(session_factory, "GONE") == kept != []
 
 
-# --- the price-history spelling ----------------------------------------------------------------
+# --- Schwab's spelling ------------------------------------------------------------------------
 
 
 async def test_a_class_share_is_asked_for_slashed_and_its_bars_keep_the_universe_symbol(session_factory):

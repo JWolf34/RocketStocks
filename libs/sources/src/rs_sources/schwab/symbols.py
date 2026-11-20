@@ -1,4 +1,4 @@
-"""Schwab's spelling of a Universe symbol, the one place every Schwab request is spelled.
+"""Schwab's spelling of a Universe symbol, the one place chain and price history requests are spelled.
 
 The Universe keeps the listing file's own symbol (`BRK.B`) and everything is stored under it;
 only the request to Schwab is spelled this way.
