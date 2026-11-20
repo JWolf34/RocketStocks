@@ -2,6 +2,7 @@
 
 from datetime import UTC, date, datetime
 
+import pytest
 from sqlalchemy import select
 
 from rs_domain import EarningsOrigin, EarningsTime, StoredEarnings
@@ -170,9 +171,40 @@ async def test_a_backfill_row_does_not_displace_a_nightly_row_of_the_same_report
     assert sorted(r.origin for r in await stored_rows(session_factory)) == ["backfill", "nightly"]
 
 
-def test_the_tool_needs_a_database_url(monkeypatch, capsys):
-    monkeypatch.delenv(earnings_backfill.DSN_VARIABLE, raising=False)
-    monkeypatch.setattr("sys.argv", ["earnings_backfill"])
+SETTINGS = {
+    "RS_DB_URL": "postgresql+psycopg://ingest:p@localhost:5498/rocketstocks",
+    "SCHWAB_API_KEY": "key",
+    "SCHWAB_API_SECRET": "secret",
+    "RS_EDGAR_USER_AGENT": "RocketStocks test@example.com",
+}
 
+
+@pytest.fixture
+def bare_environment(monkeypatch, tmp_path):
+    """No ingest variable in the environment and no `.env` in the working directory."""
+    for name in SETTINGS:
+        monkeypatch.delenv(name, raising=False)
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr("sys.argv", ["earnings_backfill", "--start", "2008-01-14", "--end", "2008-01-18"])
+    return tmp_path
+
+
+def test_the_tool_reads_ingests_settings_from_dotenv(bare_environment, monkeypatch):
+    (bare_environment / ".env").write_text("".join(f"{name}={value}\n" for name, value in SETTINGS.items()))
+    seen = []
+
+    async def fake_run(settings, start, end):
+        seen.append((settings.rs_db_url, start, end))
+        return earnings_backfill.BackfillReport()
+
+    monkeypatch.setattr(earnings_backfill, "_run", fake_run)
+
+    assert earnings_backfill.main() == 0
+    assert seen == [(SETTINGS["RS_DB_URL"], MONDAY, FRIDAY)]
+
+
+def test_missing_settings_are_bad_configuration(bare_environment, capsys):
     assert earnings_backfill.main() == 2
-    assert "RS_DB_URL is not set" in capsys.readouterr().err
+
+    out = capsys.readouterr().out
+    assert "invalid configuration" in out and "rs_db_url" in out
