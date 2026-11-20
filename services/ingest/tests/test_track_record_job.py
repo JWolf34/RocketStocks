@@ -1,4 +1,4 @@
-"""The nightly Track record job: schedule, the subprocess boundary and failure reporting."""
+"""The Track record run: its place in the evening sweep, the subprocess boundary and failure reporting."""
 
 import asyncio
 import json

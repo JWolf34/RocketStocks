@@ -245,10 +245,12 @@ class EveningClient:
     def __init__(self, calls: list[str] | None = None) -> None:
         self.calls = calls if calls is not None else []
         self.chain_error: Exception | None = None
+        # When set, only this underlying's chain raises `chain_error`.
+        self.chain_error_for: str | None = None
 
     async def get_option_chain(self, symbol, *, contract_type=None, from_date=None, to_date=None):
         self.calls.append(f"chain {symbol}")
-        if self.chain_error is not None:
+        if self.chain_error is not None and self.chain_error_for in (None, symbol):
             raise self.chain_error
         empty = {"symbol": symbol, "status": "SUCCESS", "underlyingPrice": 10.0, "callExpDateMap": {}, "putExpDateMap": {}}
         return httpx.Response(200, json=empty)
@@ -336,6 +338,27 @@ async def test_a_dead_token_ends_the_evening_at_once_and_the_rerun_resumes_it(se
     await _job(session_factory, "evening_sweep", schwab=client, clock=EVE, outcomes=outcomes).run()
 
     assert calls[:2] == ["chain AAA", "chain OLD"] and calls[-1] == "outcomes"
+
+
+async def test_a_rerun_after_a_dead_token_fetches_only_the_underlyings_not_yet_recorded(
+    session_factory, seed_previous
+):
+    await seed_previous(day=EVENING_SESSION)
+    calls: list[str] = []
+    client = EveningClient(calls)
+    client.chain_error, client.chain_error_for = SchwabAuthError("refresh token rejected"), "OLD"
+
+    with pytest.raises(SchwabAuthError):
+        await _job(session_factory, "evening_sweep", schwab=client, clock=EVE).run()
+    assert await _recorded(session_factory, ChainPass.EVENING, "AAA") is not None
+    assert await _recorded(session_factory, ChainPass.EVENING, "OLD") is None
+
+    client.chain_error = None
+    calls.clear()
+    await _job(session_factory, "evening_sweep", schwab=client, clock=EVE).run()
+
+    assert calls[0] == "chain OLD" and "chain AAA" not in calls
+    assert calls[1] == "bars SPY"
 
 
 async def test_a_failed_stage_does_not_hold_back_the_stages_after_it(session_factory, seed_previous):

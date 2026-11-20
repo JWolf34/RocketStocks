@@ -269,7 +269,7 @@ async def test_a_weekend_run_belongs_to_fridays_session(session_factory):
     await _universe(session_factory, ("AAA",), day=friday)
     saturday_noon = datetime(2026, 11, 14, 17, 0, tzinfo=UTC)
 
-    # Friday's deadline passed at 03:00 Central Saturday: the pass only records what was missed.
+    # Friday's deadline (19:00 ET) passed: the pass only records what was missed.
     report = await _run(session_factory, FakeSchwab(), FakeClock(saturday_noon))
 
     assert report.session == friday

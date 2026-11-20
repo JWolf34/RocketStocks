@@ -286,13 +286,14 @@ Either needs a stored Universe (see "The nightly sweep").
 3. Expect, in `$COMPOSE logs ingest`: `Schwab token dead - pausing Schwab jobs`.
    Expect in the ops channel: exactly one Ops ping, "Schwab token is dead ...".
    Expect `schwab_token_dead 1` and `cron_job_runs{job_name="evening_sweep",outcome="auth_error"}` (or `morning_open_interest`) on the metrics port, and `deferred_token_dead` outcomes for the Schwab jobs when one of their slots comes due.
-   Run the chain query of step 1 again: `recorded` and `tombstones` are the baseline's, and they stay there.
+   Run the chain query of step 1 twice, a minute apart: `recorded` no longer rises, the two readings are equal, and `tombstones` is the baseline's.
+   Write that reading down.
    The underlying whose call met the dead token has no record, not a Tombstone.
    In the evening no `daily_bars:` log line follows the restart, because the bars start only when the chains finish.
 4. Confirm polling continues: a new `popularity_snapshot` boundary appears within 30 minutes.
 5. Recover: run `/setup schwab` (see "Schwab sign-in").
    Expect the log line `Schwab token renewed - resuming Schwab jobs`, one "renewed" Ops ping and `schwab_token_dead 0`.
-6. Confirm the killed run goes again once, right after the renewal: `outcome="success"` rises for the same job, and its log line `chains of <date>: N optionable underlyings from the Universe of ..., M already recorded` has `M` equal to the `recorded` of step 1, up to the underlyings the restart cost.
+6. Confirm the killed run goes again once, right after the renewal: `outcome="success"` rises for the same job, and its log line `chains of <date>: N optionable underlyings from the Universe of ..., M already recorded` has `M` equal to the reading of step 3.
    The pass ends with `recorded` equal to the Universe's optionable count and `tombstones` unchanged, provided the sign-in came before the pass's deadline.
    A slot that comes due while the token is dead is deferred, not lost; the killed run and any deferred slots together run once.
 
@@ -319,7 +320,7 @@ Do it while a chain pass is running (the evening chains from 18:10 to 18:50 ET, 
    ```
    Do not use `$COMPOSE kill` here: Docker treats it as a manual stop, and the restart policy never brings the container back.
 3. Confirm the restart policy brought ingest back (`$COMPOSE ps` shows it up again, with a fresh start time).
-   Ingest runs the poll and every Schwab pass at startup, so it finishes the interrupted boundary and resumes the pass: its log line `chains of <date>: ... M already recorded` has `M` equal to the `recorded` of step 1 (the underlying in flight at the kill had no record and is fetched again).
+   Ingest runs the poll and every Schwab pass at startup, so it finishes the interrupted boundary and resumes the pass: its log line `chains of <date>: ... M already recorded` has `M` equal to the `recorded` you read just before the kill or higher (the underlying in flight at the kill had no record and is fetched again).
 4. Repeat the count query.
    Expect: snapshot rows for the interrupted boundary are present exactly once (the key is `polled_at, ticker` with `ON CONFLICT DO NOTHING`), every hit has exactly one `candidate` (its key is the Trigger, rule version, stock and hit time), and a rerun of the same boundary added no Alert.
    A candidate and the Alert it produced commit in one transaction, so a kill leaves both or neither.
@@ -441,7 +442,7 @@ The constants it recommends changing live in `services/ingest/src/rs_ingest/sele
 ### The nightly sweep
 
 Every trading evening ingest records the whole market, and the next morning it records the settled open interest.
-Three jobs and one more run beside each other:
+Four jobs run beside each other:
 
 | Eastern time | Job | What it does |
 | --- | --- | --- |
@@ -684,14 +685,14 @@ The first step depends on the host and is yours; the steps after it run inside t
 
 ### The night that records the sweep
 
-This is the checklist for the evening that proves the sweep (the milestone's recorded night) and the morning after it.
+This is the checklist for the evening that proves the sweep (the recorded night) and the morning after it.
 Do the one-time steps first, on any day before it.
 
 One-time, before the night:
 
 1. Deploy this version (see "Upgrade to a new version") with a fresh Schwab sign-in, so the token does not run out mid-night.
 2. Have a Universe stored: the chains read the latest one and fetch nothing without it.
-   Either wait for one evening's `universe_snapshot` or take it by hand (see "The Universe snapshot") and confirm `psql -c "SELECT snapshot_date, count(*) FROM universe_listing WHERE optionable GROUP BY 1 ORDER BY 1 DESC LIMIT 1"` shows about 5,400.
+   Either wait for one evening's `universe_snapshot` or take it by hand (see "The Universe snapshot") and confirm `psql -c "SELECT snapshot_date, count(*) FROM universe_listing WHERE optionable GROUP BY 1 ORDER BY 1 DESC LIMIT 1"` shows about 5,500.
 3. Load the earnings calendar's history once (see "Earnings calendar"); it makes no Schwab calls and takes about an hour.
 4. Set the disk alarm and note `df` (see "Disk space").
 5. Check `.env`: `RS_INGEST_SCHWAB_CALLS_PER_MINUTE` unset or 120, and `RS_INGEST_DAILY_BARS_STOP_AT` unset or 03:00.
