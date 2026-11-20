@@ -2,8 +2,7 @@
 optionable underlying.
 
 The roster is the optionable listings of the latest Universe snapshot. Every chain is fetched
-whole and unfiltered, and what
-Schwab will not serve whole goes down a ladder: fetch, retry once, split into three expiry
+whole and unfiltered, and what Schwab will not serve whole goes down a ladder: fetch, retry once, split into three expiry
 ranges (the last open-ended), retry each range once, then a Tombstone. A chain is stored only
 whole: when any range fails twice the underlying is a Tombstone and none of its ranges is kept.
 
@@ -146,7 +145,7 @@ def morning_slot(calendar: TradingCalendar, now: datetime) -> tuple[date, dateti
         if datetime.combine(day, MORNING_STARTS_AT, tzinfo=EASTERN) <= now:
             settled = calendar.sessions_in_range(day - SESSION_SEARCH, day - timedelta(days=1))
             if not settled:
-                break
+                raise RuntimeError(f"no session in the {SESSION_SEARCH.days} days before the morning of {day}")
             return settled[-1], calendar.session_open(day)
     raise RuntimeError(f"no session morning has started in the {SESSION_SEARCH.days} days before {today}")
 
@@ -371,7 +370,7 @@ def _count(report: ChainPassReport, tally: SweepTally, fetched: _Fetched) -> Non
 def _log(label: str, report: ChainPassReport) -> None:
     logger.info(
         "%s: %d underlyings in the roster, %d already recorded, %d ok, %d empty, %d rejected, "
-        "%d failed, %d past the deadline, %d contracts stored, %d calls",
+        "%d failed, %d past the deadline, %d contracts or open-interest rows stored, %d calls",
         label,
         report.roster,
         report.already_recorded,
