@@ -1,8 +1,9 @@
 """Runs a plan: the survey (chain sizes, bar depth) while the clock waits for each timed sample.
 
-Every chain, in the survey and in the timed samples, goes down the same ladder: fetch, fetch
-again once if the answer was a gateway error or a timeout, then fetch the three expiry ranges
-(the last open-ended), each tried twice. A sample that is due goes before the next call of
+Every chain, in the survey and in the timed samples, goes down ingest's ladder
+(`rs_ingest.chains`): fetch, fetch again once if the answer was a gateway error or a timeout,
+then fetch the three expiry ranges (the last open-ended), each tried twice. Bars are asked from
+ingest's seed start. A sample that is due goes before the next call of
 anything else, between the parts of a ladder included.
 
 Every call waits on the limiter, builds its client from the stored token (a survey reuses one
@@ -25,6 +26,8 @@ import httpx
 from sqlalchemy.exc import SQLAlchemyError
 
 from rs_domain import EASTERN, Clock, eastern_day
+from rs_ingest.chains import ATTEMPTS, expiry_ranges
+from rs_ingest.daily_bars import SEED_START
 from rs_ingest.tools.sweep_probe.payloads import (
     candle_span,
     expiry_count,
@@ -54,29 +57,16 @@ from rs_sources.schwab import SchwabAuthError, TokenMissingError, translate_auth
 
 logger = logging.getLogger(__name__)
 
-HISTORY_START = datetime(1990, 1, 1, tzinfo=EASTERN)
+HISTORY_START = datetime.combine(SEED_START, datetime.min.time(), tzinfo=EASTERN)
 # A survey reuses its client for this long; a token ingest refreshed or a re-login is then picked up.
 CLIENT_MAX_AGE = timedelta(minutes=5)
 WAIT_CHUNK_SECONDS = 60.0
 # A survey task that found no usable token is tried again this long after the survey's last task.
 SURVEY_RETRY_AFTER = timedelta(minutes=10)
-# Days to expiry that end the first two ranges of the ladder; the third is open-ended.
-LADDER_DAYS = (30, 180)
-ATTEMPTS = 2
 
 
 class Limiter(Protocol):
     async def acquire(self) -> None: ...
-
-
-def expiry_ranges(today: date) -> tuple[tuple[date, date | None], ...]:
-    """The ladder: expiries within 30 days, 31 to 180 days, and everything after."""
-    near, mid = LADDER_DAYS
-    return (
-        (today, today + timedelta(days=near)),
-        (today + timedelta(days=near + 1), today + timedelta(days=mid)),
-        (today + timedelta(days=mid + 1), None),
-    )
 
 
 class ProbeRunner:
@@ -357,4 +347,4 @@ class ProbeRunner:
         )
 
 
-__all__ = ["ProbeRunner", "expiry_ranges"]
+__all__ = ["ProbeRunner"]
