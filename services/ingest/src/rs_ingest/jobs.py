@@ -233,16 +233,17 @@ def register_jobs(cron: CronTable, deps: Dependencies) -> None:
             # a failure that repeats every night must reach Ops, not only the logs.
             await deps.health.report_failed(Source.NASDAQ, exc.reason)
             raise SourceFailed(Source.NASDAQ) from exc
-        if report is not None:  # a night with nothing due says nothing about Nasdaq
+        if report is not None:  # an evening already snapshotted says nothing about Nasdaq
             await deps.health.report_ok(Source.NASDAQ)
 
     cron.register(
         Job(
             "earnings_snapshot",
-            # After the close and the after-hours reports; weekends and holidays find nothing to do.
+            # After the close and the after-hours reports; weekends and holidays find the last
+            # trading evening's snapshot stored and do nothing.
             Daily(SNAPSHOT_AT, EASTERN),
             earnings_snapshot,
-            # A restart after the slot still takes the night's snapshot; before it, nothing is due.
+            # A restart, even the next morning, takes the latest evening's snapshot if it is missing.
             run_on_start=True,
             # About 70 days at 0.25s spacing plus latency; a day that fails ends the run after its
             # retries, and a hung endpoint must not hold the slot.

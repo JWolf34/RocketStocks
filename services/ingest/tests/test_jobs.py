@@ -609,18 +609,28 @@ async def test_a_healthy_snapshot_is_stored_and_recovers_nasdaq(session_factory,
     assert (row.ticker, row.report_date, row.snapshot_date) == ("AAA", date(2026, 10, 22), date(2026, 10, 20))
 
 
-async def test_the_snapshot_asks_nothing_when_no_evening_is_due(session_factory, notices):
-    requests = []
+async def test_a_restart_the_morning_after_a_missed_slot_takes_that_evenings_snapshot_once(session_factory, notices):
+    requests: list[str] = []
 
     def handler(request: httpx.Request) -> httpx.Response:
-        requests.append(request)
-        return httpx.Response(503)
+        requests.append(request.url.params["date"])
+        return _earnings_handler()(request)
 
-    job = _job(session_factory, "earnings_snapshot", handler=handler)  # 18:00 Eastern, before the slot
+    # Ingest was down over Tuesday's 20:30 slot and starts again at 07:30 Eastern on Wednesday.
+    await _job(session_factory, "earnings_snapshot", handler=handler, clock=MORNING).run()
 
-    await job.run()
+    async with session_factory() as session:
+        [row] = (await session.scalars(select(EarningsSnapshotRow))).all()
+    assert (row.snapshot_date, row.fetched_at) == (EVENING_SESSION, MORNING.now())
+    assert requests[0] == "2026-10-13"  # Tuesday evening's window, a week back from the 20th
+
+    # Another restart that morning finds Tuesday's snapshot and asks Nasdaq nothing.
+    requests.clear()
+    await _job(session_factory, "earnings_snapshot", handler=handler, clock=AFTER_OPEN).run()
 
     assert requests == [] and notices == []
+    async with session_factory() as session:
+        assert await session.scalar(select(func.count()).select_from(EarningsSnapshotRow)) == 1
 
 
 async def test_a_failed_apewisdom_listing_pings_apewisdom_and_fails_the_poll_without_its_own_ping(

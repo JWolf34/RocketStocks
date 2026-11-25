@@ -348,9 +348,10 @@ def _accept_stamp(file: _File, created_at: datetime, window: _Window) -> None:
     raise _Unusable(f"{file.name} is stamped after the next open", superseded=True)
 
 
-def last_evening_session(calendar: TradingCalendar, now: datetime) -> date:
+def last_evening_session(calendar: TradingCalendar, now: datetime, starts_at: time = EVENING_STARTS_AT) -> date:
+    """The latest session whose evening has reached `starts_at` (Eastern) by `now`."""
     today = eastern_day(now)
     for day in reversed(calendar.sessions_in_range(today - SESSION_SEARCH, today)):
-        if datetime.combine(day, EVENING_STARTS_AT, tzinfo=EASTERN) <= now:
+        if datetime.combine(day, starts_at, tzinfo=EASTERN) <= now:
             return day
-    raise RuntimeError(f"no session evening has started in the {SESSION_SEARCH.days} days before {today}")
+    raise RuntimeError(f"no session evening has reached {starts_at} in the {SESSION_SEARCH.days} days before {today}")
