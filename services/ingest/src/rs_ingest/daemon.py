@@ -18,7 +18,7 @@ from rs_domain import Clock
 from rs_ingest.cron import CronTable, Job
 from rs_ingest.metrics import DaemonMetrics, Outcome
 from rs_observability import HealthTracker, QuietFailure, notify_ops, unit_of_work
-from rs_sources.schwab import SchwabAuthError
+from rs_sources.schwab import TOKEN_ERRORS
 
 logger = logging.getLogger(__name__)
 
@@ -41,7 +41,7 @@ class _Pending(Enum):
 class TokenGate:
     """Shared "Schwab token is dead" state.
 
-    A SchwabAuthError from any job trips it; needs_schwab jobs are skipped
+    A dead or missing token (`TOKEN_ERRORS`) from any job trips it; needs_schwab jobs are skipped
     while it is tripped. It clears when the stored token's `updated_at` moves
     past the one stored when it tripped (polled; both are the database's
     clock, never compared with this process's) or when `renewed()` is called
@@ -300,7 +300,7 @@ class Daemon:
                 if asyncio.current_task() in self._timed_out:
                     return  # cancelled by the timeout check, which already recorded it
                 raise
-            except SchwabAuthError as exc:
+            except TOKEN_ERRORS as exc:
                 if job.needs_schwab:
                     # The run died half done: it is owed again once the gate reopens. Only a
                     # needs_schwab job waits for the gate; any other would re-run at once, in a loop.

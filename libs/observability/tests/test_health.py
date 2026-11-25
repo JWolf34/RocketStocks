@@ -129,6 +129,41 @@ async def test_a_failing_sweep_pings_once_and_a_healthy_one_recovers(pings):
     ]
 
 
+async def test_sweeps_reported_together_are_each_judged_against_their_own_requests(pings):
+    health = HealthTracker("ingest")
+    chains = tally(100, 15)
+    chains.unit = "chains"
+
+    # Pooled, 15 failures in 13,100 requests would be healthy.
+    assert await health.report_sweep(Source.SCHWAB, chains, tally(13_000, 0)) is True
+    # A healthy sweep beside a failing one does not recover the source in the same report.
+    assert await health.report_sweep(Source.SCHWAB, tally(100, 0), tally(13_000, 700)) is True
+    assert await health.report_sweep(Source.SCHWAB, tally(100, 0), tally(5, 1)) is False
+
+    assert pings == [
+        "Schwab is failing (15 of 100 chains failed). See the ingest logs.",
+        "Schwab recovered.",
+    ]
+
+
+async def test_every_failing_sweep_is_named_in_the_ping(pings):
+    chains, bars = tally(100, 15), tally(1000, 100)
+    chains.unit, bars.unit = "chains", "bar requests"
+
+    await HealthTracker("ingest").report_sweep(Source.SCHWAB, chains, bars)
+
+    assert pings == ["Schwab is failing (15 of 100 chains failed, 100 of 1000 bar requests failed). See the ingest logs."]
+
+
+async def test_sweeps_that_all_say_nothing_change_nothing(pings):
+    health = HealthTracker("ingest")
+    await health.report_failed(Source.SCHWAB, "ConnectError")
+
+    assert await health.report_sweep(Source.SCHWAB, tally(0, 0), tally(5, 1)) is False
+
+    assert health.is_failing(Source.SCHWAB)
+
+
 async def test_one_stock_failing_in_a_sweep_pings_nothing_and_changes_nothing(pings):
     health = HealthTracker("ingest")
 

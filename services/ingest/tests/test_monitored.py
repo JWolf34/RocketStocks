@@ -208,8 +208,9 @@ class TestSchwabHistory:
 
         assert tally.verdict is SweepVerdict.FAILING
 
-    async def test_a_dead_token_is_not_counted(self):
-        tally = await run_history(SchwabAuthError("dead"))
+    @pytest.mark.parametrize("error", [SchwabAuthError("dead"), TokenMissingError("no token")])
+    async def test_a_dead_or_missing_token_is_not_counted(self, error):
+        tally = await run_history(error)
 
         assert (tally.attempted, tally.failed) == (0, 0)
 
@@ -243,7 +244,7 @@ class TestFinishSweep:
         cause = RuntimeError("x")
 
         with pytest.raises(SourceFailed) as raised:
-            await finish_sweep(health, Source.SCHWAB, SweepTally(attempted=100, failed=10), cause)
+            await finish_sweep(health, Source.SCHWAB, SweepTally(attempted=100, failed=10), error=cause)
 
         assert raised.value.__cause__ is cause
         assert isinstance(raised.value, QuietFailure)
@@ -261,3 +262,13 @@ class TestFinishSweep:
         await finish_sweep(health, Source.SCHWAB, SweepTally(attempted=500, failed=0))
 
         assert notices[-1] == "Schwab recovered."
+
+    async def test_each_sweep_is_judged_against_its_own_requests_in_one_report(self, health, notices):
+        chains = SweepTally(attempted=100, failed=15, unit="chains")
+        bars = SweepTally(attempted=13_000, failed=0, unit="bar requests")
+
+        with pytest.raises(SourceFailed):
+            await finish_sweep(health, Source.SCHWAB, chains, bars)
+
+        # Judged together the 15 Tombstones would be 0.1 percent of the calls; judged on its own the chain pass fails.
+        assert notices == ["Schwab is failing (15 of 100 chains failed). See the ingest logs."]
