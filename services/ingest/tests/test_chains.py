@@ -1,7 +1,7 @@
 """The evening chain pass and the morning open-interest pass against a real database, the real
 exchange calendar and the real Schwab chain adapter over a fake schwab-py client: the roster, the
 ladder (retry, expiry ranges, Tombstone), 400s and empty chains, resume, the deadline, the dead
-token and the sweep tally."""
+token, what earlier sessions left unrecorded and the sweep tally."""
 
 from datetime import UTC, date, datetime, time, timedelta
 
@@ -623,6 +623,146 @@ async def test_a_missed_night_is_never_caught_up(session_factory):
         FetchStatus.FAILED,
     ]
     assert (report.already_recorded, report.past_deadline) == (1, 2)
+
+
+# --- what earlier sessions left unrecorded ----------------------------------------------------------
+
+# The evenings after SESSION, at 18:30 ET: Wednesday the 18th and Thursday the 19th.
+NEXT_EVENING = datetime(2026, 11, 18, 23, 30, tzinfo=UTC)
+THURSDAY_EVENING = datetime(2026, 11, 19, 23, 30, tzinfo=UTC)
+
+
+async def _statuses(session_factory, session: date, chain_pass: ChainPass = ChainPass.EVENING) -> dict:
+    async with session_factory() as s:
+        repo = ChainRepository(s)
+        recorded = await repo.recorded_underlyings(session, chain_pass)
+        records = [await repo.record(session, chain_pass, symbol) for symbol in sorted(recorded)]
+    return {r.underlying: (r.status, r.attempts) for r in records if r is not None}
+
+
+async def test_a_pass_a_429_stopped_is_tombstoned_by_the_next_sessions_pass(session_factory):
+    await _universe(session_factory, ("AAA", "BBB", "CCC"))
+    schwab = FakeSchwab()
+    schwab.script["BBB"] = [429]
+    with pytest.raises(SchwabResponseError, match="429"):
+        await _run(session_factory, schwab)
+    schwab.calls.clear()
+
+    tally = SweepTally()
+    report = await _run(session_factory, schwab, FakeClock(NEXT_EVENING), tally)
+
+    # Nothing re-ran Tuesday's pass: Wednesday's writes its leftovers as Tombstones, with no call.
+    assert await _statuses(session_factory, SESSION) == {
+        "AAA": (FetchStatus.OK, 1),
+        "BBB": (FetchStatus.FAILED, 0),
+        "CCC": (FetchStatus.FAILED, 0),
+    }
+    assert (await _record(session_factory, "BBB")).fetched_at == NEXT_EVENING
+    assert (report.session, report.earlier_tombstones) == (date(2026, 11, 18), 2)
+    # Wednesday's own pass fetched every chain, and is judged on its own underlyings only.
+    assert schwab.symbols_called() == ["AAA", "BBB", "CCC"]
+    assert set((await _statuses(session_factory, date(2026, 11, 18))).values()) == {(FetchStatus.OK, 1)}
+    assert (tally.attempted, tally.failed, tally.verdict) == (3, 0, SweepVerdict.HEALTHY)
+
+
+async def test_an_outage_of_several_sessions_leaves_a_record_per_underlying_per_session(session_factory):
+    friday = date(2026, 11, 13)
+    await _universe(session_factory, ("AAA", "BBB"), day=friday)
+    schwab = FakeSchwab()
+    await _run(session_factory, schwab, FakeClock(datetime(2026, 11, 13, 23, 30, tzinfo=UTC)))
+    schwab.calls.clear()
+
+    # The daemon is down from Friday night until Thursday evening.
+    report = await _run(session_factory, schwab, FakeClock(THURSDAY_EVENING))
+
+    assert await _statuses(session_factory, friday) == {"AAA": (FetchStatus.OK, 1), "BBB": (FetchStatus.OK, 1)}
+    for missed in (date(2026, 11, 16), date(2026, 11, 17), date(2026, 11, 18)):
+        assert await _statuses(session_factory, missed) == {
+            "AAA": (FetchStatus.FAILED, 0),
+            "BBB": (FetchStatus.FAILED, 0),
+        }
+    assert report.earlier_tombstones == 6
+    assert schwab.symbols_called() == ["AAA", "BBB"]  # Thursday's own chains, and nothing for the sessions missed
+
+
+async def test_an_earlier_session_is_tombstoned_over_the_universe_its_pass_reads_at_its_slot(session_factory):
+    await _universe(session_factory, ("AAA",), day=date(2026, 11, 13))
+    await _run(session_factory, FakeSchwab(), FakeClock(datetime(2026, 11, 13, 23, 30, tzinfo=UTC)))
+    await _run_morning(session_factory, FakeSchwab(), FakeClock(datetime(2026, 11, 16, 12, 30, tzinfo=UTC)))
+    # Tuesday's Universe lists NEW. Tuesday's evening starts before it is stored and reads
+    # Friday's; Tuesday's morning, on Wednesday, reads Tuesday's.
+    await _universe(session_factory, ("AAA", "NEW"), day=SESSION)
+
+    await _run(session_factory, FakeSchwab(), FakeClock(THURSDAY_EVENING))
+    await _run_morning(session_factory, FakeSchwab(), FakeClock(datetime(2026, 11, 19, 12, 30, tzinfo=UTC)))
+
+    assert set(await _statuses(session_factory, date(2026, 11, 16))) == {"AAA"}
+    assert set(await _statuses(session_factory, SESSION)) == {"AAA"}
+    assert set(await _statuses(session_factory, date(2026, 11, 18))) == {"AAA", "NEW"}
+    assert set(await _statuses(session_factory, date(2026, 11, 16), ChainPass.MORNING)) == {"AAA"}
+    assert set(await _statuses(session_factory, SESSION, ChainPass.MORNING)) == {"AAA", "NEW"}
+
+
+async def test_a_complete_evening_on_last_nights_universe_leaves_nothing_to_tombstone(session_factory):
+    await _universe(session_factory, ("AAA",), day=date(2026, 11, 16))
+    await _run(session_factory, FakeSchwab())  # Tuesday's evening, before Tuesday's Universe is stored
+    await _universe(session_factory, ("AAA", "NEW"), day=SESSION)
+
+    report = await _run(session_factory, FakeSchwab(), FakeClock(NEXT_EVENING))
+
+    # NEW became optionable on Tuesday, after Tuesday's chains began: no chain was owed for it that night.
+    assert report.earlier_tombstones == 0
+    assert await _statuses(session_factory, SESSION) == {"AAA": (FetchStatus.OK, 1)}
+
+
+async def test_no_session_before_the_passs_first_record_is_tombstoned(session_factory):
+    # A Universe stored days before the sweep's first night.
+    await _universe(session_factory, ("AAA",), day=date(2026, 11, 10))
+
+    first = await _run(session_factory, FakeSchwab())
+    later = await _run(session_factory, FakeSchwab(), FakeClock(NEXT_EVENING))
+
+    assert (first.earlier_tombstones, later.earlier_tombstones) == (0, 0)
+    for day in (date(2026, 11, 10), date(2026, 11, 13), date(2026, 11, 16)):
+        assert await _statuses(session_factory, day) == {}
+
+
+async def test_the_look_back_is_bounded(session_factory):
+    old = date(2026, 9, 1)
+    await _universe(session_factory, ("AAA",), day=old)
+    await _run(session_factory, FakeSchwab(), FakeClock(datetime(2026, 9, 1, 22, 30, tzinfo=UTC)))
+
+    report = await _run(session_factory, FakeSchwab(), FakeClock(NEXT_EVENING))
+
+    sessions = CALENDAR.sessions_in_range(old, SESSION)
+    tombstoned = [day for day in sessions if await _statuses(session_factory, day)]
+    # The night that ran, then a month back from Wednesday and no further.
+    assert tombstoned[0] == old
+    assert tombstoned[1:] == list(CALENDAR.sessions_in_range(date(2026, 10, 18), SESSION))
+    assert report.earlier_tombstones == len(tombstoned) - 1
+
+
+async def test_a_morning_a_429_stopped_is_tombstoned_by_the_next_morning(session_factory):
+    await _universe(session_factory, ("AAA", "BBB", "CCC"))
+    schwab = FakeSchwab()
+    schwab.script["BBB"] = [429]
+    with pytest.raises(SchwabResponseError, match="429"):
+        await _run_morning(session_factory, schwab)
+
+    # Thursday 07:30 ET: the morning of Wednesday's session.
+    tally = SweepTally()
+    thursday_morning = FakeClock(datetime(2026, 11, 19, 12, 30, tzinfo=UTC))
+    report = await _run_morning(session_factory, schwab, thursday_morning, tally)
+
+    assert await _statuses(session_factory, SESSION, ChainPass.MORNING) == {
+        "AAA": (FetchStatus.OK, 1),
+        "BBB": (FetchStatus.FAILED, 0),
+        "CCC": (FetchStatus.FAILED, 0),
+    }
+    # The evening of the same session is another pass, and is left alone.
+    assert await _statuses(session_factory, SESSION) == {}
+    assert (report.session, report.earlier_tombstones) == (date(2026, 11, 18), 2)
+    assert (tally.attempted, tally.failed) == (3, 0)
 
 
 # --- the sweep tally --------------------------------------------------------------------------------

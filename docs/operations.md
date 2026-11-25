@@ -453,15 +453,16 @@ Four jobs run beside each other:
 
 The three Schwab passes share one budget of `RS_INGEST_SCHWAB_CALLS_PER_MINUTE` (default 120, Schwab's documented limit), which is why they run one after the other: about 5,500 chain calls take about 46 minutes alone, and about 13,000 bar calls about 108 minutes.
 Each stage starts when the one before ends, whether it ended well or not: a stage that failed does not hold back the next, which reads what is stored and skips what is recorded, and the failure is raised once the last stage has run.
-A dead Schwab token ends the whole run at once instead; the daemon pauses Schwab jobs and runs the sweep again when the sign-in reopens the gate, and every stage skips what it had already recorded.
+A dead Schwab token, or no token stored at all, ends the whole run at once instead; the daemon pauses Schwab jobs and runs the sweep again when the sign-in reopens the gate, and every stage skips what it had already recorded.
 
 After a restart, every Schwab job runs on start and skips the work already recorded.
 That includes a restart outside a pass's window, with these results:
 
 - Chains started after 19:00 ET write only Tombstones: the volume they would carry is gone, so the night is recorded as missed and is never caught up.
 - The morning pass started after the 09:30 ET open does the same for that morning.
-- A first deploy, or a restart that follows a night the daemon missed, therefore records that night's optionable underlyings as Tombstones with no attempts, and the pass counts as failing: Ops gets `Schwab is failing (N of N requests failed)` once.
+- A first deploy, or a restart that follows a night the daemon missed, therefore records that night's optionable underlyings as Tombstones with no attempts, and the pass counts as failing: Ops gets `Schwab is failing (N of N chains failed)` once.
   It is the record that the night was missed, not a fault; the next full evening recovers it.
+- The sessions before that night, when the daemon was down for several, get their Tombstones from the same run; see "Option chains".
 - A restart on a weekend or holiday finds the last session's passes recorded and does nothing.
 - The bars do not start after their stop time (03:00 Central of the evening they belong to), so a restart the next morning or on a weekend leaves them to the next evening.
 - The Outcomes and Track record are recomputed from storage each time they run, so they always run.
@@ -486,9 +487,17 @@ A failed morning loses nothing, because the evening sweep carries the same open 
 Every pass writes one `chain_fetch` row per optionable underlying: its pass (`evening` or `morning`), session, status, attempts, contract count and fetch time.
 `ok` is a stored chain, `empty` is Schwab saying there are no contracts, `rejected` is a 400 or 404 for the symbol, and `failed` is a Tombstone (the ladder ran out, or the deadline came first).
 Contract rows never hold nulls or placeholders, so a Tombstone has a fetch record and no contracts.
-A pass counts as failing, with an Ops ping `Schwab is failing`, when more than about 5% of the underlyings a run handled (and at least two) are Tombstones or the run was rate limited; a 400 or an empty chain is Schwab answering.
-Because one tally covers the whole evening sweep (chains and bars), a Tombstone-heavy chain pass is judged against all its calls.
-A 429 or a dead token stops the pass without a Tombstone for the underlying in flight.
+A pass counts as failing, with an Ops ping `Schwab is failing (N of M chains failed)`, when more than about 5% of the underlyings a run handled (and at least two) are Tombstones or the run was rate limited; a 400 or an empty chain is Schwab answering.
+Each pass is judged against its own underlyings: the evening's chains and bars are judged apart, so a Tombstone-heavy chain pass pings even when the bars were clean, and both are judged once, when the evening sweep ends, so the evening pings at most once.
+A 429, a dead token or a missing one stops the pass without a Tombstone for the underlying in flight.
+
+Nothing runs a stopped pass again once the next session's starts (a 429, a database failure, a token signed in again only the next day), and a daemon that was down for several sessions never runs theirs.
+So every pass, before its own session, writes Tombstones with no attempts for the optionable underlyings that earlier sessions of the same pass left with no record, a month back at most and never before the pass's first record.
+An earlier session's roster is the Universe its pass reads when it starts at its slot: the evening's is the snapshot before the session's own (or the session's, when there is none before), and the morning's is the session's own.
+A pass restarted after the night's Universe landed read that one instead, so the two can differ by a few dozen names.
+These Tombstones belong to the earlier sessions and are not judged with the pass that writes them; the log says `<pass> chains of <date>: N optionable underlyings of the Universe of <date> had no record; Tombstoned as missed`.
+A fetch record therefore explains every optionable underlying of every session from a pass's first record on, as long as no gap between two runs of the pass is longer than a month.
+A pass whose very first run stopped before recording anything leaves that one session unexplained.
 
 Read a night:
 ```
@@ -505,7 +514,7 @@ Look at the Tombstones, which are the underlyings with no chain:
 ```
 psql -c "SELECT underlying, status, attempts, fetched_at AT TIME ZONE 'America/New_York' AS at FROM chain_fetch WHERE session_date = '<date>' AND chain_pass = 'evening' AND status IN ('failed', 'rejected') ORDER BY status, underlying LIMIT 50"
 ```
-An `attempts` of 0 is a Tombstone written past the deadline.
+An `attempts` of 0 is a Tombstone written past the deadline; one whose `at` falls on a later session was written by that session's pass, for a pass that stopped or never ran.
 A healthy night ends with `last_at` before 19:00 ET for the evening pass and before 09:30 ET for the morning, and a handful of Tombstones at most.
 
 Chains are stored compressed and kept indefinitely, so the tables only grow; see "Disk space".
@@ -753,7 +762,8 @@ Which pings to expect, by cause:
 
 - `ApeWisdom is failing ...`: the Popularity poll could not fetch the listing, or fetched it empty.
   The poll fails without a second ping; a boundary is missed until the next poll.
-- `Schwab is failing ...`: quotes for an Alert's facts failed, or more than about 5% of the evening sweep's chain and bar requests did (a chain Tombstone counts, one written past its deadline too), or of the morning pass's.
+- `Schwab is failing ...`: quotes for an Alert's facts failed, or one of the sweep's passes failed by itself: more than about 5% of the evening's chains (a Tombstone counts, one written past its deadline too), of its bar requests, or of the morning's chains.
+  The reason names each failing pass, such as `(400 of 5500 chains failed)` or `(700 of 13000 bar requests failed)`.
   The Alert still posts, with the missing facts labelled.
 - `Nasdaq is failing ...`: the nightly earnings snapshot stored nothing, because a calendar day still failed after two retries or the calendar listed no earnings at all.
   The snapshot is whole or nothing, so this pings when the first night stores nothing, and `Nasdaq recovered.` follows the first night that stores a snapshot; the next-earnings fact trusts the last snapshot for two trading sessions, then falls back to the EDGAR estimate.
@@ -766,7 +776,7 @@ Which pings to expect, by cause:
 - `Ingest job <name> is failing (<type>)` and `Ingest job <name> recovered.`: a job failed for a reason that is not a source, such as the database being down or a bug.
   It pings on its first failure, not after several, and once when the job next succeeds.
 - `Schwab token is dead ...` and `Schwab token renewed ...`: see "Schwab sign-in" and the token-expiry rehearsal.
-  A dead token has these pings only; it does not also send `Schwab is failing`.
+  A dead token, or no token stored, has these pings only; it does not also send `Schwab is failing`.
 - `Alert #<id> ... failed to post after N attempts ...`: the procedure above.
   It is sent only when Discord is not already reported failing.
 - `Alert #<id> ... may or may not have posted ...`: the history check above could not be read.

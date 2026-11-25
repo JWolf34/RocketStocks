@@ -7,14 +7,17 @@ ranges (the last open-ended), retry each range once, then a Tombstone. A chain i
 whole: when any range fails twice the underlying is a Tombstone and none of its ranges is kept.
 
 A 400 or 404 is Schwab's answer about the symbol and an empty chain is an observation; both are
-recorded at once and never retried. A dead token (`SchwabAuthError`) propagates out of the pass
-and is never a Tombstone, and so does a 429, so a pass that ran out of budget or token stops
-and the next run resumes with what is not recorded.
+recorded at once and never retried. A dead or missing token propagates out of the pass and is
+never a Tombstone, and so does a 429, so a pass that ran out of token or budget stops and a
+rerun resumes with what is not recorded.
 
 An underlying and its record are committed together, so a rerun, a restart or a pass a dead
 token killed skips every underlying already recorded for the session and pass. A pass is owed
 until its deadline; past it the pass writes only Tombstones, so a night that was missed is
-recorded as missed and is never caught up.
+recorded as missed and is never caught up. Nothing reruns a pass once a later session's has
+started, so every pass first Tombstones what earlier sessions of it left unrecorded (a pass a
+429 or a failure stopped, the sessions the daemon was down for), looking back a month: a fetch
+record explains every optionable underlying of every session.
 
 The evening pass stores each whole contract for the session. It starts when the session's evening
 does (18:05 ET) and is owed until 19:00 ET, before Schwab resets the session's volume to zero
@@ -24,9 +27,9 @@ and stores only each contract's open interest, named by the session it settled f
 session before the morning) in its own table; its deadline is that morning's open. A failed
 morning loses nothing, because the evening pass carries the same open interest a session later.
 
-The pass reports every underlying's outcome into the `SweepTally` it is given, one entry per
-underlying (not per call), for the job to judge once the pass ends: above about 5% of the
-underlyings Tombstoned is Schwab failing.
+The pass reports each of its own underlyings' outcomes into the `SweepTally` it is given, one
+entry per underlying (not per call), for the job to judge once the pass ends: above about 5% of
+the underlyings Tombstoned is Schwab failing. Earlier sessions' Tombstones are not counted.
 """
 
 import logging
@@ -46,19 +49,18 @@ from rs_domain import (
     OpenInterest,
     OptionContract,
     TradingCalendar,
+    UniverseHeader,
     eastern_day,
 )
-from rs_ingest.monitored import RATE_LIMITED
 from rs_ingest.rate_limit import RateLimiter
 from rs_ingest.universe import SESSION_SEARCH, last_evening_session
 from rs_observability import SweepTally
 from rs_persistence import ChainRepository, UniverseRepository
-from rs_sources.errors import PER_SYMBOL_STATUSES
 from rs_sources.schwab import (
     OptionChain,
-    SchwabAuthError,
+    SchwabFailure,
     SchwabResponseError,
-    TokenMissingError,
+    schwab_failure,
 )
 
 logger = logging.getLogger(__name__)
@@ -75,6 +77,11 @@ LADDER_DAYS = (30, 180)
 ATTEMPTS = 2
 # Progress is logged this often during a long pass.
 PROGRESS_EVERY = 500
+# How far back a pass looks for earlier sessions' underlyings left with no record. A month covers
+# any outage short of rebuilding the host, and each earlier session costs one statement per pass.
+LEFTOVER_LOOK_BACK = timedelta(days=31)
+# Underlyings named in a log line, at most.
+LOGGED_NAMES = 10
 
 
 class ChainSource(Protocol):
@@ -97,6 +104,9 @@ class ChainPassReport:
     # Contracts stored (the morning pass's open-interest rows, one per contract).
     contracts: int = 0
     calls: int = 0
+    # Tombstones written for underlyings earlier sessions of the pass left unrecorded; they are
+    # not this pass's and are not judged with it.
+    earlier_tombstones: int = 0
 
     @property
     def tombstones(self) -> int:
@@ -169,6 +179,7 @@ async def sweep_evening_chains(
         session_factory=session_factory,
         source=source,
         limiter=limiter,
+        calendar=calendar,
         clock=clock,
         tally=tally,
     )
@@ -191,6 +202,7 @@ async def sweep_morning_open_interest(
         session_factory=session_factory,
         source=source,
         limiter=limiter,
+        calendar=calendar,
         clock=clock,
         tally=tally,
     )
@@ -204,10 +216,12 @@ async def _sweep(
     session_factory: async_sessionmaker[AsyncSession],
     source: ChainSource,
     limiter: RateLimiter,
+    calendar: TradingCalendar,
     clock: Clock,
     tally: SweepTally,
 ) -> ChainPassReport:
     report = ChainPassReport(session=session)
+    report.earlier_tombstones = await _tombstone_earlier_sessions(session_factory, calendar, clock, chain_pass, session)
     label = f"{chain_pass.value} chains of {session}"
     async with session_factory() as db:
         universe = UniverseRepository(db)
@@ -235,16 +249,64 @@ async def _sweep(
             else:
                 try:
                     fetched = await ladder.fetch(symbol)
-                except SchwabResponseError as exc:
-                    if exc.status_code != RATE_LIMITED:
-                        raise
-                    tally.record_failure(source_wide=True)
+                except Exception as exc:
+                    if schwab_failure(exc) is SchwabFailure.RATE_LIMITED:
+                        tally.record_failure(source_wide=True)
                     raise
             await _store(session_factory, clock, chain_pass, session, symbol, fetched)
             _count(report, tally, fetched)
     finally:
         _log(label, report)
     return report
+
+
+async def _tombstone_earlier_sessions(
+    session_factory: async_sessionmaker[AsyncSession],
+    calendar: TradingCalendar,
+    clock: Clock,
+    chain_pass: ChainPass,
+    session: date,
+) -> int:
+    """Tombstone every optionable underlying an earlier session of the pass left with no record.
+
+    A pass a 429 or a failure stopped, and the sessions the daemon was down for, are never run
+    again, and every earlier session is past its deadline. Each session's roster is the Universe
+    its pass reads when it starts at its slot, looking back at most LEFTOVER_LOOK_BACK and never
+    before the pass's first record. Returns how many Tombstones were written.
+    """
+    async with session_factory() as db:
+        first = await ChainRepository(db).first_session(chain_pass)
+    if first is None or first >= session:
+        return 0
+    start = max(first, session - LEFTOVER_LOOK_BACK)
+    written = 0
+    for day in calendar.sessions_in_range(start, session - timedelta(days=1)):
+        async with session_factory() as db:
+            header = await _slot_universe(UniverseRepository(db), chain_pass, day)
+            if header is None:
+                continue
+            missed = await ChainRepository(db).tombstone_unrecorded(day, chain_pass, header.snapshot_date, clock.now())
+            await db.commit()
+        if missed:
+            logger.warning(
+                "%s chains of %s: %d optionable underlyings of the Universe of %s had no record; "
+                "Tombstoned as missed: %s",
+                chain_pass.value, day, len(missed), header.snapshot_date, _first_names(missed),
+            )
+            written += len(missed)
+    return written
+
+
+async def _slot_universe(universe: UniverseRepository, chain_pass: ChainPass, session: date) -> UniverseHeader | None:
+    """The Universe a pass of `session` reads when it starts at its slot.
+
+    The evening starts before the night's snapshot is stored, so it reads the one before (or the
+    night's, when there is none before); the morning starts after, so it reads the night's.
+    """
+    after_night = session + timedelta(days=1)
+    if chain_pass is ChainPass.EVENING:
+        return await universe.latest_header(before=session) or await universe.latest_header(before=after_night)
+    return await universe.latest_header(before=after_night)
 
 
 class _Ladder:
@@ -299,17 +361,19 @@ class _Ladder:
             self._report.calls += 1
             try:
                 chain = await self._source.chain(symbol, start, end)
-            except (SchwabAuthError, TokenMissingError):
-                raise  # the daemon pauses Schwab jobs on this; never a Tombstone
-            except SchwabResponseError as exc:
-                if exc.status_code in PER_SYMBOL_STATUSES:
-                    logger.info("%s: Schwab refuses the chain: %s", symbol, exc)
-                    raise _Rejected from exc
-                if exc.status_code == RATE_LIMITED:
-                    raise  # over budget: stop, the next run resumes
-                logger.warning("%s: chain request failed: %s", symbol, exc)
-            except Exception:
-                logger.exception("%s: chain request failed", symbol)
+            except Exception as exc:
+                match schwab_failure(exc):
+                    case SchwabFailure.TOKEN:
+                        raise  # the daemon pauses Schwab jobs on this; never a Tombstone
+                    case SchwabFailure.RATE_LIMITED:
+                        raise  # over budget: stop; a rerun resumes, or the next session Tombstones the rest
+                    case SchwabFailure.PER_SYMBOL:
+                        logger.info("%s: Schwab refuses the chain: %s", symbol, exc)
+                        raise _Rejected from exc
+                    case SchwabFailure.TRANSIENT if isinstance(exc, SchwabResponseError):
+                        logger.warning("%s: chain request failed: %s", symbol, exc)
+                    case SchwabFailure.TRANSIENT:
+                        logger.exception("%s: chain request failed", symbol)
             else:
                 if chain.truncated:
                     logger.warning("%s: Schwab flags the chain as truncated", symbol)
@@ -368,10 +432,17 @@ def _count(report: ChainPassReport, tally: SweepTally, fetched: _Fetched) -> Non
                 report.rejected += 1
 
 
+def _first_names(symbols: Sequence[str]) -> str:
+    """The first LOGGED_NAMES of `symbols`, and how many more there are."""
+    shown = ", ".join(symbols[:LOGGED_NAMES])
+    return shown + (f" (+{len(symbols) - LOGGED_NAMES} more)" if len(symbols) > LOGGED_NAMES else "")
+
+
 def _log(label: str, report: ChainPassReport) -> None:
     logger.info(
         "%s: %d underlyings in the roster, %d already recorded, %d ok, %d empty, %d rejected, "
-        "%d failed, %d past the deadline, %d contracts or open-interest rows stored, %d calls",
+        "%d failed, %d past the deadline, %d contracts or open-interest rows stored, %d calls, "
+        "%d Tombstones for earlier sessions",
         label,
         report.roster,
         report.already_recorded,
@@ -382,4 +453,5 @@ def _log(label: str, report: ChainPassReport) -> None:
         report.past_deadline,
         report.contracts,
         report.calls,
+        report.earlier_tombstones,
     )

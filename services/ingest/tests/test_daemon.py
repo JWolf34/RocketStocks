@@ -15,7 +15,7 @@ from rs_ingest.daemon import Daemon, TokenGate
 from rs_ingest.metrics import DaemonMetrics
 from rs_ingest.monitored import MonitoredPopularitySource
 from rs_observability import HealthTracker, QuietFailure, Source, SourceFailed
-from rs_sources.schwab import SchwabAuthError
+from rs_sources.schwab import SchwabAuthError, TokenMissingError
 
 START = datetime(2026, 10, 19, 12, 7, tzinfo=UTC)
 SETTLE_TURNS = 30
@@ -539,6 +539,22 @@ class TestTokenGate:
         assert schwab.started[2:] == [at(13, 0)]
         assert rig.runs("bars", "auth_error") == 1
         assert rig.runs("bars", "success") == 2
+
+    async def test_a_missing_token_pauses_schwab_jobs_like_a_dead_one_and_the_run_is_owed_again(
+        self, rig, notices
+    ):
+        schwab = Recorder(rig.clock, [TokenMissingError("no Schwab token in the database"), None])
+        rig.cron.register(Job("bars", Every(30), schwab, needs_schwab=True))
+        rig.build()
+        rig.when(at(12, 40), lambda: setattr(rig, "token_updated_at", at(12, 35)))
+
+        await rig.run_until(at(12, 50))
+
+        assert schwab.started[0] == at(12, 30)
+        assert at(12, 40) <= schwab.started[1] <= at(12, 42)
+        assert rig.runs("bars", "auth_error") == 1
+        assert rig.runs("bars", "failure") == 0
+        assert ["dead" in n or "renewed" in n for n in notices] == [True, True]
 
     async def test_a_killed_run_and_a_slot_due_during_the_outage_do_not_run_twice_after_the_renewal(
         self, rig, notices

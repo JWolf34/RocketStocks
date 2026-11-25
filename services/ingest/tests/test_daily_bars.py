@@ -36,7 +36,12 @@ from rs_persistence import (
     UniverseRepository,
 )
 from rs_sources import ExchangeCalendar
-from rs_sources.schwab import SchwabAuthError, SchwabMarketData, SchwabResponseError
+from rs_sources.schwab import (
+    SchwabAuthError,
+    SchwabMarketData,
+    SchwabResponseError,
+    TokenMissingError,
+)
 
 CALENDAR = ExchangeCalendar()
 CALENDAR_FIRST_SESSION = date(1990, 1, 2)
@@ -753,24 +758,29 @@ async def test_being_over_budget_stops_the_run_and_keeps_what_was_stored(session
     assert await _bars(session_factory, BENCHMARK) != []
 
 
-async def test_a_dead_token_propagates_so_the_daemon_can_pause_schwab_jobs(session_factory):
+@pytest.mark.parametrize("error", [SchwabAuthError("refresh token rejected"), TokenMissingError("no token stored")])
+async def test_a_dead_or_missing_token_propagates_so_the_daemon_can_pause_schwab_jobs(session_factory, error):
     await _seed(session_factory)
-    schwab = FakeSchwab().price("AAA", "BBB", "ZZZ", BENCHMARK)
 
     class Dead:
-        async def daily_history(self, symbol, start, end):
-            raise SchwabAuthError("refresh token rejected")
+        calls = 0
 
-    with pytest.raises(SchwabAuthError):
+        async def daily_history(self, symbol, start, end):
+            self.calls += 1
+            raise error
+
+    source = Dead()
+    with pytest.raises(type(error)):
         await sync_daily_bars(
             session_factory=session_factory,
-            source=Dead(),
+            source=source,
             limiter=Budget().limiter(),
             calendar=CALENDAR,
             clock=FakeClock(NOW),
             stop_at=stop_time(NOW),
         )
-    assert schwab.calls == []
+    # The first call ends the run: no symbol is counted failed and none is asked after it.
+    assert source.calls == 1
 
 
 async def test_a_run_a_dead_token_killed_is_safe_to_rerun_and_repeats_no_work(session_factory):

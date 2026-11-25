@@ -6,7 +6,7 @@ through unchanged, reports the outcome to the `HealthTracker`, and re-raises
 whatever the call raised. A vendor's answer about one symbol (a 400 or 404, an
 unknown ticker) reports ok: the source did answer.
 
-A Schwab auth error is deliberately not reported: a dead token already has its
+A dead or missing Schwab token is deliberately not reported: it already has its
 own Ops ping through the token gate.
 """
 
@@ -22,16 +22,12 @@ from rs_sources.earnings import FilingSource
 from rs_sources.edgar import Filing8K
 from rs_sources.errors import is_per_symbol_answer
 from rs_sources.schwab import (
+    TOKEN_ERRORS,
     DailyHistory,
     Quote,
-    SchwabAuthError,
-    SchwabResponseError,
-    TokenMissingError,
+    SchwabFailure,
+    schwab_failure,
 )
-
-RATE_LIMITED = 429
-# Raised by a dead or missing token: the token gate pings for these, not the Schwab health.
-_TOKEN_ERRORS = (SchwabAuthError, TokenMissingError)
 
 
 async def _observed[T](
@@ -41,8 +37,8 @@ async def _observed[T](
     `per_symbol` is False for a source with no per-symbol requests, where every error is its own."""
     try:
         result = await call
-    except _TOKEN_ERRORS:
-        raise
+    except TOKEN_ERRORS:
+        raise  # the token gate pings for a dead or missing token, not the Schwab health
     except Exception as exc:
         if per_symbol and is_per_symbol_answer(exc):
             await health.report_ok(source)
@@ -87,7 +83,8 @@ class MonitoredQuotes:
 class TalliedHistory:
     """Schwab daily history for a sweep: counts every request in `tally` for the sweep's
     owner to judge once it ends (more than about 5% failing is Schwab failing, one stock is not).
-    A 429 speaks for the whole source, however few requests were made."""
+    A 429 speaks for the whole source, however few requests were made; a dead or missing token
+    is not counted."""
 
     def __init__(self, history: DailyHistorySource, tally: SweepTally) -> None:
         self._history = history
@@ -96,14 +93,14 @@ class TalliedHistory:
     async def daily_history(self, symbol: str, start: date, end: date) -> DailyHistory:
         try:
             history = await self._history.daily_history(symbol, start, end)
-        except _TOKEN_ERRORS:
-            raise
         except Exception as exc:
-            if is_per_symbol_answer(exc):
-                self._tally.record_ok()
-            else:
-                rate_limited = isinstance(exc, SchwabResponseError) and exc.status_code == RATE_LIMITED
-                self._tally.record_failure(source_wide=rate_limited)
+            match schwab_failure(exc):
+                case SchwabFailure.TOKEN:
+                    pass  # the token gate's to report, not Schwab's health
+                case SchwabFailure.PER_SYMBOL:
+                    self._tally.record_ok()
+                case failure:
+                    self._tally.record_failure(source_wide=failure is SchwabFailure.RATE_LIMITED)
             raise
         self._tally.record_ok()
         return history
@@ -121,8 +118,9 @@ class MonitoredFilings:
 
 
 async def finish_sweep(
-    health: HealthTracker, source: Source, tally: SweepTally, error: Exception | None = None
+    health: HealthTracker, source: Source, *tallies: SweepTally, error: Exception | None = None
 ) -> None:
-    """Judge a finished sweep; raises `SourceFailed` (from `error`) when it says `source` is failing."""
-    if await health.report_sweep(source, tally):
+    """Judge finished sweeps, each against its own requests; raises `SourceFailed` (from `error`)
+    when one says `source` is failing."""
+    if await health.report_sweep(source, *tallies):
         raise SourceFailed(source) from error

@@ -3,9 +3,9 @@
 Chains, then daily bars, then Outcomes and the Track record. A stage that fails (a stock's
 bars, a database error, a Tombstone-heavy chain pass) does not hold back the stages after it,
 because each of them reads what is stored and skips what is recorded: the failure is kept and
-raised once the last stage has run. A dead Schwab token is the exception: it ends the run at
-once, the daemon pauses Schwab jobs, and the whole run is owed again once sign-in reopens the
-gate, when every stage skips what it had already finished.
+raised once the last stage has run. A dead or missing Schwab token is the exception: it ends
+the run at once, the daemon pauses Schwab jobs, and the whole run is owed again once sign-in
+reopens the gate, when every stage skips what it had already finished.
 
 The Universe and the earnings snapshot are their own jobs and run beside the sequence.
 """
@@ -17,7 +17,7 @@ from datetime import date, datetime
 from rs_domain import EASTERN
 from rs_ingest.universe import EVENING_STARTS_AT
 from rs_observability import QuietFailure
-from rs_sources.schwab import SchwabAuthError
+from rs_sources.schwab import TOKEN_ERRORS
 
 logger = logging.getLogger(__name__)
 
@@ -32,7 +32,7 @@ def evening_start(session: date) -> datetime:
 async def run_evening(
     stages: Sequence[tuple[str, Stage]], judge: Callable[[Exception | None], Awaitable[None]]
 ) -> None:
-    """Run `stages` in order, then `judge` the evening's Schwab calls as a whole.
+    """Run `stages` in order, then `judge` the evening's Schwab passes, once, after the last.
 
     `judge` raises `SourceFailed` when Schwab is failing (it has pinged Ops already); it gets the
     first stage failure to chain from. What the job raises, most telling first: Schwab failing,
@@ -42,8 +42,8 @@ async def run_evening(
     for name, stage in stages:
         try:
             await stage()
-        except SchwabAuthError:
-            raise  # the daemon pauses Schwab jobs on this
+        except TOKEN_ERRORS:
+            raise  # the daemon pauses Schwab jobs on a dead or missing token
         except Exception as exc:
             logger.exception("evening stage %s failed; the stages after it still run", name)
             failures.append(exc)

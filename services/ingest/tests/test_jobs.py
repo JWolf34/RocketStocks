@@ -6,15 +6,27 @@ import httpx
 import pytest
 from sqlalchemy import func, select
 
-from rs_domain import EASTERN, ChainPass, FetchStatus
+from rs_domain import (
+    EASTERN,
+    ChainPass,
+    FetchStatus,
+    UniverseCounts,
+    UniverseListing,
+    UniverseSnapshot,
+)
 from rs_ingest.cron import CronTable, Daily, Every
 from rs_ingest.jobs import Dependencies, register_jobs
 from rs_ingest.rate_limit import RateLimiter
 from rs_observability import HealthTracker, QuietFailure, SourceFailed
-from rs_persistence import ChainRepository, EarningsSnapshotRow, PopularitySnapshotRow
+from rs_persistence import (
+    ChainRepository,
+    EarningsSnapshotRow,
+    PopularitySnapshotRow,
+    UniverseRepository,
+)
 from rs_sources import ExchangeCalendar
 from rs_sources.nasdaq import EARNINGS_URL
-from rs_sources.schwab import SchwabAuthError
+from rs_sources.schwab import SchwabAuthError, TokenMissingError
 
 NOW = datetime(2026, 10, 20, 22, 0, tzinfo=UTC)
 
@@ -174,7 +186,7 @@ async def test_schwab_rate_limiting_the_bars_run_pings_schwab_once_and_fails_the
             await job.run()
 
     assert len(notices) == 1
-    assert notices[0].startswith("Schwab is failing (1 of 1 requests failed)")
+    assert notices[0].startswith("Schwab is failing (1 of 1 bar requests failed)")
 
 
 async def test_a_symbol_schwab_refuses_is_not_a_failure_and_does_not_fail_the_bars_run(session_factory, notices):
@@ -245,12 +257,12 @@ class EveningClient:
     def __init__(self, calls: list[str] | None = None) -> None:
         self.calls = calls if calls is not None else []
         self.chain_error: Exception | None = None
-        # When set, only this underlying's chain raises `chain_error`.
-        self.chain_error_for: str | None = None
+        # When set, only these underlyings' chains raise `chain_error`.
+        self.chain_error_for: set[str] | None = None
 
     async def get_option_chain(self, symbol, *, contract_type=None, from_date=None, to_date=None):
         self.calls.append(f"chain {symbol}")
-        if self.chain_error is not None and self.chain_error_for in (None, symbol):
+        if self.chain_error is not None and (self.chain_error_for is None or symbol in self.chain_error_for):
             raise self.chain_error
         empty = {"symbol": symbol, "status": "SUCCESS", "underlyingPrice": 10.0, "callExpDateMap": {}, "putExpDateMap": {}}
         return httpx.Response(200, json=empty)
@@ -346,7 +358,7 @@ async def test_a_rerun_after_a_dead_token_fetches_only_the_underlyings_not_yet_r
     await seed_previous(day=EVENING_SESSION)
     calls: list[str] = []
     client = EveningClient(calls)
-    client.chain_error, client.chain_error_for = SchwabAuthError("refresh token rejected"), "OLD"
+    client.chain_error, client.chain_error_for = SchwabAuthError("refresh token rejected"), {"OLD"}
 
     with pytest.raises(SchwabAuthError):
         await _job(session_factory, "evening_sweep", schwab=client, clock=EVE).run()
@@ -371,6 +383,74 @@ async def test_a_failed_stage_does_not_hold_back_the_stages_after_it(session_fac
         await job.run()
 
     assert "bars SPY" in calls and calls[-1] == "outcomes"
+
+
+async def _universe(session_factory, optionable: list[str], plain: list[str]) -> None:
+    listings = tuple(
+        UniverseListing(
+            symbol=symbol,
+            security_name=symbol,
+            exchange="Q",
+            etf=False,
+            financial_status="N",
+            cqs_symbol=None,
+            nasdaq_symbol=None,
+            optionable=symbol in optionable,
+        )
+        for symbol in (*optionable, *plain)
+    )
+    async with session_factory() as s:
+        await UniverseRepository(s).save(
+            UniverseSnapshot(
+                snapshot_date=EVENING_SESSION,
+                as_of=datetime.combine(EVENING_SESSION, time(18, 1), tzinfo=EASTERN).astimezone(UTC),
+                counts=UniverseCounts(nasdaq_listed=len(listings), other_listed=0, options_symbols=0, cboe_symbols=0),
+                optionable_carried=False,
+                listings=listings,
+            )
+        )
+        await s.commit()
+
+
+async def test_a_chain_pass_failing_above_its_share_pings_schwab_while_the_bars_are_clean(session_factory, notices):
+    optionable = [f"C{n:02d}" for n in range(20)]
+    await _universe(session_factory, optionable, [f"P{n:02d}" for n in range(60)])
+    client = EveningClient()
+    client.chain_error, client.chain_error_for = RuntimeError("bad gateway"), {"C03", "C11"}
+
+    with pytest.raises(SourceFailed):
+        await _job(session_factory, "evening_sweep", schwab=client, clock=EVE).run()
+
+    # 2 Tombstones in 20 chains is 10 percent; pooled with 81 clean bar requests it would be 2 percent.
+    assert sum(call.startswith("bars ") for call in client.calls) == 81
+    assert notices == ["Schwab is failing (2 of 20 chains failed). See the ingest logs."]
+
+
+class NoTokenSession:
+    """Stands in for SchwabSession before any token was stored."""
+
+    @property
+    def client(self):
+        raise TokenMissingError("no Schwab token in the database")
+
+
+@pytest.mark.parametrize("name", ["evening_sweep", "morning_open_interest"])
+async def test_a_missing_token_ends_a_schwab_job_at_once_like_a_dead_one(session_factory, seed_previous, notices, name):
+    await seed_previous(day=EVENING_SESSION)
+    calls: list[str] = []
+    cron = CronTable()
+    register_jobs(cron, _deps(session_factory, NoTokenSession(), clock=MORNING, outcomes=OutcomesRuns(calls)))
+    job = next(job for job in cron if job.name == name)
+
+    # Raised as it is, for the daemon to pause the Schwab jobs and run this one again after sign-in.
+    with pytest.raises(TokenMissingError):
+        await job.run()
+
+    assert calls == []  # no stage after it ran
+    assert notices == []  # the token gate pings, not the Schwab health
+    async with session_factory() as s:
+        for chain_pass in ChainPass:
+            assert await ChainRepository(s).recorded_underlyings(EVENING_SESSION, chain_pass) == set()
 
 
 async def test_the_morning_pass_records_open_interest_for_the_session_it_settled(session_factory, seed_previous):
@@ -417,7 +497,7 @@ async def test_a_morning_failing_above_the_share_pings_schwab_once(session_facto
         await job.run()
     await job.run()  # the rerun finds every underlying recorded and judges nothing
 
-    assert len(notices) == 1 and notices[0].startswith("Schwab is failing (2 of 2 requests failed)")
+    assert len(notices) == 1 and notices[0].startswith("Schwab is failing (2 of 2 chains failed)")
 
 
 # Tuesday 2026-10-20, 20:45 Eastern: past the snapshot slot.
