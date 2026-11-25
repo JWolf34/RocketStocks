@@ -25,8 +25,8 @@ from rs_sources.schwab.option_chain import (
     OptionChain,
     SchwabOptionChains,
     normalize_chain,
-    schwab_chain_symbol,
 )
+from rs_sources.schwab.symbols import schwab_symbol
 
 __all__ = [
     "TOKEN_ERRORS",
@@ -49,6 +49,6 @@ __all__ = [
     "build_schwab_client",
     "normalize_chain",
     "schwab_failure",
-    "schwab_chain_symbol",
+    "schwab_symbol",
     "translate_auth_errors",
 ]

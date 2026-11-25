@@ -301,19 +301,12 @@ async def test_bars_of_a_listing_that_left_the_universe_are_kept_and_no_longer_a
     assert await _bars(session_factory, "GONE") == kept != []
 
 
-# --- the price-history spelling ----------------------------------------------------------------
+# --- Schwab's spelling ------------------------------------------------------------------------
 
 
-def test_a_universe_symbol_is_asked_for_under_its_own_spelling_by_default():
-    assert daily_bars.price_history_symbol("BRK.B") == "BRK.B"
-    assert daily_bars.price_history_symbol("AAPL") == "AAPL"
-
-
-async def test_the_request_spelling_comes_from_one_function_and_bars_keep_the_universe_symbol(
-    session_factory, monkeypatch
-):
-    monkeypatch.setattr(daily_bars, "price_history_symbol", lambda symbol: symbol.replace(".", "/"))
+async def test_a_class_share_is_asked_for_slashed_and_its_bars_keep_the_universe_symbol(session_factory):
     await _universe(session_factory, "BRK.B")
+    # Schwab answers the dotted spelling with no candles; only the slashed one prices.
     schwab = FakeSchwab().price("BRK/B", BENCHMARK)
 
     await _run(session_factory, schwab, FakeClock(NOW))
@@ -321,8 +314,39 @@ async def test_the_request_spelling_comes_from_one_function_and_bars_keep_the_un
     assert schwab.symbols_called() == [BENCHMARK, "BRK/B"]
     assert await _bars(session_factory, "BRK.B") == _sessions(SHORT_SEED)
     assert await _bars(session_factory, "BRK/B") == []
+    assert await _unpriced(session_factory) == {}
     async with session_factory() as s:
         assert await DailyBarRepository(s).earliest_requested(["BRK.B", "BRK/B"]) == {"BRK.B": SHORT_SEED}
+
+
+async def test_a_class_share_refused_under_its_dotted_spelling_is_asked_again_on_the_next_run(session_factory):
+    await _universe(session_factory, "BRK.B")
+    async with session_factory() as s:
+        await DailyBarRepository(s).record_unpriced("BRK.B", "no_history", NOW - timedelta(days=1), requested_as="BRK.B")
+        await s.commit()
+    schwab = FakeSchwab().price("BRK/B", BENCHMARK)
+
+    report = await _run(session_factory, schwab, FakeClock(NOW))
+
+    assert "BRK/B" in schwab.symbols_called()
+    assert report.deferred == 0
+    assert await _bars(session_factory, "BRK.B") == _sessions(SHORT_SEED)
+    assert await _unpriced(session_factory) == {}
+
+
+async def test_a_class_share_refused_under_its_slashed_spelling_waits_the_week(session_factory):
+    await _universe(session_factory, "BRK.B")
+    schwab = FakeSchwab().price(BENCHMARK)
+    clock = FakeClock(NOW)
+    await _run(session_factory, schwab, clock)
+    assert (await _unpriced(session_factory))["BRK.B"].requested_as == "BRK/B"
+
+    schwab.calls.clear()
+    clock.current = NOW + timedelta(days=1)
+    report = await _run(session_factory, schwab, clock)
+
+    assert "BRK/B" not in schwab.symbols_called()
+    assert report.deferred == 1
 
 
 # --- the seed ------------------------------------------------------------------------------------

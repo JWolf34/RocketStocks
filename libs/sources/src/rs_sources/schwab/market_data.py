@@ -18,6 +18,7 @@ from pydantic import BaseModel, ConfigDict, Field, NonNegativeInt, ValidationErr
 from rs_domain import TradingCalendar, UtcDatetime
 from rs_sources.errors import SourceError
 from rs_sources.schwab.client import translate_auth_errors
+from rs_sources.schwab.symbols import schwab_symbol
 
 logger = logging.getLogger(__name__)
 
@@ -135,21 +136,25 @@ class SchwabMarketData:
             raise SchwabResponseError(f"{symbol}: unusable quote ({exc})") from exc
 
     async def daily_history(self, symbol: str, start: date, end: date) -> DailyHistory:
-        """Daily OHLCV for ET session dates `start` to `end`, inclusive."""
+        """Daily OHLCV of Universe symbol `symbol` for ET session dates `start` to `end`, inclusive.
+
+        The request is spelled the way Schwab knows the symbol; the bars carry `symbol` itself.
+        """
         if start > end:
             raise ValueError(f"start {start} is after end {end}")
         symbol = symbol.strip().upper()
+        spelled = schwab_symbol(symbol)
         # A full-day window also keeps start == end off Schwab's zero-width 400.
         window_start = datetime.combine(start, time.min, tzinfo=_EASTERN)
         window_end = datetime.combine(end, time(23, 59, 59), tzinfo=_EASTERN)
         with translate_auth_errors():
             response = await self._client.get_price_history_every_day(
-                symbol,
+                spelled,
                 start_datetime=window_start,
                 end_datetime=window_end,
                 need_extended_hours_data=False,
             )
-        payload = response_payload(response, symbol)
+        payload = response_payload(response, spelled)
         bars: list[DailyBar] = []
         rejects: list[RejectedBar] = []
         seen: set[date] = set()

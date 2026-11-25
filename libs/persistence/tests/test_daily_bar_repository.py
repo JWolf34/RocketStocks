@@ -116,23 +116,23 @@ async def test_record_unpriced_keeps_first_seen_and_advances_last_attempt(sessio
     later = first + timedelta(days=7)
     async with session_factory() as s:
         repo = DailyBarRepository(s)
-        await repo.record_unpriced("DEAD", "empty history", first)
-        await repo.record_unpriced("DEAD", "still empty", later)
-        await repo.record_unpriced("OTHER", "delisted", later)
+        await repo.record_unpriced("DE.AD", "empty history", first, requested_as="DE.AD")
+        await repo.record_unpriced("DE.AD", "still empty", later, requested_as="DE/AD")
+        await repo.record_unpriced("OTHER", "delisted", later, requested_as="OTHER")
         await s.commit()
 
     async with session_factory() as s:
         got = await DailyBarRepository(s).list_unpriced()
-    assert [(u.symbol, u.first_seen, u.last_attempt, u.reason) for u in got] == [
-        ("DEAD", first, later, "still empty"),
-        ("OTHER", later, later, "delisted"),
+    assert [(u.symbol, u.first_seen, u.last_attempt, u.reason, u.requested_as) for u in got] == [
+        ("DE.AD", first, later, "still empty", "DE/AD"),
+        ("OTHER", later, later, "delisted", "OTHER"),
     ]
 
 
 async def test_clear_unpriced(session_factory):
     async with session_factory() as s:
         repo = DailyBarRepository(s)
-        await repo.record_unpriced("DEAD", "empty history", FETCHED)
+        await repo.record_unpriced("DEAD", "empty history", FETCHED, requested_as="DEAD")
         assert await repo.clear_unpriced("DEAD") is True
         assert await repo.clear_unpriced("DEAD") is False
         assert await repo.list_unpriced() == []

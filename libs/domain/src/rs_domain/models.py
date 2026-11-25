@@ -131,7 +131,8 @@ class StoredDailyBar(BaseModel):
 
 class UnpricedSymbol(BaseModel):
     """A symbol the price vendor cannot price, kept so its cases are counted as
-    unpriced and it is retried slowly instead of in a hot loop."""
+    unpriced and it is retried slowly instead of in a hot loop. `requested_as` is
+    the spelling the vendor was last asked under."""
 
     model_config = ConfigDict(frozen=True)
 
@@ -139,6 +140,7 @@ class UnpricedSymbol(BaseModel):
     first_seen: UtcDatetime
     last_attempt: UtcDatetime
     reason: str
+    requested_as: str
 
 
 class UniverseListing(BaseModel):

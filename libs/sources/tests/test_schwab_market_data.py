@@ -141,6 +141,12 @@ class TestDailyHistoryRequest:
         assert end > start  # a single-day request is never zero-width (Schwab 400s on that)
         assert kwargs["need_extended_hours_data"] is False
 
+    async def test_a_class_share_is_requested_slashed_and_its_bars_carry_the_universe_symbol(self, calendar):
+        data, client = market(history_of([candle(date(2026, 7, 6))], symbol="BRK/B"), calendar)
+        result = await data.daily_history("BRK.B", date(2026, 7, 6), date(2026, 7, 6))
+        assert [symbol for symbol, _ in client.history_calls] == ["BRK/B"]
+        assert [bar.symbol for bar in result.bars] == ["BRK.B"]
+
     async def test_start_after_end_is_rejected_before_any_call(self, calendar):
         data, client = market(history_of([]), calendar)
         with pytest.raises(ValueError):

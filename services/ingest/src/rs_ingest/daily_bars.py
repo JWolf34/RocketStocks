@@ -11,6 +11,10 @@ one call as a tail, with more rows. A symbol whose history begins after the seed
 back, unless Schwab was already asked for that start and has nothing earlier: a young listing is
 asked once. Bars of a listing that has left the Universe stay; the pass just stops asking.
 
+A symbol Schwab cannot price is asked again after UNPRICED_RETRY, or on the next run when
+Schwab's spelling of it has changed since it was refused. The source spells each request
+(`BRK.B` is asked as `BRK/B`); bars are stored under the Universe's own symbol.
+
 A symbol's bars are written in one transaction, one commit per symbol, so a write never
 decompresses more than that symbol's own history (Timescale aborts a transaction that
 decompresses more than 100,000 tuples).
@@ -46,6 +50,7 @@ from rs_sources.schwab import (
     SchwabFailure,
     SchwabResponseError,
     schwab_failure,
+    schwab_symbol,
 )
 
 logger = logging.getLogger(__name__)
@@ -63,7 +68,7 @@ STOP_AT = time(3, 0)
 PROGRESS_EVERY = 100
 # A session's candle is trusted this long after the close; the daily slot is 90 minutes after.
 SETTLE = timedelta(hours=1)
-# A symbol Schwab cannot price is asked about again this often, never sooner.
+# A symbol Schwab cannot price is asked about again this often, never sooner under the same spelling.
 UNPRICED_RETRY = timedelta(days=7)
 # Schwab's daily history is split-adjusted as of the fetch (measured on four known splits).
 PRICES_ADJUSTED = True
@@ -105,16 +110,6 @@ class DailyBarsReport:
     failed: list[str] = field(default_factory=list)
     # Symbols still to fetch when the stop time came; the next run resumes with them.
     left: int = 0
-
-
-def price_history_symbol(symbol: str) -> str:
-    """The spelling Schwab's price history knows a Universe symbol by.
-
-    The Universe keeps the listing file's own symbol (`BRK.B`), and bars are stored under it;
-    only the request is spelled this way. One place, so a spelling the probe finds Schwab wants
-    for class shares and preferreds is a change here and nowhere else.
-    """
-    return symbol
 
 
 def stop_time(now: datetime, at: time = STOP_AT) -> datetime:
@@ -240,7 +235,12 @@ async def sync_daily_bars(
         if start is None:
             continue
         previous = unpriced.get(symbol)
-        if symbol not in stored and previous is not None and now - previous.last_attempt < UNPRICED_RETRY:
+        if (
+            symbol not in stored
+            and previous is not None
+            and previous.requested_as == schwab_symbol(symbol)
+            and now - previous.last_attempt < UNPRICED_RETRY
+        ):
             report.deferred += 1
             continue
         todo.append((symbol, start))
@@ -254,7 +254,7 @@ async def sync_daily_bars(
         if clock.now() >= stop_at:
             raise _Stopped
         try:
-            history = await source.daily_history(price_history_symbol(symbol), start, last_session)
+            history = await source.daily_history(symbol, start, last_session)
         except Exception as exc:
             match schwab_failure(exc):
                 case SchwabFailure.TOKEN:
@@ -358,7 +358,7 @@ async def _record_unpriced(
     session_factory: async_sessionmaker[AsyncSession], symbol: str, reason: str, now: datetime
 ) -> None:
     async with session_factory() as session:
-        await DailyBarRepository(session).record_unpriced(symbol, reason, now)
+        await DailyBarRepository(session).record_unpriced(symbol, reason, now, requested_as=schwab_symbol(symbol))
         await session.commit()
 
 
